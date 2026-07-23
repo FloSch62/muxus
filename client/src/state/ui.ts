@@ -14,18 +14,23 @@ export type HostEditorState =
 interface UiState {
   settingsOpen: boolean;
   hostEditor: HostEditorState;
-  /** Forwards dialog targets the active tab's connection. */
-  forwardsOpen: boolean;
+  /** Global forwarding side panel (saved tunnels + live forwards). */
+  forwardingOpen: boolean;
+  /** Tab ids awaiting a close confirmation (live sessions). */
+  confirmCloseTabs: string[] | null;
   setSettingsOpen: (open: boolean) => void;
   setHostEditor: (value: HostEditorState) => void;
-  setForwardsOpen: (open: boolean) => void;
+  setForwardingOpen: (open: boolean) => void;
+  setConfirmCloseTabs: (tabIds: string[] | null) => void;
 }
 
 export const useUiStore = create<UiState>()((set) => ({
   settingsOpen: false,
   hostEditor: false,
-  forwardsOpen: false,
+  forwardingOpen: false,
+  confirmCloseTabs: null,
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setHostEditor: (hostEditor) => set({ hostEditor }),
-  setForwardsOpen: (forwardsOpen) => set({ forwardsOpen }),
+  setForwardingOpen: (forwardingOpen) => set({ forwardingOpen }),
+  setConfirmCloseTabs: (confirmCloseTabs) => set({ confirmCloseTabs }),
 }));

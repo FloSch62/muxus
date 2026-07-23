@@ -1,4 +1,4 @@
-import { openLocalTerminal } from './session-actions.js';
+import { openLocalTerminal, requestCloseTabs } from './session-actions.js';
 import { usePrefsStore } from './state/prefs.js';
 import { useTabsStore } from './state/tabs.js';
 
@@ -16,6 +16,11 @@ export function installShortcuts(): () => void {
       openLocalTerminal();
       return;
     }
+    if (mod && e.shiftKey && !e.altKey && e.code === 'KeyF') {
+      e.preventDefault();
+      useTabsStore.getState().requestSearch();
+      return;
+    }
     if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && (e.code === 'PageUp' || e.code === 'PageDown')) {
       e.preventDefault();
       useTabsStore.getState().cycle(e.code === 'PageUp');
@@ -31,8 +36,9 @@ export function installShortcuts(): () => void {
 
   const unsubscribers = [
     window.muxusDesktop?.onCloseTab(() => {
-      const { activeId, close } = useTabsStore.getState();
-      if (activeId) close(activeId);
+      const { activeId, activePaneId, root, closePane } = useTabsStore.getState();
+      if (activeId) requestCloseTabs([activeId]);
+      else if (root.type === 'split') closePane(activePaneId);
       else window.muxusDesktop?.closeWindow();
     }),
     window.muxusDesktop?.onCycleTab((backwards) => {

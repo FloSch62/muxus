@@ -1,5 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
-import type { AppInfo, ForwardInfo, SftpListResponse, SshConfigResponse, SshKeysResponse } from '@muxus/shared';
+import type {
+  AppInfo,
+  ConnectionsResponse,
+  ForwardInfo,
+  SftpListResponse,
+  SshConfigResponse,
+  SshKeysResponse,
+  TunnelsResponse,
+} from '@muxus/shared';
 import { apiFetch } from './http.js';
 
 export function useAppInfo() {
@@ -14,7 +22,8 @@ export function useSshConfig() {
   return useQuery({
     queryKey: ['ssh-config'],
     queryFn: () => apiFetch<SshConfigResponse>('/api/ssh/config'),
-    // ~/.ssh/config is the session store; pick up external edits quickly.
+    // OpenSSH config remains the live source for connection details; pick up
+    // external edits quickly while the server overlays Muxus-owned metadata.
     staleTime: 5_000,
     refetchInterval: 15_000,
     refetchOnWindowFocus: true,
@@ -47,11 +56,28 @@ export function useSftpHome(connId: string | undefined) {
   });
 }
 
-export function useForwards(connId: string | undefined) {
+/** Every active forward on every connection (forwarding panel + badge). */
+export function useForwards() {
   return useQuery({
-    queryKey: ['forwards', connId],
-    queryFn: () => apiFetch<{ forwards: ForwardInfo[] }>(`/api/forwards?connId=${encodeURIComponent(connId ?? '')}`),
-    enabled: !!connId,
+    queryKey: ['forwards'],
+    queryFn: () => apiFetch<{ forwards: ForwardInfo[] }>('/api/forwards'),
     refetchInterval: 5_000,
+  });
+}
+
+/** Live SSH transports (connection reuse for tunnels, grouping in the panel). */
+export function useConnections() {
+  return useQuery({
+    queryKey: ['connections'],
+    queryFn: () => apiFetch<ConnectionsResponse>('/api/connections'),
+    refetchInterval: 5_000,
+  });
+}
+
+/** Saved tunnel definitions. */
+export function useTunnels() {
+  return useQuery({
+    queryKey: ['tunnels'],
+    queryFn: () => apiFetch<TunnelsResponse>('/api/tunnels'),
   });
 }

@@ -1,6 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { HostPreviewResponse, SshConfigResponse, SshKeysResponse } from '@muxus/shared';
+import type {
+  HostPreviewResponse,
+  OpenSshMetadataPatch,
+  OpenSshProfileMetadata,
+  SshConfigResponse,
+  SshKeysResponse,
+} from '@muxus/shared';
 import type { AppContext } from '../app.js';
 import { sendError } from '../util/errors.js';
 import { defaultSshConfigPath, listHosts, loadConfigDocument } from '../ssh/ssh-config.js';
@@ -33,14 +39,25 @@ const upsertSchema = z.object({
   }),
 });
 
-/** ~/.ssh/config as the session store: listing, editing, and key discovery. */
-export function registerSshRoutes(app: FastifyInstance, _ctx: AppContext): void {
+const metadataPatchSchema = z
+  .object({
+    favorite: z.boolean().optional(),
+    displayName: z.string().max(200).nullable().optional(),
+    color: z.string().max(64).nullable().optional(),
+    icon: z.string().max(64).nullable().optional(),
+  })
+  .refine((patch) => Object.keys(patch).length > 0, 'at least one metadata field is required');
+
+/** Live OpenSSH config plus Muxus-owned metadata, editing, and key discovery. */
+export function registerSshRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/ssh/config', (): SshConfigResponse => {
     const doc = loadConfigDocument();
+    const hosts = listHosts(doc).sort((a, b) => a.alias.localeCompare(b.alias));
+    const metadata = ctx.database.openSshMetadata(hosts.map((host) => host.alias));
     return {
       path: defaultSshConfigPath(),
       files: doc.fileOrder,
-      hosts: listHosts(doc).sort((a, b) => a.alias.localeCompare(b.alias)),
+      hosts: hosts.map((host) => ({ ...host, metadata: metadata.get(host.alias) })),
       error: doc.error,
     };
   });
@@ -51,7 +68,12 @@ export function registerSshRoutes(app: FastifyInstance, _ctx: AppContext): void 
       if (!parsed.success) {
         return await reply.code(400).send({ message: parsed.error.issues[0]?.message ?? 'invalid host payload' });
       }
-      return upsertHost(parsed.data);
+      const result = upsertHost(parsed.data);
+      const nextAlias = parsed.data.aliases[0]!;
+      if (parsed.data.previousAlias) {
+        ctx.database.renameOpenSshAlias(parsed.data.previousAlias, nextAlias);
+      }
+      return result;
     } catch (err) {
       return sendError(reply, err);
     }
@@ -74,6 +96,19 @@ export function registerSshRoutes(app: FastifyInstance, _ctx: AppContext): void 
       const { alias } = req.params as { alias: string };
       deleteHost(alias);
       return { ok: true };
+    } catch (err) {
+      return sendError(reply, err);
+    }
+  });
+
+  app.patch('/api/ssh/config/hosts/:alias/metadata', async (req, reply): Promise<OpenSshProfileMetadata | void> => {
+    try {
+      const { alias } = req.params as { alias: string };
+      const parsed = metadataPatchSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return await reply.code(400).send({ message: parsed.error.issues[0]?.message ?? 'invalid metadata payload' });
+      }
+      return ctx.database.updateOpenSshMetadata(alias, parsed.data satisfies OpenSshMetadataPatch);
     } catch (err) {
       return sendError(reply, err);
     }

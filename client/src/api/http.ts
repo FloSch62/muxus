@@ -1,18 +1,25 @@
 import type { ApiErrorBody } from '@muxus/shared';
+import { terminalWebSocketProtocols } from '@muxus/shared/ws-protocol';
 import { reportAuthInvalid, reportBackendDown, reportBackendUp } from '../state/backend.js';
 
 let token = '';
 
-/** Capture the auth token from the URL (?token=...) once, then strip it. */
+/** Capture a standalone-browser bootstrap token once, then strip it. */
 export function initAuthToken(): void {
   const url = new URL(window.location.href);
-  const fromUrl = url.searchParams.get('token');
+  const fragment = new URLSearchParams(url.hash.startsWith('#') ? url.hash.slice(1) : url.hash);
+  // Query support only migrates old launch URLs. New browser launches use a
+  // fragment (never sent to the server); Electron supplies the token over IPC.
+  const fromUrl = fragment.get('token') ?? url.searchParams.get('token');
   if (fromUrl) {
     sessionStorage.setItem('muxus-token', fromUrl);
+    fragment.delete('token');
     url.searchParams.delete('token');
+    const nextFragment = fragment.toString();
+    url.hash = nextFragment ? `#${nextFragment}` : '';
     window.history.replaceState({}, '', url.toString());
   }
-  token = sessionStorage.getItem('muxus-token') ?? (import.meta.env.DEV ? 'dev' : '');
+  token = window.muxusDesktop?.authToken ?? sessionStorage.getItem('muxus-token') ?? (import.meta.env.DEV ? 'dev' : '');
 }
 
 export function authToken(): string {
@@ -78,13 +85,14 @@ export async function apiFetchRaw(path: string, init?: RequestInit): Promise<Res
   const res = await statusFetch(path, init);
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
+    let body: ApiErrorBody | undefined;
     try {
-      const body = (await res.json()) as ApiErrorBody;
+      body = (await res.json()) as ApiErrorBody;
       if (body?.message) message = body.message;
     } catch {
       /* non-JSON error body */
     }
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, body);
   }
   return res;
 }
@@ -92,9 +100,13 @@ export async function apiFetchRaw(path: string, init?: RequestInit): Promise<Res
 export function wsUrl(path: string, params: Record<string, string | number | boolean | undefined> = {}): string {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const url = new URL(`${proto}//${window.location.host}${path}`);
-  url.searchParams.set('token', token);
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined) url.searchParams.set(k, String(v));
   }
   return url.toString();
+}
+
+/** Handshake protocols authenticate a WebSocket without leaking into its URL. */
+export function wsProtocols(): string[] {
+  return terminalWebSocketProtocols(token);
 }

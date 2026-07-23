@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { sessionProfileSchema, terminalClientMessageSchema } from '@muxus/shared/ws-protocol';
+import {
+  sessionProfileSchema,
+  TERMINAL_WS_PROTOCOL,
+  terminalClientMessageSchema,
+  terminalWebSocketProtocols,
+} from '@muxus/shared/ws-protocol';
+
+describe('terminalWebSocketProtocols', () => {
+  it('offers a fixed selected protocol and a separate auth protocol', () => {
+    expect(terminalWebSocketProtocols('secret')).toEqual([TERMINAL_WS_PROTOCOL, 'muxus.auth.secret']);
+  });
+});
 
 describe('sessionProfileSchema', () => {
   it('accepts a minimal local profile', () => {
@@ -49,6 +60,11 @@ describe('terminalClientMessageSchema', () => {
     expect(terminalClientMessageSchema.safeParse({ op: 'resize', cols: 120, rows: 40 }).success).toBe(true);
     expect(terminalClientMessageSchema.safeParse({ op: 'auth-response', answers: ['hunter2'] }).success).toBe(true);
     expect(terminalClientMessageSchema.safeParse({ op: 'host-key-response', accept: true }).success).toBe(true);
+  });
+
+  it('accepts a shell-less dial for ssh targets only', () => {
+    expect(terminalClientMessageSchema.safeParse({ op: 'dial', profile: { kind: 'ssh', target: 'web' } }).success).toBe(true);
+    expect(terminalClientMessageSchema.safeParse({ op: 'dial', profile: { kind: 'local' } }).success).toBe(false);
   });
 
   it('rejects unknown ops', () => {

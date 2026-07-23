@@ -23,7 +23,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import { useQueryClient } from '@tanstack/react-query';
 import type { SftpEntry } from '@muxus/shared';
-import { apiFetch, apiFetchRaw } from '../api/http.js';
+import { ApiError, apiFetch, apiFetchRaw } from '../api/http.js';
 import { useSftpHome, useSftpList } from '../api/queries.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { layout } from '../theme.js';
@@ -113,15 +113,38 @@ export function SftpPanel({ connId }: { connId: string }) {
     void (async () => {
       setBusy(true);
       try {
+        let uploaded = 0;
         for (const file of files) {
-          await apiFetchRaw(`/api/sftp/${connId}/upload?path=${encodeURIComponent(joinPath(path, file.name))}`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/octet-stream' },
-            body: file,
-          });
+          const destination = joinPath(path, file.name);
+          const send = (overwrite: boolean) =>
+            apiFetchRaw(
+              `/api/sftp/${connId}/upload?path=${encodeURIComponent(destination)}${overwrite ? '&overwrite=true' : ''}`,
+              {
+                method: 'POST',
+                headers: { 'content-type': 'application/octet-stream' },
+                body: file,
+              },
+            );
+          try {
+            await send(false);
+            uploaded++;
+          } catch (err) {
+            if (
+              !(err instanceof ApiError) ||
+              err.status !== 409 ||
+              err.body?.code !== 'SFTP_DESTINATION_EXISTS'
+            ) {
+              throw err;
+            }
+            if (!window.confirm(`${file.name} already exists on the remote host. Replace it?`)) continue;
+            await send(true);
+            uploaded++;
+          }
         }
-        showToast('success', `Uploaded ${files.length === 1 ? files[0]!.name : `${files.length} files`}`);
-        refresh();
+        if (uploaded > 0) {
+          showToast('success', `Uploaded ${uploaded === 1 ? '1 file' : `${uploaded} files`}`);
+          refresh();
+        }
       } catch (err) {
         showErrorToast(err);
       } finally {

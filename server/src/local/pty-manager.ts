@@ -3,7 +3,8 @@ import os from 'node:os';
 import pty from 'node-pty';
 import type { LocalProfile } from '@muxus/shared';
 
-export const DEFAULT_TERM = 'xterm-kitty';
+/** Broad compatibility default; users can opt into xterm-kitty per profile. */
+export const DEFAULT_TERM = 'xterm-256color';
 
 /** The login shell a local terminal spawns when the profile has no override. */
 export function defaultShell(): string {

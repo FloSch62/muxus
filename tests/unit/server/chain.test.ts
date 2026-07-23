@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { buildChain } from '../../../server/src/ssh/connection-manager.js';
+import { buildChain, findMetadataAlias } from '../../../server/src/ssh/connection-manager.js';
 import { loadConfigDocument } from '../../../server/src/ssh/ssh-config.js';
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'muxus-chain-'));
@@ -73,5 +73,22 @@ describe('buildChain', () => {
   it('detects ProxyJump cycles', () => {
     const doc = docOf(['Host a', '  ProxyJump b', '', 'Host b', '  ProxyJump a'].join('\n'));
     expect(() => buildChain(doc, { target: 'a' })).toThrowError(/cycle/);
+  });
+});
+
+describe('findMetadataAlias', () => {
+  it('only attributes recent-use metadata to concrete OpenSSH aliases', () => {
+    const doc = docOf([
+      'Host production prod',
+      '  HostName 203.0.113.10',
+      '',
+      'Host *.internal',
+      '  User deploy',
+    ].join('\n'));
+
+    expect(findMetadataAlias(doc, 'production')).toBe('production');
+    expect(findMetadataAlias(doc, 'prod')).toBe('prod');
+    expect(findMetadataAlias(doc, 'web.internal')).toBeUndefined();
+    expect(findMetadataAlias(doc, '203.0.113.11')).toBeUndefined();
   });
 });

@@ -17,10 +17,16 @@ import ssh2, {
 const { utils } = ssh2;
 import { nanoid } from 'nanoid';
 import type { FastifyBaseLogger } from 'fastify';
-import type { ConfigForward, SshProfile } from '@muxus/shared';
+import type { ConfigForward, ConnectionInfo, SshProfile } from '@muxus/shared';
 import { KnownHostsStore, fingerprintSha256, hostKeyType } from './known-hosts.js';
 import { agentSocket } from './key-scan.js';
 import {
+  ConnectionLeaseRegistry,
+  type ConnectionLeaseOwner,
+  type TransportLease,
+} from './connection-leases.js';
+import {
+  listHosts,
   loadConfigDocument,
   parseHostSpec,
   resolveHost,
@@ -55,13 +61,19 @@ export interface ManagedConnection {
   host: string;
   port: number;
   user: string;
+  /** Concrete OpenSSH alias eligible for Muxus-owned recent/favorite metadata. */
+  metadataAlias?: string;
   /** *Forward lines resolved from ssh config — auto-started once the session is up. */
   configForwards: ConfigForward[];
   shell(cols: number, rows: number, term: string): Promise<ClientChannel>;
   sftp(): Promise<SFTPWrapper>;
-  onClose(listener: () => void): void;
+  /** Subscribe to transport loss; returns an unsubscribe function. */
+  onClose(listener: () => void): () => void;
+  /** Force-close the transport, regardless of active leases. */
   close(): void;
 }
+
+export type ConnectionLease = TransportLease<ManagedConnection>;
 
 const MAX_JUMP_DEPTH = 8;
 const MAX_PASSWORD_ATTEMPTS = 3;
@@ -80,23 +92,36 @@ export interface ChainHop {
 }
 
 /**
- * Dials SSH targets exactly the way `ssh <target>` would, with ~/.ssh/config
- * as the single source of truth: alias resolution, ProxyJump chains (each hop
- * resolved, verified and authenticated in its own right), agent + IdentityFile
- * + keyboard-interactive + password auth in OpenSSH order, and host keys
- * checked against the real known_hosts files.
+ * Dials SSH targets exactly the way `ssh <target>` would, using OpenSSH as
+ * the source for connection details: alias resolution, ProxyJump chains
+ * (each hop resolved, verified and authenticated in its own right), agent +
+ * IdentityFile + keyboard-interactive + password auth in OpenSSH order, and
+ * host keys checked against the real known_hosts files.
  */
 export class SshConnectionManager {
-  private readonly connections = new Map<string, ManagedConnection>();
+  private readonly connections = new ConnectionLeaseRegistry<ManagedConnection>();
   readonly knownHosts = new KnownHostsStore();
 
   constructor(private readonly log: FastifyBaseLogger) {}
 
-  get(id: string): ManagedConnection | undefined {
-    return this.connections.get(id);
+  /** Acquire an independent consumer lease on an existing SSH transport. */
+  acquire(id: string, owner: ConnectionLeaseOwner): ConnectionLease | undefined {
+    return this.connections.acquire(id, owner);
   }
 
-  async connect(profile: SshProfile, io: ConnectIo): Promise<ManagedConnection> {
+  /** Live transports (forwarding panel, connection reuse when starting tunnels). */
+  list(): ConnectionInfo[] {
+    return this.connections.list().map((conn) => ({
+      id: conn.id,
+      target: conn.profile.target,
+      host: conn.host,
+      port: conn.port,
+      user: conn.user,
+      metadataAlias: conn.metadataAlias,
+    }));
+  }
+
+  async connect(profile: SshProfile, io: ConnectIo, owner: ConnectionLeaseOwner = 'terminal'): Promise<ConnectionLease> {
     const doc = loadConfigDocument();
     const chain = buildChain(doc, profile);
 
@@ -120,9 +145,12 @@ export class SshConnectionManager {
     const target = chain[chain.length - 1]!;
     const client = clients[clients.length - 1]!;
     const jumpClients = clients.slice(0, -1);
+    const metadataAlias = findMetadataAlias(doc, target.spec.host);
     const id = nanoid(10);
     const closeListeners = new Set<() => void>();
     let sftpPromise: Promise<SFTPWrapper> | undefined;
+    let closed = false;
+    let ending = false;
 
     const managed: ManagedConnection = {
       id,
@@ -131,6 +159,7 @@ export class SshConnectionManager {
       host: target.resolved.hostname,
       port: target.port,
       user: target.user,
+      metadataAlias,
       configForwards: target.resolved.forwards,
       shell: (cols, rows, term) =>
         new Promise((resolve, reject) => {
@@ -138,34 +167,57 @@ export class SshConnectionManager {
         }),
       sftp: () => {
         // One SFTP channel per connection, shared by every file operation.
-        sftpPromise ??= new Promise((resolve, reject) => {
+        if (sftpPromise) return sftpPromise;
+        const pending = new Promise<SFTPWrapper>((resolve, reject) => {
           client.sftp((err, sftp) => (err ? reject(err) : resolve(sftp)));
         });
-        return sftpPromise;
+        sftpPromise = pending;
+        void pending.then(
+          (sftp) => {
+            sftp.once('close', () => {
+              if (sftpPromise === pending) sftpPromise = undefined;
+            });
+          },
+          () => {
+            // A transient channel-open failure must not poison every future
+            // SFTP operation on an otherwise healthy transport.
+            if (sftpPromise === pending) sftpPromise = undefined;
+          },
+        );
+        return pending;
       },
-      onClose: (listener) => closeListeners.add(listener),
+      onClose: (listener) => {
+        if (closed) {
+          queueMicrotask(listener);
+          return () => undefined;
+        }
+        closeListeners.add(listener);
+        return () => closeListeners.delete(listener);
+      },
       close: () => {
+        if (ending) return;
+        ending = true;
         client.end();
         for (const jump of [...jumpClients].reverse()) jump.end();
       },
     };
 
     client.on('close', () => {
-      this.connections.delete(id);
+      closed = true;
+      this.connections.markClosed(managed);
       for (const jump of jumpClients) jump.end();
       for (const listener of closeListeners) listener();
+      closeListeners.clear();
     });
     for (const jump of jumpClients) {
       // A dying hop takes the whole chain with it; surface that as a close.
       jump.on('close', () => client.end());
     }
-    this.connections.set(id, managed);
-    return managed;
+    return this.connections.register(managed, owner);
   }
 
   closeAll(): void {
-    for (const conn of this.connections.values()) conn.close();
-    this.connections.clear();
+    this.connections.closeAll();
   }
 
   private dial(hop: ChainHop, sock: Duplex | undefined, io: ConnectIo): Promise<Client> {
@@ -261,6 +313,13 @@ export function buildChain(doc: ConfigDocument, profile: Pick<SshProfile, 'targe
 
   walk(parseHostSpec(profile.target), true, 0);
   return chain;
+}
+
+/** Ad-hoc targets never masquerade as OpenSSH-backed database profiles. */
+export function findMetadataAlias(doc: ConfigDocument, requestedHost: string): string | undefined {
+  return listHosts(doc).some((entry) => entry.aliases.includes(requestedHost))
+    ? requestedHost
+    : undefined;
 }
 
 /** direct-tcpip channel from a jump host to the next hop — the `ssh -W` equivalent. */

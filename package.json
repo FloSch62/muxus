@@ -2,7 +2,8 @@
   "name": "muxus",
   "version": "0.1.0",
   "private": true,
-  "description": "Free, open-source SSH client & terminal — kitty graphics, tabbed sessions, SFTP, port forwarding",
+  "packageManager": "pnpm@11.12.0",
+  "description": "Free, open-source SSH client & terminal — kitty graphics, split-pane sessions, SFTP, port forwarding",
   "license": "MIT",
   "engines": {
     "node": ">=24.17.0"
@@ -21,7 +22,7 @@
   },
   "devDependencies": {
     "oxlint": "^1.74.0",
-    "oxlint-tsgolint": "^0.25.0",
+    "oxlint-tsgolint": "^7.0.2001",
     "typescript": "^7.0.2"
   }
 }

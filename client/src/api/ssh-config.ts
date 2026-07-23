@@ -1,5 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { HostPreviewResponse, HostUpsertRequest } from '@muxus/shared';
+import type {
+  HostPreviewResponse,
+  HostUpsertRequest,
+  OpenSshMetadataPatch,
+  OpenSshProfileMetadata,
+} from '@muxus/shared';
 import { apiFetch } from './http.js';
 import { showErrorToast } from '../state/toast.js';
 
@@ -31,6 +36,24 @@ export function useDeleteHost(onSuccess?: () => void) {
       void queryClient.invalidateQueries({ queryKey: ['ssh-config'] });
       onSuccess?.();
     },
+    onError: showErrorToast,
+  });
+}
+
+/** Update Muxus-owned metadata without rewriting the OpenSSH Host block. */
+export function useUpdateSshMetadata() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ alias, patch }: { alias: string; patch: OpenSshMetadataPatch }) =>
+      apiFetch<OpenSshProfileMetadata>(
+        `/api/ssh/config/hosts/${encodeURIComponent(alias)}/metadata`,
+        {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(patch),
+        },
+      ),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['ssh-config'] }),
     onError: showErrorToast,
   });
 }

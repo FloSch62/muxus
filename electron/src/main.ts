@@ -29,6 +29,7 @@ app.setName('Muxus');
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const isMac = process.platform === 'darwin';
 const isLinux = process.platform === 'linux';
+const EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 
 // Must match the client TopBar height: its toolbar doubles as the titlebar.
 const TITLEBAR_HEIGHT = 52;
@@ -136,8 +137,19 @@ function overlayColors(): { color: string; symbolColor: string } {
   };
 }
 
+function openAllowedExternalUrl(rawUrl: string): void {
+  try {
+    const parsed = new URL(rawUrl);
+    if (!EXTERNAL_PROTOCOLS.has(parsed.protocol)) return;
+    void shell.openExternal(parsed.toString()).catch(() => undefined);
+  } catch {
+    /* malformed or relative URLs are never handed to the OS */
+  }
+}
+
 function createWindow(url: string): void {
   const state = loadWindowState();
+  const appOrigin = new URL(url).origin;
   mainWindow = new BrowserWindow({
     width: state.width,
     height: state.height,
@@ -155,6 +167,13 @@ function createWindow(url: string): void {
     titleBarOverlay: isMac ? true : { ...overlayColors(), height: TITLEBAR_HEIGHT },
     webPreferences: {
       preload: path.join(moduleDir, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false,
+      navigateOnDragDrop: false,
     },
   });
   if (state.maximized) mainWindow.maximize();
@@ -169,8 +188,26 @@ function createWindow(url: string): void {
     mainWindow = undefined;
   });
   mainWindow.webContents.setWindowOpenHandler(({ url: external }) => {
-    void shell.openExternal(external);
+    openAllowedExternalUrl(external);
     return { action: 'deny' };
+  });
+  mainWindow.webContents.on('will-navigate', (event, destination) => {
+    try {
+      if (new URL(destination).origin === appOrigin) return;
+    } catch {
+      /* malformed destinations are blocked below */
+    }
+    event.preventDefault();
+    openAllowedExternalUrl(destination);
+  });
+  mainWindow.webContents.on('will-redirect', (event, destination) => {
+    try {
+      if (new URL(destination).origin === appOrigin) return;
+    } catch {
+      /* malformed destinations are blocked below */
+    }
+    event.preventDefault();
+    openAllowedExternalUrl(destination);
   });
   // Cmd/Ctrl+W is the OS "close window" accelerator. Hand it to the renderer
   // so it can close the focused terminal tab first, and only close the whole
@@ -223,6 +260,10 @@ ipcMain.on('muxus:state:get-all', (event) => {
   } catch {
     event.returnValue = {};
   }
+});
+
+ipcMain.on('muxus:auth-token', (event) => {
+  event.returnValue = isMainWindowSender(event) ? (server?.token ?? '') : '';
 });
 
 // Steady-state writes are fire-and-forget so the renderer never blocks on
@@ -295,6 +336,7 @@ if (!app.requestSingleInstanceLock()) {
         port: 0,
         openBrowser: false,
         prettyLogs: false,
+        databasePath: path.join(app.getPath('userData'), 'muxus.sqlite3'),
         staticRoot: app.isPackaged
           ? path.join(process.resourcesPath, 'client')
           : path.resolve(moduleDir, '../../client/dist'),

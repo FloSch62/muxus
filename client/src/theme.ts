@@ -26,6 +26,8 @@ export const layout = {
   tabStripHeight: 40,
   /** Default SFTP panel width. */
   sftpPanelWidth: 380,
+  /** Forwarding side panel width. */
+  forwardingPanelWidth: 380,
   /** Themed scrollbar thickness. */
   scrollbarSize: 10,
 } as const;

@@ -1,6 +1,7 @@
 import type { LocalProfile, SessionProfile } from '@muxus/shared';
 import { usePrefsStore } from './state/prefs.js';
 import { useTabsStore } from './state/tabs.js';
+import { useUiStore } from './state/ui.js';
 
 /** Open a new local terminal tab using the user's shell/term preferences. */
 export function openLocalTerminal(): string {
@@ -27,6 +28,23 @@ export function connectTarget(target: string, title = target): string {
 export function duplicateTab(tabId: string): void {
   const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId);
   if (tab) useTabsStore.getState().open(tab.profile, tab.title);
+}
+
+/**
+ * Close tabs, routing through a confirmation dialog when any of them still
+ * has a live session (pref-gated). The dialog in AppShell performs the
+ * actual close on confirm.
+ */
+export function requestCloseTabs(tabIds: string[]): void {
+  const { tabs, close } = useTabsStore.getState();
+  const targets = tabIds.filter((id) => tabs.some((tab) => tab.id === id));
+  if (targets.length === 0) return;
+  const live = targets.some((id) => tabs.find((tab) => tab.id === id)?.status === 'connected');
+  if (live && usePrefsStore.getState().confirmCloseConnected) {
+    useUiStore.getState().setConfirmCloseTabs(targets);
+    return;
+  }
+  for (const id of targets) close(id);
 }
 
 /**

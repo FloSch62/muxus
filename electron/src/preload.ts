@@ -14,6 +14,15 @@ const stateSnapshot: Record<string, string> = (() => {
   }
 })();
 
+const authToken: string = (() => {
+  try {
+    const value: unknown = ipcRenderer.sendSync('muxus:auth-token');
+    return typeof value === 'string' ? value : '';
+  } catch {
+    return '';
+  }
+})();
+
 // The disk-side write failed in the main process: mirror the snapshot into
 // origin-scoped localStorage so a relaunch on the same origin can migrate it
 // back (muxusStateStorage.getItem reads browser storage when the desktop
@@ -29,6 +38,7 @@ ipcRenderer.on('muxus:state:write-failed', () => {
 // Desktop bridge for stable client state plus native window integrations.
 contextBridge.exposeInMainWorld('muxusDesktop', {
   platform: process.platform,
+  authToken,
   stateStorage: {
     getItem(name: string): string | null {
       return stateSnapshot[name] ?? null;

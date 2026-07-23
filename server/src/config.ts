@@ -1,4 +1,6 @@
 import { randomBytes } from 'node:crypto';
+import os from 'node:os';
+import path from 'node:path';
 
 export interface ServerConfig {
   host: string;
@@ -10,8 +12,21 @@ export interface ServerConfig {
   openBrowser: boolean;
   /** Directory to serve the built client from; defaults to the repo's client/dist. */
   staticRoot?: string;
+  /** Local metadata/workspace database. OpenSSH config remains an external source. */
+  databasePath: string;
   /** Use the pino-pretty worker transport (unusable inside a bundled main process). */
   prettyLogs: boolean;
+}
+
+export function defaultDatabasePath(): string {
+  if (process.platform === 'darwin') {
+    return path.join(os.homedir(), 'Library', 'Application Support', 'Muxus', 'muxus.sqlite3');
+  }
+  if (process.platform === 'win32') {
+    return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Muxus', 'muxus.sqlite3');
+  }
+  const dataHome = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
+  return path.join(dataHome, 'muxus', 'muxus.sqlite3');
 }
 
 export function resolveConfig(overrides: Partial<ServerConfig> = {}): ServerConfig {
@@ -20,6 +35,7 @@ export function resolveConfig(overrides: Partial<ServerConfig> = {}): ServerConf
     port: 3002,
     token: overrides.devToken ?? randomBytes(24).toString('base64url'),
     openBrowser: true,
+    databasePath: defaultDatabasePath(),
     prettyLogs: process.env.NODE_ENV !== 'production',
     ...overrides,
   };

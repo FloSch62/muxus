@@ -6,6 +6,8 @@ declare global {
     muxusDesktop?: {
       /** Electron's process.platform ('linux', 'win32', 'darwin', …). */
       platform: string;
+      /** Per-run backend credential delivered over the isolated preload bridge. */
+      authToken: string;
       stateStorage: {
         getItem(name: string): string | null;
         setItem(name: string, value: string): void;

@@ -30,11 +30,12 @@ export class ForwardManager {
   }
 
   async start(req: ForwardRequest, origin: ForwardInfo['origin'] = 'manual'): Promise<ForwardInfo> {
-    const conn = this.connections.get(req.connId);
-    if (!conn) throw new HttpProblem(404, 'connection not found (terminal closed?)');
     if (req.type !== 'dynamic' && (!req.targetHost || !req.targetPort)) {
       throw new HttpProblem(400, 'targetHost and targetPort are required for local/remote forwards');
     }
+    const lease = this.connections.acquire(req.connId, 'forward');
+    if (!lease) throw new HttpProblem(404, 'connection not found');
+    const conn = lease.connection;
     const info: ForwardInfo = {
       id: nanoid(8),
       connId: req.connId,
@@ -44,14 +45,35 @@ export class ForwardManager {
       targetPort: req.targetPort,
       origin,
       status: 'active',
+      tunnelId: req.tunnelId,
     };
-    const stop =
-      req.type === 'local'
-        ? await this.startLocal(conn, info)
-        : req.type === 'dynamic'
-          ? await this.startDynamic(conn, info)
-          : await this.startRemote(conn, info);
+    let stopTransport: () => void;
+    try {
+      stopTransport =
+        req.type === 'local'
+          ? await this.startLocal(conn, info)
+          : req.type === 'dynamic'
+            ? await this.startDynamic(conn, info)
+            : await this.startRemote(conn, info);
+    } catch (err) {
+      lease.release();
+      throw err;
+    }
+
+    let stopped = false;
+    let unsubscribe: () => void = () => undefined;
+    const stop = () => {
+      if (stopped) return;
+      stopped = true;
+      unsubscribe();
+      try {
+        stopTransport();
+      } finally {
+        lease.release();
+      }
+    };
     this.forwards.set(info.id, { info, stop });
+    unsubscribe = conn.onClose(() => this.stop(info.id));
     return info;
   }
 
@@ -60,6 +82,14 @@ export class ForwardManager {
     if (!active) return;
     this.forwards.delete(id);
     active.stop();
+  }
+
+  /** Adopt a running forward into a saved tunnel (no restart needed). */
+  assignTunnel(id: string, tunnelId: string): ForwardInfo | undefined {
+    const active = this.forwards.get(id);
+    if (!active) return undefined;
+    active.info.tunnelId = tunnelId;
+    return active.info;
   }
 
   stopForConnection(connId: string): void {
@@ -125,6 +155,7 @@ export class ForwardManager {
     dispatch.set(info.bindPort, info);
     return () => {
       dispatch.delete(info.bindPort);
+      if (dispatch.size === 0) this.remoteDispatch.delete(conn.id);
       conn.client.unforwardIn('127.0.0.1', info.bindPort, () => {});
     };
   }

@@ -2,12 +2,16 @@ import type { AddressInfo } from 'node:net';
 import type { FastifyInstance } from 'fastify';
 import { resolveConfig, type ServerConfig } from './config.js';
 import { buildApp } from './app.js';
+import { serverUrls } from './auth.js';
 
 export interface RunningServer {
   app: FastifyInstance;
   port: number;
   token: string;
+  /** Public URL safe to show in logs. It never contains the bearer token. */
   url: string;
+  /** Standalone-browser bootstrap URL. The fragment is never sent in an HTTP request. */
+  browserUrl: string;
   close(): Promise<void>;
 }
 
@@ -18,11 +22,13 @@ export async function startServer(overrides: Partial<ServerConfig> = {}): Promis
   await app.listen({ host: config.host, port: config.port });
   // config.port may be 0 (pick any free port); read the real one back.
   const port = (app.server.address() as AddressInfo).port;
+  const urls = serverUrls(config.host, port, config.token);
   return {
     app,
     port,
     token: config.token,
-    url: `http://${config.host}:${port}/?token=${config.token}`,
+    url: urls.publicUrl,
+    browserUrl: urls.browserUrl,
     close: () => app.close(),
   };
 }

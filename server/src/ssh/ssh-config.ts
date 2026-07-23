@@ -4,8 +4,9 @@ import path from 'node:path';
 import type { ConfigForward, HostBlockOptions, ResolvedHostSettings, SshHostEntry } from '@muxus/shared';
 
 /**
- * OpenSSH per-user config engine. ~/.ssh/config is Muxus's one and only
- * session store, so this module does three jobs:
+ * OpenSSH per-user config engine. OpenSSH files remain the interoperable
+ * source for connection details while Muxus owns UI metadata separately, so
+ * this module does three jobs:
  *
  *  - parse the config (and its Includes) into a *line-preserving* document,
  *    so Host blocks can be edited in place without disturbing anything else

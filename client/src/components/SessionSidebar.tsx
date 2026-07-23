@@ -34,11 +34,13 @@ import LibraryAddOutlinedIcon from '@mui/icons-material/LibraryAddOutlined';
 import PasswordOutlinedIcon from '@mui/icons-material/PasswordOutlined';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
 import SearchIcon from '@mui/icons-material/Search';
+import StarIcon from '@mui/icons-material/Star';
+import StarBorderIcon from '@mui/icons-material/StarBorder';
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import type { SshHostEntry } from '@muxus/shared';
 import { useSshConfig } from '../api/queries.js';
-import { useDeleteHost } from '../api/ssh-config.js';
+import { useDeleteHost, useUpdateSshMetadata } from '../api/ssh-config.js';
 import { copyToClipboard } from '../clipboard.js';
 import { connectTarget, isQuickConnectTarget, openLocalTerminal } from '../session-actions.js';
 import { showToast } from '../state/toast.js';
@@ -47,10 +49,8 @@ import { useUiStore } from '../state/ui.js';
 import { layout } from '../theme.js';
 
 /**
- * The session manager. ~/.ssh/config is the single source of truth: every
- * concrete Host block appears here (grouped by config file), one click
- * connects, and editing writes back to the config. The search field doubles
- * as a quick-connect box — type an alias or user@host[:port] and hit Enter.
+ * Live OpenSSH hosts enriched with Muxus-owned favorites/recent metadata.
+ * Editing connection details still writes directly back to ssh_config.
  */
 export function SessionSidebar() {
   const { data: config } = useSshConfig();
@@ -61,13 +61,20 @@ export function SessionSidebar() {
   const [confirmDelete, setConfirmDelete] = useState<SshHostEntry | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const deleteHost = useDeleteHost(() => setConfirmDelete(null));
+  const updateMetadata = useUpdateSshMetadata();
 
   const needle = filter.trim().toLowerCase();
   const hosts = config?.hosts ?? [];
 
   const matches = (h: SshHostEntry) =>
     !needle ||
-    [...h.aliases, h.resolved.hostname, h.resolved.user ?? '', h.description ?? ''].some((t) => t.toLowerCase().includes(needle));
+    [
+      ...h.aliases,
+      h.resolved.hostname,
+      h.resolved.user ?? '',
+      h.description ?? '',
+      h.metadata?.displayName ?? '',
+    ].some((t) => t.toLowerCase().includes(needle));
 
   /** Hosts grouped by config file, root first, preserving server sort. */
   const groups = useMemo(() => {
@@ -76,6 +83,13 @@ export function SessionSidebar() {
       const list = byFile.get(h.file) ?? [];
       list.push(h);
       byFile.set(h.file, list);
+    }
+    for (const list of byFile.values()) {
+      list.sort(
+        (a, b) =>
+          Number(b.metadata?.favorite ?? false) - Number(a.metadata?.favorite ?? false) ||
+          a.alias.localeCompare(b.alias),
+      );
     }
     const order = config?.files ?? [];
     return [...byFile.entries()].sort(([a], [b]) => order.indexOf(a) - order.indexOf(b));
@@ -263,6 +277,22 @@ export function SessionSidebar() {
         </MenuItem>
         <MenuItem
           onClick={() => {
+            if (menu) {
+              updateMetadata.mutate({
+                alias: menu.entry.alias,
+                patch: { favorite: !(menu.entry.metadata?.favorite ?? false) },
+              });
+            }
+            setMenu(null);
+          }}
+        >
+          <ListItemIcon>
+            {menu?.entry.metadata?.favorite ? <StarIcon fontSize="small" /> : <StarBorderIcon fontSize="small" />}
+          </ListItemIcon>
+          {menu?.entry.metadata?.favorite ? 'Remove from favorites' : 'Add to favorites'}
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
             if (menu) setHostEditor({ mode: 'edit', entry: menu.entry });
             setMenu(null);
           }}
@@ -382,8 +412,9 @@ function HostRow({
               />
             )}
             <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {entry.alias}
+              {entry.metadata?.displayName ?? entry.alias}
             </Box>
+            {entry.metadata?.favorite && <StarIcon sx={{ fontSize: 13, color: 'warning.main' }} />}
             {(live?.connected ?? 0) > 1 && (
               <Typography component="span" sx={{ fontSize: 10, color: 'success.main' }}>
                 ×{live!.connected}

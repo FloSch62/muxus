@@ -21,7 +21,7 @@ server.app.log.info(`Muxus ready at ${server.url}`);
 
 if (config.openBrowser) {
   const { default: open } = await import('open');
-  await open(server.url).catch(() => {
-    /* headless environments: URL is already logged */
+  await open(server.browserUrl).catch(() => {
+    /* Headless environments keep serving; credentials are deliberately not logged. */
   });
 }

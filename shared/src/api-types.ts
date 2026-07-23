@@ -72,7 +72,93 @@ export interface SshHostEntry {
   options: HostBlockOptions;
   /** Effective values with `Host *`-style defaults applied (display + connect). */
   resolved: ResolvedHostSettings;
+  /** Muxus-only metadata. Connection details still resolve live from OpenSSH. */
+  metadata?: OpenSshProfileMetadata;
 }
+
+export interface OpenSshProfileMetadata {
+  /** Stable local ID survives an OpenSSH alias rename. */
+  profileId: string;
+  favorite: boolean;
+  displayName?: string;
+  color?: string;
+  icon?: string;
+  lastConnectedAt?: string;
+  connectCount: number;
+}
+
+export interface OpenSshMetadataPatch {
+  favorite?: boolean;
+  displayName?: string | null;
+  color?: string | null;
+  icon?: string | null;
+}
+
+export interface WorkspaceConnectionRef {
+  source: 'openssh' | 'profile';
+  /** OpenSSH alias when source=openssh, stable database profile ID otherwise. */
+  id: string;
+}
+
+export type WorkspaceTabLayout =
+  | {
+      id: string;
+      kind: 'terminal';
+      title: string;
+      profile: import('./ws-protocol.js').SessionProfile;
+      cwdHint?: string;
+      /** User-set color flag marking the tab. */
+      color?: string;
+      /** Restoring a layout may offer a fresh connection; it never resumes a process. */
+      offerReconnect: boolean;
+    }
+  | {
+      id: string;
+      kind: 'sftp';
+      title: string;
+      connection: WorkspaceConnectionRef;
+      path?: string;
+    }
+  | {
+      id: string;
+      kind: 'editor';
+      title: string;
+      connection: WorkspaceConnectionRef;
+      path?: string;
+    };
+
+export type WorkspaceNode =
+  | {
+      id: string;
+      type: 'pane';
+      tabs: WorkspaceTabLayout[];
+      activeTabId?: string;
+    }
+  | {
+      id: string;
+      type: 'split';
+      direction: 'horizontal' | 'vertical';
+      /** Fraction occupied by children[0]. */
+      ratio: number;
+      children: [WorkspaceNode, WorkspaceNode];
+    };
+
+export interface WorkspaceLayoutV1 {
+  version: 1;
+  root: WorkspaceNode | null;
+  activePaneId?: string;
+}
+
+export interface WorkspaceRecord {
+  id: string;
+  name: string;
+  layout: WorkspaceLayoutV1;
+  createdAt: string;
+  updatedAt: string;
+  lastOpenedAt?: string;
+}
+
+export type WorkspaceSummary = Omit<WorkspaceRecord, 'layout'>;
 
 export interface SshConfigResponse {
   /** Root config path (~/.ssh/config). */
@@ -158,6 +244,8 @@ export interface ForwardRequest {
   /** Target of the tunnel; unused for dynamic (SOCKS picks per request). */
   targetHost?: string;
   targetPort?: number;
+  /** Saved tunnel this forward realizes (running-state matching in the UI). */
+  tunnelId?: string;
 }
 
 export interface ForwardInfo {
@@ -171,4 +259,57 @@ export interface ForwardInfo {
   origin: 'config' | 'manual';
   status: 'active' | 'error';
   error?: string;
+  /** Saved tunnel this forward realizes, when it was started from one. */
+  tunnelId?: string;
+}
+
+/**
+ * A saved tunnel definition — a forwarding rule bound to an SSH target,
+ * started and stopped independently of any terminal (the MobaXterm tunnel
+ * workflow). Starting one reuses a live connection to the target when there
+ * is one, otherwise dials a shell-less transport.
+ */
+export interface TunnelRecord {
+  id: string;
+  /** Display name; falls back to the rule description in the UI. */
+  name?: string;
+  /** SSH target — config alias or "[user@]host[:port]", dialed like `ssh <target>`. */
+  target: string;
+  type: ForwardType;
+  bindPort: number;
+  targetHost?: string;
+  targetPort?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Create/update a saved tunnel (id present = update). */
+export interface TunnelInput {
+  id?: string;
+  name?: string;
+  target: string;
+  type: ForwardType;
+  bindPort: number;
+  targetHost?: string;
+  targetPort?: number;
+}
+
+export interface TunnelsResponse {
+  tunnels: TunnelRecord[];
+}
+
+/** Live SSH transport summary (forwarding panel, connection reuse). */
+export interface ConnectionInfo {
+  id: string;
+  /** What was dialed — config alias or ad-hoc "[user@]host[:port]". */
+  target: string;
+  host: string;
+  port: number;
+  user: string;
+  /** Config alias when the target matches a Host block in ~/.ssh/config. */
+  metadataAlias?: string;
+}
+
+export interface ConnectionsResponse {
+  connections: ConnectionInfo[];
 }
