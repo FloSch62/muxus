@@ -110,6 +110,7 @@ export interface OpenSshMetadata {
   profileId: string;
   favorite: boolean;
   displayName?: string;
+  group?: string;
   color?: string;
   icon?: string;
   lastConnectedAt?: string;
@@ -201,9 +202,20 @@ export class MuxusDatabase {
     if (filename !== ':memory:') this.db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
     this.migrate();
     this.metadataByAlias = this.db.prepare(`
-      SELECT id, name, ssh_alias, favorite, color, icon, last_connected_at, connect_count
-      FROM connection_profiles
-      WHERE kind = 'openssh' AND ssh_alias = ?
+      SELECT
+        profiles.id,
+        profiles.name,
+        profiles.ssh_alias,
+        profiles.group_id,
+        profiles.favorite,
+        profiles.color,
+        profiles.icon,
+        profiles.last_connected_at,
+        profiles.connect_count,
+        groups.name AS group_name
+      FROM connection_profiles AS profiles
+      LEFT JOIN connection_groups AS groups ON groups.id = profiles.group_id
+      WHERE profiles.kind = 'openssh' AND profiles.ssh_alias = ?
     `);
   }
 
@@ -230,20 +242,29 @@ export class MuxusDatabase {
 
   updateOpenSshMetadata(
     alias: string,
-    patch: { favorite?: boolean; displayName?: string | null; color?: string | null; icon?: string | null },
+    patch: {
+      favorite?: boolean;
+      displayName?: string | null;
+      group?: string | null;
+      color?: string | null;
+      icon?: string | null;
+    },
   ): OpenSshMetadata {
     requireNonEmpty(alias, 'alias');
     const current = this.ensureOpenSshProfile(alias);
     const displayName =
       patch.displayName === undefined ? String(current.name) : patch.displayName?.trim() || alias;
+    const groupId =
+      patch.group === undefined ? nullableString(current.group_id) : this.groupIdForName(patch.group);
     this.db
       .prepare(`
         UPDATE connection_profiles
-        SET name = ?, favorite = ?, color = ?, icon = ?, updated_at = CURRENT_TIMESTAMP
+        SET name = ?, group_id = ?, favorite = ?, color = ?, icon = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `)
       .run(
         displayName,
+        groupId,
         patch.favorite === undefined ? Number(current.favorite) : patch.favorite ? 1 : 0,
         patch.color === undefined ? nullableString(current.color) : patch.color,
         patch.icon === undefined ? nullableString(current.icon) : patch.icon,
@@ -476,6 +497,22 @@ export class MuxusDatabase {
     return this.metadataByAlias.get(alias)!;
   }
 
+  /** Reuse group names case-insensitively so typing "work" and "Work" cannot
+   *  silently create two visually indistinguishable sidebar groups. */
+  private groupIdForName(name: string | null): string | null {
+    const normalized = name?.trim();
+    if (!normalized) return null;
+    const existing = this.db
+      .prepare('SELECT id FROM connection_groups WHERE name = ? COLLATE NOCASE ORDER BY created_at LIMIT 1')
+      .get(normalized);
+    if (existing) return String(existing.id);
+    const id = nanoid();
+    this.db
+      .prepare('INSERT INTO connection_groups(id, name) VALUES (?, ?)')
+      .run(id, normalized);
+    return id;
+  }
+
   private migrate(): void {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -537,6 +574,7 @@ function metadataFromRow(row: SqlRow): OpenSshMetadata {
     profileId: String(row.id),
     favorite: Number(row.favorite) === 1,
     displayName: name === alias ? undefined : name,
+    group: optionalString(row.group_name),
     color: optionalString(row.color),
     icon: optionalString(row.icon),
     lastConnectedAt: optionalString(row.last_connected_at),

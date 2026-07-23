@@ -47,6 +47,8 @@ describe('hybrid OpenSSH metadata', () => {
     const favorite = database.updateOpenSshMetadata('production', {
       favorite: true,
       displayName: 'Production',
+      group: 'Work',
+      color: '#3b82f6',
     });
     const connected = database.recordOpenSshConnection('production');
 
@@ -54,9 +56,24 @@ describe('hybrid OpenSSH metadata', () => {
       profileId: favorite.profileId,
       favorite: true,
       displayName: 'Production',
+      group: 'Work',
+      color: '#3b82f6',
       connectCount: 1,
     });
     expect(database.openSshMetadata(['production']).get('production')).toEqual(connected);
+  });
+
+  it('moves hosts between case-insensitive groups and can clear organization', () => {
+    database = new MuxusDatabase(':memory:');
+
+    database.updateOpenSshMetadata('one', { group: 'Production', color: '#ef4444' });
+    const grouped = database.updateOpenSshMetadata('two', { group: 'production' });
+    const cleared = database.updateOpenSshMetadata('one', { group: null, color: null });
+
+    expect(grouped).toMatchObject({ group: 'Production' });
+    expect(cleared).toMatchObject({ favorite: false });
+    expect(cleared.group).toBeUndefined();
+    expect(cleared.color).toBeUndefined();
   });
 
   it('preserves the stable profile ID when an OpenSSH alias is renamed', () => {

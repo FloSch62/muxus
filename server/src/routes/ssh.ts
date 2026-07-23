@@ -43,6 +43,7 @@ const metadataPatchSchema = z
   .object({
     favorite: z.boolean().optional(),
     displayName: z.string().max(200).nullable().optional(),
+    group: z.string().max(100).nullable().optional(),
     color: z.string().max(64).nullable().optional(),
     icon: z.string().max(64).nullable().optional(),
   })

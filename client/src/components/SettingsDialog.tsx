@@ -5,7 +5,6 @@ import Button from '@mui/material/Button';
 import ButtonBase from '@mui/material/ButtonBase';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
-import Divider from '@mui/material/Divider';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
@@ -20,23 +19,20 @@ import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import KeyboardOutlinedIcon from '@mui/icons-material/KeyboardOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
 import { useAppInfo } from '../api/queries.js';
-import { HOTKEY_MOD_LABEL } from '../platform.js';
 import { usePrefsStore, type RightClickAction, type ThemeMode } from '../state/prefs.js';
 import { useUiStore } from '../state/ui.js';
 import { TERMINAL_SCHEMES, type TerminalScheme } from '../terminal/palette.js';
 
-type Section = 'appearance' | 'terminal' | 'behavior' | 'shortcuts' | 'about';
+type Section = 'appearance' | 'terminal' | 'behavior' | 'about';
 
 const SECTIONS: Array<{ id: Section; label: string; icon: React.ReactNode }> = [
   { id: 'appearance', label: 'Appearance', icon: <PaletteOutlinedIcon fontSize="small" /> },
   { id: 'terminal', label: 'Terminal', icon: <TerminalIcon fontSize="small" /> },
   { id: 'behavior', label: 'Behavior', icon: <TuneOutlinedIcon fontSize="small" /> },
-  { id: 'shortcuts', label: 'Shortcuts', icon: <KeyboardOutlinedIcon fontSize="small" /> },
   { id: 'about', label: 'About', icon: <InfoOutlinedIcon fontSize="small" /> },
 ];
 
@@ -78,7 +74,6 @@ export function SettingsDialog() {
             {section === 'appearance' && <AppearanceSection />}
             {section === 'terminal' && <TerminalSection />}
             {section === 'behavior' && <BehaviorSection />}
-            {section === 'shortcuts' && <ShortcutsSection />}
             {section === 'about' && <AboutSection />}
           </Box>
           <DialogActions sx={{ borderTop: 1, borderColor: 'divider' }}>
@@ -356,42 +351,6 @@ function BehaviorSection() {
         />
       </Box>
     </Stack>
-  );
-}
-
-function ShortcutsSection() {
-  const mod = HOTKEY_MOD_LABEL;
-  const rows: Array<[string, string]> = [
-    ['New local terminal', `${mod}Shift+T`],
-    ['Find in terminal', `${mod}Shift+F`],
-    ['Copy / Paste', `${mod}Shift+C / ${mod}Shift+V`],
-    ['Select all', `${mod}Shift+A`],
-    ['Clear scrollback', `${mod}Shift+K`],
-    ['Zoom in / out / reset', `${mod}Shift+= / - / 0`],
-    ['Zoom (mouse)', 'Ctrl+Scroll wheel'],
-    ['Next / previous tab', 'Ctrl+PageDown / Ctrl+PageUp'],
-    ['Toggle sessions sidebar', `${mod}B`],
-    ['Close tab (desktop app)', `${mod}W`],
-    ['Cycle tabs (desktop app)', 'Ctrl+Tab / Ctrl+Shift+Tab'],
-    ['Search next / previous match', 'Enter / Shift+Enter'],
-    ['Rename tab', 'Double-click the tab'],
-  ];
-  return (
-    <Box>
-      <SectionTitle>Keyboard shortcuts</SectionTitle>
-      <Stack divider={<Divider flexItem />} spacing={0}>
-        {rows.map(([what, keys]) => (
-          <Stack key={what} direction="row" sx={{ py: 0.9, alignItems: 'center' }}>
-            <Typography variant="body2" sx={{ flex: 1 }}>
-              {what}
-            </Typography>
-            <Typography variant="body2" sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 12, color: 'text.secondary' }}>
-              {keys}
-            </Typography>
-          </Stack>
-        ))}
-      </Stack>
-    </Box>
   );
 }
 

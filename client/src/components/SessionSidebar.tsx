@@ -29,9 +29,11 @@ import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
 import LibraryAddOutlinedIcon from '@mui/icons-material/LibraryAddOutlined';
 import PasswordOutlinedIcon from '@mui/icons-material/PasswordOutlined';
+import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import StarIcon from '@mui/icons-material/Star';
@@ -42,11 +44,14 @@ import type { SshHostEntry } from '@muxus/shared';
 import { useSshConfig } from '../api/queries.js';
 import { useDeleteHost, useUpdateSshMetadata } from '../api/ssh-config.js';
 import { copyToClipboard } from '../clipboard.js';
-import { connectTarget, isQuickConnectTarget, openLocalTerminal } from '../session-actions.js';
+import { groupHosts, hostAddress, hostDisplayName } from '../host-organization.js';
+import { connectHost, connectTarget, isQuickConnectTarget, openLocalTerminal } from '../session-actions.js';
 import { showToast } from '../state/toast.js';
 import { useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
 import { layout } from '../theme.js';
+
+const EMPTY_HOSTS: SshHostEntry[] = [];
 
 /**
  * Live OpenSSH hosts enriched with Muxus-owned favorites/recent metadata.
@@ -55,6 +60,7 @@ import { layout } from '../theme.js';
 export function SessionSidebar() {
   const { data: config } = useSshConfig();
   const setHostEditor = useUiStore((s) => s.setHostEditor);
+  const setHostOrganizer = useUiStore((s) => s.setHostOrganizer);
   const tabs = useTabsStore((s) => s.tabs);
   const [filter, setFilter] = useState('');
   const [menu, setMenu] = useState<{ anchor: HTMLElement; position?: { top: number; left: number }; entry: SshHostEntry } | null>(null);
@@ -64,41 +70,13 @@ export function SessionSidebar() {
   const updateMetadata = useUpdateSshMetadata();
 
   const needle = filter.trim().toLowerCase();
-  const hosts = config?.hosts ?? [];
+  const hosts = config?.hosts ?? EMPTY_HOSTS;
 
-  const matches = (h: SshHostEntry) =>
-    !needle ||
-    [
-      ...h.aliases,
-      h.resolved.hostname,
-      h.resolved.user ?? '',
-      h.description ?? '',
-      h.metadata?.displayName ?? '',
-    ].some((t) => t.toLowerCase().includes(needle));
-
-  /** Hosts grouped by config file, root first, preserving server sort. */
-  const groups = useMemo(() => {
-    const byFile = new Map<string, SshHostEntry[]>();
-    for (const h of hosts.filter(matches)) {
-      const list = byFile.get(h.file) ?? [];
-      list.push(h);
-      byFile.set(h.file, list);
-    }
-    for (const list of byFile.values()) {
-      list.sort(
-        (a, b) =>
-          Number(b.metadata?.favorite ?? false) - Number(a.metadata?.favorite ?? false) ||
-          a.alias.localeCompare(b.alias),
-      );
-    }
-    const order = config?.files ?? [];
-    return [...byFile.entries()].sort(([a], [b]) => order.indexOf(a) - order.indexOf(b));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hosts, needle, config?.files]);
-
-  const visible = groups.flatMap(([, list]) => list);
-  const rootFile = config?.path;
-  const groupLabel = (file: string) => (file === rootFile ? 'Hosts' : (file.split(/[\\/]/).pop() ?? file).replace(/\.(conf|config)$/, ''));
+  const groups = useMemo(
+    () => groupHosts(hosts, config?.files ?? [], config?.path, needle),
+    [hosts, config?.files, config?.path, needle],
+  );
+  const visible = groups.flatMap((group) => group.hosts);
 
   /** Live session dots: connected/connecting tab counts per primary alias. */
   const liveByTarget = useMemo(() => {
@@ -116,7 +94,7 @@ export function SessionSidebar() {
   const quickConnectable = !!needle && isQuickConnectTarget(filter) && !hosts.some((h) => h.aliases.includes(filter.trim()));
 
   const onEnter = () => {
-    if (visible.length > 0) connectTarget(visible[0]!.alias);
+    if (visible.length > 0) connectHost(visible[0]!);
     else if (quickConnectable) connectTarget(filter.trim());
     else return;
     setFilter('');
@@ -194,15 +172,15 @@ export function SessionSidebar() {
           </Alert>
         )}
 
-        {groups.map(([file, list]) => (
+        {groups.map((group) => (
           <List
-            key={file}
+            key={group.key}
             dense
             disablePadding
             subheader={
               <ListSubheader
                 disableSticky
-                onClick={() => setCollapsed((c) => ({ ...c, [file]: !c[file] }))}
+                onClick={() => setCollapsed((current) => ({ ...current, [group.key]: !current[group.key] }))}
                 sx={{
                   bgcolor: 'transparent',
                   lineHeight: '28px',
@@ -216,23 +194,24 @@ export function SessionSidebar() {
                   gap: 0.5,
                 }}
               >
-                {collapsed[file] ? <ExpandMoreIcon sx={{ fontSize: 14 }} /> : <ExpandLessIcon sx={{ fontSize: 14 }} />}
-                <Tooltip title={file}>
-                  <span>{groupLabel(file)}</span>
+                {collapsed[group.key] ? <ExpandMoreIcon sx={{ fontSize: 14 }} /> : <ExpandLessIcon sx={{ fontSize: 14 }} />}
+                {group.kind === 'custom' && <FolderOutlinedIcon sx={{ fontSize: 13, color: 'text.disabled' }} />}
+                <Tooltip title={group.tooltip ?? group.label}>
+                  <span>{group.label}</span>
                 </Tooltip>
                 <Typography component="span" sx={{ fontSize: 11, color: 'text.disabled', ml: 'auto', mr: 0.5 }}>
-                  {list.length}
+                  {group.hosts.length}
                 </Typography>
               </ListSubheader>
             }
           >
-            {!collapsed[file] &&
-              list.map((h) => (
+            {!collapsed[group.key] &&
+              group.hosts.map((h) => (
                 <HostRow
                   key={`${h.file}:${h.alias}`}
                   entry={h}
                   live={liveByTarget.get(h.alias)}
-                  onConnect={() => connectTarget(h.alias)}
+                  onConnect={() => connectHost(h)}
                   onMenu={openMenu}
                 />
               ))}
@@ -266,7 +245,7 @@ export function SessionSidebar() {
       >
         <MenuItem
           onClick={() => {
-            if (menu) connectTarget(menu.entry.alias);
+            if (menu) connectHost(menu.entry);
             setMenu(null);
           }}
         >
@@ -290,6 +269,17 @@ export function SessionSidebar() {
             {menu?.entry.metadata?.favorite ? <StarIcon fontSize="small" /> : <StarBorderIcon fontSize="small" />}
           </ListItemIcon>
           {menu?.entry.metadata?.favorite ? 'Remove from favorites' : 'Add to favorites'}
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            if (menu) setHostOrganizer(menu.entry);
+            setMenu(null);
+          }}
+        >
+          <ListItemIcon>
+            <PaletteOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          Organize & color…
         </MenuItem>
         <MenuItem
           onClick={() => {
@@ -378,7 +368,7 @@ function HostRow({
   onMenu: (entry: SshHostEntry, anchor: HTMLElement, position?: { top: number; left: number }) => void;
 }) {
   const r = entry.resolved;
-  const secondary = `${r.user ? `${r.user}@` : ''}${r.hostname}${r.port !== 22 ? `:${r.port}` : ''}`;
+  const secondary = hostAddress(entry);
   const badge = { fontSize: 14, color: 'text.disabled' } as const;
 
   const row = (
@@ -388,10 +378,19 @@ function HostRow({
         e.preventDefault();
         onMenu(entry, e.currentTarget, { top: e.clientY, left: e.clientX });
       }}
-      sx={{ '&:hover .host-row-menu': { opacity: 1 }, pr: 0.5 }}
+      sx={{
+        '&:hover .host-row-menu': { opacity: 1 },
+        pr: 0.5,
+        borderLeft: 3,
+        borderLeftColor: entry.metadata?.color ?? 'transparent',
+      }}
     >
       <ListItemIcon sx={{ minWidth: 32 }}>
-        {r.proxyJump.length > 0 ? <AltRouteIcon fontSize="small" /> : <DnsOutlinedIcon fontSize="small" />}
+        {r.proxyJump.length > 0 ? (
+          <AltRouteIcon fontSize="small" sx={{ color: entry.metadata?.color ?? 'text.secondary' }} />
+        ) : (
+          <DnsOutlinedIcon fontSize="small" sx={{ color: entry.metadata?.color ?? 'text.secondary' }} />
+        )}
       </ListItemIcon>
       <ListItemText
         primary={
@@ -412,7 +411,7 @@ function HostRow({
               />
             )}
             <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {entry.metadata?.displayName ?? entry.alias}
+              {hostDisplayName(entry)}
             </Box>
             {entry.metadata?.favorite && <StarIcon sx={{ fontSize: 13, color: 'warning.main' }} />}
             {(live?.connected ?? 0) > 1 && (

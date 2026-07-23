@@ -41,7 +41,7 @@ export function useDeleteHost(onSuccess?: () => void) {
 }
 
 /** Update Muxus-owned metadata without rewriting the OpenSSH Host block. */
-export function useUpdateSshMetadata() {
+export function useUpdateSshMetadata(onSuccess?: (metadata: OpenSshProfileMetadata) => void) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ alias, patch }: { alias: string; patch: OpenSshMetadataPatch }) =>
@@ -53,7 +53,10 @@ export function useUpdateSshMetadata() {
           body: JSON.stringify(patch),
         },
       ),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['ssh-config'] }),
+    onSuccess: (metadata) => {
+      void queryClient.invalidateQueries({ queryKey: ['ssh-config'] });
+      onSuccess?.(metadata);
+    },
     onError: showErrorToast,
   });
 }

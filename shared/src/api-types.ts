@@ -81,6 +81,8 @@ export interface OpenSshProfileMetadata {
   profileId: string;
   favorite: boolean;
   displayName?: string;
+  /** Muxus-only organizational group; does not alter the OpenSSH config file. */
+  group?: string;
   color?: string;
   icon?: string;
   lastConnectedAt?: string;
@@ -90,6 +92,7 @@ export interface OpenSshProfileMetadata {
 export interface OpenSshMetadataPatch {
   favorite?: boolean;
   displayName?: string | null;
+  group?: string | null;
   color?: string | null;
   icon?: string | null;
 }

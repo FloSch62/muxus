@@ -7,7 +7,9 @@ import { usePrefsStore } from './state/prefs.js';
 import { AppShell } from './layout/AppShell.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { HostEditorDialog } from './components/HostEditorDialog.js';
+import { HostOrganizationDialog } from './components/HostOrganizationDialog.js';
 import { SettingsDialog } from './components/SettingsDialog.js';
+import { ShortcutsDialog } from './components/ShortcutsDialog.js';
 import { ToastHost } from './components/ToastHost.js';
 import { BackendStatusBanner } from './components/BackendStatusBanner.js';
 
@@ -35,7 +37,9 @@ export default function App() {
         <AppShell />
       </ErrorBoundary>
       <HostEditorDialog />
+      <HostOrganizationDialog />
       <SettingsDialog />
+      <ShortcutsDialog />
       <ToastHost />
       <BackendStatusBanner />
     </ThemeProvider>

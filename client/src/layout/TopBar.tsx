@@ -22,6 +22,7 @@ import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
 import MenuIcon from '@mui/icons-material/Menu';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
+import KeyboardOutlinedIcon from '@mui/icons-material/KeyboardOutlined';
 import SearchOutlinedIcon from '@mui/icons-material/SearchOutlined';
 import SelectAllIcon from '@mui/icons-material/SelectAll';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
@@ -45,6 +46,7 @@ export const TopBar = memo(function TopBar() {
   const sidebarCollapsed = usePrefsStore((s) => s.sidebarCollapsed);
   const setPrefs = usePrefsStore((s) => s.set);
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
+  const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
   const forwardingOpen = useUiStore((s) => s.forwardingOpen);
   const setForwardingOpen = useUiStore((s) => s.setForwardingOpen);
   const activeTab = useTabsStore((s) => s.tabs.find((t) => t.id === s.activeId));
@@ -136,6 +138,11 @@ export const TopBar = memo(function TopBar() {
         <Tooltip title={mode === 'light' ? 'Switch to dark mode' : mode === 'dark' ? 'Follow system theme' : 'Switch to light mode'}>
           <IconButton size="small" aria-label="Toggle theme" onClick={toggleTheme}>
             {mode === 'light' ? <DarkModeOutlinedIcon fontSize="small" /> : mode === 'dark' ? <BrightnessAutoOutlinedIcon fontSize="small" /> : <LightModeOutlinedIcon fontSize="small" />}
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Keyboard shortcuts">
+          <IconButton size="small" aria-label="Keyboard shortcuts" onClick={() => setShortcutsOpen(true)}>
+            <KeyboardOutlinedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
         <Tooltip title="Settings">

@@ -1,0 +1,65 @@
+import { describe, expect, it } from 'vitest';
+import type { SshHostEntry } from '@muxus/shared';
+import { groupHosts } from '../../../client/src/host-organization.js';
+
+const host = (
+  alias: string,
+  options: { file?: string; group?: string; favorite?: boolean; displayName?: string } = {},
+): SshHostEntry => ({
+  alias,
+  aliases: [alias],
+  file: options.file ?? '/home/test/.ssh/config',
+  options: {},
+  resolved: {
+    hostname: `${alias}.example.com`,
+    port: 22,
+    identityFiles: [],
+    identitiesOnly: false,
+    forwardAgent: false,
+    proxyJump: [],
+    forwards: [],
+    passwordOnly: false,
+  },
+  metadata:
+    options.group || options.favorite || options.displayName
+      ? {
+          profileId: alias,
+          favorite: options.favorite ?? false,
+          group: options.group,
+          displayName: options.displayName,
+          connectCount: 0,
+        }
+      : undefined,
+});
+
+describe('host organization', () => {
+  it('puts custom groups first while retaining config-file structure for ungrouped hosts', () => {
+    const groups = groupHosts(
+      [
+        host('plain'),
+        host('database', { group: 'Production' }),
+        host('api', { group: 'Production', favorite: true }),
+        host('lab', { file: '/home/test/.ssh/config.d/lab.conf' }),
+      ],
+      ['/home/test/.ssh/config', '/home/test/.ssh/config.d/lab.conf'],
+      '/home/test/.ssh/config',
+    );
+
+    expect(groups.map((group) => group.label)).toEqual([
+      'Production',
+      'Ungrouped',
+      'Ungrouped · lab',
+    ]);
+    expect(groups[0]?.hosts.map((entry) => entry.alias)).toEqual(['api', 'database']);
+  });
+
+  it('searches group and display names', () => {
+    const hosts = [
+      host('db-01', { group: 'Production', displayName: 'Primary database' }),
+      host('web-01', { group: 'Staging' }),
+    ];
+
+    expect(groupHosts(hosts, [], undefined, 'production')[0]?.hosts[0]?.alias).toBe('db-01');
+    expect(groupHosts(hosts, [], undefined, 'primary')[0]?.hosts[0]?.alias).toBe('db-01');
+  });
+});

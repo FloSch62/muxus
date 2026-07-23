@@ -13,11 +13,7 @@ import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import FormControlLabel from '@mui/material/FormControlLabel';
-import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
-import AddIcon from '@mui/icons-material/Add';
-import TerminalIcon from '@mui/icons-material/Terminal';
-import { openLocalTerminal } from '../session-actions.js';
 import { usePrefsStore } from '../state/prefs.js';
 import {
   useTabsStore,
@@ -32,6 +28,7 @@ import {
 import { useUiStore } from '../state/ui.js';
 import { useWorkspacePersistence } from '../workspace-persistence.js';
 import { ErrorBoundary } from '../components/ErrorBoundary.js';
+import { EmptyPane } from '../components/EmptyPane.js';
 import { ForwardingPanel } from '../components/ForwardingPanel.js';
 import { SessionSidebar } from '../components/SessionSidebar.js';
 import { SftpPanel } from '../components/SftpPanel.js';
@@ -203,20 +200,7 @@ function PaneView({
             );
           })}
           {paneTabs.length === 0 && (
-            <Stack sx={{ height: '100%', alignItems: 'center', justifyContent: 'center', px: 2 }} spacing={2}>
-              <TerminalIcon sx={{ fontSize: 40, color: 'text.disabled' }} />
-              <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center' }}>
-                This pane is empty. Open a terminal here or select an SSH host.
-              </Typography>
-              <Stack direction="row" spacing={1}>
-                <Button size="small" variant="contained" startIcon={<TerminalIcon />} onClick={() => openLocalTerminal()}>
-                  Local terminal
-                </Button>
-                <Button size="small" variant="outlined" startIcon={<AddIcon />} onClick={onAddHost}>
-                  Add SSH host
-                </Button>
-              </Stack>
-            </Stack>
+            <EmptyPane onAddHost={onAddHost} />
           )}
         </Box>
         {activeTab?.sftpOpen && activeTab.connId && (

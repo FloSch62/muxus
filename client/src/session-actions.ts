@@ -1,4 +1,4 @@
-import type { LocalProfile, SessionProfile } from '@muxus/shared';
+import type { LocalProfile, SessionProfile, SshHostEntry } from '@muxus/shared';
 import { usePrefsStore } from './state/prefs.js';
 import { useTabsStore } from './state/tabs.js';
 import { useUiStore } from './state/ui.js';
@@ -22,6 +22,14 @@ export function connectTarget(target: string, title = target): string {
   const { termName } = usePrefsStore.getState();
   const profile: SessionProfile = { kind: 'ssh', target, term: termName };
   return useTabsStore.getState().open(profile, title);
+}
+
+/** Connect a listed host with its Muxus display name and color carried into
+ *  the tab, preserving the visual cue after the sidebar is hidden. */
+export function connectHost(host: SshHostEntry): string {
+  const id = connectTarget(host.alias, host.metadata?.displayName ?? host.alias);
+  if (host.metadata?.color) useTabsStore.getState().update(id, { color: host.metadata.color });
+  return id;
 }
 
 /** Duplicate an open tab (same profile, fresh session). */
