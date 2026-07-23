@@ -124,7 +124,11 @@ const workspaceSaveSchema = z.object({
 
 export function registerWorkspaceRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/workspaces', (): { workspaces: WorkspaceSummary[] } => ({
-    workspaces: ctx.database.listWorkspaces().map(({ layout: _layout, ...summary }) => summary),
+    workspaces: ctx.database.listWorkspaceSummaries(),
+  }));
+
+  app.get('/api/workspaces/latest', (): { workspace: WorkspaceRecord | null } => ({
+    workspace: (ctx.database.latestWorkspace() as WorkspaceRecord | undefined) ?? null,
   }));
 
   app.get('/api/workspaces/:id', async (req, reply): Promise<WorkspaceRecord | void> => {

@@ -41,6 +41,9 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Check bundle budgets
+        run: pnpm check:bundle
+
   package-smoke:
     name: Package (${{ matrix.os }})
     needs: validate

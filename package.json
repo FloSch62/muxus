@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "pnpm -r --parallel --stream dev",
     "build": "pnpm -r build",
+    "check:bundle": "pnpm --filter @muxus/client build && pnpm --filter @muxus/client check:bundle",
     "start": "node server/dist/index.js",
     "electron": "pnpm build && pnpm --filter @muxus/electron start",
     "dist": "pnpm build && pnpm --filter @muxus/electron dist",

@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import type {
   WorkspaceLayoutV1,
   WorkspaceRecord,
-  WorkspaceSummary,
 } from '@muxus/shared';
 import { apiFetch, authToken } from './api/http.js';
 import { useTabsStore, type SessionTab } from './state/tabs.js';
@@ -68,15 +67,12 @@ export function useWorkspacePersistence(): void {
       const beforeLoad = JSON.stringify(currentLayout());
       let restored = false;
       try {
-        const { workspaces } = await apiFetch<{ workspaces: WorkspaceSummary[] }>('/api/workspaces');
+        const { workspace } = await apiFetch<{ workspace: WorkspaceRecord | null }>(
+          '/api/workspaces/latest',
+        );
         if (stopped) return;
-        const latest = workspaces[0];
-        if (latest) {
-          workspaceId = latest.id;
-          const workspace = await apiFetch<WorkspaceRecord>(
-            `/api/workspaces/${encodeURIComponent(latest.id)}`,
-          );
-          if (stopped) return;
+        if (workspace) {
+          workspaceId = workspace.id;
           const state = useTabsStore.getState();
           // Do not clobber a session the user opened while the request was in flight.
           if (state.tabs.length === 0 && state.root.type === 'pane') {

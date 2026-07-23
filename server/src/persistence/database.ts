@@ -163,6 +163,8 @@ export interface WorkspaceRecord {
   lastOpenedAt?: string;
 }
 
+export type WorkspaceSummary = Omit<WorkspaceRecord, 'layout'>;
+
 /**
  * Reject secrets at the persistence boundary. Profiles may contain key paths
  * and credential-reference IDs, but never passwords, passphrases, tokens, or
@@ -449,6 +451,43 @@ export class MuxusDatabase {
       updatedAt: String(row.updated_at),
       lastOpenedAt: optionalString(row.last_opened_at),
     };
+  }
+
+  latestWorkspace(): WorkspaceRecord | undefined {
+    const row = this.db
+      .prepare(`
+        SELECT id, name, layout_json, created_at, updated_at, last_opened_at
+        FROM workspaces
+        ORDER BY COALESCE(last_opened_at, updated_at) DESC, name COLLATE NOCASE
+        LIMIT 1
+      `)
+      .get();
+    if (!row) return undefined;
+    return {
+      id: String(row.id),
+      name: String(row.name),
+      layout: JSON.parse(String(row.layout_json)),
+      createdAt: String(row.created_at),
+      updatedAt: String(row.updated_at),
+      lastOpenedAt: optionalString(row.last_opened_at),
+    };
+  }
+
+  listWorkspaceSummaries(): WorkspaceSummary[] {
+    return this.db
+      .prepare(`
+        SELECT id, name, created_at, updated_at, last_opened_at
+        FROM workspaces
+        ORDER BY COALESCE(last_opened_at, updated_at) DESC, name COLLATE NOCASE
+      `)
+      .all()
+      .map((row) => ({
+        id: String(row.id),
+        name: String(row.name),
+        createdAt: String(row.created_at),
+        updatedAt: String(row.updated_at),
+        lastOpenedAt: optionalString(row.last_opened_at),
+      }));
   }
 
   listWorkspaces(): WorkspaceRecord[] {

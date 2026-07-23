@@ -1,20 +1,40 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import CssBaseline from '@mui/material/CssBaseline';
 import { ThemeProvider } from '@mui/material/styles';
 import { buildTheme } from './theme.js';
 import { setTitleBarMode } from './titlebar-overlay.js';
 import { usePrefsStore } from './state/prefs.js';
+import { useUiStore } from './state/ui.js';
 import { AppShell } from './layout/AppShell.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
-import { HostEditorDialog } from './components/HostEditorDialog.js';
-import { HostOrganizationDialog } from './components/HostOrganizationDialog.js';
-import { SettingsDialog } from './components/SettingsDialog.js';
-import { ShortcutsDialog } from './components/ShortcutsDialog.js';
 import { ToastHost } from './components/ToastHost.js';
 import { BackendStatusBanner } from './components/BackendStatusBanner.js';
+import {
+  loadHostEditorDialog,
+  loadHostOrganizationDialog,
+  loadSettingsDialog,
+  loadShortcutsDialog,
+} from './lazy-features.js';
+
+const HostEditorDialog = lazy(() =>
+  loadHostEditorDialog().then((module) => ({ default: module.HostEditorDialog })),
+);
+const HostOrganizationDialog = lazy(() =>
+  loadHostOrganizationDialog().then((module) => ({ default: module.HostOrganizationDialog })),
+);
+const SettingsDialog = lazy(() =>
+  loadSettingsDialog().then((module) => ({ default: module.SettingsDialog })),
+);
+const ShortcutsDialog = lazy(() =>
+  loadShortcutsDialog().then((module) => ({ default: module.ShortcutsDialog })),
+);
 
 export default function App() {
   const themeMode = usePrefsStore((s) => s.themeMode);
+  const hostEditorOpen = useUiStore((s) => !!s.hostEditor);
+  const hostOrganizerOpen = useUiStore((s) => !!s.hostOrganizer);
+  const settingsOpen = useUiStore((s) => s.settingsOpen);
+  const shortcutsOpen = useUiStore((s) => s.shortcutsOpen);
   const [osTheme, setOsTheme] = useState<'light' | 'dark'>(() =>
     window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
   );
@@ -36,10 +56,12 @@ export default function App() {
       <ErrorBoundary label="Muxus">
         <AppShell />
       </ErrorBoundary>
-      <HostEditorDialog />
-      <HostOrganizationDialog />
-      <SettingsDialog />
-      <ShortcutsDialog />
+      <Suspense fallback={null}>
+        {hostEditorOpen ? <HostEditorDialog /> : null}
+        {hostOrganizerOpen ? <HostOrganizationDialog /> : null}
+        {settingsOpen ? <SettingsDialog /> : null}
+        {shortcutsOpen ? <ShortcutsDialog /> : null}
+      </Suspense>
       <ToastHost />
       <BackendStatusBanner />
     </ThemeProvider>

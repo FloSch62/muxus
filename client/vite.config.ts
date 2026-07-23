@@ -12,7 +12,8 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
-    chunkSizeWarningLimit: 4096,
+    manifest: true,
+    chunkSizeWarningLimit: 700,
     rolldownOptions: {
       output: {
         codeSplitting: {
@@ -22,7 +23,6 @@ export default defineConfig({
             { name: 'preload-helper', test: /vite[\\/]preload-helper/ },
             { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
             { name: 'xterm', test: /node_modules[\\/]@xterm[\\/]/ },
-            { name: 'mui', test: /node_modules[\\/]@mui[\\/]material[\\/]/ },
           ],
         },
       },

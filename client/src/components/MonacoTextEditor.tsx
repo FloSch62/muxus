@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import Editor, { loader, type OnMount } from '@monaco-editor/react';
 import * as monaco from 'monaco-editor/editor/editor.api';
 import 'monaco-editor/language/css/monaco.contribution';
@@ -75,14 +75,23 @@ export default function MonacoTextEditor({
   onSave: () => void;
 }) {
   const saveRef = useRef(onSave);
+  const changeRef = useRef(onChange);
   useEffect(() => {
     saveRef.current = onSave;
-  }, [onSave]);
+    changeRef.current = onChange;
+  }, [onChange, onSave]);
 
-  const onMount: OnMount = (editor) => {
+  const handleMount = useCallback<OnMount>((editor) => {
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => saveRef.current());
     editor.focus();
-  };
+  }, []);
+  const handleChange = useCallback((next: string | undefined) => {
+    changeRef.current(next ?? '');
+  }, []);
+  const options = useMemo(
+    () => ({ ...EDITOR_OPTIONS, readOnly }),
+    [readOnly],
+  );
 
   return (
     <Editor
@@ -93,9 +102,9 @@ export default function MonacoTextEditor({
       theme={dark ? 'vs-dark' : 'light'}
       keepCurrentModel
       saveViewState
-      options={{ ...EDITOR_OPTIONS, readOnly }}
-      onChange={(next) => onChange(next ?? '')}
-      onMount={onMount}
+      options={options}
+      onChange={handleChange}
+      onMount={handleMount}
       loading=""
     />
   );

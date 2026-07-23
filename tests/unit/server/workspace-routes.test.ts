@@ -100,6 +100,25 @@ describe('workspace routes', () => {
       expect.objectContaining({ id: saved.id, name: 'Daily work' }),
     ]);
     expect(list.json().workspaces[0]).not.toHaveProperty('layout');
+
+    const latest = await app.inject({
+      method: 'GET',
+      url: '/api/workspaces/latest',
+      headers: auth(),
+    });
+    expect(latest.json()).toEqual({
+      workspace: expect.objectContaining({ id: saved.id, name: 'Daily work', layout }),
+    });
+  });
+
+  it('returns null when there is no latest workspace', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/workspaces/latest',
+      headers: auth(),
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ workspace: null });
   });
 
   it('rejects invalid split dimensions', async () => {

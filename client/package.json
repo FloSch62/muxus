@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --configLoader runner",
     "build": "tsc --noEmit && vite build --configLoader runner",
+    "check:bundle": "node scripts/check-bundle-budget.mjs",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview --configLoader runner"
   },

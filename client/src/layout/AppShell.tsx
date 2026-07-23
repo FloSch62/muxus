@@ -1,5 +1,8 @@
 import {
-  useMemo,
+  lazy,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -21,21 +24,29 @@ import {
   type PaneNode,
   type TerminalTab,
 } from '../state/tabs.js';
-import {
-  flattenPaneLayout,
-  type LayoutRect,
-} from '../state/workspace-layout.js';
 import { useUiStore } from '../state/ui.js';
 import { useWorkspacePersistence } from '../workspace-persistence.js';
 import { ErrorBoundary } from '../components/ErrorBoundary.js';
 import { EmptyPane } from '../components/EmptyPane.js';
-import { ForwardingPanel } from '../components/ForwardingPanel.js';
 import { SessionSidebar } from '../components/SessionSidebar.js';
-import { SftpPanel } from '../components/SftpPanel.js';
 import { TabStrip } from '../components/TabStrip.js';
 import { TerminalView } from '../components/TerminalView.js';
-import { RemoteEditorWorkspace } from '../components/RemoteEditorWorkspace.js';
+import {
+  loadForwardingPanel,
+  loadRemoteEditorWorkspace,
+  loadSftpPanel,
+} from '../lazy-features.js';
 import { TopBar } from './TopBar.js';
+
+const ForwardingPanel = lazy(() =>
+  loadForwardingPanel().then((module) => ({ default: module.ForwardingPanel })),
+);
+const SftpPanel = lazy(() =>
+  loadSftpPanel().then((module) => ({ default: module.SftpPanel })),
+);
+const RemoteEditorWorkspace = lazy(() =>
+  loadRemoteEditorWorkspace().then((module) => ({ default: module.RemoteEditorWorkspace })),
+);
 
 /** TopBar over a stable, resizable pane canvas. Hidden tabs stay mounted. */
 export function AppShell() {
@@ -62,7 +73,9 @@ export function AppShell() {
         </Box>
         {forwardingOpen && (
           <ErrorBoundary label="The forwarding panel">
-            <ForwardingPanel />
+            <Suspense fallback={null}>
+              <ForwardingPanel />
+            </Suspense>
           </ErrorBoundary>
         )}
       </Box>
@@ -131,37 +144,138 @@ function PaneCanvas({
   activePaneId: string;
   onAddHost: () => void;
 }) {
+  return (
+    <Box sx={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
+      <PaneTree
+        node={root}
+        tabs={tabs}
+        activePaneId={activePaneId}
+        onAddHost={onAddHost}
+      />
+    </Box>
+  );
+}
+
+function PaneTree({
+  node,
+  tabs,
+  activePaneId,
+  onAddHost,
+}: {
+  node: PaneNode;
+  tabs: TerminalTab[];
+  activePaneId: string;
+  onAddHost: () => void;
+}) {
+  if (node.type === 'pane') {
+    return (
+      <PaneView
+        pane={node}
+        tabs={tabs}
+        focused={node.id === activePaneId}
+        onAddHost={onAddHost}
+      />
+    );
+  }
+  return (
+    <SplitPane
+      node={node}
+      tabs={tabs}
+      activePaneId={activePaneId}
+      onAddHost={onAddHost}
+    />
+  );
+}
+
+function SplitPane({
+  node,
+  tabs,
+  activePaneId,
+  onAddHost,
+}: {
+  node: Extract<PaneNode, { type: 'split' }>;
+  tabs: TerminalTab[];
+  activePaneId: string;
+  onAddHost: () => void;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const layout = useMemo(() => flattenPaneLayout(root), [root]);
+  const firstRef = useRef<HTMLDivElement>(null);
+  const secondRef = useRef<HTMLDivElement>(null);
+  const dividerRef = useRef<HTMLHRElement>(null);
+  const horizontal = node.direction === 'horizontal';
+  const ratioPercent = `${node.ratio * 100}%`;
+  const remainderPercent = `${(1 - node.ratio) * 100}%`;
+
+  useLayoutEffect(() => {
+    applySplitRatio(
+      node.direction,
+      node.ratio,
+      firstRef.current,
+      secondRef.current,
+      dividerRef.current,
+    );
+  }, [node.direction, node.ratio]);
 
   return (
     <Box ref={containerRef} sx={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
-      {layout.panes.map(({ pane, rect }) => (
-        <PaneView
-          key={pane.id}
-          pane={pane}
-          rect={rect}
+      <Box
+        ref={firstRef}
+        sx={{
+          position: 'absolute',
+          minWidth: 0,
+          minHeight: 0,
+          overflow: 'hidden',
+          ...(horizontal
+            ? { left: 0, top: 0, width: ratioPercent, height: '100%' }
+            : { left: 0, top: 0, width: '100%', height: ratioPercent }),
+        }}
+      >
+        <PaneTree
+          node={node.children[0]}
           tabs={tabs}
-          focused={pane.id === activePaneId}
+          activePaneId={activePaneId}
           onAddHost={onAddHost}
         />
-      ))}
-      {layout.dividers.map((divider) => (
-        <SplitDivider key={divider.splitId} {...divider} containerRef={containerRef} />
-      ))}
+      </Box>
+      <Box
+        ref={secondRef}
+        sx={{
+          position: 'absolute',
+          minWidth: 0,
+          minHeight: 0,
+          overflow: 'hidden',
+          ...(horizontal
+            ? { left: ratioPercent, top: 0, width: remainderPercent, height: '100%' }
+            : { left: 0, top: ratioPercent, width: '100%', height: remainderPercent }),
+        }}
+      >
+        <PaneTree
+          node={node.children[1]}
+          tabs={tabs}
+          activePaneId={activePaneId}
+          onAddHost={onAddHost}
+        />
+      </Box>
+      <SplitDivider
+        dividerRef={dividerRef}
+        splitId={node.id}
+        direction={node.direction}
+        ratio={node.ratio}
+        containerRef={containerRef}
+        firstRef={firstRef}
+        secondRef={secondRef}
+      />
     </Box>
   );
 }
 
 function PaneView({
   pane,
-  rect,
   tabs,
   focused,
   onAddHost,
 }: {
   pane: PaneLeaf;
-  rect: LayoutRect;
   tabs: TerminalTab[];
   focused: boolean;
   onAddHost: () => void;
@@ -177,11 +291,8 @@ function PaneView({
     <Box
       onPointerDown={() => focusPane(pane.id)}
       sx={{
-        position: 'absolute',
-        left: `${rect.x * 100}%`,
-        top: `${rect.y * 100}%`,
-        width: `${rect.width * 100}%`,
-        height: `${rect.height * 100}%`,
+        width: '100%',
+        height: '100%',
         minWidth: 0,
         minHeight: 0,
         display: 'flex',
@@ -203,14 +314,16 @@ function PaneView({
                     </Box>
                     {tab.editorPaths.length > 0 && (
                       <Box sx={{ height: '100%', display: tab.activeEditorPath ? 'block' : 'none' }}>
-                        <RemoteEditorWorkspace
-                          tabId={tab.id}
-                          connId={tab.connId}
-                          paths={tab.editorPaths}
-                          activePath={tab.activeEditorPath}
-                          onActivate={(path) => activateEditor(tab.id, path)}
-                          onClose={(path) => closeEditor(tab.id, path)}
-                        />
+                        <Suspense fallback={null}>
+                          <RemoteEditorWorkspace
+                            tabId={tab.id}
+                            connId={tab.connId}
+                            paths={tab.editorPaths}
+                            activePath={tab.activeEditorPath}
+                            onActivate={(path) => activateEditor(tab.id, path)}
+                            onClose={(path) => closeEditor(tab.id, path)}
+                          />
+                        </Suspense>
                       </Box>
                     )}
                   </ErrorBoundary>
@@ -226,11 +339,13 @@ function PaneView({
         </Box>
         {activeTab?.sftpOpen && activeTab.connId && (
           <ErrorBoundary label="The file browser">
-            <SftpPanel
-              key={activeTab.connId}
-              connId={activeTab.connId}
-              onOpenFile={(path) => openEditor(activeTab.id, path)}
-            />
+            <Suspense fallback={null}>
+              <SftpPanel
+                key={activeTab.connId}
+                connId={activeTab.connId}
+                onOpenFile={(path) => openEditor(activeTab.id, path)}
+              />
+            </Suspense>
           </ErrorBoundary>
         )}
       </Box>
@@ -238,47 +353,116 @@ function PaneView({
   );
 }
 
-function SplitDivider({
+const MIN_SPLIT_RATIO = 0.1;
+const MAX_SPLIT_RATIO = 0.9;
+
+function clampSplitRatio(ratio: number): number {
+  return Math.max(MIN_SPLIT_RATIO, Math.min(MAX_SPLIT_RATIO, ratio));
+}
+
+function applySplitRatio(
+  direction: 'horizontal' | 'vertical',
+  ratio: number,
+  first: HTMLDivElement | null,
+  second: HTMLDivElement | null,
+  divider: HTMLHRElement | null,
+): void {
+  if (!first || !second || !divider) return;
+  const position = `${ratio * 100}%`;
+  const remainder = `${(1 - ratio) * 100}%`;
+  if (direction === 'horizontal') {
+    first.style.width = position;
+    second.style.left = position;
+    second.style.width = remainder;
+    divider.style.left = position;
+    return;
+  }
+  first.style.height = position;
+  second.style.top = position;
+  second.style.height = remainder;
+  divider.style.top = position;
+}
+
+interface SplitResizeState {
+  pointerId: number;
+  pendingRatio: number;
+  frame: number;
+  bodyCursor: string;
+  bodyUserSelect: string;
+}
+
+const SplitDivider = function SplitDivider({
   splitId,
   direction,
-  bounds,
   ratio,
   containerRef,
+  firstRef,
+  secondRef,
+  dividerRef,
 }: {
   splitId: string;
   direction: 'horizontal' | 'vertical';
-  bounds: LayoutRect;
   ratio: number;
   containerRef: RefObject<HTMLDivElement | null>;
+  firstRef: RefObject<HTMLDivElement | null>;
+  secondRef: RefObject<HTMLDivElement | null>;
+  dividerRef: RefObject<HTMLHRElement | null>;
 }) {
   const resizeSplit = useTabsStore((state) => state.resizeSplit);
-  const dragging = useRef(false);
+  const resizeRef = useRef<SplitResizeState | undefined>(undefined);
 
-  const update = (event: ReactPointerEvent<HTMLDivElement>) => {
+  useEffect(
+    () => () => {
+      const resize = resizeRef.current;
+      if (!resize) return;
+      if (resize.frame) cancelAnimationFrame(resize.frame);
+      document.body.style.cursor = resize.bodyCursor;
+      document.body.style.userSelect = resize.bodyUserSelect;
+      resizeRef.current = undefined;
+    },
+    [],
+  );
+
+  const apply = (nextRatio: number) =>
+    applySplitRatio(
+      direction,
+      nextRatio,
+      firstRef.current,
+      secondRef.current,
+      dividerRef.current,
+    );
+
+  const update = (event: ReactPointerEvent<HTMLHRElement>) => {
+    const resize = resizeRef.current;
     const container = containerRef.current;
-    if (!container) return;
+    if (!resize || resize.pointerId !== event.pointerId || !container) return;
     const rect = container.getBoundingClientRect();
-    const value =
+    resize.pendingRatio = clampSplitRatio(
       direction === 'horizontal'
-        ? (event.clientX - rect.left - bounds.x * rect.width) / (bounds.width * rect.width)
-        : (event.clientY - rect.top - bounds.y * rect.height) / (bounds.height * rect.height);
-    resizeSplit(splitId, value);
+        ? (event.clientX - rect.left) / rect.width
+        : (event.clientY - rect.top) / rect.height,
+    );
+    if (resize.frame) return;
+    resize.frame = requestAnimationFrame(() => {
+      resize.frame = 0;
+      apply(resize.pendingRatio);
+    });
   };
 
   const position =
     direction === 'horizontal'
       ? {
-          left: `${(bounds.x + bounds.width * ratio) * 100}%`,
-          top: `${bounds.y * 100}%`,
+          left: `${ratio * 100}%`,
+          top: 0,
           width: 6,
-          height: `${bounds.height * 100}%`,
+          height: '100%',
           transform: 'translateX(-3px)',
           cursor: 'col-resize',
         }
       : {
-          left: `${bounds.x * 100}%`,
-          top: `${(bounds.y + bounds.height * ratio) * 100}%`,
-          width: `${bounds.width * 100}%`,
+          left: 0,
+          top: `${ratio * 100}%`,
+          width: '100%',
           height: 6,
           transform: 'translateY(-3px)',
           cursor: 'row-resize',
@@ -287,7 +471,12 @@ function SplitDivider({
   return (
     <Box
       component="hr"
+      ref={dividerRef}
+      aria-label="Resize split"
       aria-orientation={direction === 'horizontal' ? 'vertical' : 'horizontal'}
+      aria-valuemin={MIN_SPLIT_RATIO * 100}
+      aria-valuemax={MAX_SPLIT_RATIO * 100}
+      aria-valuenow={Math.round(ratio * 100)}
       tabIndex={0}
       onDoubleClick={() => resizeSplit(splitId, 0.5)}
       onKeyDown={(event) => {
@@ -300,18 +489,24 @@ function SplitDivider({
         resizeSplit(splitId, event.key === 'Home' ? 0.5 : ratio + (increase ? 0.05 : -0.05));
       }}
       onPointerDown={(event) => {
+        if (event.button !== 0) return;
         event.preventDefault();
-        dragging.current = true;
         event.currentTarget.setPointerCapture(event.pointerId);
+        resizeRef.current = {
+          pointerId: event.pointerId,
+          pendingRatio: ratio,
+          frame: 0,
+          bodyCursor: document.body.style.cursor,
+          bodyUserSelect: document.body.style.userSelect,
+        };
+        document.body.style.cursor = direction === 'horizontal' ? 'col-resize' : 'row-resize';
+        document.body.style.userSelect = 'none';
         update(event);
       }}
-      onPointerMove={(event) => {
-        if (dragging.current) update(event);
-      }}
-      onPointerUp={(event) => {
-        dragging.current = false;
-        event.currentTarget.releasePointerCapture(event.pointerId);
-      }}
+      onPointerMove={update}
+      onPointerUp={(event) => finishSplitResize(event, true)}
+      onPointerCancel={(event) => finishSplitResize(event, false)}
+      onLostPointerCapture={(event) => finishSplitResize(event, false)}
       sx={{
         position: 'absolute',
         border: 0,
@@ -332,4 +527,22 @@ function SplitDivider({
       }}
     />
   );
-}
+
+  function finishSplitResize(event: ReactPointerEvent<HTMLHRElement>, commit: boolean) {
+    const resize = resizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    if (resize.frame) cancelAnimationFrame(resize.frame);
+    document.body.style.cursor = resize.bodyCursor;
+    document.body.style.userSelect = resize.bodyUserSelect;
+    resizeRef.current = undefined;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (commit) {
+      apply(resize.pendingRatio);
+      resizeSplit(splitId, resize.pendingRatio);
+    } else {
+      apply(ratio);
+    }
+  }
+};

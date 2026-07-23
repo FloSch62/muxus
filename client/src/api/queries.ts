@@ -47,15 +47,6 @@ export function useSftpList(connId: string | undefined, path: string | undefined
   });
 }
 
-export function useSftpHome(connId: string | undefined) {
-  return useQuery({
-    queryKey: ['sftp-home', connId],
-    queryFn: () => apiFetch<{ path: string }>(`/api/sftp/${connId}/home`),
-    enabled: !!connId,
-    staleTime: Infinity,
-  });
-}
-
 /** Every active forward on every connection (forwarding panel + badge). */
 export function useForwards() {
   return useQuery({

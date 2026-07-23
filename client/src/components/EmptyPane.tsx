@@ -7,6 +7,7 @@ import AddIcon from '@mui/icons-material/Add';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import { openLocalTerminal } from '../session-actions.js';
+import { loadHostEditorDialog, loadTerminalViewImpl } from '../lazy-features.js';
 import { HostPickerPopover } from './HostPickerPopover.js';
 
 export function EmptyPane({
@@ -42,18 +43,21 @@ export function EmptyPane({
           title="Local terminal"
           description="This device"
           primary
+          onIntent={() => void loadTerminalViewImpl()}
           onClick={() => openLocalTerminal(replaceTabId)}
         />
         <EmptyAction
           icon={<DnsOutlinedIcon />}
           title="SSH host"
           description="Choose saved host"
+          onIntent={() => void loadTerminalViewImpl()}
           onClick={(event) => setHostPickerAnchor(event.currentTarget)}
         />
         <EmptyAction
           icon={<AddIcon />}
           title="Add host"
           description="New SSH profile"
+          onIntent={() => void loadHostEditorDialog()}
           onClick={onAddHost}
         />
       </Box>
@@ -71,16 +75,20 @@ function EmptyAction({
   title,
   description,
   primary = false,
+  onIntent,
   onClick,
 }: {
   icon: React.ReactNode;
   title: string;
   description: string;
   primary?: boolean;
+  onIntent: () => void;
   onClick: (event: React.MouseEvent<HTMLElement>) => void;
 }) {
   return (
     <ButtonBase
+      onMouseEnter={onIntent}
+      onFocus={onIntent}
       onClick={onClick}
       sx={{
         minHeight: 92,

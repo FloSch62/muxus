@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -29,7 +29,7 @@ import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import { useQueryClient } from '@tanstack/react-query';
 import type { SftpEntry } from '@muxus/shared';
 import { ApiError, apiFetch } from '../api/http.js';
-import { useSftpHome, useSftpList } from '../api/queries.js';
+import { useSftpList } from '../api/queries.js';
 import {
   downloadBlobWithProgress,
   uploadRawWithProgress,
@@ -37,6 +37,7 @@ import {
 } from '../api/transfers.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { usePrefsStore } from '../state/prefs.js';
+import { loadMonacoTextEditor } from '../lazy-features.js';
 import {
   clampSftpPanelWidth,
   DEFAULT_SFTP_PANEL_WIDTH,
@@ -173,6 +174,117 @@ function saveDownload(name: string, blob: Blob): void {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+const SftpEntryTable = memo(function SftpEntryTable({
+  connId,
+  currentPath,
+  entries,
+  isFetching,
+  selectedName,
+  onNavigate,
+  onOpenFile,
+  onSelect,
+  onContextMenu,
+}: {
+  connId: string;
+  currentPath: string;
+  entries: SftpEntry[];
+  isFetching: boolean;
+  selectedName?: string;
+  onNavigate: (path: string) => void;
+  onOpenFile: (path: string) => void;
+  onSelect: (name: string) => void;
+  onContextMenu: (entry: SftpEntry, x: number, y: number) => void;
+}) {
+  return (
+    <Table size="small" stickyHeader sx={{ '& td, & th': { py: 0.45, fontSize: 12 } }}>
+      <TableHead>
+        <TableRow>
+          <TableCell>Name</TableCell>
+          <TableCell align="right" sx={{ width: 72 }}>
+            Size
+          </TableCell>
+          <TableCell sx={{ width: 112 }}>Modified</TableCell>
+        </TableRow>
+      </TableHead>
+      <TableBody>
+        {entries.map((entry) => {
+          const entryPath = joinPath(currentPath, entry.name);
+          return (
+            <TableRow
+              key={entry.name}
+              hover
+              selected={entry.name === selectedName}
+              draggable={entry.type === 'file' && !!entry.downloadTicket}
+              title={entry.type === 'file' ? 'Double-click to edit · drag out to download' : undefined}
+              sx={{
+                cursor: entry.type === 'file' ? 'grab' : 'pointer',
+                userSelect: 'none',
+                contentVisibility: 'auto',
+                containIntrinsicSize: '0 33px',
+              }}
+              onClick={() => onSelect(entry.name)}
+              onPointerDown={() => {
+                if (entry.type === 'file') void loadMonacoTextEditor();
+              }}
+              onDoubleClick={() =>
+                entry.type === 'dir'
+                  ? onNavigate(entryPath)
+                  : entry.type === 'file'
+                    ? onOpenFile(entryPath)
+                    : undefined
+              }
+              onDragStart={(event) => {
+                if (entry.type !== 'file' || !entry.downloadTicket) {
+                  event.preventDefault();
+                  return;
+                }
+                const url = new URL(
+                  `/api/sftp/${encodeURIComponent(connId)}/drag-download?ticket=${encodeURIComponent(entry.downloadTicket)}`,
+                  window.location.href,
+                ).toString();
+                const dragName = entry.name.replaceAll(/[\r\n:]/g, '_');
+                event.dataTransfer.effectAllowed = 'copy';
+                event.dataTransfer.setData('DownloadURL', `application/octet-stream:${dragName}:${url}`);
+                event.dataTransfer.setData('text/uri-list', url);
+              }}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                onContextMenu(entry, event.clientX, event.clientY);
+              }}
+            >
+              <TableCell sx={{ display: 'flex', alignItems: 'center', gap: 0.75, border: 0, minWidth: 0 }}>
+                {entry.type === 'dir' ? (
+                  <FolderIcon sx={{ fontSize: 16, color: 'primary.main' }} />
+                ) : entry.type === 'link' ? (
+                  <LinkOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                ) : (
+                  <DescriptionOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                )}
+                <Typography variant="body2" noWrap sx={{ fontSize: 12 }}>
+                  {entry.name}
+                </Typography>
+              </TableCell>
+              <TableCell align="right" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
+                {entry.type === 'file' ? formatSize(entry.size) : ''}
+              </TableCell>
+              <TableCell sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
+                {formatMtime(entry.mtimeMs)}
+              </TableCell>
+            </TableRow>
+          );
+        })}
+        {entries.length === 0 && !isFetching && (
+          <TableRow>
+            <TableCell colSpan={3} sx={{ color: 'text.secondary', textAlign: 'center', border: 0, py: 3 }}>
+              Empty directory
+            </TableCell>
+          </TableRow>
+        )}
+      </TableBody>
+    </Table>
+  );
+});
+
 /**
  * Remote Explorer bound to a live SSH connection. Files open in Monaco on
  * double-click; explicit and outbound-drag downloads remain one gesture away.
@@ -184,9 +296,8 @@ export function SftpPanel({
   connId: string;
   onOpenFile: (path: string) => void;
 }) {
-  const { data: home } = useSftpHome(connId);
-  const [path, setPath] = useState<string | undefined>();
-  const [pathInput, setPathInput] = useState('');
+  const [path, setPath] = useState('.');
+  const [pathInput, setPathInput] = useState('.');
   const [dragOver, setDragOver] = useState(false);
   const [selectedName, setSelectedName] = useState<string>();
   const [menu, setMenu] = useState<{ x: number; y: number; entry: SftpEntry } | null>(null);
@@ -194,6 +305,7 @@ export function SftpPanel({
   const [transfer, setTransfer] = useState<TransferState>();
   const nextTransferIdRef = useRef(1);
   const transferControllerRef = useRef<AbortController | undefined>(undefined);
+  const homePathRef = useRef<string | undefined>(undefined);
   const dragDepthRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -201,31 +313,49 @@ export function SftpPanel({
   const panelWidth = usePrefsStore((state) => state.sftpPanelWidth);
   const setPrefs = usePrefsStore((state) => state.set);
 
+  const { data, isFetching, error } = useSftpList(connId, path);
   useEffect(() => {
-    if (home && !path) {
-      setPath(home.path);
-      setPathInput(home.path);
-    }
-  }, [home, path]);
+    if (!data?.path) return;
+    homePathRef.current ??= data.path;
+    setPathInput(data.path);
+  }, [data?.path]);
   useEffect(() => () => transferControllerRef.current?.abort(), []);
 
-  const { data, isFetching, error } = useSftpList(connId, path);
-  const entries = [...(data?.entries ?? [])].sort((a, b) => {
-    if ((a.type === 'dir') !== (b.type === 'dir')) return a.type === 'dir' ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
-  const selected = entries.find((entry) => entry.name === selectedName);
+  const entries = useMemo(
+    () =>
+      [...(data?.entries ?? [])].sort((a, b) => {
+        if ((a.type === 'dir') !== (b.type === 'dir')) return a.type === 'dir' ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      }),
+    [data?.entries],
+  );
+  const selected = useMemo(
+    () => entries.find((entry) => entry.name === selectedName),
+    [entries, selectedName],
+  );
+  const currentPath = data?.path ?? path;
+  const homePath = homePathRef.current ?? (path === '.' ? data?.path : undefined) ?? '.';
 
-  const navigate = (next: string) => {
+  const navigate = useCallback((next: string) => {
     setPath(next);
     setPathInput(next);
     setSelectedName(undefined);
-  };
-  const refresh = () => void queryClient.invalidateQueries({ queryKey: ['sftp-list', connId] });
-  const remotePath = (entry: SftpEntry) => joinPath(path!, entry.name);
+  }, []);
+  const refresh = useCallback(
+    () => void queryClient.invalidateQueries({ queryKey: ['sftp-list', connId] }),
+    [connId, queryClient],
+  );
+  const remotePath = useCallback(
+    (entry: SftpEntry) => joinPath(currentPath, entry.name),
+    [currentPath],
+  );
+  const openContextMenu = useCallback((entry: SftpEntry, x: number, y: number) => {
+    setSelectedName(entry.name);
+    setMenu({ x, y, entry });
+  }, []);
 
   const download = (entry: SftpEntry) => {
-    if (!path || busy) return;
+    if (busy) return;
     void (async () => {
       const id = nextTransferIdRef.current++;
       const controller = new AbortController();
@@ -286,7 +416,7 @@ export function SftpPanel({
   };
 
   const upload = (payload: DropPayload) => {
-    if (!path || busy || (payload.files.length === 0 && payload.directories.length === 0)) return;
+    if (busy || (payload.files.length === 0 && payload.directories.length === 0)) return;
     void (async () => {
       const id = nextTransferIdRef.current++;
       const controller = new AbortController();
@@ -329,14 +459,14 @@ export function SftpPanel({
           await apiFetch(`/api/sftp/${connId}/mkdir`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ path: joinPath(path, relative), recursive: true }),
+            body: JSON.stringify({ path: joinPath(currentPath, relative), recursive: true }),
             signal: controller.signal,
           });
         }
         for (const item of payload.files) {
           currentFileIndex++;
           const relative = cleanRelativePath(item.relativePath || item.file.name);
-          const destination = joinPath(path, relative);
+          const destination = joinPath(currentPath, relative);
           const updateProgress = (progress: ByteProgress) =>
             setTransfer({
               id,
@@ -437,30 +567,30 @@ export function SftpPanel({
 
   const mkdir = () => {
     const name = window.prompt('New folder name');
-    if (!name || !path) return;
+    if (!name) return;
     run(() =>
       apiFetch(`/api/sftp/${connId}/mkdir`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ path: joinPath(path, cleanRelativePath(name)) }),
+        body: JSON.stringify({ path: joinPath(currentPath, cleanRelativePath(name)) }),
       }),
     );
   };
 
   const rename = (entry: SftpEntry) => {
     const name = window.prompt(`Rename ${entry.name} to`, entry.name);
-    if (!name || name === entry.name || !path) return;
+    if (!name || name === entry.name) return;
     run(() =>
       apiFetch(`/api/sftp/${connId}/rename`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ from: remotePath(entry), to: joinPath(path, cleanRelativePath(name)) }),
+        body: JSON.stringify({ from: remotePath(entry), to: joinPath(currentPath, cleanRelativePath(name)) }),
       }),
     );
   };
 
   const remove = (entry: SftpEntry) => {
-    if (!path || !window.confirm(`Delete ${entry.name}${entry.type === 'dir' ? ' and everything in it' : ''}?`)) return;
+    if (!window.confirm(`Delete ${entry.name}${entry.type === 'dir' ? ' and everything in it' : ''}?`)) return;
     run(() =>
       apiFetch(`/api/sftp/${connId}/delete`, {
         method: 'POST',
@@ -545,13 +675,17 @@ export function SftpPanel({
       <Stack direction="row" spacing={0.25} sx={{ p: 0.75, alignItems: 'center' }}>
         <Tooltip title="Parent directory">
           <span>
-            <IconButton size="small" disabled={!path || path === '/'} onClick={() => path && navigate(parentPath(path))}>
+            <IconButton
+              size="small"
+              disabled={currentPath === '/'}
+              onClick={() => navigate(parentPath(currentPath))}
+            >
               <ArrowUpwardIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
         <Tooltip title="Home">
-          <IconButton size="small" onClick={() => home && navigate(home.path)}>
+          <IconButton size="small" onClick={() => navigate(homePath)}>
             <HomeOutlinedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
@@ -602,6 +736,8 @@ export function SftpPanel({
             <IconButton
               size="small"
               disabled={busy || selected?.type !== 'file'}
+              onMouseEnter={() => void loadMonacoTextEditor()}
+              onFocus={() => void loadMonacoTextEditor()}
               onClick={() => selected && onOpenFile(remotePath(selected))}
             >
               <EditOutlinedIcon fontSize="small" />
@@ -698,80 +834,17 @@ export function SftpPanel({
             {error instanceof Error ? error.message : String(error)}
           </Typography>
         ) : (
-          <Table size="small" stickyHeader sx={{ '& td, & th': { py: 0.45, fontSize: 12 } }}>
-            <TableHead>
-              <TableRow>
-                <TableCell>Name</TableCell>
-                <TableCell align="right" sx={{ width: 72 }}>
-                  Size
-                </TableCell>
-                <TableCell sx={{ width: 112 }}>Modified</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {entries.map((entry) => (
-                <TableRow
-                  key={entry.name}
-                  hover
-                  selected={entry.name === selectedName}
-                  draggable={entry.type === 'file' && !!entry.downloadTicket}
-                  title={entry.type === 'file' ? 'Double-click to edit · drag out to download' : undefined}
-                  sx={{ cursor: entry.type === 'file' ? 'grab' : 'pointer', userSelect: 'none' }}
-                  onClick={() => setSelectedName(entry.name)}
-                  onDoubleClick={() =>
-                    entry.type === 'dir'
-                      ? navigate(remotePath(entry))
-                      : entry.type === 'file'
-                        ? onOpenFile(remotePath(entry))
-                        : undefined
-                  }
-                  onDragStart={(event) => {
-                    if (entry.type !== 'file' || !entry.downloadTicket) {
-                      event.preventDefault();
-                      return;
-                    }
-                    const url = new URL(
-                      `/api/sftp/${encodeURIComponent(connId)}/drag-download?ticket=${encodeURIComponent(entry.downloadTicket)}`,
-                      window.location.href,
-                    ).toString();
-                    const dragName = entry.name.replaceAll(/[\r\n:]/g, '_');
-                    event.dataTransfer.effectAllowed = 'copy';
-                    event.dataTransfer.setData('DownloadURL', `application/octet-stream:${dragName}:${url}`);
-                    event.dataTransfer.setData('text/uri-list', url);
-                  }}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    setSelectedName(entry.name);
-                    setMenu({ x: event.clientX, y: event.clientY, entry });
-                  }}
-                >
-                  <TableCell sx={{ display: 'flex', alignItems: 'center', gap: 0.75, border: 0, minWidth: 0 }}>
-                    {entry.type === 'dir' ? (
-                      <FolderIcon sx={{ fontSize: 16, color: 'primary.main' }} />
-                    ) : entry.type === 'link' ? (
-                      <LinkOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-                    ) : (
-                      <DescriptionOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-                    )}
-                    <Typography variant="body2" noWrap sx={{ fontSize: 12 }}>
-                      {entry.name}
-                    </Typography>
-                  </TableCell>
-                  <TableCell align="right" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
-                    {entry.type === 'file' ? formatSize(entry.size) : ''}
-                  </TableCell>
-                  <TableCell sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>{formatMtime(entry.mtimeMs)}</TableCell>
-                </TableRow>
-              ))}
-              {entries.length === 0 && !isFetching && (
-                <TableRow>
-                  <TableCell colSpan={3} sx={{ color: 'text.secondary', textAlign: 'center', border: 0, py: 3 }}>
-                    Empty directory
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+          <SftpEntryTable
+            connId={connId}
+            currentPath={currentPath}
+            entries={entries}
+            isFetching={isFetching}
+            selectedName={selectedName}
+            onNavigate={navigate}
+            onOpenFile={onOpenFile}
+            onSelect={setSelectedName}
+            onContextMenu={openContextMenu}
+          />
         )}
       </Box>
       {dragOver && (
@@ -794,7 +867,7 @@ export function SftpPanel({
             <UploadFileOutlinedIcon color="primary" sx={{ fontSize: 38 }} />
             <Typography variant="subtitle2">Upload files and folders</Typography>
             <Typography variant="caption" color="text.secondary" sx={{ wordBreak: 'break-all' }}>
-              Drop into {path}
+              Drop into {currentPath}
             </Typography>
           </Stack>
         </Box>
@@ -807,8 +880,10 @@ export function SftpPanel({
       >
         {menu?.entry.type === 'file' && (
           <MenuItem
+            onMouseEnter={() => void loadMonacoTextEditor()}
+            onFocus={() => void loadMonacoTextEditor()}
             onClick={() => {
-              if (menu && path) onOpenFile(remotePath(menu.entry));
+              if (menu) onOpenFile(remotePath(menu.entry));
               setMenu(null);
             }}
           >

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Divider from '@mui/material/Divider';
@@ -19,6 +19,7 @@ import StarIcon from '@mui/icons-material/Star';
 import { useSshConfig } from '../api/queries.js';
 import { groupHosts, hostAddress, hostDisplayName } from '../host-organization.js';
 import { connectHost } from '../session-actions.js';
+import { loadHostEditorDialog, loadTerminalViewImpl } from '../lazy-features.js';
 import { useUiStore } from '../state/ui.js';
 import { TruncationTooltip } from './TruncationTooltip.js';
 
@@ -34,10 +35,11 @@ export function HostPickerPopover({
   const { data: config } = useSshConfig();
   const setHostEditor = useUiStore((state) => state.setHostEditor);
   const [filter, setFilter] = useState('');
+  const deferredFilter = useDeferredValue(filter);
   const searchInput = useRef<HTMLInputElement>(null);
   const groups = useMemo(
-    () => groupHosts(config?.hosts ?? [], config?.files ?? [], config?.path, filter),
-    [config?.hosts, config?.files, config?.path, filter],
+    () => groupHosts(config?.hosts ?? [], config?.files ?? [], config?.path, deferredFilter),
+    [config?.hosts, config?.files, config?.path, deferredFilter],
   );
   const visible = groups.flatMap((group) => group.hosts);
 
@@ -51,7 +53,12 @@ export function HostPickerPopover({
   }, [anchorEl]);
 
   const connect = (index: number) => {
-    const host = visible[index];
+    const host = groupHosts(
+      config?.hosts ?? [],
+      config?.files ?? [],
+      config?.path,
+      filter,
+    ).flatMap((group) => group.hosts)[index];
     if (!host) return;
     connectHost(host, replaceTabId);
     onClose();
@@ -117,10 +124,13 @@ export function HostPickerPopover({
             {group.hosts.map((host) => (
               <ListItemButton
                 key={`${host.file}:${host.alias}`}
+                onMouseEnter={() => void loadTerminalViewImpl()}
+                onFocus={() => void loadTerminalViewImpl()}
                 onClick={() => {
                   connectHost(host, replaceTabId);
                   onClose();
                 }}
+                sx={{ contentVisibility: 'auto', containIntrinsicSize: '0 48px' }}
               >
                 <ListItemIcon sx={{ minWidth: 34 }}>
                   <Box sx={{ position: 'relative', display: 'grid', placeItems: 'center' }}>
@@ -177,6 +187,8 @@ export function HostPickerPopover({
           fullWidth
           color="inherit"
           startIcon={<AddIcon />}
+          onMouseEnter={() => void loadHostEditorDialog()}
+          onFocus={() => void loadHostEditorDialog()}
           onClick={() => {
             onClose();
             setHostEditor({ mode: 'new' });

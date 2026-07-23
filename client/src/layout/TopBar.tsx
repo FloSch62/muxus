@@ -40,6 +40,12 @@ import { useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
 import { MultiExecControl } from '../components/MultiExecControl.js';
+import {
+  loadForwardingPanel,
+  loadSettingsDialog,
+  loadShortcutsDialog,
+  loadSftpPanel,
+} from '../lazy-features.js';
 
 export const TopBar = memo(function TopBar() {
   const mode = usePrefsStore((s) => s.themeMode);
@@ -106,6 +112,8 @@ export const TopBar = memo(function TopBar() {
               size="small"
               aria-label="Toggle file browser"
               color={activeTab.sftpOpen ? 'primary' : 'default'}
+              onMouseEnter={() => void loadSftpPanel()}
+              onFocus={() => void loadSftpPanel()}
               onClick={() => updateTab(activeTab.id, { sftpOpen: !activeTab.sftpOpen })}
             >
               <FolderOutlinedIcon fontSize="small" />
@@ -117,6 +125,8 @@ export const TopBar = memo(function TopBar() {
             size="small"
             aria-label="Toggle forwarding panel"
             color={forwardingOpen ? 'primary' : 'default'}
+            onMouseEnter={() => void loadForwardingPanel()}
+            onFocus={() => void loadForwardingPanel()}
             onClick={() => setForwardingOpen(!forwardingOpen)}
           >
             <Badge badgeContent={activeForwards} color="success" max={99} slotProps={{ badge: { sx: { fontSize: 9, height: 14, minWidth: 14 } } }}>
@@ -137,12 +147,24 @@ export const TopBar = memo(function TopBar() {
           </IconButton>
         </Tooltip>
         <Tooltip title="Keyboard shortcuts">
-          <IconButton size="small" aria-label="Keyboard shortcuts" onClick={() => setShortcutsOpen(true)}>
+          <IconButton
+            size="small"
+            aria-label="Keyboard shortcuts"
+            onMouseEnter={() => void loadShortcutsDialog()}
+            onFocus={() => void loadShortcutsDialog()}
+            onClick={() => setShortcutsOpen(true)}
+          >
             <KeyboardOutlinedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
         <Tooltip title="Settings">
-          <IconButton size="small" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
+          <IconButton
+            size="small"
+            aria-label="Settings"
+            onMouseEnter={() => void loadSettingsDialog()}
+            onFocus={() => void loadSettingsDialog()}
+            onClick={() => setSettingsOpen(true)}
+          >
             <SettingsOutlinedIcon fontSize="small" />
           </IconButton>
         </Tooltip>

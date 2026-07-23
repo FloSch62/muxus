@@ -59,6 +59,8 @@ const SEARCH_DECORATIONS: ISearchOptions['decorations'] = {
 
 const MIN_FONT_SIZE = 6;
 const MAX_FONT_SIZE = 40;
+const ACTIVE_IMAGE_STORAGE_MB = 64;
+const BACKGROUND_IMAGE_STORAGE_MB = 16;
 
 /** Plain-text contents of scrollback + screen, trailing blank rows trimmed. */
 function bufferText(term: Terminal): string {
@@ -78,6 +80,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const wsRef = useRef<WebSocket | null>(null);
   const searchRef = useRef<SearchAddon | null>(null);
   const serializeRef = useRef<SerializeAddon | null>(null);
+  const imageRef = useRef<ImageAddon | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const lastSearchRequestRef = useRef(tab.searchRequest);
   /** Per-tab zoom offset added to the preference font size. */
@@ -210,7 +213,12 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     term.loadAddon(new WebLinksAddon());
     // xterm 6.1 streams Kitty APC payloads straight into ImageAddon's WASM
     // base64 decoder. This also handles Sixel and iTerm2 inline images.
-    term.loadAddon(new ImageAddon({ kittySizeLimit: 64 * 1024 * 1024, storageLimit: 256 }));
+    const image = new ImageAddon({
+      kittySizeLimit: 64 * 1024 * 1024,
+      storageLimit: active ? ACTIVE_IMAGE_STORAGE_MB : BACKGROUND_IMAGE_STORAGE_MB,
+    });
+    imageRef.current = image;
+    term.loadAddon(image);
     const search = new SearchAddon();
     searchRef.current = search;
     term.loadAddon(search);
@@ -396,6 +404,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       term.dispose();
       searchRef.current = null;
       serializeRef.current = null;
+      imageRef.current = null;
       termRef.current = null;
       wsRef.current = null;
     };
@@ -440,13 +449,18 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
 
   // Refit when this tab becomes visible (display:none panes have zero size).
   useEffect(() => {
+    if (imageRef.current) {
+      imageRef.current.storageLimit = active
+        ? ACTIVE_IMAGE_STORAGE_MB
+        : BACKGROUND_IMAGE_STORAGE_MB;
+    }
     if (active) {
       requestAnimationFrame(() => {
         fitRef.current?.fit();
         termRef.current?.focus();
       });
     }
-  }, [active]);
+  }, [active, generation]);
 
   const answerAuth = (answers: string[] | null) => {
     setAuthPrompt(null);

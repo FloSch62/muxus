@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type DragEvent } from 'react';
+import { useDeferredValue, useMemo, useRef, useState, type DragEvent } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -50,6 +50,11 @@ import { copyToClipboard } from '../clipboard.js';
 import { groupHosts, hostAddress, hostDisplayName, hostOrderAfterDrop } from '../host-organization.js';
 import { connectHost, connectTarget, isQuickConnectTarget, openLocalTerminal } from '../session-actions.js';
 import {
+  loadHostEditorDialog,
+  loadHostOrganizationDialog,
+  loadTerminalViewImpl,
+} from '../lazy-features.js';
+import {
   clampSidebarWidth,
   DEFAULT_SIDEBAR_WIDTH,
   maxSidebarWidth,
@@ -89,7 +94,8 @@ export function SessionSidebar() {
   const updateMetadata = useUpdateSshMetadata();
   const reorderHosts = useReorderSshHosts();
 
-  const needle = filter.trim().toLowerCase();
+  const normalizedFilter = filter.trim().toLowerCase();
+  const needle = useDeferredValue(normalizedFilter);
   const hosts = config?.hosts ?? EMPTY_HOSTS;
 
   const groups = useMemo(
@@ -226,10 +232,19 @@ export function SessionSidebar() {
     return map;
   }, [tabs]);
 
-  const quickConnectable = !!needle && isQuickConnectTarget(filter) && !hosts.some((h) => h.aliases.includes(filter.trim()));
+  const quickConnectable =
+    !!normalizedFilter &&
+    isQuickConnectTarget(filter) &&
+    !hosts.some((h) => h.aliases.includes(filter.trim()));
 
   const onEnter = () => {
-    if (visible.length > 0) connectHost(visible[0]!);
+    const currentMatch = groupHosts(
+      hosts,
+      config?.files ?? [],
+      config?.path,
+      normalizedFilter,
+    ).flatMap((group) => group.hosts)[0];
+    if (currentMatch) connectHost(currentMatch);
     else if (quickConnectable) connectTarget(filter.trim());
     else return;
     setFilter('');
@@ -286,7 +301,13 @@ export function SessionSidebar() {
           }}
         />
         <Tooltip title="Add host to ~/.ssh/config">
-          <IconButton size="small" aria-label="Add SSH host" onClick={() => setHostEditor({ mode: 'new' })}>
+          <IconButton
+            size="small"
+            aria-label="Add SSH host"
+            onMouseEnter={() => void loadHostEditorDialog()}
+            onFocus={() => void loadHostEditorDialog()}
+            onClick={() => setHostEditor({ mode: 'new' })}
+          >
             <AddIcon fontSize="small" />
           </IconButton>
         </Tooltip>
@@ -294,7 +315,11 @@ export function SessionSidebar() {
 
       <Box sx={{ flex: 1, overflowY: 'auto', pb: 1 }}>
         <List dense disablePadding>
-          <ListItemButton onClick={() => openLocalTerminal()}>
+          <ListItemButton
+            onMouseEnter={() => void loadTerminalViewImpl()}
+            onFocus={() => void loadTerminalViewImpl()}
+            onClick={() => openLocalTerminal()}
+          >
             <ListItemIcon sx={{ minWidth: 32 }}>
               <TerminalIcon fontSize="small" />
             </ListItemIcon>
@@ -302,6 +327,8 @@ export function SessionSidebar() {
           </ListItemButton>
           {quickConnectable && (
             <ListItemButton
+              onMouseEnter={() => void loadTerminalViewImpl()}
+              onFocus={() => void loadTerminalViewImpl()}
               onClick={() => {
                 connectTarget(filter.trim());
                 setFilter('');
@@ -409,7 +436,14 @@ export function SessionSidebar() {
             <Typography variant="body2" color="text.secondary">
               No hosts in ~/.ssh/config yet.
             </Typography>
-            <Button size="small" variant="outlined" startIcon={<AddIcon />} onClick={() => setHostEditor({ mode: 'new' })}>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<AddIcon />}
+              onMouseEnter={() => void loadHostEditorDialog()}
+              onFocus={() => void loadHostEditorDialog()}
+              onClick={() => setHostEditor({ mode: 'new' })}
+            >
               Add your first host
             </Button>
           </Stack>
@@ -429,6 +463,8 @@ export function SessionSidebar() {
         onClose={() => setMenu(null)}
       >
         <MenuItem
+          onMouseEnter={() => void loadTerminalViewImpl()}
+          onFocus={() => void loadTerminalViewImpl()}
           onClick={() => {
             if (menu) connectHost(menu.entry);
             setMenu(null);
@@ -481,6 +517,8 @@ export function SessionSidebar() {
         </MenuItem>
         <Divider />
         <MenuItem
+          onMouseEnter={() => void loadHostOrganizationDialog()}
+          onFocus={() => void loadHostOrganizationDialog()}
           onClick={() => {
             if (menu) setHostOrganizer(menu.entry);
             setMenu(null);
@@ -492,6 +530,8 @@ export function SessionSidebar() {
           Organize & color…
         </MenuItem>
         <MenuItem
+          onMouseEnter={() => void loadHostEditorDialog()}
+          onFocus={() => void loadHostEditorDialog()}
           onClick={() => {
             if (menu) setHostEditor({ mode: 'edit', entry: menu.entry });
             setMenu(null);
@@ -503,6 +543,8 @@ export function SessionSidebar() {
           Edit host
         </MenuItem>
         <MenuItem
+          onMouseEnter={() => void loadHostEditorDialog()}
+          onFocus={() => void loadHostEditorDialog()}
           onClick={() => {
             if (menu) setHostEditor({ mode: 'duplicate', entry: menu.entry });
             setMenu(null);
@@ -599,6 +641,8 @@ function HostRow({
 
   const row = (
     <ListItemButton
+      onMouseEnter={() => void loadTerminalViewImpl()}
+      onFocus={() => void loadTerminalViewImpl()}
       onClick={onConnect}
       onDragOver={onDragOver}
       onDrop={onDrop}
@@ -613,6 +657,8 @@ function HostRow({
         borderLeft: 3,
         borderLeftColor: entry.metadata?.color ?? 'transparent',
         position: 'relative',
+        contentVisibility: 'auto',
+        containIntrinsicSize: '0 48px',
         ...(dropEdge && {
           [`&::${dropEdge === 'before' ? 'before' : 'after'}`]: {
             content: '""',

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -20,8 +20,9 @@ import type {
 import { ApiError, apiFetch, apiFetchRaw } from '../api/http.js';
 import { registerRemoteEditor } from '../editor/remote-editor-registry.js';
 import { showErrorToast, showToast } from '../state/toast.js';
+import { loadMonacoTextEditor } from '../lazy-features.js';
 
-const MonacoTextEditor = lazy(() => import('./MonacoTextEditor.js'));
+const MonacoTextEditor = lazy(loadMonacoTextEditor);
 
 interface EditorDocument {
   content: string;
@@ -182,10 +183,12 @@ export function RemoteEditorWorkspace({
     () => new Set(Object.entries(documents).filter(([, doc]) => doc.content !== doc.savedContent).map(([path]) => path)),
     [documents],
   );
+  const dirtyPathsRef = useRef(dirtyPaths);
+  dirtyPathsRef.current = dirtyPaths;
 
   useEffect(
-    () => registerRemoteEditor(tabId, { hasDirty: () => dirtyPaths.size > 0 }),
-    [dirtyPaths, tabId],
+    () => registerRemoteEditor(tabId, { hasDirty: () => dirtyPathsRef.current.size > 0 }),
+    [tabId],
   );
 
   const save = async (path: string, force = false) => {

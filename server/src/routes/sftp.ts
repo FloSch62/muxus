@@ -88,6 +88,8 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
     }
   };
 
+  // Kept for API compatibility; the client now resolves "." through /list so
+  // its initial directory load only needs one round trip.
   app.get('/api/sftp/:connId/home', async (req, reply) => {
     try {
       return await withSftp(req, async (sftp) => {
