@@ -41,7 +41,10 @@ import { showToast } from '../state/toast.js';
 import { broadcastTerminalInput } from '../state/multi-exec.js';
 import { terminalFontStack, usePrefsStore } from '../state/prefs.js';
 import { useTabsStore, type SessionTab } from '../state/tabs.js';
-import { terminalScheme } from '../terminal/palette.js';
+import {
+  TERMINAL_MINIMUM_CONTRAST_RATIO,
+  terminalScheme,
+} from '../terminal/palette.js';
 import { attachCommandTracker } from '../terminal/shell-integration.js';
 import { registerTerminal } from '../terminal/terminal-registry.js';
 import { requiresPasteConfirmation } from '../terminal/paste-safety.js';
@@ -196,6 +199,10 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       // ImageAddon uses a bottom layer for negative-z Kitty placements.
       allowTransparency: true,
       theme: terminalScheme(prefs.terminalScheme).theme,
+      // ANSI uses the same palette entries for foregrounds and backgrounds,
+      // so combinations chosen by remote tools are not always legible in
+      // every theme. Let xterm adjust only the rendered foreground as needed.
+      minimumContrastRatio: TERMINAL_MINIMUM_CONTRAST_RATIO,
       // Shell-integration failure marks and search matches render here,
       // like VS Code's scrollbar annotations.
       scrollbar: { width: 14 },

@@ -2,15 +2,18 @@ import { useState } from 'react';
 import Autocomplete from '@mui/material/Autocomplete';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import ButtonBase from '@mui/material/ButtonBase';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
+import FormControl from '@mui/material/FormControl';
 import FormControlLabel from '@mui/material/FormControlLabel';
+import InputLabel from '@mui/material/InputLabel';
 import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
+import ListSubheader from '@mui/material/ListSubheader';
 import MenuItem from '@mui/material/MenuItem';
+import Select from '@mui/material/Select';
 import Slider from '@mui/material/Slider';
 import Stack from '@mui/material/Stack';
 import Switch from '@mui/material/Switch';
@@ -25,7 +28,7 @@ import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
 import { useAppInfo } from '../api/queries.js';
 import { usePrefsStore, type RightClickAction, type ThemeMode } from '../state/prefs.js';
 import { useUiStore } from '../state/ui.js';
-import { TERMINAL_SCHEMES, type TerminalScheme } from '../terminal/palette.js';
+import { TERMINAL_SCHEMES, terminalScheme, type TerminalScheme } from '../terminal/palette.js';
 
 type Section = 'appearance' | 'terminal' | 'behavior' | 'about';
 
@@ -48,6 +51,13 @@ const FONT_PRESETS = [
   'DejaVu Sans Mono',
   'monospace',
 ];
+
+const TERMINAL_SCHEME_GROUPS = [
+  { label: 'Light schemes', schemes: TERMINAL_SCHEMES.filter((scheme) => scheme.light) },
+  { label: 'Dark schemes', schemes: TERMINAL_SCHEMES.filter((scheme) => !scheme.light) },
+] as const;
+
+const SCHEME_SWATCH_COLORS = ['red', 'green', 'yellow', 'blue', 'magenta', 'cyan'] as const;
 
 /** All preferences, applied live — including already-open terminals. */
 export function SettingsDialog() {
@@ -126,16 +136,26 @@ function AppearanceSection() {
       </Box>
       <Box>
         <SectionTitle>Terminal color scheme</SectionTitle>
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 1 }}>
-          {TERMINAL_SCHEMES.map((scheme) => (
-            <SchemeCard
-              key={scheme.id}
-              scheme={scheme}
-              selected={prefs.terminalScheme === scheme.id}
-              onSelect={() => prefs.set({ terminalScheme: scheme.id })}
-            />
-          ))}
-        </Box>
+        <FormControl sx={{ width: '100%', maxWidth: 420 }}>
+          <InputLabel id="terminal-color-scheme-label">Color scheme</InputLabel>
+          <Select
+            labelId="terminal-color-scheme-label"
+            value={prefs.terminalScheme}
+            label="Color scheme"
+            onChange={(event) => prefs.set({ terminalScheme: event.target.value })}
+            renderValue={(schemeId) => <SchemeLabel scheme={terminalScheme(schemeId)} showMode />}
+            MenuProps={{ slotProps: { paper: { sx: { maxHeight: 390 } } } }}
+          >
+            {TERMINAL_SCHEME_GROUPS.flatMap((group) => [
+              <ListSubheader key={group.label}>{group.label}</ListSubheader>,
+              ...group.schemes.map((scheme) => (
+                <MenuItem key={scheme.id} value={scheme.id}>
+                  <SchemeLabel scheme={scheme} />
+                </MenuItem>
+              )),
+            ])}
+          </Select>
+        </FormControl>
       </Box>
       <Box>
         <SectionTitle>Font</SectionTitle>
@@ -186,38 +206,43 @@ function AppearanceSection() {
   );
 }
 
-/** Mini terminal preview: background swatch + the 8 ANSI hues + name. */
-function SchemeCard({ scheme, selected, onSelect }: { scheme: TerminalScheme; selected: boolean; onSelect: () => void }) {
+/** Compact terminal preview used by both the closed selector and its menu. */
+function SchemeLabel({ scheme, showMode = false }: { scheme: TerminalScheme; showMode?: boolean }) {
   const t = scheme.theme;
-  const dots = [t.red, t.green, t.yellow, t.blue, t.magenta, t.cyan, t.white, t.brightBlack];
   return (
-    <ButtonBase
-      aria-label={`Use ${scheme.name} color scheme`}
-      onClick={onSelect}
-      sx={{
-        display: 'block',
-        textAlign: 'left',
-        borderRadius: 1,
-        border: 2,
-        borderColor: selected ? 'primary.main' : 'divider',
-        overflow: 'hidden',
-        '&:hover': { borderColor: selected ? 'primary.main' : 'text.disabled' },
-      }}
-    >
-      <Box sx={{ bgcolor: t.background, px: 1, py: 0.75 }}>
-        <Typography sx={{ color: t.foreground, fontFamily: '"JetBrains Mono", monospace', fontSize: 11, lineHeight: 1.4 }}>
-          $ muxus ▮
-        </Typography>
-        <Stack direction="row" spacing={0.5} sx={{ mt: 0.5 }}>
-          {dots.map((color, i) => (
-            <Box key={i} sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color }} />
-          ))}
-        </Stack>
+    <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', width: '100%', minWidth: 0 }}>
+      <Box
+        aria-hidden
+        sx={{
+          width: 60,
+          height: 28,
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '3px',
+          bgcolor: t.background,
+          border: 1,
+          borderColor: scheme.light ? 'rgba(0, 0, 0, 0.14)' : 'rgba(255, 255, 255, 0.14)',
+          borderRadius: 0.75,
+        }}
+      >
+        {SCHEME_SWATCH_COLORS.map((color) => (
+          <Box
+            key={color}
+            sx={{ width: 5, height: 12, borderRadius: '2px', bgcolor: t[color] }}
+          />
+        ))}
       </Box>
-      <Typography variant="caption" sx={{ display: 'block', px: 1, py: 0.4, fontWeight: selected ? 700 : 500 }}>
+      <Typography variant="body2" noWrap sx={{ fontWeight: 500 }}>
         {scheme.name}
       </Typography>
-    </ButtonBase>
+      {showMode ? (
+        <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto !important', pr: 0.5 }}>
+          {scheme.light ? 'Light' : 'Dark'}
+        </Typography>
+      ) : null}
+    </Stack>
   );
 }
 

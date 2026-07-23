@@ -1,10 +1,14 @@
 import type { ITheme } from '@xterm/xterm';
 
+/** WCAG AA contrast floor enforced by xterm for every rendered text cell. */
+export const TERMINAL_MINIMUM_CONTRAST_RATIO = 4.5;
+
 /**
  * Built-in terminal color schemes. The default matches VS Code's stock dark
  * terminal so the out-of-the-box look is what most people already stare at
  * all day; the rest are faithful renditions of the classics people expect
- * from a terminal.
+ * from a terminal, plus a few light palettes tuned to stay readable for a
+ * full workday.
  */
 export interface TerminalScheme {
   id: string;
@@ -258,7 +262,137 @@ const solarizedLight: ITheme = {
   brightWhite: '#fdf6e3',
 };
 
+/** Warm, low-glare paper with deliberately restrained ANSI colors. */
+const paper: ITheme = {
+  background: '#f5f0e6',
+  foreground: '#403b33',
+  cursor: '#765b3d',
+  cursorAccent: '#f5f0e6',
+  selectionBackground: 'rgba(183, 157, 111, 0.38)',
+  black: '#282622',
+  red: '#a63d40',
+  green: '#52783d',
+  yellow: '#866316',
+  blue: '#386b8c',
+  magenta: '#795080',
+  cyan: '#39766f',
+  white: '#d8d1c3',
+  brightBlack: '#706a60',
+  brightRed: '#bd4f4b',
+  brightGreen: '#648947',
+  brightYellow: '#9d741b',
+  brightBlue: '#4b7b9a',
+  brightMagenta: '#8d6092',
+  brightCyan: '#4a8780',
+  brightWhite: '#fffaf0',
+};
+
+/** VS Code's light terminal palette, with its pale-blue selection. */
+const vscodeLight: ITheme = {
+  background: '#ffffff',
+  foreground: '#333333',
+  cursor: '#333333',
+  cursorAccent: '#ffffff',
+  selectionBackground: '#add6ff',
+  black: '#000000',
+  red: '#cd3131',
+  green: '#008000',
+  yellow: '#795e26',
+  blue: '#0451a5',
+  magenta: '#bc05bc',
+  cyan: '#0598bc',
+  white: '#767676',
+  brightBlack: '#666666',
+  brightRed: '#cd3131',
+  brightGreen: '#16825d',
+  brightYellow: '#8f6d20',
+  brightBlue: '#0451a5',
+  brightMagenta: '#bc05bc',
+  brightCyan: '#0598bc',
+  // Keep ANSI bright white genuinely light: tools such as GNU ls use bold
+  // white over a red background to call out broken symlinks.
+  brightWhite: '#ffffff',
+};
+
+const githubLight: ITheme = {
+  background: '#ffffff',
+  foreground: '#24292f',
+  cursor: '#0969da',
+  cursorAccent: '#ffffff',
+  selectionBackground: 'rgba(9, 105, 218, 0.24)',
+  black: '#24292f',
+  red: '#cf222e',
+  green: '#1a7f37',
+  yellow: '#9a6700',
+  blue: '#0969da',
+  magenta: '#8250df',
+  cyan: '#1b7c83',
+  white: '#d0d7de',
+  brightBlack: '#57606a',
+  brightRed: '#a40e26',
+  brightGreen: '#116329',
+  brightYellow: '#7d4e00',
+  brightBlue: '#0550ae',
+  brightMagenta: '#6639ba',
+  brightCyan: '#0a676d',
+  brightWhite: '#ffffff',
+};
+
+const gruvboxLight: ITheme = {
+  background: '#fbf1c7',
+  foreground: '#3c3836',
+  cursor: '#3c3836',
+  cursorAccent: '#fbf1c7',
+  selectionBackground: '#d5c4a1',
+  black: '#282828',
+  red: '#9d0006',
+  green: '#79740e',
+  yellow: '#b57614',
+  blue: '#076678',
+  magenta: '#8f3f71',
+  cyan: '#427b58',
+  white: '#d5c4a1',
+  brightBlack: '#7c6f64',
+  brightRed: '#cc241d',
+  brightGreen: '#98971a',
+  brightYellow: '#d79921',
+  brightBlue: '#458588',
+  brightMagenta: '#b16286',
+  brightCyan: '#689d6a',
+  brightWhite: '#fbf1c7',
+};
+
+const catppuccinLatte: ITheme = {
+  background: '#eff1f5',
+  foreground: '#4c4f69',
+  cursor: '#dc8a78',
+  cursorAccent: '#eff1f5',
+  selectionBackground: 'rgba(172, 176, 190, 0.55)',
+  black: '#5c5f77',
+  red: '#d20f39',
+  green: '#40a02b',
+  yellow: '#b36b00',
+  blue: '#1e66f5',
+  magenta: '#8839ef',
+  cyan: '#0f7f85',
+  white: '#acb0be',
+  brightBlack: '#6c6f85',
+  brightRed: '#b80b31',
+  brightGreen: '#348822',
+  brightYellow: '#965800',
+  brightBlue: '#1856ce',
+  brightMagenta: '#762fd3',
+  brightCyan: '#0b6b70',
+  brightWhite: '#eff1f5',
+};
+
 export const TERMINAL_SCHEMES: readonly TerminalScheme[] = [
+  { id: 'paper', name: 'Paper', light: true, theme: paper },
+  { id: 'vscode-light', name: 'Light (VS Code)', light: true, theme: vscodeLight },
+  { id: 'github-light', name: 'GitHub Light', light: true, theme: githubLight },
+  { id: 'gruvbox-light', name: 'Gruvbox Light', light: true, theme: gruvboxLight },
+  { id: 'catppuccin-latte', name: 'Catppuccin Latte', light: true, theme: catppuccinLatte },
+  { id: 'solarized-light', name: 'Solarized Light', light: true, theme: solarizedLight },
   { id: 'vscode-dark', name: 'Dark (VS Code)', theme: vscodeDark },
   { id: 'muxus', name: 'Muxus', theme: muxus },
   { id: 'dracula', name: 'Dracula', theme: dracula },
@@ -268,7 +402,6 @@ export const TERMINAL_SCHEMES: readonly TerminalScheme[] = [
   { id: 'catppuccin-mocha', name: 'Catppuccin Mocha', theme: catppuccinMocha },
   { id: 'monokai', name: 'Monokai', theme: monokai },
   { id: 'solarized-dark', name: 'Solarized Dark', theme: solarizedDark },
-  { id: 'solarized-light', name: 'Solarized Light', light: true, theme: solarizedLight },
 ].map((scheme) => ({
   ...scheme,
   // xterm outlines the overview ruler with overviewRulerBorder, which
@@ -279,5 +412,6 @@ export const TERMINAL_SCHEMES: readonly TerminalScheme[] = [
 
 /** Resolve a scheme id, falling back to the VS Code dark default. */
 export function terminalScheme(id: string | undefined): TerminalScheme {
-  return TERMINAL_SCHEMES.find((scheme) => scheme.id === id) ?? TERMINAL_SCHEMES[0]!;
+  return TERMINAL_SCHEMES.find((scheme) => scheme.id === id)
+    ?? TERMINAL_SCHEMES.find((scheme) => scheme.id === 'vscode-dark')!;
 }
