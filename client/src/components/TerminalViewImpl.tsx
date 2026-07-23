@@ -41,8 +41,6 @@ import { showToast } from '../state/toast.js';
 import { broadcastTerminalInput } from '../state/multi-exec.js';
 import { terminalFontStack, usePrefsStore } from '../state/prefs.js';
 import { useTabsStore, type SessionTab } from '../state/tabs.js';
-import { KittyApcExtractor, type StreamPart } from '../terminal/apc-stream.js';
-import { KittyGraphicsEngine } from '../terminal/kitty-graphics.js';
 import { KittyKeyboardHandler } from '../terminal/kitty-keyboard.js';
 import { terminalScheme } from '../terminal/palette.js';
 import { attachCommandTracker } from '../terminal/shell-integration.js';
@@ -61,51 +59,6 @@ const SEARCH_DECORATIONS: ISearchOptions['decorations'] = {
 
 const MIN_FONT_SIZE = 6;
 const MAX_FONT_SIZE = 40;
-
-/**
- * Serializes terminal writes with graphics commands. Plain data is written
- * fire-and-forget; a graphics command first drains the parser (empty write
- * with callback) so the cursor position it anchors to is exact, then runs
- * the engine and injects the cursor advance — all while later stream parts
- * queue behind it.
- */
-class GraphicsPipeline {
-  private chain: Promise<void> | null = null;
-
-  constructor(
-    private readonly term: Terminal,
-    private readonly engine: KittyGraphicsEngine,
-    private readonly sendToApp: (data: string) => void,
-  ) {}
-
-  push(parts: StreamPart[]): void {
-    for (const part of parts) {
-      if (part.kind === 'data') {
-        const data = part.data;
-        if (this.chain) this.chain = this.chain.then(() => this.term.write(data));
-        else this.term.write(data);
-      } else {
-        const cmd = part.cmd;
-        this.chain = (this.chain ?? Promise.resolve())
-          .then(() => new Promise<void>((resolve) => this.term.write('', resolve)))
-          .then(() => this.engine.handle(cmd))
-          .then((result) => {
-            if (result.response) this.sendToApp(result.response);
-            if (result.advance) this.term.write(result.advance);
-          })
-          .catch(() => {
-            /* a broken image must not stall the stream */
-          });
-      }
-    }
-    const current = this.chain;
-    if (current) {
-      void current.then(() => {
-        if (this.chain === current) this.chain = null;
-      });
-    }
-  }
-}
 
 /** Plain-text contents of scrollback + screen, trailing blank rows trimmed. */
 function bufferText(term: Terminal): string {
@@ -238,10 +191,12 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       cursorStyle: prefs.cursorStyle,
       scrollback: prefs.scrollback,
       allowProposedApi: true,
+      // ImageAddon uses a bottom layer for negative-z Kitty placements.
+      allowTransparency: true,
       theme: terminalScheme(prefs.terminalScheme).theme,
       // Shell-integration failure marks and search matches render here,
       // like VS Code's scrollbar annotations.
-      overviewRuler: { width: 14 },
+      scrollbar: { width: 14 },
       // icat &co discover cell pixel metrics via CSI 14/16 t when the PTY
       // reports no pixel size.
       windowOptions: { getWinSizePixels: true, getCellSizePixels: true, getWinSizeChars: true },
@@ -253,8 +208,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     term.loadAddon(new Unicode11Addon());
     term.unicode.activeVersion = '11';
     term.loadAddon(new WebLinksAddon());
-    // Sixel + iTerm2 inline images ride along; kitty graphics are ours.
-    term.loadAddon(new ImageAddon());
+    // xterm 6.1 streams Kitty APC payloads straight into ImageAddon's WASM
+    // base64 decoder. This also handles Sixel and iTerm2 inline images.
+    term.loadAddon(new ImageAddon({ kittySizeLimit: 64 * 1024 * 1024, storageLimit: 256 }));
     const search = new SearchAddon();
     searchRef.current = search;
     term.loadAddon(search);
@@ -311,17 +267,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     };
     el.addEventListener('wheel', onWheel, { passive: false, capture: true });
 
-    const sendToApp = (data: string) => {
-      sendInput(data);
-    };
-
     const commandTracker = attachCommandTracker(term);
-    const graphics = new KittyGraphicsEngine(term);
-    graphics.attach();
     const keyboard = new KittyKeyboardHandler(term);
     keyboard.attach();
-    const extractor = new KittyApcExtractor();
-    const pipeline = new GraphicsPipeline(term, graphics, sendToApp);
 
     term.attachCustomKeyEventHandler((ev) => {
       // Ctrl+Shift chords stay ours (kitty reserves ctrl+shift for the terminal).
@@ -375,7 +323,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     };
     ws.onmessage = (ev) => {
       if (ev.data instanceof ArrayBuffer) {
-        pipeline.push(extractor.feed(new Uint8Array(ev.data)));
+        term.write(new Uint8Array(ev.data));
         return;
       }
       if (typeof ev.data !== 'string') return;
@@ -439,7 +387,6 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       onSelection.dispose();
       onSearchResults.dispose();
       keyboard.dispose();
-      graphics.dispose();
       commandTracker.dispose();
       ws.onopen = null;
       ws.onmessage = null;

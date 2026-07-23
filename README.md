@@ -23,11 +23,11 @@ pnpm workspace, all TypeScript/ESM:
 | --- | --- |
 | `shared/` | REST DTOs + zod WebSocket protocol (`/ws/terminal`: binary frames = bytes, text frames = control) |
 | `server/` | Fastify on 127.0.0.1 with per-run bearer token; versioned SQLite migrations for Muxus-owned data; ssh_config engine (line-preserving parser/resolver/editor); leased ssh2 transports with ProxyJump + OpenSSH-order auth; known_hosts verification; node-pty local shells; SFTP routes and forward manager |
-| `client/` | React 19 + MUI, resizable pane tree and workspace recovery, xterm.js with custom kitty graphics/keyboard engines (`client/src/terminal/`) |
+| `client/` | React 19 + MUI, resizable pane tree and workspace recovery, xterm.js Image Addon for graphics plus a custom kitty keyboard engine |
 | `electron/` | Hardened desktop shell: embeds the server in-process, uses an isolated preload bridge for bootstrap credentials and blocks unexpected navigation |
 | `tests/` | vitest units for security/auth boundaries, persistence and migrations, connection leases, workspace/pane behavior, SFTP overwrite policy, paste safety, and terminal protocols |
 
-The kitty graphics protocol rides on APC escape sequences, which xterm.js has no hooks for — Muxus extracts them from the byte stream *before* `term.write()` (`apc-stream.ts`), anchors placements to xterm buffer markers so images scroll with text, and renders them into overlay layers (`kitty-graphics.ts`).
+Kitty graphics APC sequences flow directly into xterm.js 6.1 and its Image Addon. The addon parses chunked payloads incrementally, streams base64 decoding through WebAssembly, and renders images as terminal-buffer-aware canvas layers without a second parser or per-chunk scheduling queue in Muxus.
 
 ## Development
 

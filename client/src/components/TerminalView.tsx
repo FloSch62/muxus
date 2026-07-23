@@ -6,7 +6,7 @@ import { terminalScheme } from '../terminal/palette.js';
 
 const TerminalViewImpl = lazy(() => import('./TerminalViewImpl.js'));
 
-/** Thin Suspense wrapper so xterm and the kitty engines stay off the first paint. */
+/** Thin Suspense wrapper so xterm and its terminal addons stay off the first paint. */
 export function TerminalView({ tab, active }: { tab: SessionTab; active: boolean }) {
   const schemeId = usePrefsStore((s) => s.terminalScheme);
   return (
