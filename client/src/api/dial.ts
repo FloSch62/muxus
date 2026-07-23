@@ -1,4 +1,4 @@
-import type { TerminalServerMessage } from '@muxus/shared';
+import type { TerminalServerMessage, TunnelSshOptions } from '@muxus/shared';
 import type { AuthPromptRequest } from '../components/AuthPromptDialog.js';
 import type { HostKeyRequest } from '../components/HostKeyDialog.js';
 import { wsProtocols, wsUrl } from './http.js';
@@ -25,7 +25,11 @@ export interface DialedConnection {
  * path). Runs the same interactive auth/host-key round-trips as a terminal
  * connection over a dedicated /ws/terminal socket in `dial` mode.
  */
-export function dialConnection(target: string, handlers: DialHandlers): Promise<DialedConnection> {
+export function dialConnection(
+  target: string,
+  handlers: DialHandlers,
+  sshOptions?: TunnelSshOptions,
+): Promise<DialedConnection> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl('/ws/terminal'), wsProtocols());
     let settled = false;
@@ -39,7 +43,16 @@ export function dialConnection(target: string, handlers: DialHandlers): Promise<
     };
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({ op: 'dial', profile: { kind: 'ssh', target } }));
+      ws.send(
+        JSON.stringify({
+          op: 'dial',
+          profile: {
+            kind: 'ssh',
+            target,
+            ...(sshOptions === undefined ? {} : { useConfig: false, ...sshOptions }),
+          },
+        }),
+      );
     };
     ws.onerror = () => fail('could not reach the Muxus backend');
     ws.onclose = () => fail(lastStatus || 'connection closed before it was ready');

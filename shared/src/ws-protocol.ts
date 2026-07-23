@@ -37,9 +37,17 @@ export const sshProfileSchema = z.object({
    * resolves server-side from the config, exactly like `ssh <target>`.
    */
   target: z.string().min(1),
+  /** False for a self-contained tunnel profile; jump aliases still resolve from config. */
+  useConfig: z.boolean().optional(),
   /** Quick-connect overrides on top of config resolution. */
   user: z.string().optional(),
   port: z.number().int().min(1).max(65535).optional(),
+  /** Tunnel-owned overrides; passwords/passphrases still travel only in prompts. */
+  identityFiles: z.array(z.string().min(1).max(4096)).max(32).optional(),
+  identitiesOnly: z.boolean().optional(),
+  forwardAgent: z.boolean().optional(),
+  proxyJump: z.array(z.string().min(1).max(500)).max(8).optional(),
+  passwordOnly: z.boolean().optional(),
   term: z.string().optional(),
 });
 

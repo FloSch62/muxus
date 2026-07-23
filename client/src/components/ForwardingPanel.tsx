@@ -205,7 +205,7 @@ export function ForwardingPanel() {
       </Stack>
 
       <Box sx={{ flex: 1, overflowY: 'auto', py: 1 }}>
-        <SectionLabel>Tunnels</SectionLabel>
+        <SectionLabel>Persistent tunnels</SectionLabel>
         {tunnels.length === 0 && (
           <Typography variant="body2" color="text.secondary" sx={{ px: 1.5, pb: 1 }}>
             Saved tunnels start and stop port forwarding without opening a terminal — closing terminals never
@@ -240,7 +240,10 @@ export function ForwardingPanel() {
                   {tunnel.name || tunnel.target}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', ...MONO, fontSize: 11 }}>
-                  {busy ?? `${FORWARD_FLAG[tunnel.type]} ${describeForward(tunnel)}${tunnel.name ? ` · via ${tunnel.target}` : ''}`}
+                  {busy ?? `${FORWARD_FLAG[tunnel.type]} ${describeForward(tunnel)}`}
+                </Typography>
+                <Typography variant="caption" color="text.disabled" noWrap sx={{ display: 'block', fontSize: 11 }}>
+                  {describeTunnelConnection(tunnel)}
                 </Typography>
                 {running?.error && (
                   <Typography variant="caption" sx={{ color: 'error.main', display: 'block' }} noWrap>
@@ -376,6 +379,21 @@ export function ForwardingPanel() {
 function hostEntryFor(hosts: SshHostEntry[] | undefined, conn: ConnectionInfo): SshHostEntry | undefined {
   if (!conn.metadataAlias) return undefined;
   return hosts?.find((h) => h.aliases.includes(conn.metadataAlias!));
+}
+
+function describeTunnelConnection(tunnel: TunnelRecord): string {
+  if (tunnel.sshOptions === undefined) return `SSH config · ${tunnel.target}`;
+  const options = tunnel.sshOptions;
+  const endpoint = `${options.user ? `${options.user}@` : ''}${tunnel.target}${options.port ? `:${options.port}` : ''}`;
+  const route = options.proxyJump?.length
+    ? `${options.proxyJump.length} jump${options.proxyJump.length === 1 ? '' : 's'}`
+    : 'direct';
+  const auth = options.passwordOnly
+    ? 'password'
+    : options.identityFiles?.length
+      ? `${options.identityFiles.length} key${options.identityFiles.length === 1 ? '' : 's'}`
+      : 'agent / defaults';
+  return `${endpoint} · ${route} · ${auth}`;
 }
 
 function SectionLabel({ children }: { children: string }) {

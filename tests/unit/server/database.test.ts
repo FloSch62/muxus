@@ -15,6 +15,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 1, name: 'foundation' },
       { version: 2, name: 'tunnels' },
       { version: 3, name: 'host-sort-order' },
+      { version: 4, name: 'tunnel-ssh-options' },
     ]);
   });
 });
@@ -38,6 +39,41 @@ describe('saved tunnels', () => {
     const db = new MuxusDatabase(':memory:');
     database = db;
     expect(() => db.saveTunnel({ target: 'web', type: 'local', bindPort: 8080 })).toThrow(/targetHost/);
+  });
+
+  it('persists a tunnel-owned SSH profile without credentials', () => {
+    database = new MuxusDatabase(':memory:');
+    const created = database.saveTunnel({
+      name: 'Private database',
+      target: 'db.internal',
+      sshOptions: {
+        user: 'deploy',
+        port: 2222,
+        identityFiles: ['~/.ssh/work_ed25519'],
+        identitiesOnly: true,
+        proxyJump: ['bastion', 'ops@relay.example.com:2200'],
+      },
+      type: 'local',
+      bindPort: 5432,
+      targetHost: 'localhost',
+      targetPort: 5432,
+    });
+
+    expect(created.sshOptions).toEqual({
+      user: 'deploy',
+      port: 2222,
+      identityFiles: ['~/.ssh/work_ed25519'],
+      identitiesOnly: true,
+      proxyJump: ['bastion', 'ops@relay.example.com:2200'],
+    });
+
+    const switchedToHost = database.saveTunnel({
+      id: created.id,
+      target: 'database-config-alias',
+      type: 'dynamic',
+      bindPort: 1080,
+    });
+    expect(switchedToHost.sshOptions).toBeUndefined();
   });
 });
 

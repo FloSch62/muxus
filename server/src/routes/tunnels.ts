@@ -4,11 +4,24 @@ import type { TunnelRecord, TunnelsResponse } from '@muxus/shared';
 import type { AppContext } from '../app.js';
 import { sendError } from '../util/errors.js';
 
+const sshOptionsSchema = z
+  .object({
+    user: z.string().trim().min(1).max(200).optional(),
+    port: z.number().int().min(1).max(65535).optional(),
+    identityFiles: z.array(z.string().trim().min(1).max(4096)).max(32).optional(),
+    identitiesOnly: z.boolean().optional(),
+    forwardAgent: z.boolean().optional(),
+    proxyJump: z.array(z.string().trim().min(1).max(500)).max(8).optional(),
+    passwordOnly: z.boolean().optional(),
+  })
+  .strict();
+
 const tunnelSchema = z
   .object({
     id: z.string().min(1).optional(),
     name: z.string().max(200).optional(),
-    target: z.string().min(1).max(500),
+    target: z.string().trim().min(1).max(500),
+    sshOptions: sshOptionsSchema.optional(),
     type: z.enum(['local', 'remote', 'dynamic']),
     bindPort: z.number().int().min(1).max(65535),
     targetHost: z.string().min(1).max(500).optional(),

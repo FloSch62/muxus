@@ -27,6 +27,7 @@ import {
   type TransportLease,
 } from './connection-leases.js';
 import {
+  expandIdentityPath,
   listHosts,
   loadConfigDocument,
   parseHostSpec,
@@ -155,7 +156,8 @@ export class SshConnectionManager {
     const target = chain[chain.length - 1]!;
     const client = clients[clients.length - 1]!;
     const jumpClients = clients.slice(0, -1);
-    const metadataAlias = findMetadataAlias(doc, target.spec.host);
+    const metadataAlias =
+      profile.useConfig === false ? undefined : findMetadataAlias(doc, target.spec.host);
     const id = nanoid(10);
     const closeListeners = new Set<() => void>();
     let sftpPromise: Promise<SFTPWrapper> | undefined;
@@ -304,7 +306,10 @@ export class SshConnectionManager {
  * hop (each recursively resolved through the config, like the `ssh -W`
  * processes OpenSSH would spawn) and the final target last.
  */
-export function buildChain(doc: ConfigDocument, profile: Pick<SshProfile, 'target' | 'user' | 'port'>): ChainHop[] {
+export function buildChain(
+  doc: ConfigDocument,
+  profile: Omit<SshProfile, 'kind'>,
+): ChainHop[] {
   const chain: ChainHop[] = [];
   const visited = new Set<string>();
 
@@ -312,12 +317,29 @@ export function buildChain(doc: ConfigDocument, profile: Pick<SshProfile, 'targe
     if (depth > MAX_JUMP_DEPTH) throw new Error('ProxyJump chain too deep');
     if (visited.has(spec.host)) throw new Error(`ProxyJump cycle detected at "${spec.host}"`);
     visited.add(spec.host);
-    const resolved = resolveHost(doc, spec.host);
+    const fromConfig = !final || profile.useConfig !== false;
+    const base = fromConfig ? resolveHost(doc, spec.host) : directSettings(spec.host);
+    const user = (final ? profile.user : undefined) ?? spec.user ?? base.user ?? os.userInfo().username;
+    const resolved: ResolvedTarget = final
+      ? {
+          ...base,
+          identityFiles:
+            profile.identityFiles === undefined
+              ? base.identityFiles
+              : profile.identityFiles.map((file) =>
+                  expandIdentityPath(file, { h: base.hostname, r: user }),
+                ),
+          identitiesOnly: profile.identitiesOnly ?? base.identitiesOnly,
+          forwardAgent: profile.forwardAgent ?? base.forwardAgent,
+          proxyJump: profile.proxyJump ?? base.proxyJump,
+          passwordOnly: profile.passwordOnly ?? base.passwordOnly,
+        }
+      : base;
     for (const hopSpec of resolved.proxyJump) walk(parseHostSpec(hopSpec), false, depth + 1);
     chain.push({
       spec,
       resolved,
-      user: (final ? profile.user : undefined) ?? spec.user ?? resolved.user ?? os.userInfo().username,
+      user,
       port: (final ? profile.port : undefined) ?? spec.port ?? resolved.port,
       hopLabel: final ? undefined : spec.host,
     });
@@ -325,6 +347,19 @@ export function buildChain(doc: ConfigDocument, profile: Pick<SshProfile, 'targe
 
   walk(parseHostSpec(profile.target), true, 0);
   return chain;
+}
+
+function directSettings(hostname: string): ResolvedTarget {
+  return {
+    hostname,
+    port: 22,
+    identityFiles: [],
+    identitiesOnly: false,
+    forwardAgent: false,
+    proxyJump: [],
+    forwards: [],
+    passwordOnly: false,
+  };
 }
 
 /** Ad-hoc targets never masquerade as OpenSSH-backed database profiles. */

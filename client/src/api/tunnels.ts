@@ -48,7 +48,12 @@ function startForward(connId: string, tunnel: TunnelRecord): Promise<ForwardInfo
  */
 export async function startTunnel(tunnel: TunnelRecord, handlers: DialHandlers): Promise<ForwardInfo> {
   const { connections } = await apiFetch<ConnectionsResponse>('/api/connections');
-  const existing = connections.find((conn) => conn.target === tunnel.target);
+  // A tunnel-owned profile may deliberately use different keys/jumps than a
+  // live terminal with the same hostname, so only config-backed tunnels reuse.
+  const existing =
+    tunnel.sshOptions === undefined
+      ? connections.find((conn) => conn.target === tunnel.target)
+      : undefined;
   if (existing) {
     try {
       return await startForward(existing.id, tunnel);
@@ -58,7 +63,7 @@ export async function startTunnel(tunnel: TunnelRecord, handlers: DialHandlers):
       if (!(err instanceof ApiError && err.status === 404)) throw err;
     }
   }
-  const dialed = await dialConnection(tunnel.target, handlers);
+  const dialed = await dialConnection(tunnel.target, handlers, tunnel.sshOptions);
   try {
     // The dial lease is released right after; the forward now holds its own.
     return await startForward(dialed.connId, tunnel);

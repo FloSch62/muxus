@@ -67,6 +67,45 @@ describe('buildChain', () => {
     expect(chain[1]).toMatchObject({ user: 'override', port: 2022 });
   });
 
+  it('uses a self-contained final profile while resolving configured jumps', () => {
+    const doc = docOf(
+      [
+        'Host app.internal',
+        '  HostName wrong.example.com',
+        '  User wrong-user',
+        '  IdentityFile ~/.ssh/wrong',
+        '  ProxyJump wrong-hop',
+        '',
+        'Host bastion',
+        '  HostName bastion.example.com',
+        '  User jumpuser',
+      ].join('\n'),
+    );
+    const chain = buildChain(doc, {
+      target: 'app.internal',
+      useConfig: false,
+      user: 'deploy',
+      port: 2222,
+      identityFiles: ['~/.ssh/tunnel_ed25519'],
+      identitiesOnly: true,
+      proxyJump: ['bastion'],
+    });
+
+    expect(chain.map((hop) => hop.resolved.hostname)).toEqual([
+      'bastion.example.com',
+      'app.internal',
+    ]);
+    expect(chain[0]).toMatchObject({ user: 'jumpuser', port: 22 });
+    expect(chain[1]).toMatchObject({ user: 'deploy', port: 2222 });
+    expect(chain[1]!.resolved).toMatchObject({
+      identitiesOnly: true,
+      proxyJump: ['bastion'],
+    });
+    expect(chain[1]!.resolved.identityFiles[0]).toMatch(
+      /[\\/]\.ssh[\\/]tunnel_ed25519$/,
+    );
+  });
+
   it('parses ad-hoc user@host:port targets', () => {
     const doc = docOf('');
     const chain = buildChain(doc, { target: 'root@203.0.113.7:2222' });

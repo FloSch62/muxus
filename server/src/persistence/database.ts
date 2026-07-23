@@ -111,6 +111,14 @@ const MIGRATIONS = [
       ALTER TABLE connection_profiles ADD COLUMN sort_order INTEGER;
     `,
   },
+  {
+    version: 4,
+    name: 'tunnel-ssh-options',
+    sql: `
+      ALTER TABLE tunnels
+        ADD COLUMN ssh_options_json TEXT CHECK(ssh_options_json IS NULL OR json_valid(ssh_options_json));
+    `,
+  },
 ] as const;
 
 export interface OpenSshMetadata {
@@ -468,7 +476,7 @@ export class MuxusDatabase {
   listTunnels(): TunnelRecord[] {
     return this.db
       .prepare(`
-        SELECT id, name, target, type, bind_port, target_host, target_port, created_at, updated_at
+        SELECT id, name, target, ssh_options_json, type, bind_port, target_host, target_port, created_at, updated_at
         FROM tunnels
         ORDER BY COALESCE(NULLIF(name, ''), target) COLLATE NOCASE, created_at
       `)
@@ -478,6 +486,7 @@ export class MuxusDatabase {
 
   saveTunnel(input: TunnelInput): TunnelRecord {
     requireNonEmpty(input.target, 'target');
+    assertSecretFree(input.sshOptions, 'tunnel.sshOptions');
     const dynamic = input.type === 'dynamic';
     if (!dynamic && (!input.targetHost?.trim() || !input.targetPort)) {
       throw new Error('targetHost and targetPort are required for local/remote tunnels');
@@ -485,11 +494,12 @@ export class MuxusDatabase {
     const id = input.id ?? nanoid();
     this.db
       .prepare(`
-        INSERT INTO tunnels(id, name, target, type, bind_port, target_host, target_port)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO tunnels(id, name, target, ssh_options_json, type, bind_port, target_host, target_port)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           target = excluded.target,
+          ssh_options_json = excluded.ssh_options_json,
           type = excluded.type,
           bind_port = excluded.bind_port,
           target_host = excluded.target_host,
@@ -500,6 +510,7 @@ export class MuxusDatabase {
         id,
         input.name?.trim() || null,
         input.target.trim(),
+        input.sshOptions === undefined ? null : JSON.stringify(input.sshOptions),
         input.type,
         input.bindPort,
         dynamic ? null : input.targetHost!.trim(),
@@ -507,7 +518,7 @@ export class MuxusDatabase {
       );
     const row = this.db
       .prepare(`
-        SELECT id, name, target, type, bind_port, target_host, target_port, created_at, updated_at
+        SELECT id, name, target, ssh_options_json, type, bind_port, target_host, target_port, created_at, updated_at
         FROM tunnels WHERE id = ?
       `)
       .get(id)!;
@@ -588,10 +599,15 @@ type SqlRow = Record<string, SQLOutputValue>;
 
 function tunnelFromRow(row: SqlRow): TunnelRecord {
   const type = String(row.type) as ForwardType;
+  const sshOptions =
+    typeof row.ssh_options_json === 'string'
+      ? (JSON.parse(row.ssh_options_json) as TunnelRecord['sshOptions'])
+      : undefined;
   return {
     id: String(row.id),
     name: optionalString(row.name),
     target: String(row.target),
+    sshOptions,
     type,
     bindPort: Number(row.bind_port),
     targetHost: type === 'dynamic' ? undefined : String(row.target_host),

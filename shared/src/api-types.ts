@@ -309,8 +309,15 @@ export interface TunnelRecord {
   id: string;
   /** Display name; falls back to the rule description in the UI. */
   name?: string;
-  /** SSH target — config alias or "[user@]host[:port]", dialed like `ssh <target>`. */
+  /** SSH target — a config alias when sshOptions is absent, otherwise a hostname. */
   target: string;
+  /**
+   * Present for a tunnel-owned connection profile. Absent means "resolve this
+   * target from OpenSSH config". Passwords and passphrases are never stored.
+   * An empty object is meaningful: it selects an ad-hoc connection using the
+   * default SSH agent/key discovery without inheriting an alias's settings.
+   */
+  sshOptions?: TunnelSshOptions;
   type: ForwardType;
   bindPort: number;
   targetHost?: string;
@@ -324,10 +331,24 @@ export interface TunnelInput {
   id?: string;
   name?: string;
   target: string;
+  sshOptions?: TunnelSshOptions;
   type: ForwardType;
   bindPort: number;
   targetHost?: string;
   targetPort?: number;
+}
+
+/** Safe-to-persist SSH settings owned by a saved tunnel. */
+export interface TunnelSshOptions {
+  user?: string;
+  port?: number;
+  identityFiles?: string[];
+  identitiesOnly?: boolean;
+  forwardAgent?: boolean;
+  /** Ordered ProxyJump specs: config aliases or "[user@]host[:port]". */
+  proxyJump?: string[];
+  /** Skip public keys and prompt for password/keyboard-interactive auth. */
+  passwordOnly?: boolean;
 }
 
 export interface TunnelsResponse {

@@ -23,6 +23,10 @@ describe('sessionProfileSchema', () => {
       target: 'web',
       port: 2222,
       user: 'alice',
+      useConfig: false,
+      identityFiles: ['~/.ssh/work_ed25519'],
+      identitiesOnly: true,
+      proxyJump: ['bastion', 'ops@relay:2200'],
       term: 'xterm-kitty',
     });
     expect(parsed.success).toBe(true);
@@ -36,6 +40,23 @@ describe('sessionProfileSchema', () => {
   it('rejects out-of-range ports', () => {
     expect(sessionProfileSchema.safeParse({ kind: 'ssh', target: 'x', port: 0 }).success).toBe(false);
     expect(sessionProfileSchema.safeParse({ kind: 'ssh', target: 'x', port: 65536 }).success).toBe(false);
+  });
+
+  it('bounds tunnel-owned SSH configuration', () => {
+    expect(
+      sessionProfileSchema.safeParse({
+        kind: 'ssh',
+        target: 'x',
+        proxyJump: Array.from({ length: 9 }, (_, index) => `jump-${index}`),
+      }).success,
+    ).toBe(false);
+    expect(
+      sessionProfileSchema.safeParse({
+        kind: 'ssh',
+        target: 'x',
+        identityFiles: [''],
+      }).success,
+    ).toBe(false);
   });
 });
 
