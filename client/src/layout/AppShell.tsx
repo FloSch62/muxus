@@ -183,10 +183,9 @@ function PaneView({
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        boxShadow: focused ? (theme) => `inset 0 0 0 1px ${theme.palette.primary.main}` : undefined,
       }}
     >
-      <TabStrip paneId={pane.id} />
+      <TabStrip paneId={pane.id} focused={focused} />
       <Box sx={{ flex: 1, display: 'flex', minHeight: 0 }}>
         <Box sx={{ flex: 1, minWidth: 0, position: 'relative' }}>
           {paneTabs.map((tab) => {

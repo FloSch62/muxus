@@ -16,6 +16,7 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
+import { alpha } from '@mui/material/styles';
 import AddIcon from '@mui/icons-material/Add';
 import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
@@ -40,7 +41,7 @@ const statusDot: Record<TabStatus, 'warning' | 'success' | 'error'> = {
 const TAB_FLAG_COLORS = ['#ef5350', '#ffa726', '#ffee58', '#66bb6a', '#26c6da', '#42a5f5', '#ab47bc', '#ec407a'];
 
 /** Browser-style terminal tab strip scoped to one split pane. */
-export function TabStrip({ paneId }: { paneId: string }) {
+export function TabStrip({ paneId, focused }: { paneId: string; focused: boolean }) {
   const allTabs = useTabsStore((s) => s.tabs);
   const tabs = allTabs.filter((tab) => tab.paneId === paneId);
   const activeId = useTabsStore((s) => findPane(s.root, paneId)?.activeTabId ?? null);
@@ -80,6 +81,12 @@ export function TabStrip({ paneId }: { paneId: string }) {
         borderColor: 'divider',
         overflowX: 'auto',
         scrollbarWidth: 'none',
+        transition: (theme) => theme.transitions.create('border-color', {
+          duration: theme.transitions.duration.shortest,
+        }),
+        ...(focused && {
+          borderBottomColor: (theme) => alpha(theme.palette.text.primary, 0.18),
+        }),
       }}
       onPointerDown={() => focusPane(paneId)}
     >
@@ -108,12 +115,13 @@ export function TabStrip({ paneId }: { paneId: string }) {
               setRenameValue(tab.title);
               setRenaming(tab);
             }}
-            sx={{
+            sx={(theme) => ({
               alignItems: 'center',
               gap: 0.75,
               px: 1.25,
               minWidth: 0,
               maxWidth: 220,
+              position: 'relative',
               cursor: 'pointer',
               userSelect: 'none',
               borderRight: 1,
@@ -122,20 +130,51 @@ export function TabStrip({ paneId }: { paneId: string }) {
               borderTopColor: tab.color ?? 'transparent',
               bgcolor: active ? 'background.default' : 'transparent',
               borderBottom: active ? 'none' : undefined,
+              backgroundImage: active && focused
+                ? `linear-gradient(180deg, ${alpha(theme.palette.primary.main, 0.1)}, transparent 72%)`
+                : 'none',
+              transition: theme.transitions.create(['background-color', 'color'], {
+                duration: theme.transitions.duration.shortest,
+              }),
+              '&::after': {
+                content: '""',
+                position: 'absolute',
+                left: 10,
+                right: 10,
+                bottom: 0,
+                height: 2,
+                borderRadius: '2px 2px 0 0',
+                bgcolor: 'primary.main',
+                boxShadow: `0 -1px 8px ${alpha(theme.palette.primary.main, 0.32)}`,
+                opacity: active && focused ? 1 : 0,
+                transform: active && focused ? 'scaleX(1)' : 'scaleX(0.55)',
+                transition: theme.transitions.create(['opacity', 'transform'], {
+                  duration: theme.transitions.duration.shortest,
+                }),
+              },
+              '&:focus-visible': {
+                outline: 'none',
+                boxShadow: `inset 0 0 0 1px ${alpha(theme.palette.text.primary, 0.35)}`,
+              },
               '&:hover .muxus-tab-close': { visibility: 'visible' },
-            }}
+            })}
           >
             {tab.profile === null ? (
-              <AddIcon sx={{ fontSize: 15, color: 'text.secondary' }} />
+              <AddIcon sx={{ fontSize: 15, color: active && focused ? 'primary.main' : 'text.secondary' }} />
             ) : tab.profile.kind === 'local' ? (
-              <TerminalIcon sx={{ fontSize: 15, color: 'text.secondary' }} />
+              <TerminalIcon sx={{ fontSize: 15, color: active && focused ? 'primary.main' : 'text.secondary' }} />
             ) : (
-              <DnsOutlinedIcon sx={{ fontSize: 15, color: 'text.secondary' }} />
+              <DnsOutlinedIcon sx={{ fontSize: 15, color: active && focused ? 'primary.main' : 'text.secondary' }} />
             )}
             <Typography
               variant="body2"
               noWrap
-              sx={{ fontWeight: active ? 600 : 500, color: active ? 'text.primary' : 'text.secondary', flex: 1, minWidth: 0 }}
+              sx={{
+                fontWeight: active && focused ? 600 : 500,
+                color: active ? 'text.primary' : 'text.secondary',
+                flex: 1,
+                minWidth: 0,
+              }}
             >
               {tab.title}
             </Typography>
