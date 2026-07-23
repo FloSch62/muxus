@@ -1,4 +1,4 @@
-import { openLocalTerminal, requestCloseTabs } from './session-actions.js';
+import { openEmptyTab, requestCloseTabs } from './session-actions.js';
 import { usePrefsStore } from './state/prefs.js';
 import { useTabsStore } from './state/tabs.js';
 
@@ -13,7 +13,7 @@ export function installShortcuts(): () => void {
     const mod = e.ctrlKey || e.metaKey;
     if (mod && e.shiftKey && !e.altKey && e.code === 'KeyT') {
       e.preventDefault();
-      openLocalTerminal();
+      openEmptyTab();
       return;
     }
     if (mod && e.shiftKey && !e.altKey && e.code === 'KeyF') {

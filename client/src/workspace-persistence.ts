@@ -5,7 +5,7 @@ import type {
   WorkspaceSummary,
 } from '@muxus/shared';
 import { apiFetch, authToken } from './api/http.js';
-import { useTabsStore } from './state/tabs.js';
+import { useTabsStore, type SessionTab } from './state/tabs.js';
 import { serializeWorkspace } from './state/workspace-layout.js';
 
 const SAVE_DELAY_MS = 350;
@@ -13,7 +13,8 @@ const RETRY_DELAY_MS = 2_000;
 
 function currentLayout(): WorkspaceLayoutV1 {
   const { root, tabs, activePaneId } = useTabsStore.getState();
-  return serializeWorkspace(root, tabs, activePaneId);
+  const sessionTabs = tabs.filter((tab): tab is SessionTab => tab.profile !== null);
+  return serializeWorkspace(root, sessionTabs, activePaneId);
 }
 
 /**

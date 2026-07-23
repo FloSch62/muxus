@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Autocomplete from '@mui/material/Autocomplete';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
@@ -13,6 +14,7 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import CheckCircleOutlinedIcon from '@mui/icons-material/CheckCircleOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
+import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import type { SshKeysResponse } from '@muxus/shared';
@@ -124,6 +126,24 @@ export function AuthSection({
               />
             )}
           />
+          {window.muxusDesktop && (
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+              <Typography variant="caption" color="text.secondary">
+                Key stored elsewhere?
+              </Typography>
+              <Button
+                variant="outlined"
+                startIcon={<FolderOpenOutlinedIcon />}
+                onClick={() => {
+                  void window.muxusDesktop?.selectPrivateKey().then((path) => {
+                    if (path) addKey(path);
+                  });
+                }}
+              >
+                Browse files…
+              </Button>
+            </Stack>
+          )}
           <FormControlLabel
             control={<Switch size="small" checked={draft.identitiesOnly} onChange={(e) => set({ identitiesOnly: e.target.checked })} />}
             label={<Labeled title="IdentitiesOnly" sub="Never offer other agent keys — avoids 'too many authentication failures'" />}

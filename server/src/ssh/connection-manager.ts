@@ -11,6 +11,7 @@ import ssh2, {
   type ClientChannel,
   type ConnectConfig,
   type ParsedKey,
+  type PseudoTtyOptions,
   type SFTPWrapper,
 } from 'ssh2';
 
@@ -79,6 +80,15 @@ const MAX_JUMP_DEPTH = 8;
 const MAX_PASSWORD_ATTEMPTS = 3;
 const MAX_PASSPHRASE_ATTEMPTS = 3;
 const DEFAULT_IDENTITY_NAMES = ['id_ed25519', 'id_ecdsa', 'id_rsa', 'id_ed25519_sk', 'id_ecdsa_sk'];
+
+/**
+ * xterm sends DEL for Backspace. Advertising the same erase character while
+ * requesting the remote PTY prevents DEL from being echoed as visible input
+ * (and advancing the cursor) on hosts with a different login default.
+ */
+export function terminalPtyOptions(cols: number, rows: number, term: string): PseudoTtyOptions {
+  return { term, cols, rows, modes: { VERASE: 0x7f } };
+}
 
 /** One node of the dial plan: the final target or a ProxyJump hop before it. */
 export interface ChainHop {
@@ -163,7 +173,9 @@ export class SshConnectionManager {
       configForwards: target.resolved.forwards,
       shell: (cols, rows, term) =>
         new Promise((resolve, reject) => {
-          client.shell({ term, cols, rows }, (err, stream) => (err ? reject(err) : resolve(stream)));
+          client.shell(terminalPtyOptions(cols, rows, term), (err, stream) =>
+            err ? reject(err) : resolve(stream),
+          );
         }),
       sftp: () => {
         // One SFTP channel per connection, shared by every file operation.

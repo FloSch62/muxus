@@ -39,7 +39,7 @@ import { copyToClipboard, readFromClipboard } from '../clipboard.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { showToast } from '../state/toast.js';
 import { terminalFontStack, usePrefsStore } from '../state/prefs.js';
-import { useTabsStore, type TerminalTab } from '../state/tabs.js';
+import { useTabsStore, type SessionTab } from '../state/tabs.js';
 import { KittyApcExtractor, type StreamPart } from '../terminal/apc-stream.js';
 import { KittyGraphicsEngine } from '../terminal/kitty-graphics.js';
 import { KittyKeyboardHandler } from '../terminal/kitty-keyboard.js';
@@ -116,7 +116,7 @@ function bufferText(term: Terminal): string {
   return lines.length ? `${lines.join('\n')}\n` : '';
 }
 
-export default function TerminalViewImpl({ tab, active }: { tab: TerminalTab; active: boolean }) {
+export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; active: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -505,7 +505,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: TerminalTab; ac
   };
 
   return (
-    <Box sx={{ height: '100%', p: 1, pt: 0.75, position: 'relative' }}>
+    <Box sx={{ height: '100%', p: 1, pt: 0.75, minHeight: 0, position: 'relative' }}>
       <Box
         ref={containerRef}
         onContextMenu={onContextMenu}
@@ -527,7 +527,10 @@ export default function TerminalViewImpl({ tab, active }: { tab: TerminalTab; ac
           spacing={1.5}
           sx={{
             position: 'absolute',
-            inset: 8,
+            top: theme.spacing(0.75),
+            right: theme.spacing(1),
+            bottom: theme.spacing(1),
+            left: theme.spacing(1),
             alignItems: 'center',
             justifyContent: 'center',
             bgcolor: 'rgba(22, 22, 30, 0.72)',
@@ -552,8 +555,8 @@ export default function TerminalViewImpl({ tab, active }: { tab: TerminalTab; ac
           sx={{
             position: 'absolute',
             zIndex: 6,
-            top: 12,
-            right: 18,
+            top: 11,
+            right: 13,
             display: 'flex',
             alignItems: 'center',
             gap: 0.25,

@@ -193,9 +193,13 @@ function PaneView({
             const visible = tab.id === pane.activeTabId;
             return (
               <Box key={tab.id} sx={{ height: '100%', display: visible ? 'block' : 'none' }}>
-                <ErrorBoundary label="This terminal">
-                  <TerminalView tab={tab} active={visible && focused} />
-                </ErrorBoundary>
+                {tab.profile ? (
+                  <ErrorBoundary label="This terminal">
+                    <TerminalView tab={tab} active={visible && focused} />
+                  </ErrorBoundary>
+                ) : (
+                  <EmptyPane onAddHost={onAddHost} replaceTabId={tab.id} />
+                )}
               </Box>
             );
           })}

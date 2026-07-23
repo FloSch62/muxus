@@ -21,12 +21,12 @@ import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
 import MenuIcon from '@mui/icons-material/Menu';
-import MoreVertIcon from '@mui/icons-material/MoreVert';
 import KeyboardOutlinedIcon from '@mui/icons-material/KeyboardOutlined';
 import SearchOutlinedIcon from '@mui/icons-material/SearchOutlined';
 import SelectAllIcon from '@mui/icons-material/SelectAll';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
+import TerminalIcon from '@mui/icons-material/Terminal';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import { useForwards } from '../api/queries.js';
@@ -55,6 +55,7 @@ export const TopBar = memo(function TopBar() {
   const { data: forwardsData } = useForwards();
   const activeForwards = forwardsData?.forwards.length ?? 0;
   const sshReady = !!activeTab?.connId;
+  const terminalReady = !!activeTab?.profile;
   const [terminalMenu, setTerminalMenu] = useState<HTMLElement | null>(null);
   // Re-render hook so the zoom percentage in the open menu stays current.
   const [, setZoomTick] = useState(0);
@@ -97,13 +98,6 @@ export const TopBar = memo(function TopBar() {
           </Typography>
         </Stack>
         <Box sx={{ flex: 1 }} />
-        {activeTab && (
-          <Tooltip title={`Find in terminal (${HOTKEY_MOD_LABEL}Shift+F)`}>
-            <IconButton size="small" aria-label="Find in terminal" onClick={requestSearch}>
-              <SearchOutlinedIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        )}
         {sshReady && (
           <Tooltip title={activeTab.sftpOpen ? 'Hide file browser' : 'Browse files (SFTP)'}>
             <IconButton
@@ -128,10 +122,10 @@ export const TopBar = memo(function TopBar() {
             </Badge>
           </IconButton>
         </Tooltip>
-        {activeTab && (
+        {terminalReady && (
           <Tooltip title="Terminal actions">
             <IconButton size="small" aria-label="Terminal actions" onClick={(e) => setTerminalMenu(e.currentTarget)}>
-              <MoreVertIcon fontSize="small" />
+              <TerminalIcon fontSize="small" />
             </IconButton>
           </Tooltip>
         )}

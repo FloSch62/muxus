@@ -104,11 +104,19 @@ const MIGRATIONS = [
       ) STRICT;
     `,
   },
+  {
+    version: 3,
+    name: 'host-sort-order',
+    sql: `
+      ALTER TABLE connection_profiles ADD COLUMN sort_order INTEGER;
+    `,
+  },
 ] as const;
 
 export interface OpenSshMetadata {
   profileId: string;
   favorite: boolean;
+  sortOrder?: number;
   displayName?: string;
   group?: string;
   color?: string;
@@ -208,6 +216,7 @@ export class MuxusDatabase {
         profiles.ssh_alias,
         profiles.group_id,
         profiles.favorite,
+        profiles.sort_order,
         profiles.color,
         profiles.icon,
         profiles.last_connected_at,
@@ -271,6 +280,31 @@ export class MuxusDatabase {
         String(current.id),
       );
     return metadataFromRow(this.metadataByAlias.get(alias)!);
+  }
+
+  /**
+   * Persist one complete visual group order. Profiles are created lazily so
+   * even otherwise-unmodified OpenSSH hosts can participate in sorting.
+   */
+  reorderOpenSshHosts(aliases: readonly string[]): void {
+    if (new Set(aliases).size !== aliases.length) throw new Error('host order contains duplicate aliases');
+    for (const alias of aliases) requireNonEmpty(alias, 'alias');
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const update = this.db.prepare(`
+        UPDATE connection_profiles
+        SET sort_order = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `);
+      aliases.forEach((alias, index) => {
+        const profile = this.ensureOpenSshProfile(alias);
+        update.run(index, String(profile.id));
+      });
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
   }
 
   recordOpenSshConnection(alias: string): OpenSshMetadata {
@@ -573,6 +607,7 @@ function metadataFromRow(row: SqlRow): OpenSshMetadata {
   return {
     profileId: String(row.id),
     favorite: Number(row.favorite) === 1,
+    sortOrder: row.sort_order === null || row.sort_order === undefined ? undefined : Number(row.sort_order),
     displayName: name === alias ? undefined : name,
     group: optionalString(row.group_name),
     color: optionalString(row.color),

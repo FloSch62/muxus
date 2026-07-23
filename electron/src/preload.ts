@@ -58,6 +58,10 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   getAppInfo() {
     return ipcRenderer.invoke('muxus:get-app-info');
   },
+  /** Open a native single-file picker and return only the user-selected path. */
+  selectPrivateKey(): Promise<string | undefined> {
+    return ipcRenderer.invoke('muxus:select-private-key');
+  },
   // Fires when the user presses the OS close-window chord (Cmd/Ctrl+W).
   // Returns an unsubscribe. The renderer closes the focused terminal tab; it
   // never closes the window from this chord.

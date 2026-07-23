@@ -49,6 +49,10 @@ const metadataPatchSchema = z
   })
   .refine((patch) => Object.keys(patch).length > 0, 'at least one metadata field is required');
 
+const hostOrderSchema = z.object({
+  aliases: z.array(z.string().min(1)).max(10_000),
+});
+
 /** Live OpenSSH config plus Muxus-owned metadata, editing, and key discovery. */
 export function registerSshRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/ssh/config', (): SshConfigResponse => {
@@ -110,6 +114,23 @@ export function registerSshRoutes(app: FastifyInstance, ctx: AppContext): void {
         return await reply.code(400).send({ message: parsed.error.issues[0]?.message ?? 'invalid metadata payload' });
       }
       return ctx.database.updateOpenSshMetadata(alias, parsed.data satisfies OpenSshMetadataPatch);
+    } catch (err) {
+      return sendError(reply, err);
+    }
+  });
+
+  app.put('/api/ssh/config/order', async (req, reply) => {
+    try {
+      const parsed = hostOrderSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return await reply.code(400).send({ message: parsed.error.issues[0]?.message ?? 'invalid host order' });
+      }
+      const aliases = parsed.data.aliases;
+      if (new Set(aliases).size !== aliases.length) {
+        return await reply.code(400).send({ message: 'host order contains duplicate aliases' });
+      }
+      ctx.database.reorderOpenSshHosts(aliases);
+      return { ok: true };
     } catch (err) {
       return sendError(reply, err);
     }

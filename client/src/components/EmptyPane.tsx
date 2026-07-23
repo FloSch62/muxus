@@ -9,7 +9,14 @@ import TerminalIcon from '@mui/icons-material/Terminal';
 import { openLocalTerminal } from '../session-actions.js';
 import { HostPickerPopover } from './HostPickerPopover.js';
 
-export function EmptyPane({ onAddHost }: { onAddHost: () => void }) {
+export function EmptyPane({
+  onAddHost,
+  replaceTabId,
+}: {
+  onAddHost: () => void;
+  /** When rendered for a blank tab, the chosen session replaces that tab. */
+  replaceTabId?: string;
+}) {
   const [hostPickerAnchor, setHostPickerAnchor] = useState<HTMLElement | null>(null);
 
   return (
@@ -35,7 +42,7 @@ export function EmptyPane({ onAddHost }: { onAddHost: () => void }) {
           title="Local terminal"
           description="This device"
           primary
-          onClick={() => openLocalTerminal()}
+          onClick={() => openLocalTerminal(replaceTabId)}
         />
         <EmptyAction
           icon={<DnsOutlinedIcon />}
@@ -50,7 +57,11 @@ export function EmptyPane({ onAddHost }: { onAddHost: () => void }) {
           onClick={onAddHost}
         />
       </Box>
-      <HostPickerPopover anchorEl={hostPickerAnchor} onClose={() => setHostPickerAnchor(null)} />
+      <HostPickerPopover
+        anchorEl={hostPickerAnchor}
+        onClose={() => setHostPickerAnchor(null)}
+        replaceTabId={replaceTabId}
+      />
     </Stack>
   );
 }

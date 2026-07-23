@@ -339,8 +339,8 @@ export function ForwardingPanel() {
       <Dialog open={!!adhocConn} onClose={() => setAdhocConn(null)} maxWidth="sm" fullWidth>
         <DialogTitle>
           Forward on {adhocConn?.target}
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-            Runs on the live connection; save it as a tunnel to keep it.
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            Belongs to this terminal session; save it as a tunnel to keep it after the terminal closes.
           </Typography>
         </DialogTitle>
         <DialogContent>
@@ -445,7 +445,7 @@ function ConnectionGroup({
             {f.error ? ` — ${f.error}` : ''}
           </Typography>
           {f.origin === 'config' ? (
-            <Tooltip title="Declared in ssh config — started with the session">
+            <Tooltip title="Declared in ssh config — starts and stops with this terminal">
               <Chip size="small" label="config" variant="outlined" sx={{ height: 18, fontSize: 10 }} />
             </Tooltip>
           ) : (

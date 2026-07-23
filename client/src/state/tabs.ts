@@ -13,14 +13,10 @@ import {
 
 export type TabStatus = 'connecting' | 'connected' | 'closed';
 
-export interface TerminalTab {
+interface TabBase {
   id: string;
   paneId: string;
   title: string;
-  profile: SessionProfile;
-  status: TabStatus;
-  /** Restored layouts wait for an explicit reconnect instead of starting a new process. */
-  connectOnMount: boolean;
   /** Live connection id from the server's `ready` (SSH only) — keys SFTP/forwards. */
   connId?: string;
   /** SFTP file panel visible for this tab. */
@@ -31,12 +27,37 @@ export interface TerminalTab {
   color?: string;
 }
 
+export interface SessionTab extends TabBase {
+  profile: SessionProfile;
+  status: TabStatus;
+  /** Restored layouts wait for an explicit reconnect instead of starting a new process. */
+  connectOnMount: boolean;
+}
+
+export interface EmptyTab extends TabBase {
+  profile: null;
+  status: 'idle';
+  connectOnMount: false;
+}
+
+export type TerminalTab = SessionTab | EmptyTab;
+
+type TabUpdate = Partial<{
+  title: string;
+  status: TabStatus;
+  connId: string | undefined;
+  sftpOpen: boolean;
+  color: string | undefined;
+}>;
+
 interface TabsState {
   tabs: TerminalTab[];
   root: PaneNode;
   activePaneId: string;
   activeId: string | null;
   open: (profile: SessionProfile, title: string) => string;
+  openEmpty: () => string;
+  replaceEmpty: (id: string, profile: SessionProfile, title: string) => boolean;
   close: (id: string) => void;
   activate: (id: string) => void;
   focusPane: (paneId: string) => void;
@@ -46,10 +67,7 @@ interface TabsState {
   resizeSplit: (splitId: string, ratio: number) => void;
   requestSearch: () => void;
   restore: (layout: WorkspaceLayoutV1) => void;
-  update: (
-    id: string,
-    patch: Partial<Pick<TerminalTab, 'title' | 'status' | 'connId' | 'sftpOpen' | 'color'>>,
-  ) => void;
+  update: (id: string, patch: TabUpdate) => void;
 }
 
 let nextId = 1;
@@ -86,6 +104,51 @@ export const useTabsStore = create<TabsState>()((set) => ({
       };
     });
     return id;
+  },
+  openEmpty: () => {
+    const id = newId('tab');
+    set((state) => {
+      const pane = findPane(state.root, state.activePaneId) ?? firstPane(state.root);
+      return {
+        tabs: [
+          ...state.tabs,
+          {
+            id,
+            paneId: pane.id,
+            title: 'New tab',
+            profile: null,
+            status: 'idle',
+            connectOnMount: false,
+            sftpOpen: false,
+            searchRequest: 0,
+          },
+        ],
+        root: updatePane(state.root, pane.id, (leaf) => ({ ...leaf, activeTabId: id })),
+        activePaneId: pane.id,
+        activeId: id,
+      };
+    });
+    return id;
+  },
+  replaceEmpty: (id, profile, title) => {
+    let replaced = false;
+    set((state) => ({
+      tabs: state.tabs.map((tab) => {
+        if (tab.id !== id || tab.profile !== null) return tab;
+        replaced = true;
+        return {
+          ...tab,
+          title,
+          profile,
+          status: 'connecting' as const,
+          connectOnMount: true as const,
+          connId: undefined,
+          sftpOpen: false,
+          searchRequest: 0,
+        };
+      }),
+    }));
+    return replaced;
   },
   close: (id) =>
     set((state) => {
@@ -178,7 +241,12 @@ export const useTabsStore = create<TabsState>()((set) => ({
     }),
   update: (id, patch) =>
     set((state) => ({
-      tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, ...patch } : tab)),
+      tabs: state.tabs.map((tab) => {
+        if (tab.id !== id) return tab;
+        if (tab.profile) return { ...tab, ...patch };
+        const { status: _status, connId: _connId, sftpOpen: _sftpOpen, ...emptyPatch } = patch;
+        return { ...tab, ...emptyPatch };
+      }),
     })),
 }));
 

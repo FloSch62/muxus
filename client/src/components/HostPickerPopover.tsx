@@ -24,9 +24,11 @@ import { useUiStore } from '../state/ui.js';
 export function HostPickerPopover({
   anchorEl,
   onClose,
+  replaceTabId,
 }: {
   anchorEl: HTMLElement | null;
   onClose: () => void;
+  replaceTabId?: string;
 }) {
   const { data: config } = useSshConfig();
   const setHostEditor = useUiStore((state) => state.setHostEditor);
@@ -50,7 +52,7 @@ export function HostPickerPopover({
   const connect = (index: number) => {
     const host = visible[index];
     if (!host) return;
-    connectHost(host);
+    connectHost(host, replaceTabId);
     onClose();
   };
 
@@ -115,7 +117,7 @@ export function HostPickerPopover({
               <ListItemButton
                 key={`${host.file}:${host.alias}`}
                 onClick={() => {
-                  connectHost(host);
+                  connectHost(host, replaceTabId);
                   onClose();
                 }}
               >

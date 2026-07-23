@@ -12,7 +12,7 @@ import { HOTKEY_MOD_LABEL } from '../platform.js';
 import { useUiStore } from '../state/ui.js';
 
 const SHORTCUTS: Array<[string, string]> = [
-  ['New local terminal', `${HOTKEY_MOD_LABEL}Shift+T`],
+  ['New tab', `${HOTKEY_MOD_LABEL}Shift+T`],
   ['Find in terminal', `${HOTKEY_MOD_LABEL}Shift+F`],
   ['Copy / Paste', `${HOTKEY_MOD_LABEL}Shift+C / ${HOTKEY_MOD_LABEL}Shift+V`],
   ['Select all', `${HOTKEY_MOD_LABEL}Shift+A`],

@@ -44,6 +44,7 @@ export class ForwardManager {
       targetHost: req.targetHost,
       targetPort: req.targetPort,
       origin,
+      lifecycle: req.tunnelId ? 'independent' : 'session',
       status: 'active',
       tunnelId: req.tunnelId,
     };
@@ -89,17 +90,18 @@ export class ForwardManager {
     const active = this.forwards.get(id);
     if (!active) return undefined;
     active.info.tunnelId = tunnelId;
+    active.info.lifecycle = 'independent';
     return active.info;
   }
 
-  stopForConnection(connId: string): void {
+  /** Stop forwards owned by the terminal session while preserving saved/manual tunnels. */
+  stopSessionForConnection(connId: string): void {
     for (const [id, active] of this.forwards) {
-      if (active.info.connId === connId) {
+      if (active.info.connId === connId && active.info.lifecycle === 'session') {
         this.forwards.delete(id);
         active.stop();
       }
     }
-    this.remoteDispatch.delete(connId);
   }
 
   stopAll(): void {

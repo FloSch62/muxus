@@ -14,6 +14,7 @@ describe('MuxusDatabase migrations', () => {
     expect(database.appliedMigrations()).toEqual([
       { version: 1, name: 'foundation' },
       { version: 2, name: 'tunnels' },
+      { version: 3, name: 'host-sort-order' },
     ]);
   });
 });
@@ -89,6 +90,19 @@ describe('hybrid OpenSSH metadata', () => {
       favorite: true,
       connectCount: 1,
     });
+  });
+
+  it('persists a complete drag order for otherwise-unmodified OpenSSH hosts', () => {
+    database = new MuxusDatabase(':memory:');
+
+    database.reorderOpenSshHosts(['gamma', 'alpha', 'beta']);
+
+    expect([...database.openSshMetadata(['alpha', 'beta', 'gamma'])]).toEqual([
+      ['alpha', expect.objectContaining({ sortOrder: 1 })],
+      ['beta', expect.objectContaining({ sortOrder: 2 })],
+      ['gamma', expect.objectContaining({ sortOrder: 0 })],
+    ]);
+    expect(() => database!.reorderOpenSshHosts(['alpha', 'alpha'])).toThrow(/duplicate/);
   });
 });
 

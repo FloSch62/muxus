@@ -2,7 +2,11 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { buildChain, findMetadataAlias } from '../../../server/src/ssh/connection-manager.js';
+import {
+  buildChain,
+  findMetadataAlias,
+  terminalPtyOptions,
+} from '../../../server/src/ssh/connection-manager.js';
 import { loadConfigDocument } from '../../../server/src/ssh/ssh-config.js';
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'muxus-chain-'));
@@ -90,5 +94,16 @@ describe('findMetadataAlias', () => {
     expect(findMetadataAlias(doc, 'prod')).toBe('prod');
     expect(findMetadataAlias(doc, 'web.internal')).toBeUndefined();
     expect(findMetadataAlias(doc, '203.0.113.11')).toBeUndefined();
+  });
+});
+
+describe('terminalPtyOptions', () => {
+  it('negotiates DEL as the remote erase character to match xterm Backspace', () => {
+    expect(terminalPtyOptions(132, 42, 'xterm-256color')).toEqual({
+      cols: 132,
+      rows: 42,
+      term: 'xterm-256color',
+      modes: { VERASE: 0x7f },
+    });
   });
 });

@@ -25,7 +25,7 @@ import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutli
 import HorizontalSplitOutlinedIcon from '@mui/icons-material/HorizontalSplitOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined';
-import { duplicateTab, openLocalTerminal, requestCloseTabs } from '../session-actions.js';
+import { duplicateTab, openEmptyTab, requestCloseTabs } from '../session-actions.js';
 import { useTabsStore, type TabStatus, type TerminalTab } from '../state/tabs.js';
 import { findPane } from '../state/workspace-layout.js';
 import { layout, statusTextColor } from '../theme.js';
@@ -125,7 +125,13 @@ export function TabStrip({ paneId }: { paneId: string }) {
               '&:hover .muxus-tab-close': { visibility: 'visible' },
             }}
           >
-            {tab.profile.kind === 'local' ? <TerminalIcon sx={{ fontSize: 15, color: 'text.secondary' }} /> : <DnsOutlinedIcon sx={{ fontSize: 15, color: 'text.secondary' }} />}
+            {tab.profile === null ? (
+              <AddIcon sx={{ fontSize: 15, color: 'text.secondary' }} />
+            ) : tab.profile.kind === 'local' ? (
+              <TerminalIcon sx={{ fontSize: 15, color: 'text.secondary' }} />
+            ) : (
+              <DnsOutlinedIcon sx={{ fontSize: 15, color: 'text.secondary' }} />
+            )}
             <Typography
               variant="body2"
               noWrap
@@ -133,15 +139,17 @@ export function TabStrip({ paneId }: { paneId: string }) {
             >
               {tab.title}
             </Typography>
-            <Box
-              sx={(theme) => ({
-                width: 7,
-                height: 7,
-                borderRadius: '50%',
-                flexShrink: 0,
-                bgcolor: statusTextColor(statusDot[tab.status])(theme),
-              })}
-            />
+            {tab.status !== 'idle' && (
+              <Box
+                sx={(theme) => ({
+                  width: 7,
+                  height: 7,
+                  borderRadius: '50%',
+                  flexShrink: 0,
+                  bgcolor: statusTextColor(statusDot[tab.status])(theme),
+                })}
+              />
+            )}
             <IconButton
               className="muxus-tab-close"
               size="small"
@@ -157,13 +165,13 @@ export function TabStrip({ paneId }: { paneId: string }) {
           </Stack>
         );
       })}
-      <Tooltip title="New local terminal (Ctrl+Shift+T)">
+      <Tooltip title="New tab (Ctrl+Shift+T)">
         <IconButton
           size="small"
-          aria-label="New local terminal"
+          aria-label="New tab"
           onClick={() => {
             focusPane(paneId);
-            openLocalTerminal();
+            openEmptyTab();
           }}
           sx={{ alignSelf: 'center', ml: 0.5 }}
         >
@@ -225,6 +233,7 @@ export function TabStrip({ paneId }: { paneId: string }) {
           <ListItemText>Rename tab</ListItemText>
         </MenuItem>
         <MenuItem
+          disabled={!menuTab?.profile}
           onClick={() => {
             if (menuTab) duplicateTab(menuTab.id);
             setMenu(null);

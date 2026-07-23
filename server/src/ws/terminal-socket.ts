@@ -163,6 +163,10 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
   // --- SSH ---
   const terminalLease = await ctx.connections.connect(profile, io);
   const conn = terminalLease.connection;
+  // Config and ad-hoc forwards started on this terminal's connection belong
+  // to the terminal. Saved/manual tunnels are marked independent and keep
+  // their own lease when this socket closes.
+  socket.once('close', () => ctx.forwards.stopSessionForConnection(conn.id));
 
   // Forwards declared on the host in ssh config start with the session,
   // exactly like `ssh` honoring LocalForward/RemoteForward/DynamicForward.

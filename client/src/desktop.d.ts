@@ -15,6 +15,8 @@ declare global {
       };
       setTitleBarOverlay(options: { color: string; symbolColor: string }): void;
       getAppInfo(): Promise<AppInfo | undefined>;
+      /** Choose an SSH private key with the operating system's file picker. */
+      selectPrivateKey(): Promise<string | undefined>;
       /** Subscribe to the OS close-window chord (Cmd/Ctrl+W); returns unsubscribe. */
       onCloseTab(callback: () => void): () => void;
       /** Subscribe to the tab-cycling chords (Ctrl+Tab & friends); backwards=true cycles left. */

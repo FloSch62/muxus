@@ -80,6 +80,8 @@ export interface OpenSshProfileMetadata {
   /** Stable local ID survives an OpenSSH alias rename. */
   profileId: string;
   favorite: boolean;
+  /** User-defined position inside the host's current sidebar group. */
+  sortOrder?: number;
   displayName?: string;
   /** Muxus-only organizational group; does not alter the OpenSSH config file. */
   group?: string;
@@ -260,6 +262,11 @@ export interface ForwardInfo {
   targetPort?: number;
   /** config = auto-started from a *Forward line in ssh config; manual = added at runtime. */
   origin: 'config' | 'manual';
+  /**
+   * Session forwards belong to the terminal that created the connection and
+   * stop with it. Independent forwards are explicitly saved/manual tunnels.
+   */
+  lifecycle: 'session' | 'independent';
   status: 'active' | 'error';
   error?: string;
   /** Saved tunnel this forward realizes, when it was started from one. */

@@ -73,6 +73,27 @@ describe('pane tree operations', () => {
 });
 
 describe('workspace serialization', () => {
+  it('does not persist a blank chooser as the active terminal', () => {
+    const layout = serializeWorkspace(
+      { id: 'pane', type: 'pane', activeTabId: 'blank-tab' },
+      [
+        {
+          id: 'session-tab',
+          paneId: 'pane',
+          title: 'Production',
+          profile: { kind: 'ssh', target: 'production' },
+        },
+      ],
+      'pane',
+    );
+
+    expect(layout.root).toMatchObject({
+      type: 'pane',
+      activeTabId: 'session-tab',
+      tabs: [{ id: 'session-tab' }],
+    });
+  });
+
   it('restores layout only and requires explicit terminal reconnection', () => {
     const layout = serializeWorkspace(
       root,

@@ -4,7 +4,7 @@ import { groupHosts } from '../../../client/src/host-organization.js';
 
 const host = (
   alias: string,
-  options: { file?: string; group?: string; favorite?: boolean; displayName?: string } = {},
+  options: { file?: string; group?: string; favorite?: boolean; displayName?: string; sortOrder?: number } = {},
 ): SshHostEntry => ({
   alias,
   aliases: [alias],
@@ -21,12 +21,13 @@ const host = (
     passwordOnly: false,
   },
   metadata:
-    options.group || options.favorite || options.displayName
+    options.group || options.favorite || options.displayName || options.sortOrder !== undefined
       ? {
           profileId: alias,
           favorite: options.favorite ?? false,
           group: options.group,
           displayName: options.displayName,
+          sortOrder: options.sortOrder,
           connectCount: 0,
         }
       : undefined,
@@ -61,5 +62,19 @@ describe('host organization', () => {
 
     expect(groupHosts(hosts, [], undefined, 'production')[0]?.hosts[0]?.alias).toBe('db-01');
     expect(groupHosts(hosts, [], undefined, 'primary')[0]?.hosts[0]?.alias).toBe('db-01');
+  });
+
+  it('uses a persisted drag order ahead of favorites and display names', () => {
+    const groups = groupHosts(
+      [
+        host('alpha', { favorite: true, sortOrder: 2 }),
+        host('bravo', { sortOrder: 0 }),
+        host('charlie', { sortOrder: 1 }),
+      ],
+      ['/home/test/.ssh/config'],
+      '/home/test/.ssh/config',
+    );
+
+    expect(groups[0]?.hosts.map((entry) => entry.alias)).toEqual(['bravo', 'charlie', 'alpha']);
   });
 });

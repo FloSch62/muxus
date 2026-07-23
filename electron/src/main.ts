@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import {
   app,
   BrowserWindow,
+  dialog,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
   ipcMain,
@@ -317,6 +318,17 @@ ipcMain.on('muxus:state:remove-item', (event, name: unknown) => {
 ipcMain.handle('muxus:get-app-info', (event): AppInfo | undefined => {
   if (!isMainWindowSender(event)) return undefined;
   return { name: app.getName(), version: app.getVersion() };
+});
+
+ipcMain.handle('muxus:select-private-key', async (event): Promise<string | undefined> => {
+  if (!isMainWindowSender(event) || !mainWindow) return undefined;
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choose SSH private key',
+    defaultPath: path.join(app.getPath('home'), '.ssh'),
+    buttonLabel: 'Use key',
+    properties: ['openFile', 'showHiddenFiles'],
+  });
+  return result.canceled ? undefined : result.filePaths[0];
 });
 
 if (!app.requestSingleInstanceLock()) {

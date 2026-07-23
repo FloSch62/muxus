@@ -148,6 +148,9 @@ export function serializeWorkspace(
       };
     }
     const paneTabs = byPane.get(node.id) ?? [];
+    const activeTabId = paneTabs.some((tab) => tab.id === node.activeTabId)
+      ? (node.activeTabId ?? undefined)
+      : paneTabs[0]?.id;
     return {
       id: node.id,
       type: 'pane',
@@ -160,7 +163,7 @@ export function serializeWorkspace(
         color: tab.color,
         offerReconnect: true,
       })),
-      activeTabId: node.activeTabId ?? undefined,
+      activeTabId,
     };
   };
   return { version: 1, root: serializeNode(root), activePaneId };

@@ -3,31 +3,51 @@ import { usePrefsStore } from './state/prefs.js';
 import { useTabsStore } from './state/tabs.js';
 import { useUiStore } from './state/ui.js';
 
+function replaceActiveEmpty(
+  profile: SessionProfile,
+  title: string,
+  requestedTabId?: string,
+): string | undefined {
+  const state = useTabsStore.getState();
+  const activeTab = state.tabs.find((tab) => tab.id === state.activeId);
+  const id = requestedTabId ?? (activeTab?.profile === null ? activeTab.id : undefined);
+  return id && state.replaceEmpty(id, profile, title) ? id : undefined;
+}
+
 /** Open a new local terminal tab using the user's shell/term preferences. */
-export function openLocalTerminal(): string {
+export function openLocalTerminal(replaceTabId?: string): string {
   const { localShell, termName } = usePrefsStore.getState();
   const profile: LocalProfile = {
     kind: 'local',
     shell: localShell !== 'auto' && localShell.trim() ? localShell.trim() : undefined,
     term: termName,
   };
+  const replacedId = replaceActiveEmpty(profile, 'Local', replaceTabId);
+  if (replacedId) return replacedId;
   return useTabsStore.getState().open(profile, 'Local');
+}
+
+/** Open a blank tab that lets the user choose what kind of session to start. */
+export function openEmptyTab(): string {
+  return useTabsStore.getState().openEmpty();
 }
 
 /**
  * Open an SSH tab. `target` is a ~/.ssh/config alias or an ad-hoc
  * "[user@]host[:port]" — the server resolves it exactly like `ssh <target>`.
  */
-export function connectTarget(target: string, title = target): string {
+export function connectTarget(target: string, title = target, replaceTabId?: string): string {
   const { termName } = usePrefsStore.getState();
   const profile: SessionProfile = { kind: 'ssh', target, term: termName };
+  const replacedId = replaceActiveEmpty(profile, title, replaceTabId);
+  if (replacedId) return replacedId;
   return useTabsStore.getState().open(profile, title);
 }
 
 /** Connect a listed host with its Muxus display name and color carried into
  *  the tab, preserving the visual cue after the sidebar is hidden. */
-export function connectHost(host: SshHostEntry): string {
-  const id = connectTarget(host.alias, host.metadata?.displayName ?? host.alias);
+export function connectHost(host: SshHostEntry, replaceTabId?: string): string {
+  const id = connectTarget(host.alias, host.metadata?.displayName ?? host.alias, replaceTabId);
   if (host.metadata?.color) useTabsStore.getState().update(id, { color: host.metadata.color });
   return id;
 }
@@ -35,7 +55,7 @@ export function connectHost(host: SshHostEntry): string {
 /** Duplicate an open tab (same profile, fresh session). */
 export function duplicateTab(tabId: string): void {
   const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId);
-  if (tab) useTabsStore.getState().open(tab.profile, tab.title);
+  if (tab?.profile) useTabsStore.getState().open(tab.profile, tab.title);
 }
 
 /**

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type DragEvent } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -26,11 +26,14 @@ import BoltIcon from '@mui/icons-material/Bolt';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
+import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import LibraryAddOutlinedIcon from '@mui/icons-material/LibraryAddOutlined';
 import PasswordOutlinedIcon from '@mui/icons-material/PasswordOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
@@ -42,7 +45,7 @@ import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import type { SshHostEntry } from '@muxus/shared';
 import { useSshConfig } from '../api/queries.js';
-import { useDeleteHost, useUpdateSshMetadata } from '../api/ssh-config.js';
+import { useDeleteHost, useReorderSshHosts, useUpdateSshMetadata } from '../api/ssh-config.js';
 import { copyToClipboard } from '../clipboard.js';
 import { groupHosts, hostAddress, hostDisplayName } from '../host-organization.js';
 import { connectHost, connectTarget, isQuickConnectTarget, openLocalTerminal } from '../session-actions.js';
@@ -52,6 +55,7 @@ import { useUiStore } from '../state/ui.js';
 import { layout } from '../theme.js';
 
 const EMPTY_HOSTS: SshHostEntry[] = [];
+type DropTarget = { groupKey: string; alias: string; edge: 'before' | 'after' };
 
 /**
  * Live OpenSSH hosts enriched with Muxus-owned favorites/recent metadata.
@@ -66,8 +70,11 @@ export function SessionSidebar() {
   const [menu, setMenu] = useState<{ anchor: HTMLElement; position?: { top: number; left: number }; entry: SshHostEntry } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<SshHostEntry | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [dragged, setDragged] = useState<{ groupKey: string; alias: string } | null>(null);
+  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const deleteHost = useDeleteHost(() => setConfirmDelete(null));
   const updateMetadata = useUpdateSshMetadata();
+  const reorderHosts = useReorderSshHosts();
 
   const needle = filter.trim().toLowerCase();
   const hosts = config?.hosts ?? EMPTY_HOSTS;
@@ -77,12 +84,66 @@ export function SessionSidebar() {
     [hosts, config?.files, config?.path, needle],
   );
   const visible = groups.flatMap((group) => group.hosts);
+  const menuGroup = menu ? groups.find((group) => group.hosts.some((host) => host.alias === menu.entry.alias)) : undefined;
+  const menuIndex = menuGroup && menu ? menuGroup.hosts.findIndex((host) => host.alias === menu.entry.alias) : -1;
+
+  const commitOrder = (groupKey: string, sourceAlias: string, targetAlias: string, edge: 'before' | 'after') => {
+    const group = groups.find((candidate) => candidate.key === groupKey);
+    if (!group || sourceAlias === targetAlias) return;
+    const aliases = group.hosts.map((host) => host.alias);
+    const next = aliases.filter((alias) => alias !== sourceAlias);
+    const targetIndex = next.indexOf(targetAlias);
+    if (targetIndex < 0) return;
+    next.splice(targetIndex + (edge === 'after' ? 1 : 0), 0, sourceAlias);
+    if (next.every((alias, index) => alias === aliases[index])) return;
+    reorderHosts.mutate(next);
+  };
+
+  const moveBy = (groupKey: string, alias: string, delta: -1 | 1) => {
+    const group = groups.find((candidate) => candidate.key === groupKey);
+    if (!group) return;
+    const aliases = group.hosts.map((host) => host.alias);
+    const from = aliases.indexOf(alias);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= aliases.length) return;
+    [aliases[from], aliases[to]] = [aliases[to]!, aliases[from]!];
+    reorderHosts.mutate(aliases);
+  };
+
+  const beginDrag = (event: DragEvent<HTMLElement>, groupKey: string, alias: string) => {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', alias);
+    setDragged({ groupKey, alias });
+    setDropTarget(null);
+  };
+
+  const dragOver = (event: DragEvent<HTMLElement>, groupKey: string, alias: string) => {
+    if (!dragged || dragged.groupKey !== groupKey || dragged.alias === alias) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    const rect = event.currentTarget.getBoundingClientRect();
+    const edge = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+    setDropTarget((current) =>
+      current?.groupKey === groupKey && current.alias === alias && current.edge === edge
+        ? current
+        : { groupKey, alias, edge },
+    );
+  };
+
+  const drop = (event: DragEvent<HTMLElement>, groupKey: string, alias: string) => {
+    event.preventDefault();
+    if (dragged?.groupKey === groupKey && dropTarget?.groupKey === groupKey && dropTarget.alias === alias) {
+      commitOrder(groupKey, dragged.alias, alias, dropTarget.edge);
+    }
+    setDragged(null);
+    setDropTarget(null);
+  };
 
   /** Live session dots: connected/connecting tab counts per primary alias. */
   const liveByTarget = useMemo(() => {
     const map = new Map<string, { connected: number; connecting: number }>();
     for (const t of tabs) {
-      if (t.profile.kind !== 'ssh') continue;
+      if (!t.profile || t.profile.kind !== 'ssh') continue;
       const entry = map.get(t.profile.target) ?? { connected: 0, connecting: 0 };
       if (t.status === 'connected') entry.connected++;
       if (t.status === 'connecting') entry.connecting++;
@@ -213,6 +274,17 @@ export function SessionSidebar() {
                   live={liveByTarget.get(h.alias)}
                   onConnect={() => connectHost(h)}
                   onMenu={openMenu}
+                  sortEnabled={!needle && group.hosts.length > 1 && !reorderHosts.isPending}
+                  dragging={dragged?.groupKey === group.key && dragged.alias === h.alias}
+                  dropEdge={dropTarget?.groupKey === group.key && dropTarget.alias === h.alias ? dropTarget.edge : undefined}
+                  onDragStart={(event) => beginDrag(event, group.key, h.alias)}
+                  onDragOver={(event) => dragOver(event, group.key, h.alias)}
+                  onDrop={(event) => drop(event, group.key, h.alias)}
+                  onDragEnd={() => {
+                    setDragged(null);
+                    setDropTarget(null);
+                  }}
+                  onMove={(delta) => moveBy(group.key, h.alias, delta)}
                 />
               ))}
           </List>
@@ -270,6 +342,31 @@ export function SessionSidebar() {
           </ListItemIcon>
           {menu?.entry.metadata?.favorite ? 'Remove from favorites' : 'Add to favorites'}
         </MenuItem>
+        <MenuItem
+          disabled={!!needle || menuIndex <= 0 || reorderHosts.isPending}
+          onClick={() => {
+            if (menu && menuGroup) moveBy(menuGroup.key, menu.entry.alias, -1);
+            setMenu(null);
+          }}
+        >
+          <ListItemIcon>
+            <KeyboardArrowUpIcon fontSize="small" />
+          </ListItemIcon>
+          Move up
+        </MenuItem>
+        <MenuItem
+          disabled={!!needle || !menuGroup || menuIndex < 0 || menuIndex >= menuGroup.hosts.length - 1 || reorderHosts.isPending}
+          onClick={() => {
+            if (menu && menuGroup) moveBy(menuGroup.key, menu.entry.alias, 1);
+            setMenu(null);
+          }}
+        >
+          <ListItemIcon>
+            <KeyboardArrowDownIcon fontSize="small" />
+          </ListItemIcon>
+          Move down
+        </MenuItem>
+        <Divider />
         <MenuItem
           onClick={() => {
             if (menu) setHostOrganizer(menu.entry);
@@ -361,11 +458,27 @@ function HostRow({
   live,
   onConnect,
   onMenu,
+  sortEnabled,
+  dragging,
+  dropEdge,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+  onMove,
 }: {
   entry: SshHostEntry;
   live?: { connected: number; connecting: number };
   onConnect: () => void;
   onMenu: (entry: SshHostEntry, anchor: HTMLElement, position?: { top: number; left: number }) => void;
+  sortEnabled: boolean;
+  dragging: boolean;
+  dropEdge?: 'before' | 'after';
+  onDragStart: (event: DragEvent<HTMLElement>) => void;
+  onDragOver: (event: DragEvent<HTMLElement>) => void;
+  onDrop: (event: DragEvent<HTMLElement>) => void;
+  onDragEnd: () => void;
+  onMove: (delta: -1 | 1) => void;
 }) {
   const r = entry.resolved;
   const secondary = hostAddress(entry);
@@ -374,17 +487,63 @@ function HostRow({
   const row = (
     <ListItemButton
       onClick={onConnect}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
       onContextMenu={(e) => {
         e.preventDefault();
         onMenu(entry, e.currentTarget, { top: e.clientY, left: e.clientX });
       }}
       sx={{
-        '&:hover .host-row-menu': { opacity: 1 },
+        '&:hover .host-row-menu, &:hover .host-drag-handle, &:focus-within .host-drag-handle': { opacity: 1 },
+        opacity: dragging ? 0.45 : 1,
         pr: 0.5,
         borderLeft: 3,
         borderLeftColor: entry.metadata?.color ?? 'transparent',
+        position: 'relative',
+        ...(dropEdge && {
+          [`&::${dropEdge === 'before' ? 'before' : 'after'}`]: {
+            content: '""',
+            position: 'absolute',
+            left: 8,
+            right: 8,
+            [dropEdge === 'before' ? 'top' : 'bottom']: -1,
+            height: 2,
+            borderRadius: 2,
+            bgcolor: 'primary.main',
+            zIndex: 2,
+          },
+        }),
       }}
     >
+      {sortEnabled && (
+        <Tooltip title="Drag to reorder · Alt+↑/↓">
+          <IconButton
+            className="host-drag-handle"
+            size="small"
+            aria-label={`Reorder ${hostDisplayName(entry)}`}
+            draggable
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
+              event.preventDefault();
+              event.stopPropagation();
+              onMove(event.key === 'ArrowUp' ? -1 : 1);
+            }}
+            sx={{
+              opacity: { xs: 0.75, md: 0.2 },
+              p: 0.25,
+              mr: 0.25,
+              cursor: 'grab',
+              '&:active': { cursor: 'grabbing' },
+              transition: 'opacity 120ms',
+            }}
+          >
+            <DragIndicatorIcon sx={{ fontSize: 16 }} />
+          </IconButton>
+        </Tooltip>
+      )}
       <ListItemIcon sx={{ minWidth: 32 }}>
         {r.proxyJump.length > 0 ? (
           <AltRouteIcon fontSize="small" sx={{ color: entry.metadata?.color ?? 'text.secondary' }} />
