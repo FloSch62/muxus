@@ -303,7 +303,7 @@ function TerminalSection() {
           label="TERM"
           value={prefs.termName}
           onChange={(e) => prefs.set({ termName: e.target.value })}
-          helperText="xterm-256color works broadly; opt into xterm-kitty only on hosts with kitty's terminfo installed. Applies to new sessions."
+          helperText="xterm-256color works broadly; xterm-kitty needs kitty's terminfo on the host — local terminals find it or fall back automatically, remote hosts must have it installed. Applies to new sessions."
           sx={{ maxWidth: 420 }}
           fullWidth
         />

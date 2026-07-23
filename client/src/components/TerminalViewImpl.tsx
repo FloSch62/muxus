@@ -45,6 +45,7 @@ import { KittyApcExtractor, type StreamPart } from '../terminal/apc-stream.js';
 import { KittyGraphicsEngine } from '../terminal/kitty-graphics.js';
 import { KittyKeyboardHandler } from '../terminal/kitty-keyboard.js';
 import { terminalScheme } from '../terminal/palette.js';
+import { attachCommandTracker } from '../terminal/shell-integration.js';
 import { registerTerminal } from '../terminal/terminal-registry.js';
 import { requiresPasteConfirmation } from '../terminal/paste-safety.js';
 import { AuthPromptDialog, type AuthPromptRequest } from './AuthPromptDialog.js';
@@ -238,6 +239,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       scrollback: prefs.scrollback,
       allowProposedApi: true,
       theme: terminalScheme(prefs.terminalScheme).theme,
+      // Shell-integration failure marks and search matches render here,
+      // like VS Code's scrollbar annotations.
+      overviewRuler: { width: 14 },
       // icat &co discover cell pixel metrics via CSI 14/16 t when the PTY
       // reports no pixel size.
       windowOptions: { getWinSizePixels: true, getCellSizePixels: true, getWinSizeChars: true },
@@ -311,6 +315,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       sendInput(data);
     };
 
+    const commandTracker = attachCommandTracker(term);
     const graphics = new KittyGraphicsEngine(term);
     graphics.attach();
     const keyboard = new KittyKeyboardHandler(term);
@@ -435,6 +440,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       onSearchResults.dispose();
       keyboard.dispose();
       graphics.dispose();
+      commandTracker.dispose();
       ws.onopen = null;
       ws.onmessage = null;
       ws.onclose = null;

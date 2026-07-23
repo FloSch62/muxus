@@ -1,10 +1,10 @@
 import type { ITheme } from '@xterm/xterm';
 
 /**
- * Built-in terminal color schemes. The default keeps the terminal a fixed
- * near-black regardless of app theme (tuned to sit next to the Muxus dark
- * chrome, periwinkle-forward ANSI ramp to match the app accent); the rest
- * are faithful renditions of the classics people expect from a terminal.
+ * Built-in terminal color schemes. The default matches VS Code's stock dark
+ * terminal so the out-of-the-box look is what most people already stare at
+ * all day; the rest are faithful renditions of the classics people expect
+ * from a terminal.
  */
 export interface TerminalScheme {
   id: string;
@@ -14,6 +14,34 @@ export interface TerminalScheme {
   theme: ITheme;
 }
 
+/** VS Code Dark Modern chrome with the default ANSI palette from its
+ *  terminal color registry. */
+const vscodeDark: ITheme = {
+  background: '#181818',
+  foreground: '#cccccc',
+  cursor: '#cccccc',
+  cursorAccent: '#181818',
+  selectionBackground: '#264f78',
+  black: '#000000',
+  red: '#cd3131',
+  green: '#0dbc79',
+  yellow: '#e5e510',
+  blue: '#2472c8',
+  magenta: '#bc3fbc',
+  cyan: '#11a8cd',
+  white: '#e5e5e5',
+  brightBlack: '#666666',
+  brightRed: '#f14c4c',
+  brightGreen: '#23d18b',
+  brightYellow: '#f5f543',
+  brightBlue: '#3b8eea',
+  brightMagenta: '#d670d6',
+  brightCyan: '#29b8db',
+  brightWhite: '#e5e5e5',
+};
+
+/** Fixed near-black tuned to sit next to the Muxus dark chrome, with a
+ *  periwinkle-forward ANSI ramp to match the app accent. */
 const muxus: ITheme = {
   background: '#16161e',
   foreground: '#c8ccd8',
@@ -231,6 +259,7 @@ const solarizedLight: ITheme = {
 };
 
 export const TERMINAL_SCHEMES: readonly TerminalScheme[] = [
+  { id: 'vscode-dark', name: 'Dark (VS Code)', theme: vscodeDark },
   { id: 'muxus', name: 'Muxus', theme: muxus },
   { id: 'dracula', name: 'Dracula', theme: dracula },
   { id: 'one-dark', name: 'One Dark', theme: oneDark },
@@ -240,9 +269,15 @@ export const TERMINAL_SCHEMES: readonly TerminalScheme[] = [
   { id: 'monokai', name: 'Monokai', theme: monokai },
   { id: 'solarized-dark', name: 'Solarized Dark', theme: solarizedDark },
   { id: 'solarized-light', name: 'Solarized Light', light: true, theme: solarizedLight },
-];
+].map((scheme) => ({
+  ...scheme,
+  // xterm outlines the overview ruler with overviewRulerBorder, which
+  // defaults to the foreground color — a bright line down the right edge.
+  // Marks should float over the terminal with no visible ruler chrome.
+  theme: { ...scheme.theme, overviewRulerBorder: '#00000000' },
+}));
 
-/** Resolve a scheme id, falling back to the Muxus default. */
+/** Resolve a scheme id, falling back to the VS Code dark default. */
 export function terminalScheme(id: string | undefined): TerminalScheme {
   return TERMINAL_SCHEMES.find((scheme) => scheme.id === id) ?? TERMINAL_SCHEMES[0]!;
 }

@@ -61,7 +61,7 @@ export const usePrefsStore = create<PrefsState>()(
       monoFontSize: 14,
       fontFamily: 'JetBrains Mono',
       lineHeight: 1.0,
-      terminalScheme: 'muxus',
+      terminalScheme: 'vscode-dark',
       scrollback: 10_000,
       cursorBlink: true,
       cursorStyle: 'block',
@@ -78,6 +78,17 @@ export const usePrefsStore = create<PrefsState>()(
         set((s) => ({ themeMode: s.themeMode === 'light' ? 'dark' : s.themeMode === 'dark' ? 'os' : 'light' })),
       set: (patch) => set(patch),
     }),
-    { name: 'muxus-prefs', version: 0, storage: createJSONStorage(() => muxusStateStorage) },
+    {
+      name: 'muxus-prefs',
+      version: 1,
+      migrate: (persisted, version) => {
+        const state = persisted as Partial<PrefsState>;
+        // v0 shipped the Muxus scheme as the default; stored copies of that
+        // default follow the new one.
+        if (version === 0 && state.terminalScheme === 'muxus') state.terminalScheme = 'vscode-dark';
+        return state;
+      },
+      storage: createJSONStorage(() => muxusStateStorage),
+    },
   ),
 );
