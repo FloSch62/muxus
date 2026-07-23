@@ -1,0 +1,97 @@
+import path from 'node:path';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import Fastify, { type FastifyInstance } from 'fastify';
+import fastifyWebsocket from '@fastify/websocket';
+import fastifyStatic from '@fastify/static';
+import type { ServerConfig } from './config.js';
+import { SshConnectionManager } from './ssh/connection-manager.js';
+import { ForwardManager } from './forwards/forward-manager.js';
+import { registerAppRoutes } from './routes/app.js';
+import { registerSshRoutes } from './routes/ssh.js';
+import { registerSftpRoutes } from './routes/sftp.js';
+import { registerForwardRoutes } from './routes/forwards.js';
+import { registerTerminalSocket } from './ws/terminal-socket.js';
+
+export interface AppContext {
+  config: ServerConfig;
+  connections: SshConnectionManager;
+  forwards: ForwardManager;
+}
+
+// Not named __dirname: the Electron esbuild bundle defines that identifier
+// in its banner for CJS interop, and banner names can't be renamed around.
+const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+
+export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInstance; ctx: AppContext }> {
+  const app = Fastify({
+    logger: {
+      level: process.env.LOG_LEVEL ?? 'info',
+      transport: config.prettyLogs ? { target: 'pino-pretty', options: { translateTime: 'HH:MM:ss' } } : undefined,
+    },
+  });
+
+  const connections = new SshConnectionManager(app.log);
+  const forwards = new ForwardManager(connections, app.log);
+  const ctx: AppContext = { config, connections, forwards };
+
+  // SFTP uploads stream through as-is — no buffering, no size limit.
+  app.addContentTypeParser('application/octet-stream', (_req, payload, done) => done(null, payload));
+
+  await app.register(fastifyWebsocket, {
+    options: {
+      maxPayload: 16 * 1024 * 1024,
+      verifyClient: (info: { origin?: string; req: { url?: string; headers: Record<string, unknown> } }) => {
+        // Origin check: only same-host browser pages (or non-browser clients
+        // without an Origin header) may open sockets — DNS-rebinding defense.
+        const origin = info.origin;
+        if (origin) {
+          try {
+            const u = new URL(origin);
+            if (u.hostname !== '127.0.0.1' && u.hostname !== 'localhost') return false;
+          } catch {
+            return false;
+          }
+        }
+        const url = new URL(info.req.url ?? '/', 'http://localhost');
+        return url.searchParams.get('token') === config.token;
+      },
+    },
+  });
+
+  // Bearer-token auth for all /api routes.
+  app.addHook('onRequest', async (req, reply) => {
+    if (!req.url.startsWith('/api/')) return;
+    const header = req.headers.authorization;
+    const ok = header === `Bearer ${config.token}`;
+    if (!ok) {
+      await reply.code(401).send({ message: 'unauthorized' });
+    }
+  });
+
+  registerAppRoutes(app, ctx);
+  registerSshRoutes(app, ctx);
+  registerSftpRoutes(app, ctx);
+  registerForwardRoutes(app, ctx);
+  registerTerminalSocket(app, ctx);
+
+  // Serve the built client in production (same-origin, no CORS needed).
+  const clientDist = config.staticRoot ?? path.resolve(moduleDir, '../../client/dist');
+  if (existsSync(clientDist)) {
+    await app.register(fastifyStatic, { root: clientDist });
+    app.setNotFoundHandler((req, reply) => {
+      if (req.url.startsWith('/api/') || req.url.startsWith('/ws/')) {
+        void reply.code(404).send({ message: 'not found' });
+      } else {
+        void reply.sendFile('index.html');
+      }
+    });
+  }
+
+  app.addHook('onClose', async () => {
+    forwards.stopAll();
+    connections.closeAll();
+  });
+
+  return { app, ctx };
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@muxus/tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "exit 0",
+    "build": "exit 0",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@muxus/shared": "workspace:*",
+    "@types/node": "^24.13.3",
+    "@vitest/coverage-v8": "^4.0.5",
+    "typescript": "^7.0.2",
+    "vitest": "^4.0.5",
+    "zod": "^4.4.3"
+  }
+}

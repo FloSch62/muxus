@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "react", "jsx-a11y", "import"],
+  "categories": {
+    "correctness": "error"
+  },
+  "options": {
+    "typeAware": true,
+    "reportUnusedDisableDirectives": "error"
+  },
+  "rules": {
+    // Muxus uses TypeScript's automatic JSX runtime (`jsx: react-jsx`).
+    "react/react-in-jsx-scope": "off",
+    // High-signal React correctness and performance checks outside the
+    // default correctness category.
+    "react/rules-of-hooks": "error",
+    "react/no-unstable-nested-components": "error",
+    "react/jsx-no-constructed-context-values": "error",
+    "react/no-object-type-as-default-prop": "error"
+  },
+  "overrides": [
+    {
+      // These modal surfaces intentionally move focus to their primary control.
+      "files": [
+        "client/src/components/SessionDialog.tsx",
+        "client/src/components/AuthPromptDialog.tsx"
+      ],
+      "rules": {
+        "jsx-a11y/no-autofocus": "off"
+      }
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+appId: io.github.flosch62.muxus
+productName: Muxus
+executableName: muxus
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**
+  - package.json
+asar: true
+asarUnpack:
+  - "**/*.node"
+extraResources:
+  - from: ../client/dist
+    to: client
+  - from: build/icons/256x256.png
+    to: icon.png
+icon: build/icon.png
+artifactName: muxus-${version}-${os}-${arch}.${ext}
+npmRebuild: true
+afterPack: scripts/after-pack.cjs
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+mac:
+  category: public.app-category.developer-tools
+  identity: null
+  notarize: false
+  target:
+    - target: dmg
+      arch: [universal]
+dmg:
+  sign: false
+linux:
+  category: Network
+  synopsis: SSH client & terminal
+  icon: build/icons
+  desktop:
+    entry:
+      StartupWMClass: Muxus
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+publish:
+  provider: github
+  owner: FloSch62
+  repo: muxus
+  releaseType: release
