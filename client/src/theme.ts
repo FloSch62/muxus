@@ -1,5 +1,7 @@
 import type { ElementType } from 'react';
 import { alpha, createTheme, type Theme } from '@mui/material/styles';
+import { DEFAULT_SIDEBAR_WIDTH } from './sidebar-width.js';
+import { DEFAULT_SFTP_PANEL_WIDTH } from './sftp-panel-width.js';
 
 declare module '@mui/material/styles' {
   /** Chrome surfaces (top bar, session sidebar, tab strip) share this background —
@@ -21,11 +23,11 @@ export const layout = {
   /** TopBar toolbar height; the Electron titlebar overlay uses the same value. */
   topBarHeight: 52,
   /** Session sidebar width. */
-  sidebarWidth: 260,
+  sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   /** Tab strip height under the top bar. */
   tabStripHeight: 40,
   /** Default SFTP panel width. */
-  sftpPanelWidth: 380,
+  sftpPanelWidth: DEFAULT_SFTP_PANEL_WIDTH,
   /** Forwarding side panel width. */
   forwardingPanelWidth: 380,
   /** Themed scrollbar thickness. */

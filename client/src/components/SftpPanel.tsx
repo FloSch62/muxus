@@ -36,7 +36,14 @@ import {
   type ByteProgress,
 } from '../api/transfers.js';
 import { showErrorToast, showToast } from '../state/toast.js';
-import { layout } from '../theme.js';
+import { usePrefsStore } from '../state/prefs.js';
+import {
+  clampSftpPanelWidth,
+  DEFAULT_SFTP_PANEL_WIDTH,
+  maxSftpPanelWidth,
+  MIN_SFTP_PANEL_WIDTH,
+} from '../sftp-panel-width.js';
+import { PanelResizeHandle } from './PanelResizeHandle.js';
 
 interface DroppedFile {
   file: File;
@@ -189,7 +196,10 @@ export function SftpPanel({
   const transferControllerRef = useRef<AbortController | undefined>(undefined);
   const dragDepthRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
+  const panelWidth = usePrefsStore((state) => state.sftpPanelWidth);
+  const setPrefs = usePrefsStore((state) => state.set);
 
   useEffect(() => {
     if (home && !path) {
@@ -471,8 +481,10 @@ export function SftpPanel({
 
   return (
     <Box
+      ref={panelRef}
       sx={{
-        width: layout.sftpPanelWidth,
+        width: panelWidth,
+        maxWidth: '70%',
         flexShrink: 0,
         height: '100%',
         display: 'flex',
@@ -511,6 +523,17 @@ export function SftpPanel({
         void collectDrop(items).then(upload).catch(showErrorToast);
       }}
     >
+      <PanelResizeHandle
+        panelRef={panelRef}
+        edge="left"
+        width={panelWidth}
+        defaultWidth={DEFAULT_SFTP_PANEL_WIDTH}
+        minWidth={MIN_SFTP_PANEL_WIDTH}
+        maxWidth={maxSftpPanelWidth}
+        clampWidth={clampSftpPanelWidth}
+        onWidthChange={(sftpPanelWidth) => setPrefs({ sftpPanelWidth })}
+        label="Resize SFTP browser"
+      />
       <Stack direction="row" sx={{ px: 1.25, pt: 1, alignItems: 'center' }}>
         <Typography variant="subtitle2" sx={{ flex: 1 }}>
           Remote Explorer

@@ -20,6 +20,7 @@ import { useSshConfig } from '../api/queries.js';
 import { groupHosts, hostAddress, hostDisplayName } from '../host-organization.js';
 import { connectHost } from '../session-actions.js';
 import { useUiStore } from '../state/ui.js';
+import { TruncationTooltip } from './TruncationTooltip.js';
 
 export function HostPickerPopover({
   anchorEl,
@@ -143,10 +144,12 @@ export function HostPickerPopover({
                 </ListItemIcon>
                 <ListItemText
                   primary={
-                    <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
-                      <Typography variant="body2" noWrap sx={{ fontWeight: 550 }}>
-                        {hostDisplayName(host)}
-                      </Typography>
+                    <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', minWidth: 0 }}>
+                      <TruncationTooltip text={hostDisplayName(host)}>
+                        <Typography variant="body2" noWrap sx={{ minWidth: 0, fontWeight: 550 }}>
+                          {hostDisplayName(host)}
+                        </Typography>
+                      </TruncationTooltip>
                       {host.metadata?.favorite && <StarIcon sx={{ fontSize: 12, color: 'warning.main', flexShrink: 0 }} />}
                     </Stack>
                   }

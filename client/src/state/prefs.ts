@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import { DEFAULT_SIDEBAR_WIDTH } from '../sidebar-width.js';
+import { DEFAULT_SFTP_PANEL_WIDTH } from '../sftp-panel-width.js';
 import { muxusStateStorage } from './persist-storage.js';
 
 export type ThemeMode = 'light' | 'dark' | 'os';
@@ -44,6 +46,10 @@ interface PrefsState {
   /** Ask before closing a tab with a live session. */
   confirmCloseConnected: boolean;
   sidebarCollapsed: boolean;
+  /** Width of the sessions and hosts sidebar. */
+  sidebarWidth: number;
+  /** Width of the per-session remote file browser. */
+  sftpPanelWidth: number;
   toggleTheme: () => void;
   set: (patch: Partial<Omit<PrefsState, 'set' | 'toggleTheme'>>) => void;
 }
@@ -66,6 +72,8 @@ export const usePrefsStore = create<PrefsState>()(
       pasteWarnMultiline: true,
       confirmCloseConnected: true,
       sidebarCollapsed: false,
+      sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
+      sftpPanelWidth: DEFAULT_SFTP_PANEL_WIDTH,
       toggleTheme: () =>
         set((s) => ({ themeMode: s.themeMode === 'light' ? 'dark' : s.themeMode === 'dark' ? 'os' : 'light' })),
       set: (patch) => set(patch),

@@ -43,6 +43,22 @@ export function matchesHost(host: SshHostEntry, needle: string): boolean {
   ].some((value) => value.toLowerCase().includes(normalized));
 }
 
+/** Build the persisted order after dropping one host before/after another, or
+ * append it when the group header itself is the target. */
+export function hostOrderAfterDrop(
+  aliases: readonly string[],
+  sourceAlias: string,
+  targetAlias?: string,
+  edge: 'before' | 'after' = 'after',
+): string[] {
+  const next = aliases.filter((alias) => alias !== sourceAlias);
+  if (!targetAlias) return [...next, sourceAlias];
+  const targetIndex = next.indexOf(targetAlias);
+  if (targetIndex < 0) return [...next, sourceAlias];
+  next.splice(targetIndex + (edge === 'after' ? 1 : 0), 0, sourceAlias);
+  return next;
+}
+
 /**
  * Custom Muxus groups take priority. Hosts without one retain the useful
  * config-file grouping, so existing users do not lose structure.

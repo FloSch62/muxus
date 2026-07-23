@@ -54,11 +54,42 @@ export function useUpdateSshMetadata(onSuccess?: (metadata: OpenSshProfileMetada
           body: JSON.stringify(patch),
         },
       ),
+    onMutate: async ({ alias, patch }) => {
+      await queryClient.cancelQueries({ queryKey: ['ssh-config'] });
+      const previous = queryClient.getQueryData<SshConfigResponse>(['ssh-config']);
+      queryClient.setQueryData<SshConfigResponse>(['ssh-config'], (current) => {
+        if (!current) return current;
+        return {
+          ...current,
+          hosts: current.hosts.map((host) => {
+            if (host.alias !== alias) return host;
+            const metadata: OpenSshProfileMetadata = {
+              profileId: host.metadata?.profileId ?? host.alias,
+              favorite: host.metadata?.favorite ?? false,
+              connectCount: host.metadata?.connectCount ?? 0,
+              ...host.metadata,
+              ...(patch.favorite !== undefined ? { favorite: patch.favorite } : {}),
+              ...(patch.displayName !== undefined ? { displayName: patch.displayName ?? undefined } : {}),
+              ...(patch.group !== undefined ? { group: patch.group ?? undefined } : {}),
+              ...(patch.color !== undefined ? { color: patch.color ?? undefined } : {}),
+              ...(patch.icon !== undefined ? { icon: patch.icon ?? undefined } : {}),
+            };
+            return { ...host, metadata };
+          }),
+        };
+      });
+      return { previous };
+    },
     onSuccess: (metadata) => {
-      void queryClient.invalidateQueries({ queryKey: ['ssh-config'] });
       onSuccess?.(metadata);
     },
-    onError: showErrorToast,
+    onError: (error, _request, context) => {
+      if (context?.previous) queryClient.setQueryData(['ssh-config'], context.previous);
+      showErrorToast(error);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['ssh-config'] });
+    },
   });
 }
 

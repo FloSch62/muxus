@@ -1,4 +1,4 @@
-import { useMemo, useState, type DragEvent } from 'react';
+import { useMemo, useRef, useState, type DragEvent } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -47,15 +47,25 @@ import type { SshHostEntry } from '@muxus/shared';
 import { useSshConfig } from '../api/queries.js';
 import { useDeleteHost, useReorderSshHosts, useUpdateSshMetadata } from '../api/ssh-config.js';
 import { copyToClipboard } from '../clipboard.js';
-import { groupHosts, hostAddress, hostDisplayName } from '../host-organization.js';
+import { groupHosts, hostAddress, hostDisplayName, hostOrderAfterDrop } from '../host-organization.js';
 import { connectHost, connectTarget, isQuickConnectTarget, openLocalTerminal } from '../session-actions.js';
+import {
+  clampSidebarWidth,
+  DEFAULT_SIDEBAR_WIDTH,
+  maxSidebarWidth,
+  MIN_SIDEBAR_WIDTH,
+} from '../sidebar-width.js';
+import { usePrefsStore } from '../state/prefs.js';
 import { showToast } from '../state/toast.js';
 import { useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
-import { layout } from '../theme.js';
+import { PanelResizeHandle } from './PanelResizeHandle.js';
+import { TruncationTooltip } from './TruncationTooltip.js';
 
 const EMPTY_HOSTS: SshHostEntry[] = [];
-type DropTarget = { groupKey: string; alias: string; edge: 'before' | 'after' };
+type DropTarget =
+  | { kind: 'row'; groupKey: string; alias: string; edge: 'before' | 'after' }
+  | { kind: 'group'; groupKey: string };
 
 /**
  * Live OpenSSH hosts enriched with Muxus-owned favorites/recent metadata.
@@ -66,6 +76,9 @@ export function SessionSidebar() {
   const setHostEditor = useUiStore((s) => s.setHostEditor);
   const setHostOrganizer = useUiStore((s) => s.setHostOrganizer);
   const tabs = useTabsStore((s) => s.tabs);
+  const sidebarWidth = usePrefsStore((state) => state.sidebarWidth);
+  const setPrefs = usePrefsStore((state) => state.set);
+  const sidebarRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState('');
   const [menu, setMenu] = useState<{ anchor: HTMLElement; position?: { top: number; left: number }; entry: SshHostEntry } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<SshHostEntry | null>(null);
@@ -91,12 +104,30 @@ export function SessionSidebar() {
     const group = groups.find((candidate) => candidate.key === groupKey);
     if (!group || sourceAlias === targetAlias) return;
     const aliases = group.hosts.map((host) => host.alias);
-    const next = aliases.filter((alias) => alias !== sourceAlias);
-    const targetIndex = next.indexOf(targetAlias);
-    if (targetIndex < 0) return;
-    next.splice(targetIndex + (edge === 'after' ? 1 : 0), 0, sourceAlias);
+    const next = hostOrderAfterDrop(aliases, sourceAlias, targetAlias, edge);
     if (next.every((alias, index) => alias === aliases[index])) return;
     reorderHosts.mutate(next);
+  };
+
+  const moveToGroup = (
+    targetGroupKey: string,
+    sourceAlias: string,
+    targetAlias?: string,
+    edge: 'before' | 'after' = 'after',
+  ) => {
+    const targetGroup = groups.find((candidate) => candidate.key === targetGroupKey);
+    const sourceGroup = groups.find((candidate) => candidate.hosts.some((host) => host.alias === sourceAlias));
+    if (!targetGroup || targetGroup.kind !== 'custom' || !sourceGroup) return;
+    const aliases = targetGroup.hosts.map((host) => host.alias);
+    const next = hostOrderAfterDrop(aliases, sourceAlias, targetAlias, edge);
+    if (sourceGroup.key === targetGroup.key) {
+      if (!next.every((alias, index) => alias === aliases[index])) reorderHosts.mutate(next);
+      return;
+    }
+    void updateMetadata
+      .mutateAsync({ alias: sourceAlias, patch: { group: targetGroup.label } })
+      .then(() => reorderHosts.mutate(next))
+      .catch(() => undefined);
   };
 
   const moveBy = (groupKey: string, alias: string, delta: -1 | 1) => {
@@ -118,22 +149,65 @@ export function SessionSidebar() {
   };
 
   const dragOver = (event: DragEvent<HTMLElement>, groupKey: string, alias: string) => {
-    if (!dragged || dragged.groupKey !== groupKey || dragged.alias === alias) return;
+    if (!dragged) return;
+    const targetGroup = groups.find((candidate) => candidate.key === groupKey);
+    if (
+      dragged.alias === alias ||
+      !targetGroup ||
+      (dragged.groupKey !== groupKey && targetGroup.kind !== 'custom')
+    ) {
+      setDropTarget((current) => (current ? null : current));
+      return;
+    }
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
     const rect = event.currentTarget.getBoundingClientRect();
     const edge = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
     setDropTarget((current) =>
-      current?.groupKey === groupKey && current.alias === alias && current.edge === edge
+      current?.kind === 'row' &&
+      current.groupKey === groupKey &&
+      current.alias === alias &&
+      current.edge === edge
         ? current
-        : { groupKey, alias, edge },
+        : { kind: 'row', groupKey, alias, edge },
     );
   };
 
   const drop = (event: DragEvent<HTMLElement>, groupKey: string, alias: string) => {
     event.preventDefault();
-    if (dragged?.groupKey === groupKey && dropTarget?.groupKey === groupKey && dropTarget.alias === alias) {
-      commitOrder(groupKey, dragged.alias, alias, dropTarget.edge);
+    if (
+      dragged &&
+      dropTarget?.kind === 'row' &&
+      dropTarget.groupKey === groupKey &&
+      dropTarget.alias === alias
+    ) {
+      if (dragged.groupKey === groupKey) commitOrder(groupKey, dragged.alias, alias, dropTarget.edge);
+      else moveToGroup(groupKey, dragged.alias, alias, dropTarget.edge);
+    }
+    setDragged(null);
+    setDropTarget(null);
+  };
+
+  const dragOverGroup = (event: DragEvent<HTMLElement>, groupKey: string) => {
+    const group = groups.find((candidate) => candidate.key === groupKey);
+    if (!dragged) return;
+    if (!group || group.kind !== 'custom') {
+      setDropTarget((current) => (current ? null : current));
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setDropTarget((current) =>
+      current?.kind === 'group' && current.groupKey === groupKey
+        ? current
+        : { kind: 'group', groupKey },
+    );
+  };
+
+  const dropOnGroup = (event: DragEvent<HTMLElement>, groupKey: string) => {
+    event.preventDefault();
+    if (dragged && dropTarget?.kind === 'group' && dropTarget.groupKey === groupKey) {
+      moveToGroup(groupKey, dragged.alias);
     }
     setDragged(null);
     setDropTarget(null);
@@ -166,8 +240,10 @@ export function SessionSidebar() {
 
   return (
     <Box
+      ref={sidebarRef}
       sx={{
-        width: layout.sidebarWidth,
+        width: sidebarWidth,
+        maxWidth: '45%',
         flexShrink: 0,
         height: '100%',
         display: 'flex',
@@ -175,8 +251,20 @@ export function SessionSidebar() {
         bgcolor: 'sidebar',
         borderRight: 1,
         borderColor: 'divider',
+        position: 'relative',
       }}
     >
+      <PanelResizeHandle
+        panelRef={sidebarRef}
+        edge="right"
+        width={sidebarWidth}
+        defaultWidth={DEFAULT_SIDEBAR_WIDTH}
+        minWidth={MIN_SIDEBAR_WIDTH}
+        maxWidth={maxSidebarWidth}
+        clampWidth={clampSidebarWidth}
+        onWidthChange={(nextSidebarWidth) => setPrefs({ sidebarWidth: nextSidebarWidth })}
+        label="Resize sessions sidebar"
+      />
       <Stack direction="row" spacing={1} sx={{ p: 1.25, pb: 0.75, alignItems: 'center' }}>
         <TextField
           fullWidth
@@ -242,8 +330,20 @@ export function SessionSidebar() {
               <ListSubheader
                 disableSticky
                 onClick={() => setCollapsed((current) => ({ ...current, [group.key]: !current[group.key] }))}
+                onDragOver={(event) => dragOverGroup(event, group.key)}
+                onDragLeave={(event) => {
+                  const related = event.relatedTarget;
+                  if (related instanceof Node && event.currentTarget.contains(related)) return;
+                  setDropTarget((current) =>
+                    current?.kind === 'group' && current.groupKey === group.key ? null : current,
+                  );
+                }}
+                onDrop={(event) => dropOnGroup(event, group.key)}
                 sx={{
-                  bgcolor: 'transparent',
+                  bgcolor:
+                    dropTarget?.kind === 'group' && dropTarget.groupKey === group.key
+                      ? 'action.selected'
+                      : 'transparent',
                   lineHeight: '28px',
                   fontSize: 11,
                   textTransform: 'uppercase',
@@ -253,6 +353,13 @@ export function SessionSidebar() {
                   display: 'flex',
                   alignItems: 'center',
                   gap: 0.5,
+                  borderRadius: 1,
+                  transition: 'background-color 120ms ease, color 120ms ease, box-shadow 120ms ease',
+                  ...(dropTarget?.kind === 'group' &&
+                    dropTarget.groupKey === group.key && {
+                      color: 'primary.main',
+                      boxShadow: (theme) => `inset 3px 0 ${theme.palette.primary.main}`,
+                    }),
                 }}
               >
                 {collapsed[group.key] ? <ExpandMoreIcon sx={{ fontSize: 14 }} /> : <ExpandLessIcon sx={{ fontSize: 14 }} />}
@@ -274,9 +381,15 @@ export function SessionSidebar() {
                   live={liveByTarget.get(h.alias)}
                   onConnect={() => connectHost(h)}
                   onMenu={openMenu}
-                  sortEnabled={!needle && group.hosts.length > 1 && !reorderHosts.isPending}
+                  dragEnabled={!needle && !reorderHosts.isPending && !updateMetadata.isPending}
                   dragging={dragged?.groupKey === group.key && dragged.alias === h.alias}
-                  dropEdge={dropTarget?.groupKey === group.key && dropTarget.alias === h.alias ? dropTarget.edge : undefined}
+                  dropEdge={
+                    dropTarget?.kind === 'row' &&
+                    dropTarget.groupKey === group.key &&
+                    dropTarget.alias === h.alias
+                      ? dropTarget.edge
+                      : undefined
+                  }
                   onDragStart={(event) => beginDrag(event, group.key, h.alias)}
                   onDragOver={(event) => dragOver(event, group.key, h.alias)}
                   onDrop={(event) => drop(event, group.key, h.alias)}
@@ -458,7 +571,7 @@ function HostRow({
   live,
   onConnect,
   onMenu,
-  sortEnabled,
+  dragEnabled,
   dragging,
   dropEdge,
   onDragStart,
@@ -471,7 +584,7 @@ function HostRow({
   live?: { connected: number; connecting: number };
   onConnect: () => void;
   onMenu: (entry: SshHostEntry, anchor: HTMLElement, position?: { top: number; left: number }) => void;
-  sortEnabled: boolean;
+  dragEnabled: boolean;
   dragging: boolean;
   dropEdge?: 'before' | 'after';
   onDragStart: (event: DragEvent<HTMLElement>) => void;
@@ -515,12 +628,12 @@ function HostRow({
         }),
       }}
     >
-      {sortEnabled && (
-        <Tooltip title="Drag to reorder · Alt+↑/↓">
+      {dragEnabled && (
+        <Tooltip title="Drag to reorder or move to a group · Alt+↑/↓">
           <IconButton
             className="host-drag-handle"
             size="small"
-            aria-label={`Reorder ${hostDisplayName(entry)}`}
+            aria-label={`Move ${hostDisplayName(entry)}`}
             draggable
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
@@ -569,9 +682,14 @@ function HostRow({
                 }}
               />
             )}
-            <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {hostDisplayName(entry)}
-            </Box>
+            <TruncationTooltip text={hostDisplayName(entry)}>
+              <Box
+                component="span"
+                sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              >
+                {hostDisplayName(entry)}
+              </Box>
+            </TruncationTooltip>
             {entry.metadata?.favorite && <StarIcon sx={{ fontSize: 13, color: 'warning.main' }} />}
             {(live?.connected ?? 0) > 1 && (
               <Typography component="span" sx={{ fontSize: 10, color: 'success.main' }}>

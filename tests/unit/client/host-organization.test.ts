@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SshHostEntry } from '@muxus/shared';
-import { groupHosts } from '../../../client/src/host-organization.js';
+import { groupHosts, hostOrderAfterDrop } from '../../../client/src/host-organization.js';
 
 const host = (
   alias: string,
@@ -34,6 +34,20 @@ const host = (
 });
 
 describe('host organization', () => {
+  it('builds same-group and cross-group drop orders', () => {
+    expect(hostOrderAfterDrop(['alpha', 'bravo', 'charlie'], 'alpha', 'bravo', 'after')).toEqual([
+      'bravo',
+      'alpha',
+      'charlie',
+    ]);
+    expect(hostOrderAfterDrop(['alpha', 'bravo'], 'charlie', 'alpha', 'before')).toEqual([
+      'charlie',
+      'alpha',
+      'bravo',
+    ]);
+    expect(hostOrderAfterDrop(['alpha', 'bravo'], 'charlie')).toEqual(['alpha', 'bravo', 'charlie']);
+  });
+
   it('puts custom groups first while retaining config-file structure for ungrouped hosts', () => {
     const groups = groupHosts(
       [
