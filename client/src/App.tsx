@@ -6,7 +6,7 @@ import { setTitleBarMode } from './titlebar-overlay.js';
 import { usePrefsStore } from './state/prefs.js';
 import { AppShell } from './layout/AppShell.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
-import { SessionDialog } from './components/SessionDialog.js';
+import { HostEditorDialog } from './components/HostEditorDialog.js';
 import { SettingsDialog } from './components/SettingsDialog.js';
 import { ToastHost } from './components/ToastHost.js';
 import { BackendStatusBanner } from './components/BackendStatusBanner.js';
@@ -34,7 +34,7 @@ export default function App() {
       <ErrorBoundary label="Muxus">
         <AppShell />
       </ErrorBoundary>
-      <SessionDialog />
+      <HostEditorDialog />
       <SettingsDialog />
       <ToastHost />
       <BackendStatusBanner />

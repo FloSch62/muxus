@@ -1,65 +1,180 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-export interface KnownHostEntry {
+/**
+ * Host key verification against the real OpenSSH files: ~/.ssh/known_hosts
+ * (read + write) and /etc/ssh/ssh_known_hosts (read only). Supports plain,
+ * wildcard and hashed (|1|salt|hmac) host entries, `[host]:port` notation and
+ * the @revoked marker. First contact asks the user (TOFU) and appends a plain
+ * entry, like `ssh` with HashKnownHosts=no; accepting a changed key replaces
+ * the stale same-type entries the way `ssh-keygen -R` would, keeping a
+ * known_hosts.old backup.
+ */
+
+export type KnownHostVerdict =
+  | { state: 'ok' }
+  | { state: 'unknown' }
+  | { state: 'changed'; previous: string }
+  | { state: 'revoked' };
+
+interface KnownHostLine {
+  marker?: 'revoked' | 'cert-authority';
+  hosts: string;
   keyType: string;
-  /** SHA256:… fingerprint, OpenSSH presentation. */
-  fingerprint: string;
-  addedAt: string;
+  keyB64: string;
 }
 
-/**
- * Trust-on-first-use host key store. Muxus keeps its own JSON store instead
- * of parsing ~/.ssh/known_hosts: the OpenSSH file's hashed-host entries can't
- * be enumerated, and writing to it from a GUI risks corrupting a file other
- * tooling depends on. First contact asks the user; a changed key blocks the
- * connection until the user explicitly accepts the new fingerprint.
- */
+export function defaultKnownHostsPath(): string {
+  return path.join(os.homedir(), '.ssh', 'known_hosts');
+}
+
+const GLOBAL_KNOWN_HOSTS = '/etc/ssh/ssh_known_hosts';
+
+/** SHA256:… fingerprint, OpenSSH presentation. */
+export function fingerprintSha256(key: Buffer): string {
+  return `SHA256:${createHash('sha256').update(key).digest('base64').replace(/=+$/, '')}`;
+}
+
+/** "ssh-ed25519", "ecdsa-sha2-nistp256", … — the leading string of the key blob. */
+export function hostKeyType(key: Buffer): string {
+  try {
+    const len = key.readUInt32BE(0);
+    return key.subarray(4, 4 + len).toString('latin1');
+  } catch {
+    return 'unknown';
+  }
+}
+
 export class KnownHostsStore {
-  private cache: Record<string, KnownHostEntry> | undefined;
+  constructor(
+    private readonly userFile = defaultKnownHostsPath(),
+    private readonly globalFile = GLOBAL_KNOWN_HOSTS,
+  ) {}
 
-  constructor(private readonly file = defaultKnownHostsPath()) {}
+  verify(host: string, port: number, key: Buffer): KnownHostVerdict {
+    const names = hostNames(host, port);
+    const keyType = hostKeyType(key);
+    const keyB64 = key.toString('base64');
+    let previous: string | undefined;
 
-  lookup(host: string, port: number): KnownHostEntry | undefined {
-    return this.load()[hostKey(host, port)];
-  }
-
-  record(host: string, port: number, keyType: string, fingerprint: string): void {
-    const entries = { ...this.load() };
-    entries[hostKey(host, port)] = { keyType, fingerprint, addedAt: new Date().toISOString() };
-    this.save(entries);
-  }
-
-  private load(): Record<string, KnownHostEntry> {
-    if (!this.cache) {
-      try {
-        const parsed: unknown = JSON.parse(readFileSync(this.file, 'utf8'));
-        this.cache = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, KnownHostEntry>) : {};
-      } catch {
-        this.cache = {};
+    for (const file of [this.userFile, this.globalFile]) {
+      for (const entry of readEntries(file)) {
+        if (entry.marker === 'cert-authority') continue; // CA validation is out of scope
+        if (entry.keyType !== keyType || !entryMatches(entry.hosts, names)) continue;
+        if (entry.keyB64 === keyB64) {
+          if (entry.marker === 'revoked') return { state: 'revoked' };
+          return { state: 'ok' };
+        }
+        previous ??= fingerprintSha256(Buffer.from(entry.keyB64, 'base64'));
       }
     }
-    return this.cache;
+    return previous ? { state: 'changed', previous } : { state: 'unknown' };
   }
 
-  private save(entries: Record<string, KnownHostEntry>): void {
-    const tmp = `${this.file}.tmp`;
-    mkdirSync(path.dirname(this.file), { recursive: true });
-    writeFileSync(tmp, `${JSON.stringify(entries, null, 2)}\n`, { mode: 0o600 });
-    renameSync(tmp, this.file);
-    this.cache = entries;
+  /**
+   * Record an accepted key: drop stale same-type entries for the host (the
+   * `ssh-keygen -R` part, backing up to known_hosts.old), then append.
+   */
+  record(host: string, port: number, key: Buffer): void {
+    const names = hostNames(host, port);
+    const keyType = hostKeyType(key);
+    fs.mkdirSync(path.dirname(this.userFile), { recursive: true, mode: 0o700 });
+
+    let lines: string[] = [];
+    try {
+      const text = fs.readFileSync(this.userFile, 'utf8');
+      fs.writeFileSync(`${this.userFile}.old`, text, { mode: 0o600 });
+      lines = text.split(/\r?\n/);
+      while (lines.length && lines[lines.length - 1] === '') lines.pop();
+    } catch {
+      // First entry ever.
+    }
+
+    const kept = lines.filter((line) => {
+      const entry = parseLine(line);
+      return !entry || entry.marker !== undefined || entry.keyType !== keyType || !entryMatches(entry.hosts, names);
+    });
+    kept.push(`${names[0]} ${keyType} ${key.toString('base64')}`);
+
+    const tmp = `${this.userFile}.muxus.tmp`;
+    fs.writeFileSync(tmp, `${kept.join('\n')}\n`, { mode: 0o600 });
+    fs.renameSync(tmp, this.userFile);
   }
 }
 
-function hostKey(host: string, port: number): string {
-  return port === 22 ? host : `[${host}]:${port}`;
+/** The names OpenSSH would store/check for this host+port. */
+function hostNames(host: string, port: number): [string, ...string[]] {
+  const h = host.toLowerCase();
+  return port === 22 ? [h, `[${h}]:22`] : [`[${h}]:${port}`];
 }
 
-function defaultKnownHostsPath(): string {
-  const base =
-    process.platform === 'win32'
-      ? (process.env.APPDATA ?? path.join(os.homedir(), 'AppData', 'Roaming'))
-      : (process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), '.config'));
-  return path.join(base, 'muxus', 'known-hosts.json');
+function* readEntries(file: string): Generator<KnownHostLine> {
+  let text: string;
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    return;
+  }
+  for (const raw of text.split(/\r?\n/)) {
+    const entry = parseLine(raw);
+    if (entry) yield entry;
+  }
+}
+
+function parseLine(raw: string): KnownHostLine | undefined {
+  const line = raw.trim();
+  if (!line || line.startsWith('#')) return undefined;
+  const fields = line.split(/\s+/);
+  let marker: KnownHostLine['marker'];
+  if (fields[0] === '@revoked' || fields[0] === '@cert-authority') {
+    marker = fields.shift()!.slice(1) as KnownHostLine['marker'];
+  }
+  const [hosts, keyType, keyB64] = fields;
+  if (!hosts || !keyType || !keyB64) return undefined;
+  return { marker, hosts, keyType, keyB64 };
+}
+
+/** Match one entry's host field (comma-separated patterns or a |1| hash). */
+function entryMatches(hostsField: string, names: string[]): boolean {
+  if (hostsField.startsWith('|')) return hashedMatches(hostsField, names);
+  let matched = false;
+  for (const pattern of hostsField.split(',')) {
+    const p = pattern.toLowerCase();
+    if (!p) continue;
+    if (p.startsWith('!')) {
+      if (names.some((n) => globMatch(p.slice(1), n))) return false;
+    } else if (names.some((n) => globMatch(p, n))) {
+      matched = true;
+    }
+  }
+  return matched;
+}
+
+/** |1|base64(salt)|base64(hmac-sha1(salt, host)) */
+function hashedMatches(field: string, names: string[]): boolean {
+  const parts = field.split('|');
+  if (parts.length !== 4 || parts[1] !== '1') return false;
+  try {
+    const salt = Buffer.from(parts[2]!, 'base64');
+    const hash = Buffer.from(parts[3]!, 'base64');
+    return names.some((name) => {
+      const mac = createHmac('sha1', salt).update(name).digest();
+      return mac.length === hash.length && timingSafeEqual(mac, hash);
+    });
+  } catch {
+    return false;
+  }
+}
+
+const globCache = new Map<string, RegExp>();
+
+function globMatch(pattern: string, text: string): boolean {
+  let rx = globCache.get(pattern);
+  if (!rx) {
+    rx = new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`);
+    globCache.set(pattern, rx);
+  }
+  return rx.test(text);
 }

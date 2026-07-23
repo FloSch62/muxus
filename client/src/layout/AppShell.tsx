@@ -27,7 +27,7 @@ export function AppShell() {
   const activeTab = tabs.find((t) => t.id === activeId);
   const forwardsOpen = useUiStore((s) => s.forwardsOpen);
   const setForwardsOpen = useUiStore((s) => s.setForwardsOpen);
-  const setSessionDialog = useUiStore((s) => s.setSessionDialog);
+  const setHostEditor = useUiStore((s) => s.setHostEditor);
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -55,8 +55,8 @@ export function AppShell() {
                     <Button variant="contained" startIcon={<TerminalIcon />} onClick={() => openLocalTerminal()}>
                       Local terminal
                     </Button>
-                    <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setSessionDialog('new')}>
-                      New SSH session
+                    <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setHostEditor({ mode: 'new' })}>
+                      Add SSH host
                     </Button>
                   </Stack>
                 </Stack>
@@ -70,7 +70,14 @@ export function AppShell() {
           </Box>
         </Box>
       </Box>
-      {activeTab?.connId && <ForwardsDialog connId={activeTab.connId} open={forwardsOpen} onClose={() => setForwardsOpen(false)} />}
+      {activeTab?.connId && (
+        <ForwardsDialog
+          connId={activeTab.connId}
+          target={activeTab.profile.kind === 'ssh' ? activeTab.profile.target : undefined}
+          open={forwardsOpen}
+          onClose={() => setForwardsOpen(false)}
+        />
+      )}
     </Box>
   );
 }

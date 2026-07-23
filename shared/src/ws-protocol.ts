@@ -21,12 +21,15 @@ export const sessionProfileSchema = z.discriminatedUnion('kind', [
   }),
   z.object({
     kind: z.literal('ssh'),
-    host: z.string().min(1),
-    port: z.number().int().min(1).max(65535).optional(),
+    /**
+     * Host alias from ~/.ssh/config, or an ad-hoc "[user@]host[:port]".
+     * Everything else — HostName, User, Port, keys, ProxyJump, forwards —
+     * resolves server-side from the config, exactly like `ssh <target>`.
+     */
+    target: z.string().min(1),
+    /** Quick-connect overrides on top of config resolution. */
     user: z.string().optional(),
-    /** agent = SSH agent, key = private key file, password = interactive. */
-    auth: z.enum(['agent', 'key', 'password']).optional(),
-    keyPath: z.string().optional(),
+    port: z.number().int().min(1).max(65535).optional(),
     term: z.string().optional(),
   }),
 ]);
@@ -55,7 +58,14 @@ export type TerminalServerMessage =
   /** Connection progress worth echoing into the terminal ("Connecting …"). */
   | { op: 'status'; message: string }
   /** Interactive auth (password, 2FA, key passphrase). echo=false → mask input. */
-  | { op: 'auth-prompt'; name?: string; instructions?: string; prompts: Array<{ prompt: string; echo: boolean }> }
+  | {
+      op: 'auth-prompt';
+      name?: string;
+      instructions?: string;
+      /** Which host in the connection chain is asking ("bastion", "user@web1"). */
+      host?: string;
+      prompts: Array<{ prompt: string; echo: boolean }>;
+    }
   /** Host key verification: `new` = first contact (TOFU), `mismatch` = KEY CHANGED. */
   | {
       op: 'host-key';
@@ -67,7 +77,9 @@ export type TerminalServerMessage =
       state: 'new' | 'mismatch';
       /** Previously recorded fingerprint when state is `mismatch`. */
       previous?: string;
+      /** Set when this is an intermediate ProxyJump hop, not the final target. */
+      hop?: string;
     }
   /** Shell attached; connId keys follow-up SFTP/forward REST calls. */
-  | { op: 'ready'; connId: string }
+  | { op: 'ready'; connId: string; host?: string; user?: string }
   | { op: 'exit'; code?: number; message?: string };

@@ -1,44 +1,51 @@
 import type { LocalProfile, SessionProfile } from '@muxus/shared';
 import { usePrefsStore } from './state/prefs.js';
 import { useTabsStore } from './state/tabs.js';
-import type { SavedSession } from './state/sessions.js';
 
 /** Open a new local terminal tab using the user's shell/term preferences. */
 export function openLocalTerminal(): string {
   const { localShell, termName } = usePrefsStore.getState();
   const profile: LocalProfile = {
     kind: 'local',
-    shell: localShell === 'auto' ? undefined : localShell,
+    shell: localShell !== 'auto' && localShell.trim() ? localShell.trim() : undefined,
     term: termName,
   };
   return useTabsStore.getState().open(profile, 'Local');
 }
 
-/** Open a tab for a saved SSH session. */
-export function openSavedSession(session: SavedSession): string {
+/**
+ * Open an SSH tab. `target` is a ~/.ssh/config alias or an ad-hoc
+ * "[user@]host[:port]" — the server resolves it exactly like `ssh <target>`.
+ */
+export function connectTarget(target: string, title = target): string {
   const { termName } = usePrefsStore.getState();
-  const profile: SessionProfile = {
-    kind: 'ssh',
-    host: session.host,
-    port: session.port,
-    user: session.user,
-    auth: session.auth,
-    keyPath: session.keyPath,
-    term: termName,
-  };
-  return useTabsStore.getState().open(profile, session.name);
+  const profile: SessionProfile = { kind: 'ssh', target, term: termName };
+  return useTabsStore.getState().open(profile, title);
 }
 
-/** Open an ad-hoc SSH tab straight from a ~/.ssh/config alias (agent auth). */
-export function openConfigHost(alias: string, hint: { user?: string; port?: number }): string {
-  const { termName } = usePrefsStore.getState();
-  const profile: SessionProfile = {
-    kind: 'ssh',
-    host: alias,
-    port: hint.port,
-    user: hint.user,
-    auth: 'agent',
-    term: termName,
-  };
-  return useTabsStore.getState().open(profile, alias);
+/** Duplicate an open tab (same profile, fresh session). */
+export function duplicateTab(tabId: string): void {
+  const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId);
+  if (tab) useTabsStore.getState().open(tab.profile, tab.title);
+}
+
+/**
+ * Whether omnibox input can be dialed directly: "[user@]host[:port]" with a
+ * plausible host part. Deliberately permissive — any single word could be a
+ * resolvable hostname or config alias.
+ */
+export function isQuickConnectTarget(input: string): boolean {
+  const s = input.trim();
+  if (!s || /\s/.test(s)) return false;
+  const at = s.lastIndexOf('@');
+  const user = at > 0 ? s.slice(0, at) : undefined;
+  const rest = at > 0 ? s.slice(at + 1) : s;
+  if (at === 0 || user === '') return false;
+  const m = /^([^:]+)(?::(\d+))?$/.exec(rest);
+  if (!m || !m[1]) return false;
+  if (m[2] !== undefined) {
+    const port = Number(m[2]);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return false;
+  }
+  return true;
 }

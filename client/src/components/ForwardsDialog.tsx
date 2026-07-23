@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import Dialog from '@mui/material/Dialog';
@@ -7,53 +6,41 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import IconButton from '@mui/material/IconButton';
-import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
-import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
+import BookmarkAddOutlinedIcon from '@mui/icons-material/BookmarkAddOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { ForwardInfo, ForwardType } from '@muxus/shared';
+import type { ConfigForward, ForwardInfo } from '@muxus/shared';
 import { apiFetch } from '../api/http.js';
-import { useForwards } from '../api/queries.js';
-import { showErrorToast } from '../state/toast.js';
+import { useForwards, useSshConfig } from '../api/queries.js';
+import { useUpsertHost } from '../api/ssh-config.js';
+import { showErrorToast, showToast } from '../state/toast.js';
+import { FORWARD_FLAG, ForwardRuleForm, describeForward } from './ForwardRuleForm.js';
 
-function describe(f: ForwardInfo): string {
-  if (f.type === 'dynamic') return `SOCKS5 on 127.0.0.1:${f.bindPort}`;
-  if (f.type === 'local') return `127.0.0.1:${f.bindPort} → ${f.targetHost}:${f.targetPort}`;
-  return `remote :${f.bindPort} → ${f.targetHost}:${f.targetPort}`;
-}
-
-/** Port forwarding manager for the active tab's SSH connection. */
-export function ForwardsDialog({ connId, open, onClose }: { connId: string; open: boolean; onClose: () => void }) {
+/**
+ * Port forwarding on the active tab's live connection. Config-declared
+ * forwards appear with a "config" chip (they started with the session);
+ * ad-hoc ones can be bookmarked into the Host block so they come back
+ * on the next connect.
+ */
+export function ForwardsDialog({ connId, target, open, onClose }: { connId: string; target?: string; open: boolean; onClose: () => void }) {
   const { data } = useForwards(open ? connId : undefined);
+  const { data: config } = useSshConfig();
   const queryClient = useQueryClient();
-  const [type, setType] = useState<ForwardType>('local');
-  const [bindPort, setBindPort] = useState('');
-  const [targetHost, setTargetHost] = useState('localhost');
-  const [targetPort, setTargetPort] = useState('');
+  const hostEntry = target ? config?.hosts.find((h) => h.aliases.includes(target)) : undefined;
 
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: ['forwards', connId] });
 
   const create = useMutation({
-    mutationFn: () =>
+    mutationFn: (rule: ConfigForward) =>
       apiFetch('/api/forwards', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          connId,
-          type,
-          bindPort: Number(bindPort),
-          targetHost: type === 'dynamic' ? undefined : targetHost.trim(),
-          targetPort: type === 'dynamic' ? undefined : Number(targetPort),
-        }),
+        body: JSON.stringify({ connId, ...rule }),
       }),
-    onSuccess: () => {
-      setBindPort('');
-      setTargetPort('');
-      invalidate();
-    },
+    onSuccess: invalidate,
     onError: showErrorToast,
   });
 
@@ -63,59 +50,90 @@ export function ForwardsDialog({ connId, open, onClose }: { connId: string; open
     onError: showErrorToast,
   });
 
-  const portOk = (v: string) => Number.isInteger(Number(v)) && Number(v) > 0 && Number(v) < 65536;
-  const valid = portOk(bindPort) && (type === 'dynamic' || (targetHost.trim() && portOk(targetPort)));
+  const saveToConfig = useUpsertHost(() => showToast('success', `Saved to ${hostEntry?.alias} — starts with every connection.`));
+
+  const alreadyInConfig = (f: ForwardInfo): boolean =>
+    !!hostEntry?.options.forwards?.some(
+      (c) => c.type === f.type && c.bindPort === f.bindPort && c.targetHost === f.targetHost && c.targetPort === f.targetPort,
+    );
+
+  const bookmark = (f: ForwardInfo) => {
+    if (!hostEntry) return;
+    const rule: ConfigForward =
+      f.type === 'dynamic' ? { type: f.type, bindPort: f.bindPort } : { type: f.type, bindPort: f.bindPort, targetHost: f.targetHost, targetPort: f.targetPort };
+    saveToConfig.mutate({
+      aliases: hostEntry.aliases,
+      description: hostEntry.description,
+      file: hostEntry.file,
+      previousAlias: hostEntry.alias,
+      options: { ...hostEntry.options, forwards: [...(hostEntry.options.forwards ?? []), rule] },
+    });
+  };
+
+  const forwards = data?.forwards ?? [];
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Port forwarding</DialogTitle>
+      <DialogTitle>
+        Port forwarding
+        {target && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            on {target}
+          </Typography>
+        )}
+      </DialogTitle>
       <DialogContent>
         <Stack spacing={1.5} sx={{ mt: 0.5 }}>
-          {(data?.forwards ?? []).map((f) => (
+          {forwards.map((f) => (
             <Stack key={f.id} direction="row" spacing={1} sx={{ alignItems: 'center' }}>
               <Chip
                 size="small"
-                label={f.type === 'local' ? '-L' : f.type === 'remote' ? '-R' : '-D'}
+                label={FORWARD_FLAG[f.type]}
                 color={f.status === 'error' ? 'error' : 'default'}
-                sx={{ fontFamily: '"JetBrains Mono", monospace', width: 42 }}
+                sx={{ fontFamily: '"JetBrains Mono", monospace', width: 44 }}
               />
               <Typography variant="body2" sx={{ flex: 1, fontFamily: '"JetBrains Mono", monospace', fontSize: 12 }}>
-                {describe(f)}
+                {describeForward(f)}
+                {f.error ? ` — ${f.error}` : ''}
               </Typography>
-              <Tooltip title="Stop forward">
+              {f.origin === 'config' ? (
+                <Tooltip title="Declared in ssh config — started with the session">
+                  <Chip size="small" label="config" variant="outlined" sx={{ height: 20 }} />
+                </Tooltip>
+              ) : (
+                hostEntry && (
+                  <Tooltip title={alreadyInConfig(f) ? 'Already in the Host block' : `Save to ${hostEntry.alias}'s config — starts on every connect`}>
+                    <span>
+                      <IconButton
+                        size="small"
+                        aria-label="Save forward to config"
+                        disabled={alreadyInConfig(f) || saveToConfig.isPending}
+                        onClick={() => bookmark(f)}
+                      >
+                        <BookmarkAddOutlinedIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                )
+              )}
+              <Tooltip title={f.origin === 'config' ? 'Stop for this session (the config rule stays)' : 'Stop forward'}>
                 <IconButton size="small" aria-label="Stop forward" onClick={() => remove.mutate(f.id)}>
                   <DeleteOutlineIcon fontSize="small" />
                 </IconButton>
               </Tooltip>
             </Stack>
           ))}
-          {!data?.forwards.length && (
+          {forwards.length === 0 && (
             <Typography variant="body2" color="text.secondary">
               No active forwards on this connection.
             </Typography>
           )}
           <Divider />
-          <Stack direction="row" spacing={1.5}>
-            <TextField select label="Type" value={type} onChange={(e) => setType(e.target.value as ForwardType)} sx={{ width: 150 }}>
-              <MenuItem value="local">Local (-L)</MenuItem>
-              <MenuItem value="remote">Remote (-R)</MenuItem>
-              <MenuItem value="dynamic">SOCKS (-D)</MenuItem>
-            </TextField>
-            <TextField label={type === 'remote' ? 'Remote port' : 'Local port'} value={bindPort} onChange={(e) => setBindPort(e.target.value)} sx={{ width: 120 }} />
-            {type !== 'dynamic' && (
-              <>
-                <TextField label="Target host" value={targetHost} onChange={(e) => setTargetHost(e.target.value)} fullWidth />
-                <TextField label="Target port" value={targetPort} onChange={(e) => setTargetPort(e.target.value)} sx={{ width: 120 }} />
-              </>
-            )}
-          </Stack>
+          <ForwardRuleForm serverLabel={target ?? 'SSH server'} busy={create.isPending} onAdd={(rule) => create.mutate(rule)} submitLabel="Start" />
         </Stack>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Close</Button>
-        <Button variant="contained" disabled={!valid || create.isPending} onClick={() => create.mutate()}>
-          Add forward
-        </Button>
       </DialogActions>
     </Dialog>
   );

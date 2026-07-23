@@ -197,7 +197,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: TerminalTab; ac
           term.write(`\x1b[90m${ctl.message}\x1b[0m\r\n`);
           break;
         case 'auth-prompt':
-          setAuthPrompt({ name: ctl.name, instructions: ctl.instructions, prompts: ctl.prompts });
+          setAuthPrompt({ name: ctl.name, instructions: ctl.instructions, host: ctl.host, prompts: ctl.prompts });
           break;
         case 'host-key':
           setHostKey(ctl);

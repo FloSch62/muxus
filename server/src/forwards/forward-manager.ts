@@ -29,7 +29,7 @@ export class ForwardManager {
     return [...this.forwards.values()].map((f) => f.info).filter((f) => !connId || f.connId === connId);
   }
 
-  async start(req: ForwardRequest): Promise<ForwardInfo> {
+  async start(req: ForwardRequest, origin: ForwardInfo['origin'] = 'manual'): Promise<ForwardInfo> {
     const conn = this.connections.get(req.connId);
     if (!conn) throw new HttpProblem(404, 'connection not found (terminal closed?)');
     if (req.type !== 'dynamic' && (!req.targetHost || !req.targetPort)) {
@@ -42,6 +42,7 @@ export class ForwardManager {
       bindPort: req.bindPort,
       targetHost: req.targetHost,
       targetPort: req.targetPort,
+      origin,
       status: 'active',
     };
     const stop =

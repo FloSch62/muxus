@@ -11,6 +11,8 @@ import Typography from '@mui/material/Typography';
 export interface AuthPromptRequest {
   name?: string;
   instructions?: string;
+  /** Which host in the connection chain is asking ("bastion", "web"). */
+  host?: string;
   prompts: Array<{ prompt: string; echo: boolean }>;
 }
 
@@ -25,7 +27,14 @@ export function AuthPromptDialog({ request, onSubmit }: { request: AuthPromptReq
   const submit = () => onSubmit(answers);
   return (
     <Dialog open onClose={() => onSubmit(null)} maxWidth="xs" fullWidth>
-      <DialogTitle>{request.name || 'Authentication'}</DialogTitle>
+      <DialogTitle>
+        {request.name || 'Authentication'}
+        {request.host && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            {request.host}
+          </Typography>
+        )}
+      </DialogTitle>
       <DialogContent>
         <Stack spacing={1.5} sx={{ mt: 0.5 }}>
           {request.instructions && (

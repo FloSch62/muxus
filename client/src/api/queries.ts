@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import type { AppInfo, ForwardInfo, SftpListResponse, SshConfigResponse } from '@muxus/shared';
+import type { AppInfo, ForwardInfo, SftpListResponse, SshConfigResponse, SshKeysResponse } from '@muxus/shared';
 import { apiFetch } from './http.js';
 
 export function useAppInfo() {
@@ -10,12 +10,23 @@ export function useAppInfo() {
   });
 }
 
-export function useSshConfigHosts() {
+export function useSshConfig() {
   return useQuery({
-    queryKey: ['ssh-config-hosts'],
-    queryFn: () => apiFetch<SshConfigResponse>('/api/ssh/config-hosts'),
-    // The config rarely changes mid-session; a manual refresh re-reads it.
-    staleTime: 60_000,
+    queryKey: ['ssh-config'],
+    queryFn: () => apiFetch<SshConfigResponse>('/api/ssh/config'),
+    // ~/.ssh/config is the session store; pick up external edits quickly.
+    staleTime: 5_000,
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useSshKeys(enabled = true) {
+  return useQuery({
+    queryKey: ['ssh-keys'],
+    queryFn: () => apiFetch<SshKeysResponse>('/api/ssh/keys'),
+    enabled,
+    staleTime: 30_000,
   });
 }
 

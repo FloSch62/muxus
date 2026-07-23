@@ -14,6 +14,8 @@ export interface HostKeyRequest {
   fingerprint: string;
   state: 'new' | 'mismatch';
   previous?: string;
+  /** Set when this is an intermediate ProxyJump hop, not the final target. */
+  hop?: string;
 }
 
 const mono = { fontFamily: '"JetBrains Mono", monospace', fontSize: 12, overflowWrap: 'anywhere' } as const;
@@ -27,6 +29,11 @@ export function HostKeyDialog({ request, onAnswer }: { request: HostKeyRequest |
       <DialogTitle>{mismatch ? 'Host key changed!' : 'Unknown host'}</DialogTitle>
       <DialogContent>
         <Stack spacing={1.5} sx={{ mt: 0.5 }}>
+          {request.hop && (
+            <Alert severity="info" sx={{ py: 0 }}>
+              This is the jump host “{request.hop}” on the way to your target.
+            </Alert>
+          )}
           {mismatch ? (
             <Alert severity="error">
               The identity of {request.host}:{request.port} has CHANGED. This can mean the server was reinstalled — or that the

@@ -123,6 +123,16 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
     },
   });
 
+  // Forwards declared on the host in ssh config start with the session,
+  // exactly like `ssh` honoring LocalForward/RemoteForward/DynamicForward.
+  for (const fwd of conn.configForwards) {
+    try {
+      await ctx.forwards.start({ connId: conn.id, type: fwd.type, bindPort: fwd.bindPort, targetHost: fwd.targetHost, targetPort: fwd.targetPort }, 'config');
+    } catch (err) {
+      sendControl(socket, { op: 'status', message: `forward -${fwd.type[0]?.toUpperCase()} ${fwd.bindPort} failed: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  }
+
   if (!socketOpen) {
     conn.close();
     return;
@@ -172,8 +182,8 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
     conn.close();
   });
 
-  app.log.info({ host: conn.host, user: conn.user, connId: conn.id }, 'ssh session established');
-  sendControl(socket, { op: 'ready', connId: conn.id });
+  app.log.info({ target: profile.target, host: conn.host, user: conn.user, connId: conn.id }, 'ssh session established');
+  sendControl(socket, { op: 'ready', connId: conn.id, host: conn.host, user: conn.user });
 }
 
 function sendControl(socket: WebSocket, msg: TerminalServerMessage): void {

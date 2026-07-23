@@ -4,11 +4,13 @@ Free, open-source SSH client & modern terminal — the MobaXterm workflow with a
 
 - **Kitty graphics protocol** — `kitten icat`, yazi/ranger image previews, matplotlib backends and timg render inline images over SSH. Direct (chunked, optionally zlib-compressed) PNG/RGB/RGBA transmission, placements with z-index, cell sizing and delete commands; sixel and iTerm2 inline images work too.
 - **Kitty keyboard protocol** — the progressive-enhancement flag stack (disambiguate, event types, alternate keys, report-all, associated text), so modern TUIs (neovim, helix, fish) get full key fidelity. `TERM=xterm-kitty` by default, honestly.
-- **Session manager** — saved SSH sessions (agent / key / password auth, groups) plus your parsed `~/.ssh/config` hosts, one click to connect.
+- **Session manager on ~/.ssh/config** — your OpenSSH config *is* the session store, nothing else. Every concrete `Host` block appears in the sidebar (grouped by Include file, with live-connection dots and jump/key/forward badges); adding or editing a session writes the block back in place without touching the rest of the file (atomic writes + `.muxus.bak`). The search box doubles as quick connect: type an alias or `user@host:port` and hit Enter.
+- **Full connect-through** — ProxyJump chains (nested, comma-listed, cycle-checked) are dialed hop by hop like real ssh: every hop gets its own config resolution, host-key verification and authentication. Auth follows OpenSSH order inside one connection: agent → IdentityFile / default `id_*` keys (passphrase prompts included, `IdentitiesOnly` honored) → keyboard-interactive → password. `LocalForward`/`RemoteForward`/`DynamicForward` from the config start with the session; `ForwardAgent` works when an agent is present.
+- **Host editor** — a MobaXterm-style visual editor for `Host` blocks: key picker fed by the keys found in `~/.ssh` (agent-loaded and encrypted keys badged), jump-chain builder, port-forwarding editor with a live tunnel diagram, free-form options for anything Muxus doesn't model, and an exact preview of the block text before it is written.
 - **Tabbed terminals** — local shells (real PTYs) and SSH sessions side by side; browser-style tab strip, Ctrl+Tab cycling, Ctrl+Shift+T.
 - **SFTP file browser** — per SSH tab, sharing the session's connection: navigate, upload (drag & drop), download, rename, delete, mkdir.
-- **Port forwarding** — local (-L), remote (-R) and dynamic SOCKS5 (-D) forwards per connection.
-- **Interactive auth done right** — keyboard-interactive/2FA prompts, key passphrases and password retries as dialogs; trust-on-first-use host key verification with a loud key-changed warning.
+- **Port forwarding** — local (-L), remote (-R) and dynamic SOCKS5 (-D) forwards per connection, plus one click to save an ad-hoc forward into the host's config block.
+- **Interactive auth done right** — keyboard-interactive/2FA prompts, key passphrases and password retries as dialogs (labelled with the hop that is asking); host keys are verified against the real `~/.ssh/known_hosts` (hashed entries included), trust-on-first-use appends to it, and a changed key gets the loud warning with `ssh-keygen -R`-style replacement on accept.
 - Dark/light/system theme, frameless desktop window, Inter + JetBrains Mono.
 
 ## Architecture
@@ -18,7 +20,7 @@ pnpm workspace, all TypeScript/ESM:
 | Package | What it is |
 | --- | --- |
 | `shared/` | REST DTOs + zod WebSocket protocol (`/ws/terminal`: binary frames = bytes, text frames = control) |
-| `server/` | Fastify on 127.0.0.1 with per-run bearer token; ssh2 connections, node-pty local shells, SFTP routes, forward manager |
+| `server/` | Fastify on 127.0.0.1 with per-run bearer token; ssh_config engine (line-preserving parser/resolver/editor), ssh2 connections with ProxyJump + OpenSSH-order auth, known_hosts verification, node-pty local shells, SFTP routes, forward manager |
 | `client/` | React 19 + MUI, xterm.js with custom kitty graphics/keyboard engines (`client/src/terminal/`) |
 | `electron/` | Desktop shell: embeds the server in-process, frameless window, state persistence over IPC |
 | `tests/` | vitest units for the protocol parsers and encoders |
@@ -48,7 +50,7 @@ Note: the Electron desktop build rebuilds `node-pty` against Electron's ABI (`pn
 
 ## Security model
 
-Local single-user tool: the server binds 127.0.0.1 only, every request needs the per-run bearer token, WebSocket upgrades check token + Origin (DNS-rebinding defense). Passwords/passphrases are never stored — they travel only through the interactive auth prompts of a live connection. Host keys are pinned on first use in `~/.config/muxus/known-hosts.json`.
+Local single-user tool: the server binds 127.0.0.1 only, every request needs the per-run bearer token, WebSocket upgrades check token + Origin (DNS-rebinding defense). Passwords/passphrases are never stored — they travel only through the interactive auth prompts of a live connection. Host keys are verified against `~/.ssh/known_hosts` (and `/etc/ssh/ssh_known_hosts`, read-only) exactly like OpenSSH; first use appends there, and config edits are atomic with a `.muxus.bak` of the previous content.
 
 ## License
 

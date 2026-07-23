@@ -9,28 +9,22 @@ describe('sessionProfileSchema', () => {
   it('accepts a full ssh profile', () => {
     const parsed = sessionProfileSchema.safeParse({
       kind: 'ssh',
-      host: 'example.com',
+      target: 'web',
       port: 2222,
       user: 'alice',
-      auth: 'key',
-      keyPath: '~/.ssh/id_ed25519',
       term: 'xterm-kitty',
     });
     expect(parsed.success).toBe(true);
   });
 
-  it('rejects ssh profiles without a host', () => {
-    expect(sessionProfileSchema.safeParse({ kind: 'ssh', host: '' }).success).toBe(false);
+  it('rejects ssh profiles without a target', () => {
+    expect(sessionProfileSchema.safeParse({ kind: 'ssh', target: '' }).success).toBe(false);
     expect(sessionProfileSchema.safeParse({ kind: 'ssh' }).success).toBe(false);
   });
 
   it('rejects out-of-range ports', () => {
-    expect(sessionProfileSchema.safeParse({ kind: 'ssh', host: 'x', port: 0 }).success).toBe(false);
-    expect(sessionProfileSchema.safeParse({ kind: 'ssh', host: 'x', port: 65536 }).success).toBe(false);
-  });
-
-  it('rejects unknown auth methods', () => {
-    expect(sessionProfileSchema.safeParse({ kind: 'ssh', host: 'x', auth: 'kerberos' }).success).toBe(false);
+    expect(sessionProfileSchema.safeParse({ kind: 'ssh', target: 'x', port: 0 }).success).toBe(false);
+    expect(sessionProfileSchema.safeParse({ kind: 'ssh', target: 'x', port: 65536 }).success).toBe(false);
   });
 });
 
@@ -38,7 +32,7 @@ describe('terminalClientMessageSchema', () => {
   it('accepts connect with profile and dimensions', () => {
     const parsed = terminalClientMessageSchema.safeParse({
       op: 'connect',
-      profile: { kind: 'ssh', host: 'example.com' },
+      profile: { kind: 'ssh', target: 'example.com' },
       cols: 80,
       rows: 24,
     });
