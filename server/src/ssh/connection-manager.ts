@@ -26,6 +26,7 @@ import {
   type ConnectionLeaseOwner,
   type TransportLease,
 } from './connection-leases.js';
+import { openIntegratedRemoteShell } from './remote-shell-integration.js';
 import {
   expandIdentityPath,
   listHosts,
@@ -164,6 +165,27 @@ export class SshConnectionManager {
     let closed = false;
     let ending = false;
 
+    const getSftp = () => {
+      if (sftpPromise) return sftpPromise;
+      const pending = new Promise<SFTPWrapper>((resolve, reject) => {
+        client.sftp((err, sftp) => (err ? reject(err) : resolve(sftp)));
+      });
+      sftpPromise = pending;
+      void pending.then(
+        (sftp) => {
+          sftp.once('close', () => {
+            if (sftpPromise === pending) sftpPromise = undefined;
+          });
+        },
+        () => {
+          // A transient channel-open failure must not poison every future
+          // SFTP operation on an otherwise healthy transport.
+          if (sftpPromise === pending) sftpPromise = undefined;
+        },
+      );
+      return pending;
+    };
+
     const managed: ManagedConnection = {
       id,
       client,
@@ -173,33 +195,16 @@ export class SshConnectionManager {
       user: target.user,
       metadataAlias,
       configForwards: target.resolved.forwards,
-      shell: (cols, rows, term) =>
-        new Promise((resolve, reject) => {
-          client.shell(terminalPtyOptions(cols, rows, term), (err, stream) =>
-            err ? reject(err) : resolve(stream),
-          );
-        }),
-      sftp: () => {
-        // One SFTP channel per connection, shared by every file operation.
-        if (sftpPromise) return sftpPromise;
-        const pending = new Promise<SFTPWrapper>((resolve, reject) => {
-          client.sftp((err, sftp) => (err ? reject(err) : resolve(sftp)));
+      shell: async (cols, rows, term) => {
+        const pty = terminalPtyOptions(cols, rows, term);
+        const integrated = await openIntegratedRemoteShell(client, getSftp, pty);
+        if (integrated) return integrated;
+        return new Promise((resolve, reject) => {
+          client.shell(pty, (err, stream) => (err ? reject(err) : resolve(stream)));
         });
-        sftpPromise = pending;
-        void pending.then(
-          (sftp) => {
-            sftp.once('close', () => {
-              if (sftpPromise === pending) sftpPromise = undefined;
-            });
-          },
-          () => {
-            // A transient channel-open failure must not poison every future
-            // SFTP operation on an otherwise healthy transport.
-            if (sftpPromise === pending) sftpPromise = undefined;
-          },
-        );
-        return pending;
       },
+      // One SFTP channel per connection, shared by every file operation.
+      sftp: getSftp,
       onClose: (listener) => {
         if (closed) {
           queueMicrotask(listener);

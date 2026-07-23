@@ -10,7 +10,7 @@ import path from 'node:path';
  * user's own startup files first, so prompts and plugins are untouched.
  */
 
-const ZSHENV = `# Muxus shell integration bootstrap. Sources your own .zshenv unmodified,
+export const ZSHENV = `# Muxus shell integration bootstrap. Sources your own .zshenv unmodified,
 # then returns to the shim so .zshrc can hook in.
 __muxus_shim="$ZDOTDIR"
 if [[ -n "$MUXUS_USER_ZDOTDIR" ]]; then ZDOTDIR="$MUXUS_USER_ZDOTDIR"; else builtin unset ZDOTDIR; fi
@@ -20,7 +20,7 @@ ZDOTDIR="$__muxus_shim"
 builtin unset __muxus_shim
 `;
 
-const ZSHRC = `# Muxus shell integration. Your .zshrc runs first, unmodified.
+export const ZSHRC = `# Muxus shell integration. Your .zshrc runs first, unmodified.
 if [[ -n "$MUXUS_USER_ZDOTDIR" ]]; then ZDOTDIR="$MUXUS_USER_ZDOTDIR"; else builtin unset ZDOTDIR; fi
 builtin unset MUXUS_USER_ZDOTDIR
 if [[ -f "\${ZDOTDIR:-$HOME}/.zshrc" ]]; then builtin source "\${ZDOTDIR:-$HOME}/.zshrc"; fi

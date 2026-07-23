@@ -26,7 +26,7 @@ export interface MarkerHost {
  * paints the command's line red in the overview ruler, exactly like
  * VS Code's failed-command decorations. Local shells get the sequences
  * from the injected integration (server/src/local/shell-integration.ts);
- * remote shells produce them whenever their own prompt integration does.
+ * zsh/bash SSH sessions get an equivalent remote-side integration.
  */
 export class CommandTracker {
   private commandStart: CommandMarker | undefined;
