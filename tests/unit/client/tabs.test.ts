@@ -60,3 +60,31 @@ describe('blank session tabs', () => {
     ]);
   });
 });
+
+describe('remote editor tabs', () => {
+  it('opens, activates, and closes remote files without disturbing the terminal tab', () => {
+    const store = useTabsStore.getState();
+    const id = store.open({ kind: 'ssh', target: 'edge-router' }, 'Edge router');
+
+    store.openEditor(id, '/etc/hosts');
+    store.openEditor(id, '/etc/ssh/sshd_config');
+    expect(useTabsStore.getState().tabs[0]).toMatchObject({
+      editorPaths: ['/etc/hosts', '/etc/ssh/sshd_config'],
+      activeEditorPath: '/etc/ssh/sshd_config',
+    });
+
+    store.activateEditor(id, '/etc/hosts');
+    store.closeEditor(id, '/etc/hosts');
+    expect(useTabsStore.getState().tabs[0]).toMatchObject({
+      profile: { kind: 'ssh', target: 'edge-router' },
+      editorPaths: ['/etc/ssh/sshd_config'],
+      activeEditorPath: '/etc/ssh/sshd_config',
+    });
+
+    store.closeEditor(id, '/etc/ssh/sshd_config');
+    expect(useTabsStore.getState().tabs[0]).toMatchObject({
+      editorPaths: [],
+      activeEditorPath: undefined,
+    });
+  });
+});

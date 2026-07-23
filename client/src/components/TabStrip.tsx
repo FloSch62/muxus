@@ -26,10 +26,12 @@ import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutli
 import HorizontalSplitOutlinedIcon from '@mui/icons-material/HorizontalSplitOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined';
+import PodcastsOutlinedIcon from '@mui/icons-material/PodcastsOutlined';
 import { duplicateTab, openEmptyTab, requestCloseTabs } from '../session-actions.js';
 import { useTabsStore, type TabStatus, type TerminalTab } from '../state/tabs.js';
 import { findPane } from '../state/workspace-layout.js';
 import { layout, statusTextColor } from '../theme.js';
+import { useMultiExecStore } from '../state/multi-exec.js';
 
 const statusDot: Record<TabStatus, 'warning' | 'success' | 'error'> = {
   connecting: 'warning',
@@ -51,6 +53,8 @@ export function TabStrip({ paneId, focused }: { paneId: string; focused: boolean
   const split = useTabsStore((s) => s.split);
   const closePane = useTabsStore((s) => s.closePane);
   const update = useTabsStore((s) => s.update);
+  const multiExecTargets = useMultiExecStore((s) => s.selectedIds);
+  const toggleMultiExecTarget = useMultiExecStore((s) => s.toggleTarget);
   const [menu, setMenu] = useState<{ position: { top: number; left: number }; tab: TerminalTab } | null>(null);
   const [renaming, setRenaming] = useState<TerminalTab | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -178,6 +182,20 @@ export function TabStrip({ paneId, focused }: { paneId: string; focused: boolean
             >
               {tab.title}
             </Typography>
+            {multiExecTargets.includes(tab.id) && (
+              <Tooltip
+                title={
+                  multiExecTargets.length >= 2
+                    ? 'Input is mirrored with this terminal'
+                    : 'Selected for multi-execution'
+                }
+              >
+                <PodcastsOutlinedIcon
+                  color={multiExecTargets.length >= 2 ? 'warning' : 'disabled'}
+                  sx={{ fontSize: 14, flexShrink: 0 }}
+                />
+              </Tooltip>
+            )}
             {tab.status !== 'idle' && (
               <Box
                 sx={(theme) => ({
@@ -329,6 +347,21 @@ export function TabStrip({ paneId, focused }: { paneId: string; focused: boolean
             </Tooltip>
           </Stack>
         </Box>
+        <Divider />
+        <MenuItem
+          disabled={menuTab?.status !== 'connected'}
+          onClick={() => {
+            if (menuTab) toggleMultiExecTarget(menuTab.id);
+            setMenu(null);
+          }}
+        >
+          <ListItemIcon>
+            <PodcastsOutlinedIcon fontSize="small" color={menuTab && multiExecTargets.includes(menuTab.id) ? 'warning' : 'inherit'} />
+          </ListItemIcon>
+          <ListItemText>
+            {menuTab && multiExecTargets.includes(menuTab.id) ? 'Remove from multi-execution' : 'Add to multi-execution'}
+          </ListItemText>
+        </MenuItem>
         <Divider />
         <MenuItem
           onClick={() => {

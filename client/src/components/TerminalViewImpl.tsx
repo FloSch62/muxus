@@ -38,6 +38,7 @@ import { wsProtocols, wsUrl } from '../api/http.js';
 import { copyToClipboard, readFromClipboard } from '../clipboard.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { showToast } from '../state/toast.js';
+import { broadcastTerminalInput } from '../state/multi-exec.js';
 import { terminalFontStack, usePrefsStore } from '../state/prefs.js';
 import { useTabsStore, type SessionTab } from '../state/tabs.js';
 import { KittyApcExtractor, type StreamPart } from '../terminal/apc-stream.js';
@@ -260,8 +261,17 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     term.open(el);
     fit.fit();
 
+    const encoder = new TextEncoder();
+    const sendInput = (data: string | Uint8Array<ArrayBuffer>): boolean => {
+      const socket = wsRef.current;
+      if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+      socket.send(typeof data === 'string' ? encoder.encode(data) : data);
+      return true;
+    };
+
     const unregister = registerTerminal(tab.id, {
       focus: () => term.focus(),
+      sendInput,
       clear: () => term.clear(),
       selectAll: () => term.selectAll(),
       hasSelection: () => term.hasSelection(),
@@ -297,9 +307,8 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     };
     el.addEventListener('wheel', onWheel, { passive: false, capture: true });
 
-    const encoder = new TextEncoder();
     const sendToApp = (data: string) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(encoder.encode(data));
+      sendInput(data);
     };
 
     const graphics = new KittyGraphicsEngine(term);
@@ -398,13 +407,14 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     };
 
     const onData = term.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(encoder.encode(data));
+      if (sendInput(data)) broadcastTerminalInput(tab.id, data);
     });
     const onBinary = term.onBinary((data) => {
       if (ws.readyState !== WebSocket.OPEN) return;
       const bytes = new Uint8Array(data.length);
       for (let i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i) & 0xff;
       ws.send(bytes);
+      broadcastTerminalInput(tab.id, bytes);
     });
     const onResize = term.onResize(({ cols, rows }) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ op: 'resize', cols, rows }));

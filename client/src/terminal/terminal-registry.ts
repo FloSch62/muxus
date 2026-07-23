@@ -6,6 +6,8 @@
  */
 export interface TerminalHandle {
   focus(): void;
+  /** Write raw input directly to this terminal's PTY transport. */
+  sendInput(data: string | Uint8Array<ArrayBuffer>): boolean;
   /** Clear screen + scrollback. */
   clear(): void;
   selectAll(): void;

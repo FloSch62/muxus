@@ -34,6 +34,7 @@ import { SessionSidebar } from '../components/SessionSidebar.js';
 import { SftpPanel } from '../components/SftpPanel.js';
 import { TabStrip } from '../components/TabStrip.js';
 import { TerminalView } from '../components/TerminalView.js';
+import { RemoteEditorWorkspace } from '../components/RemoteEditorWorkspace.js';
 import { TopBar } from './TopBar.js';
 
 /** TopBar over a stable, resizable pane canvas. Hidden tabs stay mounted. */
@@ -166,6 +167,9 @@ function PaneView({
   onAddHost: () => void;
 }) {
   const focusPane = useTabsStore((state) => state.focusPane);
+  const openEditor = useTabsStore((state) => state.openEditor);
+  const activateEditor = useTabsStore((state) => state.activateEditor);
+  const closeEditor = useTabsStore((state) => state.closeEditor);
   const paneTabs = tabs.filter((tab) => tab.paneId === pane.id);
   const activeTab = paneTabs.find((tab) => tab.id === pane.activeTabId);
 
@@ -194,7 +198,21 @@ function PaneView({
               <Box key={tab.id} sx={{ height: '100%', display: visible ? 'block' : 'none' }}>
                 {tab.profile ? (
                   <ErrorBoundary label="This terminal">
-                    <TerminalView tab={tab} active={visible && focused} />
+                    <Box sx={{ height: '100%', display: tab.activeEditorPath ? 'none' : 'block' }}>
+                      <TerminalView tab={tab} active={visible && focused && !tab.activeEditorPath} />
+                    </Box>
+                    {tab.editorPaths.length > 0 && (
+                      <Box sx={{ height: '100%', display: tab.activeEditorPath ? 'block' : 'none' }}>
+                        <RemoteEditorWorkspace
+                          tabId={tab.id}
+                          connId={tab.connId}
+                          paths={tab.editorPaths}
+                          activePath={tab.activeEditorPath}
+                          onActivate={(path) => activateEditor(tab.id, path)}
+                          onClose={(path) => closeEditor(tab.id, path)}
+                        />
+                      </Box>
+                    )}
                   </ErrorBoundary>
                 ) : (
                   <EmptyPane onAddHost={onAddHost} replaceTabId={tab.id} />
@@ -208,7 +226,11 @@ function PaneView({
         </Box>
         {activeTab?.sftpOpen && activeTab.connId && (
           <ErrorBoundary label="The file browser">
-            <SftpPanel key={activeTab.connId} connId={activeTab.connId} />
+            <SftpPanel
+              key={activeTab.connId}
+              connId={activeTab.connId}
+              onOpenFile={(path) => openEditor(activeTab.id, path)}
+            />
           </ErrorBoundary>
         )}
       </Box>

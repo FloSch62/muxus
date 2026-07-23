@@ -232,11 +232,37 @@ export interface SftpEntry {
   mode?: number;
   owner?: string;
   group?: string;
+  /** Short-lived, single-file capability used by Chromium's native DownloadURL drag format. */
+  downloadTicket?: string;
 }
 
 export interface SftpListResponse {
   path: string;
   entries: SftpEntry[];
+}
+
+/** Text file opened through the remote editor. */
+export interface SftpFileResponse {
+  path: string;
+  content: string;
+  size: number;
+  mtimeMs?: number;
+  mode?: number;
+}
+
+/** Optimistic, text-only remote save request. */
+export interface SftpFileSaveRequest {
+  content: string;
+  /** Modification time returned by the read/save that produced this buffer. */
+  expectedMtimeMs?: number;
+  /** Explicit conflict recovery chosen by the user. */
+  force?: boolean;
+}
+
+export interface SftpFileSaveResponse {
+  ok: true;
+  size: number;
+  mtimeMs?: number;
 }
 
 export type ForwardType = 'local' | 'remote' | 'dynamic';

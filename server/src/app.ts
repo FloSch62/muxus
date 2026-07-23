@@ -94,6 +94,10 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   // Bearer-token auth for all /api routes.
   app.addHook('onRequest', async (req, reply) => {
     if (!req.url.startsWith('/api/')) return;
+    // Native HTML file drags cannot attach an Authorization header. This
+    // one endpoint uses a short-lived, path-bound ticket issued only in an
+    // authenticated SFTP listing response.
+    if (req.method === 'GET' && /^\/api\/sftp\/[^/]+\/drag-download(?:\?|$)/.test(req.url)) return;
     const header = req.headers.authorization;
     const ok = header === `Bearer ${config.token}`;
     if (!ok) {

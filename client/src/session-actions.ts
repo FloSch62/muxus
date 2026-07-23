@@ -2,6 +2,7 @@ import type { LocalProfile, SessionProfile, SshHostEntry } from '@muxus/shared';
 import { usePrefsStore } from './state/prefs.js';
 import { useTabsStore } from './state/tabs.js';
 import { useUiStore } from './state/ui.js';
+import { confirmDiscardRemoteEditors } from './editor/remote-editor-registry.js';
 
 function replaceActiveEmpty(
   profile: SessionProfile,
@@ -67,6 +68,7 @@ export function requestCloseTabs(tabIds: string[]): void {
   const { tabs, close } = useTabsStore.getState();
   const targets = tabIds.filter((id) => tabs.some((tab) => tab.id === id));
   if (targets.length === 0) return;
+  if (!confirmDiscardRemoteEditors(targets)) return;
   const live = targets.some((id) => tabs.find((tab) => tab.id === id)?.status === 'connected');
   if (live && usePrefsStore.getState().confirmCloseConnected) {
     useUiStore.getState().setConfirmCloseTabs(targets);

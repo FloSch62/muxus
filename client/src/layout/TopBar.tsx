@@ -39,6 +39,7 @@ import { usePrefsStore } from '../state/prefs.js';
 import { useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
+import { MultiExecControl } from '../components/MultiExecControl.js';
 
 export const TopBar = memo(function TopBar() {
   const mode = usePrefsStore((s) => s.themeMode);
@@ -98,6 +99,7 @@ export const TopBar = memo(function TopBar() {
           </Typography>
         </Stack>
         <Box sx={{ flex: 1 }} />
+        <MultiExecControl />
         {sshReady && (
           <Tooltip title={activeTab.sftpOpen ? 'Hide file browser' : 'Browse files (SFTP)'}>
             <IconButton

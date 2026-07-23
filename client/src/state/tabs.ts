@@ -25,6 +25,9 @@ interface TabBase {
   searchRequest: number;
   /** User-set color flag marking the tab. */
   color?: string;
+  /** Remote files open in the Monaco workspace attached to this session. */
+  editorPaths: string[];
+  activeEditorPath?: string;
 }
 
 export interface SessionTab extends TabBase {
@@ -66,6 +69,9 @@ interface TabsState {
   closePane: (paneId: string) => void;
   resizeSplit: (splitId: string, ratio: number) => void;
   requestSearch: () => void;
+  openEditor: (tabId: string, path: string) => void;
+  activateEditor: (tabId: string, path: string) => void;
+  closeEditor: (tabId: string, path: string) => void;
   restore: (layout: WorkspaceLayoutV1) => void;
   update: (id: string, patch: TabUpdate) => void;
 }
@@ -96,6 +102,7 @@ export const useTabsStore = create<TabsState>()((set) => ({
             connectOnMount: true,
             sftpOpen: false,
             searchRequest: 0,
+            editorPaths: [],
           },
         ],
         root: updatePane(state.root, pane.id, (leaf) => ({ ...leaf, activeTabId: id })),
@@ -121,6 +128,7 @@ export const useTabsStore = create<TabsState>()((set) => ({
             connectOnMount: false,
             sftpOpen: false,
             searchRequest: 0,
+            editorPaths: [],
           },
         ],
         root: updatePane(state.root, pane.id, (leaf) => ({ ...leaf, activeTabId: id })),
@@ -145,6 +153,8 @@ export const useTabsStore = create<TabsState>()((set) => ({
           connId: undefined,
           sftpOpen: false,
           searchRequest: 0,
+          editorPaths: [],
+          activeEditorPath: undefined,
         };
       }),
     }));
@@ -225,6 +235,39 @@ export const useTabsStore = create<TabsState>()((set) => ({
         tab.id === state.activeId ? { ...tab, searchRequest: tab.searchRequest + 1 } : tab,
       ),
     })),
+  openEditor: (tabId, path) =>
+    set((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.id === tabId && tab.profile
+          ? {
+              ...tab,
+              editorPaths: tab.editorPaths.includes(path) ? tab.editorPaths : [...tab.editorPaths, path],
+              activeEditorPath: path,
+            }
+          : tab,
+      ),
+    })),
+  activateEditor: (tabId, path) =>
+    set((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.id === tabId && tab.editorPaths.includes(path)
+          ? { ...tab, activeEditorPath: path }
+          : tab,
+      ),
+    })),
+  closeEditor: (tabId, path) =>
+    set((state) => ({
+      tabs: state.tabs.map((tab) => {
+        if (tab.id !== tabId || !tab.editorPaths.includes(path)) return tab;
+        const index = tab.editorPaths.indexOf(path);
+        const editorPaths = tab.editorPaths.filter((candidate) => candidate !== path);
+        const activeEditorPath =
+          tab.activeEditorPath === path
+            ? editorPaths[Math.min(index, editorPaths.length - 1)]
+            : tab.activeEditorPath;
+        return { ...tab, editorPaths, activeEditorPath };
+      }),
+    })),
   restore: (layout) =>
     set((state) => {
       const restored = restoreWorkspaceLayout(layout);
@@ -236,6 +279,8 @@ export const useTabsStore = create<TabsState>()((set) => ({
           status: 'closed' as const,
           sftpOpen: false,
           searchRequest: 0,
+          editorPaths: [],
+          activeEditorPath: undefined,
         })),
       };
     }),
