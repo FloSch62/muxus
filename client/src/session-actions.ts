@@ -15,13 +15,12 @@ function replaceActiveEmpty(
   return id && state.replaceEmpty(id, profile, title) ? id : undefined;
 }
 
-/** Open a new local terminal tab using the user's shell/term preferences. */
+/** Open a new local terminal tab using the user's shell preference. */
 export function openLocalTerminal(replaceTabId?: string): string {
-  const { localShell, termName } = usePrefsStore.getState();
+  const { localShell } = usePrefsStore.getState();
   const profile: LocalProfile = {
     kind: 'local',
     shell: localShell !== 'auto' && localShell.trim() ? localShell.trim() : undefined,
-    term: termName,
   };
   const replacedId = replaceActiveEmpty(profile, 'Local', replaceTabId);
   if (replacedId) return replacedId;
@@ -38,8 +37,7 @@ export function openEmptyTab(): string {
  * "[user@]host[:port]" — the server resolves it exactly like `ssh <target>`.
  */
 export function connectTarget(target: string, title = target, replaceTabId?: string): string {
-  const { termName } = usePrefsStore.getState();
-  const profile: SessionProfile = { kind: 'ssh', target, term: termName };
+  const profile: SessionProfile = { kind: 'ssh', target };
   const replacedId = replaceActiveEmpty(profile, title, replaceTabId);
   if (replacedId) return replacedId;
   return useTabsStore.getState().open(profile, title);

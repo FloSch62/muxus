@@ -66,6 +66,7 @@ export function useWorkspacePersistence(): void {
     const start = async () => {
       const beforeLoad = JSON.stringify(currentLayout());
       let restored = false;
+      let restoredSource = '';
       try {
         const { workspace } = await apiFetch<{ workspace: WorkspaceRecord | null }>(
           '/api/workspaces/latest',
@@ -76,6 +77,7 @@ export function useWorkspacePersistence(): void {
           const state = useTabsStore.getState();
           // Do not clobber a session the user opened while the request was in flight.
           if (state.tabs.length === 0 && state.root.type === 'pane') {
+            restoredSource = JSON.stringify(workspace.layout);
             state.restore(workspace.layout);
             restored = true;
           }
@@ -87,10 +89,16 @@ export function useWorkspacePersistence(): void {
       if (stopped) return;
       const loadedLayout = currentLayout();
       lastSerialized = JSON.stringify(loadedLayout);
+      // Persist in-memory migrations applied while restoring (for example,
+      // removing retired TERM overrides from session profiles).
+      if (restored && restoredSource !== lastSerialized) {
+        pending = { layout: loadedLayout, serialized: lastSerialized };
+        schedule();
+      }
       // A user can open or split a terminal while the initial read is in
       // flight. Preserve that newer state instead of treating it as the
       // post-load baseline and silently losing it on shutdown.
-      if (!restored && lastSerialized !== beforeLoad) {
+      else if (!restored && lastSerialized !== beforeLoad) {
         pending = { layout: loadedLayout, serialized: lastSerialized };
         schedule();
       }

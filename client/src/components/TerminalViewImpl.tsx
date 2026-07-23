@@ -41,7 +41,6 @@ import { showToast } from '../state/toast.js';
 import { broadcastTerminalInput } from '../state/multi-exec.js';
 import { terminalFontStack, usePrefsStore } from '../state/prefs.js';
 import { useTabsStore, type SessionTab } from '../state/tabs.js';
-import { KittyKeyboardHandler } from '../terminal/kitty-keyboard.js';
 import { terminalScheme } from '../terminal/palette.js';
 import { attachCommandTracker } from '../terminal/shell-integration.js';
 import { registerTerminal } from '../terminal/terminal-registry.js';
@@ -203,6 +202,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       // icat &co discover cell pixel metrics via CSI 14/16 t when the PTY
       // reports no pixel size.
       windowOptions: { getWinSizePixels: true, getCellSizePixels: true, getWinSizeChars: true },
+      // xterm 6.1 owns the Kitty keyboard state and key event lifecycle.
+      // Installing a second encoder would emit printable keys twice.
+      vtExtensions: { kittyKeyboard: true },
     });
     const fit = new FitAddon();
     fitRef.current = fit;
@@ -276,8 +278,6 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     el.addEventListener('wheel', onWheel, { passive: false, capture: true });
 
     const commandTracker = attachCommandTracker(term);
-    const keyboard = new KittyKeyboardHandler(term);
-    keyboard.attach();
 
     term.attachCustomKeyEventHandler((ev) => {
       // Ctrl+Shift chords stay ours (kitty reserves ctrl+shift for the terminal).
@@ -314,7 +314,6 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       if (ev.type === 'keydown' && ev.ctrlKey && !ev.shiftKey && !ev.altKey && !ev.metaKey && (ev.code === 'PageUp' || ev.code === 'PageDown')) {
         return true; // bubbles to the app shortcut
       }
-      if (keyboard.handleKey(ev)) return false;
       return true;
     });
 
@@ -394,7 +393,6 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       onResize.dispose();
       onSelection.dispose();
       onSearchResults.dispose();
-      keyboard.dispose();
       commandTracker.dispose();
       ws.onopen = null;
       ws.onmessage = null;

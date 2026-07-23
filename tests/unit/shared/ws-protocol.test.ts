@@ -27,9 +27,15 @@ describe('sessionProfileSchema', () => {
       identityFiles: ['~/.ssh/work_ed25519'],
       identitiesOnly: true,
       proxyJump: ['bastion', 'ops@relay:2200'],
-      term: 'xterm-kitty',
     });
     expect(parsed.success).toBe(true);
+  });
+
+  it('drops retired TERM overrides from legacy profiles', () => {
+    expect(sessionProfileSchema.parse({ kind: 'ssh', target: 'web', term: 'xterm-kitty' })).toEqual({
+      kind: 'ssh',
+      target: 'web',
+    });
   });
 
   it('rejects ssh profiles without a target', () => {

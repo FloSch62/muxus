@@ -169,7 +169,9 @@ export function serializeWorkspace(
   return { version: 1, root: serializeNode(root), activePaneId };
 }
 
-export function restoreWorkspace(layout: WorkspaceLayoutV1): {
+export function restoreWorkspace(
+  layout: WorkspaceLayoutV1,
+): {
   root: PaneNode;
   tabs: RestoredTerminalTab[];
   activePaneId: string;
@@ -189,11 +191,15 @@ export function restoreWorkspace(layout: WorkspaceLayoutV1): {
     }
     const terminalTabs = node.tabs.filter((tab) => tab.kind === 'terminal');
     for (const tab of terminalTabs) {
+      // Workspaces written before TERM became fixed may still carry an
+      // override. Strip it at the restore boundary and persist the clean
+      // profile on the next workspace save.
+      const profile = stripLegacyTerm(tab.profile);
       tabs.push({
         id: tab.id,
         paneId: node.id,
         title: tab.title,
-        profile: tab.profile,
+        profile,
         color: tab.color,
         connectOnMount: false,
       });
@@ -215,6 +221,12 @@ export function restoreWorkspace(layout: WorkspaceLayoutV1): {
     activePaneId: activePane.id,
     activeId: activePane.activeTabId,
   };
+}
+
+function stripLegacyTerm(profile: SessionProfile): SessionProfile {
+  if (!('term' in profile)) return profile;
+  const { term: _term, ...clean } = profile;
+  return clean as SessionProfile;
 }
 
 function clampRatio(ratio: number): number {

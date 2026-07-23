@@ -145,4 +145,35 @@ describe('workspace serialization', () => {
       expect.objectContaining({ id: 'tab-b', paneId: 'pane-bottom', connectOnMount: false }),
     ]);
   });
+
+  it('strips retired TERM overrides from restored profiles', () => {
+    const layout = serializeWorkspace(
+      { id: 'pane', type: 'pane', activeTabId: 'ssh-tab' },
+      [
+        {
+          id: 'ssh-tab',
+          paneId: 'pane',
+          title: 'Router',
+          profile: { kind: 'ssh', target: 'router' },
+        },
+        {
+          id: 'screen-tab',
+          paneId: 'pane',
+          title: 'Screen host',
+          profile: { kind: 'ssh', target: 'screen-host' },
+        },
+      ],
+      'pane',
+    );
+    const pane = layout.root?.type === 'pane' ? layout.root : undefined;
+    if (pane?.tabs[0]?.kind === 'terminal') Object.assign(pane.tabs[0].profile, { term: 'xterm-kitty' });
+    if (pane?.tabs[1]?.kind === 'terminal') Object.assign(pane.tabs[1].profile, { term: 'screen-256color' });
+
+    const restored = restoreWorkspace(layout)!;
+    expect(restored.tabs.map((tab) => tab.profile)).toEqual([
+      { kind: 'ssh', target: 'router' },
+      { kind: 'ssh', target: 'screen-host' },
+    ]);
+    expect(pane?.tabs[0]?.kind === 'terminal' && 'term' in pane.tabs[0].profile).toBe(true);
+  });
 });

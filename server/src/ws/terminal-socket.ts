@@ -199,8 +199,7 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
   }
   socket.once('close', () => terminalLease.release());
 
-  const term = profile.term?.trim() || DEFAULT_TERM;
-  const stream = await conn.shell(cols, rows, term);
+  const stream = await conn.shell(cols, rows, DEFAULT_TERM);
   writeInput = (data) => stream.write(data);
   control.onMessage = (msg) => {
     if (msg.op === 'resize') stream.setWindow(msg.rows, msg.cols, 0, 0);

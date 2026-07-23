@@ -25,8 +25,6 @@ export const localProfileSchema = z.object({
   /** Login shell override; empty/absent picks the server's default. */
   shell: z.string().optional(),
   cwd: z.string().optional(),
-  /** TERM to advertise; the server defaults to xterm-256color. */
-  term: z.string().optional(),
 });
 
 export const sshProfileSchema = z.object({
@@ -48,7 +46,6 @@ export const sshProfileSchema = z.object({
   forwardAgent: z.boolean().optional(),
   proxyJump: z.array(z.string().min(1).max(500)).max(8).optional(),
   passwordOnly: z.boolean().optional(),
-  term: z.string().optional(),
 });
 
 export const sessionProfileSchema = z.discriminatedUnion('kind', [localProfileSchema, sshProfileSchema]);

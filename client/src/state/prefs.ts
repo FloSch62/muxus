@@ -32,9 +32,6 @@ interface PrefsState {
   scrollback: number;
   cursorBlink: boolean;
   cursorStyle: 'block' | 'underline' | 'bar';
-  /** TERM advertised to sessions. The compatibility default works on hosts
-   *  without kitty's terminfo; users can opt into xterm-kitty. */
-  termName: string;
   /** Local terminal shell; 'auto' lets the server pick the login shell. */
   localShell: string;
   /** Copy the selection to the clipboard as soon as it is made. */
@@ -54,6 +51,18 @@ interface PrefsState {
   set: (patch: Partial<Omit<PrefsState, 'set' | 'toggleTheme'>>) => void;
 }
 
+/** Upgrade persisted preferences without mutating the storage snapshot. */
+export function migratePrefsState(persisted: unknown, version: number): unknown {
+  if (persisted === null || typeof persisted !== 'object') return persisted;
+  const state = { ...persisted } as Partial<PrefsState> & { termName?: unknown };
+  // v0 shipped the Muxus scheme as the default; stored copies of that
+  // default follow the new one.
+  if (version === 0 && state.terminalScheme === 'muxus') state.terminalScheme = 'vscode-dark';
+  // TERM is fixed by the server now; remove the retired client override.
+  delete state.termName;
+  return state;
+}
+
 export const usePrefsStore = create<PrefsState>()(
   persist(
     (set) => ({
@@ -65,7 +74,6 @@ export const usePrefsStore = create<PrefsState>()(
       scrollback: 10_000,
       cursorBlink: true,
       cursorStyle: 'block',
-      termName: 'xterm-256color',
       localShell: 'auto',
       copyOnSelect: false,
       rightClickAction: 'copy-paste',
@@ -80,14 +88,8 @@ export const usePrefsStore = create<PrefsState>()(
     }),
     {
       name: 'muxus-prefs',
-      version: 1,
-      migrate: (persisted, version) => {
-        const state = persisted as Partial<PrefsState>;
-        // v0 shipped the Muxus scheme as the default; stored copies of that
-        // default follow the new one.
-        if (version === 0 && state.terminalScheme === 'muxus') state.terminalScheme = 'vscode-dark';
-        return state;
-      },
+      version: 3,
+      migrate: migratePrefsState,
       storage: createJSONStorage(() => muxusStateStorage),
     },
   ),
