@@ -21,6 +21,7 @@ interface UiState {
   commandButtonsOpen: boolean;
   shortcutsOpen: boolean;
   historyOpen: boolean;
+  workspacesOpen: boolean;
   hostEditor: HostEditorState;
   /** Host whose Muxus-only display metadata is being organized. */
   hostOrganizer: SshHostEntry | SavedHostProfile | false;
@@ -32,6 +33,7 @@ interface UiState {
   setCommandButtonsOpen: (open: boolean) => void;
   setShortcutsOpen: (open: boolean) => void;
   setHistoryOpen: (open: boolean) => void;
+  setWorkspacesOpen: (open: boolean) => void;
   setHostEditor: (value: HostEditorState) => void;
   setHostOrganizer: (value: SshHostEntry | SavedHostProfile | false) => void;
   setForwardingOpen: (open: boolean) => void;
@@ -43,6 +45,7 @@ export const useUiStore = create<UiState>()((set) => ({
   commandButtonsOpen: false,
   shortcutsOpen: false,
   historyOpen: false,
+  workspacesOpen: false,
   hostEditor: false,
   hostOrganizer: false,
   forwardingOpen: false,
@@ -51,6 +54,7 @@ export const useUiStore = create<UiState>()((set) => ({
   setCommandButtonsOpen: (commandButtonsOpen) => set({ commandButtonsOpen }),
   setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
   setHistoryOpen: (historyOpen) => set({ historyOpen }),
+  setWorkspacesOpen: (workspacesOpen) => set({ workspacesOpen }),
   setHostEditor: (hostEditor) => set({ hostEditor }),
   setHostOrganizer: (hostOrganizer) => set({ hostOrganizer }),
   setForwardingOpen: (forwardingOpen) => set({ forwardingOpen }),

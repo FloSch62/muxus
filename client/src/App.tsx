@@ -17,6 +17,7 @@ import {
   loadSettingsDialog,
   loadShortcutsDialog,
   loadSessionHistoryDialog,
+  loadWorkspaceDialog,
 } from './lazy-features.js';
 
 const HostEditorDialog = lazy(() =>
@@ -37,6 +38,9 @@ const ShortcutsDialog = lazy(() =>
 const SessionHistoryDialog = lazy(() =>
   loadSessionHistoryDialog().then((module) => ({ default: module.SessionHistoryDialog })),
 );
+const WorkspaceDialog = lazy(() =>
+  loadWorkspaceDialog().then((module) => ({ default: module.WorkspaceDialog })),
+);
 const SftpWindow = lazy(() =>
   import('./layout/SftpWindow.js').then((module) => ({ default: module.SftpWindow })),
 );
@@ -49,6 +53,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const commandButtonsOpen = useUiStore((s) => s.commandButtonsOpen);
   const shortcutsOpen = useUiStore((s) => s.shortcutsOpen);
   const historyOpen = useUiStore((s) => s.historyOpen);
+  const workspacesOpen = useUiStore((s) => s.workspacesOpen);
   const [osTheme, setOsTheme] = useState<'light' | 'dark'>(() =>
     window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
   );
@@ -83,6 +88,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
         {commandButtonsOpen ? <CommandButtonsDialog /> : null}
         {shortcutsOpen ? <ShortcutsDialog /> : null}
         {historyOpen ? <SessionHistoryDialog /> : null}
+        {workspacesOpen ? <WorkspaceDialog /> : null}
       </Suspense>
       <ToastHost />
       <BackendStatusBanner />

@@ -106,6 +106,10 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const [searchResult, setSearchResult] = useState({ resultIndex: -1, resultCount: 0 });
   const [ctxMenu, setCtxMenu] = useState<{ top: number; left: number; hasSelection: boolean } | null>(null);
   const [generation, setGeneration] = useState(tab.connectOnMount ? 0 : -1);
+  const reconnectRequest = useTabsStore(
+    (s) => s.tabs.find((candidate) => candidate.id === tab.id)?.reconnectRequest ?? 0,
+  );
+  const lastReconnectRequestRef = useRef(reconnectRequest);
   const updateTab = useTabsStore((s) => s.update);
   const status = useTabsStore((s) => s.tabs.find((t) => t.id === tab.id)?.status);
   const searchRequest = useTabsStore(
@@ -208,6 +212,12 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     }
     pasteFromClipboard();
   };
+
+  useEffect(() => {
+    if (reconnectRequest === lastReconnectRequestRef.current) return;
+    lastReconnectRequestRef.current = reconnectRequest;
+    setGeneration((current) => (current < 0 ? 0 : current + 1));
+  }, [reconnectRequest]);
 
   useEffect(() => {
     if (generation < 0) return;

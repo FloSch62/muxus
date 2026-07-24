@@ -11,9 +11,12 @@ import ListItemButton from '@mui/material/ListItemButton';
 import ListItemText from '@mui/material/ListItemText';
 import Popover from '@mui/material/Popover';
 import Stack from '@mui/material/Stack';
+import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import PodcastsOutlinedIcon from '@mui/icons-material/PodcastsOutlined';
+import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import { alpha } from '@mui/material/styles';
 import { useMultiExecStore } from '../state/multi-exec.js';
 import { useTabsStore } from '../state/tabs.js';
@@ -25,10 +28,15 @@ export function MultiExecControl() {
   const root = useTabsStore((state) => state.root);
   const activePaneId = useTabsStore((state) => state.activePaneId);
   const selectedIds = useMultiExecStore((state) => state.selectedIds);
+  const groups = useMultiExecStore((state) => state.groups);
   const setSelection = useMultiExecStore((state) => state.setSelection);
   const toggleTarget = useMultiExecStore((state) => state.toggleTarget);
   const reconcile = useMultiExecStore((state) => state.reconcile);
+  const saveGroup = useMultiExecStore((state) => state.saveGroup);
+  const deleteGroup = useMultiExecStore((state) => state.deleteGroup);
+  const activateGroup = useMultiExecStore((state) => state.activateGroup);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [groupName, setGroupName] = useState('');
 
   const connectedTabs = useMemo(
     () => tabs.filter((tab) => tab.profile && tab.status === 'connected'),
@@ -95,6 +103,50 @@ export function MultiExecControl() {
           {active && <Chip label="Active" color="warning" variant="outlined" />}
         </Stack>
         <Divider />
+        {groups.length > 0 ? (
+          <>
+            <Typography variant="overline" color="text.secondary" sx={{ px: 2, pt: 0.75 }}>
+              Workspace groups
+            </Typography>
+            <List dense disablePadding sx={{ maxHeight: 140, overflowY: 'auto', pb: 0.5 }}>
+              {groups.map((group) => {
+                const connectedCount = group.tabIds.filter((id) => connectedIds.includes(id)).length;
+                return (
+                  <ListItemButton
+                    key={group.id}
+                    disabled={connectedCount === 0}
+                    onClick={() => activateGroup(group.id, connectedIds)}
+                    sx={{ mx: 0.75, pr: 0.5 }}
+                  >
+                    <PodcastsOutlinedIcon
+                      fontSize="small"
+                      color={connectedCount >= 2 ? 'warning' : 'disabled'}
+                      sx={{ mr: 1.25 }}
+                    />
+                    <ListItemText
+                      primary={group.name}
+                      secondary={`${connectedCount} of ${group.tabIds.length} connected`}
+                      slotProps={{ primary: { noWrap: true }, secondary: { noWrap: true } }}
+                    />
+                    <Tooltip title={`Delete ${group.name}`}>
+                      <IconButton
+                        size="small"
+                        aria-label={`Delete multi-exec group ${group.name}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          deleteGroup(group.id);
+                        }}
+                      >
+                        <DeleteOutlineIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </ListItemButton>
+                );
+              })}
+            </List>
+            <Divider />
+          </>
+        ) : null}
         <Stack direction="row" spacing={0.75} sx={{ px: 1.5, py: 1 }}>
           <Button
             variant="outlined"
@@ -153,6 +205,33 @@ export function MultiExecControl() {
             </Typography>
           )}
         </List>
+        {selectedIds.length >= 2 ? (
+          <Stack direction="row" spacing={0.75} sx={{ px: 1.5, py: 1, borderTop: 1, borderColor: 'divider' }}>
+            <TextField
+              size="small"
+              fullWidth
+              placeholder="Save selection as a group"
+              value={groupName}
+              onChange={(event) => setGroupName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' || !groupName.trim()) return;
+                saveGroup(groupName);
+                setGroupName('');
+              }}
+            />
+            <Button
+              variant="outlined"
+              startIcon={<SaveOutlinedIcon />}
+              disabled={!groupName.trim()}
+              onClick={() => {
+                saveGroup(groupName);
+                setGroupName('');
+              }}
+            >
+              Save
+            </Button>
+          </Stack>
+        ) : null}
         {selectedIds.length === 1 && (
           <Typography variant="caption" color="warning.main" sx={{ display: 'block', px: 2, py: 1 }}>
             Select one more terminal to enable multi-execution.

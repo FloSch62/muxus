@@ -118,8 +118,53 @@ const workspaceLayoutSchema = z.object({
 
 const workspaceSaveSchema = z.object({
   id: z.string().min(1).optional(),
-  name: z.string().min(1).max(200),
+  name: z.string().trim().min(1).max(200),
   layout: workspaceLayoutSchema,
+  multiExecGroups: z.array(
+    z.object({
+      id: z.string().min(1),
+      name: z.string().trim().min(1).max(200),
+      tabIds: z.array(z.string().min(1)).min(2),
+    }).superRefine((group, ctx) => {
+      if (new Set(group.tabIds).size !== group.tabIds.length) {
+        ctx.addIssue({ code: 'custom', message: `multi-exec group "${group.name}" contains duplicate tabs` });
+      }
+    }),
+  ).default([]),
+}).superRefine((workspace, ctx) => {
+  const ids = new Set<string>();
+  const names = new Set<string>();
+  const terminalTabIds = new Set<string>();
+  const collectTerminalTabs = (node: WorkspaceNodeInput): void => {
+    if (node.type === 'split') {
+      collectTerminalTabs(node.children[0]);
+      collectTerminalTabs(node.children[1]);
+      return;
+    }
+    for (const tab of node.tabs) {
+      if (tab.kind === 'terminal') terminalTabIds.add(tab.id);
+    }
+  };
+  if (workspace.layout.root) collectTerminalTabs(workspace.layout.root);
+  for (const group of workspace.multiExecGroups) {
+    if (ids.has(group.id)) {
+      ctx.addIssue({ code: 'custom', message: `duplicate multi-exec group id "${group.id}"` });
+    }
+    ids.add(group.id);
+    const name = group.name.trim().toLocaleLowerCase();
+    if (names.has(name)) {
+      ctx.addIssue({ code: 'custom', message: `duplicate multi-exec group name "${group.name}"` });
+    }
+    names.add(name);
+    for (const tabId of group.tabIds) {
+      if (!terminalTabIds.has(tabId)) {
+        ctx.addIssue({
+          code: 'custom',
+          message: `multi-exec group "${group.name}" references unknown terminal tab "${tabId}"`,
+        });
+      }
+    }
+  }
 });
 
 export function registerWorkspaceRoutes(app: FastifyInstance, ctx: AppContext): void {
@@ -130,6 +175,21 @@ export function registerWorkspaceRoutes(app: FastifyInstance, ctx: AppContext): 
   app.get('/api/workspaces/latest', (): { workspace: WorkspaceRecord | null } => ({
     workspace: (ctx.database.latestWorkspace() as WorkspaceRecord | undefined) ?? null,
   }));
+
+  app.get('/api/workspaces/startup', (): { workspace: WorkspaceRecord | null } => ({
+    workspace: (ctx.database.startupWorkspace() as WorkspaceRecord | undefined) ?? null,
+  }));
+
+  app.put('/api/workspaces/startup', async (req, reply): Promise<{ workspace: WorkspaceRecord | null } | void> => {
+    const parsed = z.object({ id: z.string().min(1).nullable() }).safeParse(req.body);
+    if (!parsed.success) return sendError(reply, new HttpProblem(400, 'invalid startup workspace'));
+    const workspace = ctx.database.setStartupWorkspace(parsed.data.id);
+    if (parsed.data.id !== null && !workspace) {
+      await reply.code(404).send({ message: 'workspace not found' });
+      return;
+    }
+    return { workspace: (workspace as WorkspaceRecord | undefined) ?? null };
+  });
 
   app.get('/api/workspaces/:id', async (req, reply): Promise<WorkspaceRecord | void> => {
     const { id } = req.params as { id: string };
@@ -151,6 +211,34 @@ export function registerWorkspaceRoutes(app: FastifyInstance, ctx: AppContext): 
     } catch (err) {
       return sendError(reply, err);
     }
+  });
+
+  app.patch('/api/workspaces/:id', async (req, reply): Promise<WorkspaceRecord | void> => {
+    try {
+      const { id } = req.params as { id: string };
+      const parsed = z.object({ name: z.string().trim().min(1).max(200) }).safeParse(req.body);
+      if (!parsed.success) {
+        throw new HttpProblem(400, parsed.error.issues[0]?.message ?? 'invalid workspace name');
+      }
+      const workspace = ctx.database.renameWorkspace(id, parsed.data.name);
+      if (!workspace) {
+        await reply.code(404).send({ message: 'workspace not found' });
+        return;
+      }
+      return workspace as WorkspaceRecord;
+    } catch (err) {
+      return sendError(reply, err);
+    }
+  });
+
+  app.post('/api/workspaces/:id/open', async (req, reply): Promise<WorkspaceRecord | void> => {
+    const { id } = req.params as { id: string };
+    const workspace = ctx.database.openWorkspace(id);
+    if (!workspace) {
+      await reply.code(404).send({ message: 'workspace not found' });
+      return;
+    }
+    return workspace as WorkspaceRecord;
   });
 
   app.delete('/api/workspaces/:id', (req) => {

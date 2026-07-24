@@ -34,6 +34,8 @@ interface TabBase {
   loggingWarning?: string;
   loggingPaused: boolean;
   captureInput: boolean;
+  /** Monotonic signal used to reconnect one or many mounted terminal views. */
+  reconnectRequest: number;
 }
 
 export interface SessionTab extends TabBase {
@@ -64,6 +66,14 @@ type TabUpdate = Partial<{
   captureInput: boolean;
 }>;
 
+export interface SessionSetEntry {
+  profile: SessionProfile;
+  title: string;
+  color?: string;
+}
+
+export type SessionSetLayout = 'tabs' | 'columns' | 'rows' | 'grid';
+
 interface TabsState {
   tabs: TerminalTab[];
   root: PaneNode;
@@ -84,6 +94,10 @@ interface TabsState {
   activateEditor: (tabId: string, path: string) => void;
   closeEditor: (tabId: string, path: string) => void;
   restore: (layout: WorkspaceLayoutV1) => void;
+  /** Replace the pane canvas with a freshly connected, arranged session set. */
+  launchSet: (entries: readonly SessionSetEntry[], layout: SessionSetLayout) => string[];
+  /** Start fresh connections for selected ended/restored sessions. */
+  reconnect: (tabIds: readonly string[]) => void;
   update: (id: string, patch: TabUpdate) => void;
 }
 
@@ -116,6 +130,7 @@ export const useTabsStore = create<TabsState>()((set) => ({
             editorPaths: [],
             loggingPaused: false,
             captureInput: false,
+            reconnectRequest: 0,
           },
         ],
         root: updatePane(state.root, pane.id, (leaf) => ({ ...leaf, activeTabId: id })),
@@ -144,6 +159,7 @@ export const useTabsStore = create<TabsState>()((set) => ({
             editorPaths: [],
             loggingPaused: false,
             captureInput: false,
+            reconnectRequest: 0,
           },
         ],
         root: updatePane(state.root, pane.id, (leaf) => ({ ...leaf, activeTabId: id })),
@@ -175,6 +191,7 @@ export const useTabsStore = create<TabsState>()((set) => ({
           loggingWarning: undefined,
           loggingPaused: false,
           captureInput: false,
+          reconnectRequest: 0,
         };
       }),
     }));
@@ -291,6 +308,15 @@ export const useTabsStore = create<TabsState>()((set) => ({
     })),
   restore: (layout) =>
     set((state) => {
+      if (!layout.root) {
+        const pane = initialPane();
+        return {
+          tabs: [],
+          root: pane,
+          activePaneId: pane.id,
+          activeId: null,
+        };
+      }
       const restored = restoreWorkspaceLayout(layout);
       if (!restored) return state;
       return {
@@ -307,9 +333,71 @@ export const useTabsStore = create<TabsState>()((set) => ({
           loggingWarning: undefined,
           loggingPaused: false,
           captureInput: false,
+          reconnectRequest: 0,
         })),
       };
     }),
+  launchSet: (entries, layout) => {
+    if (entries.length === 0) return [];
+    const ids = entries.map(() => newId('tab'));
+    const paneIds =
+      layout === 'tabs'
+        ? [newId('pane')]
+        : entries.map(() => newId('pane'));
+    const tabs: SessionTab[] = entries.map((entry, index) => ({
+      id: ids[index]!,
+      paneId: layout === 'tabs' ? paneIds[0]! : paneIds[index]!,
+      title: entry.title,
+      profile: entry.profile,
+      status: 'connecting',
+      connectOnMount: true,
+      sftpOpen: false,
+      searchRequest: 0,
+      color: entry.color,
+      editorPaths: [],
+      loggingPaused: false,
+      captureInput: false,
+      reconnectRequest: 0,
+    }));
+    const leaves = paneIds.map(
+      (id, index): PaneLeaf => ({
+        id,
+        type: 'pane',
+        activeTabId: layout === 'tabs' ? ids.at(-1)! : ids[index]!,
+      }),
+    );
+    const root =
+      layout === 'tabs'
+        ? leaves[0]!
+        : buildSessionSetTree(
+            leaves,
+            layout === 'rows' ? 'vertical' : 'horizontal',
+            layout === 'grid',
+          );
+    const activePane = firstPane(root);
+    set({
+      tabs,
+      root,
+      activePaneId: activePane.id,
+      activeId: activePane.activeTabId,
+    });
+    return ids;
+  },
+  reconnect: (tabIds) => {
+    const requested = new Set(tabIds);
+    set((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.profile && tab.status === 'closed' && requested.has(tab.id)
+          ? {
+              ...tab,
+              status: 'connecting' as const,
+              connectOnMount: true,
+              reconnectRequest: tab.reconnectRequest + 1,
+            }
+          : tab,
+      ),
+    }));
+  },
   update: (id, patch) =>
     set((state) => ({
       tabs: state.tabs.map((tab) => {
@@ -320,5 +408,33 @@ export const useTabsStore = create<TabsState>()((set) => ({
       }),
     })),
 }));
+
+function buildSessionSetTree(
+  panes: readonly PaneLeaf[],
+  direction: 'horizontal' | 'vertical',
+  grid: boolean,
+  depth = 0,
+): PaneNode {
+  if (panes.length === 1) return panes[0]!;
+  const midpoint = Math.ceil(panes.length / 2);
+  const first = panes.slice(0, midpoint);
+  const second = panes.slice(midpoint);
+  const splitDirection =
+    grid && depth % 2 === 1
+      ? direction === 'horizontal'
+        ? 'vertical'
+        : 'horizontal'
+      : direction;
+  return {
+    id: newId('split'),
+    type: 'split',
+    direction: splitDirection,
+    ratio: first.length / panes.length,
+    children: [
+      buildSessionSetTree(first, direction, grid, depth + 1),
+      buildSessionSetTree(second, direction, grid, depth + 1),
+    ],
+  };
+}
 
 export type { PaneLeaf, PaneNode };

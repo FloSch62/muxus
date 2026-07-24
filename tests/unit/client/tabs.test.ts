@@ -107,6 +107,81 @@ describe('workspace restoration', () => {
       }),
     ]);
   });
+
+  it('reconnects only selected ended sessions', () => {
+    useTabsStore.getState().restore({
+      version: 1,
+      root: {
+        id: 'pane-restored',
+        type: 'pane',
+        tabs: [
+          {
+            id: 'ssh-a',
+            kind: 'terminal',
+            title: 'A',
+            profile: { kind: 'ssh', target: 'a' },
+            offerReconnect: true,
+          },
+          {
+            id: 'ssh-b',
+            kind: 'terminal',
+            title: 'B',
+            profile: { kind: 'ssh', target: 'b' },
+            offerReconnect: true,
+          },
+        ],
+      },
+    });
+
+    useTabsStore.getState().reconnect(['ssh-b']);
+
+    expect(useTabsStore.getState().tabs).toEqual([
+      expect.objectContaining({ id: 'ssh-a', status: 'closed', reconnectRequest: 0 }),
+      expect.objectContaining({ id: 'ssh-b', status: 'connecting', reconnectRequest: 1 }),
+    ]);
+  });
+
+  it('clears the canvas when opening an empty workspace', () => {
+    useTabsStore.getState().open({ kind: 'ssh', target: 'router' }, 'Router');
+    useTabsStore.getState().restore({ version: 1, root: null });
+
+    expect(useTabsStore.getState()).toMatchObject({
+      tabs: [],
+      root: { type: 'pane', activeTabId: null },
+      activeId: null,
+    });
+  });
+});
+
+describe('session-set layouts', () => {
+  const entries = [
+    { profile: { kind: 'ssh' as const, target: 'a' }, title: 'A' },
+    { profile: { kind: 'ssh' as const, target: 'b' }, title: 'B' },
+    { profile: { kind: 'ssh' as const, target: 'c' }, title: 'C' },
+    { profile: { kind: 'ssh' as const, target: 'd' }, title: 'D' },
+  ];
+
+  it('launches a group as tabs in one pane', () => {
+    useTabsStore.getState().launchSet(entries, 'tabs');
+    const state = useTabsStore.getState();
+    expect(state.root.type).toBe('pane');
+    expect(new Set(state.tabs.map((tab) => tab.paneId)).size).toBe(1);
+    expect(state.tabs.every((tab) => tab.status === 'connecting')).toBe(true);
+  });
+
+  it('launches a group as an even grid', () => {
+    useTabsStore.getState().launchSet(entries, 'grid');
+    const state = useTabsStore.getState();
+    expect(state.root).toMatchObject({
+      type: 'split',
+      direction: 'horizontal',
+      children: [
+        { type: 'split', direction: 'vertical' },
+        { type: 'split', direction: 'vertical' },
+      ],
+    });
+    expect(new Set(state.tabs.map((tab) => tab.paneId)).size).toBe(4);
+  });
 });
 
 describe('remote editor tabs', () => {

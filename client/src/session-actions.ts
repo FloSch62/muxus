@@ -7,7 +7,9 @@ import type {
 import type { ManagedHost } from './managed-hosts.js';
 import { savedHostDisplayName } from './saved-hosts.js';
 import { usePrefsStore } from './state/prefs.js';
+import { useMultiExecStore } from './state/multi-exec.js';
 import { useTabsStore } from './state/tabs.js';
+import type { SessionSetLayout } from './state/tabs.js';
 import { useUiStore } from './state/ui.js';
 import { confirmDiscardRemoteEditors } from './editor/remote-editor-registry.js';
 import { findPane } from './state/workspace-layout.js';
@@ -74,6 +76,33 @@ export function connectManagedHost(host: ManagedHost, replaceTabId?: string): st
   return host.kind === 'ssh'
     ? connectHost(host.entry, replaceTabId)
     : connectSavedHost(host.entry, replaceTabId);
+}
+
+/** Replace the current canvas with every host in a sidebar group. */
+export function launchManagedHostGroup(
+  hosts: readonly ManagedHost[],
+  layout: SessionSetLayout,
+): string[] {
+  const currentTabIds = useTabsStore.getState().tabs.map((tab) => tab.id);
+  if (!confirmDiscardRemoteEditors(currentTabIds)) return [];
+  const ids = useTabsStore.getState().launchSet(
+    hosts.map((host) =>
+      host.kind === 'ssh'
+        ? {
+            profile: { kind: 'ssh' as const, target: host.entry.alias },
+            title: host.entry.metadata?.displayName ?? host.entry.alias,
+            color: host.entry.metadata?.color,
+          }
+        : {
+            profile: { ...host.entry.profile, profileId: host.entry.id },
+            title: savedHostDisplayName(host.entry),
+            color: host.entry.metadata.color,
+          },
+    ),
+    layout,
+  );
+  useMultiExecStore.getState().setGroups([]);
+  return ids;
 }
 
 /** Duplicate an open tab (same profile, fresh session). */

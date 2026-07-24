@@ -28,7 +28,7 @@ function handle(sendInput: TerminalHandle['sendInput']): TerminalHandle {
 }
 
 beforeEach(() => {
-  useMultiExecStore.setState({ selectedIds: [] });
+  useMultiExecStore.setState({ selectedIds: [], groups: [] });
 });
 
 describe('multi-execution routing', () => {
@@ -69,5 +69,18 @@ describe('multi-execution routing', () => {
     expect(useMultiExecStore.getState()).toMatchObject({
       selectedIds: ['tab-a'],
     });
+  });
+
+  it('saves and activates named workspace groups', () => {
+    useMultiExecStore.getState().setSelection(['tab-a', 'tab-b']);
+    const id = useMultiExecStore.getState().saveGroup('Routers');
+
+    expect(useMultiExecStore.getState().groups).toEqual([
+      { id, name: 'Routers', tabIds: ['tab-a', 'tab-b'] },
+    ]);
+
+    useMultiExecStore.getState().setSelection([]);
+    useMultiExecStore.getState().activateGroup(id!, ['tab-b', 'tab-c']);
+    expect(useMultiExecStore.getState().selectedIds).toEqual(['tab-b']);
   });
 });

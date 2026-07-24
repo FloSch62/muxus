@@ -354,16 +354,27 @@ export interface WorkspaceLayoutV1 {
   activePaneId?: string;
 }
 
+/** A reusable mirrored-input target set owned by one workspace. */
+export interface WorkspaceMultiExecGroup {
+  id: string;
+  name: string;
+  /** Stable workspace terminal-tab IDs. */
+  tabIds: string[];
+}
+
 export interface WorkspaceRecord {
   id: string;
   name: string;
   layout: WorkspaceLayoutV1;
+  multiExecGroups: WorkspaceMultiExecGroup[];
+  /** At most one workspace is selected for startup. */
+  isStartup: boolean;
   createdAt: string;
   updatedAt: string;
   lastOpenedAt?: string;
 }
 
-export type WorkspaceSummary = Omit<WorkspaceRecord, 'layout'>;
+export type WorkspaceSummary = Omit<WorkspaceRecord, 'layout' | 'multiExecGroups'>;
 
 export interface SshConfigResponse {
   /** Root config path (~/.ssh/config). */

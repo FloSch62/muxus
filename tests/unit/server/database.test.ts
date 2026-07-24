@@ -19,6 +19,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 5, name: 'host-keyword-highlights' },
       { version: 6, name: 'persistent-session-history' },
       { version: 7, name: 'bounded-session-history-settings' },
+      { version: 8, name: 'named-workspace-session-sets' },
     ]);
   });
 });
@@ -389,6 +390,9 @@ describe('credential and workspace safety', () => {
     database = new MuxusDatabase(':memory:');
     const saved = database.saveWorkspace({
       name: 'Daily work',
+      multiExecGroups: [
+        { id: 'prod', name: 'Production', tabIds: ['tab-a', 'tab-b'] },
+      ],
       layout: {
         version: 1,
         root: {
@@ -404,5 +408,27 @@ describe('credential and workspace safety', () => {
     });
 
     expect(database.workspace(saved.id)).toEqual(saved);
+    expect(saved).toMatchObject({
+      isStartup: false,
+      multiExecGroups: [
+        { id: 'prod', name: 'Production', tabIds: ['tab-a', 'tab-b'] },
+      ],
+    });
+  });
+
+  it('renames, opens, and selects exactly one startup workspace', () => {
+    database = new MuxusDatabase(':memory:');
+    const first = database.saveWorkspace({ name: 'First', layout: { version: 1, root: null } });
+    const second = database.saveWorkspace({ name: 'Second', layout: { version: 1, root: null } });
+
+    expect(database.renameWorkspace(first.id, 'Daily')).toMatchObject({ name: 'Daily' });
+    expect(database.openWorkspace(first.id)?.lastOpenedAt).toBeDefined();
+    expect(database.setStartupWorkspace(first.id)).toMatchObject({ id: first.id, isStartup: true });
+    expect(database.setStartupWorkspace(second.id)).toMatchObject({ id: second.id, isStartup: true });
+    expect(database.workspace(first.id)?.isStartup).toBe(false);
+    expect(database.startupWorkspace()?.id).toBe(second.id);
+    expect(database.listWorkspaceSummaries().filter((workspace) => workspace.isStartup)).toHaveLength(1);
+    expect(database.setStartupWorkspace(null)).toBeUndefined();
+    expect(database.startupWorkspace()).toBeUndefined();
   });
 });

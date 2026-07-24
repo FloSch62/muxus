@@ -19,6 +19,7 @@ import type {
   SessionLoggingPolicyInput,
   TunnelInput,
   TunnelRecord,
+  WorkspaceMultiExecGroup,
 } from '@muxus/shared';
 
 const MIGRATIONS = [
@@ -236,6 +237,21 @@ const MIGRATIONS = [
       ) VALUES (1, NULL, 5368709120, 2147483648, 5, NULL);
     `,
   },
+  {
+    version: 8,
+    name: 'named-workspace-session-sets',
+    sql: `
+      ALTER TABLE workspaces
+        ADD COLUMN multi_exec_groups_json TEXT NOT NULL DEFAULT '[]'
+        CHECK(json_valid(multi_exec_groups_json));
+      ALTER TABLE workspaces
+        ADD COLUMN is_startup INTEGER NOT NULL DEFAULT 0
+        CHECK(is_startup IN (0, 1));
+      CREATE UNIQUE INDEX workspaces_single_startup
+        ON workspaces(is_startup)
+        WHERE is_startup = 1;
+    `,
+  },
 ] as const;
 
 const DEFAULT_SESSION_LOGGING_POLICY: SessionLoggingPolicyInput = {
@@ -283,12 +299,14 @@ export interface WorkspaceRecord {
   id: string;
   name: string;
   layout: unknown;
+  multiExecGroups: WorkspaceMultiExecGroup[];
+  isStartup: boolean;
   createdAt: string;
   updatedAt: string;
   lastOpenedAt?: string;
 }
 
-export type WorkspaceSummary = Omit<WorkspaceRecord, 'layout'>;
+export type WorkspaceSummary = Omit<WorkspaceRecord, 'layout' | 'multiExecGroups'>;
 
 export interface SessionLogCreateInput {
   profileKey: string;
@@ -689,67 +707,74 @@ export class MuxusDatabase {
     return deleted;
   }
 
-  saveWorkspace(input: { id?: string; name: string; layout: unknown }): WorkspaceRecord {
+  saveWorkspace(input: {
+    id?: string;
+    name: string;
+    layout: unknown;
+    multiExecGroups?: WorkspaceMultiExecGroup[];
+  }): WorkspaceRecord {
     requireNonEmpty(input.name, 'name');
     assertSecretFree(input.layout, 'workspace.layout');
+    assertSecretFree(input.multiExecGroups, 'workspace.multiExecGroups');
     const id = input.id ?? nanoid();
     const layout = JSON.stringify(input.layout);
+    const groups = JSON.stringify(input.multiExecGroups ?? []);
     if (layout === undefined) throw new Error('workspace.layout must be JSON-serializable');
     this.db
       .prepare(`
-        INSERT INTO workspaces(id, name, layout_json)
-        VALUES (?, ?, ?)
+        INSERT INTO workspaces(id, name, layout_json, multi_exec_groups_json)
+        VALUES (?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           layout_json = excluded.layout_json,
+          multi_exec_groups_json = excluded.multi_exec_groups_json,
           updated_at = CURRENT_TIMESTAMP
       `)
-      .run(id, input.name.trim(), layout);
+      .run(id, input.name.trim(), layout, groups);
     return this.workspace(id)!;
   }
 
   workspace(id: string): WorkspaceRecord | undefined {
     const row = this.db
       .prepare(`
-        SELECT id, name, layout_json, created_at, updated_at, last_opened_at
+        SELECT id, name, layout_json, multi_exec_groups_json, is_startup,
+               created_at, updated_at, last_opened_at
         FROM workspaces WHERE id = ?
       `)
       .get(id);
-    if (!row) return undefined;
-    return {
-      id: String(row.id),
-      name: String(row.name),
-      layout: JSON.parse(String(row.layout_json)),
-      createdAt: String(row.created_at),
-      updatedAt: String(row.updated_at),
-      lastOpenedAt: optionalString(row.last_opened_at),
-    };
+    return row ? workspaceFromRow(row) : undefined;
   }
 
   latestWorkspace(): WorkspaceRecord | undefined {
     const row = this.db
       .prepare(`
-        SELECT id, name, layout_json, created_at, updated_at, last_opened_at
+        SELECT id, name, layout_json, multi_exec_groups_json, is_startup,
+               created_at, updated_at, last_opened_at
         FROM workspaces
         ORDER BY COALESCE(last_opened_at, updated_at) DESC, name COLLATE NOCASE
         LIMIT 1
       `)
       .get();
-    if (!row) return undefined;
-    return {
-      id: String(row.id),
-      name: String(row.name),
-      layout: JSON.parse(String(row.layout_json)),
-      createdAt: String(row.created_at),
-      updatedAt: String(row.updated_at),
-      lastOpenedAt: optionalString(row.last_opened_at),
-    };
+    return row ? workspaceFromRow(row) : undefined;
+  }
+
+  startupWorkspace(): WorkspaceRecord | undefined {
+    const row = this.db
+      .prepare(`
+        SELECT id, name, layout_json, multi_exec_groups_json, is_startup,
+               created_at, updated_at, last_opened_at
+        FROM workspaces
+        WHERE is_startup = 1
+        LIMIT 1
+      `)
+      .get();
+    return row ? workspaceFromRow(row) : undefined;
   }
 
   listWorkspaceSummaries(): WorkspaceSummary[] {
     return this.db
       .prepare(`
-        SELECT id, name, created_at, updated_at, last_opened_at
+        SELECT id, name, is_startup, created_at, updated_at, last_opened_at
         FROM workspaces
         ORDER BY COALESCE(last_opened_at, updated_at) DESC, name COLLATE NOCASE
       `)
@@ -757,6 +782,7 @@ export class MuxusDatabase {
       .map((row) => ({
         id: String(row.id),
         name: String(row.name),
+        isStartup: Number(row.is_startup) === 1,
         createdAt: String(row.created_at),
         updatedAt: String(row.updated_at),
         lastOpenedAt: optionalString(row.last_opened_at),
@@ -766,19 +792,52 @@ export class MuxusDatabase {
   listWorkspaces(): WorkspaceRecord[] {
     return this.db
       .prepare(`
-        SELECT id, name, layout_json, created_at, updated_at, last_opened_at
+        SELECT id, name, layout_json, multi_exec_groups_json, is_startup,
+               created_at, updated_at, last_opened_at
         FROM workspaces
         ORDER BY COALESCE(last_opened_at, updated_at) DESC, name COLLATE NOCASE
       `)
       .all()
-      .map((row) => ({
-        id: String(row.id),
-        name: String(row.name),
-        layout: JSON.parse(String(row.layout_json)),
-        createdAt: String(row.created_at),
-        updatedAt: String(row.updated_at),
-        lastOpenedAt: optionalString(row.last_opened_at),
-      }));
+      .map(workspaceFromRow);
+  }
+
+  renameWorkspace(id: string, name: string): WorkspaceRecord | undefined {
+    requireNonEmpty(name, 'name');
+    const updated = this.db
+      .prepare(`
+        UPDATE workspaces
+        SET name = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `)
+      .run(name.trim(), id).changes > 0;
+    return updated ? this.workspace(id) : undefined;
+  }
+
+  openWorkspace(id: string): WorkspaceRecord | undefined {
+    const opened = this.db
+      .prepare(`
+        UPDATE workspaces
+        SET last_opened_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `)
+      .run(id).changes > 0;
+    return opened ? this.workspace(id) : undefined;
+  }
+
+  setStartupWorkspace(id: string | null): WorkspaceRecord | undefined {
+    if (id !== null && !this.workspace(id)) return undefined;
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.db.prepare('UPDATE workspaces SET is_startup = 0 WHERE is_startup = 1').run();
+      if (id !== null) {
+        this.db.prepare('UPDATE workspaces SET is_startup = 1 WHERE id = ?').run(id);
+      }
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+    return id === null ? undefined : this.workspace(id);
   }
 
   deleteWorkspace(id: string): boolean {
@@ -1074,6 +1133,19 @@ export class MuxusDatabase {
 }
 
 type SqlRow = Record<string, SQLOutputValue>;
+
+function workspaceFromRow(row: SqlRow): WorkspaceRecord {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    layout: JSON.parse(String(row.layout_json)),
+    multiExecGroups: JSON.parse(String(row.multi_exec_groups_json)) as WorkspaceMultiExecGroup[],
+    isStartup: Number(row.is_startup) === 1,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+    lastOpenedAt: optionalString(row.last_opened_at),
+  };
+}
 
 function tunnelFromRow(row: SqlRow): TunnelRecord {
   const type = String(row.type) as ForwardType;

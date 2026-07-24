@@ -19,6 +19,8 @@ import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
 import AltRouteIcon from '@mui/icons-material/AltRoute';
@@ -35,15 +37,20 @@ import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import LibraryAddOutlinedIcon from '@mui/icons-material/LibraryAddOutlined';
+import GridViewOutlinedIcon from '@mui/icons-material/GridViewOutlined';
 import PasswordOutlinedIcon from '@mui/icons-material/PasswordOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
+import RocketLaunchOutlinedIcon from '@mui/icons-material/RocketLaunchOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import StarIcon from '@mui/icons-material/Star';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
+import TabOutlinedIcon from '@mui/icons-material/TabOutlined';
+import TableRowsOutlinedIcon from '@mui/icons-material/TableRowsOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
+import ViewColumnOutlinedIcon from '@mui/icons-material/ViewColumnOutlined';
 import type { SshHostEntry } from '@muxus/shared';
 import { useReorderManagedHosts } from '../api/host-order.js';
 import { useDeleteHostProfile, useUpdateHostProfileMetadata } from '../api/profiles.js';
@@ -59,11 +66,13 @@ import {
   managedHostKey,
   managedHostRef,
   type ManagedHost,
+  type ManagedHostGroup,
 } from '../managed-hosts.js';
 import {
   connectManagedHost,
   connectTarget,
   isQuickConnectTarget,
+  launchManagedHostGroup,
   openLocalTerminal,
   openManagedHostInNewWindow,
 } from '../session-actions.js';
@@ -81,6 +90,7 @@ import {
 import { usePrefsStore } from '../state/prefs.js';
 import { showToast } from '../state/toast.js';
 import { useTabsStore } from '../state/tabs.js';
+import type { SessionSetLayout } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
 import { hostKindIcon } from './host-kind-icon.js';
 import { PanelResizeHandle } from './PanelResizeHandle.js';
@@ -105,6 +115,8 @@ export function SessionSidebar() {
   const [filter, setFilter] = useState('');
   const [menu, setMenu] = useState<{ anchor: HTMLElement; position?: { top: number; left: number }; host: ManagedHost } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<ManagedHost | null>(null);
+  const [launchGroup, setLaunchGroup] = useState<ManagedHostGroup | null>(null);
+  const [launchLayout, setLaunchLayout] = useState<SessionSetLayout>('tabs');
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [dragged, setDragged] = useState<{ groupKey: string; hostKey: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
@@ -483,6 +495,21 @@ export function SessionSidebar() {
                 <Tooltip title={group.tooltip ?? group.label}>
                   <span>{group.label}</span>
                 </Tooltip>
+                <Tooltip title={`Launch all ${group.hosts.length} hosts`}>
+                  <IconButton
+                    size="small"
+                    aria-label={`Launch ${group.label} group`}
+                    disabled={group.hosts.length === 0}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setLaunchGroup(group);
+                      setLaunchLayout('tabs');
+                    }}
+                    sx={{ p: 0.25, ml: 'auto' }}
+                  >
+                    <RocketLaunchOutlinedIcon sx={{ fontSize: 14 }} />
+                  </IconButton>
+                </Tooltip>
                 <Typography component="span" sx={{ fontSize: 11, color: 'text.disabled', ml: 'auto', mr: 0.5 }}>
                   {group.hosts.length}
                 </Typography>
@@ -724,6 +751,72 @@ export function SessionSidebar() {
             onClick={confirmDeleteHost}
           >
             Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={!!launchGroup} onClose={() => setLaunchGroup(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Launch “{launchGroup?.label}”</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Start all {launchGroup?.hosts.length ?? 0} hosts and replace the current pane layout.
+          </Typography>
+          <ToggleButtonGroup
+            exclusive
+            fullWidth
+            size="small"
+            value={launchLayout}
+            onChange={(_event, value: SessionSetLayout | null) => {
+              if (value) setLaunchLayout(value);
+            }}
+            aria-label="Host group layout"
+          >
+            <ToggleButton value="tabs" aria-label="Tabs">
+              <Stack spacing={0.25} sx={{ alignItems: 'center' }}>
+                <TabOutlinedIcon fontSize="small" />
+                <Typography variant="caption">Tabs</Typography>
+              </Stack>
+            </ToggleButton>
+            <ToggleButton value="columns" aria-label="Columns">
+              <Stack spacing={0.25} sx={{ alignItems: 'center' }}>
+                <ViewColumnOutlinedIcon fontSize="small" />
+                <Typography variant="caption">Columns</Typography>
+              </Stack>
+            </ToggleButton>
+            <ToggleButton value="rows" aria-label="Rows">
+              <Stack spacing={0.25} sx={{ alignItems: 'center' }}>
+                <TableRowsOutlinedIcon fontSize="small" />
+                <Typography variant="caption">Rows</Typography>
+              </Stack>
+            </ToggleButton>
+            <ToggleButton value="grid" aria-label="Grid">
+              <Stack spacing={0.25} sx={{ alignItems: 'center' }}>
+                <GridViewOutlinedIcon fontSize="small" />
+                <Typography variant="caption">Grid</Typography>
+              </Stack>
+            </ToggleButton>
+          </ToggleButtonGroup>
+          {tabs.some((tab) => tab.profile && tab.status !== 'closed') ? (
+            <Alert severity="warning" sx={{ mt: 2 }}>
+              Existing live sessions will be closed when this group replaces the current layout.
+            </Alert>
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setLaunchGroup(null)}>Cancel</Button>
+          <Button
+            variant="contained"
+            startIcon={<RocketLaunchOutlinedIcon />}
+            disabled={!launchGroup?.hosts.length}
+            onClick={() => {
+              if (!launchGroup) return;
+              const count = launchManagedHostGroup(launchGroup.hosts, launchLayout).length;
+              if (count === 0) return;
+              showToast('success', `Launching ${count} session${count === 1 ? '' : 's'} in ${launchLayout}.`);
+              setLaunchGroup(null);
+            }}
+          >
+            Launch group
           </Button>
         </DialogActions>
       </Dialog>

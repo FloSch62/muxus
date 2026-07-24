@@ -2,6 +2,7 @@ import { memo, useState } from 'react';
 import AppBar from '@mui/material/AppBar';
 import Badge from '@mui/material/Badge';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import Divider from '@mui/material/Divider';
 import IconButton from '@mui/material/IconButton';
 import ListItemIcon from '@mui/material/ListItemIcon';
@@ -28,6 +29,7 @@ import KeyboardOutlinedIcon from '@mui/icons-material/KeyboardOutlined';
 import SearchOutlinedIcon from '@mui/icons-material/SearchOutlined';
 import SelectAllIcon from '@mui/icons-material/SelectAll';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import WorkspacesOutlinedIcon from '@mui/icons-material/WorkspacesOutlined';
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutlineOutlined';
@@ -45,6 +47,7 @@ import { showToast } from '../state/toast.js';
 import { usePrefsStore } from '../state/prefs.js';
 import { useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
+import { useWorkspacesStore } from '../state/workspaces.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
 import { MultiExecControl } from '../components/MultiExecControl.js';
 import {
@@ -53,6 +56,7 @@ import {
   loadSettingsDialog,
   loadSessionHistoryDialog,
   loadShortcutsDialog,
+  loadWorkspaceDialog,
   loadSftpPanel,
 } from '../lazy-features.js';
 
@@ -65,6 +69,9 @@ export const TopBar = memo(function TopBar() {
   const setCommandButtonsOpen = useUiStore((s) => s.setCommandButtonsOpen);
   const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
   const setHistoryOpen = useUiStore((s) => s.setHistoryOpen);
+  const setWorkspacesOpen = useUiStore((s) => s.setWorkspacesOpen);
+  const workspaceName = useWorkspacesStore((s) => s.activeName);
+  const workspacesReady = useWorkspacesStore((s) => s.ready);
   const forwardingOpen = useUiStore((s) => s.forwardingOpen);
   const setForwardingOpen = useUiStore((s) => s.setForwardingOpen);
   const activeTab = useTabsStore((s) => s.tabs.find((t) => t.id === s.activeId));
@@ -115,6 +122,20 @@ export const TopBar = memo(function TopBar() {
             Muxus
           </Typography>
         </Stack>
+        <Button
+          size="small"
+          color="inherit"
+          startIcon={<WorkspacesOutlinedIcon fontSize="small" />}
+          disabled={!workspacesReady}
+          onMouseEnter={() => void loadWorkspaceDialog()}
+          onFocus={() => void loadWorkspaceDialog()}
+          onClick={() => setWorkspacesOpen(true)}
+          sx={{ maxWidth: 240, textTransform: 'none', justifyContent: 'flex-start' }}
+        >
+          <Typography variant="body2" noWrap>
+            {workspaceName}
+          </Typography>
+        </Button>
         <Box sx={{ flex: 1 }} />
         <MultiExecControl />
         <Tooltip title="Saved command buttons">
