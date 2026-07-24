@@ -285,7 +285,13 @@ export function SessionSidebar() {
           fullWidth
           placeholder="Search / user@host ⏎"
           value={filter}
-          onChange={(e) => setFilter(e.target.value)}
+          onChange={(e) => {
+            const next = e.target.value;
+            setFilter(next);
+            // Quick-connect commonly goes straight from typing to Enter, so
+            // overlap the lazy terminal chunk with the user's input.
+            if (next.trim()) void loadTerminalViewImpl();
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter') onEnter();
             if (e.key === 'Escape') setFilter('');

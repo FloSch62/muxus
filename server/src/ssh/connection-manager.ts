@@ -274,6 +274,9 @@ export class SshConnectionManager {
         }
       });
       client.connect(config);
+      // Interactive input consists of tiny packets. Disable Nagle explicitly
+      // so a keystroke never waits for a previous packet's acknowledgement.
+      client.setNoDelay(true);
     });
   }
 

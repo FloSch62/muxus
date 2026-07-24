@@ -48,6 +48,10 @@ export function HostPickerPopover({
       setFilter('');
       return;
     }
+    // Keyboard users may press Enter without ever hovering a host row. Start
+    // the lazy terminal chunk while they choose a host so connection startup
+    // does not wait behind code loading.
+    void loadTerminalViewImpl();
     const frame = requestAnimationFrame(() => searchInput.current?.focus());
     return () => cancelAnimationFrame(frame);
   }, [anchorEl]);

@@ -1,11 +1,11 @@
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { Client, ClientChannel, PseudoTtyOptions, SFTPWrapper, Stats } from 'ssh2';
 import { ZSHENV, ZSHRC } from '../local/shell-integration.js';
 
-const SHELL_PROBE = `command printf '\\n__MUXUS_SHELL__=%s\\n__MUXUS_ZDOTDIR__=%s\\n' "\${SHELL-}" "\${ZDOTDIR-}"`;
+const SHELL_PROBE = `command printf '\\n__MUXUS_SHELL__=%s\\n__MUXUS_ZDOTDIR__=%s\\n__MUXUS_HOME__=%s\\n' "\${SHELL-}" "\${ZDOTDIR-}" "\${HOME-}"`;
 const PROBE_TIMEOUT_MS = 5_000;
 const MAX_PROBE_OUTPUT = 8 * 1024;
-const INTEGRATION_VERSION = 'v1';
 
 const ZPROFILE = `# Preserve login-zsh startup while ZDOTDIR points at the Muxus shim.
 __muxus_shim="$ZDOTDIR"
@@ -38,9 +38,22 @@ if [[ $- == *i* && -z "$__muxus_integrated" ]]; then
 fi
 `;
 
+// A content-addressed directory makes the installed scripts immutable. Once
+// the completion marker exists, future connections need only one SFTP stat
+// instead of re-checking every parent and rewriting every file over the WAN.
+const INTEGRATION_VERSION = createHash('sha256')
+  .update(ZSHENV)
+  .update(ZPROFILE)
+  .update(ZSHRC)
+  .update(BASH_INIT)
+  .digest('hex')
+  .slice(0, 12);
+const INSTALL_COMPLETE = '.complete';
+
 type SupportedShell = {
   path: string;
   kind: 'bash' | 'zsh';
+  home: string;
   zdotdir?: string;
 };
 
@@ -54,11 +67,12 @@ export async function openIntegratedRemoteShell(
   getSftp: () => Promise<SFTPWrapper>,
   pty: PseudoTtyOptions,
 ): Promise<ClientChannel | undefined> {
-  const shell = await probeShell(client);
-  if (!shell) return undefined;
-
   try {
-    const root = await installIntegration(await getSftp(), shell.kind);
+    // Shell detection and SFTP channel setup are independent network
+    // round-trips, so overlap them on the same SSH transport.
+    const [shell, sftp] = await Promise.all([probeShell(client), getSftp()]);
+    if (!shell) return undefined;
+    const root = await installIntegration(sftp, shell);
     return await openExec(client, remoteShellCommand(shell, root), { pty });
   } catch {
     return undefined;
@@ -70,8 +84,10 @@ export function parseShellProbe(output: string): SupportedShell | undefined {
   if (!shellPath || shellPath.includes('\0')) return undefined;
   const name = path.posix.basename(shellPath);
   if (name !== 'bash' && name !== 'zsh') return undefined;
+  const home = /^__MUXUS_HOME__=(\/[^\r\n]*)$/m.exec(output)?.[1]?.trim();
+  if (!home || home.includes('\0')) return undefined;
   const zdotdir = /^__MUXUS_ZDOTDIR__=([^\r\n]*)$/m.exec(output)?.[1]?.trim();
-  return { path: shellPath, kind: name, ...(zdotdir ? { zdotdir } : {}) };
+  return { path: shellPath, kind: name, home, ...(zdotdir ? { zdotdir } : {}) };
 }
 
 export function remoteShellCommand(shell: SupportedShell, root: string): string {
@@ -116,14 +132,23 @@ async function probeShell(client: Client): Promise<SupportedShell | undefined> {
   });
 }
 
-async function installIntegration(sftp: SFTPWrapper, kind: SupportedShell['kind']): Promise<string> {
-  const home = await call<string>((cb) => sftp.realpath('.', cb));
-  if (!home.startsWith('/')) throw new Error('remote home is not POSIX');
-  const root = path.posix.join(home, '.cache', 'muxus', 'shell-integration', INTEGRATION_VERSION);
-  const directories = kind === 'zsh' ? [root, path.posix.join(root, 'zsh')] : [root];
+async function installIntegration(sftp: SFTPWrapper, shell: SupportedShell): Promise<string> {
+  const root = path.posix.join(
+    shell.home,
+    '.cache',
+    'muxus',
+    'shell-integration',
+    INTEGRATION_VERSION,
+  );
+  const completePath = path.posix.join(root, INSTALL_COMPLETE);
+  const complete = await call<Stats>((cb) => sftp.stat(completePath, cb)).catch(() => undefined);
+  if (complete?.isFile()) return root;
+
+  const directories =
+    shell.kind === 'zsh' ? [root, path.posix.join(root, 'zsh')] : [root];
   for (const directory of directories) await ensureDirectory(sftp, directory);
 
-  const files = kind === 'zsh'
+  const files = shell.kind === 'zsh'
     ? [
         { path: path.posix.join(root, 'zsh', '.zshenv'), content: ZSHENV },
         { path: path.posix.join(root, 'zsh', '.zprofile'), content: ZPROFILE },
@@ -131,6 +156,8 @@ async function installIntegration(sftp: SFTPWrapper, kind: SupportedShell['kind'
       ]
     : [{ path: path.posix.join(root, 'bash-init.bash'), content: BASH_INIT }];
   await Promise.all(files.map((file) => writeFile(sftp, file.path, file.content)));
+  // Written last so interrupted installs are repaired on the next attempt.
+  await writeFile(sftp, completePath, INTEGRATION_VERSION);
   return root;
 }
 
