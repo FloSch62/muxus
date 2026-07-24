@@ -74,11 +74,23 @@ export function EditorShell<S extends string>({
           {storage}
         </Typography>
       </DialogTitle>
-      <DialogContent sx={{ pb: 0.5 }}>
+      <DialogContent
+        sx={{
+          pb: 0.5,
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: 0,
+          overflow: 'hidden',
+        }}
+      >
         {typeKind && onTypeChange && (
           <ConnectionTypeTabs kind={typeKind} onChange={onTypeChange} />
         )}
-        <Stack direction="row" spacing={2.5} sx={{ minHeight: 440, pt: typeKind ? 1.5 : 0 }}>
+        <Stack
+          direction="row"
+          spacing={2.5}
+          sx={{ flex: 1, minHeight: 0, pt: typeKind ? 1.5 : 0 }}
+        >
           <Tabs
             orientation="vertical"
             value={section}

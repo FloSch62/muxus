@@ -55,7 +55,19 @@ export function HostEditorDialog() {
   if (!state) return null;
 
   return (
-    <Dialog open onClose={() => setState(false)} maxWidth="md" fullWidth>
+    <Dialog
+      open
+      onClose={() => setState(false)}
+      maxWidth="md"
+      fullWidth
+      slotProps={{
+        paper: {
+          sx: {
+            height: 650,
+          },
+        },
+      }}
+    >
       <HostEditorBody state={state} />
     </Dialog>
   );
