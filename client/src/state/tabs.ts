@@ -218,11 +218,12 @@ export const useTabsStore = create<TabsState>()((set) => ({
     }),
   closePane: (paneId) =>
     set((state) => {
-      if (state.root.type === 'pane' || state.tabs.some((tab) => tab.paneId === paneId)) return state;
+      if (state.root.type === 'pane') return state;
       const root = removePane(state.root, paneId);
       if (!root) return state;
       const activePane = firstPane(root);
       return {
+        tabs: state.tabs.filter((tab) => tab.paneId !== paneId),
         root,
         activePaneId: state.activePaneId === paneId ? activePane.id : state.activePaneId,
         activeId: state.activePaneId === paneId ? activePane.activeTabId : state.activeId,

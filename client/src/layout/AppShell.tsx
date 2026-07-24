@@ -84,27 +84,32 @@ export function AppShell() {
   );
 }
 
-/** Pref-gated confirmation before closing tabs with live sessions. */
+/** Pref-gated confirmation before closing tabs or panes with live sessions. */
 function ConfirmCloseDialog() {
-  const tabIds = useUiStore((state) => state.confirmCloseTabs);
-  const setConfirmCloseTabs = useUiStore((state) => state.setConfirmCloseTabs);
+  const request = useUiStore((state) => state.confirmClose);
+  const setConfirmClose = useUiStore((state) => state.setConfirmClose);
   const tabs = useTabsStore((state) => state.tabs);
   const close = useTabsStore((state) => state.close);
+  const closePane = useTabsStore((state) => state.closePane);
   const setPrefs = usePrefsStore((state) => state.set);
   const [dontAskAgain, setDontAskAgain] = useState(false);
 
-  const targets = (tabIds ?? []).map((id) => tabs.find((tab) => tab.id === id)).filter((tab) => tab !== undefined);
+  const targets = (request?.tabIds ?? []).map((id) => tabs.find((tab) => tab.id === id)).filter((tab) => tab !== undefined);
   const live = targets.filter((tab) => tab.status === 'connected');
   const label = live.length === 1 ? `“${live[0]!.title}” has a live session` : `${live.length} tabs have live sessions`;
 
   const dismiss = () => {
-    setConfirmCloseTabs(null);
+    setConfirmClose(null);
     setDontAskAgain(false);
   };
 
   return (
-    <Dialog open={!!tabIds} onClose={dismiss} maxWidth="xs" fullWidth>
-      <DialogTitle>Close {targets.length === 1 ? 'this tab' : `${targets.length} tabs`}?</DialogTitle>
+    <Dialog open={!!request} onClose={dismiss} maxWidth="xs" fullWidth>
+      <DialogTitle>
+        {request?.paneId
+          ? 'Close this pane?'
+          : `Close ${targets.length === 1 ? 'this tab' : `${targets.length} tabs`}?`}
+      </DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary">
           {label} — closing ends it.
@@ -122,7 +127,8 @@ function ConfirmCloseDialog() {
           color="error"
           onClick={() => {
             if (dontAskAgain) setPrefs({ confirmCloseConnected: false });
-            for (const tab of targets) close(tab.id);
+            if (request?.paneId) closePane(request.paneId);
+            else for (const tab of targets) close(tab.id);
             dismiss();
           }}
         >

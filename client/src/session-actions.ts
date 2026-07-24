@@ -3,6 +3,7 @@ import { usePrefsStore } from './state/prefs.js';
 import { useTabsStore } from './state/tabs.js';
 import { useUiStore } from './state/ui.js';
 import { confirmDiscardRemoteEditors } from './editor/remote-editor-registry.js';
+import { findPane } from './state/workspace-layout.js';
 
 function replaceActiveEmpty(
   profile: SessionProfile,
@@ -69,10 +70,27 @@ export function requestCloseTabs(tabIds: string[]): void {
   if (!confirmDiscardRemoteEditors(targets)) return;
   const live = targets.some((id) => tabs.find((tab) => tab.id === id)?.status === 'connected');
   if (live && usePrefsStore.getState().confirmCloseConnected) {
-    useUiStore.getState().setConfirmCloseTabs(targets);
+    useUiStore.getState().setConfirmClose({ tabIds: targets });
     return;
   }
   for (const id of targets) close(id);
+}
+
+/**
+ * Close a split pane and every tab it contains. Live sessions use the same
+ * preference-gated confirmation as individual tab closes.
+ */
+export function requestClosePane(paneId: string): void {
+  const { root, tabs, closePane } = useTabsStore.getState();
+  if (root.type === 'pane' || !findPane(root, paneId)) return;
+  const targets = tabs.filter((tab) => tab.paneId === paneId).map((tab) => tab.id);
+  if (!confirmDiscardRemoteEditors(targets)) return;
+  const live = tabs.some((tab) => tab.paneId === paneId && tab.status === 'connected');
+  if (live && usePrefsStore.getState().confirmCloseConnected) {
+    useUiStore.getState().setConfirmClose({ tabIds: targets, paneId });
+    return;
+  }
+  closePane(paneId);
 }
 
 /**

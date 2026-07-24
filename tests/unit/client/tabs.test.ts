@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { requestClosePane } from '../../../client/src/session-actions.js';
+import { usePrefsStore } from '../../../client/src/state/prefs.js';
 import { useTabsStore } from '../../../client/src/state/tabs.js';
+import { useUiStore } from '../../../client/src/state/ui.js';
 
 beforeEach(() => {
   useTabsStore.setState({
@@ -8,6 +11,8 @@ beforeEach(() => {
     activePaneId: 'pane-test',
     activeId: null,
   });
+  usePrefsStore.setState({ confirmCloseConnected: true });
+  useUiStore.setState({ confirmClose: null });
 });
 
 describe('blank session tabs', () => {
@@ -86,5 +91,56 @@ describe('remote editor tabs', () => {
       editorPaths: [],
       activeEditorPath: undefined,
     });
+  });
+});
+
+describe('pane closing', () => {
+  it('closes a non-empty pane and its tabs', () => {
+    const store = useTabsStore.getState();
+    const survivingTabId = store.open({ kind: 'local' }, 'Local');
+    store.split('pane-test', 'horizontal');
+    const closingPaneId = useTabsStore.getState().activePaneId;
+    const closingTabId = useTabsStore.getState().open({ kind: 'ssh', target: 'router' }, 'Router');
+
+    useTabsStore.getState().closePane(closingPaneId);
+
+    const state = useTabsStore.getState();
+    expect(state.root).toMatchObject({ id: 'pane-test', type: 'pane' });
+    expect(state.tabs.map((tab) => tab.id)).toEqual([survivingTabId]);
+    expect(state.tabs.some((tab) => tab.id === closingTabId)).toBe(false);
+    expect(state.activePaneId).toBe('pane-test');
+    expect(state.activeId).toBe(survivingTabId);
+  });
+
+  it('gates a pane containing live tabs behind the close confirmation', () => {
+    const store = useTabsStore.getState();
+    store.open({ kind: 'local' }, 'Local');
+    store.split('pane-test', 'horizontal');
+    const closingPaneId = useTabsStore.getState().activePaneId;
+    const closingTabId = useTabsStore.getState().open({ kind: 'ssh', target: 'router' }, 'Router');
+    useTabsStore.getState().update(closingTabId, { status: 'connected' });
+
+    requestClosePane(closingPaneId);
+
+    expect(useUiStore.getState().confirmClose).toEqual({
+      tabIds: [closingTabId],
+      paneId: closingPaneId,
+    });
+    expect(useTabsStore.getState().root.type).toBe('split');
+  });
+
+  it('closes a live pane immediately when confirmation is disabled', () => {
+    const store = useTabsStore.getState();
+    store.open({ kind: 'local' }, 'Local');
+    store.split('pane-test', 'horizontal');
+    const closingPaneId = useTabsStore.getState().activePaneId;
+    const closingTabId = useTabsStore.getState().open({ kind: 'ssh', target: 'router' }, 'Router');
+    useTabsStore.getState().update(closingTabId, { status: 'connected' });
+    usePrefsStore.setState({ confirmCloseConnected: false });
+
+    requestClosePane(closingPaneId);
+
+    expect(useUiStore.getState().confirmClose).toBeNull();
+    expect(useTabsStore.getState().root).toMatchObject({ id: 'pane-test', type: 'pane' });
   });
 });

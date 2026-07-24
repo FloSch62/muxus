@@ -27,7 +27,12 @@ import HorizontalSplitOutlinedIcon from '@mui/icons-material/HorizontalSplitOutl
 import TerminalIcon from '@mui/icons-material/Terminal';
 import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined';
 import PodcastsOutlinedIcon from '@mui/icons-material/PodcastsOutlined';
-import { duplicateTab, openEmptyTab, requestCloseTabs } from '../session-actions.js';
+import {
+  duplicateTab,
+  openEmptyTab,
+  requestClosePane,
+  requestCloseTabs,
+} from '../session-actions.js';
 import { useTabsStore, type TabStatus, type TerminalTab } from '../state/tabs.js';
 import { findPane } from '../state/workspace-layout.js';
 import { layout, statusTextColor } from '../theme.js';
@@ -47,11 +52,10 @@ export function TabStrip({ paneId, focused }: { paneId: string; focused: boolean
   const allTabs = useTabsStore((s) => s.tabs);
   const tabs = allTabs.filter((tab) => tab.paneId === paneId);
   const activeId = useTabsStore((s) => findPane(s.root, paneId)?.activeTabId ?? null);
-  const canClosePane = useTabsStore((s) => s.root.type === 'split' && !s.tabs.some((tab) => tab.paneId === paneId));
+  const canClosePane = useTabsStore((s) => s.root.type === 'split');
   const activate = useTabsStore((s) => s.activate);
   const focusPane = useTabsStore((s) => s.focusPane);
   const split = useTabsStore((s) => s.split);
-  const closePane = useTabsStore((s) => s.closePane);
   const update = useTabsStore((s) => s.update);
   const multiExecTargets = useMultiExecStore((s) => s.selectedIds);
   const toggleMultiExecTarget = useMultiExecStore((s) => s.toggleTarget);
@@ -257,11 +261,11 @@ export function TabStrip({ paneId, focused }: { paneId: string; focused: boolean
         </IconButton>
       </Tooltip>
       {canClosePane && (
-        <Tooltip title="Close empty pane">
+        <Tooltip title="Close pane">
           <IconButton
             size="small"
-            aria-label="Close empty pane"
-            onClick={() => closePane(paneId)}
+            aria-label="Close pane"
+            onClick={() => requestClosePane(paneId)}
             sx={{ alignSelf: 'center', mr: 0.5 }}
           >
             <CloseIcon sx={{ fontSize: 16 }} />
