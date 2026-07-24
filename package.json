@@ -2,7 +2,7 @@
   "name": "muxus",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@11.12.0",
+  "packageManager": "pnpm@11.13.1",
   "description": "Free, open-source SSH client & terminal — kitty graphics, split-pane sessions, SFTP, port forwarding",
   "license": "MIT",
   "engines": {
