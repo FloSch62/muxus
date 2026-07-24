@@ -26,6 +26,7 @@ import {
 import { registerRemoteEditor } from '../editor/remote-editor-registry.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { loadMonacoTextEditor } from '../lazy-features.js';
+import { FileTypeIcon } from './FileTypeIcon.js';
 
 const MonacoTextEditor = lazy(loadMonacoTextEditor);
 
@@ -302,6 +303,7 @@ export function RemoteEditorWorkspace({
                 boxShadow: active ? `inset 0 2px ${currentTheme.palette.primary.main}` : 'none',
               })}
             >
+              <FileTypeIcon name={baseName(path)} />
               <Typography variant="body2" noWrap sx={{ flex: 1, fontSize: 12.5 }}>
                 {baseName(path)}
               </Typography>
@@ -332,6 +334,7 @@ export function RemoteEditorWorkspace({
           direction="row"
           sx={{ minHeight: 38, px: 1.25, gap: 0.5, alignItems: 'center', borderBottom: 1, borderColor: 'divider' }}
         >
+          <FileTypeIcon name={baseName(activePath)} />
           <Typography
             variant="caption"
             color="text.secondary"

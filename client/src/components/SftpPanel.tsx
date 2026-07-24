@@ -18,12 +18,13 @@ import Typography from '@mui/material/Typography';
 import { alpha } from '@mui/material/styles';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import CreateNewFolderOutlinedIcon from '@mui/icons-material/CreateNewFolderOutlined';
-import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
+import DriveFileRenameOutlineRoundedIcon from '@mui/icons-material/DriveFileRenameOutlineRounded';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
-import FolderIcon from '@mui/icons-material/Folder';
+import FolderOffOutlinedIcon from '@mui/icons-material/FolderOffOutlined';
+import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded';
 import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
-import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
@@ -45,6 +46,7 @@ import {
   maxSftpPanelWidth,
   MIN_SFTP_PANEL_WIDTH,
 } from '../sftp-panel-width.js';
+import { FileTypeIcon } from './FileTypeIcon.js';
 import { PanelResizeHandle } from './PanelResizeHandle.js';
 
 interface DroppedFile {
@@ -254,13 +256,7 @@ const SftpEntryTable = memo(function SftpEntryTable({
               }}
             >
               <TableCell sx={{ display: 'flex', alignItems: 'center', gap: 0.75, border: 0, minWidth: 0 }}>
-                {entry.type === 'dir' ? (
-                  <FolderIcon sx={{ fontSize: 16, color: 'primary.main' }} />
-                ) : entry.type === 'link' ? (
-                  <LinkOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-                ) : (
-                  <DescriptionOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-                )}
+                <FileTypeIcon name={entry.name} type={entry.type} />
                 <Typography variant="body2" noWrap sx={{ fontSize: 12 }}>
                   {entry.name}
                 </Typography>
@@ -277,7 +273,12 @@ const SftpEntryTable = memo(function SftpEntryTable({
         {entries.length === 0 && !isFetching && (
           <TableRow>
             <TableCell colSpan={3} sx={{ color: 'text.secondary', textAlign: 'center', border: 0, py: 3 }}>
-              Empty directory
+              <Stack spacing={0.5} sx={{ alignItems: 'center' }}>
+                <FolderOffOutlinedIcon sx={{ fontSize: 26, color: 'text.disabled' }} />
+                <Typography variant="caption" color="text.secondary">
+                  Empty directory
+                </Typography>
+              </Stack>
             </TableCell>
           </TableRow>
         )}
@@ -675,6 +676,7 @@ export function SftpPanel({
         />
       )}
       <Stack direction="row" sx={{ px: 1.25, pt: 1, alignItems: 'center' }}>
+        <FolderOpenRoundedIcon sx={{ mr: 0.75, fontSize: 18, color: 'primary.main' }} />
         <Typography variant="subtitle2" sx={{ flex: 1 }}>
           Remote Explorer
         </Typography>
@@ -909,6 +911,7 @@ export function SftpPanel({
               setMenu(null);
             }}
           >
+            <EditOutlinedIcon sx={{ mr: 1.25, fontSize: 18, color: 'text.secondary' }} />
             Open in editor
           </MenuItem>
         )}
@@ -919,6 +922,7 @@ export function SftpPanel({
               setMenu(null);
             }}
           >
+            <DownloadOutlinedIcon sx={{ mr: 1.25, fontSize: 18, color: 'text.secondary' }} />
             Download
           </MenuItem>
         )}
@@ -928,6 +932,7 @@ export function SftpPanel({
             setMenu(null);
           }}
         >
+          <DriveFileRenameOutlineRoundedIcon sx={{ mr: 1.25, fontSize: 18, color: 'text.secondary' }} />
           Rename
         </MenuItem>
         <MenuItem
@@ -936,6 +941,7 @@ export function SftpPanel({
             setMenu(null);
           }}
         >
+          <DeleteOutlineRoundedIcon sx={{ mr: 1.25, fontSize: 18, color: 'error.main' }} />
           Delete
         </MenuItem>
       </Menu>
