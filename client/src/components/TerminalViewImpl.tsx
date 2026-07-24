@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
 import Divider from '@mui/material/Divider';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
@@ -9,7 +8,6 @@ import ListItemText from '@mui/material/ListItemText';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import Paper from '@mui/material/Paper';
-import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import ToggleButton from '@mui/material/ToggleButton';
 import Tooltip from '@mui/material/Tooltip';
@@ -59,6 +57,15 @@ import { isQuickLauncherShortcut } from '../quick-launcher.js';
 import { AuthPromptDialog, type AuthPromptRequest } from './AuthPromptDialog.js';
 import { HostKeyDialog, type HostKeyRequest } from './HostKeyDialog.js';
 import { PasteConfirmDialog } from './PasteConfirmDialog.js';
+import {
+  CONNECTION_INTERRUPTION_GRACE_MS,
+  connectionFailureReason,
+  reattachCommand,
+  shouldDelayConnectionLost,
+  shouldWaitForTerminalOutput,
+  terminalNotice,
+  type TerminalExitMessage,
+} from '../connection-recovery.js';
 
 const SEARCH_DECORATIONS: ISearchOptions['decorations'] = {
   matchBackground: '#594b24',
@@ -107,13 +114,12 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const [searchRegex, setSearchRegex] = useState(false);
   const [searchResult, setSearchResult] = useState({ resultIndex: -1, resultCount: 0 });
   const [ctxMenu, setCtxMenu] = useState<{ top: number; left: number; hasSelection: boolean } | null>(null);
-  const [generation, setGeneration] = useState(tab.connectOnMount ? 0 : -1);
+  const [generation, setGeneration] = useState(tab.connectOnMount ? 1 : 0);
   const reconnectRequest = useTabsStore(
     (s) => s.tabs.find((candidate) => candidate.id === tab.id)?.reconnectRequest ?? 0,
   );
   const lastReconnectRequestRef = useRef(reconnectRequest);
   const updateTab = useTabsStore((s) => s.update);
-  const status = useTabsStore((s) => s.tabs.find((t) => t.id === tab.id)?.status);
   const searchRequest = useTabsStore(
     (s) => s.tabs.find((candidate) => candidate.id === tab.id)?.searchRequest ?? 0,
   );
@@ -218,14 +224,16 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   useEffect(() => {
     if (reconnectRequest === lastReconnectRequestRef.current) return;
     lastReconnectRequestRef.current = reconnectRequest;
-    setGeneration((current) => (current < 0 ? 0 : current + 1));
+    setGeneration((current) => current + 1);
   }, [reconnectRequest]);
 
   useEffect(() => {
-    if (generation < 0) return;
     const el = containerRef.current;
     if (!el) return;
-    updateTab(tab.id, { status: 'connecting' });
+    const shouldConnect = generation > 0;
+    if (shouldConnect) {
+      updateTab(tab.id, { status: 'connecting', connId: undefined });
+    }
 
     const prefs = usePrefsStore.getState();
     const term = new Terminal({
@@ -391,83 +399,228 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       if (usePrefsStore.getState().copyOnSelect && term.hasSelection()) void copyToClipboard(term.getSelection());
     });
 
-    const ws = new WebSocket(wsUrl('/ws/terminal'), wsProtocols());
-    wsRef.current = ws;
-    ws.binaryType = 'arraybuffer';
+    let ws: WebSocket | undefined;
+    let ready = false;
+    let socketFailed = false;
+    let exitMessage: TerminalExitMessage | undefined;
+    let interruptionTimer: ReturnType<typeof setTimeout> | undefined;
+    let receivedTerminalOutput = false;
+    let waitingForTerminalOutput = false;
+    let transportSuspect = false;
+    let transientStatusVisible = false;
+    const clearTransientStatus = () => {
+      if (!transientStatusVisible) return;
+      transientStatusVisible = false;
+      term.write('\r\x1b[2K');
+    };
 
-    ws.onopen = () => {
-      ws.send(JSON.stringify({
-        op: 'connect',
-        profile: tab.profile,
-        title: tab.title,
-        cols: term.cols,
-        rows: term.rows,
-      }));
-    };
-    ws.onmessage = (ev) => {
-      if (ev.data instanceof ArrayBuffer) {
-        term.write(new Uint8Array(ev.data));
-        return;
-      }
-      if (typeof ev.data !== 'string') return;
-      let ctl: TerminalServerMessage;
-      try {
-        ctl = JSON.parse(ev.data) as TerminalServerMessage;
-      } catch {
-        term.write(ev.data);
-        return;
-      }
-      switch (ctl.op) {
-        case 'status':
-          term.write(`\x1b[90m${ctl.message}\x1b[0m\r\n`);
-          break;
-        case 'auth-prompt':
-          setAuthPrompt({ name: ctl.name, instructions: ctl.instructions, host: ctl.host, prompts: ctl.prompts });
-          break;
-        case 'host-key':
-          setHostKey(ctl);
-          break;
-        case 'ready':
+    if (shouldConnect) {
+      ws = new WebSocket(wsUrl('/ws/terminal'), wsProtocols());
+      wsRef.current = ws;
+      ws.binaryType = 'arraybuffer';
+      ws.onopen = () => {
+        ws?.send(JSON.stringify({
+          op: 'connect',
+          profile: tab.profile,
+          title: tab.title,
+          cols: term.cols,
+          rows: term.rows,
+        }));
+      };
+      ws.onmessage = (ev) => {
+        if (ev.data instanceof ArrayBuffer) {
+          clearTransientStatus();
+          receivedTerminalOutput = true;
+          if (waitingForTerminalOutput) {
+            waitingForTerminalOutput = false;
+            if (!transportSuspect) {
+              updateTab(tab.id, {
+                status: 'connected',
+                failureReason: undefined,
+                disconnectReason: undefined,
+              });
+            }
+          }
+          term.write(new Uint8Array(ev.data));
+          return;
+        }
+        if (typeof ev.data !== 'string') return;
+        let ctl: TerminalServerMessage;
+        try {
+          ctl = JSON.parse(ev.data) as TerminalServerMessage;
+        } catch {
+          term.write(ev.data);
+          return;
+        }
+        switch (ctl.op) {
+          case 'status': {
+            if (!ready && !transportSuspect) {
+              updateTab(tab.id, {
+                status: 'connecting',
+                connId: undefined,
+                failureReason: undefined,
+                disconnectReason: undefined,
+              });
+            }
+            clearTransientStatus();
+            if (ctl.transient) {
+              const message = terminalNotice(ctl.message).slice(
+                0,
+                Math.max(1, term.cols - 1),
+              );
+              term.write(`\r\x1b[90m${message}\x1b[0m`);
+              transientStatusVisible = true;
+            } else {
+              term.write(`\x1b[90m${ctl.message}\x1b[0m\r\n`);
+            }
+            break;
+          }
+          case 'connection-health':
+            transportSuspect = ctl.state === 'suspect';
+            if (transportSuspect) {
+              updateTab(tab.id, {
+                status: 'interrupted',
+                failureReason: 'The SSH transport is not responding.',
+                disconnectReason: undefined,
+              });
+            } else if (ready) {
+              updateTab(tab.id, {
+                status: waitingForTerminalOutput ? 'connecting' : 'connected',
+                failureReason: undefined,
+                disconnectReason: undefined,
+              });
+            }
+            break;
+          case 'auth-prompt':
+            setAuthPrompt({ name: ctl.name, instructions: ctl.instructions, host: ctl.host, prompts: ctl.prompts });
+            break;
+          case 'host-key':
+            setHostKey(ctl);
+            break;
+          case 'ready': {
+            ready = true;
+            clearTransientStatus();
+            waitingForTerminalOutput = shouldWaitForTerminalOutput(
+              tab.profile.kind,
+              receivedTerminalOutput,
+            );
+            updateTab(tab.id, {
+              status: transportSuspect
+                ? 'interrupted'
+                : waitingForTerminalOutput
+                  ? 'connecting'
+                  : 'connected',
+              failureReason: undefined,
+              disconnectReason: undefined,
+              // Only SSH transport IDs are valid SFTP/forwarding lease keys.
+              connId: tab.profile.kind === 'ssh' ? ctl.connId : undefined,
+            });
+            const current = useTabsStore
+              .getState()
+              .tabs.find((candidate) => candidate.id === tab.id);
+            if (current?.profile?.kind === 'ssh' && current.reconnectMode) {
+              ws?.send(encoder.encode(reattachCommand(current.reconnectMode)));
+            }
+            break;
+          }
+          case 'logging-state':
+            updateTab(tab.id, {
+              loggingEnabled: ctl.enabled,
+              sessionLogId: ctl.sessionId,
+              loggingWarning: ctl.warning,
+              loggingPaused: ctl.paused,
+              captureInput: ctl.captureInput,
+            });
+            if (ctl.warning) showToast('warning', ctl.warning);
+            break;
+          case 'exit':
+            exitMessage = ctl;
+            break;
+        }
+      };
+      ws.onerror = () => {
+        socketFailed = true;
+      };
+      ws.onclose = (event) => {
+        clearTransientStatus();
+        const reason =
+          socketFailed && !ready && !exitMessage
+            ? 'Could not reach the Muxus backend.'
+            : connectionFailureReason(exitMessage, event);
+        const reasonKind = exitMessage?.reason ?? (ready ? 'disconnected' : 'failed');
+        setAuthPrompt(null);
+        setHostKey(null);
+
+        const showFinalState = () => {
+          term.write(
+            `\r\n\x1b[${reasonKind === 'completed' ? '33' : '31'}m[${
+              reasonKind === 'completed' ? 'session ended' : 'connection lost'
+            }: ${terminalNotice(reason)}]\x1b[0m\r\n`,
+          );
+          term.write('\x1b[1;36mPress any key to reconnect\x1b[0m\r\n');
           updateTab(tab.id, {
-            status: 'connected',
-            // Only SSH transport IDs are valid SFTP/forwarding lease keys.
-            connId: tab.profile.kind === 'ssh' ? ctl.connId : undefined,
+            status: 'closed',
+            connId: undefined,
+            failureReason: reason,
+            disconnectReason: reasonKind,
           });
-          break;
-        case 'logging-state':
-          updateTab(tab.id, {
-            loggingEnabled: ctl.enabled,
-            sessionLogId: ctl.sessionId,
-            loggingWarning: ctl.warning,
-            loggingPaused: ctl.paused,
-            captureInput: ctl.captureInput,
-          });
-          if (ctl.warning) showToast('warning', ctl.warning);
-          break;
-        case 'exit':
-          term.write(`\r\n\x1b[33m[session ended${ctl.message ? `: ${ctl.message}` : ''}]\x1b[0m\r\n`);
-          break;
-      }
-    };
-    ws.onclose = () => {
-      term.write('\r\n\x1b[90m[disconnected]\x1b[0m\r\n');
-      setAuthPrompt(null);
-      setHostKey(null);
-      updateTab(tab.id, { status: 'closed', connId: undefined });
+        };
+
+        if (!shouldDelayConnectionLost(exitMessage, ready)) {
+          showFinalState();
+          return;
+        }
+
+        updateTab(tab.id, {
+          status: 'interrupted',
+          connId: undefined,
+          failureReason: reason,
+          disconnectReason: reasonKind,
+        });
+        interruptionTimer = setTimeout(() => {
+          const current = useTabsStore
+            .getState()
+            .tabs.find((candidate) => candidate.id === tab.id);
+          if (current?.status !== 'interrupted') return;
+          showFinalState();
+        }, CONNECTION_INTERRUPTION_GRACE_MS);
+      };
+    } else {
+      term.write('\x1b[90m[restored session]\x1b[0m\r\n');
+      term.write('\x1b[1;36mPress any key to reconnect\x1b[0m\r\n');
+    }
+
+    const reconnectFromTerminalInput = (): boolean => {
+      const state = useTabsStore.getState();
+      const current = state.tabs.find((candidate) => candidate.id === tab.id);
+      if (!current?.profile || current.status !== 'closed') return false;
+      state.reconnect(
+        [tab.id],
+        current.reconnectMode ? { reattach: current.reconnectMode } : undefined,
+      );
+      return true;
     };
 
     const onData = term.onData((data) => {
       if (sendInput(data)) broadcastTerminalInput(tab.id, data);
+      else reconnectFromTerminalInput();
     });
     const onBinary = term.onBinary((data) => {
-      if (ws.readyState !== WebSocket.OPEN) return;
+      const socket = wsRef.current;
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        reconnectFromTerminalInput();
+        return;
+      }
       const bytes = new Uint8Array(data.length);
       for (let i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i) & 0xff;
-      ws.send(bytes);
+      socket.send(bytes);
       broadcastTerminalInput(tab.id, bytes);
     });
     const onResize = term.onResize(({ cols, rows }) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ op: 'resize', cols, rows }));
+      const socket = wsRef.current;
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ op: 'resize', cols, rows }));
+      }
     });
 
     const observer = new ResizeObserver(() => fit.fit());
@@ -485,11 +638,14 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       onSearchResults.dispose();
       commandTracker.dispose();
       keywordHighlighterRef.current?.dispose();
-      ws.onopen = null;
-      ws.onmessage = null;
-      ws.onclose = null;
-      ws.onerror = null;
-      ws.close();
+      if (interruptionTimer !== undefined) clearTimeout(interruptionTimer);
+      if (ws) {
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onclose = null;
+        ws.onerror = null;
+        ws.close();
+      }
       term.dispose();
       searchRef.current = null;
       serializeRef.current = null;
@@ -593,33 +749,6 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           '& .xterm .xterm-viewport': { backgroundColor: 'transparent' },
         }}
       />
-      {status === 'closed' && (
-        <Stack
-          spacing={1.5}
-          sx={{
-            position: 'absolute',
-            top: theme.spacing(0.75),
-            right: theme.spacing(1),
-            bottom: theme.spacing(1),
-            left: theme.spacing(1),
-            alignItems: 'center',
-            justifyContent: 'center',
-            bgcolor: 'rgba(22, 22, 30, 0.72)',
-            borderRadius: 1,
-          }}
-        >
-          <Typography variant="body2" sx={{ color: '#c8ccd8' }}>
-            Session ended
-          </Typography>
-          <Button
-            variant="contained"
-            size="small"
-            onClick={() => setGeneration((current) => (current < 0 ? 0 : current + 1))}
-          >
-            Reconnect
-          </Button>
-        </Stack>
-      )}
       {searchOpen && (
         <Paper
           elevation={8}

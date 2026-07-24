@@ -23,8 +23,10 @@ import CloseIcon from '@mui/icons-material/Close';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
 import HorizontalSplitOutlinedIcon from '@mui/icons-material/HorizontalSplitOutlined';
+import LinkOffOutlinedIcon from '@mui/icons-material/LinkOffOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutlineOutlined';
+import ReplayOutlinedIcon from '@mui/icons-material/ReplayOutlined';
 import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined';
@@ -46,6 +48,7 @@ import { hostKindIcon } from './host-kind-icon.js';
 const statusDot: Record<TabStatus, 'warning' | 'success' | 'error'> = {
   connecting: 'warning',
   connected: 'success',
+  interrupted: 'warning',
   closed: 'error',
 };
 
@@ -62,6 +65,7 @@ export function TabStrip({ paneId, focused }: { paneId: string; focused: boolean
   const focusPane = useTabsStore((s) => s.focusPane);
   const split = useTabsStore((s) => s.split);
   const update = useTabsStore((s) => s.update);
+  const reconnect = useTabsStore((s) => s.reconnect);
   const multiExecTargets = useMultiExecStore((s) => s.selectedIds);
   const toggleMultiExecTarget = useMultiExecStore((s) => s.toggleTarget);
   const [menu, setMenu] = useState<{ position: { top: number; left: number }; tab: TerminalTab } | null>(null);
@@ -206,15 +210,44 @@ export function TabStrip({ paneId, focused }: { paneId: string; focused: boolean
               </Tooltip>
             )}
             {tab.status !== 'idle' && (
-              <Box
-                sx={(theme) => ({
-                  width: 7,
-                  height: 7,
-                  borderRadius: '50%',
-                  flexShrink: 0,
-                  bgcolor: statusTextColor(statusDot[tab.status])(theme),
-                })}
-              />
+              <Tooltip
+                title={
+                  tab.status === 'closed' && tab.failureReason
+                    ? tab.failureReason
+                    : tab.status === 'interrupted'
+                      ? tab.failureReason ?? 'Connection interrupted'
+                    : tab.status === 'connected'
+                      ? 'Connected'
+                      : tab.status === 'connecting'
+                        ? 'Connecting'
+                        : 'Disconnected'
+                }
+              >
+                {tab.status === 'closed' ? (
+                  <LinkOffOutlinedIcon
+                    aria-label="Disconnected"
+                    sx={{ color: 'error.main', fontSize: 15, flexShrink: 0 }}
+                  />
+                ) : (
+                  <Box
+                    component="span"
+                    aria-label={
+                      tab.status === 'interrupted'
+                        ? 'Connection interrupted'
+                        : tab.status === 'connecting'
+                          ? 'Connecting'
+                          : 'Connected'
+                    }
+                    sx={(theme) => ({
+                      width: 7,
+                      height: 7,
+                      borderRadius: '50%',
+                      flexShrink: 0,
+                      bgcolor: statusTextColor(statusDot[tab.status])(theme),
+                    })}
+                  />
+                )}
+              </Tooltip>
             )}
             <IconButton
               className="muxus-tab-close"
@@ -322,6 +355,48 @@ export function TabStrip({ paneId, focused }: { paneId: string; focused: boolean
           </ListItemIcon>
           <ListItemText>Open in new window</ListItemText>
         </MenuItem>
+        {menuTab?.profile && menuTab.status === 'closed' ? (
+          <>
+            <Divider />
+            <MenuItem
+              onClick={() => {
+                reconnect([menuTab.id]);
+                setMenu(null);
+              }}
+            >
+              <ListItemIcon>
+                <ReplayOutlinedIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Reconnect</ListItemText>
+            </MenuItem>
+            {menuTab.profile.kind === 'ssh' ? (
+              <>
+                <MenuItem
+                  onClick={() => {
+                    reconnect([menuTab.id], { reattach: 'tmux' });
+                    setMenu(null);
+                  }}
+                >
+                  <ListItemIcon>
+                    <TerminalIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Reconnect + tmux</ListItemText>
+                </MenuItem>
+                <MenuItem
+                  onClick={() => {
+                    reconnect([menuTab.id], { reattach: 'screen' });
+                    setMenu(null);
+                  }}
+                >
+                  <ListItemIcon>
+                    <TerminalIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Reconnect + screen</ListItemText>
+                </MenuItem>
+              </>
+            ) : null}
+          </>
+        ) : null}
         <Divider />
         <Box sx={{ px: 2, py: 0.5 }}>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>

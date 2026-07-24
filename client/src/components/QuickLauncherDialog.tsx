@@ -66,7 +66,7 @@ import {
 } from '../session-actions.js';
 import type { CommandButton } from '../state/prefs.js';
 import { usePrefsStore } from '../state/prefs.js';
-import { useTabsStore } from '../state/tabs.js';
+import { useTabsStore, type TabStatus } from '../state/tabs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
 import { useWorkspacesStore } from '../state/workspaces.js';
@@ -1028,9 +1028,10 @@ function profileSummary(profile: SessionProfile): string {
   return `Local${profile.cwd ? ` · ${profile.cwd}` : ''}`;
 }
 
-function tabStatusLabel(status: 'connecting' | 'connected' | 'closed'): string {
+function tabStatusLabel(status: TabStatus): string {
   if (status === 'connected') return 'Connected';
   if (status === 'connecting') return 'Connecting';
+  if (status === 'interrupted') return 'Connection interrupted';
   return 'Disconnected — reconnect';
 }
 

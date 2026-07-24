@@ -141,6 +141,81 @@ describe('workspace restoration', () => {
     ]);
   });
 
+  it('reconnects every ended workspace session with optional SSH reattachment', () => {
+    useTabsStore.getState().restore({
+      version: 1,
+      root: {
+        id: 'pane-restored',
+        type: 'pane',
+        tabs: [
+          {
+            id: 'ssh-a',
+            kind: 'terminal',
+            title: 'A',
+            profile: { kind: 'ssh', target: 'a' },
+            offerReconnect: true,
+          },
+          {
+            id: 'telnet-b',
+            kind: 'terminal',
+            title: 'B',
+            profile: { kind: 'telnet', host: 'b', port: 23 },
+            offerReconnect: true,
+          },
+        ],
+      },
+    });
+
+    useTabsStore.getState().reconnectAll({ reattach: 'tmux' });
+
+    expect(useTabsStore.getState().tabs).toEqual([
+      expect.objectContaining({
+        id: 'ssh-a',
+        status: 'connecting',
+        reconnectRequest: 1,
+        reconnectMode: 'tmux',
+      }),
+      expect.objectContaining({
+        id: 'telnet-b',
+        status: 'connecting',
+        reconnectRequest: 1,
+        reconnectMode: undefined,
+      }),
+    ]);
+  });
+
+  it('clears stale failure details when manually reconnecting', () => {
+    useTabsStore.getState().restore({
+      version: 1,
+      root: {
+        id: 'pane-restored',
+        type: 'pane',
+        tabs: [
+          {
+            id: 'ssh-a',
+            kind: 'terminal',
+            title: 'A',
+            profile: { kind: 'ssh', target: 'a' },
+            offerReconnect: true,
+          },
+        ],
+      },
+    });
+    useTabsStore.getState().update('ssh-a', {
+      failureReason: 'network unreachable',
+      disconnectReason: 'failed',
+    });
+
+    useTabsStore.getState().reconnect(['ssh-a'], { reattach: 'screen' });
+
+    expect(useTabsStore.getState().tabs[0]).toMatchObject({
+      status: 'connecting',
+      reconnectMode: 'screen',
+      failureReason: undefined,
+      disconnectReason: undefined,
+    });
+  });
+
   it('clears the canvas when opening an empty workspace', () => {
     useTabsStore.getState().open({ kind: 'ssh', target: 'router' }, 'Router');
     useTabsStore.getState().restore({ version: 1, root: null });

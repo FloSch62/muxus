@@ -1,17 +1,20 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { PassThrough } from 'node:stream';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildChain,
   expandProxyCommand,
   findMetadataAlias,
+  observeSshTransportHealth,
   terminalPtyOptions,
 } from '../../../server/src/ssh/connection-manager.js';
 import { loadConfigDocument } from '../../../server/src/ssh/ssh-config.js';
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'muxus-chain-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+afterEach(() => vi.useRealTimers());
 
 let counter = 0;
 function docOf(content: string) {
@@ -177,5 +180,37 @@ describe('terminalPtyOptions', () => {
       term: 'xterm-256color',
       modes: { VERASE: 0x7f },
     });
+  });
+});
+
+describe('passive SSH transport health', () => {
+  it('turns suspect after two silent keepalive intervals and recovers on input', () => {
+    vi.useFakeTimers();
+    const transport = new PassThrough();
+    const states: string[] = [];
+    const stop = observeSshTransportHealth(transport, 15_000, (state) => states.push(state));
+
+    vi.advanceTimersByTime(29_999);
+    expect(states).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(states).toEqual(['suspect']);
+
+    transport.write('keepalive reply');
+    expect(states).toEqual(['suspect', 'healthy']);
+
+    stop();
+    vi.advanceTimersByTime(30_000);
+    expect(states).toEqual(['suspect', 'healthy']);
+    transport.destroy();
+  });
+
+  it('does not monitor when SSH keepalives are disabled', () => {
+    vi.useFakeTimers();
+    const transport = new PassThrough();
+    const listener = vi.fn();
+    observeSshTransportHealth(transport, 0, listener);
+    vi.advanceTimersByTime(120_000);
+    expect(listener).not.toHaveBeenCalled();
+    transport.destroy();
   });
 });

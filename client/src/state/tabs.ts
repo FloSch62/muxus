@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { SessionProfile, WorkspaceLayoutV1 } from '@muxus/shared';
+import type { ReattachMode } from '../connection-recovery.js';
 import {
   findPane,
   firstPane,
@@ -11,7 +12,7 @@ import {
   type PaneNode,
 } from './workspace-layout.js';
 
-export type TabStatus = 'connecting' | 'connected' | 'closed';
+export type TabStatus = 'connecting' | 'connected' | 'interrupted' | 'closed';
 
 interface TabBase {
   id: string;
@@ -36,6 +37,11 @@ interface TabBase {
   captureInput: boolean;
   /** Monotonic signal used to reconnect one or many mounted terminal views. */
   reconnectRequest: number;
+  /** Optional multiplexer to attach after the replacement SSH shell is ready. */
+  reconnectMode?: ReattachMode;
+  /** Most recent connection/end reason, shown without requiring terminal scrollback. */
+  failureReason?: string;
+  disconnectReason?: 'completed' | 'failed' | 'disconnected';
 }
 
 export interface SessionTab extends TabBase {
@@ -64,7 +70,13 @@ type TabUpdate = Partial<{
   loggingWarning: string | undefined;
   loggingPaused: boolean;
   captureInput: boolean;
+  failureReason: string | undefined;
+  disconnectReason: 'completed' | 'failed' | 'disconnected' | undefined;
 }>;
+
+export interface ReconnectOptions {
+  reattach?: ReattachMode;
+}
 
 export interface SessionSetEntry {
   profile: SessionProfile;
@@ -97,7 +109,9 @@ interface TabsState {
   /** Replace the pane canvas with a freshly connected, arranged session set. */
   launchSet: (entries: readonly SessionSetEntry[], layout: SessionSetLayout) => string[];
   /** Start fresh connections for selected ended/restored sessions. */
-  reconnect: (tabIds: readonly string[]) => void;
+  reconnect: (tabIds: readonly string[], options?: ReconnectOptions) => void;
+  /** Reconnect every ended/restored session in the current workspace. */
+  reconnectAll: (options?: ReconnectOptions) => void;
   update: (id: string, patch: TabUpdate) => void;
 }
 
@@ -383,7 +397,7 @@ export const useTabsStore = create<TabsState>()((set) => ({
     });
     return ids;
   },
-  reconnect: (tabIds) => {
+  reconnect: (tabIds, options) => {
     const requested = new Set(tabIds);
     set((state) => ({
       tabs: state.tabs.map((tab) =>
@@ -393,11 +407,32 @@ export const useTabsStore = create<TabsState>()((set) => ({
               status: 'connecting' as const,
               connectOnMount: true,
               reconnectRequest: tab.reconnectRequest + 1,
+              reconnectMode:
+                tab.profile.kind === 'ssh' ? options?.reattach : undefined,
+              failureReason: undefined,
+              disconnectReason: undefined,
             }
           : tab,
       ),
     }));
   },
+  reconnectAll: (options) =>
+    set((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.profile && tab.status === 'closed'
+          ? {
+              ...tab,
+              status: 'connecting' as const,
+              connectOnMount: true,
+              reconnectRequest: tab.reconnectRequest + 1,
+              reconnectMode:
+                tab.profile.kind === 'ssh' ? options?.reattach : undefined,
+              failureReason: undefined,
+              disconnectReason: undefined,
+            }
+          : tab,
+      ),
+    })),
   update: (id, patch) =>
     set((state) => ({
       tabs: state.tabs.map((tab) => {

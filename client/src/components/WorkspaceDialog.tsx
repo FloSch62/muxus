@@ -82,6 +82,7 @@ export function WorkspaceDialog() {
   const busy = useWorkspacesStore((state) => state.busy);
   const tabs = useTabsStore((state) => state.tabs);
   const reconnect = useTabsStore((state) => state.reconnect);
+  const reconnectAll = useTabsStore((state) => state.reconnectAll);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<WorkspaceSort>('recent');
   const [nameAction, setNameAction] = useState<NameAction | null>(null);
@@ -620,17 +621,18 @@ export function WorkspaceDialog() {
         {reconnectable.length > 0 ? (
           <Button
             startIcon={<PlayArrowOutlinedIcon />}
-            disabled={selectedIds.length === 0}
             onClick={() => {
-              reconnect(selectedIds);
+              const count = selectedIds.length || reconnectable.length;
+              if (selectedIds.length) reconnect(selectedIds);
+              else reconnectAll();
               showToast(
                 'info',
-                `Reconnecting ${selectedIds.length} session${selectedIds.length === 1 ? '' : 's'}…`,
+                `Reconnecting ${count} session${count === 1 ? '' : 's'}…`,
               );
               setSelectedIds([]);
             }}
           >
-            Reconnect selected
+            {selectedIds.length ? 'Reconnect selected' : 'Reconnect all'}
           </Button>
         ) : null}
         <Box sx={{ flex: 1 }} />

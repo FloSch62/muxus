@@ -55,7 +55,7 @@ export interface HostKeyChallenge {
 
 /** Interactive hooks a connection attempt needs from the UI. */
 export interface ConnectIo {
-  status(message: string): void;
+  status(message: string, options?: { transient?: boolean }): void;
   /** Ask the user to answer auth prompts (password, 2FA, key passphrase). */
   prompt(info: { name?: string; instructions?: string; host?: string; prompts: Array<{ prompt: string; echo: boolean }> }): Promise<string[]>;
   /** Ask the user to accept a new or changed host key. */
@@ -75,18 +75,59 @@ export interface ManagedConnection {
   configForwards: ConfigForward[];
   shell(cols: number, rows: number, term: string): Promise<ClientChannel>;
   sftp(): Promise<SFTPWrapper>;
+  /** Subscribe to passive keepalive health; returns an unsubscribe function. */
+  onHealth(listener: (state: SshTransportHealth) => void): () => void;
   /** Subscribe to transport loss; returns an unsubscribe function. */
-  onClose(listener: () => void): () => void;
+  onClose(listener: (reason?: string) => void): () => void;
   /** Force-close the transport, regardless of active leases. */
   close(): void;
 }
 
 export type ConnectionLease = TransportLease<ManagedConnection>;
+export type SshTransportHealth = 'healthy' | 'suspect';
 
 const MAX_JUMP_DEPTH = 8;
 const MAX_PASSWORD_ATTEMPTS = 3;
 const MAX_PASSPHRASE_ATTEMPTS = 3;
 const DEFAULT_IDENTITY_NAMES = ['id_ed25519', 'id_ecdsa', 'id_rsa', 'id_ed25519_sk', 'id_ecdsa_sk'];
+
+/**
+ * Observe replies to ssh2's existing keepalives without sending any probes of
+ * our own. Two silent intervals mean at least one keepalive went unanswered.
+ */
+export function observeSshTransportHealth(
+  stream: Pick<Duplex, 'on' | 'off'>,
+  keepaliveIntervalMs: number,
+  listener: (state: SshTransportHealth) => void,
+): () => void {
+  if (keepaliveIntervalMs <= 0) return () => undefined;
+
+  let state: SshTransportHealth = 'healthy';
+  let timer: NodeJS.Timeout | undefined;
+  const arm = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = undefined;
+      if (state === 'suspect') return;
+      state = 'suspect';
+      listener(state);
+    }, keepaliveIntervalMs * 2);
+  };
+  const onData = () => {
+    if (state === 'suspect') {
+      state = 'healthy';
+      listener(state);
+    }
+    arm();
+  };
+
+  stream.on('data', onData);
+  arm();
+  return () => {
+    if (timer) clearTimeout(timer);
+    stream.off('data', onData);
+  };
+}
 
 /**
  * xterm sends DEL for Backspace. Advertising the same erase character while
@@ -118,6 +159,7 @@ export interface ChainHop {
  */
 export class SshConnectionManager {
   private readonly connections = new ConnectionLeaseRegistry<ManagedConnection>();
+  private readonly closeReasons = new WeakMap<Client, string>();
   readonly knownHosts = new KnownHostsStore();
 
   constructor(private readonly log: FastifyBaseLogger) {}
@@ -144,18 +186,47 @@ export class SshConnectionManager {
     const chain = buildChain(doc, profile);
 
     const clients: Client[] = [];
+    const healthListeners = new Set<(state: SshTransportHealth) => void>();
+    const hopHealth = new Map<number, SshTransportHealth>();
+    const stopHealthObservers: Array<() => void> = [];
+    let transportHealth: SshTransportHealth = 'healthy';
+    const updateHopHealth = (index: number, state: SshTransportHealth) => {
+      hopHealth.set(index, state);
+      const next = [...hopHealth.values()].includes('suspect') ? 'suspect' : 'healthy';
+      if (next === transportHealth) return;
+      transportHealth = next;
+      for (const listener of healthListeners) listener(next);
+    };
+    const stopHealth = () => {
+      for (const stop of stopHealthObservers.splice(0)) stop();
+    };
     let sock: Duplex | undefined;
     try {
       for (let i = 0; i < chain.length; i++) {
         const hop = chain[i]!;
         const via = i > 0 ? ` via ${chain[i - 1]!.spec.host}` : '';
-        io.status(`Connecting to ${hop.user}@${hop.resolved.hostname}:${hop.port}${via} …`);
+        io.status(
+          `Connecting to ${hop.user}@${hop.resolved.hostname}:${hop.port}${via} …`,
+          { transient: true },
+        );
         const client = await this.dial(hop, sock, io);
         clients.push(client);
+        hopHealth.set(i, 'healthy');
+        const transport = (client as Client & { _sock?: Duplex })._sock;
+        if (transport) {
+          stopHealthObservers.push(
+            observeSshTransportHealth(
+              transport,
+              (hop.resolved.serverAliveInterval ?? 15) * 1000,
+              (state) => updateHopHealth(i, state),
+            ),
+          );
+        }
         const next = chain[i + 1];
         if (next) sock = await openJumpChannel(client, next.resolved.hostname, next.port);
       }
     } catch (err) {
+      stopHealth();
       for (const c of clients.reverse()) c.end();
       throw err;
     }
@@ -166,7 +237,7 @@ export class SshConnectionManager {
     const metadataAlias =
       profile.useConfig === false ? undefined : findMetadataAlias(doc, target.spec.host);
     const id = nanoid(10);
-    const closeListeners = new Set<() => void>();
+    const closeListeners = new Set<(reason?: string) => void>();
     let sftpPromise: Promise<SFTPWrapper> | undefined;
     let closed = false;
     let ending = false;
@@ -211,9 +282,18 @@ export class SshConnectionManager {
       },
       // One SFTP channel per connection, shared by every file operation.
       sftp: getSftp,
+      onHealth: (listener) => {
+        healthListeners.add(listener);
+        if (transportHealth === 'suspect') {
+          queueMicrotask(() => {
+            if (healthListeners.has(listener)) listener(transportHealth);
+          });
+        }
+        return () => healthListeners.delete(listener);
+      },
       onClose: (listener) => {
         if (closed) {
-          queueMicrotask(listener);
+          queueMicrotask(() => listener(this.closeReasons.get(client)));
           return () => undefined;
         }
         closeListeners.add(listener);
@@ -229,14 +309,24 @@ export class SshConnectionManager {
 
     client.on('close', () => {
       closed = true;
+      stopHealth();
       this.connections.markClosed(managed);
       for (const jump of jumpClients) jump.end();
-      for (const listener of closeListeners) listener();
+      const reason = this.closeReasons.get(client);
+      for (const listener of closeListeners) listener(reason);
       closeListeners.clear();
+      healthListeners.clear();
     });
-    for (const jump of jumpClients) {
+    for (const [index, jump] of jumpClients.entries()) {
       // A dying hop takes the whole chain with it; surface that as a close.
-      jump.on('close', () => client.end());
+      jump.on('close', () => {
+        if (closed || ending) return;
+        this.closeReasons.set(
+          client,
+          `SSH jump host ${chain[index]?.spec.host ?? index + 1} disconnected.`,
+        );
+        client.end();
+      });
     }
     return this.connections.register(managed, owner);
   }
@@ -289,6 +379,7 @@ export class SshConnectionManager {
           proxySocket?.destroy();
           reject(friendlyConnectError(auth.cancelled ? new Error('authentication cancelled') : err, hop));
         } else {
+          this.closeReasons.set(client, friendlyConnectError(err, hop).message);
           this.log.warn({ err, host: hop.resolved.hostname }, 'ssh connection error');
         }
       });

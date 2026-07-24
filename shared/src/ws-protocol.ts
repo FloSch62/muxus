@@ -122,7 +122,9 @@ export type TerminalClientMessage = z.infer<typeof terminalClientMessageSchema>;
 /** Text frames the server sends on /ws/terminal. */
 export type TerminalServerMessage =
   /** Connection progress worth echoing into the terminal ("Connecting …"). */
-  | { op: 'status'; message: string }
+  | { op: 'status'; message: string; transient?: boolean }
+  /** Passive SSH transport health derived from the existing keepalive lifecycle. */
+  | { op: 'connection-health'; state: 'healthy' | 'suspect' }
   /** Interactive auth (password, 2FA, key passphrase). echo=false → mask input. */
   | {
       op: 'auth-prompt';
@@ -158,4 +160,10 @@ export type TerminalServerMessage =
       /** Present when storage/backpressure suspended logging for this session. */
       warning?: string;
     }
-  | { op: 'exit'; code?: number; message?: string };
+  | {
+      op: 'exit';
+      code?: number;
+      message?: string;
+      /** Whether the shell ended normally, setup failed, or a live transport was lost. */
+      reason: 'completed' | 'failed' | 'disconnected';
+    };
