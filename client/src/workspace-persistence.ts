@@ -21,8 +21,9 @@ function currentLayout(): WorkspaceLayoutV1 {
  * SQLite. Restored terminal tabs remain disconnected until the user chooses
  * Reconnect; this never claims to resume a shell process.
  */
-export function useWorkspacePersistence(): void {
+export function useWorkspacePersistence(enabled = true): void {
   useEffect(() => {
+    if (!enabled) return;
     let stopped = false;
     let workspaceId: string | undefined;
     let unsubscribe: (() => void) | undefined;
@@ -139,5 +140,5 @@ export function useWorkspacePersistence(): void {
       unsubscribe?.();
       window.removeEventListener('beforeunload', flushOnUnload);
     };
-  }, []);
+  }, [enabled]);
 }

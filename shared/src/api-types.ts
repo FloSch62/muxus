@@ -15,6 +15,25 @@ export interface AppInfo {
   defaultShell: string;
 }
 
+/**
+ * One extra application window requested by the renderer. Session windows
+ * start a fresh shell; SFTP windows stay attached to an existing SSH
+ * transport and hold their own lease for as long as the window is open.
+ */
+export type AppWindowLaunch =
+  | {
+      kind: 'session';
+      profile: import('./ws-protocol.js').SessionProfile;
+      title: string;
+      color?: string;
+    }
+  | {
+      kind: 'sftp';
+      connId: string;
+      title: string;
+      path?: string;
+    };
+
 /** A LocalForward / RemoteForward / DynamicForward rule declared in ssh config. */
 export interface ConfigForward {
   type: ForwardType;

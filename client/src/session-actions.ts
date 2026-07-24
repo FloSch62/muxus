@@ -4,6 +4,7 @@ import { useTabsStore } from './state/tabs.js';
 import { useUiStore } from './state/ui.js';
 import { confirmDiscardRemoteEditors } from './editor/remote-editor-registry.js';
 import { findPane } from './state/workspace-layout.js';
+import { openAppWindow } from './window-management.js';
 
 function replaceActiveEmpty(
   profile: SessionProfile,
@@ -56,6 +57,28 @@ export function connectHost(host: SshHostEntry, replaceTabId?: string): string {
 export function duplicateTab(tabId: string): void {
   const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId);
   if (tab?.profile) useTabsStore.getState().open(tab.profile, tab.title);
+}
+
+/** Open the tab's profile as a fresh session in a separate app window. */
+export function openTabInNewWindow(tabId: string): void {
+  const tab = useTabsStore.getState().tabs.find((candidate) => candidate.id === tabId);
+  if (!tab?.profile) return;
+  openAppWindow({
+    kind: 'session',
+    profile: tab.profile,
+    title: tab.title,
+    ...(tab.color ? { color: tab.color } : {}),
+  });
+}
+
+/** Open a listed host as a fresh SSH session in a separate app window. */
+export function openHostInNewWindow(host: SshHostEntry): void {
+  openAppWindow({
+    kind: 'session',
+    profile: { kind: 'ssh', target: host.alias },
+    title: host.metadata?.displayName ?? host.alias,
+    ...(host.metadata?.color ? { color: host.metadata.color } : {}),
+  });
 }
 
 /**

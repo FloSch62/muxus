@@ -38,6 +38,7 @@ import LibraryAddOutlinedIcon from '@mui/icons-material/LibraryAddOutlined';
 import PasswordOutlinedIcon from '@mui/icons-material/PasswordOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
+import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import StarIcon from '@mui/icons-material/Star';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
@@ -48,7 +49,13 @@ import { useSshConfig } from '../api/queries.js';
 import { useDeleteHost, useReorderSshHosts, useUpdateSshMetadata } from '../api/ssh-config.js';
 import { copyToClipboard } from '../clipboard.js';
 import { groupHosts, hostAddress, hostDisplayName, hostOrderAfterDrop } from '../host-organization.js';
-import { connectHost, connectTarget, isQuickConnectTarget, openLocalTerminal } from '../session-actions.js';
+import {
+  connectHost,
+  connectTarget,
+  isQuickConnectTarget,
+  openHostInNewWindow,
+  openLocalTerminal,
+} from '../session-actions.js';
 import {
   loadHostEditorDialog,
   loadHostOrganizationDialog,
@@ -480,6 +487,19 @@ export function SessionSidebar() {
             <PlayArrowOutlinedIcon fontSize="small" />
           </ListItemIcon>
           Connect
+        </MenuItem>
+        <MenuItem
+          onMouseEnter={() => void loadTerminalViewImpl()}
+          onFocus={() => void loadTerminalViewImpl()}
+          onClick={() => {
+            if (menu) openHostInNewWindow(menu.entry);
+            setMenu(null);
+          }}
+        >
+          <ListItemIcon>
+            <OpenInNewOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          Open in new window
         </MenuItem>
         <MenuItem
           onClick={() => {

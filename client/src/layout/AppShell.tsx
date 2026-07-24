@@ -37,6 +37,7 @@ import {
   loadSftpPanel,
 } from '../lazy-features.js';
 import { TopBar } from './TopBar.js';
+import { openAppWindow } from '../window-management.js';
 
 const ForwardingPanel = lazy(() =>
   loadForwardingPanel().then((module) => ({ default: module.ForwardingPanel })),
@@ -49,8 +50,8 @@ const RemoteEditorWorkspace = lazy(() =>
 );
 
 /** TopBar over a stable, resizable pane canvas. Hidden tabs stay mounted. */
-export function AppShell() {
-  useWorkspacePersistence();
+export function AppShell({ persistWorkspace = true }: { persistWorkspace?: boolean }) {
+  useWorkspacePersistence(persistWorkspace);
   const sidebarCollapsed = usePrefsStore((state) => state.sidebarCollapsed);
   const tabs = useTabsStore((state) => state.tabs);
   const root = useTabsStore((state) => state.root);
@@ -350,6 +351,14 @@ function PaneView({
                 key={activeTab.connId}
                 connId={activeTab.connId}
                 onOpenFile={(path) => openEditor(activeTab.id, path)}
+                onOpenInNewWindow={(path) =>
+                  openAppWindow({
+                    kind: 'sftp',
+                    connId: activeTab.connId!,
+                    title: activeTab.title,
+                    path,
+                  })
+                }
               />
             </Suspense>
           </ErrorBoundary>

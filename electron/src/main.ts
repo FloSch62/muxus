@@ -15,6 +15,7 @@ import {
 } from 'electron';
 import fixPath from 'fix-path';
 import { startServer, type RunningServer } from '@muxus/server';
+import type { AppWindowLaunch } from '@muxus/shared';
 
 // GUI apps on macOS/Linux don't inherit the shell PATH; ssh-agent sockets
 // and the user's login shell tooling need it.
@@ -35,7 +36,10 @@ const EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 // Must match the client TopBar height: its toolbar doubles as the titlebar.
 const TITLEBAR_HEIGHT = 52;
 
-let mainWindow: BrowserWindow | undefined;
+let primaryWindow: BrowserWindow | undefined;
+let appUrl: string | undefined;
+const managedWindows = new Set<BrowserWindow>();
+const windowLaunches = new Map<number, AppWindowLaunch>();
 let server: RunningServer | undefined;
 let closing: Promise<void> | undefined;
 
@@ -55,8 +59,13 @@ interface AppInfo {
 const windowStateFile = () => path.join(app.getPath('userData'), 'window-state.json');
 const clientStateFile = () => path.join(app.getPath('userData'), 'client-state.json');
 
-function isMainWindowSender(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
-  return !!mainWindow && event.sender === mainWindow.webContents;
+function senderWindow(event: IpcMainEvent | IpcMainInvokeEvent): BrowserWindow | undefined {
+  const win = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+  return win && managedWindows.has(win) ? win : undefined;
+}
+
+function isManagedWindowSender(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
+  return senderWindow(event) !== undefined;
 }
 
 function loadWindowState(): WindowState {
@@ -148,17 +157,18 @@ function openAllowedExternalUrl(rawUrl: string): void {
   }
 }
 
-function createWindow(url: string): void {
+function createWindow(url: string, launch?: AppWindowLaunch): BrowserWindow {
   const state = loadWindowState();
   const appOrigin = new URL(url).origin;
-  mainWindow = new BrowserWindow({
-    width: state.width,
-    height: state.height,
-    x: state.x,
-    y: state.y,
+  const isPrimary = !primaryWindow;
+  const win = new BrowserWindow({
+    width: launch?.kind === 'sftp' ? Math.max(960, Math.min(state.width, 1280)) : state.width,
+    height: launch?.kind === 'sftp' ? Math.max(640, Math.min(state.height, 900)) : state.height,
+    x: state.x === undefined || isPrimary ? state.x : state.x + 28,
+    y: state.y === undefined || isPrimary ? state.y : state.y + 28,
     minWidth: 800,
     minHeight: 500,
-    title: 'Muxus',
+    title: launch ? `${launch.title} — Muxus` : 'Muxus',
     show: false,
     icon: windowIcon(),
     // Frameless look on every platform: the client's TopBar is the titlebar
@@ -177,22 +187,28 @@ function createWindow(url: string): void {
       navigateOnDragDrop: false,
     },
   });
-  if (state.maximized) mainWindow.maximize();
+  managedWindows.add(win);
+  const webContentsId = win.webContents.id;
+  if (launch) windowLaunches.set(webContentsId, launch);
+  if (isPrimary) primaryWindow = win;
+  if (state.maximized && isPrimary) win.maximize();
   // The menu stays installed so its accelerators (zoom, reload, devtools,
   // fullscreen) keep working, but the bar itself is macOS-only chrome.
-  if (!isMac) mainWindow.setMenuBarVisibility(false);
-  mainWindow.once('ready-to-show', () => mainWindow?.show());
-  mainWindow.on('close', () => {
-    if (mainWindow) saveWindowState(mainWindow);
+  if (!isMac) win.setMenuBarVisibility(false);
+  win.once('ready-to-show', () => win.show());
+  win.on('close', () => {
+    if (win === primaryWindow) saveWindowState(win);
   });
-  mainWindow.on('closed', () => {
-    mainWindow = undefined;
+  win.on('closed', () => {
+    managedWindows.delete(win);
+    windowLaunches.delete(webContentsId);
+    if (primaryWindow === win) primaryWindow = undefined;
   });
-  mainWindow.webContents.setWindowOpenHandler(({ url: external }) => {
+  win.webContents.setWindowOpenHandler(({ url: external }) => {
     openAllowedExternalUrl(external);
     return { action: 'deny' };
   });
-  mainWindow.webContents.on('will-navigate', (event, destination) => {
+  win.webContents.on('will-navigate', (event, destination) => {
     try {
       if (new URL(destination).origin === appOrigin) return;
     } catch {
@@ -201,7 +217,7 @@ function createWindow(url: string): void {
     event.preventDefault();
     openAllowedExternalUrl(destination);
   });
-  mainWindow.webContents.on('will-redirect', (event, destination) => {
+  win.webContents.on('will-redirect', (event, destination) => {
     try {
       if (new URL(destination).origin === appOrigin) return;
     } catch {
@@ -213,35 +229,35 @@ function createWindow(url: string): void {
   // Cmd/Ctrl+W is the OS "close window" accelerator. Hand it to the renderer
   // so it can close the focused terminal tab first, and only close the whole
   // window when no tab is open. Ctrl+Tab & friends cycle tabs.
-  mainWindow.webContents.on('before-input-event', (event, input) => {
+  win.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
     const key = input.key.toLowerCase();
     if (key === 'w' && !input.alt && !input.shift && (isMac ? input.meta && !input.control : input.control && !input.meta)) {
       event.preventDefault();
-      mainWindow?.webContents.send('muxus:close-tab');
+      win.webContents.send('muxus:close-tab');
       return;
     }
     if (input.control && !input.meta && !input.alt && key === 'tab') {
       event.preventDefault();
-      mainWindow?.webContents.send('muxus:cycle-tab', input.shift);
+      win.webContents.send('muxus:cycle-tab', input.shift);
       return;
     }
     if (isMac && input.meta && input.shift && !input.control && !input.alt && (input.code === 'BracketLeft' || input.code === 'BracketRight')) {
       event.preventDefault();
-      mainWindow?.webContents.send('muxus:cycle-tab', input.code === 'BracketLeft');
+      win.webContents.send('muxus:cycle-tab', input.code === 'BracketLeft');
     }
   });
-  void mainWindow.loadURL(url);
+  void win.loadURL(url);
+  return win;
 }
 
 ipcMain.on('muxus:close-window', (event) => {
-  if (!isMainWindowSender(event)) return;
-  mainWindow?.close();
+  senderWindow(event)?.close();
 });
 
 ipcMain.on('muxus:set-titlebar-overlay', (event, options: unknown) => {
-  if (isMac || !isMainWindowSender(event)) return;
-  const win = mainWindow;
+  if (isMac) return;
+  const win = senderWindow(event);
   if (!win) return;
   const { color, symbolColor } = (options ?? {}) as { color?: unknown; symbolColor?: unknown };
   if (typeof color !== 'string' || typeof symbolColor !== 'string') return;
@@ -257,14 +273,27 @@ ipcMain.on('muxus:set-titlebar-overlay', (event, options: unknown) => {
 // reply parks the renderer main thread forever.
 ipcMain.on('muxus:state:get-all', (event) => {
   try {
-    event.returnValue = isMainWindowSender(event) ? { ...loadClientState() } : {};
+    event.returnValue = isManagedWindowSender(event) ? { ...loadClientState() } : {};
   } catch {
     event.returnValue = {};
   }
 });
 
 ipcMain.on('muxus:auth-token', (event) => {
-  event.returnValue = isMainWindowSender(event) ? (server?.token ?? '') : '';
+  event.returnValue = isManagedWindowSender(event) ? (server?.token ?? '') : '';
+});
+
+ipcMain.on('muxus:window-launch', (event) => {
+  event.returnValue = isManagedWindowSender(event)
+    ? windowLaunches.get(event.sender.id)
+    : undefined;
+});
+
+ipcMain.on('muxus:open-window', (event, value: unknown) => {
+  if (!isManagedWindowSender(event) || !appUrl) return;
+  const launch = parseWindowLaunch(value);
+  if (!launch) return;
+  createWindow(appUrl, launch);
 });
 
 // Steady-state writes are fire-and-forget so the renderer never blocks on
@@ -298,31 +327,34 @@ function flushClientState(): void {
     // Disk write failed (full disk, permissions …): keep the state pending
     // and retry with backoff, and tell the renderer so it can mirror the
     // snapshot into browser storage as a fallback.
-    mainWindow?.webContents.send('muxus:state:write-failed');
+    for (const win of managedWindows) {
+      win.webContents.send('muxus:state:write-failed');
+    }
     scheduleClientStateFlush(state, STATE_RETRY_MS);
   }
 }
 
 ipcMain.on('muxus:state:set-item', (event, name: unknown, value: unknown) => {
-  if (!isMainWindowSender(event) || typeof name !== 'string' || typeof value !== 'string') return;
+  if (!isManagedWindowSender(event) || typeof name !== 'string' || typeof value !== 'string') return;
   scheduleClientStateFlush({ ...loadClientState(), [name]: value });
 });
 
 ipcMain.on('muxus:state:remove-item', (event, name: unknown) => {
-  if (!isMainWindowSender(event) || typeof name !== 'string') return;
+  if (!isManagedWindowSender(event) || typeof name !== 'string') return;
   const next = { ...loadClientState() };
   delete next[name];
   scheduleClientStateFlush(next);
 });
 
 ipcMain.handle('muxus:get-app-info', (event): AppInfo | undefined => {
-  if (!isMainWindowSender(event)) return undefined;
+  if (!isManagedWindowSender(event)) return undefined;
   return { name: app.getName(), version: app.getVersion() };
 });
 
 ipcMain.handle('muxus:select-private-key', async (event): Promise<string | undefined> => {
-  if (!isMainWindowSender(event) || !mainWindow) return undefined;
-  const result = await dialog.showOpenDialog(mainWindow, {
+  const win = senderWindow(event);
+  if (!win) return undefined;
+  const result = await dialog.showOpenDialog(win, {
     title: 'Choose SSH private key',
     defaultPath: path.join(app.getPath('home'), '.ssh'),
     buttonLabel: 'Use key',
@@ -331,13 +363,52 @@ ipcMain.handle('muxus:select-private-key', async (event): Promise<string | undef
   return result.canceled ? undefined : result.filePaths[0];
 });
 
+function parseWindowLaunch(value: unknown): AppWindowLaunch | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const launch = value as Record<string, unknown>;
+  if (launch.kind === 'session') {
+    if (
+      typeof launch.title !== 'string' ||
+      launch.title.length > 500 ||
+      !launch.profile ||
+      typeof launch.profile !== 'object'
+    ) {
+      return undefined;
+    }
+    const profile = launch.profile as Record<string, unknown>;
+    const valid =
+      (profile.kind === 'local' &&
+        (profile.shell === undefined || typeof profile.shell === 'string') &&
+        (profile.cwd === undefined || typeof profile.cwd === 'string')) ||
+      (profile.kind === 'ssh' &&
+        typeof profile.target === 'string' &&
+        profile.target.length > 0 &&
+        profile.target.length <= 500);
+    if (!valid) return undefined;
+    return value as AppWindowLaunch;
+  }
+  if (
+    launch.kind !== 'sftp' ||
+    typeof launch.connId !== 'string' ||
+    launch.connId.length === 0 ||
+    launch.connId.length > 200 ||
+    typeof launch.title !== 'string' ||
+    launch.title.length > 500 ||
+    (launch.path !== undefined && (typeof launch.path !== 'string' || launch.path.length > 4096))
+  ) {
+    return undefined;
+  }
+  return value as AppWindowLaunch;
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
+    const win = primaryWindow ?? [...managedWindows][0];
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
     }
   });
 
@@ -359,7 +430,8 @@ if (!app.requestSingleInstanceLock()) {
       return;
     }
     buildMenu();
-    createWindow(server.url);
+    appUrl = server.url;
+    createWindow(appUrl);
   });
 
   // The server (and its SSH connections) is tied to the window, so quit

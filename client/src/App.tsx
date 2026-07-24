@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import CssBaseline from '@mui/material/CssBaseline';
 import { ThemeProvider } from '@mui/material/styles';
+import type { AppWindowLaunch } from '@muxus/shared';
 import { buildTheme } from './theme.js';
 import { setTitleBarMode } from './titlebar-overlay.js';
 import { usePrefsStore } from './state/prefs.js';
@@ -28,8 +29,11 @@ const SettingsDialog = lazy(() =>
 const ShortcutsDialog = lazy(() =>
   loadShortcutsDialog().then((module) => ({ default: module.ShortcutsDialog })),
 );
+const SftpWindow = lazy(() =>
+  import('./layout/SftpWindow.js').then((module) => ({ default: module.SftpWindow })),
+);
 
-export default function App() {
+export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const themeMode = usePrefsStore((s) => s.themeMode);
   const hostEditorOpen = useUiStore((s) => !!s.hostEditor);
   const hostOrganizerOpen = useUiStore((s) => !!s.hostOrganizer);
@@ -54,7 +58,13 @@ export default function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <ErrorBoundary label="Muxus">
-        <AppShell />
+        {launch?.kind === 'sftp' ? (
+          <Suspense fallback={null}>
+            <SftpWindow launch={launch} />
+          </Suspense>
+        ) : (
+          <AppShell persistWorkspace={!launch} />
+        )}
       </ErrorBoundary>
       <Suspense fallback={null}>
         {hostEditorOpen ? <HostEditorDialog /> : null}

@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { AppWindowLaunch } from '@muxus/shared';
 
 // Client state is mirrored here and persisted with fire-and-forget messages.
 // sendSync is deliberately avoided for the steady-state path: it parks the
@@ -23,6 +24,15 @@ const authToken: string = (() => {
   }
 })();
 
+const windowLaunch: AppWindowLaunch | undefined = (() => {
+  try {
+    const value: unknown = ipcRenderer.sendSync('muxus:window-launch');
+    return value && typeof value === 'object' ? (value as AppWindowLaunch) : undefined;
+  } catch {
+    return undefined;
+  }
+})();
+
 // The disk-side write failed in the main process: mirror the snapshot into
 // origin-scoped localStorage so a relaunch on the same origin can migrate it
 // back (muxusStateStorage.getItem reads browser storage when the desktop
@@ -39,6 +49,7 @@ ipcRenderer.on('muxus:state:write-failed', () => {
 contextBridge.exposeInMainWorld('muxusDesktop', {
   platform: process.platform,
   authToken,
+  windowLaunch,
   stateStorage: {
     getItem(name: string): string | null {
       return stateSnapshot[name] ?? null;
@@ -61,6 +72,9 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   /** Open a native single-file picker and return only the user-selected path. */
   selectPrivateKey(): Promise<string | undefined> {
     return ipcRenderer.invoke('muxus:select-private-key');
+  },
+  openWindow(launch: AppWindowLaunch): void {
+    ipcRenderer.send('muxus:open-window', launch);
   },
   // Fires when the user presses the OS close-window chord (Cmd/Ctrl+W).
   // Returns an unsubscribe. The renderer closes the focused terminal tab; it

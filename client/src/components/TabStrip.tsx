@@ -24,12 +24,14 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
 import HorizontalSplitOutlinedIcon from '@mui/icons-material/HorizontalSplitOutlined';
+import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined';
 import PodcastsOutlinedIcon from '@mui/icons-material/PodcastsOutlined';
 import {
   duplicateTab,
   openEmptyTab,
+  openTabInNewWindow,
   requestClosePane,
   requestCloseTabs,
 } from '../session-actions.js';
@@ -304,6 +306,18 @@ export function TabStrip({ paneId, focused }: { paneId: string; focused: boolean
             <ContentCopyIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>Duplicate (new session)</ListItemText>
+        </MenuItem>
+        <MenuItem
+          disabled={!menuTab?.profile}
+          onClick={() => {
+            if (menuTab) openTabInNewWindow(menuTab.id);
+            setMenu(null);
+          }}
+        >
+          <ListItemIcon>
+            <OpenInNewOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Open in new window</ListItemText>
         </MenuItem>
         <Divider />
         <Box sx={{ px: 2, py: 0.5 }}>

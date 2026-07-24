@@ -14,6 +14,7 @@ import { registerSftpRoutes } from './routes/sftp.js';
 import { registerForwardRoutes } from './routes/forwards.js';
 import { registerTunnelRoutes } from './routes/tunnels.js';
 import { registerTerminalSocket } from './ws/terminal-socket.js';
+import { registerSftpLeaseSocket } from './ws/sftp-lease-socket.js';
 import { websocketHeaderHasToken } from './auth.js';
 import { MuxusDatabase } from './persistence/database.js';
 import { registerWorkspaceRoutes } from './routes/workspaces.js';
@@ -112,6 +113,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   registerTunnelRoutes(app, ctx);
   registerWorkspaceRoutes(app, ctx);
   registerTerminalSocket(app, ctx);
+  registerSftpLeaseSocket(app, ctx);
 
   // Serve the built client in production (same-origin, no CORS needed).
   const clientDist = config.staticRoot ?? path.resolve(moduleDir, '../../client/dist');

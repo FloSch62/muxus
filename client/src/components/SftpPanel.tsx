@@ -24,6 +24,7 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import FolderIcon from '@mui/icons-material/Folder';
 import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
 import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
+import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import { useQueryClient } from '@tanstack/react-query';
@@ -292,12 +293,19 @@ const SftpEntryTable = memo(function SftpEntryTable({
 export function SftpPanel({
   connId,
   onOpenFile,
+  initialPath = '.',
+  fill = false,
+  onOpenInNewWindow,
 }: {
   connId: string;
   onOpenFile: (path: string) => void;
+  initialPath?: string;
+  /** Fill a standalone window instead of using the saved side-panel width. */
+  fill?: boolean;
+  onOpenInNewWindow?: (path: string) => void;
 }) {
-  const [path, setPath] = useState('.');
-  const [pathInput, setPathInput] = useState('.');
+  const [path, setPath] = useState(initialPath);
+  const [pathInput, setPathInput] = useState(initialPath);
   const [dragOver, setDragOver] = useState(false);
   const [selectedName, setSelectedName] = useState<string>();
   const [menu, setMenu] = useState<{ x: number; y: number; entry: SftpEntry } | null>(null);
@@ -613,13 +621,13 @@ export function SftpPanel({
     <Box
       ref={panelRef}
       sx={{
-        width: panelWidth,
-        maxWidth: '70%',
+        width: fill ? '100%' : panelWidth,
+        maxWidth: fill ? 'none' : '70%',
         flexShrink: 0,
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        borderLeft: 1,
+        borderLeft: fill ? 0 : 1,
         borderColor: 'divider',
         bgcolor: 'background.paper',
         position: 'relative',
@@ -653,17 +661,19 @@ export function SftpPanel({
         void collectDrop(items).then(upload).catch(showErrorToast);
       }}
     >
-      <PanelResizeHandle
-        panelRef={panelRef}
-        edge="left"
-        width={panelWidth}
-        defaultWidth={DEFAULT_SFTP_PANEL_WIDTH}
-        minWidth={MIN_SFTP_PANEL_WIDTH}
-        maxWidth={maxSftpPanelWidth}
-        clampWidth={clampSftpPanelWidth}
-        onWidthChange={(sftpPanelWidth) => setPrefs({ sftpPanelWidth })}
-        label="Resize SFTP browser"
-      />
+      {!fill && (
+        <PanelResizeHandle
+          panelRef={panelRef}
+          edge="left"
+          width={panelWidth}
+          defaultWidth={DEFAULT_SFTP_PANEL_WIDTH}
+          minWidth={MIN_SFTP_PANEL_WIDTH}
+          maxWidth={maxSftpPanelWidth}
+          clampWidth={clampSftpPanelWidth}
+          onWidthChange={(sftpPanelWidth) => setPrefs({ sftpPanelWidth })}
+          label="Resize SFTP browser"
+        />
+      )}
       <Stack direction="row" sx={{ px: 1.25, pt: 1, alignItems: 'center' }}>
         <Typography variant="subtitle2" sx={{ flex: 1 }}>
           Remote Explorer
@@ -671,6 +681,18 @@ export function SftpPanel({
         <Typography variant="caption" color="text.secondary">
           SFTP
         </Typography>
+        {onOpenInNewWindow && (
+          <Tooltip title="Open SFTP in new window">
+            <IconButton
+              size="small"
+              aria-label="Open SFTP in new window"
+              onClick={() => onOpenInNewWindow(currentPath)}
+              sx={{ ml: 0.5 }}
+            >
+              <OpenInNewOutlinedIcon sx={{ fontSize: 17 }} />
+            </IconButton>
+          </Tooltip>
+        )}
       </Stack>
       <Stack direction="row" spacing={0.25} sx={{ p: 0.75, alignItems: 'center' }}>
         <Tooltip title="Parent directory">
