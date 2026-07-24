@@ -39,7 +39,7 @@ import { copyToClipboard, readFromClipboard } from '../clipboard.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { showToast } from '../state/toast.js';
 import { broadcastTerminalInput } from '../state/multi-exec.js';
-import { terminalFontStack, usePrefsStore } from '../state/prefs.js';
+import { TERMINAL_SYMBOL_FONT, terminalFontStack, usePrefsStore } from '../state/prefs.js';
 import { useTabsStore, type SessionTab } from '../state/tabs.js';
 import {
   TERMINAL_MINIMUM_CONTRAST_RATIO,
@@ -237,6 +237,18 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     const onSearchResults = search.onDidChangeResults(setSearchResult);
     term.open(el);
     fit.fit();
+    // Webfonts load lazily. Force the bundled Nerd Font face to load, then
+    // repaint any prompt glyphs that arrived while the browser still had a
+    // placeholder face. The text font remains user-selectable; this face is
+    // only reached for Powerline/Nerd Font code points it does not contain.
+    void document.fonts
+      ?.load(`${prefs.monoFontSize}px ${TERMINAL_SYMBOL_FONT}`, '\ue0b0\uf015\uf31b\u276f')
+      .then(() => {
+        if (termRef.current !== term) return;
+        term.refresh(0, term.rows - 1);
+        fit.fit();
+      })
+      .catch(() => undefined);
 
     const encoder = new TextEncoder();
     const sendInput = (data: string | Uint8Array<ArrayBuffer>): boolean => {

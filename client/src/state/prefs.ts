@@ -7,8 +7,11 @@ import { muxusStateStorage } from './persist-storage.js';
 export type ThemeMode = 'light' | 'dark' | 'os';
 export type RightClickAction = 'copy-paste' | 'paste' | 'menu';
 
+/** Bundled icon-only fallback covering Nerd Font and Powerline glyphs. */
+export const TERMINAL_SYMBOL_FONT = '"Pure Nerd Font"';
+
 /** Fallback stack appended after the user's chosen family. */
-export const MONO_FONT_FALLBACK = '"JetBrains Mono", "Fira Code", monospace';
+export const MONO_FONT_FALLBACK = `"JetBrains Mono", ${TERMINAL_SYMBOL_FONT}, "Noto Sans Mono", "DejaVu Sans Mono", "Liberation Mono", monospace`;
 
 /** CSS font-family stack for the terminal given the fontFamily pref. */
 export function terminalFontStack(family: string): string {
@@ -22,7 +25,7 @@ interface PrefsState {
   themeMode: ThemeMode;
   /** Base font size for the terminal. */
   monoFontSize: number;
-  /** Terminal font family; JetBrains Mono ships with Muxus, others must be installed. */
+  /** Terminal font family; bundled text and symbol fonts remain as fallbacks. */
   fontFamily: string;
   /** Terminal line height multiplier (1.0 = font metrics). */
   lineHeight: number;

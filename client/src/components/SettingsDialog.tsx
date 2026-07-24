@@ -169,7 +169,7 @@ function AppearanceSection() {
               <TextField
                 {...params}
                 label="Font family"
-                helperText="JetBrains Mono ships with Muxus; other fonts must be installed on this machine."
+                helperText="JetBrains Mono and Nerd Font symbols ship with Muxus; other text fonts must be installed on this machine."
               />
             )}
           />

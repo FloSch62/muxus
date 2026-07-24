@@ -13,7 +13,7 @@ Free, open-source SSH client & modern terminal — the MobaXterm workflow with a
 - **SFTP file browser** — per SSH tab, sharing the underlying SSH transport: navigate, upload (drag & drop), download, rename, delete and mkdir. Existing upload targets require an explicit overwrite confirmation.
 - **Tunnel manager** — the MobaXterm workflow: saved tunnels (local -L, remote -R, dynamic SOCKS5 -D) live in a dedicated forwarding panel and start/stop with one click, no terminal needed — starting one reuses a live connection to the target or dials a shell-less transport (`ssh -N` style) with the full interactive-auth flow. Independent transport leases mean closing a terminal never tears down a running tunnel. Ad-hoc forwards on live connections can be promoted to saved tunnels or written into the host's config block.
 - **Interactive auth done right** — keyboard-interactive/2FA prompts, key passphrases and password retries as dialogs (labelled with the hop that is asking); host keys are verified against the real `~/.ssh/known_hosts` (hashed entries included), trust-on-first-use appends to it, and a changed key gets the loud warning with `ssh-keygen -R`-style replacement on accept.
-- Dark/light/system theme, frameless desktop window, Inter + JetBrains Mono.
+- Dark/light/system theme, frameless desktop window, Inter + JetBrains Mono with bundled Nerd Font/Powerline glyph coverage for remote prompts and TUIs.
 
 ## Architecture
 

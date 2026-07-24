@@ -1,5 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import { migratePrefsState } from '../../../client/src/state/prefs.js';
+import {
+  MONO_FONT_FALLBACK,
+  migratePrefsState,
+  terminalFontStack,
+} from '../../../client/src/state/prefs.js';
+
+describe('terminalFontStack', () => {
+  it('always includes the bundled Nerd Font symbol fallback', () => {
+    expect(MONO_FONT_FALLBACK).toContain('"Pure Nerd Font"');
+    expect(terminalFontStack('Iosevka')).toBe(`Iosevka, ${MONO_FONT_FALLBACK}`);
+  });
+
+  it('does not duplicate the bundled default font', () => {
+    expect(terminalFontStack('JetBrains Mono')).toBe(MONO_FONT_FALLBACK);
+    expect(terminalFontStack('"JetBrains Mono"')).toBe(MONO_FONT_FALLBACK);
+    expect(terminalFontStack('monospace')).toBe(MONO_FONT_FALLBACK);
+    expect(terminalFontStack('  ')).toBe(MONO_FONT_FALLBACK);
+  });
+
+  it('quotes custom family names containing spaces', () => {
+    expect(terminalFontStack('Cascadia Code')).toBe(`"Cascadia Code", ${MONO_FONT_FALLBACK}`);
+  });
+});
 
 describe('migratePrefsState', () => {
   it('removes the retired TERM preference without mutating the snapshot', () => {

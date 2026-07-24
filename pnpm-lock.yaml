@@ -20,6 +20,9 @@ importers:
 
   client:
     dependencies:
+      '@azurity/pure-nerd-font':
+        specifier: ^3.0.5
+        version: 3.0.5
       '@emotion/react':
         specifier: ^11.14.0
         version: 11.14.0(@types/react@19.2.17)(react@19.2.8)
@@ -218,6 +221,9 @@ importers:
         version: 4.4.3
 
 packages:
+
+  '@azurity/pure-nerd-font@3.0.5':
+    resolution: {integrity: sha512-/uiaszK8TN9hf5OG+UUiijXkxykjgKEh4+b937jdOWwfXIelgAjYOOS/o1X1+SYD4DwTvgFsW5iHxE7PqlEkqA==}
 
   '@babel/code-frame@7.29.7':
     resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
@@ -3205,6 +3211,8 @@ packages:
         optional: true
 
 snapshots:
+
+  '@azurity/pure-nerd-font@3.0.5': {}
 
   '@babel/code-frame@7.29.7':
     dependencies:
