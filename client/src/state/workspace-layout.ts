@@ -29,7 +29,8 @@ export interface PersistableTerminalTab {
 }
 
 export interface RestoredTerminalTab extends PersistableTerminalTab {
-  connectOnMount: false;
+  /** Local shells start fresh immediately; remote sessions still wait for consent. */
+  connectOnMount: boolean;
 }
 
 export interface LayoutRect {
@@ -201,7 +202,7 @@ export function restoreWorkspace(
         title: tab.title,
         profile,
         color: tab.color,
-        connectOnMount: false,
+        connectOnMount: profile.kind === 'local',
       });
     }
     const activeTabId =

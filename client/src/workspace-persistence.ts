@@ -18,8 +18,8 @@ function currentLayout(): WorkspaceLayoutV1 {
 
 /**
  * Restore the most recent layout once, then debounce structural snapshots to
- * SQLite. Restored terminal tabs remain disconnected until the user chooses
- * Reconnect; this never claims to resume a shell process.
+ * SQLite. Restored local tabs start a fresh shell automatically; remote tabs
+ * remain disconnected until the user chooses Reconnect.
  */
 export function useWorkspacePersistence(enabled = true): void {
   useEffect(() => {

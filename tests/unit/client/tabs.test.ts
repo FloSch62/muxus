@@ -66,6 +66,49 @@ describe('blank session tabs', () => {
   });
 });
 
+describe('workspace restoration', () => {
+  it('starts restored local shells without reconnecting remote sessions', () => {
+    useTabsStore.getState().restore({
+      version: 1,
+      root: {
+        id: 'pane-restored',
+        type: 'pane',
+        activeTabId: 'local-tab',
+        tabs: [
+          {
+            id: 'local-tab',
+            kind: 'terminal',
+            title: 'Local',
+            profile: { kind: 'local', cwd: '/srv/app' },
+            offerReconnect: true,
+          },
+          {
+            id: 'ssh-tab',
+            kind: 'terminal',
+            title: 'Router',
+            profile: { kind: 'ssh', target: 'router' },
+            offerReconnect: true,
+          },
+        ],
+      },
+      activePaneId: 'pane-restored',
+    });
+
+    expect(useTabsStore.getState().tabs).toEqual([
+      expect.objectContaining({
+        id: 'local-tab',
+        status: 'connecting',
+        connectOnMount: true,
+      }),
+      expect.objectContaining({
+        id: 'ssh-tab',
+        status: 'closed',
+        connectOnMount: false,
+      }),
+    ]);
+  });
+});
+
 describe('remote editor tabs', () => {
   it('opens, activates, and closes remote files without disturbing the terminal tab', () => {
     const store = useTabsStore.getState();

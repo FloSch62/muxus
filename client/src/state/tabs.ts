@@ -33,7 +33,7 @@ interface TabBase {
 export interface SessionTab extends TabBase {
   profile: SessionProfile;
   status: TabStatus;
-  /** Restored layouts wait for an explicit reconnect instead of starting a new process. */
+  /** Whether this tab should establish its session when the terminal view mounts. */
   connectOnMount: boolean;
 }
 
@@ -277,7 +277,7 @@ export const useTabsStore = create<TabsState>()((set) => ({
         ...restored,
         tabs: restored.tabs.map((tab) => ({
           ...tab,
-          status: 'closed' as const,
+          status: tab.connectOnMount ? 'connecting' as const : 'closed' as const,
           sftpOpen: false,
           searchRequest: 0,
           editorPaths: [],

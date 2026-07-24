@@ -94,7 +94,7 @@ describe('workspace serialization', () => {
     });
   });
 
-  it('restores layout only and requires explicit terminal reconnection', () => {
+  it('automatically reconnects local tabs while remote tabs wait', () => {
     const layout = serializeWorkspace(
       root,
       [
@@ -142,7 +142,7 @@ describe('workspace serialization', () => {
     expect(restored.activeId).toBe('tab-b');
     expect(restored.tabs).toEqual([
       expect.objectContaining({ id: 'tab-a', paneId: 'pane-left', connectOnMount: false }),
-      expect.objectContaining({ id: 'tab-b', paneId: 'pane-bottom', connectOnMount: false }),
+      expect.objectContaining({ id: 'tab-b', paneId: 'pane-bottom', connectOnMount: true }),
     ]);
   });
 
