@@ -54,6 +54,8 @@ import {
 } from '../terminal/keyword-highlighting.js';
 import { registerTerminal } from '../terminal/terminal-registry.js';
 import { requiresPasteConfirmation } from '../terminal/paste-safety.js';
+import { openQuickLauncher } from '../quick-launcher-control.js';
+import { isQuickLauncherShortcut } from '../quick-launcher.js';
 import { AuthPromptDialog, type AuthPromptRequest } from './AuthPromptDialog.js';
 import { HostKeyDialog, type HostKeyRequest } from './HostKeyDialog.js';
 import { PasteConfirmDialog } from './PasteConfirmDialog.js';
@@ -344,6 +346,10 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     const commandTracker = attachCommandTracker(term);
 
     term.attachCustomKeyEventHandler((ev) => {
+      if (ev.type === 'keydown' && isQuickLauncherShortcut(ev)) {
+        openQuickLauncher();
+        return false;
+      }
       // Ctrl+Shift chords stay ours (kitty reserves ctrl+shift for the terminal).
       if (ev.type === 'keydown' && (ev.ctrlKey || ev.metaKey) && ev.shiftKey && !ev.altKey) {
         if (ev.code === 'KeyC' && term.hasSelection()) {

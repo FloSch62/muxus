@@ -1,4 +1,6 @@
 import { openEmptyTab, requestCloseTabs } from './session-actions.js';
+import { openQuickLauncher } from './quick-launcher-control.js';
+import { isQuickLauncherShortcut } from './quick-launcher.js';
 import { requestCloseRemoteEditor } from './editor/remote-editor-registry.js';
 import { usePrefsStore } from './state/prefs.js';
 import { useTabsStore } from './state/tabs.js';
@@ -12,6 +14,11 @@ import { useTabsStore } from './state/tabs.js';
 export function installShortcuts(): () => void {
   const onKeyDown = (e: KeyboardEvent) => {
     const mod = e.ctrlKey || e.metaKey;
+    if (isQuickLauncherShortcut(e)) {
+      e.preventDefault();
+      openQuickLauncher();
+      return;
+    }
     if (mod && e.shiftKey && !e.altKey && e.code === 'KeyT') {
       e.preventDefault();
       openEmptyTab();

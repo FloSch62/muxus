@@ -20,7 +20,10 @@ interface UiState {
   settingsOpen: boolean;
   commandButtonsOpen: boolean;
   shortcutsOpen: boolean;
+  quickLauncherOpen: boolean;
   historyOpen: boolean;
+  historyQuery: string;
+  historySelectedId?: string;
   workspacesOpen: boolean;
   hostEditor: HostEditorState;
   /** Host whose Muxus-only display metadata is being organized. */
@@ -32,7 +35,9 @@ interface UiState {
   setSettingsOpen: (open: boolean) => void;
   setCommandButtonsOpen: (open: boolean) => void;
   setShortcutsOpen: (open: boolean) => void;
+  setQuickLauncherOpen: (open: boolean) => void;
   setHistoryOpen: (open: boolean) => void;
+  openHistory: (query?: string, selectedId?: string) => void;
   setWorkspacesOpen: (open: boolean) => void;
   setHostEditor: (value: HostEditorState) => void;
   setHostOrganizer: (value: SshHostEntry | SavedHostProfile | false) => void;
@@ -44,7 +49,9 @@ export const useUiStore = create<UiState>()((set) => ({
   settingsOpen: false,
   commandButtonsOpen: false,
   shortcutsOpen: false,
+  quickLauncherOpen: false,
   historyOpen: false,
+  historyQuery: '',
   workspacesOpen: false,
   hostEditor: false,
   hostOrganizer: false,
@@ -53,7 +60,14 @@ export const useUiStore = create<UiState>()((set) => ({
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setCommandButtonsOpen: (commandButtonsOpen) => set({ commandButtonsOpen }),
   setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
-  setHistoryOpen: (historyOpen) => set({ historyOpen }),
+  setQuickLauncherOpen: (quickLauncherOpen) => set({ quickLauncherOpen }),
+  setHistoryOpen: (historyOpen) =>
+    set({
+      historyOpen,
+      ...(historyOpen ? { historyQuery: '', historySelectedId: undefined } : {}),
+    }),
+  openHistory: (historyQuery = '', historySelectedId) =>
+    set({ historyOpen: true, historyQuery, historySelectedId }),
   setWorkspacesOpen: (workspacesOpen) => set({ workspacesOpen }),
   setHostEditor: (hostEditor) => set({ hostEditor }),
   setHostOrganizer: (hostOrganizer) => set({ hostOrganizer }),

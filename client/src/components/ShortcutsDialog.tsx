@@ -12,6 +12,7 @@ import { HOTKEY_MOD_LABEL } from '../platform.js';
 import { useUiStore } from '../state/ui.js';
 
 const SHORTCUTS: Array<[string, string]> = [
+  ['Open quick launcher', `${HOTKEY_MOD_LABEL}K`],
   ['New tab', `${HOTKEY_MOD_LABEL}Shift+T`],
   ['Find in terminal', `${HOTKEY_MOD_LABEL}Shift+F`],
   ['Save editor file / all files', `${HOTKEY_MOD_LABEL}S / ${HOTKEY_MOD_LABEL}K, S`],

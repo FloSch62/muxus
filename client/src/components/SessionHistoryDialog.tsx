@@ -50,7 +50,9 @@ const MAX_PREVIEW_EVENTS = 5_000;
 
 export function SessionHistoryDialog() {
   const setOpen = useUiStore((state) => state.setHistoryOpen);
-  const [query, setQuery] = useState('');
+  const initialQuery = useUiStore((state) => state.historyQuery);
+  const initialSelectedId = useUiStore((state) => state.historySelectedId);
+  const [query, setQuery] = useState(initialQuery);
   const [host, setHost] = useState('');
   const [kind, setKind] = useState('');
   const [startedAfter, setStartedAfter] = useState('');
@@ -74,7 +76,7 @@ export function SessionHistoryDialog() {
     fetchNextPage,
     isFetchingNextPage,
   } = useSessionHistory(debouncedQuery, filters);
-  const [selectedId, setSelectedId] = useState<string>();
+  const [selectedId, setSelectedId] = useState<string | undefined>(initialSelectedId);
   const selected =
     data?.sessions.find((session) => session.id === selectedId) ??
     data?.sessions[0];

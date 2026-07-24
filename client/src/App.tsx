@@ -17,6 +17,7 @@ import {
   loadSettingsDialog,
   loadShortcutsDialog,
   loadSessionHistoryDialog,
+  loadQuickLauncherDialog,
   loadWorkspaceDialog,
 } from './lazy-features.js';
 
@@ -38,6 +39,9 @@ const ShortcutsDialog = lazy(() =>
 const SessionHistoryDialog = lazy(() =>
   loadSessionHistoryDialog().then((module) => ({ default: module.SessionHistoryDialog })),
 );
+const QuickLauncherDialog = lazy(() =>
+  loadQuickLauncherDialog().then((module) => ({ default: module.QuickLauncherDialog })),
+);
 const WorkspaceDialog = lazy(() =>
   loadWorkspaceDialog().then((module) => ({ default: module.WorkspaceDialog })),
 );
@@ -53,6 +57,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const commandButtonsOpen = useUiStore((s) => s.commandButtonsOpen);
   const shortcutsOpen = useUiStore((s) => s.shortcutsOpen);
   const historyOpen = useUiStore((s) => s.historyOpen);
+  const quickLauncherOpen = useUiStore((s) => s.quickLauncherOpen);
   const workspacesOpen = useUiStore((s) => s.workspacesOpen);
   const [osTheme, setOsTheme] = useState<'light' | 'dark'>(() =>
     window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
@@ -88,6 +93,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
         {commandButtonsOpen ? <CommandButtonsDialog /> : null}
         {shortcutsOpen ? <ShortcutsDialog /> : null}
         {historyOpen ? <SessionHistoryDialog /> : null}
+        {quickLauncherOpen ? <QuickLauncherDialog /> : null}
         {workspacesOpen ? <WorkspaceDialog /> : null}
       </Suspense>
       <ToastHost />
