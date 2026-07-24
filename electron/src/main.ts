@@ -430,8 +430,9 @@ if (!app.requestSingleInstanceLock()) {
       return;
     }
     buildMenu();
-    appUrl = server.url;
-    createWindow(appUrl);
+    const url = server.url;
+    appUrl = url;
+    createWindow(url);
   });
 
   // The server (and its SSH connections) is tied to the window, so quit

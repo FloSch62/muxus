@@ -15,7 +15,7 @@
     "start": "node server/dist/index.js",
     "electron": "pnpm build && pnpm --filter @muxus/electron start",
     "dist": "pnpm build && pnpm --filter @muxus/electron dist",
-    "typecheck": "pnpm --filter @muxus/shared build && pnpm -r typecheck",
+    "typecheck": "pnpm --filter @muxus/shared --filter @muxus/server build && pnpm -r typecheck",
     "test": "pnpm --filter @muxus/tests test",
     "test:watch": "pnpm --filter @muxus/tests test:watch",
     "test:coverage": "pnpm --filter @muxus/tests test:coverage",
