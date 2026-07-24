@@ -13,10 +13,12 @@ import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import CheckCircleOutlinedIcon from '@mui/icons-material/CheckCircleOutlined';
+import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
+import VerifiedUserOutlinedIcon from '@mui/icons-material/VerifiedUserOutlined';
 import type { SshKeysResponse } from '@muxus/shared';
 import type { HostDraft } from './draft.js';
 
@@ -35,6 +37,7 @@ export function AuthSection({
   keys: SshKeysResponse | undefined;
 }) {
   const [pending, setPending] = useState('');
+  const [pendingCertificate, setPendingCertificate] = useState('');
   const available = (keys?.keys ?? []).filter((k) => !draft.identityFiles.includes(k.path) && !draft.identityFiles.includes(`~/.ssh/${k.name}`));
 
   const addKey = (value: string) => {
@@ -45,6 +48,12 @@ export function AuthSection({
   };
 
   const keyMeta = (file: string) => keys?.keys.find((k) => k.path === file || `~/.ssh/${k.name}` === file || k.name === file.split(/[\\/]/).pop());
+  const addCertificate = () => {
+    const file = pendingCertificate.trim();
+    if (!file || draft.certificateFiles.includes(file)) return;
+    set({ certificateFiles: [...draft.certificateFiles, file] });
+    setPendingCertificate('');
+  };
 
   return (
     <Stack spacing={2}>
@@ -144,6 +153,52 @@ export function AuthSection({
               </Button>
             </Stack>
           )}
+          <Stack spacing={1} sx={{ pt: 1 }}>
+            <Box>
+              <Typography variant="body2">User certificates</Typography>
+              <Typography variant="caption" color="text.secondary">
+                Writes CertificateFile. Each certificate is matched to its private key above.
+              </Typography>
+            </Box>
+            {draft.certificateFiles.map((file, i) => (
+              <Stack key={`${file}-${i}`} direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                <VerifiedUserOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
+                <Typography sx={{ flex: 1, fontFamily: '"JetBrains Mono", monospace', fontSize: 12, overflowWrap: 'anywhere' }}>
+                  {file}
+                </Typography>
+                <IconButton
+                  size="small"
+                  aria-label={`Remove certificate ${file}`}
+                  onClick={() => set({ certificateFiles: draft.certificateFiles.filter((_, j) => j !== i) })}
+                >
+                  <DeleteOutlineIcon fontSize="small" />
+                </IconButton>
+              </Stack>
+            ))}
+            <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+              <TextField
+                fullWidth
+                label="Add certificate"
+                placeholder="~/.ssh/id_ed25519-cert.pub"
+                value={pendingCertificate}
+                onChange={(e) => setPendingCertificate(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addCertificate();
+                  }
+                }}
+              />
+              <IconButton
+                aria-label="Add certificate"
+                disabled={!pendingCertificate.trim()}
+                onClick={addCertificate}
+                sx={{ mt: 0.5 }}
+              >
+                <AddIcon />
+              </IconButton>
+            </Stack>
+          </Stack>
           <FormControlLabel
             control={<Switch size="small" checked={draft.identitiesOnly} onChange={(e) => set({ identitiesOnly: e.target.checked })} />}
             label={<Labeled title="IdentitiesOnly" sub="Never offer other agent keys — avoids 'too many authentication failures'" />}

@@ -205,10 +205,14 @@ export interface HostBlockOptions {
   user?: string;
   port?: number;
   identityFiles?: string[];
+  /** OpenSSH user certificates paired to matching IdentityFile keys. */
+  certificateFiles?: string[];
   identitiesOnly?: boolean;
   forwardAgent?: boolean;
   /** ProxyJump hops in order ("bastion", "user@host:2222"); absent = none. */
   proxyJump?: string[];
+  /** Shell command whose stdin/stdout provide the SSH transport. */
+  proxyCommand?: string;
   forwards?: ConfigForward[];
   /** Skip public keys and go straight to password/keyboard-interactive. */
   passwordOnly?: boolean;
@@ -222,9 +226,13 @@ export interface ResolvedHostSettings {
   user?: string;
   port: number;
   identityFiles: string[];
+  /** User certificates paired with matching private IdentityFile keys. */
+  certificateFiles: string[];
   identitiesOnly: boolean;
   forwardAgent: boolean;
   proxyJump: string[];
+  /** Raw ProxyCommand after Host-pattern resolution; tokens expand at dial time. */
+  proxyCommand?: string;
   forwards: ConfigForward[];
   passwordOnly: boolean;
 }

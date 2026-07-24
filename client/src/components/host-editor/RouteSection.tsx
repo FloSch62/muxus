@@ -2,7 +2,10 @@ import { useState } from 'react';
 import Autocomplete from '@mui/material/Autocomplete';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
+import Radio from '@mui/material/Radio';
+import RadioGroup from '@mui/material/RadioGroup';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
@@ -14,14 +17,14 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import ComputerOutlinedIcon from '@mui/icons-material/ComputerOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
+import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 import type { SshConfigResponse } from '@muxus/shared';
 import type { HostDraft } from './draft.js';
 import { draftAliases } from './draft.js';
 
 /**
- * The ProxyJump chain builder: a visual path from this computer through each
- * jump host to the target, plus an ordered editable hop list. Hops can be
- * config aliases (picked from a list) or ad-hoc user@host:port specs.
+ * Select direct, ProxyJump, or ProxyCommand routing. The jump route includes a
+ * visual path and ordered editable hop list.
  */
 export function RouteSection({
   draft,
@@ -56,30 +59,58 @@ export function RouteSection({
 
   return (
     <Stack spacing={2.5}>
+      <RadioGroup
+        value={draft.routeMode}
+        onChange={(e) => set({ routeMode: e.target.value as HostDraft['routeMode'] })}
+      >
+        <FormControlLabel
+          value="direct"
+          control={<Radio size="small" />}
+          label={<Labeled title="Direct connection" sub="Connect to the target without a proxy" />}
+        />
+        <FormControlLabel
+          value="jump"
+          control={<Radio size="small" />}
+          label={<Labeled title="Jump hosts" sub="Writes ProxyJump — connect through one or more SSH bastions" />}
+        />
+        <FormControlLabel
+          value="command"
+          control={<Radio size="small" />}
+          label={<Labeled title="Proxy command" sub="Writes ProxyCommand — use a command's stdin/stdout as the transport" />}
+        />
+      </RadioGroup>
+
       {/* Visual path */}
       <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}>
         <Chip size="small" icon={<ComputerOutlinedIcon />} label="This computer" variant="outlined" />
         <ArrowForwardIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
-        {draft.proxyJump.map((hop) => (
-          <Stack key={hop} direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
-            <Tooltip title={knownAlias(hop) ? 'Jump host from your config' : 'Ad-hoc jump host'}>
-              <Chip size="small" icon={<DnsOutlinedIcon />} label={hop} color="primary" variant="outlined" />
-            </Tooltip>
+        {draft.routeMode === 'jump'
+          ? draft.proxyJump.map((hop) => (
+              <Stack key={hop} direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+                <Tooltip title={knownAlias(hop) ? 'Jump host from your config' : 'Ad-hoc jump host'}>
+                  <Chip size="small" icon={<DnsOutlinedIcon />} label={hop} color="primary" variant="outlined" />
+                </Tooltip>
+                <ArrowForwardIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+              </Stack>
+            ))
+          : null}
+        {draft.routeMode === 'command' ? (
+          <>
+            <Chip size="small" icon={<TerminalOutlinedIcon />} label="ProxyCommand" color="primary" variant="outlined" />
             <ArrowForwardIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
-          </Stack>
-        ))}
+          </>
+        ) : null}
         <Chip size="small" icon={<DnsOutlinedIcon />} label={target} />
       </Stack>
 
-      {draft.proxyJump.length === 0 && (
+      {draft.routeMode === 'direct' ? (
         <Typography variant="body2" color="text.secondary">
-          Direct connection. Add a jump host to reach {target} through a bastion — each hop is authenticated and verified in its own
-          right, and its own config (keys, user, port) applies.
+          Muxus opens the TCP connection to {target} itself.
         </Typography>
-      )}
+      ) : null}
 
       {/* Editable hop list */}
-      {draft.proxyJump.length > 0 && (
+      {draft.routeMode === 'jump' ? (
         <Stack spacing={0.5}>
           {draft.proxyJump.map((hop, i) => (
             <Stack key={`${hop}-${i}`} direction="row" spacing={1} sx={{ alignItems: 'center' }}>
@@ -96,39 +127,63 @@ export function RouteSection({
               </IconButton>
             </Stack>
           ))}
-        </Stack>
-      )}
-
-      <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
-        <Autocomplete
-          freeSolo
-          fullWidth
-          options={aliasOptions}
-          inputValue={pending}
-          onInputChange={(_e, v) => setPending(v)}
-          onChange={(_e, v) => {
-            if (typeof v === 'string') add(v);
-          }}
-          renderInput={(params) => (
-            <TextField
-              {...params}
-              label="Add jump host"
-              placeholder="alias from config, or user@host:port"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && pending.trim()) {
-                  e.preventDefault();
-                  add(pending);
-                }
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', pt: 1 }}>
+            <Autocomplete
+              freeSolo
+              fullWidth
+              options={aliasOptions}
+              inputValue={pending}
+              onInputChange={(_e, v) => setPending(v)}
+              onChange={(_e, v) => {
+                if (typeof v === 'string') add(v);
               }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Add jump host"
+                  placeholder="alias from config, or user@host:port"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && pending.trim()) {
+                      e.preventDefault();
+                      add(pending);
+                    }
+                  }}
+                />
+              )}
             />
-          )}
+            <Box sx={{ pt: 0.5 }}>
+              <IconButton aria-label="Add jump host" onClick={() => add(pending)} disabled={!pending.trim()}>
+                <AddIcon />
+              </IconButton>
+            </Box>
+          </Stack>
+          <Typography variant="caption" color="text.secondary">
+            Each hop is authenticated and host-key verified using its own SSH config.
+          </Typography>
+        </Stack>
+      ) : null}
+
+      {draft.routeMode === 'command' ? (
+        <TextField
+          label="ProxyCommand"
+          value={draft.proxyCommand}
+          onChange={(e) => set({ proxyCommand: e.target.value })}
+          placeholder="cloudflared access ssh --hostname %h"
+          helperText="Supports OpenSSH tokens %% (percent), %h (host), %n (alias), %p (port), and %r (user)."
+          fullWidth
         />
-        <Box sx={{ pt: 0.5 }}>
-          <IconButton aria-label="Add jump host" onClick={() => add(pending)} disabled={!pending.trim()}>
-            <AddIcon />
-          </IconButton>
-        </Box>
-      </Stack>
+      ) : null}
     </Stack>
+  );
+}
+
+function Labeled({ title, sub }: { title: string; sub: string }) {
+  return (
+    <Box sx={{ py: 0.25 }}>
+      <Typography variant="body2">{title}</Typography>
+      <Typography variant="caption" color="text.secondary">
+        {sub}
+      </Typography>
+    </Box>
   );
 }

@@ -134,8 +134,8 @@ function initialNativeDraft(state: OpenState): NativeHostDraft {
 /**
  * The Host block editor — Muxus's session editor. Everything here reads and
  * writes ~/.ssh/config: general addressing, authentication (key picker with
- * agent awareness), the ProxyJump chain, port forwards with the live tunnel
- * diagram, and free-form options with an exact server-rendered preview.
+ * agent awareness), direct/ProxyJump/ProxyCommand routing, port forwards with
+ * the live tunnel diagram, and free-form options with an exact preview.
  */
 function SshHostEditorContent({
   state,
@@ -233,7 +233,17 @@ function SshHostEditorContent({
   const sections: EditorSectionDef<Section>[] = [
     { value: 'general', label: 'General', icon: <DnsOutlinedIcon fontSize="small" /> },
     { value: 'auth', label: 'Authentication', icon: <KeyOutlinedIcon fontSize="small" /> },
-    { value: 'route', label: 'Jump hosts', icon: <AltRouteIcon fontSize="small" />, count: draft.proxyJump.length },
+    {
+      value: 'route',
+      label: 'Connection route',
+      icon: <AltRouteIcon fontSize="small" />,
+      count:
+        draft.routeMode === 'jump'
+          ? draft.proxyJump.length
+          : draft.routeMode === 'command'
+            ? 1
+            : undefined,
+    },
     { value: 'forwards', label: 'Port forwarding', icon: <SwapHorizOutlinedIcon fontSize="small" />, count: draft.forwards.length },
     { value: 'logging', label: 'Session logging', icon: <HistoryOutlinedIcon fontSize="small" /> },
     { value: 'highlighting', label: 'Highlighting', icon: <HighlightOutlinedIcon fontSize="small" />, count: draft.keywordHighlights.rules.length },

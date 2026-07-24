@@ -31,7 +31,7 @@ export function AdvancedSection({
     <Stack spacing={2}>
       <Stack spacing={1}>
         <Typography variant="body2" color="text.secondary">
-          Extra ssh_config options written into the block as-is (Compression, ServerAliveInterval, ProxyCommand, …).
+          Extra ssh_config options written into the block as-is (Compression, ServerAliveInterval, RequestTTY, …).
         </Typography>
         {draft.extras.map((e, i) => (
           <Stack key={i} direction="row" spacing={1} sx={{ alignItems: 'center' }}>

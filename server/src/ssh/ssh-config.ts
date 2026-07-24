@@ -14,8 +14,8 @@ import type { ConfigForward, HostBlockOptions, ResolvedHostSettings, SshHostEntr
  *  - list the concrete Host aliases for the session manager, each with the
  *    block's own options plus the fully resolved effective settings;
  *  - resolve any target the way `ssh` would: sequential first-obtained-wins
- *    option lookup across matching Host patterns, accumulating IdentityFile
- *    and *Forward directives.
+ *    option lookup across matching Host patterns, accumulating IdentityFile,
+ *    CertificateFile and *Forward directives.
  *
  * Known deviations from ssh_config(5): Match blocks are skipped (their
  * conditions need runtime state we don't have), and Include inside a Host
@@ -266,11 +266,14 @@ const yes = (v: string | undefined): boolean => (v ?? '').toLowerCase() === 'yes
 
 /**
  * Resolve every option for `host` in ssh's sequential first-obtained-wins
- * order. IdentityFile and the *Forward directives accumulate instead.
+ * order. IdentityFile, CertificateFile and the *Forward directives accumulate
+ * instead. ProxyJump and ProxyCommand are mutually exclusive: whichever is
+ * obtained first wins, matching OpenSSH.
  */
 export function resolveHost(doc: ConfigDocument, host: string): ResolvedTarget {
   const first = new Map<string, string>();
   const identityFiles: string[] = [];
+  const certificateFiles: string[] = [];
   const forwards: ConfigForward[] = [];
 
   for (const entry of doc.sequence) {
@@ -282,6 +285,17 @@ export function resolveHost(doc: ConfigDocument, host: string): ResolvedTarget {
           if (file && !identityFiles.includes(file)) identityFiles.push(file);
           break;
         }
+        case 'certificatefile': {
+          const file = opt.args[0];
+          if (file && !certificateFiles.includes(file)) certificateFiles.push(file);
+          break;
+        }
+        case 'proxyjump':
+        case 'proxycommand':
+          if (!first.has('proxyjump') && !first.has('proxycommand') && opt.value) {
+            first.set(opt.key, opt.value);
+          }
+          break;
         case 'localforward':
         case 'remoteforward':
         case 'dynamicforward': {
@@ -306,9 +320,11 @@ export function resolveHost(doc: ConfigDocument, host: string): ResolvedTarget {
     user,
     port,
     identityFiles: identityFiles.map((f) => expandIdentityPath(f, tokens)),
+    certificateFiles: certificateFiles.map((f) => expandIdentityPath(f, tokens)),
     identitiesOnly: yes(first.get('identitiesonly')),
     forwardAgent: yes(first.get('forwardagent')),
     proxyJump: parseProxyJumpList(first.get('proxyjump')),
+    proxyCommand: parseProxyCommand(first.get('proxycommand')),
     forwards,
     passwordOnly:
       (first.get('pubkeyauthentication') ?? '').toLowerCase() === 'no' ||
@@ -324,12 +340,15 @@ const RESOLVED_KEYS = new Set([
   'port',
   'identitiesonly',
   'forwardagent',
-  'proxyjump',
   'preferredauthentications',
   'pubkeyauthentication',
   'connecttimeout',
   'serveraliveinterval',
 ]);
+
+function parseProxyCommand(value: string | undefined): string | undefined {
+  return value && value.toLowerCase() !== 'none' ? value : undefined;
+}
 
 function parsePort(value: string | undefined): number | undefined {
   const port = Number(value);
@@ -376,7 +395,7 @@ function expandTokens(value: string, tokens: { h: string }): string {
   return value.replace(/%[%h]/g, (m) => (m === '%%' ? '%' : tokens.h));
 }
 
-/** Expand ~ and the common %-tokens in an IdentityFile path. */
+/** Expand ~ and the common %-tokens in an identity or certificate path. */
 export function expandIdentityPath(value: string, tokens: { h: string; r: string }): string {
   const home = os.homedir();
   let p = value.replace(/^~(?=$|[\\/])/, home);
@@ -426,6 +445,7 @@ export function blockToOptions(block: HostBlock): HostBlockOptions {
   const out: HostBlockOptions = {};
   const extras: Array<{ keyword: string; value: string }> = [];
   let preferredConsumed = false;
+  let proxyConsumed = false;
 
   for (const opt of block.options) {
     switch (opt.key) {
@@ -446,6 +466,9 @@ export function blockToOptions(block: HostBlock): HostBlockOptions {
       case 'identityfile':
         if (opt.args[0]) (out.identityFiles ??= []).push(opt.args[0]);
         break;
+      case 'certificatefile':
+        if (opt.args[0]) (out.certificateFiles ??= []).push(opt.args[0]);
+        break;
       case 'identitiesonly':
         out.identitiesOnly = yes(opt.args[0]);
         break;
@@ -453,8 +476,18 @@ export function blockToOptions(block: HostBlock): HostBlockOptions {
         out.forwardAgent = yes(opt.args[0]);
         break;
       case 'proxyjump':
-        if (out.proxyJump === undefined) out.proxyJump = parseProxyJumpList(opt.value);
-        else extras.push({ keyword: opt.keyword, value: opt.value });
+        if (!proxyConsumed) {
+          out.proxyJump = parseProxyJumpList(opt.value);
+          proxyConsumed = true;
+        } else extras.push({ keyword: opt.keyword, value: opt.value });
+        break;
+      case 'proxycommand':
+        if (!proxyConsumed) {
+          const command = parseProxyCommand(opt.value);
+          if (command) out.proxyCommand = command;
+          else extras.push({ keyword: opt.keyword, value: opt.value });
+          proxyConsumed = true;
+        } else extras.push({ keyword: opt.keyword, value: opt.value });
         break;
       case 'localforward':
       case 'remoteforward':
@@ -506,9 +539,11 @@ export function listHosts(doc: ConfigDocument): SshHostEntry[] {
         user: resolved.user,
         port: resolved.port,
         identityFiles: resolved.identityFiles,
+        certificateFiles: resolved.certificateFiles,
         identitiesOnly: resolved.identitiesOnly,
         forwardAgent: resolved.forwardAgent,
         proxyJump: resolved.proxyJump,
+        proxyCommand: resolved.proxyCommand,
         forwards: resolved.forwards,
         passwordOnly: resolved.passwordOnly,
       },

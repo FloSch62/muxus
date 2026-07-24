@@ -21,9 +21,12 @@ export interface HostDraft {
   port: string;
   authMode: 'default' | 'key' | 'password';
   identityFiles: string[];
+  certificateFiles: string[];
   identitiesOnly: boolean;
   forwardAgent: boolean;
+  routeMode: 'direct' | 'jump' | 'command';
   proxyJump: string[];
+  proxyCommand: string;
   forwards: ConfigForward[];
   extras: Array<{ keyword: string; value: string }>;
   keywordHighlights: HostKeywordHighlightConfig;
@@ -40,9 +43,12 @@ export function blankDraft(prefillTarget = ''): HostDraft {
     port: '',
     authMode: 'default',
     identityFiles: [],
+    certificateFiles: [],
     identitiesOnly: false,
     forwardAgent: false,
+    routeMode: 'direct',
     proxyJump: [],
+    proxyCommand: '',
     forwards: [],
     extras: [],
     keywordHighlights: { inheritGlobal: true, rules: [] },
@@ -60,11 +66,23 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
     hostname: o.hostname ?? '',
     user: o.user ?? '',
     port: o.port?.toString() ?? '',
-    authMode: o.passwordOnly ? 'password' : (o.identityFiles?.length ? 'key' : 'default'),
+    authMode:
+      o.passwordOnly
+        ? 'password'
+        : (o.identityFiles?.length || o.certificateFiles?.length)
+          ? 'key'
+          : 'default',
     identityFiles: o.identityFiles ?? [],
+    certificateFiles: o.certificateFiles ?? [],
     identitiesOnly: o.identitiesOnly ?? false,
     forwardAgent: o.forwardAgent ?? false,
+    routeMode: o.proxyCommand
+      ? 'command'
+      : o.proxyJump?.length
+        ? 'jump'
+        : 'direct',
     proxyJump: o.proxyJump ?? [],
+    proxyCommand: o.proxyCommand ?? '',
     forwards: o.forwards ?? [],
     extras: o.extras ?? [],
     keywordHighlights: entry.metadata?.keywordHighlights ?? {
@@ -89,6 +107,9 @@ export function draftProblem(draft: HostDraft): string | null {
   }
   if (draft.port && !portOk(draft.port)) return 'Port must be 1–65535.';
   if (draft.authMode === 'key' && !draft.identityFiles.some((f) => f.trim())) return 'Pick at least one key file, or switch the auth mode.';
+  if (draft.routeMode === 'command' && !draft.proxyCommand.trim()) {
+    return 'Proxy command is required when ProxyCommand routing is selected.';
+  }
   for (const f of draft.forwards) {
     if (!portOk(String(f.bindPort))) return 'Every forward needs a listen port (1–65535).';
     if (f.type !== 'dynamic' && (!f.targetHost?.trim() || !portOk(String(f.targetPort ?? '')))) return 'Local/remote forwards need a target host and port.';
@@ -119,9 +140,18 @@ export function draftToRequest(draft: HostDraft, previousAlias?: string): HostUp
       user: text(draft.user),
       port: draft.port ? Number(draft.port) : undefined,
       identityFiles: draft.authMode === 'key' ? draft.identityFiles.map((f) => f.trim()).filter(Boolean) : undefined,
+      certificateFiles:
+        draft.authMode === 'key'
+          ? draft.certificateFiles.map((f) => f.trim()).filter(Boolean)
+          : undefined,
       identitiesOnly: draft.authMode === 'key' && draft.identitiesOnly ? true : undefined,
       forwardAgent: draft.forwardAgent ? true : undefined,
-      proxyJump: draft.proxyJump.length ? draft.proxyJump : undefined,
+      proxyJump:
+        draft.routeMode === 'jump' && draft.proxyJump.length
+          ? draft.proxyJump
+          : undefined,
+      proxyCommand:
+        draft.routeMode === 'command' ? text(draft.proxyCommand) : undefined,
       forwards: draft.forwards.length ? draft.forwards : undefined,
       passwordOnly: draft.authMode === 'password' ? true : undefined,
       extras: draft.extras.length ? draft.extras : undefined,

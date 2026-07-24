@@ -1,10 +1,9 @@
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { Duplex } from 'node:stream';
-// ssh2 is CommonJS; `utils` is attached dynamically and escapes Node's
-// named-export detection, so it must come off the default export.
-import ssh2, {
+import { Duplex } from 'node:stream';
+import {
   Client,
   type AnyAuthMethod,
   type AuthenticationType,
@@ -14,11 +13,17 @@ import ssh2, {
   type PseudoTtyOptions,
   type SFTPWrapper,
 } from 'ssh2';
-
-const { utils } = ssh2;
 import { nanoid } from 'nanoid';
 import type { FastifyBaseLogger } from 'fastify';
 import type { ConfigForward, ConnectionInfo, SshProfile } from '@muxus/shared';
+import {
+  certificateAlgorithms,
+  certificateMatchesKey,
+  certifiedKey,
+  parseOpenSshCertificate,
+  parseSshKey,
+  type OpenSshCertificate,
+} from './certificates.js';
 import { KnownHostsStore, fingerprintSha256, hostKeyType } from './known-hosts.js';
 import { agentSocket } from './key-scan.js';
 import {
@@ -106,9 +111,10 @@ export interface ChainHop {
 /**
  * Dials SSH targets exactly the way `ssh <target>` would, using OpenSSH as
  * the source for connection details: alias resolution, ProxyJump chains
- * (each hop resolved, verified and authenticated in its own right), agent +
- * IdentityFile + keyboard-interactive + password auth in OpenSSH order, and
- * host keys checked against the real known_hosts files.
+ * (each hop resolved, verified and authenticated in its own right),
+ * ProxyCommand transports, agent + CertificateFile/IdentityFile +
+ * keyboard-interactive + password auth in OpenSSH order, and host keys
+ * checked against the real known_hosts files.
  */
 export class SshConnectionManager {
   private readonly connections = new ConnectionLeaseRegistry<ManagedConnection>();
@@ -242,6 +248,18 @@ export class SshConnectionManager {
   private dial(hop: ChainHop, sock: Duplex | undefined, io: ConnectIo): Promise<Client> {
     const agent = agentSocket();
     const auth = new AuthLadder(hop, io);
+    const proxySocket =
+      !sock && hop.resolved.proxyCommand
+        ? openProxyCommand(
+            expandProxyCommand(hop.resolved.proxyCommand, {
+              hostname: hop.resolved.hostname,
+              originalHost: hop.spec.host,
+              port: hop.port,
+              user: hop.user,
+            }),
+          )
+        : undefined;
+    const transport = sock ?? proxySocket;
     const config: ConnectConfig = {
       username: hop.user,
       readyTimeout: (hop.resolved.connectTimeout ?? 20) * 1000,
@@ -253,7 +271,7 @@ export class SshConnectionManager {
       authHandler: (authsLeft, _partialSuccess, next) => {
         auth.next(authsLeft, next as (method: AnyAuthMethod | false) => void);
       },
-      ...(sock ? { sock } : { host: hop.resolved.hostname, port: hop.port }),
+      ...(transport ? { sock: transport } : { host: hop.resolved.hostname, port: hop.port }),
       ...(agent ? { agent, agentForward: hop.resolved.forwardAgent } : {}),
     };
 
@@ -268,11 +286,13 @@ export class SshConnectionManager {
       client.on('error', (err) => {
         if (!settled) {
           settled = true;
+          proxySocket?.destroy();
           reject(friendlyConnectError(auth.cancelled ? new Error('authentication cancelled') : err, hop));
         } else {
           this.log.warn({ err, host: hop.resolved.hostname }, 'ssh connection error');
         }
       });
+      client.on('close', () => proxySocket?.destroy());
       client.connect(config);
       // Interactive input consists of tiny packets. Disable Nagle explicitly
       // so a keystroke never waits for a previous packet's acknowledgement.
@@ -340,6 +360,8 @@ export function buildChain(
           identitiesOnly: profile.identitiesOnly ?? base.identitiesOnly,
           forwardAgent: profile.forwardAgent ?? base.forwardAgent,
           proxyJump: profile.proxyJump ?? base.proxyJump,
+          proxyCommand:
+            profile.proxyJump === undefined ? base.proxyCommand : undefined,
           passwordOnly: profile.passwordOnly ?? base.passwordOnly,
         }
       : base;
@@ -362,12 +384,72 @@ function directSettings(hostname: string): ResolvedTarget {
     hostname,
     port: 22,
     identityFiles: [],
+    certificateFiles: [],
     identitiesOnly: false,
     forwardAgent: false,
     proxyJump: [],
     forwards: [],
     passwordOnly: false,
   };
+}
+
+/** Expand the tokens accepted by OpenSSH's ProxyCommand directive. */
+export function expandProxyCommand(
+  command: string,
+  tokens: { hostname: string; originalHost: string; port: number; user: string },
+): string {
+  return command.replace(/%%|%[hnpr]/g, (token) => {
+    switch (token) {
+      case '%%':
+        return '%';
+      case '%h':
+        return tokens.hostname;
+      case '%n':
+        return tokens.originalHost;
+      case '%p':
+        return String(tokens.port);
+      default:
+        return tokens.user;
+    }
+  });
+}
+
+const PROXY_STDERR_LIMIT = 8 * 1024;
+
+/**
+ * Run ProxyCommand with the user's platform shell and expose its stdin/stdout
+ * as the byte stream ssh2 expects. This matches OpenSSH's shell-command
+ * semantics, including pipes and quoted arguments.
+ */
+function openProxyCommand(command: string): Duplex {
+  const child = spawn(command, {
+    shell: true,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
+  const stream = Duplex.from({
+    readable: child.stdout,
+    writable: child.stdin,
+  });
+  let stderr = '';
+  child.stderr.on('data', (chunk: Buffer) => {
+    stderr = `${stderr}${chunk.toString()}`.slice(-PROXY_STDERR_LIMIT);
+  });
+  child.once('error', (err) => {
+    stream.destroy(new Error(`ProxyCommand could not start: ${err.message}`));
+  });
+  child.once('exit', (code, signal) => {
+    if (code === 0 || stream.destroyed) return;
+    const reason = signal ? `signal ${signal}` : `exit code ${code ?? 'unknown'}`;
+    const detail = stderr.trim();
+    stream.destroy(
+      new Error(`ProxyCommand failed with ${reason}${detail ? `: ${detail}` : ''}`),
+    );
+  });
+  stream.once('close', () => {
+    if (child.exitCode === null && !child.killed) child.kill();
+  });
+  return stream;
 }
 
 /** Ad-hoc targets never masquerade as OpenSSH-backed database profiles. */
@@ -398,12 +480,18 @@ interface AuthAttempt {
 
 /**
  * OpenSSH's client auth order as an ssh2 authHandler: none → agent (unless
- * IdentitiesOnly) → identity files (config ones first, else the default
- * id_* files) with passphrase prompts → keyboard-interactive → password.
+ * IdentitiesOnly) → configured certificates with their matching private keys
+ * → identity files (config ones first, else the default id_* files) with
+ * passphrase prompts → keyboard-interactive → password.
  * Every attempt happens inside one TCP connection, like the real client.
  */
 class AuthLadder {
   private readonly attempts: AuthAttempt[];
+  private readonly privateKeys = new Map<string, Promise<ParsedKey | undefined>>();
+  private readonly certificateKeys = new Map<
+    OpenSshCertificate,
+    Promise<ParsedKey | undefined>
+  >();
   private index = 0;
   cancelled = false;
 
@@ -449,8 +537,41 @@ class AuthLadder {
       }
       const explicit = resolved.identityFiles.length > 0;
       const files = explicit ? resolved.identityFiles : defaultIdentityFiles();
+      const certificates = resolved.certificateFiles
+        .map((file) => this.loadCertificate(file))
+        .filter((item): item is { file: string; certificate: OpenSshCertificate } => !!item);
+      for (const { file, certificate } of certificates) {
+        for (const algorithm of certificateAlgorithms(certificate)) {
+          attempts.push({
+            type: 'publickey',
+            get: async () => {
+              const privateKey = await this.findCertificateKey(
+                file,
+                certificate,
+                files,
+                explicit || resolved.certificateFiles.length > 0,
+                !!agent,
+                label,
+              );
+              if (!privateKey) return undefined;
+              const key = certifiedKey(privateKey, certificate, algorithm);
+              if (key instanceof Error) {
+                this.io.status(`could not load ${path.basename(file)}: ${key.message}`);
+                return undefined;
+              }
+              return { type: 'publickey', username: user, key };
+            },
+          });
+        }
+      }
       for (const file of files) {
-        attempts.push({ type: 'publickey', get: () => this.loadKey(file, explicit, !!agent, user, label) });
+        attempts.push({
+          type: 'publickey',
+          get: async () => {
+            const key = await this.loadPrivateKey(file, explicit, !!agent, label);
+            return key ? { type: 'publickey', username: user, key } : undefined;
+          },
+        });
       }
     }
 
@@ -492,8 +613,77 @@ class AuthLadder {
     return attempts;
   }
 
+  private loadCertificate(
+    file: string,
+  ): { file: string; certificate: OpenSshCertificate } | undefined {
+    let content: Buffer;
+    try {
+      content = fs.readFileSync(file);
+    } catch {
+      this.io.status(`certificate file ${file} not found — skipping`);
+      return undefined;
+    }
+    const certificate = parseOpenSshCertificate(content);
+    if (certificate instanceof Error) {
+      this.io.status(
+        `could not load ${path.basename(file)}: ${certificate.message}`,
+      );
+      return undefined;
+    }
+    return { file, certificate };
+  }
+
+  private findCertificateKey(
+    certificateFile: string,
+    certificate: OpenSshCertificate,
+    identityFiles: string[],
+    explicit: boolean,
+    agentAvailable: boolean,
+    label: string,
+  ): Promise<ParsedKey | undefined> {
+    const cached = this.certificateKeys.get(certificate);
+    if (cached) return cached;
+    const pending = (async () => {
+      for (const file of identityFiles) {
+        const key = await this.loadPrivateKey(
+          file,
+          explicit,
+          agentAvailable,
+          label,
+        );
+        if (key && certificateMatchesKey(certificate, key)) {
+          return key;
+        }
+      }
+      this.io.status(
+        `certificate ${certificateFile} has no matching identity file — skipping`,
+      );
+      return undefined;
+    })();
+    this.certificateKeys.set(certificate, pending);
+    return pending;
+  }
+
   /** Read + parse one identity file, prompting for its passphrase when needed. */
-  private async loadKey(file: string, explicit: boolean, agentAvailable: boolean, user: string, label: string): Promise<AnyAuthMethod | undefined> {
+  private loadPrivateKey(
+    file: string,
+    explicit: boolean,
+    agentAvailable: boolean,
+    label: string,
+  ): Promise<ParsedKey | undefined> {
+    const cached = this.privateKeys.get(file);
+    if (cached) return cached;
+    const pending = this.readPrivateKey(file, explicit, agentAvailable, label);
+    this.privateKeys.set(file, pending);
+    return pending;
+  }
+
+  private async readPrivateKey(
+    file: string,
+    explicit: boolean,
+    agentAvailable: boolean,
+    label: string,
+  ): Promise<ParsedKey | undefined> {
     let content: Buffer;
     try {
       content = fs.readFileSync(file);
@@ -501,7 +691,7 @@ class AuthLadder {
       if (explicit) this.io.status(`identity file ${file} not found — skipping`);
       return undefined;
     }
-    let parsed = utils.parseKey(content);
+    let parsed = parseSshKey(content);
     if (parsed instanceof Error && /passphrase|encrypted/i.test(parsed.message)) {
       // Encrypted. Default (unconfigured) keys next to a running agent are
       // skipped silently — the agent attempt already covered the loaded ones.
@@ -512,14 +702,14 @@ class AuthLadder {
           prompts: [{ prompt: `${i > 0 ? 'Bad passphrase, try again. ' : ''}Passphrase for ${path.basename(file)}`, echo: false }],
         });
         if (!passphrase) return undefined; // empty answer = skip this key
-        parsed = utils.parseKey(content, passphrase);
+        parsed = parseSshKey(content, passphrase);
       }
     }
     if (parsed instanceof Error) {
       this.io.status(`could not load ${path.basename(file)}: ${parsed.message}`);
       return undefined;
     }
-    return { type: 'publickey', username: user, key: parsed as ParsedKey };
+    return parsed as ParsedKey;
   }
 }
 

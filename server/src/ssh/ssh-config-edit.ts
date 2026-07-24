@@ -103,13 +103,24 @@ function validateUpsert(req: HostUpsertRequest): void {
     if (!ALIAS_RE.test(alias)) bad(`invalid alias "${alias}" — no spaces, wildcards or "!"`);
   }
   const o = req.options;
-  for (const v of [o.hostname, o.user, ...(o.identityFiles ?? [])]) {
+  for (const v of [
+    o.hostname,
+    o.user,
+    ...(o.identityFiles ?? []),
+    ...(o.certificateFiles ?? []),
+  ]) {
     // These are re-quoted as single tokens on render, so quotes can't nest.
     if (v !== undefined && (!v.trim() || /[\r\n"]/.test(v))) bad('option values must be non-empty single-line text without quotes');
   }
   if (o.port !== undefined && !(Number.isInteger(o.port) && o.port > 0 && o.port < 65536)) bad('port must be 1–65535');
   for (const hop of o.proxyJump ?? []) {
     if (!hop.trim() || /[\s,]/.test(hop)) bad(`invalid jump host "${hop}"`);
+  }
+  if (o.proxyCommand !== undefined && (!o.proxyCommand.trim() || /[\r\n]/.test(o.proxyCommand))) {
+    bad('ProxyCommand must be non-empty single-line text');
+  }
+  if (o.proxyCommand !== undefined && o.proxyJump !== undefined) {
+    bad('ProxyJump and ProxyCommand are mutually exclusive');
   }
   for (const f of o.forwards ?? []) validateForward(f);
   for (const extra of o.extras ?? []) {
@@ -157,8 +168,10 @@ export function renderHostBlock(req: HostUpsertRequest, indent: string, extraPat
   opt('User', singleToken(o.user));
   opt('Port', o.port?.toString());
   for (const file of o.identityFiles ?? []) opt('IdentityFile', singleToken(file));
+  for (const file of o.certificateFiles ?? []) opt('CertificateFile', singleToken(file));
   if (o.identitiesOnly !== undefined) opt('IdentitiesOnly', o.identitiesOnly ? 'yes' : 'no');
   if (o.proxyJump !== undefined) opt('ProxyJump', o.proxyJump.length ? o.proxyJump.join(',') : 'none');
+  opt('ProxyCommand', o.proxyCommand?.trim());
   if (o.forwardAgent !== undefined) opt('ForwardAgent', o.forwardAgent ? 'yes' : 'no');
   if (o.passwordOnly) {
     opt('PubkeyAuthentication', 'no');

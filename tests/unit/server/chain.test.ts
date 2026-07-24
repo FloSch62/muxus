@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   buildChain,
+  expandProxyCommand,
   findMetadataAlias,
   terminalPtyOptions,
 } from '../../../server/src/ssh/connection-manager.js';
@@ -116,6 +117,38 @@ describe('buildChain', () => {
   it('detects ProxyJump cycles', () => {
     const doc = docOf(['Host a', '  ProxyJump b', '', 'Host b', '  ProxyJump a'].join('\n'));
     expect(() => buildChain(doc, { target: 'a' })).toThrowError(/cycle/);
+  });
+
+  it('keeps ProxyCommand on a direct target and lets a profile jump override it', () => {
+    const doc = docOf(
+      [
+        'Host app',
+        '  HostName app.internal',
+        '  ProxyCommand tunnel %h %p',
+        '',
+        'Host bastion',
+        '  HostName bastion.example.com',
+      ].join('\n'),
+    );
+    expect(buildChain(doc, { target: 'app' })[0]!.resolved.proxyCommand).toBe(
+      'tunnel %h %p',
+    );
+    const jumped = buildChain(doc, { target: 'app', proxyJump: ['bastion'] });
+    expect(jumped.map((hop) => hop.spec.host)).toEqual(['bastion', 'app']);
+    expect(jumped[1]!.resolved.proxyCommand).toBeUndefined();
+  });
+});
+
+describe('ProxyCommand expansion', () => {
+  it('expands OpenSSH destination tokens at dial time', () => {
+    expect(
+      expandProxyCommand('proxy %% %h %n %p %r %x', {
+        hostname: 'real.internal',
+        originalHost: 'alias',
+        port: 2222,
+        user: 'deploy',
+      }),
+    ).toBe('proxy % real.internal alias 2222 deploy %x');
   });
 });
 

@@ -96,6 +96,8 @@ describe('upsertHost', () => {
         '  HostName app.example.com',
         '  ProxyJump bastion',
         '  IdentityFile ~/.ssh/app',
+        '  CertificateFile ~/.ssh/app-cert.pub',
+        '  ProxyCommand custom-proxy %h %p',
         '  LocalForward 8080 localhost:80',
         '  Compression yes',
         '',
@@ -131,6 +133,17 @@ describe('upsertHost', () => {
     expect(() => upsertHost(req({ aliases: ['star*'] }), root)).toThrowError(/invalid alias/);
     expect(() => upsertHost(req({ options: { extras: [{ keyword: 'Host', value: 'x' }] } }), root)).toThrowError(/invalid option keyword/);
     expect(() => upsertHost(req({ options: { extras: [{ keyword: 'Weird Key', value: 'x' }] } }), root)).toThrowError(/invalid option keyword/);
+    expect(() =>
+      upsertHost(
+        req({
+          options: {
+            proxyJump: ['bastion'],
+            proxyCommand: 'proxy %h %p',
+          },
+        }),
+        root,
+      ),
+    ).toThrowError(/mutually exclusive/);
   });
 
   it('keeps a .muxus.bak of the previous content', () => {
@@ -159,5 +172,22 @@ describe('previewHost', () => {
     const text = previewHost(req({ description: 'Web box' }), root);
     expect(text).toBe(['# Web box', 'Host web', '  HostName web.example.com', '  User deploy', '  Port 2222'].join('\n'));
     expect(existsSync(`${root}.muxus.tmp`)).toBe(false);
+  });
+
+  it('renders CertificateFile and ProxyCommand from modeled options', () => {
+    const root = seed('');
+    const text = previewHost(
+      req({
+        options: {
+          identityFiles: ['~/.ssh/app'],
+          certificateFiles: ['~/.ssh/app-cert.pub'],
+          proxyCommand: 'cloudflared access ssh --hostname %h',
+        },
+      }),
+      root,
+    );
+    expect(text).toContain('  IdentityFile ~/.ssh/app');
+    expect(text).toContain('  CertificateFile ~/.ssh/app-cert.pub');
+    expect(text).toContain('  ProxyCommand cloudflared access ssh --hostname %h');
   });
 });

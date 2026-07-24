@@ -19,6 +19,7 @@ function sshHost(alias: string, group?: string): SshHostEntry {
       hostname: `${alias}.example.test`,
       port: 22,
       identityFiles: [],
+      certificateFiles: [],
       identitiesOnly: false,
       forwardAgent: false,
       proxyJump: [],

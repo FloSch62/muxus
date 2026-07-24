@@ -14,6 +14,7 @@ const host = (
     hostname: `${alias}.example.com`,
     port: 22,
     identityFiles: [],
+    certificateFiles: [],
     identitiesOnly: false,
     forwardAgent: false,
     proxyJump: [],

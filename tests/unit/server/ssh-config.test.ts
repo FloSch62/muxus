@@ -62,6 +62,7 @@ describe('listHosts', () => {
         'Host app',
         '  ProxyJump bastion,ops@edge:2200',
         '  IdentityFile ~/.ssh/app_key',
+        '  CertificateFile ~/.ssh/app_key-cert.pub',
         '  IdentitiesOnly yes',
         '  ForwardAgent yes',
         '  LocalForward 8080 localhost:80',
@@ -73,6 +74,7 @@ describe('listHosts', () => {
     const app = hosts[0]!;
     expect(app.options.proxyJump).toEqual(['bastion', 'ops@edge:2200']);
     expect(app.options.identityFiles).toEqual(['~/.ssh/app_key']);
+    expect(app.options.certificateFiles).toEqual(['~/.ssh/app_key-cert.pub']);
     expect(app.options.identitiesOnly).toBe(true);
     expect(app.options.forwardAgent).toBe(true);
     expect(app.options.forwards).toEqual([
@@ -82,6 +84,19 @@ describe('listHosts', () => {
       { type: 'dynamic', bindPort: 1080 },
     ]);
     expect(app.resolved.identityFiles).toEqual([path.join(os.homedir(), '.ssh', 'app_key')]);
+    expect(app.resolved.certificateFiles).toEqual([
+      path.join(os.homedir(), '.ssh', 'app_key-cert.pub'),
+    ]);
+  });
+
+  it('models ProxyCommand as a first-class block option', () => {
+    const hosts = hostsOf(
+      ['Host cloud', '  ProxyCommand cloudflared access ssh --hostname %h'].join('\n'),
+    );
+    expect(hosts[0]!.options.proxyCommand).toBe(
+      'cloudflared access ssh --hostname %h',
+    );
+    expect(hosts[0]!.options.extras).toBeUndefined();
   });
 
   it('maps PubkeyAuthentication no to passwordOnly', () => {
@@ -110,6 +125,47 @@ describe('resolveHost', () => {
   it('accumulates IdentityFile across blocks and dedupes', () => {
     const doc = loadConfigDocument(write(['Host web', '  IdentityFile /a', '', 'Host *', '  IdentityFile /b', '  IdentityFile /a'].join('\n')));
     expect(resolveHost(doc, 'web').identityFiles).toEqual(['/a', '/b']);
+  });
+
+  it('accumulates CertificateFile and resolves ProxyCommand', () => {
+    const doc = loadConfigDocument(
+      write(
+        [
+          'Host web',
+          '  CertificateFile ~/.ssh/web-cert.pub',
+          '  ProxyCommand connect-proxy %h %p',
+          '',
+          'Host *',
+          '  CertificateFile /shared-cert.pub',
+          '  CertificateFile ~/.ssh/web-cert.pub',
+          '  ProxyJump ignored-because-proxy-command-won',
+        ].join('\n'),
+      ),
+    );
+    const resolved = resolveHost(doc, 'web');
+    expect(resolved.certificateFiles).toEqual([
+      path.join(os.homedir(), '.ssh', 'web-cert.pub'),
+      '/shared-cert.pub',
+    ]);
+    expect(resolved.proxyCommand).toBe('connect-proxy %h %p');
+    expect(resolved.proxyJump).toEqual([]);
+  });
+
+  it('lets ProxyJump win when it is obtained before ProxyCommand', () => {
+    const doc = loadConfigDocument(
+      write(
+        [
+          'Host web',
+          '  ProxyJump bastion',
+          '',
+          'Host *',
+          '  ProxyCommand ignored %h %p',
+        ].join('\n'),
+      ),
+    );
+    const resolved = resolveHost(doc, 'web');
+    expect(resolved.proxyJump).toEqual(['bastion']);
+    expect(resolved.proxyCommand).toBeUndefined();
   });
 
   it('expands %h in HostName and defaults hostname to the alias', () => {
