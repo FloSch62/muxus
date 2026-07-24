@@ -6,7 +6,13 @@ import {
   type StatementSync,
 } from 'node:sqlite';
 import { nanoid } from 'nanoid';
-import type { ForwardType, TunnelInput, TunnelRecord } from '@muxus/shared';
+import type {
+  ForwardType,
+  HostKeywordHighlightConfig,
+  OpenSshMetadataPatch,
+  TunnelInput,
+  TunnelRecord,
+} from '@muxus/shared';
 
 const MIGRATIONS = [
   {
@@ -119,6 +125,15 @@ const MIGRATIONS = [
         ADD COLUMN ssh_options_json TEXT CHECK(ssh_options_json IS NULL OR json_valid(ssh_options_json));
     `,
   },
+  {
+    version: 5,
+    name: 'host-keyword-highlights',
+    sql: `
+      ALTER TABLE connection_profiles
+        ADD COLUMN keyword_highlights_json TEXT
+        CHECK(keyword_highlights_json IS NULL OR json_valid(keyword_highlights_json));
+    `,
+  },
 ] as const;
 
 export interface OpenSshMetadata {
@@ -129,6 +144,7 @@ export interface OpenSshMetadata {
   group?: string;
   color?: string;
   icon?: string;
+  keywordHighlights?: HostKeywordHighlightConfig;
   lastConnectedAt?: string;
   connectCount: number;
 }
@@ -229,6 +245,7 @@ export class MuxusDatabase {
         profiles.sort_order,
         profiles.color,
         profiles.icon,
+        profiles.keyword_highlights_json,
         profiles.last_connected_at,
         profiles.connect_count,
         groups.name AS group_name
@@ -261,13 +278,7 @@ export class MuxusDatabase {
 
   updateOpenSshMetadata(
     alias: string,
-    patch: {
-      favorite?: boolean;
-      displayName?: string | null;
-      group?: string | null;
-      color?: string | null;
-      icon?: string | null;
-    },
+    patch: OpenSshMetadataPatch,
   ): OpenSshMetadata {
     requireNonEmpty(alias, 'alias');
     const current = this.ensureOpenSshProfile(alias);
@@ -278,7 +289,13 @@ export class MuxusDatabase {
     this.db
       .prepare(`
         UPDATE connection_profiles
-        SET name = ?, group_id = ?, favorite = ?, color = ?, icon = ?, updated_at = CURRENT_TIMESTAMP
+        SET name = ?,
+            group_id = ?,
+            favorite = ?,
+            color = ?,
+            icon = ?,
+            keyword_highlights_json = ?,
+            updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `)
       .run(
@@ -287,6 +304,11 @@ export class MuxusDatabase {
         patch.favorite === undefined ? Number(current.favorite) : patch.favorite ? 1 : 0,
         patch.color === undefined ? nullableString(current.color) : patch.color,
         patch.icon === undefined ? nullableString(current.icon) : patch.icon,
+        patch.keywordHighlights === undefined
+          ? nullableString(current.keyword_highlights_json)
+          : patch.keywordHighlights === null
+            ? null
+            : JSON.stringify(patch.keywordHighlights),
         String(current.id),
       );
     return metadataFromRow(this.metadataByAlias.get(alias)!);
@@ -667,9 +689,21 @@ function metadataFromRow(row: SqlRow): OpenSshMetadata {
     group: optionalString(row.group_name),
     color: optionalString(row.color),
     icon: optionalString(row.icon),
+    keywordHighlights: keywordHighlightsFromJson(row.keyword_highlights_json),
     lastConnectedAt: optionalString(row.last_connected_at),
     connectCount: Number(row.connect_count),
   };
+}
+
+function keywordHighlightsFromJson(value: unknown): HostKeywordHighlightConfig | undefined {
+  if (typeof value !== 'string') return undefined;
+  try {
+    const parsed = JSON.parse(value) as Partial<HostKeywordHighlightConfig>;
+    if (typeof parsed.inheritGlobal !== 'boolean' || !Array.isArray(parsed.rules)) return undefined;
+    return parsed as HostKeywordHighlightConfig;
+  } catch {
+    return undefined;
+  }
 }
 
 function optionalString(value: unknown): string | undefined {

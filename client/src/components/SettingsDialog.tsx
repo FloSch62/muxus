@@ -22,6 +22,7 @@ import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import HighlightOutlinedIcon from '@mui/icons-material/HighlightOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
@@ -29,12 +30,14 @@ import { useAppInfo } from '../api/queries.js';
 import { usePrefsStore, type RightClickAction, type ThemeMode } from '../state/prefs.js';
 import { useUiStore } from '../state/ui.js';
 import { TERMINAL_SCHEMES, terminalScheme, type TerminalScheme } from '../terminal/palette.js';
+import { KeywordHighlightRulesEditor } from './KeywordHighlightRulesEditor.js';
 
-type Section = 'appearance' | 'terminal' | 'behavior' | 'about';
+type Section = 'appearance' | 'terminal' | 'highlighting' | 'behavior' | 'about';
 
 const SECTIONS: Array<{ id: Section; label: string; icon: React.ReactNode }> = [
   { id: 'appearance', label: 'Appearance', icon: <PaletteOutlinedIcon fontSize="small" /> },
   { id: 'terminal', label: 'Terminal', icon: <TerminalIcon fontSize="small" /> },
+  { id: 'highlighting', label: 'Highlighting', icon: <HighlightOutlinedIcon fontSize="small" /> },
   { id: 'behavior', label: 'Behavior', icon: <TuneOutlinedIcon fontSize="small" /> },
   { id: 'about', label: 'About', icon: <InfoOutlinedIcon fontSize="small" /> },
 ];
@@ -83,6 +86,7 @@ export function SettingsDialog() {
           <Box sx={{ flex: 1, overflowY: 'auto', p: 3, pt: 2.5 }}>
             {section === 'appearance' && <AppearanceSection />}
             {section === 'terminal' && <TerminalSection />}
+            {section === 'highlighting' && <HighlightingSection />}
             {section === 'behavior' && <BehaviorSection />}
             {section === 'about' && <AboutSection />}
           </Box>
@@ -362,6 +366,26 @@ function BehaviorSection() {
               </Typography>
             </Box>
           }
+        />
+      </Box>
+    </Stack>
+  );
+}
+
+function HighlightingSection() {
+  const rules = usePrefsStore((state) => state.keywordHighlights);
+  const setPrefs = usePrefsStore((state) => state.set);
+  return (
+    <Stack spacing={1.5}>
+      <Box>
+        <SectionTitle>Global keyword highlighting</SectionTitle>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          These literal keywords are highlighted in every terminal. A host can include these rules
+          and add its own, or replace them entirely.
+        </Typography>
+        <KeywordHighlightRulesEditor
+          rules={rules}
+          onChange={(keywordHighlights) => setPrefs({ keywordHighlights })}
         />
       </Box>
     </Stack>

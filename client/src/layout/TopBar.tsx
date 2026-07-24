@@ -13,6 +13,7 @@ import Toolbar from '@mui/material/Toolbar';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import BrightnessAutoOutlinedIcon from '@mui/icons-material/BrightnessAutoOutlined';
+import BoltOutlinedIcon from '@mui/icons-material/BoltOutlined';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
@@ -41,6 +42,7 @@ import { useUiStore } from '../state/ui.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
 import { MultiExecControl } from '../components/MultiExecControl.js';
 import {
+  loadCommandButtonsDialog,
   loadForwardingPanel,
   loadSettingsDialog,
   loadShortcutsDialog,
@@ -53,6 +55,7 @@ export const TopBar = memo(function TopBar() {
   const sidebarCollapsed = usePrefsStore((s) => s.sidebarCollapsed);
   const setPrefs = usePrefsStore((s) => s.set);
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
+  const setCommandButtonsOpen = useUiStore((s) => s.setCommandButtonsOpen);
   const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
   const forwardingOpen = useUiStore((s) => s.forwardingOpen);
   const setForwardingOpen = useUiStore((s) => s.setForwardingOpen);
@@ -106,6 +109,17 @@ export const TopBar = memo(function TopBar() {
         </Stack>
         <Box sx={{ flex: 1 }} />
         <MultiExecControl />
+        <Tooltip title="Saved command buttons">
+          <IconButton
+            size="small"
+            aria-label="Manage saved command buttons"
+            onMouseEnter={() => void loadCommandButtonsDialog()}
+            onFocus={() => void loadCommandButtonsDialog()}
+            onClick={() => setCommandButtonsOpen(true)}
+          >
+            <BoltOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
         {sshReady && (
           <Tooltip title={activeTab.sftpOpen ? 'Hide file browser' : 'Browse files (SFTP)'}>
             <IconButton

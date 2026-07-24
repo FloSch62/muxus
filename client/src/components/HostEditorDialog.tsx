@@ -12,10 +12,16 @@ import Typography from '@mui/material/Typography';
 import AltRouteIcon from '@mui/icons-material/AltRoute';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
+import HighlightOutlinedIcon from '@mui/icons-material/HighlightOutlined';
 import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import { useSshConfig, useSshKeys } from '../api/queries.js';
-import { fetchHostPreview, useDeleteHost, useUpsertHost } from '../api/ssh-config.js';
+import {
+  fetchHostPreview,
+  useDeleteHost,
+  useUpdateSshMetadata,
+  useUpsertHost,
+} from '../api/ssh-config.js';
 import { connectTarget } from '../session-actions.js';
 import { useUiStore } from '../state/ui.js';
 import { AdvancedSection } from './host-editor/AdvancedSection.js';
@@ -23,9 +29,10 @@ import { AuthSection } from './host-editor/AuthSection.js';
 import { blankDraft, draftFromEntry, draftProblem, draftToRequest, type HostDraft } from './host-editor/draft.js';
 import { ForwardsSection } from './host-editor/ForwardsSection.js';
 import { GeneralSection } from './host-editor/GeneralSection.js';
+import { HighlightingSection } from './host-editor/HighlightingSection.js';
 import { RouteSection } from './host-editor/RouteSection.js';
 
-type Section = 'general' | 'auth' | 'route' | 'forwards' | 'advanced';
+type Section = 'general' | 'auth' | 'route' | 'forwards' | 'highlighting' | 'advanced';
 
 /**
  * The Host block editor — Muxus's session editor. Everything here reads and
@@ -58,9 +65,20 @@ export function HostEditorDialog() {
   }, [state]);
 
   const close = () => setState(false);
-  const upsert = useUpsertHost((req) => {
+  const updateMetadata = useUpdateSshMetadata(() => {
     close();
-    if (connectAfter.current) connectTarget(req.aliases[0] ?? '');
+    const alias = draft.aliasText.trim().split(/\s+/)[0];
+    if (connectAfter.current && alias) connectTarget(alias);
+  });
+  const upsert = useUpsertHost((req) => {
+    const config = draft.keywordHighlights;
+    updateMetadata.mutate({
+      alias: req.aliases[0] ?? '',
+      patch: {
+        keywordHighlights:
+          config.inheritGlobal && config.rules.length === 0 ? null : config,
+      },
+    });
   });
   const deleteHost = useDeleteHost(close);
 
@@ -117,6 +135,7 @@ export function HostEditorDialog() {
             <Tab value="auth" icon={<KeyOutlinedIcon fontSize="small" />} iconPosition="start" label="Authentication" />
             <Tab value="route" icon={<AltRouteIcon fontSize="small" />} iconPosition="start" label={tabLabel('Jump hosts', draft.proxyJump.length)} />
             <Tab value="forwards" icon={<SwapHorizOutlinedIcon fontSize="small" />} iconPosition="start" label={tabLabel('Port forwarding', draft.forwards.length)} />
+            <Tab value="highlighting" icon={<HighlightOutlinedIcon fontSize="small" />} iconPosition="start" label={tabLabel('Highlighting', draft.keywordHighlights.rules.length)} />
             <Tab value="advanced" icon={<CodeOutlinedIcon fontSize="small" />} iconPosition="start" label={tabLabel('Advanced', draft.extras.length)} />
           </Tabs>
           <Box sx={{ flex: 1, minWidth: 0, overflowY: 'auto', pt: 0.5, pr: 0.5, pb: 1 }}>
@@ -124,6 +143,7 @@ export function HostEditorDialog() {
             {section === 'auth' && <AuthSection draft={draft} set={set} keys={keys} />}
             {section === 'route' && <RouteSection draft={draft} set={set} config={config} />}
             {section === 'forwards' && <ForwardsSection draft={draft} set={set} />}
+            {section === 'highlighting' && <HighlightingSection draft={draft} set={set} />}
             {section === 'advanced' && <AdvancedSection draft={draft} set={set} preview={preview} previewError={previewError} />}
           </Box>
         </Stack>
@@ -150,10 +170,10 @@ export function HostEditorDialog() {
         )}
         <Box sx={{ flex: 1 }} />
         <Button onClick={close}>Cancel</Button>
-        <Button disabled={!!problem || upsert.isPending} onClick={() => save(false)}>
+        <Button disabled={!!problem || upsert.isPending || updateMetadata.isPending} onClick={() => save(false)}>
           Save
         </Button>
-        <Button variant="contained" disabled={!!problem || upsert.isPending} onClick={() => save(true)}>
+        <Button variant="contained" disabled={!!problem || upsert.isPending || updateMetadata.isPending} onClick={() => save(true)}>
           Save & connect
         </Button>
       </DialogActions>

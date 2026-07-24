@@ -16,6 +16,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 2, name: 'tunnels' },
       { version: 3, name: 'host-sort-order' },
       { version: 4, name: 'tunnel-ssh-options' },
+      { version: 5, name: 'host-keyword-highlights' },
     ]);
   });
 });
@@ -86,6 +87,19 @@ describe('hybrid OpenSSH metadata', () => {
       displayName: 'Production',
       group: 'Work',
       color: '#3b82f6',
+      keywordHighlights: {
+        inheritGlobal: true,
+        rules: [
+          {
+            id: 'host-error',
+            keyword: 'ERROR',
+            foreground: '#ffffff',
+            background: '#b91c1c',
+            caseSensitive: false,
+            wholeWord: true,
+          },
+        ],
+      },
     });
     const connected = database.recordOpenSshConnection('production');
 
@@ -95,6 +109,10 @@ describe('hybrid OpenSSH metadata', () => {
       displayName: 'Production',
       group: 'Work',
       color: '#3b82f6',
+      keywordHighlights: {
+        inheritGlobal: true,
+        rules: [expect.objectContaining({ keyword: 'ERROR' })],
+      },
       connectCount: 1,
     });
     expect(database.openSshMetadata(['production']).get('production')).toEqual(connected);

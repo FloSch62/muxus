@@ -1,4 +1,9 @@
-import type { ConfigForward, HostUpsertRequest, SshHostEntry } from '@muxus/shared';
+import type {
+  ConfigForward,
+  HostKeywordHighlightConfig,
+  HostUpsertRequest,
+  SshHostEntry,
+} from '@muxus/shared';
 
 /** Everything the editor form holds, in form-friendly shapes (ports as text). */
 export interface HostDraft {
@@ -17,6 +22,7 @@ export interface HostDraft {
   proxyJump: string[];
   forwards: ConfigForward[];
   extras: Array<{ keyword: string; value: string }>;
+  keywordHighlights: HostKeywordHighlightConfig;
 }
 
 export function blankDraft(prefillTarget = ''): HostDraft {
@@ -34,6 +40,7 @@ export function blankDraft(prefillTarget = ''): HostDraft {
     proxyJump: [],
     forwards: [],
     extras: [],
+    keywordHighlights: { inheritGlobal: true, rules: [] },
   };
 }
 
@@ -54,6 +61,10 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
     proxyJump: o.proxyJump ?? [],
     forwards: o.forwards ?? [],
     extras: o.extras ?? [],
+    keywordHighlights: entry.metadata?.keywordHighlights ?? {
+      inheritGlobal: true,
+      rules: [],
+    },
   };
 }
 
@@ -77,6 +88,9 @@ export function draftProblem(draft: HostDraft): string | null {
   }
   for (const e of draft.extras) {
     if (!/^[A-Za-z][A-Za-z0-9]*$/.test(e.keyword)) return `"${e.keyword}" is not a valid option keyword.`;
+  }
+  if (draft.keywordHighlights.rules.some((rule) => !rule.keyword.trim())) {
+    return 'Every highlighting rule needs a keyword.';
   }
   return null;
 }

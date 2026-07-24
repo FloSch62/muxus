@@ -19,6 +19,7 @@ export interface ConfirmCloseRequest {
 
 interface UiState {
   settingsOpen: boolean;
+  commandButtonsOpen: boolean;
   shortcutsOpen: boolean;
   hostEditor: HostEditorState;
   /** Host whose Muxus-only display metadata is being organized. */
@@ -28,6 +29,7 @@ interface UiState {
   /** Tabs, and optionally their pane, awaiting a live-session close confirmation. */
   confirmClose: ConfirmCloseRequest | null;
   setSettingsOpen: (open: boolean) => void;
+  setCommandButtonsOpen: (open: boolean) => void;
   setShortcutsOpen: (open: boolean) => void;
   setHostEditor: (value: HostEditorState) => void;
   setHostOrganizer: (value: SshHostEntry | false) => void;
@@ -37,12 +39,14 @@ interface UiState {
 
 export const useUiStore = create<UiState>()((set) => ({
   settingsOpen: false,
+  commandButtonsOpen: false,
   shortcutsOpen: false,
   hostEditor: false,
   hostOrganizer: false,
   forwardingOpen: false,
   confirmClose: null,
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  setCommandButtonsOpen: (commandButtonsOpen) => set({ commandButtonsOpen }),
   setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
   setHostEditor: (hostEditor) => set({ hostEditor }),
   setHostOrganizer: (hostOrganizer) => set({ hostOrganizer }),

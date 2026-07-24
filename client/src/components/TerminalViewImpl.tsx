@@ -35,6 +35,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import type { TerminalServerMessage } from '@muxus/shared';
 import { wsProtocols, wsUrl } from '../api/http.js';
+import { useSshConfig } from '../api/queries.js';
 import { copyToClipboard, readFromClipboard } from '../clipboard.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { showToast } from '../state/toast.js';
@@ -46,6 +47,11 @@ import {
   terminalScheme,
 } from '../terminal/palette.js';
 import { attachCommandTracker } from '../terminal/shell-integration.js';
+import {
+  attachKeywordHighlighter,
+  resolveKeywordHighlights,
+  type KeywordHighlighter,
+} from '../terminal/keyword-highlighting.js';
 import { registerTerminal } from '../terminal/terminal-registry.js';
 import { requiresPasteConfirmation } from '../terminal/paste-safety.js';
 import { AuthPromptDialog, type AuthPromptRequest } from './AuthPromptDialog.js';
@@ -83,6 +89,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const searchRef = useRef<SearchAddon | null>(null);
   const serializeRef = useRef<SerializeAddon | null>(null);
   const imageRef = useRef<ImageAddon | null>(null);
+  const keywordHighlighterRef = useRef<KeywordHighlighter | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const lastSearchRequestRef = useRef(tab.searchRequest);
   /** Per-tab zoom offset added to the preference font size. */
@@ -111,7 +118,19 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const cursorStyle = usePrefsStore((s) => s.cursorStyle);
   const scrollback = usePrefsStore((s) => s.scrollback);
   const schemeId = usePrefsStore((s) => s.terminalScheme);
+  const globalKeywordHighlights = usePrefsStore((s) => s.keywordHighlights);
   const scheme = terminalScheme(schemeId);
+  const { data: sshConfig } = useSshConfig(tab.profile.kind === 'ssh' && tab.profile.useConfig !== false);
+  const hostKeywordHighlights = useMemo(() => {
+    if (tab.profile.kind !== 'ssh' || tab.profile.useConfig === false) return undefined;
+    const target = tab.profile.target;
+    return sshConfig?.hosts.find((host) => host.aliases.includes(target))?.metadata
+      ?.keywordHighlights;
+  }, [sshConfig, tab.profile]);
+  const keywordHighlights = useMemo(
+    () => resolveKeywordHighlights(globalKeywordHighlights, hostKeywordHighlights),
+    [globalKeywordHighlights, hostKeywordHighlights],
+  );
 
   const searchOptions = useMemo<ISearchOptions>(
     () => ({
@@ -237,6 +256,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     const onSearchResults = search.onDidChangeResults(setSearchResult);
     term.open(el);
     fit.fit();
+    keywordHighlighterRef.current = attachKeywordHighlighter(term, keywordHighlights);
     // Webfonts load lazily. Force the bundled Nerd Font face to load, then
     // repaint any prompt glyphs that arrived while the browser still had a
     // placeholder face. The text font remains user-selectable; this face is
@@ -413,6 +433,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       onSelection.dispose();
       onSearchResults.dispose();
       commandTracker.dispose();
+      keywordHighlighterRef.current?.dispose();
       ws.onopen = null;
       ws.onmessage = null;
       ws.onclose = null;
@@ -422,6 +443,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       searchRef.current = null;
       serializeRef.current = null;
       imageRef.current = null;
+      keywordHighlighterRef.current = null;
       termRef.current = null;
       wsRef.current = null;
     };
@@ -441,6 +463,10 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     term.options.theme = scheme.theme;
     fitRef.current?.fit();
   }, [monoFontSize, fontFamily, lineHeight, cursorBlink, cursorStyle, scrollback, scheme, generation]);
+
+  useEffect(() => {
+    keywordHighlighterRef.current?.setRules(keywordHighlights);
+  }, [keywordHighlights, generation]);
 
   useEffect(() => {
     if (!searchOpen) return;

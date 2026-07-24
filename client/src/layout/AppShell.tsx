@@ -27,6 +27,7 @@ import {
 import { useUiStore } from '../state/ui.js';
 import { useWorkspacePersistence } from '../workspace-persistence.js';
 import { ErrorBoundary } from '../components/ErrorBoundary.js';
+import { ActionBar } from '../components/ActionBar.js';
 import { EmptyPane } from '../components/EmptyPane.js';
 import { SessionSidebar } from '../components/SessionSidebar.js';
 import { TabStrip } from '../components/TabStrip.js';
@@ -62,6 +63,7 @@ export function AppShell({ persistWorkspace = true }: { persistWorkspace?: boole
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <TopBar />
+      <ActionBar />
       <Box sx={{ flex: 1, display: 'flex', minHeight: 0 }}>
         {!sidebarCollapsed && <SessionSidebar />}
         <Box sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>

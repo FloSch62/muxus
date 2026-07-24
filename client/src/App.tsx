@@ -13,6 +13,7 @@ import { BackendStatusBanner } from './components/BackendStatusBanner.js';
 import {
   loadHostEditorDialog,
   loadHostOrganizationDialog,
+  loadCommandButtonsDialog,
   loadSettingsDialog,
   loadShortcutsDialog,
 } from './lazy-features.js';
@@ -26,6 +27,9 @@ const HostOrganizationDialog = lazy(() =>
 const SettingsDialog = lazy(() =>
   loadSettingsDialog().then((module) => ({ default: module.SettingsDialog })),
 );
+const CommandButtonsDialog = lazy(() =>
+  loadCommandButtonsDialog().then((module) => ({ default: module.CommandButtonsDialog })),
+);
 const ShortcutsDialog = lazy(() =>
   loadShortcutsDialog().then((module) => ({ default: module.ShortcutsDialog })),
 );
@@ -38,6 +42,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const hostEditorOpen = useUiStore((s) => !!s.hostEditor);
   const hostOrganizerOpen = useUiStore((s) => !!s.hostOrganizer);
   const settingsOpen = useUiStore((s) => s.settingsOpen);
+  const commandButtonsOpen = useUiStore((s) => s.commandButtonsOpen);
   const shortcutsOpen = useUiStore((s) => s.shortcutsOpen);
   const [osTheme, setOsTheme] = useState<'light' | 'dark'>(() =>
     window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
@@ -70,6 +75,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
         {hostEditorOpen ? <HostEditorDialog /> : null}
         {hostOrganizerOpen ? <HostOrganizationDialog /> : null}
         {settingsOpen ? <SettingsDialog /> : null}
+        {commandButtonsOpen ? <CommandButtonsDialog /> : null}
         {shortcutsOpen ? <ShortcutsDialog /> : null}
       </Suspense>
       <ToastHost />

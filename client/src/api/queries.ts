@@ -18,10 +18,11 @@ export function useAppInfo() {
   });
 }
 
-export function useSshConfig() {
+export function useSshConfig(enabled = true) {
   return useQuery({
     queryKey: ['ssh-config'],
     queryFn: () => apiFetch<SshConfigResponse>('/api/ssh/config'),
+    enabled,
     // OpenSSH config remains the live source for connection details; pick up
     // external edits quickly while the server overlays Muxus-owned metadata.
     staleTime: 5_000,

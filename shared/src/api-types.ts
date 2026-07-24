@@ -95,6 +95,24 @@ export interface SshHostEntry {
   metadata?: OpenSshProfileMetadata;
 }
 
+/** One literal terminal keyword and the colors used to render every match. */
+export interface KeywordHighlightRule {
+  /** Stable client-generated id used while editing and reordering rules. */
+  id: string;
+  keyword: string;
+  /** xterm decorations require an opaque #RRGGBB color. */
+  foreground: string;
+  background?: string;
+  caseSensitive: boolean;
+  wholeWord: boolean;
+}
+
+/** Host rules are additive by default, but can replace the global rule set. */
+export interface HostKeywordHighlightConfig {
+  inheritGlobal: boolean;
+  rules: KeywordHighlightRule[];
+}
+
 export interface OpenSshProfileMetadata {
   /** Stable local ID survives an OpenSSH alias rename. */
   profileId: string;
@@ -106,6 +124,8 @@ export interface OpenSshProfileMetadata {
   group?: string;
   color?: string;
   icon?: string;
+  /** Muxus-only terminal highlighting for this OpenSSH alias. */
+  keywordHighlights?: HostKeywordHighlightConfig;
   lastConnectedAt?: string;
   connectCount: number;
 }
@@ -116,6 +136,7 @@ export interface OpenSshMetadataPatch {
   group?: string | null;
   color?: string | null;
   icon?: string | null;
+  keywordHighlights?: HostKeywordHighlightConfig | null;
 }
 
 export interface WorkspaceConnectionRef {

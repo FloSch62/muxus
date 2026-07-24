@@ -3,9 +3,18 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { DEFAULT_SIDEBAR_WIDTH } from '../sidebar-width.js';
 import { DEFAULT_SFTP_PANEL_WIDTH } from '../sftp-panel-width.js';
 import { muxusStateStorage } from './persist-storage.js';
+import type { KeywordHighlightRule } from '@muxus/shared';
 
 export type ThemeMode = 'light' | 'dark' | 'os';
 export type RightClickAction = 'copy-paste' | 'paste' | 'menu';
+
+export interface CommandButton {
+  id: string;
+  label: string;
+  command: string;
+  /** Append an Enter keystroke after sending the saved command. */
+  sendEnter: boolean;
+}
 
 /** Bundled icon-only fallback covering Nerd Font and Powerline glyphs. */
 export const TERMINAL_SYMBOL_FONT = '"Pure Nerd Font"';
@@ -45,6 +54,10 @@ interface PrefsState {
   pasteWarnMultiline: boolean;
   /** Ask before closing a tab with a live session. */
   confirmCloseConnected: boolean;
+  /** One-click commands shown in the action bar. */
+  commandButtons: CommandButton[];
+  /** Rules applied to every terminal; hosts may add to or replace these. */
+  keywordHighlights: KeywordHighlightRule[];
   sidebarCollapsed: boolean;
   /** Width of the sessions and hosts sidebar. */
   sidebarWidth: number;
@@ -82,6 +95,8 @@ export const usePrefsStore = create<PrefsState>()(
       rightClickAction: 'copy-paste',
       pasteWarnMultiline: true,
       confirmCloseConnected: true,
+      commandButtons: [],
+      keywordHighlights: [],
       sidebarCollapsed: false,
       sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
       sftpPanelWidth: DEFAULT_SFTP_PANEL_WIDTH,
@@ -91,7 +106,7 @@ export const usePrefsStore = create<PrefsState>()(
     }),
     {
       name: 'muxus-prefs',
-      version: 3,
+      version: 4,
       migrate: migratePrefsState,
       storage: createJSONStorage(() => muxusStateStorage),
     },
