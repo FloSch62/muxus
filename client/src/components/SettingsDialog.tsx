@@ -26,6 +26,7 @@ import Typography from '@mui/material/Typography';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import HighlightOutlinedIcon from '@mui/icons-material/HighlightOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
+import BackupOutlinedIcon from '@mui/icons-material/BackupOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
@@ -50,8 +51,16 @@ import { useUiStore } from '../state/ui.js';
 import { TERMINAL_SCHEMES, terminalScheme, type TerminalScheme } from '../terminal/palette.js';
 import { KeywordHighlightRulesEditor } from './KeywordHighlightRulesEditor.js';
 import { SessionLoggingPolicyFields } from './SessionLoggingPolicyFields.js';
+import { DataTransferSection } from './DataTransferSection.js';
 
-type Section = 'appearance' | 'terminal' | 'logging' | 'highlighting' | 'behavior' | 'about';
+type Section =
+  | 'appearance'
+  | 'terminal'
+  | 'logging'
+  | 'highlighting'
+  | 'behavior'
+  | 'data'
+  | 'about';
 
 const SECTIONS: Array<{ id: Section; label: string; icon: React.ReactNode }> = [
   { id: 'appearance', label: 'Appearance', icon: <PaletteOutlinedIcon fontSize="small" /> },
@@ -59,6 +68,7 @@ const SECTIONS: Array<{ id: Section; label: string; icon: React.ReactNode }> = [
   { id: 'logging', label: 'Session logging', icon: <HistoryOutlinedIcon fontSize="small" /> },
   { id: 'highlighting', label: 'Highlighting', icon: <HighlightOutlinedIcon fontSize="small" /> },
   { id: 'behavior', label: 'Behavior', icon: <TuneOutlinedIcon fontSize="small" /> },
+  { id: 'data', label: 'Backup & data', icon: <BackupOutlinedIcon fontSize="small" /> },
   { id: 'about', label: 'About', icon: <InfoOutlinedIcon fontSize="small" /> },
 ];
 
@@ -90,8 +100,8 @@ export function SettingsDialog() {
 
   return (
     <Dialog open={open} onClose={() => setOpen(false)} maxWidth="md" fullWidth>
-      <Box sx={{ display: 'flex', height: 560, maxHeight: '80vh' }}>
-        <List sx={{ width: 180, flexShrink: 0, borderRight: 1, borderColor: 'divider', py: 1 }}>
+      <Box sx={{ display: 'flex', height: 620, maxHeight: '82vh' }}>
+        <List sx={{ width: 192, flexShrink: 0, borderRight: 1, borderColor: 'divider', py: 1 }}>
           <Typography variant="h6" sx={{ px: 2, py: 1, fontWeight: 700 }}>
             Settings
           </Typography>
@@ -109,11 +119,14 @@ export function SettingsDialog() {
             {section === 'logging' && <SessionLoggingSection />}
             {section === 'highlighting' && <HighlightingSection />}
             {section === 'behavior' && <BehaviorSection />}
+            {section === 'data' && <DataTransferSection />}
             {section === 'about' && <AboutSection />}
           </Box>
           <DialogActions sx={{ borderTop: 1, borderColor: 'divider' }}>
             <Typography variant="caption" color="text.secondary" sx={{ flex: 1, pl: 1 }}>
-              Terminal preferences apply immediately; logging policies apply to new sessions.
+              {section === 'data'
+                ? 'Backups never include passwords, private key files or session recordings.'
+                : 'Terminal preferences apply immediately; logging policies apply to new sessions.'}
             </Typography>
             <Button variant="contained" onClick={() => setOpen(false)}>
               Done

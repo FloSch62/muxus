@@ -30,7 +30,7 @@ export function terminalFontStack(family: string): string {
   return quoted === '"JetBrains Mono"' || quoted === 'monospace' ? MONO_FONT_FALLBACK : `${quoted}, ${MONO_FONT_FALLBACK}`;
 }
 
-interface PrefsState {
+export interface PrefsState {
   themeMode: ThemeMode;
   /** Base font size for the terminal. */
   monoFontSize: number;
