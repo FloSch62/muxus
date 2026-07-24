@@ -401,8 +401,8 @@ function AboutSection() {
         Muxus {info?.version ?? ''} · {String(info?.platform ?? '')}
       </Typography>
       <Typography variant="body2" color="text.secondary">
-        Free, open-source SSH client & terminal — kitty graphics, split-pane workspaces, SFTP and
-        terminal-independent port forwarding.
+        Free, open-source SSH, Telnet, and serial client — kitty graphics, split-pane workspaces,
+        SFTP and terminal-independent port forwarding.
       </Typography>
     </Stack>
   );

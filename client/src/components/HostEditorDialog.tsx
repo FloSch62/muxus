@@ -1,14 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import Dialog from '@mui/material/Dialog';
-import DialogActions from '@mui/material/DialogActions';
-import DialogContent from '@mui/material/DialogContent';
-import DialogTitle from '@mui/material/DialogTitle';
-import Stack from '@mui/material/Stack';
-import Tab from '@mui/material/Tab';
-import Tabs from '@mui/material/Tabs';
-import Typography from '@mui/material/Typography';
 import AltRouteIcon from '@mui/icons-material/AltRoute';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
@@ -23,16 +14,107 @@ import {
   useUpsertHost,
 } from '../api/ssh-config.js';
 import { connectTarget } from '../session-actions.js';
-import { useUiStore } from '../state/ui.js';
+import { useUiStore, type HostEditorState } from '../state/ui.js';
 import { AdvancedSection } from './host-editor/AdvancedSection.js';
 import { AuthSection } from './host-editor/AuthSection.js';
 import { blankDraft, draftFromEntry, draftProblem, draftToRequest, type HostDraft } from './host-editor/draft.js';
+import { EditorShell, type EditorSectionDef } from './host-editor/EditorShell.js';
 import { ForwardsSection } from './host-editor/ForwardsSection.js';
 import { GeneralSection } from './host-editor/GeneralSection.js';
 import { HighlightingSection } from './host-editor/HighlightingSection.js';
+import {
+  blankNativeDraft,
+  nativeDraftFromProfile,
+  type NativeHostDraft,
+} from './host-editor/native-draft.js';
 import { RouteSection } from './host-editor/RouteSection.js';
+import { NativeHostEditorContent } from './NativeHostEditorContent.js';
 
 type Section = 'general' | 'auth' | 'route' | 'forwards' | 'highlighting' | 'advanced';
+type OpenState = Exclude<HostEditorState, false>;
+type SshEditorState = Extract<OpenState, { mode: 'new' | 'duplicate' | 'edit' }>;
+
+export function HostEditorDialog() {
+  const state = useUiStore((s) => s.hostEditor);
+  const setState = useUiStore((s) => s.setHostEditor);
+  if (!state) return null;
+
+  return (
+    <Dialog open onClose={() => setState(false)} maxWidth="md" fullWidth>
+      <HostEditorBody state={state} />
+    </Dialog>
+  );
+}
+
+/**
+ * Owns the drafts for both editors so switching the connection type while
+ * creating a host swaps the form but never loses what was already typed.
+ */
+function HostEditorBody({ state }: { state: OpenState }) {
+  const [sshDraft, setSshDraft] = useState<HostDraft>(() => initialSshDraft(state));
+  const [nativeDraft, setNativeDraft] = useState<NativeHostDraft>(() => initialNativeDraft(state));
+  const lastIdentity = useRef(stateIdentity(state));
+
+  // Re-seed only when the edited entry itself changes — a connection-type
+  // switch keeps the same identity, so both drafts survive it.
+  useEffect(() => {
+    const identity = stateIdentity(state);
+    if (identity === lastIdentity.current) return;
+    lastIdentity.current = identity;
+    setSshDraft(initialSshDraft(state));
+    setNativeDraft(initialNativeDraft(state));
+  }, [state]);
+
+  const kind = editorKind(state);
+  if (kind === 'ssh') {
+    return (
+      <SshHostEditorContent
+        state={state as SshEditorState}
+        draft={sshDraft}
+        setDraft={setSshDraft}
+      />
+    );
+  }
+  return (
+    <NativeHostEditorContent
+      state={state}
+      kind={kind}
+      draft={nativeDraft}
+      setDraft={setNativeDraft}
+    />
+  );
+}
+
+function editorKind(state: OpenState): 'ssh' | 'telnet' | 'serial' {
+  if (state.mode === 'new') return state.kind ?? 'ssh';
+  if (state.mode === 'edit-profile' || state.mode === 'duplicate-profile') {
+    return state.entry.kind;
+  }
+  return 'ssh';
+}
+
+function stateIdentity(state: OpenState): string {
+  if (state.mode === 'new') return `new:${state.prefillTarget ?? ''}`;
+  if (state.mode === 'edit-profile' || state.mode === 'duplicate-profile') {
+    return `${state.mode}:${state.entry.id}`;
+  }
+  return `${state.mode}:${state.entry.file}:${state.entry.alias}`;
+}
+
+function initialSshDraft(state: OpenState): HostDraft {
+  if (state.mode === 'new') return blankDraft(state.prefillTarget);
+  if (state.mode === 'edit' || state.mode === 'duplicate') {
+    return draftFromEntry(state.entry, state.mode === 'duplicate');
+  }
+  return blankDraft();
+}
+
+function initialNativeDraft(state: OpenState): NativeHostDraft {
+  if (state.mode === 'edit-profile' || state.mode === 'duplicate-profile') {
+    return nativeDraftFromProfile(state.entry, state.mode === 'duplicate-profile');
+  }
+  return blankNativeDraft(state.mode === 'new' ? state.prefillTarget : undefined);
+}
 
 /**
  * The Host block editor — Muxus's session editor. Everything here reads and
@@ -40,29 +122,26 @@ type Section = 'general' | 'auth' | 'route' | 'forwards' | 'highlighting' | 'adv
  * agent awareness), the ProxyJump chain, port forwards with the live tunnel
  * diagram, and free-form options with an exact server-rendered preview.
  */
-export function HostEditorDialog() {
-  const state = useUiStore((s) => s.hostEditor);
+function SshHostEditorContent({
+  state,
+  draft,
+  setDraft,
+}: {
+  state: SshEditorState;
+  draft: HostDraft;
+  setDraft: Dispatch<SetStateAction<HostDraft>>;
+}) {
   const setState = useUiStore((s) => s.setHostEditor);
   const { data: config } = useSshConfig();
-  const { data: keys } = useSshKeys(!!state);
+  const { data: keys } = useSshKeys(true);
 
   const [section, setSection] = useState<Section>('general');
-  const [draft, setDraft] = useState<HostDraft>(blankDraft);
   const [preview, setPreview] = useState('');
   const [previewError, setPreviewError] = useState<string | null>(null);
-  const [armedDelete, setArmedDelete] = useState(false);
   const connectAfter = useRef(false);
 
-  const editing = state && state.mode === 'edit' ? state.entry : undefined;
+  const editing = state.mode === 'edit' ? state.entry : undefined;
   const previousAlias = editing?.alias;
-
-  useEffect(() => {
-    if (!state) return;
-    setSection('general');
-    setArmedDelete(false);
-    if (state.mode === 'new') setDraft(blankDraft(state.prefillTarget));
-    else setDraft(draftFromEntry(state.entry, state.mode === 'duplicate'));
-  }, [state]);
 
   const close = () => setState(false);
   const updateMetadata = useUpdateSshMetadata(() => {
@@ -82,11 +161,11 @@ export function HostEditorDialog() {
   });
   const deleteHost = useDeleteHost(close);
 
-  const problem = state ? draftProblem(draft) : null;
+  const problem = draftProblem(draft);
 
   // Live preview of the exact block text, rendered by the server (debounced).
   useEffect(() => {
-    if (!state || problem) return;
+    if (problem) return;
     const timer = setTimeout(() => {
       fetchHostPreview(draftToRequest(draft, previousAlias))
         .then((text) => {
@@ -96,9 +175,7 @@ export function HostEditorDialog() {
         .catch((err: unknown) => setPreviewError(err instanceof Error ? err.message : String(err)));
     }, 350);
     return () => clearTimeout(timer);
-  }, [state, draft, problem, previousAlias]);
-
-  if (!state) return null;
+  }, [draft, problem, previousAlias]);
 
   const set = (patch: Partial<HostDraft>) => setDraft((d) => ({ ...d, ...patch }));
   const save = (connect: boolean) => {
@@ -107,77 +184,48 @@ export function HostEditorDialog() {
   };
 
   const title = state.mode === 'edit' ? `Edit ${state.entry.alias}` : state.mode === 'duplicate' ? `Duplicate ${state.entry.alias}` : 'Add host';
-  const tabLabel = (label: string, count: number) => (count > 0 ? `${label} (${count})` : label);
+
+  const sections: EditorSectionDef<Section>[] = [
+    { value: 'general', label: 'General', icon: <DnsOutlinedIcon fontSize="small" /> },
+    { value: 'auth', label: 'Authentication', icon: <KeyOutlinedIcon fontSize="small" /> },
+    { value: 'route', label: 'Jump hosts', icon: <AltRouteIcon fontSize="small" />, count: draft.proxyJump.length },
+    { value: 'forwards', label: 'Port forwarding', icon: <SwapHorizOutlinedIcon fontSize="small" />, count: draft.forwards.length },
+    { value: 'highlighting', label: 'Highlighting', icon: <HighlightOutlinedIcon fontSize="small" />, count: draft.keywordHighlights.rules.length },
+    { value: 'advanced', label: 'Advanced', icon: <CodeOutlinedIcon fontSize="small" />, count: draft.extras.length },
+  ];
 
   return (
-    <Dialog open onClose={close} maxWidth="md" fullWidth>
-      <DialogTitle sx={{ pb: 1 }}>
-        {title}
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-          Saved to {shorten(draft.file || config?.path || '~/.ssh/config')}
-        </Typography>
-      </DialogTitle>
-      <DialogContent sx={{ pb: 0.5 }}>
-        <Stack direction="row" spacing={2.5} sx={{ minHeight: 440 }}>
-          <Tabs
-            orientation="vertical"
-            value={section}
-            onChange={(_e, v: Section) => setSection(v)}
-            sx={{
-              borderRight: 1,
-              borderColor: 'divider',
-              minWidth: 178,
-              flexShrink: 0,
-              '& .MuiTab-root': { minHeight: 42, justifyContent: 'flex-start', textAlign: 'left', textTransform: 'none', fontSize: 13, gap: 1, pl: 0.5 },
-            }}
-          >
-            <Tab value="general" icon={<DnsOutlinedIcon fontSize="small" />} iconPosition="start" label="General" />
-            <Tab value="auth" icon={<KeyOutlinedIcon fontSize="small" />} iconPosition="start" label="Authentication" />
-            <Tab value="route" icon={<AltRouteIcon fontSize="small" />} iconPosition="start" label={tabLabel('Jump hosts', draft.proxyJump.length)} />
-            <Tab value="forwards" icon={<SwapHorizOutlinedIcon fontSize="small" />} iconPosition="start" label={tabLabel('Port forwarding', draft.forwards.length)} />
-            <Tab value="highlighting" icon={<HighlightOutlinedIcon fontSize="small" />} iconPosition="start" label={tabLabel('Highlighting', draft.keywordHighlights.rules.length)} />
-            <Tab value="advanced" icon={<CodeOutlinedIcon fontSize="small" />} iconPosition="start" label={tabLabel('Advanced', draft.extras.length)} />
-          </Tabs>
-          <Box sx={{ flex: 1, minWidth: 0, overflowY: 'auto', pt: 0.5, pr: 0.5, pb: 1 }}>
-            {section === 'general' && <GeneralSection draft={draft} set={set} config={config} />}
-            {section === 'auth' && <AuthSection draft={draft} set={set} keys={keys} />}
-            {section === 'route' && <RouteSection draft={draft} set={set} config={config} />}
-            {section === 'forwards' && <ForwardsSection draft={draft} set={set} />}
-            {section === 'highlighting' && <HighlightingSection draft={draft} set={set} />}
-            {section === 'advanced' && <AdvancedSection draft={draft} set={set} preview={preview} previewError={previewError} />}
-          </Box>
-        </Stack>
-      </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2 }}>
-        {state.mode === 'edit' && (
-          <Button
-            color="error"
-            variant={armedDelete ? 'contained' : 'text'}
-            disabled={deleteHost.isPending}
-            onClick={() => {
-              if (armedDelete) deleteHost.mutate(state.entry.alias);
-              else setArmedDelete(true);
-            }}
-            onBlur={() => setArmedDelete(false)}
-          >
-            {armedDelete ? 'Really delete' : 'Delete'}
-          </Button>
-        )}
-        {problem && (
-          <Typography variant="caption" color="warning.main" sx={{ ml: 1, mr: 'auto' }}>
-            {problem}
-          </Typography>
-        )}
-        <Box sx={{ flex: 1 }} />
-        <Button onClick={close}>Cancel</Button>
-        <Button disabled={!!problem || upsert.isPending || updateMetadata.isPending} onClick={() => save(false)}>
-          Save
-        </Button>
-        <Button variant="contained" disabled={!!problem || upsert.isPending || updateMetadata.isPending} onClick={() => save(true)}>
-          Save & connect
-        </Button>
-      </DialogActions>
-    </Dialog>
+    <EditorShell
+      title={title}
+      storage={`Saved to ${shorten(draft.file || config?.path || '~/.ssh/config')}`}
+      typeKind={state.mode === 'new' ? 'ssh' : undefined}
+      onTypeChange={
+        state.mode === 'new'
+          ? (kind) => setState({ mode: 'new', kind, prefillTarget: state.prefillTarget })
+          : undefined
+      }
+      sections={sections}
+      section={section}
+      onSection={setSection}
+      problem={problem}
+      busy={upsert.isPending || updateMetadata.isPending}
+      onDelete={state.mode === 'edit' ? () => deleteHost.mutate(state.entry.alias) : undefined}
+      deletePending={deleteHost.isPending}
+      onClose={close}
+      onSave={save}
+    >
+      {section === 'general' && <GeneralSection draft={draft} set={set} config={config} />}
+      {section === 'auth' && <AuthSection draft={draft} set={set} keys={keys} />}
+      {section === 'route' && <RouteSection draft={draft} set={set} config={config} />}
+      {section === 'forwards' && <ForwardsSection draft={draft} set={set} />}
+      {section === 'highlighting' && (
+        <HighlightingSection
+          config={draft.keywordHighlights}
+          onChange={(keywordHighlights) => set({ keywordHighlights })}
+        />
+      )}
+      {section === 'advanced' && <AdvancedSection draft={draft} set={set} preview={preview} previewError={previewError} />}
+    </EditorShell>
   );
 }
 

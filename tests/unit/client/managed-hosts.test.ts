@@ -1,0 +1,148 @@
+import { describe, expect, it } from 'vitest';
+import type { SavedHostProfile, SshHostEntry } from '@muxus/shared';
+import {
+  groupManagedHosts,
+  managedHostCopyCommand,
+  managedHostKey,
+  managedHostRef,
+} from '../../../client/src/managed-hosts.js';
+
+const ROOT = '/home/test/.ssh/config';
+
+function sshHost(alias: string, group?: string): SshHostEntry {
+  return {
+    alias,
+    aliases: [alias],
+    file: ROOT,
+    options: {},
+    resolved: {
+      hostname: `${alias}.example.test`,
+      port: 22,
+      identityFiles: [],
+      identitiesOnly: false,
+      forwardAgent: false,
+      proxyJump: [],
+      forwards: [],
+      passwordOnly: false,
+    },
+    metadata: group
+      ? {
+          profileId: `ssh-${alias}`,
+          favorite: false,
+          group,
+          connectCount: 0,
+        }
+      : undefined,
+  };
+}
+
+function telnetHost(name: string, group?: string): SavedHostProfile {
+  return {
+    id: `telnet-${name}`,
+    kind: 'telnet',
+    name,
+    profile: {
+      kind: 'telnet',
+      profileId: `telnet-${name}`,
+      host: `${name}.example.test`,
+      port: 23,
+    },
+    metadata: {
+      profileId: `telnet-${name}`,
+      favorite: false,
+      group,
+      connectCount: 0,
+    },
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+  };
+}
+
+function serialHost(name: string): SavedHostProfile {
+  return {
+    id: `serial-${name}`,
+    kind: 'serial',
+    name,
+    profile: {
+      kind: 'serial',
+      profileId: `serial-${name}`,
+      path: 'COM3',
+      baudRate: 115_200,
+      dataBits: 8,
+      stopBits: 1,
+      parity: 'none',
+      flowControl: 'none',
+    },
+    metadata: {
+      profileId: `serial-${name}`,
+      favorite: false,
+      connectCount: 0,
+    },
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+  };
+}
+
+describe('managed host groups', () => {
+  it('places ungrouped SSH, Telnet, and serial profiles in one Hosts group', () => {
+    const groups = groupManagedHosts(
+      [sshHost('router')],
+      [telnetHost('console'), serialHost('rack console')],
+      [ROOT],
+      ROOT,
+    );
+
+    expect(groups.map((group) => group.label)).toEqual(['Hosts']);
+    expect(
+      groups[0]?.hosts.map((host) =>
+        host.kind === 'profile' ? `profile:${host.entry.kind}` : 'ssh:ssh',
+      ),
+    ).toEqual(['profile:telnet', 'profile:serial', 'ssh:ssh']);
+  });
+
+  it('merges profiles and SSH entries that use the same custom group', () => {
+    const groups = groupManagedHosts(
+      [sshHost('router', 'Production'), sshHost('lab')],
+      [telnetHost('console', 'production')],
+      [ROOT],
+      ROOT,
+    );
+
+    expect(groups.map((group) => group.label)).toEqual([
+      'Production',
+      'Ungrouped',
+    ]);
+    expect(groups[0]?.hosts.map((host) => host.kind)).toEqual([
+      'profile',
+      'ssh',
+    ]);
+  });
+});
+
+describe('managed host identity and clipboard actions', () => {
+  const ssh = { kind: 'ssh' as const, entry: sshHost('router') };
+  const telnet = { kind: 'profile' as const, entry: telnetHost('console') };
+  const serial = { kind: 'profile' as const, entry: serialHost('rack') };
+
+  it('derives stable keys matching the reorder refs', () => {
+    expect(managedHostKey(ssh)).toBe('ssh:router');
+    expect(managedHostKey(telnet)).toBe('profile:telnet-console');
+    expect(managedHostRef(ssh)).toEqual({ kind: 'ssh', alias: 'router' });
+    expect(managedHostRef(serial)).toEqual({ kind: 'profile', id: 'serial-rack' });
+  });
+
+  it('offers a per-kind copy command', () => {
+    expect(managedHostCopyCommand(ssh)).toEqual({
+      label: 'Copy ssh command',
+      text: 'ssh router',
+    });
+    expect(managedHostCopyCommand(telnet)).toEqual({
+      label: 'Copy telnet command',
+      text: 'telnet console.example.test 23',
+    });
+    expect(managedHostCopyCommand(serial)).toEqual({
+      label: 'Copy device path',
+      text: 'COM3',
+    });
+  });
+});

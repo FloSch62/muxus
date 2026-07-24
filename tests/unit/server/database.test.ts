@@ -146,17 +146,125 @@ describe('hybrid OpenSSH metadata', () => {
     });
   });
 
-  it('persists a complete drag order for otherwise-unmodified OpenSSH hosts', () => {
+  it('persists one drag order across OpenSSH hosts and saved Telnet/serial hosts', () => {
     database = new MuxusDatabase(':memory:');
+    const saved = database.saveSavedHostProfile({
+      name: 'Core router',
+      profile: { kind: 'telnet', host: 'router.example.test', port: 23 },
+    });
 
-    database.reorderOpenSshHosts(['gamma', 'alpha', 'beta']);
+    database.reorderManagedHosts([
+      { kind: 'ssh', alias: 'gamma' },
+      { kind: 'profile', id: saved.id },
+      { kind: 'ssh', alias: 'alpha' },
+    ]);
 
-    expect([...database.openSshMetadata(['alpha', 'beta', 'gamma'])]).toEqual([
-      ['alpha', expect.objectContaining({ sortOrder: 1 })],
-      ['beta', expect.objectContaining({ sortOrder: 2 })],
+    expect([...database.openSshMetadata(['alpha', 'gamma'])]).toEqual([
+      ['alpha', expect.objectContaining({ sortOrder: 2 })],
       ['gamma', expect.objectContaining({ sortOrder: 0 })],
     ]);
-    expect(() => database!.reorderOpenSshHosts(['alpha', 'alpha'])).toThrow(/duplicate/);
+    expect(database.savedHostProfile(saved.id)?.metadata.sortOrder).toBe(1);
+
+    expect(() =>
+      database!.reorderManagedHosts([
+        { kind: 'ssh', alias: 'alpha' },
+        { kind: 'ssh', alias: 'alpha' },
+      ]),
+    ).toThrow(/duplicate/);
+    expect(() =>
+      database!.reorderManagedHosts([{ kind: 'profile', id: 'missing' }]),
+    ).toThrow(/not found/);
+  });
+});
+
+describe('saved Telnet and serial hosts', () => {
+  it('round-trips connection settings, organization, recent use, updates, and deletion', () => {
+    database = new MuxusDatabase(':memory:');
+
+    const created = database.saveSavedHostProfile({
+      name: 'Rack console',
+      profile: {
+        kind: 'serial',
+        path: '/dev/ttyUSB0',
+        baudRate: 115_200,
+        dataBits: 8,
+        stopBits: 1,
+        parity: 'none',
+        flowControl: 'hardware',
+      },
+    });
+    const organized = database.updateSavedHostMetadata(created.id, {
+      favorite: true,
+      displayName: 'Core rack console',
+      group: 'Lab',
+      color: '#3b82f6',
+    });
+    database.recordSavedHostConnection(created.id);
+
+    expect(organized).toMatchObject({
+      id: created.id,
+      kind: 'serial',
+      name: 'Core rack console',
+      profile: {
+        kind: 'serial',
+        profileId: created.id,
+        path: '/dev/ttyUSB0',
+        baudRate: 115_200,
+        flowControl: 'hardware',
+      },
+      metadata: {
+        favorite: true,
+        group: 'Lab',
+        color: '#3b82f6',
+      },
+    });
+    expect(database.savedHostProfile(created.id)?.metadata.connectCount).toBe(1);
+
+    const updated = database.saveSavedHostProfile({
+      id: created.id,
+      name: 'Console server',
+      profile: {
+        kind: 'telnet',
+        host: 'console.example.test',
+        port: 2323,
+      },
+    });
+    expect(updated).toMatchObject({
+      id: created.id,
+      kind: 'telnet',
+      name: 'Console server',
+      profile: {
+        kind: 'telnet',
+        profileId: created.id,
+        host: 'console.example.test',
+        port: 2323,
+      },
+      metadata: {
+        favorite: true,
+        group: 'Lab',
+        color: '#3b82f6',
+        connectCount: 1,
+      },
+    });
+    expect(database.listSavedHostProfiles()).toEqual([updated]);
+    expect(database.deleteSavedHostProfile(created.id)).toBe(true);
+    expect(database.listSavedHostProfiles()).toEqual([]);
+  });
+
+  it('rejects secrets in native host settings', () => {
+    database = new MuxusDatabase(':memory:');
+
+    expect(() =>
+      database!.saveSavedHostProfile({
+        name: 'Unsafe',
+        profile: {
+          kind: 'telnet',
+          host: 'router.example.test',
+          port: 23,
+          password: 'do-not-save',
+        } as never,
+      }),
+    ).toThrow(/OS credential store/);
   });
 });
 

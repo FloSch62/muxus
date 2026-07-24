@@ -31,6 +31,41 @@ describe('sessionProfileSchema', () => {
     expect(parsed.success).toBe(true);
   });
 
+  it('accepts Telnet profiles and supplies the standard port', () => {
+    expect(sessionProfileSchema.parse({ kind: 'telnet', host: 'router.local' })).toEqual({
+      kind: 'telnet',
+      host: 'router.local',
+      port: 23,
+    });
+    expect(
+      sessionProfileSchema.safeParse({ kind: 'telnet', host: 'router.local', port: 2323 })
+        .success,
+    ).toBe(true);
+  });
+
+  it('accepts serial profiles and supplies conventional 8-N-1 defaults', () => {
+    expect(sessionProfileSchema.parse({ kind: 'serial', path: '/dev/ttyUSB0' })).toEqual({
+      kind: 'serial',
+      path: '/dev/ttyUSB0',
+      baudRate: 115200,
+      dataBits: 8,
+      stopBits: 1,
+      parity: 'none',
+      flowControl: 'none',
+    });
+    expect(
+      sessionProfileSchema.safeParse({
+        kind: 'serial',
+        path: 'COM3',
+        baudRate: 9600,
+        dataBits: 7,
+        stopBits: 2,
+        parity: 'even',
+        flowControl: 'hardware',
+      }).success,
+    ).toBe(true);
+  });
+
   it('drops retired TERM overrides from legacy profiles', () => {
     expect(sessionProfileSchema.parse({ kind: 'ssh', target: 'web', term: 'xterm-kitty' })).toEqual({
       kind: 'ssh',
@@ -46,6 +81,19 @@ describe('sessionProfileSchema', () => {
   it('rejects out-of-range ports', () => {
     expect(sessionProfileSchema.safeParse({ kind: 'ssh', target: 'x', port: 0 }).success).toBe(false);
     expect(sessionProfileSchema.safeParse({ kind: 'ssh', target: 'x', port: 65536 }).success).toBe(false);
+    expect(sessionProfileSchema.safeParse({ kind: 'telnet', host: 'x', port: 0 }).success).toBe(false);
+  });
+
+  it('rejects invalid serial framing and baud rates', () => {
+    expect(
+      sessionProfileSchema.safeParse({ kind: 'serial', path: 'COM3', baudRate: 0 }).success,
+    ).toBe(false);
+    expect(
+      sessionProfileSchema.safeParse({ kind: 'serial', path: 'COM3', dataBits: 9 }).success,
+    ).toBe(false);
+    expect(
+      sessionProfileSchema.safeParse({ kind: 'serial', path: '', parity: 'none' }).success,
+    ).toBe(false);
   });
 
   it('bounds tunnel-owned SSH configuration', () => {

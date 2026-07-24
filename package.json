@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@11.13.1",
-  "description": "Free, open-source SSH client & terminal — kitty graphics, split-pane sessions, SFTP, port forwarding",
+  "description": "Free, open-source SSH, Telnet, and serial client — kitty graphics, split-pane sessions, SFTP, port forwarding",
   "license": "MIT",
   "engines": {
     "node": ">=24.17.0"

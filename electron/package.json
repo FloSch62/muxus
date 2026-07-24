@@ -16,13 +16,14 @@
     "build": "node scripts/render-icon.mjs && node esbuild.config.mjs && tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "start": "electron .",
-    "rebuild": "electron-rebuild -f -w node-pty",
+    "rebuild": "electron-rebuild -f -w node-pty,@serialport/bindings-cpp",
     "pack:dir": "electron-builder --dir",
     "dist": "electron-builder"
   },
   "dependencies": {
     "@muxus/shared": "workspace:*",
-    "node-pty": "^1.1.0"
+    "node-pty": "^1.1.0",
+    "serialport": "^13.0.0"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",

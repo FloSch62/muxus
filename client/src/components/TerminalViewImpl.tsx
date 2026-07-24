@@ -35,7 +35,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import type { TerminalServerMessage } from '@muxus/shared';
 import { wsProtocols, wsUrl } from '../api/http.js';
-import { useSshConfig } from '../api/queries.js';
+import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
 import { copyToClipboard, readFromClipboard } from '../clipboard.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { showToast } from '../state/toast.js';
@@ -121,12 +121,21 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const globalKeywordHighlights = usePrefsStore((s) => s.keywordHighlights);
   const scheme = terminalScheme(schemeId);
   const { data: sshConfig } = useSshConfig(tab.profile.kind === 'ssh' && tab.profile.useConfig !== false);
+  const savedProfileId =
+    tab.profile.kind === 'telnet' || tab.profile.kind === 'serial'
+      ? tab.profile.profileId
+      : undefined;
+  const { data: savedHosts } = useSavedHostProfiles(!!savedProfileId);
   const hostKeywordHighlights = useMemo(() => {
+    if (savedProfileId) {
+      return savedHosts?.profiles.find((profile) => profile.id === savedProfileId)
+        ?.metadata.keywordHighlights;
+    }
     if (tab.profile.kind !== 'ssh' || tab.profile.useConfig === false) return undefined;
     const target = tab.profile.target;
     return sshConfig?.hosts.find((host) => host.aliases.includes(target))?.metadata
       ?.keywordHighlights;
-  }, [sshConfig, tab.profile]);
+  }, [sshConfig, savedHosts, savedProfileId, tab.profile]);
   const keywordHighlights = useMemo(
     () => resolveKeywordHighlights(globalKeywordHighlights, hostKeywordHighlights),
     [globalKeywordHighlights, hostKeywordHighlights],
@@ -391,7 +400,11 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           setHostKey(ctl);
           break;
         case 'ready':
-          updateTab(tab.id, { status: 'connected', connId: ctl.connId.startsWith('local-') ? undefined : ctl.connId });
+          updateTab(tab.id, {
+            status: 'connected',
+            // Only SSH transport IDs are valid SFTP/forwarding lease keys.
+            connId: tab.profile.kind === 'ssh' ? ctl.connId : undefined,
+          });
           break;
         case 'exit':
           term.write(`\r\n\x1b[33m[session ended${ctl.message ? `: ${ctl.message}` : ''}]\x1b[0m\r\n`);

@@ -27,7 +27,7 @@ export function EmptyPane({
           Start a session
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Open a shell here or connect to one of your SSH hosts.
+          Open a shell or connect over SSH, Telnet, or serial.
         </Typography>
       </Box>
       <Box
@@ -48,15 +48,15 @@ export function EmptyPane({
         />
         <EmptyAction
           icon={<DnsOutlinedIcon />}
-          title="SSH host"
-          description="Choose saved host"
+          title="Saved host"
+          description="Choose any host"
           onIntent={() => void loadTerminalViewImpl()}
           onClick={(event) => setHostPickerAnchor(event.currentTarget)}
         />
         <EmptyAction
           icon={<AddIcon />}
           title="Add host"
-          description="New SSH profile"
+          description="SSH, Telnet, or serial"
           onIntent={() => void loadHostEditorDialog()}
           onClick={onAddHost}
         />

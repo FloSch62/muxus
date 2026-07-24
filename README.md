@@ -1,13 +1,14 @@
 # Muxus
 
-Free, open-source SSH client & modern terminal — the MobaXterm workflow with a terminal that speaks the **kitty graphics protocol**.
+Free, open-source SSH, Telnet, and serial client with a modern terminal — the MobaXterm workflow with a terminal that speaks the **kitty graphics protocol**.
 
 - **Kitty graphics protocol** — `kitten icat`, yazi/ranger image previews, matplotlib backends and timg render inline images over SSH. Direct (chunked, optionally zlib-compressed) PNG/RGB/RGBA transmission, placements with z-index, cell sizing and delete commands; sixel and iTerm2 inline images work too.
 - **Kitty keyboard protocol** — the progressive-enhancement flag stack (disambiguate, event types, alternate keys, report-all, associated text), so modern TUIs (neovim, helix, fish) get full key fidelity. Sessions advertise the broadly supported `TERM=xterm-256color`.
 - **OpenSSH-native connections, Muxus-owned metadata** — every concrete `Host` block appears in the sidebar (grouped by Include file, with favorites, recent-use metadata, live-connection dots and jump/key/forward badges). Connection details stay interoperable in OpenSSH config; Muxus stores UI metadata and recoverable workspaces in a versioned local SQLite database. Adding or editing a session writes its block back in place without touching the rest of the file (atomic writes + `.muxus.bak`). The search box doubles as quick connect: type an alias or `user@host:port` and hit Enter.
+- **Telnet and serial hosts** — save Telnet endpoints and COM/TTY consoles alongside SSH hosts, then search, favorite, group, color, edit, duplicate, or reconnect them through the same host workflow. Telnet sessions negotiate terminal type and window size. Serial ports are discovered through the local backend on Linux, Windows, and macOS, with manual path entry plus configurable baud rate, data bits, stop bits, parity, and RTS/CTS or XON/XOFF flow control.
 - **Full connect-through** — ProxyJump chains (nested, comma-listed, cycle-checked) are dialed hop by hop like real ssh: every hop gets its own config resolution, host-key verification and authentication. Auth follows OpenSSH order inside one connection: agent → IdentityFile / default `id_*` keys (passphrase prompts included, `IdentitiesOnly` honored) → keyboard-interactive → password. `LocalForward`/`RemoteForward`/`DynamicForward` from the config start with the session; `ForwardAgent` works when an agent is present.
-- **Host editor** — a MobaXterm-style visual editor for `Host` blocks: key picker fed by the keys found in `~/.ssh` (agent-loaded and encrypted keys badged), jump-chain builder, port-forwarding editor with a live tunnel diagram, free-form options for anything Muxus doesn't model, and an exact preview of the block text before it is written.
-- **Split terminal workspaces** — local shells (real PTYs) and SSH sessions in resizable horizontal/vertical panes, each with its own browser-style tab strip. Pane geometry and tab definitions survive restart; restored terminals stay disconnected until you explicitly reconnect.
+- **Host editor** — one add-host flow for SSH, Telnet, and serial. The MobaXterm-style SSH editor includes a key picker fed by `~/.ssh`, a jump-chain builder, port-forwarding with a live tunnel diagram, free-form options, and an exact block preview; Telnet and serial use native saved profiles in Muxus.
+- **Split terminal workspaces** — local shells (real PTYs), SSH, Telnet, and serial sessions in resizable horizontal/vertical panes, each with its own browser-style tab strip. Pane geometry and tab definitions survive restart; restored terminals stay disconnected until you explicitly reconnect.
 - **Terminal quality of life** — one-click saved command buttons (run immediately or insert for review), incremental scrollback search (case / whole-word / regex), export the buffer as text or color-preserving HTML, copy-all, clear-scrollback, select-all, per-tab zoom (Ctrl+wheel or keyboard), a configurable right-click (copy/paste convention, always-paste, or context menu), and a confirmation preview before multiline text can execute several shell commands. Tabs rename (double-click), duplicate and take color flags.
 - **Live settings** — a sectioned settings dialog (appearance, terminal, highlighting, behavior, shortcuts) whose changes apply immediately to open terminals: terminal color schemes (Muxus, Dracula, One Dark, Nord, Gruvbox, Catppuccin, Monokai, Solarized), global keyword highlighting with host-specific additive/replacement rules, font family/size/line height, cursor, scrollback and clipboard behavior.
 - **SFTP file browser** — per SSH tab, sharing the underlying SSH transport: navigate, upload (drag & drop), download, rename, delete and mkdir. Existing upload targets require an explicit overwrite confirmation.
@@ -23,7 +24,7 @@ pnpm workspace, all TypeScript/ESM:
 | Package | What it is |
 | --- | --- |
 | `shared/` | REST DTOs + zod WebSocket protocol (`/ws/terminal`: binary frames = bytes, text frames = control) |
-| `server/` | Fastify on 127.0.0.1 with per-run bearer token; versioned SQLite migrations for Muxus-owned data; ssh_config engine (line-preserving parser/resolver/editor); leased ssh2 transports with ProxyJump + OpenSSH-order auth; known_hosts verification; node-pty local shells; SFTP routes and forward manager |
+| `server/` | Fastify on 127.0.0.1 with per-run bearer token; versioned SQLite migrations for Muxus-owned data; ssh_config engine (line-preserving parser/resolver/editor); leased ssh2 transports with ProxyJump + OpenSSH-order auth; known_hosts verification; node-pty local shells; Telnet negotiation; cross-platform node-serialport access; SFTP routes and forward manager |
 | `client/` | React 19 + MUI, resizable pane tree and workspace recovery, xterm.js Image Addon for graphics plus native Kitty keyboard support |
 | `electron/` | Hardened desktop shell: embeds the server in-process, uses an isolated preload bridge for bootstrap credentials and blocks unexpected navigation |
 | `tests/` | vitest units for security/auth boundaries, persistence and migrations, connection leases, workspace/pane behavior, SFTP overwrite policy, paste safety, and terminal protocols |
@@ -49,13 +50,20 @@ pnpm typecheck
 make deb|win|dmg|all   # installers via electron-builder
 ```
 
-Note: the Electron desktop build rebuilds `node-pty` against Electron's ABI (`pnpm --filter @muxus/electron rebuild` for `pnpm electron` dev runs).
+Note: the Electron desktop build rebuilds the native `node-pty` and `serialport`
+bindings against Electron's ABI (`pnpm --filter @muxus/electron rebuild` for
+`pnpm electron` dev runs).
+
+On Linux, serial devices commonly require membership in the distribution's
+serial-access group (often `dialout` or `uucp`). Log out and back in after a
+group-membership change. Windows uses names such as `COM3`; macOS and Linux
+use `/dev/tty.*` and `/dev/ttyUSB*`/`/dev/ttyACM*` paths respectively.
 
 CI runs typecheck, lint and tests, then builds unpacked desktop packages on Linux, macOS and Windows.
 
 ## Security model
 
-Local single-user tool: the server binds 127.0.0.1 only, every API request needs the per-run bearer token, and WebSocket upgrades check both token and Origin (DNS-rebinding defense). Bootstrap credentials stay out of request URLs: browsers receive them in a fragment that is immediately removed, Electron uses an isolated preload bridge, and terminal sockets authenticate with a WebSocket subprotocol. Passwords/passphrases remain transient interactive-auth data; the SQLite persistence boundary rejects password, passphrase, secret, token and private-key material, so persisted credential fields are references only. Host keys are verified against `~/.ssh/known_hosts` (and `/etc/ssh/ssh_known_hosts`, read-only) exactly like OpenSSH; first use appends there, and config edits are atomic with a `.muxus.bak` of the previous content.
+Local single-user tool: the server binds 127.0.0.1 only, every API request needs the per-run bearer token, and WebSocket upgrades check both token and Origin (DNS-rebinding defense). Bootstrap credentials stay out of request URLs: browsers receive them in a fragment that is immediately removed, Electron uses an isolated preload bridge, and terminal sockets authenticate with a WebSocket subprotocol. Passwords/passphrases remain transient interactive-auth data; the SQLite persistence boundary rejects password, passphrase, secret, token and private-key material, so persisted credential fields are references only. Host keys are verified against `~/.ssh/known_hosts` (and `/etc/ssh/ssh_known_hosts`, read-only) exactly like OpenSSH; first use appends there, and config edits are atomic with a `.muxus.bak` of the previous content. Telnet itself provides no encryption or server authentication; use it only on a trusted network.
 
 ## License
 

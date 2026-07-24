@@ -25,12 +25,7 @@ export function isAppWindowLaunch(value: unknown): value is AppWindowLaunch {
       return false;
     }
     const profile = launch.profile as Record<string, unknown>;
-    return (
-      (profile.kind === 'local' &&
-        (profile.shell === undefined || typeof profile.shell === 'string') &&
-        (profile.cwd === undefined || typeof profile.cwd === 'string')) ||
-      (profile.kind === 'ssh' && typeof profile.target === 'string' && profile.target.length > 0)
-    );
+    return isSessionProfile(profile);
   }
   return (
     launch.kind === 'sftp' &&
@@ -38,6 +33,54 @@ export function isAppWindowLaunch(value: unknown): value is AppWindowLaunch {
     launch.connId.length > 0 &&
     typeof launch.title === 'string' &&
     (launch.path === undefined || typeof launch.path === 'string')
+  );
+}
+
+function isSessionProfile(profile: Record<string, unknown>): boolean {
+  if (profile.kind === 'local') {
+    return (
+      (profile.shell === undefined || typeof profile.shell === 'string') &&
+      (profile.cwd === undefined || typeof profile.cwd === 'string')
+    );
+  }
+  if (profile.kind === 'ssh') {
+    return typeof profile.target === 'string' && profile.target.length > 0;
+  }
+  if (profile.kind === 'telnet') {
+    return (
+      validProfileId(profile.profileId) &&
+      typeof profile.host === 'string' &&
+      profile.host.length > 0 &&
+      (profile.port === undefined || validPort(profile.port))
+    );
+  }
+  if (profile.kind !== 'serial' || typeof profile.path !== 'string' || !profile.path) {
+    return false;
+  }
+  return (
+    validProfileId(profile.profileId) &&
+    (profile.baudRate === undefined ||
+      (typeof profile.baudRate === 'number' &&
+        Number.isInteger(profile.baudRate) &&
+        profile.baudRate >= 1 &&
+        profile.baudRate <= 12_000_000)) &&
+    (profile.dataBits === undefined || [5, 6, 7, 8].includes(profile.dataBits as number)) &&
+    (profile.stopBits === undefined || [1, 1.5, 2].includes(profile.stopBits as number)) &&
+    (profile.parity === undefined ||
+      ['none', 'even', 'odd', 'mark', 'space'].includes(profile.parity as string)) &&
+    (profile.flowControl === undefined ||
+      ['none', 'hardware', 'software'].includes(profile.flowControl as string))
+  );
+}
+
+function validPort(value: unknown): boolean {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 65_535;
+}
+
+function validProfileId(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (typeof value === 'string' && value.length >= 1 && value.length <= 200)
   );
 }
 

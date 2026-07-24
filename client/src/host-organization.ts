@@ -68,6 +68,7 @@ export function groupHosts(
   files: readonly string[],
   rootFile: string | undefined,
   filter = '',
+  hasAdditionalCustomGroups = false,
 ): HostGroup[] {
   const custom = new Map<string, HostGroup>();
   const byFile = new Map<string, SshHostEntry[]>();
@@ -104,7 +105,7 @@ export function groupHosts(
   const customGroups = [...custom.values()]
     .sort((a, b) => a.label.localeCompare(b.label))
     .map((group) => ({ ...group, hosts: sortHosts(group.hosts) }));
-  const hasCustomGroups = customGroups.length > 0;
+  const hasCustomGroups = customGroups.length > 0 || hasAdditionalCustomGroups;
   const fileOrder = new Map(files.map((file, index) => [file, index]));
   const fileGroups = [...byFile.entries()]
     .sort(

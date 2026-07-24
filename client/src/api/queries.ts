@@ -3,6 +3,8 @@ import type {
   AppInfo,
   ConnectionsResponse,
   ForwardInfo,
+  SerialPortsResponse,
+  SavedHostProfilesResponse,
   SftpListResponse,
   SshConfigResponse,
   SshKeysResponse,
@@ -37,6 +39,24 @@ export function useSshKeys(enabled = true) {
     queryFn: () => apiFetch<SshKeysResponse>('/api/ssh/keys'),
     enabled,
     staleTime: 30_000,
+  });
+}
+
+export function useSerialPorts(enabled = true) {
+  return useQuery({
+    queryKey: ['serial-ports'],
+    queryFn: () => apiFetch<SerialPortsResponse>('/api/serial/ports'),
+    enabled,
+    staleTime: 5_000,
+  });
+}
+
+export function useSavedHostProfiles(enabled = true) {
+  return useQuery({
+    queryKey: ['saved-host-profiles'],
+    queryFn: () => apiFetch<SavedHostProfilesResponse>('/api/profiles'),
+    enabled,
+    staleTime: 5_000,
   });
 }
 

@@ -29,8 +29,48 @@ describe('secondary window launch payloads', () => {
     expect(decodeAppWindowLaunch(encodeAppWindowLaunch(launch))).toEqual(launch);
   });
 
+  it('accepts cross-platform Telnet and serial session launches', () => {
+    const telnet: AppWindowLaunch = {
+      kind: 'session',
+      profile: {
+        kind: 'telnet',
+        profileId: 'saved-router',
+        host: 'router.local',
+        port: 2323,
+      },
+      title: 'Router console',
+    };
+    const serial: AppWindowLaunch = {
+      kind: 'session',
+      profile: {
+        kind: 'serial',
+        path: 'COM3',
+        baudRate: 115200,
+        dataBits: 8,
+        stopBits: 1,
+        parity: 'none',
+        flowControl: 'hardware',
+      },
+      title: 'COM3',
+    };
+    expect(decodeAppWindowLaunch(encodeAppWindowLaunch(telnet))).toEqual(telnet);
+    expect(decodeAppWindowLaunch(encodeAppWindowLaunch(serial))).toEqual(serial);
+  });
+
   it('rejects malformed or unsupported payloads', () => {
     expect(isAppWindowLaunch({ kind: 'session', title: 'Missing profile' })).toBe(false);
+    expect(
+      isAppWindowLaunch({
+        kind: 'session',
+        title: 'Invalid saved host',
+        profile: {
+          kind: 'telnet',
+          profileId: { unexpected: true },
+          host: 'router.local',
+          port: 23,
+        },
+      }),
+    ).toBe(false);
     expect(isAppWindowLaunch({ kind: 'sftp', connId: '', title: 'Empty connection' })).toBe(false);
     expect(decodeAppWindowLaunch('not-base64-json')).toBeUndefined();
   });

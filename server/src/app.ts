@@ -18,6 +18,9 @@ import { registerSftpLeaseSocket } from './ws/sftp-lease-socket.js';
 import { websocketHeaderHasToken } from './auth.js';
 import { MuxusDatabase } from './persistence/database.js';
 import { registerWorkspaceRoutes } from './routes/workspaces.js';
+import { registerSerialRoutes } from './routes/serial.js';
+import { registerProfileRoutes } from './routes/profiles.js';
+import { registerHostOrderRoutes } from './routes/host-order.js';
 
 export interface AppContext {
   config: ServerConfig;
@@ -112,6 +115,9 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   registerForwardRoutes(app, ctx);
   registerTunnelRoutes(app, ctx);
   registerWorkspaceRoutes(app, ctx);
+  registerSerialRoutes(app);
+  registerProfileRoutes(app, ctx);
+  registerHostOrderRoutes(app, ctx);
   registerTerminalSocket(app, ctx);
   registerSftpLeaseSocket(app, ctx);
 

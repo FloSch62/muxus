@@ -14,8 +14,8 @@ export function terminalWebSocketProtocols(token: string): string[] {
  * /ws/terminal framing (same convention as classic web terminals): binary
  * frames carry raw terminal bytes in both directions; text frames carry JSON
  * control messages. The client speaks first with `connect`; the server
- * answers with `ready` once a shell is attached, interleaving `auth-prompt`
- * / `host-key` round-trips before that for SSH sessions.
+ * answers with `ready` once the selected transport is attached, interleaving
+ * `auth-prompt` / `host-key` round-trips before that for SSH sessions.
  */
 
 /** Where a terminal session runs. Secrets (passwords, key passphrases) are
@@ -48,10 +48,38 @@ export const sshProfileSchema = z.object({
   passwordOnly: z.boolean().optional(),
 });
 
-export const sessionProfileSchema = z.discriminatedUnion('kind', [localProfileSchema, sshProfileSchema]);
+export const telnetProfileSchema = z.object({
+  kind: z.literal('telnet'),
+  /** Stable Muxus database profile when this is a saved host. */
+  profileId: z.string().min(1).max(200).optional(),
+  host: z.string().trim().min(1).max(253),
+  port: z.number().int().min(1).max(65535).default(23),
+});
+
+export const serialProfileSchema = z.object({
+  kind: z.literal('serial'),
+  /** Stable Muxus database profile when this is a saved host. */
+  profileId: z.string().min(1).max(200).optional(),
+  /** OS-native device path: COM3, /dev/ttyUSB0, /dev/tty.usbserial-…, etc. */
+  path: z.string().trim().min(1).max(4096),
+  baudRate: z.number().int().min(1).max(12_000_000).default(115_200),
+  dataBits: z.union([z.literal(5), z.literal(6), z.literal(7), z.literal(8)]).default(8),
+  stopBits: z.union([z.literal(1), z.literal(1.5), z.literal(2)]).default(1),
+  parity: z.enum(['none', 'even', 'odd', 'mark', 'space']).default('none'),
+  flowControl: z.enum(['none', 'hardware', 'software']).default('none'),
+});
+
+export const sessionProfileSchema = z.discriminatedUnion('kind', [
+  localProfileSchema,
+  sshProfileSchema,
+  telnetProfileSchema,
+  serialProfileSchema,
+]);
 export type SessionProfile = z.infer<typeof sessionProfileSchema>;
 export type SshProfile = Extract<SessionProfile, { kind: 'ssh' }>;
 export type LocalProfile = Extract<SessionProfile, { kind: 'local' }>;
+export type TelnetProfile = Extract<SessionProfile, { kind: 'telnet' }>;
+export type SerialProfile = Extract<SessionProfile, { kind: 'serial' }>;
 
 /** Text frames the client sends on /ws/terminal. */
 export const terminalClientMessageSchema = z.discriminatedUnion('op', [
@@ -104,6 +132,6 @@ export type TerminalServerMessage =
       /** Set when this is an intermediate ProxyJump hop, not the final target. */
       hop?: string;
     }
-  /** Shell attached; connId keys follow-up SFTP/forward REST calls. */
+  /** Transport attached; SSH connIds also key follow-up SFTP/forward calls. */
   | { op: 'ready'; connId: string; host?: string; user?: string }
   | { op: 'exit'; code?: number; message?: string };

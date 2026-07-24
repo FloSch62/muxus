@@ -97,51 +97,6 @@ export function useUpdateSshMetadata(onSuccess?: (metadata: OpenSshProfileMetada
 }
 
 /** Persist and optimistically display the order of one complete host group. */
-export function useReorderSshHosts() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (aliases: string[]) =>
-      apiFetch<{ ok: boolean }>('/api/ssh/config/order', {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ aliases }),
-      }),
-    onMutate: async (aliases) => {
-      await queryClient.cancelQueries({ queryKey: ['ssh-config'] });
-      const previous = queryClient.getQueryData<SshConfigResponse>(['ssh-config']);
-      queryClient.setQueryData<SshConfigResponse>(['ssh-config'], (current) => {
-        if (!current) return current;
-        const order = new Map(aliases.map((alias, index) => [alias, index]));
-        return {
-          ...current,
-          hosts: current.hosts.map((host) => {
-            const sortOrder = order.get(host.alias);
-            if (sortOrder === undefined) return host;
-            return {
-              ...host,
-              metadata: {
-                profileId: host.metadata?.profileId ?? host.alias,
-                favorite: host.metadata?.favorite ?? false,
-                connectCount: host.metadata?.connectCount ?? 0,
-                ...host.metadata,
-                sortOrder,
-              },
-            };
-          }),
-        };
-      });
-      return { previous };
-    },
-    onError: (error, _aliases, context) => {
-      if (context?.previous) queryClient.setQueryData(['ssh-config'], context.previous);
-      showErrorToast(error);
-    },
-    onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: ['ssh-config'] });
-    },
-  });
-}
-
 /** The exact block text a save would write — for the editor's live preview. */
 export async function fetchHostPreview(req: HostUpsertRequest): Promise<string> {
   const res = await apiFetch<HostPreviewResponse>('/api/ssh/config/preview', json(req));

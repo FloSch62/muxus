@@ -15,6 +15,57 @@ export interface AppInfo {
   defaultShell: string;
 }
 
+/** One serial device reported by the host OS through node-serialport. */
+export interface SerialPortInfo {
+  /** OS-native path (COM3, /dev/ttyUSB0, /dev/tty.usbserial-…, etc.). */
+  path: string;
+  manufacturer?: string;
+  serialNumber?: string;
+  pnpId?: string;
+  locationId?: string;
+  productId?: string;
+  vendorId?: string;
+}
+
+export interface SerialPortsResponse {
+  ports: SerialPortInfo[];
+}
+
+export type SavedHostSessionProfile =
+  | import('./ws-protocol.js').TelnetProfile
+  | import('./ws-protocol.js').SerialProfile;
+
+/** Telnet/serial host stored natively by Muxus rather than in ssh_config. */
+export interface SavedHostProfile {
+  id: string;
+  kind: SavedHostSessionProfile['kind'];
+  name: string;
+  profile: SavedHostSessionProfile;
+  metadata: OpenSshProfileMetadata;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SavedHostProfileInput {
+  id?: string;
+  name: string;
+  profile: SavedHostSessionProfile;
+}
+
+export interface SavedHostProfilesResponse {
+  profiles: SavedHostProfile[];
+}
+
+/** One sidebar host, addressable across both host sources. */
+export type ManagedHostRef =
+  | { kind: 'ssh'; alias: string }
+  | { kind: 'profile'; id: string };
+
+/** One complete visual order for a sidebar group, mixing both host sources. */
+export interface HostOrderRequest {
+  hosts: ManagedHostRef[];
+}
+
 /**
  * One extra application window requested by the renderer. Session windows
  * start a fresh shell; SFTP windows stay attached to an existing SSH

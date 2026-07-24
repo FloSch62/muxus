@@ -36,7 +36,7 @@ dmg:
   sign: false
 linux:
   category: Network
-  synopsis: SSH client & terminal
+  synopsis: SSH, Telnet & serial client
   icon: build/icons
   desktop:
     entry:

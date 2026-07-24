@@ -16,11 +16,18 @@ import AddIcon from '@mui/icons-material/Add';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import StarIcon from '@mui/icons-material/Star';
-import { useSshConfig } from '../api/queries.js';
-import { groupHosts, hostAddress, hostDisplayName } from '../host-organization.js';
-import { connectHost } from '../session-actions.js';
+import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
+import {
+  groupManagedHosts,
+  managedHostAddress,
+  managedHostDisplayName,
+  managedHostKey,
+  type ManagedHost,
+} from '../managed-hosts.js';
+import { connectManagedHost } from '../session-actions.js';
 import { loadHostEditorDialog, loadTerminalViewImpl } from '../lazy-features.js';
 import { useUiStore } from '../state/ui.js';
+import { hostKindIcon } from './host-kind-icon.js';
 import { TruncationTooltip } from './TruncationTooltip.js';
 
 export function HostPickerPopover({
@@ -33,13 +40,27 @@ export function HostPickerPopover({
   replaceTabId?: string;
 }) {
   const { data: config } = useSshConfig();
+  const { data: savedData } = useSavedHostProfiles();
   const setHostEditor = useUiStore((state) => state.setHostEditor);
   const [filter, setFilter] = useState('');
   const deferredFilter = useDeferredValue(filter);
   const searchInput = useRef<HTMLInputElement>(null);
   const groups = useMemo(
-    () => groupHosts(config?.hosts ?? [], config?.files ?? [], config?.path, deferredFilter),
-    [config?.hosts, config?.files, config?.path, deferredFilter],
+    () =>
+      groupManagedHosts(
+        config?.hosts ?? [],
+        savedData?.profiles ?? [],
+        config?.files ?? [],
+        config?.path,
+        deferredFilter,
+      ),
+    [
+      config?.hosts,
+      savedData?.profiles,
+      config?.files,
+      config?.path,
+      deferredFilter,
+    ],
   );
   const visible = groups.flatMap((group) => group.hosts);
 
@@ -56,15 +77,16 @@ export function HostPickerPopover({
     return () => cancelAnimationFrame(frame);
   }, [anchorEl]);
 
-  const connect = (index: number) => {
-    const host = groupHosts(
+  const connectFirst = () => {
+    const host = groupManagedHosts(
       config?.hosts ?? [],
+      savedData?.profiles ?? [],
       config?.files ?? [],
       config?.path,
       filter,
-    ).flatMap((group) => group.hosts)[index];
+    ).flatMap((group) => group.hosts)[0];
     if (!host) return;
-    connectHost(host, replaceTabId);
+    connectManagedHost(host, replaceTabId);
     onClose();
   };
 
@@ -88,7 +110,7 @@ export function HostPickerPopover({
           value={filter}
           onChange={(event) => setFilter(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && visible.length > 0) connect(0);
+            if (event.key === 'Enter') connectFirst();
             if (event.key === 'Escape') onClose();
           }}
           slotProps={{
@@ -126,53 +148,12 @@ export function HostPickerPopover({
             }
           >
             {group.hosts.map((host) => (
-              <ListItemButton
-                key={`${host.file}:${host.alias}`}
-                onMouseEnter={() => void loadTerminalViewImpl()}
-                onFocus={() => void loadTerminalViewImpl()}
-                onClick={() => {
-                  connectHost(host, replaceTabId);
-                  onClose();
-                }}
-                sx={{ contentVisibility: 'auto', containIntrinsicSize: '0 48px' }}
-              >
-                <ListItemIcon sx={{ minWidth: 34 }}>
-                  <Box sx={{ position: 'relative', display: 'grid', placeItems: 'center' }}>
-                    <DnsOutlinedIcon sx={{ fontSize: 19, color: host.metadata?.color ?? 'text.secondary' }} />
-                    {host.metadata?.color && (
-                      <Box
-                        sx={{
-                          position: 'absolute',
-                          right: -3,
-                          bottom: -2,
-                          width: 7,
-                          height: 7,
-                          borderRadius: '50%',
-                          bgcolor: host.metadata.color,
-                          border: 1,
-                          borderColor: 'background.paper',
-                        }}
-                      />
-                    )}
-                  </Box>
-                </ListItemIcon>
-                <ListItemText
-                  primary={
-                    <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', minWidth: 0 }}>
-                      <TruncationTooltip text={hostDisplayName(host)}>
-                        <Typography variant="body2" noWrap sx={{ minWidth: 0, fontWeight: 550 }}>
-                          {hostDisplayName(host)}
-                        </Typography>
-                      </TruncationTooltip>
-                      {host.metadata?.favorite && <StarIcon sx={{ fontSize: 12, color: 'warning.main', flexShrink: 0 }} />}
-                    </Stack>
-                  }
-                  secondary={hostAddress(host)}
-                  slotProps={{
-                    secondary: { noWrap: true, sx: { fontSize: 11 } },
-                  }}
-                />
-              </ListItemButton>
+              <HostPickerRow
+                key={managedHostKey(host)}
+                host={host}
+                replaceTabId={replaceTabId}
+                onClose={onClose}
+              />
             ))}
           </List>
         ))}
@@ -180,7 +161,9 @@ export function HostPickerPopover({
           <Stack spacing={0.75} sx={{ px: 2, py: 3, alignItems: 'center', textAlign: 'center' }}>
             <DnsOutlinedIcon sx={{ fontSize: 30, color: 'text.disabled' }} />
             <Typography variant="body2" color="text.secondary">
-              {(config?.hosts.length ?? 0) === 0 ? 'No saved SSH hosts yet.' : 'No hosts match your search.'}
+              {(config?.hosts.length ?? 0) + (savedData?.profiles.length ?? 0) === 0
+                ? 'No saved hosts yet.'
+                : 'No hosts match your search.'}
             </Typography>
           </Stack>
         )}
@@ -198,9 +181,58 @@ export function HostPickerPopover({
             setHostEditor({ mode: 'new' });
           }}
         >
-          Add SSH host
+          Add host
         </Button>
       </Box>
     </Popover>
+  );
+}
+
+function HostPickerRow({
+  host,
+  replaceTabId,
+  onClose,
+}: {
+  host: ManagedHost;
+  replaceTabId?: string;
+  onClose: () => void;
+}) {
+  const title = managedHostDisplayName(host);
+  const address = managedHostAddress(host);
+  const metadata = host.entry.metadata;
+  const Icon = hostKindIcon(host.kind === 'ssh' ? 'ssh' : host.entry.kind);
+
+  return (
+    <ListItemButton
+      onMouseEnter={() => void loadTerminalViewImpl()}
+      onFocus={() => void loadTerminalViewImpl()}
+      onClick={() => {
+        connectManagedHost(host, replaceTabId);
+        onClose();
+      }}
+      sx={{ contentVisibility: 'auto', containIntrinsicSize: '0 48px' }}
+    >
+      <ListItemIcon sx={{ minWidth: 34 }}>
+        <Icon sx={{ fontSize: 19, color: metadata?.color ?? 'text.secondary' }} />
+      </ListItemIcon>
+      <ListItemText
+        primary={
+          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', minWidth: 0 }}>
+            <TruncationTooltip text={title}>
+              <Typography variant="body2" noWrap sx={{ minWidth: 0, fontWeight: 550 }}>
+                {title}
+              </Typography>
+            </TruncationTooltip>
+            {metadata?.favorite && (
+              <StarIcon
+                sx={{ fontSize: 12, color: 'warning.main', flexShrink: 0 }}
+              />
+            )}
+          </Stack>
+        }
+        secondary={address}
+        slotProps={{ secondary: { noWrap: true, sx: { fontSize: 11 } } }}
+      />
+    </ListItemButton>
   );
 }

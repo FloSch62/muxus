@@ -384,7 +384,33 @@ function parseWindowLaunch(value: unknown): AppWindowLaunch | undefined {
       (profile.kind === 'ssh' &&
         typeof profile.target === 'string' &&
         profile.target.length > 0 &&
-        profile.target.length <= 500);
+        profile.target.length <= 500) ||
+      (profile.kind === 'telnet' &&
+        validProfileId(profile.profileId) &&
+        typeof profile.host === 'string' &&
+        profile.host.length > 0 &&
+        profile.host.length <= 253 &&
+        (profile.port === undefined ||
+          (typeof profile.port === 'number' &&
+            Number.isInteger(profile.port) &&
+            profile.port >= 1 &&
+            profile.port <= 65_535))) ||
+      (profile.kind === 'serial' &&
+        validProfileId(profile.profileId) &&
+        typeof profile.path === 'string' &&
+        profile.path.length > 0 &&
+        profile.path.length <= 4096 &&
+        (profile.baudRate === undefined ||
+          (typeof profile.baudRate === 'number' &&
+            Number.isInteger(profile.baudRate) &&
+            profile.baudRate >= 1 &&
+            profile.baudRate <= 12_000_000)) &&
+        (profile.dataBits === undefined || [5, 6, 7, 8].includes(profile.dataBits as number)) &&
+        (profile.stopBits === undefined || [1, 1.5, 2].includes(profile.stopBits as number)) &&
+        (profile.parity === undefined ||
+          ['none', 'even', 'odd', 'mark', 'space'].includes(profile.parity as string)) &&
+        (profile.flowControl === undefined ||
+          ['none', 'hardware', 'software'].includes(profile.flowControl as string)));
     if (!valid) return undefined;
     return value as AppWindowLaunch;
   }
@@ -400,6 +426,13 @@ function parseWindowLaunch(value: unknown): AppWindowLaunch | undefined {
     return undefined;
   }
   return value as AppWindowLaunch;
+}
+
+function validProfileId(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (typeof value === 'string' && value.length >= 1 && value.length <= 200)
+  );
 }
 
 if (!app.requestSingleInstanceLock()) {

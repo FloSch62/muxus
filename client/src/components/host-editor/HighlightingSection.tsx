@@ -3,17 +3,18 @@ import FormControlLabel from '@mui/material/FormControlLabel';
 import Stack from '@mui/material/Stack';
 import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
-import type { HostDraft } from './draft.js';
+import type { HostKeywordHighlightConfig } from '@muxus/shared';
 import { KeywordHighlightRulesEditor } from '../KeywordHighlightRulesEditor.js';
 
 export function HighlightingSection({
-  draft,
-  set,
+  config,
+  onChange,
+  description = 'Host rules apply whenever a terminal connects through this OpenSSH alias.',
 }: {
-  draft: HostDraft;
-  set: (patch: Partial<HostDraft>) => void;
+  config: HostKeywordHighlightConfig;
+  onChange: (config: HostKeywordHighlightConfig) => void;
+  description?: string;
 }) {
-  const config = draft.keywordHighlights;
   return (
     <Stack spacing={2}>
       <Box>
@@ -21,7 +22,7 @@ export function HighlightingSection({
           Keyword highlighting
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Host rules apply whenever a terminal connects through this OpenSSH alias.
+          {description}
         </Typography>
       </Box>
       <FormControlLabel
@@ -30,12 +31,7 @@ export function HighlightingSection({
             size="small"
             checked={config.inheritGlobal}
             onChange={(event) =>
-              set({
-                keywordHighlights: {
-                  ...config,
-                  inheritGlobal: event.target.checked,
-                },
-              })
+              onChange({ ...config, inheritGlobal: event.target.checked })
             }
           />
         }
@@ -50,7 +46,7 @@ export function HighlightingSection({
       />
       <KeywordHighlightRulesEditor
         rules={config.rules}
-        onChange={(rules) => set({ keywordHighlights: { ...config, rules } })}
+        onChange={(rules) => onChange({ ...config, rules })}
         emptyMessage="No host-specific keyword rules yet."
       />
     </Stack>

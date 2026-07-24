@@ -15,3 +15,4 @@ allowBuilds:
   core-js-pure: false
   electron-winstaller: false
   cpu-features: false
+  '@serialport/bindings-cpp': true

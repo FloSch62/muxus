@@ -1,15 +1,14 @@
 import { create } from 'zustand';
-import type { SshHostEntry } from '@muxus/shared';
+import type { SavedHostProfile, SshHostEntry } from '@muxus/shared';
 
-/**
- * Host editor dialog state: closed, creating (optionally duplicating an
- * existing entry), or editing an entry's Host block in ~/.ssh/config.
- */
+/** Unified editor state for OpenSSH entries and Muxus-owned Telnet/serial hosts. */
 export type HostEditorState =
   | false
-  | { mode: 'new'; prefillTarget?: string }
+  | { mode: 'new'; prefillTarget?: string; kind?: 'ssh' | 'telnet' | 'serial' }
   | { mode: 'duplicate'; entry: SshHostEntry }
-  | { mode: 'edit'; entry: SshHostEntry };
+  | { mode: 'edit'; entry: SshHostEntry }
+  | { mode: 'duplicate-profile'; entry: SavedHostProfile }
+  | { mode: 'edit-profile'; entry: SavedHostProfile };
 
 export interface ConfirmCloseRequest {
   tabIds: string[];
@@ -23,7 +22,7 @@ interface UiState {
   shortcutsOpen: boolean;
   hostEditor: HostEditorState;
   /** Host whose Muxus-only display metadata is being organized. */
-  hostOrganizer: SshHostEntry | false;
+  hostOrganizer: SshHostEntry | SavedHostProfile | false;
   /** Global forwarding side panel (saved tunnels + live forwards). */
   forwardingOpen: boolean;
   /** Tabs, and optionally their pane, awaiting a live-session close confirmation. */
@@ -32,7 +31,7 @@ interface UiState {
   setCommandButtonsOpen: (open: boolean) => void;
   setShortcutsOpen: (open: boolean) => void;
   setHostEditor: (value: HostEditorState) => void;
-  setHostOrganizer: (value: SshHostEntry | false) => void;
+  setHostOrganizer: (value: SshHostEntry | SavedHostProfile | false) => void;
   setForwardingOpen: (open: boolean) => void;
   setConfirmClose: (request: ConfirmCloseRequest | null) => void;
 }

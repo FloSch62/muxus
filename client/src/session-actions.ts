@@ -1,4 +1,11 @@
-import type { LocalProfile, SessionProfile, SshHostEntry } from '@muxus/shared';
+import type {
+  LocalProfile,
+  SavedHostProfile,
+  SessionProfile,
+  SshHostEntry,
+} from '@muxus/shared';
+import type { ManagedHost } from './managed-hosts.js';
+import { savedHostDisplayName } from './saved-hosts.js';
 import { usePrefsStore } from './state/prefs.js';
 import { useTabsStore } from './state/tabs.js';
 import { useUiStore } from './state/ui.js';
@@ -45,12 +52,28 @@ export function connectTarget(target: string, title = target, replaceTabId?: str
   return useTabsStore.getState().open(profile, title);
 }
 
+export function connectSavedHost(host: SavedHostProfile, replaceTabId?: string): string {
+  const profile = { ...host.profile, profileId: host.id };
+  const title = savedHostDisplayName(host);
+  const replacedId = replaceActiveEmpty(profile, title, replaceTabId);
+  const id = replacedId ?? useTabsStore.getState().open(profile, title);
+  if (host.metadata.color) useTabsStore.getState().update(id, { color: host.metadata.color });
+  return id;
+}
+
 /** Connect a listed host with its Muxus display name and color carried into
  *  the tab, preserving the visual cue after the sidebar is hidden. */
 export function connectHost(host: SshHostEntry, replaceTabId?: string): string {
   const id = connectTarget(host.alias, host.metadata?.displayName ?? host.alias, replaceTabId);
   if (host.metadata?.color) useTabsStore.getState().update(id, { color: host.metadata.color });
   return id;
+}
+
+/** Connect any sidebar host, regardless of which source it comes from. */
+export function connectManagedHost(host: ManagedHost, replaceTabId?: string): string {
+  return host.kind === 'ssh'
+    ? connectHost(host.entry, replaceTabId)
+    : connectSavedHost(host.entry, replaceTabId);
 }
 
 /** Duplicate an open tab (same profile, fresh session). */
@@ -79,6 +102,20 @@ export function openHostInNewWindow(host: SshHostEntry): void {
     title: host.metadata?.displayName ?? host.alias,
     ...(host.metadata?.color ? { color: host.metadata.color } : {}),
   });
+}
+
+export function openSavedHostInNewWindow(host: SavedHostProfile): void {
+  openAppWindow({
+    kind: 'session',
+    profile: { ...host.profile, profileId: host.id },
+    title: savedHostDisplayName(host),
+    ...(host.metadata.color ? { color: host.metadata.color } : {}),
+  });
+}
+
+export function openManagedHostInNewWindow(host: ManagedHost): void {
+  if (host.kind === 'ssh') openHostInNewWindow(host.entry);
+  else openSavedHostInNewWindow(host.entry);
 }
 
 /**

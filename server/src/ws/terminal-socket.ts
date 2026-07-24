@@ -1,10 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
+import { nanoid } from 'nanoid';
 import type { TerminalServerMessage } from '@muxus/shared';
 import { terminalClientMessageSchema, type TerminalClientMessage } from '@muxus/shared/ws-protocol';
 import type { AppContext } from '../app.js';
 import type { ConnectIo } from '../ssh/connection-manager.js';
 import { spawnLocalPty, DEFAULT_TERM } from '../local/pty-manager.js';
+import { SerialTransport } from '../serial/serial-transport.js';
+import { TelnetTransport } from '../telnet/telnet-transport.js';
+import type { TerminalTransport } from '../transports/terminal-transport.js';
 
 const CONNECT_TIMEOUT_MS = 30_000;
 const KEEPALIVE_MS = 30_000;
@@ -160,6 +164,51 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
     return;
   }
 
+  if (profile.kind === 'serial') {
+    io.status(`Opening ${profile.path} at ${profile.baudRate} baud …`);
+    const transport = await SerialTransport.connect(profile);
+    if (!socketOpen) {
+      transport.close();
+      return;
+    }
+    attachTerminalTransport(
+      socket,
+      control,
+      transport,
+      (writer) => {
+        writeInput = writer;
+      },
+      `serial-${nanoid(10)}`,
+    );
+    app.log.info(
+      { path: profile.path, baudRate: profile.baudRate },
+      'serial session established',
+    );
+    if (profile.profileId) ctx.database.recordSavedHostConnection(profile.profileId);
+    return;
+  }
+
+  if (profile.kind === 'telnet') {
+    io.status(`Connecting to ${profile.host}:${profile.port} over Telnet …`);
+    const transport = await TelnetTransport.connect(profile, cols, rows);
+    if (!socketOpen) {
+      transport.close();
+      return;
+    }
+    attachTerminalTransport(
+      socket,
+      control,
+      transport,
+      (writer) => {
+        writeInput = writer;
+      },
+      `telnet-${nanoid(10)}`,
+    );
+    app.log.info({ host: profile.host, port: profile.port }, 'telnet session established');
+    if (profile.profileId) ctx.database.recordSavedHostConnection(profile.profileId);
+    return;
+  }
+
   // --- SSH ---
   const terminalLease = await ctx.connections.connect(profile, io);
   const conn = terminalLease.connection;
@@ -248,6 +297,57 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
     }
   }
   sendControl(socket, { op: 'ready', connId: conn.id, host: conn.host, user: conn.user });
+}
+
+/** Attach a byte transport to the terminal socket with shared flow control. */
+function attachTerminalTransport(
+  socket: WebSocket,
+  control: ControlChannel,
+  transport: TerminalTransport,
+  setWriteInput: (writer: (data: Buffer) => void) => void,
+  connId: string,
+): void {
+  setWriteInput((data) => transport.write(data));
+  control.onMessage = (msg) => {
+    if (msg.op === 'resize') transport.resize(msg.cols, msg.rows);
+  };
+
+  let paused = false;
+  let closed = false;
+  const resumeTimer = setInterval(() => {
+    if (paused && socket.bufferedAmount < BACKPRESSURE_HIGH / 2) {
+      paused = false;
+      transport.resume();
+    }
+  }, BACKPRESSURE_POLL_MS);
+
+  const unsubscribeData = transport.onData((data) => {
+    if (socket.readyState !== socket.OPEN) return;
+    socket.send(data, { binary: true });
+    if (!paused && socket.bufferedAmount > BACKPRESSURE_HIGH) {
+      paused = true;
+      transport.pause();
+    }
+  });
+  const unsubscribeError = transport.onError((error) => {
+    sendControl(socket, { op: 'exit', message: error.message });
+    socket.close();
+  });
+  const unsubscribeClose = transport.onClose(() => {
+    sendControl(socket, { op: 'exit' });
+    socket.close();
+  });
+
+  socket.once('close', () => {
+    if (closed) return;
+    closed = true;
+    clearInterval(resumeTimer);
+    unsubscribeData();
+    unsubscribeError();
+    unsubscribeClose();
+    transport.close();
+  });
+  sendControl(socket, { op: 'ready', connId });
 }
 
 function sendControl(socket: WebSocket, msg: TerminalServerMessage): void {

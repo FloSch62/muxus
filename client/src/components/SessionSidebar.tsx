@@ -45,16 +45,27 @@ import StarBorderIcon from '@mui/icons-material/StarBorder';
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import type { SshHostEntry } from '@muxus/shared';
-import { useSshConfig } from '../api/queries.js';
-import { useDeleteHost, useReorderSshHosts, useUpdateSshMetadata } from '../api/ssh-config.js';
+import { useReorderManagedHosts } from '../api/host-order.js';
+import { useDeleteHostProfile, useUpdateHostProfileMetadata } from '../api/profiles.js';
+import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
+import { useDeleteHost, useUpdateSshMetadata } from '../api/ssh-config.js';
 import { copyToClipboard } from '../clipboard.js';
-import { groupHosts, hostAddress, hostDisplayName, hostOrderAfterDrop } from '../host-organization.js';
+import { hostOrderAfterDrop } from '../host-organization.js';
 import {
-  connectHost,
+  groupManagedHosts,
+  managedHostAddress,
+  managedHostCopyCommand,
+  managedHostDisplayName,
+  managedHostKey,
+  managedHostRef,
+  type ManagedHost,
+} from '../managed-hosts.js';
+import {
+  connectManagedHost,
   connectTarget,
   isQuickConnectTarget,
-  openHostInNewWindow,
   openLocalTerminal,
+  openManagedHostInNewWindow,
 } from '../session-actions.js';
 import {
   loadHostEditorDialog,
@@ -71,20 +82,20 @@ import { usePrefsStore } from '../state/prefs.js';
 import { showToast } from '../state/toast.js';
 import { useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
+import { hostKindIcon } from './host-kind-icon.js';
 import { PanelResizeHandle } from './PanelResizeHandle.js';
 import { TruncationTooltip } from './TruncationTooltip.js';
 
 const EMPTY_HOSTS: SshHostEntry[] = [];
+type LiveCounts = { connected: number; connecting: number };
 type DropTarget =
-  | { kind: 'row'; groupKey: string; alias: string; edge: 'before' | 'after' }
+  | { kind: 'row'; groupKey: string; hostKey: string; edge: 'before' | 'after' }
   | { kind: 'group'; groupKey: string };
 
-/**
- * Live OpenSSH hosts enriched with Muxus-owned favorites/recent metadata.
- * Editing connection details still writes directly back to ssh_config.
- */
+/** Saved Telnet/serial profiles and live OpenSSH hosts in one host manager. */
 export function SessionSidebar() {
   const { data: config } = useSshConfig();
+  const { data: savedData } = useSavedHostProfiles();
   const setHostEditor = useUiStore((s) => s.setHostEditor);
   const setHostOrganizer = useUiStore((s) => s.setHostOrganizer);
   const tabs = useTabsStore((s) => s.tabs);
@@ -92,80 +103,125 @@ export function SessionSidebar() {
   const setPrefs = usePrefsStore((state) => state.set);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState('');
-  const [menu, setMenu] = useState<{ anchor: HTMLElement; position?: { top: number; left: number }; entry: SshHostEntry } | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<SshHostEntry | null>(null);
+  const [menu, setMenu] = useState<{ anchor: HTMLElement; position?: { top: number; left: number }; host: ManagedHost } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<ManagedHost | null>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const [dragged, setDragged] = useState<{ groupKey: string; alias: string } | null>(null);
+  const [dragged, setDragged] = useState<{ groupKey: string; hostKey: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
   const deleteHost = useDeleteHost(() => setConfirmDelete(null));
+  const deleteProfile = useDeleteHostProfile(() => setConfirmDelete(null));
   const updateMetadata = useUpdateSshMetadata();
-  const reorderHosts = useReorderSshHosts();
+  const updateProfileMetadata = useUpdateHostProfileMetadata();
+  const reorder = useReorderManagedHosts();
 
   const normalizedFilter = filter.trim().toLowerCase();
   const needle = useDeferredValue(normalizedFilter);
   const hosts = config?.hosts ?? EMPTY_HOSTS;
-
   const groups = useMemo(
-    () => groupHosts(hosts, config?.files ?? [], config?.path, needle),
-    [hosts, config?.files, config?.path, needle],
+    () =>
+      groupManagedHosts(
+        hosts,
+        savedData?.profiles ?? [],
+        config?.files ?? [],
+        config?.path,
+        needle,
+      ),
+    [hosts, savedData?.profiles, config?.files, config?.path, needle],
+  );
+  const immediateGroups = useMemo(
+    () =>
+      groupManagedHosts(
+        hosts,
+        savedData?.profiles ?? [],
+        config?.files ?? [],
+        config?.path,
+        normalizedFilter,
+      ),
+    [hosts, savedData?.profiles, config?.files, config?.path, normalizedFilter],
   );
   const visible = groups.flatMap((group) => group.hosts);
-  const menuGroup = menu ? groups.find((group) => group.hosts.some((host) => host.alias === menu.entry.alias)) : undefined;
-  const menuIndex = menuGroup && menu ? menuGroup.hosts.findIndex((host) => host.alias === menu.entry.alias) : -1;
+  const hostByKey = useMemo(
+    () => new Map(visible.map((host) => [managedHostKey(host), host])),
+    [visible],
+  );
+  const menuGroup = menu
+    ? groups.find((group) =>
+        group.hosts.some((host) => managedHostKey(host) === managedHostKey(menu.host)),
+      )
+    : undefined;
+  const menuIndex =
+    menu && menuGroup
+      ? menuGroup.hosts.findIndex(
+          (host) => managedHostKey(host) === managedHostKey(menu.host),
+        )
+      : -1;
 
-  const commitOrder = (groupKey: string, sourceAlias: string, targetAlias: string, edge: 'before' | 'after') => {
+  const mutating =
+    reorder.isPending || updateMetadata.isPending || updateProfileMetadata.isPending;
+
+  const commitOrder = (keys: readonly string[]) =>
+    reorder.mutate(
+      keys.flatMap((key) => {
+        const host = hostByKey.get(key);
+        return host ? [managedHostRef(host)] : [];
+      }),
+    );
+
+  const reorderWithin = (groupKey: string, sourceKey: string, targetKey: string, edge: 'before' | 'after') => {
     const group = groups.find((candidate) => candidate.key === groupKey);
-    if (!group || sourceAlias === targetAlias) return;
-    const aliases = group.hosts.map((host) => host.alias);
-    const next = hostOrderAfterDrop(aliases, sourceAlias, targetAlias, edge);
-    if (next.every((alias, index) => alias === aliases[index])) return;
-    reorderHosts.mutate(next);
+    if (!group || sourceKey === targetKey) return;
+    const keys = group.hosts.map(managedHostKey);
+    const next = hostOrderAfterDrop(keys, sourceKey, targetKey, edge);
+    if (next.every((key, index) => key === keys[index])) return;
+    commitOrder(next);
   };
 
   const moveToGroup = (
     targetGroupKey: string,
-    sourceAlias: string,
-    targetAlias?: string,
+    sourceKey: string,
+    targetKey?: string,
     edge: 'before' | 'after' = 'after',
   ) => {
     const targetGroup = groups.find((candidate) => candidate.key === targetGroupKey);
-    const sourceGroup = groups.find((candidate) => candidate.hosts.some((host) => host.alias === sourceAlias));
-    if (!targetGroup || targetGroup.kind !== 'custom' || !sourceGroup) return;
-    const aliases = targetGroup.hosts.map((host) => host.alias);
-    const next = hostOrderAfterDrop(aliases, sourceAlias, targetAlias, edge);
-    if (sourceGroup.key === targetGroup.key) {
-      if (!next.every((alias, index) => alias === aliases[index])) reorderHosts.mutate(next);
+    const source = hostByKey.get(sourceKey);
+    if (!targetGroup || targetGroup.kind !== 'custom' || !source) return;
+    const keys = targetGroup.hosts.map(managedHostKey);
+    const next = hostOrderAfterDrop(keys, sourceKey, targetKey, edge);
+    if (targetGroup.hosts.some((host) => managedHostKey(host) === sourceKey)) {
+      if (!next.every((key, index) => key === keys[index])) commitOrder(next);
       return;
     }
-    void updateMetadata
-      .mutateAsync({ alias: sourceAlias, patch: { group: targetGroup.label } })
-      .then(() => reorderHosts.mutate(next))
-      .catch(() => undefined);
+    const patch = { group: targetGroup.label };
+    const moved =
+      source.kind === 'ssh'
+        ? updateMetadata.mutateAsync({ alias: source.entry.alias, patch })
+        : updateProfileMetadata.mutateAsync({ id: source.entry.id, patch });
+    void moved.then(() => commitOrder(next)).catch(() => undefined);
   };
 
-  const moveBy = (groupKey: string, alias: string, delta: -1 | 1) => {
+  const moveBy = (groupKey: string, hostKey: string, delta: -1 | 1) => {
     const group = groups.find((candidate) => candidate.key === groupKey);
     if (!group) return;
-    const aliases = group.hosts.map((host) => host.alias);
-    const from = aliases.indexOf(alias);
+    const keys = group.hosts.map(managedHostKey);
+    const from = keys.indexOf(hostKey);
     const to = from + delta;
-    if (from < 0 || to < 0 || to >= aliases.length) return;
-    [aliases[from], aliases[to]] = [aliases[to]!, aliases[from]!];
-    reorderHosts.mutate(aliases);
+    if (from < 0 || to < 0 || to >= keys.length) return;
+    [keys[from], keys[to]] = [keys[to]!, keys[from]!];
+    commitOrder(keys);
   };
 
-  const beginDrag = (event: DragEvent<HTMLElement>, groupKey: string, alias: string) => {
+  const beginDrag = (event: DragEvent<HTMLElement>, groupKey: string, hostKey: string) => {
     event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', alias);
-    setDragged({ groupKey, alias });
+    event.dataTransfer.setData('text/plain', hostKey);
+    setDragged({ groupKey, hostKey });
     setDropTarget(null);
   };
 
-  const dragOver = (event: DragEvent<HTMLElement>, groupKey: string, alias: string) => {
+  const dragOver = (event: DragEvent<HTMLElement>, groupKey: string, hostKey: string) => {
     if (!dragged) return;
     const targetGroup = groups.find((candidate) => candidate.key === groupKey);
     if (
-      dragged.alias === alias ||
+      dragged.hostKey === hostKey ||
       !targetGroup ||
       (dragged.groupKey !== groupKey && targetGroup.kind !== 'custom')
     ) {
@@ -179,23 +235,23 @@ export function SessionSidebar() {
     setDropTarget((current) =>
       current?.kind === 'row' &&
       current.groupKey === groupKey &&
-      current.alias === alias &&
+      current.hostKey === hostKey &&
       current.edge === edge
         ? current
-        : { kind: 'row', groupKey, alias, edge },
+        : { kind: 'row', groupKey, hostKey, edge },
     );
   };
 
-  const drop = (event: DragEvent<HTMLElement>, groupKey: string, alias: string) => {
+  const drop = (event: DragEvent<HTMLElement>, groupKey: string, hostKey: string) => {
     event.preventDefault();
     if (
       dragged &&
       dropTarget?.kind === 'row' &&
       dropTarget.groupKey === groupKey &&
-      dropTarget.alias === alias
+      dropTarget.hostKey === hostKey
     ) {
-      if (dragged.groupKey === groupKey) commitOrder(groupKey, dragged.alias, alias, dropTarget.edge);
-      else moveToGroup(groupKey, dragged.alias, alias, dropTarget.edge);
+      if (dragged.groupKey === groupKey) reorderWithin(groupKey, dragged.hostKey, hostKey, dropTarget.edge);
+      else moveToGroup(groupKey, dragged.hostKey, hostKey, dropTarget.edge);
     }
     setDragged(null);
     setDropTarget(null);
@@ -220,21 +276,28 @@ export function SessionSidebar() {
   const dropOnGroup = (event: DragEvent<HTMLElement>, groupKey: string) => {
     event.preventDefault();
     if (dragged && dropTarget?.kind === 'group' && dropTarget.groupKey === groupKey) {
-      moveToGroup(groupKey, dragged.alias);
+      moveToGroup(groupKey, dragged.hostKey);
     }
     setDragged(null);
     setDropTarget(null);
   };
 
-  /** Live session dots: connected/connecting tab counts per primary alias. */
-  const liveByTarget = useMemo(() => {
-    const map = new Map<string, { connected: number; connecting: number }>();
-    for (const t of tabs) {
-      if (!t.profile || t.profile.kind !== 'ssh') continue;
-      const entry = map.get(t.profile.target) ?? { connected: 0, connecting: 0 };
-      if (t.status === 'connected') entry.connected++;
-      if (t.status === 'connecting') entry.connecting++;
-      map.set(t.profile.target, entry);
+  /** Live session dots keyed like managedHostKey: connected/connecting tab counts. */
+  const liveByKey = useMemo(() => {
+    const map = new Map<string, LiveCounts>();
+    for (const tab of tabs) {
+      if (!tab.profile) continue;
+      const key =
+        tab.profile.kind === 'ssh'
+          ? `ssh:${tab.profile.target}`
+          : tab.profile.kind === 'telnet' || tab.profile.kind === 'serial'
+            ? tab.profile.profileId && `profile:${tab.profile.profileId}`
+            : undefined;
+      if (!key) continue;
+      const entry = map.get(key) ?? { connected: 0, connecting: 0 };
+      if (tab.status === 'connected') entry.connected++;
+      if (tab.status === 'connecting') entry.connecting++;
+      map.set(key, entry);
     }
     return map;
   }, [tabs]);
@@ -242,23 +305,36 @@ export function SessionSidebar() {
   const quickConnectable =
     !!normalizedFilter &&
     isQuickConnectTarget(filter) &&
+    immediateGroups.every((group) => group.hosts.length === 0) &&
     !hosts.some((h) => h.aliases.includes(filter.trim()));
 
   const onEnter = () => {
-    const currentMatch = groupHosts(
-      hosts,
-      config?.files ?? [],
-      config?.path,
-      normalizedFilter,
-    ).flatMap((group) => group.hosts)[0];
-    if (currentMatch) connectHost(currentMatch);
+    const currentMatch = immediateGroups.flatMap((group) => group.hosts)[0];
+    if (currentMatch) connectManagedHost(currentMatch);
     else if (quickConnectable) connectTarget(filter.trim());
     else return;
     setFilter('');
   };
 
-  const openMenu = (entry: SshHostEntry, anchor: HTMLElement, position?: { top: number; left: number }) =>
-    setMenu({ anchor, position, entry });
+  const toggleFavorite = (host: ManagedHost) => {
+    const favorite = !(host.entry.metadata?.favorite ?? false);
+    if (host.kind === 'ssh') {
+      updateMetadata.mutate({ alias: host.entry.alias, patch: { favorite } });
+    } else {
+      updateProfileMetadata.mutate({ id: host.entry.id, patch: { favorite } });
+    }
+  };
+
+  const confirmDeleteHost = () => {
+    if (!confirmDelete) return;
+    if (confirmDelete.kind === 'ssh') deleteHost.mutate(confirmDelete.entry.alias);
+    else deleteProfile.mutate(confirmDelete.entry.id);
+  };
+
+  const openMenu = (host: ManagedHost, anchor: HTMLElement, position?: { top: number; left: number }) =>
+    setMenu({ anchor, position, host });
+
+  const copyAction = menu ? managedHostCopyCommand(menu.host) : undefined;
 
   return (
     <Box
@@ -313,10 +389,10 @@ export function SessionSidebar() {
             },
           }}
         />
-        <Tooltip title="Add host to ~/.ssh/config">
+        <Tooltip title="Add host">
           <IconButton
             size="small"
-            aria-label="Add SSH host"
+            aria-label="Add host"
             onMouseEnter={() => void loadHostEditorDialog()}
             onFocus={() => void loadHostEditorDialog()}
             onClick={() => setHostEditor({ mode: 'new' })}
@@ -414,40 +490,43 @@ export function SessionSidebar() {
             }
           >
             {!collapsed[group.key] &&
-              group.hosts.map((h) => (
-                <HostRow
-                  key={`${h.file}:${h.alias}`}
-                  entry={h}
-                  live={liveByTarget.get(h.alias)}
-                  onConnect={() => connectHost(h)}
-                  onMenu={openMenu}
-                  dragEnabled={!needle && !reorderHosts.isPending && !updateMetadata.isPending}
-                  dragging={dragged?.groupKey === group.key && dragged.alias === h.alias}
-                  dropEdge={
-                    dropTarget?.kind === 'row' &&
-                    dropTarget.groupKey === group.key &&
-                    dropTarget.alias === h.alias
-                      ? dropTarget.edge
-                      : undefined
-                  }
-                  onDragStart={(event) => beginDrag(event, group.key, h.alias)}
-                  onDragOver={(event) => dragOver(event, group.key, h.alias)}
-                  onDrop={(event) => drop(event, group.key, h.alias)}
-                  onDragEnd={() => {
-                    setDragged(null);
-                    setDropTarget(null);
-                  }}
-                  onMove={(delta) => moveBy(group.key, h.alias, delta)}
-                />
-              ))}
+              group.hosts.map((host) => {
+                const hostKey = managedHostKey(host);
+                return (
+                  <HostRow
+                    key={hostKey}
+                    host={host}
+                    live={liveByKey.get(hostKey)}
+                    onConnect={() => connectManagedHost(host)}
+                    onMenu={openMenu}
+                    dragEnabled={!needle && !mutating}
+                    dragging={dragged?.groupKey === group.key && dragged.hostKey === hostKey}
+                    dropEdge={
+                      dropTarget?.kind === 'row' &&
+                      dropTarget.groupKey === group.key &&
+                      dropTarget.hostKey === hostKey
+                        ? dropTarget.edge
+                        : undefined
+                    }
+                    onDragStart={(event) => beginDrag(event, group.key, hostKey)}
+                    onDragOver={(event) => dragOver(event, group.key, hostKey)}
+                    onDrop={(event) => drop(event, group.key, hostKey)}
+                    onDragEnd={() => {
+                      setDragged(null);
+                      setDropTarget(null);
+                    }}
+                    onMove={(delta) => moveBy(group.key, hostKey, delta)}
+                  />
+                );
+              })}
           </List>
         ))}
 
-        {hosts.length === 0 && (
+        {hosts.length === 0 && (savedData?.profiles.length ?? 0) === 0 && (
           <Stack spacing={1.5} sx={{ alignItems: 'center', p: 3, textAlign: 'center' }}>
             <DnsOutlinedIcon sx={{ fontSize: 36, color: 'text.disabled' }} />
             <Typography variant="body2" color="text.secondary">
-              No hosts in ~/.ssh/config yet.
+              No saved hosts yet.
             </Typography>
             <Button
               size="small"
@@ -461,11 +540,13 @@ export function SessionSidebar() {
             </Button>
           </Stack>
         )}
-        {hosts.length > 0 && visible.length === 0 && !quickConnectable && (
+        {(hosts.length > 0 || (savedData?.profiles.length ?? 0) > 0) &&
+          visible.length === 0 &&
+          !quickConnectable && (
           <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
             No hosts match.
           </Typography>
-        )}
+          )}
       </Box>
 
       <Menu
@@ -479,7 +560,7 @@ export function SessionSidebar() {
           onMouseEnter={() => void loadTerminalViewImpl()}
           onFocus={() => void loadTerminalViewImpl()}
           onClick={() => {
-            if (menu) connectHost(menu.entry);
+            if (menu) connectManagedHost(menu.host);
             setMenu(null);
           }}
         >
@@ -492,7 +573,7 @@ export function SessionSidebar() {
           onMouseEnter={() => void loadTerminalViewImpl()}
           onFocus={() => void loadTerminalViewImpl()}
           onClick={() => {
-            if (menu) openHostInNewWindow(menu.entry);
+            if (menu) openManagedHostInNewWindow(menu.host);
             setMenu(null);
           }}
         >
@@ -503,24 +584,19 @@ export function SessionSidebar() {
         </MenuItem>
         <MenuItem
           onClick={() => {
-            if (menu) {
-              updateMetadata.mutate({
-                alias: menu.entry.alias,
-                patch: { favorite: !(menu.entry.metadata?.favorite ?? false) },
-              });
-            }
+            if (menu) toggleFavorite(menu.host);
             setMenu(null);
           }}
         >
           <ListItemIcon>
-            {menu?.entry.metadata?.favorite ? <StarIcon fontSize="small" /> : <StarBorderIcon fontSize="small" />}
+            {menu?.host.entry.metadata?.favorite ? <StarIcon fontSize="small" /> : <StarBorderIcon fontSize="small" />}
           </ListItemIcon>
-          {menu?.entry.metadata?.favorite ? 'Remove from favorites' : 'Add to favorites'}
+          {menu?.host.entry.metadata?.favorite ? 'Remove from favorites' : 'Add to favorites'}
         </MenuItem>
         <MenuItem
-          disabled={!!needle || menuIndex <= 0 || reorderHosts.isPending}
+          disabled={!!needle || menuIndex <= 0 || mutating}
           onClick={() => {
-            if (menu && menuGroup) moveBy(menuGroup.key, menu.entry.alias, -1);
+            if (menu && menuGroup) moveBy(menuGroup.key, managedHostKey(menu.host), -1);
             setMenu(null);
           }}
         >
@@ -530,9 +606,15 @@ export function SessionSidebar() {
           Move up
         </MenuItem>
         <MenuItem
-          disabled={!!needle || !menuGroup || menuIndex < 0 || menuIndex >= menuGroup.hosts.length - 1 || reorderHosts.isPending}
+          disabled={
+            !!needle ||
+            !menuGroup ||
+            menuIndex < 0 ||
+            menuIndex >= menuGroup.hosts.length - 1 ||
+            mutating
+          }
           onClick={() => {
-            if (menu && menuGroup) moveBy(menuGroup.key, menu.entry.alias, 1);
+            if (menu && menuGroup) moveBy(menuGroup.key, managedHostKey(menu.host), 1);
             setMenu(null);
           }}
         >
@@ -546,7 +628,7 @@ export function SessionSidebar() {
           onMouseEnter={() => void loadHostOrganizationDialog()}
           onFocus={() => void loadHostOrganizationDialog()}
           onClick={() => {
-            if (menu) setHostOrganizer(menu.entry);
+            if (menu) setHostOrganizer(menu.host.entry);
             setMenu(null);
           }}
         >
@@ -559,7 +641,13 @@ export function SessionSidebar() {
           onMouseEnter={() => void loadHostEditorDialog()}
           onFocus={() => void loadHostEditorDialog()}
           onClick={() => {
-            if (menu) setHostEditor({ mode: 'edit', entry: menu.entry });
+            if (menu) {
+              setHostEditor(
+                menu.host.kind === 'ssh'
+                  ? { mode: 'edit', entry: menu.host.entry }
+                  : { mode: 'edit-profile', entry: menu.host.entry },
+              );
+            }
             setMenu(null);
           }}
         >
@@ -572,7 +660,13 @@ export function SessionSidebar() {
           onMouseEnter={() => void loadHostEditorDialog()}
           onFocus={() => void loadHostEditorDialog()}
           onClick={() => {
-            if (menu) setHostEditor({ mode: 'duplicate', entry: menu.entry });
+            if (menu) {
+              setHostEditor(
+                menu.host.kind === 'ssh'
+                  ? { mode: 'duplicate', entry: menu.host.entry }
+                  : { mode: 'duplicate-profile', entry: menu.host.entry },
+              );
+            }
             setMenu(null);
           }}
         >
@@ -583,9 +677,9 @@ export function SessionSidebar() {
         </MenuItem>
         <MenuItem
           onClick={() => {
-            if (menu) {
-              void copyToClipboard(`ssh ${menu.entry.alias}`).then((ok) => {
-                if (ok) showToast('success', `Copied "ssh ${menu.entry.alias}"`);
+            if (copyAction) {
+              void copyToClipboard(copyAction.text).then((ok) => {
+                if (ok) showToast('success', `Copied "${copyAction.text}"`);
               });
             }
             setMenu(null);
@@ -594,12 +688,12 @@ export function SessionSidebar() {
           <ListItemIcon>
             <ContentCopyIcon fontSize="small" />
           </ListItemIcon>
-          Copy ssh command
+          {copyAction?.label ?? 'Copy'}
         </MenuItem>
         <Divider />
         <MenuItem
           onClick={() => {
-            if (menu) setConfirmDelete(menu.entry);
+            if (menu) setConfirmDelete(menu.host);
             setMenu(null);
           }}
           sx={{ color: 'error.main' }}
@@ -612,16 +706,22 @@ export function SessionSidebar() {
       </Menu>
 
       <Dialog open={!!confirmDelete} onClose={() => setConfirmDelete(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>Delete “{confirmDelete?.alias}”?</DialogTitle>
+        <DialogTitle>Delete “{confirmDelete ? managedHostDisplayName(confirmDelete) : ''}”?</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary">
-            The Host block is removed from {confirmDelete ? shortenPath(confirmDelete.file) : ''}. A backup of the previous file is
-            kept next to it as config.muxus.bak.
+            {confirmDelete?.kind === 'ssh'
+              ? `The Host block is removed from ${shortenPath(confirmDelete.entry.file)}. A backup of the previous file is kept next to it as config.muxus.bak.`
+              : 'This removes the saved host from Muxus. It does not change the remote device or serial port.'}
           </Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setConfirmDelete(null)}>Cancel</Button>
-          <Button color="error" variant="contained" disabled={deleteHost.isPending} onClick={() => confirmDelete && deleteHost.mutate(confirmDelete.alias)}>
+          <Button
+            color="error"
+            variant="contained"
+            disabled={deleteHost.isPending || deleteProfile.isPending}
+            onClick={confirmDeleteHost}
+          >
             Delete
           </Button>
         </DialogActions>
@@ -634,8 +734,9 @@ function shortenPath(p: string): string {
   return p.replace(/^.*(\/\.ssh\/)/, '~/.ssh/');
 }
 
+/** One sidebar row for any host source; SSH rows add resolved-config badges. */
 function HostRow({
-  entry,
+  host,
   live,
   onConnect,
   onMenu,
@@ -648,10 +749,10 @@ function HostRow({
   onDragEnd,
   onMove,
 }: {
-  entry: SshHostEntry;
-  live?: { connected: number; connecting: number };
+  host: ManagedHost;
+  live?: LiveCounts;
   onConnect: () => void;
-  onMenu: (entry: SshHostEntry, anchor: HTMLElement, position?: { top: number; left: number }) => void;
+  onMenu: (host: ManagedHost, anchor: HTMLElement, position?: { top: number; left: number }) => void;
   dragEnabled: boolean;
   dragging: boolean;
   dropEdge?: 'before' | 'after';
@@ -661,8 +762,15 @@ function HostRow({
   onDragEnd: () => void;
   onMove: (delta: -1 | 1) => void;
 }) {
-  const r = entry.resolved;
-  const secondary = hostAddress(entry);
+  const title = managedHostDisplayName(host);
+  const address = managedHostAddress(host);
+  const secondary = host.kind === 'ssh' && address === host.entry.alias ? undefined : address;
+  const color = host.entry.metadata?.color;
+  const resolved = host.kind === 'ssh' ? host.entry.resolved : undefined;
+  const Icon =
+    resolved && resolved.proxyJump.length > 0
+      ? AltRouteIcon
+      : hostKindIcon(host.kind === 'ssh' ? 'ssh' : host.entry.kind);
   const badge = { fontSize: 14, color: 'text.disabled' } as const;
 
   const row = (
@@ -674,14 +782,14 @@ function HostRow({
       onDrop={onDrop}
       onContextMenu={(e) => {
         e.preventDefault();
-        onMenu(entry, e.currentTarget, { top: e.clientY, left: e.clientX });
+        onMenu(host, e.currentTarget, { top: e.clientY, left: e.clientX });
       }}
       sx={{
         '&:hover .host-row-menu, &:hover .host-drag-handle, &:focus-within .host-drag-handle': { opacity: 1 },
         opacity: dragging ? 0.45 : 1,
         pr: 0.5,
         borderLeft: 3,
-        borderLeftColor: entry.metadata?.color ?? 'transparent',
+        borderLeftColor: color ?? 'transparent',
         position: 'relative',
         contentVisibility: 'auto',
         containIntrinsicSize: '0 48px',
@@ -705,7 +813,7 @@ function HostRow({
           <IconButton
             className="host-drag-handle"
             size="small"
-            aria-label={`Move ${hostDisplayName(entry)}`}
+            aria-label={`Move ${title}`}
             draggable
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
@@ -730,11 +838,7 @@ function HostRow({
         </Tooltip>
       )}
       <ListItemIcon sx={{ minWidth: 32 }}>
-        {r.proxyJump.length > 0 ? (
-          <AltRouteIcon fontSize="small" sx={{ color: entry.metadata?.color ?? 'text.secondary' }} />
-        ) : (
-          <DnsOutlinedIcon fontSize="small" sx={{ color: entry.metadata?.color ?? 'text.secondary' }} />
-        )}
+        <Icon fontSize="small" sx={{ color: color ?? 'text.secondary' }} />
       </ListItemIcon>
       <ListItemText
         primary={
@@ -754,15 +858,15 @@ function HostRow({
                 }}
               />
             )}
-            <TruncationTooltip text={hostDisplayName(entry)}>
+            <TruncationTooltip text={title}>
               <Box
                 component="span"
                 sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
               >
-                {hostDisplayName(entry)}
+                {title}
               </Box>
             </TruncationTooltip>
-            {entry.metadata?.favorite && <StarIcon sx={{ fontSize: 13, color: 'warning.main' }} />}
+            {host.entry.metadata?.favorite && <StarIcon sx={{ fontSize: 13, color: 'warning.main' }} />}
             {(live?.connected ?? 0) > 1 && (
               <Typography component="span" sx={{ fontSize: 10, color: 'success.main' }}>
                 ×{live!.connected}
@@ -770,27 +874,27 @@ function HostRow({
             )}
           </Stack>
         }
-        secondary={secondary !== entry.alias ? secondary : undefined}
+        secondary={secondary}
         slotProps={{ secondary: { sx: { fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } } }}
       />
       <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexShrink: 0, mr: 0.25 }}>
-        {r.proxyJump.length > 0 && (
-          <Tooltip title={`via ${r.proxyJump.join(' → ')}`}>
+        {resolved && resolved.proxyJump.length > 0 && (
+          <Tooltip title={`via ${resolved.proxyJump.join(' → ')}`}>
             <AltRouteIcon sx={badge} />
           </Tooltip>
         )}
-        {r.identityFiles.length > 0 && (
-          <Tooltip title={r.identityFiles.map((f) => f.split(/[\\/]/).pop()).join(', ')}>
+        {resolved && resolved.identityFiles.length > 0 && (
+          <Tooltip title={resolved.identityFiles.map((f) => f.split(/[\\/]/).pop()).join(', ')}>
             <KeyOutlinedIcon sx={badge} />
           </Tooltip>
         )}
-        {r.passwordOnly && (
+        {resolved?.passwordOnly && (
           <Tooltip title="Password authentication">
             <PasswordOutlinedIcon sx={badge} />
           </Tooltip>
         )}
-        {r.forwards.length > 0 && (
-          <Tooltip title={`${r.forwards.length} port forward${r.forwards.length > 1 ? 's' : ''} on connect`}>
+        {resolved && resolved.forwards.length > 0 && (
+          <Tooltip title={`${resolved.forwards.length} port forward${resolved.forwards.length > 1 ? 's' : ''} on connect`}>
             <SwapHorizOutlinedIcon sx={badge} />
           </Tooltip>
         )}
@@ -798,11 +902,11 @@ function HostRow({
           className="host-row-menu"
           size="small"
           edge="end"
-          aria-label={`Options for ${entry.alias}`}
+          aria-label={`Options for ${title}`}
           sx={{ opacity: { xs: 1, md: 0 }, transition: 'opacity 120ms' }}
           onClick={(e) => {
             e.stopPropagation();
-            onMenu(entry, e.currentTarget);
+            onMenu(host, e.currentTarget);
           }}
         >
           <Box component="span" sx={{ fontSize: 16, lineHeight: 1 }}>
@@ -813,8 +917,8 @@ function HostRow({
     </ListItemButton>
   );
 
-  return entry.description ? (
-    <Tooltip title={entry.description} placement="right" enterDelay={600}>
+  return host.kind === 'ssh' && host.entry.description ? (
+    <Tooltip title={host.entry.description} placement="right" enterDelay={600}>
       {row}
     </Tooltip>
   ) : (

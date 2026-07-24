@@ -9,6 +9,7 @@ import type {
 } from '@muxus/shared';
 import type { AppContext } from '../app.js';
 import { sendError } from '../util/errors.js';
+import { metadataPatchSchema } from './metadata-schema.js';
 import { defaultSshConfigPath, listHosts, loadConfigDocument } from '../ssh/ssh-config.js';
 import { deleteHost, previewHost, upsertHost } from '../ssh/ssh-config-edit.js';
 import { listSshKeys } from '../ssh/key-scan.js';
@@ -37,35 +38,6 @@ const upsertSchema = z.object({
     passwordOnly: z.boolean().optional(),
     extras: z.array(z.object({ keyword: z.string(), value: z.string() })).optional(),
   }),
-});
-
-const hexColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/);
-const keywordHighlightRuleSchema = z.object({
-  id: z.string().min(1).max(100),
-  keyword: z.string().min(1).max(500),
-  foreground: hexColorSchema,
-  background: hexColorSchema.optional(),
-  caseSensitive: z.boolean(),
-  wholeWord: z.boolean(),
-});
-const hostKeywordHighlightsSchema = z.object({
-  inheritGlobal: z.boolean(),
-  rules: z.array(keywordHighlightRuleSchema).max(100),
-});
-
-const metadataPatchSchema = z
-  .object({
-    favorite: z.boolean().optional(),
-    displayName: z.string().max(200).nullable().optional(),
-    group: z.string().max(100).nullable().optional(),
-    color: z.string().max(64).nullable().optional(),
-    icon: z.string().max(64).nullable().optional(),
-    keywordHighlights: hostKeywordHighlightsSchema.nullable().optional(),
-  })
-  .refine((patch) => Object.keys(patch).length > 0, 'at least one metadata field is required');
-
-const hostOrderSchema = z.object({
-  aliases: z.array(z.string().min(1)).max(10_000),
 });
 
 /** Live OpenSSH config plus Muxus-owned metadata, editing, and key discovery. */
@@ -129,23 +101,6 @@ export function registerSshRoutes(app: FastifyInstance, ctx: AppContext): void {
         return await reply.code(400).send({ message: parsed.error.issues[0]?.message ?? 'invalid metadata payload' });
       }
       return ctx.database.updateOpenSshMetadata(alias, parsed.data satisfies OpenSshMetadataPatch);
-    } catch (err) {
-      return sendError(reply, err);
-    }
-  });
-
-  app.put('/api/ssh/config/order', async (req, reply) => {
-    try {
-      const parsed = hostOrderSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return await reply.code(400).send({ message: parsed.error.issues[0]?.message ?? 'invalid host order' });
-      }
-      const aliases = parsed.data.aliases;
-      if (new Set(aliases).size !== aliases.length) {
-        return await reply.code(400).send({ message: 'host order contains duplicate aliases' });
-      }
-      ctx.database.reorderOpenSshHosts(aliases);
-      return { ok: true };
     } catch (err) {
       return sendError(reply, err);
     }

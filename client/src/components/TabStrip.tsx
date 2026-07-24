@@ -21,7 +21,6 @@ import AddIcon from '@mui/icons-material/Add';
 import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
 import HorizontalSplitOutlinedIcon from '@mui/icons-material/HorizontalSplitOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
@@ -39,6 +38,7 @@ import { useTabsStore, type TabStatus, type TerminalTab } from '../state/tabs.js
 import { findPane } from '../state/workspace-layout.js';
 import { layout, statusTextColor } from '../theme.js';
 import { useMultiExecStore } from '../state/multi-exec.js';
+import { hostKindIcon } from './host-kind-icon.js';
 
 const statusDot: Record<TabStatus, 'warning' | 'success' | 'error'> = {
   connecting: 'warning',
@@ -102,6 +102,12 @@ export function TabStrip({ paneId, focused }: { paneId: string; focused: boolean
     >
       {tabs.map((tab) => {
         const active = tab.id === activeId;
+        const TabIcon =
+          tab.profile === null
+            ? AddIcon
+            : tab.profile.kind === 'local'
+              ? TerminalIcon
+              : hostKindIcon(tab.profile.kind);
         return (
           <Stack
             key={tab.id}
@@ -169,13 +175,7 @@ export function TabStrip({ paneId, focused }: { paneId: string; focused: boolean
               '&:hover .muxus-tab-close': { visibility: 'visible' },
             })}
           >
-            {tab.profile === null ? (
-              <AddIcon sx={{ fontSize: 15, color: active && focused ? 'primary.main' : 'text.secondary' }} />
-            ) : tab.profile.kind === 'local' ? (
-              <TerminalIcon sx={{ fontSize: 15, color: active && focused ? 'primary.main' : 'text.secondary' }} />
-            ) : (
-              <DnsOutlinedIcon sx={{ fontSize: 15, color: active && focused ? 'primary.main' : 'text.secondary' }} />
-            )}
+            <TabIcon sx={{ fontSize: 15, color: active && focused ? 'primary.main' : 'text.secondary' }} />
             <Typography
               variant="body2"
               noWrap

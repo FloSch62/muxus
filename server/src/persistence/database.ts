@@ -9,7 +9,10 @@ import { nanoid } from 'nanoid';
 import type {
   ForwardType,
   HostKeywordHighlightConfig,
+  ManagedHostRef,
   OpenSshMetadataPatch,
+  SavedHostProfile,
+  SavedHostProfileInput,
   TunnelInput,
   TunnelRecord,
 } from '@muxus/shared';
@@ -315,22 +318,30 @@ export class MuxusDatabase {
   }
 
   /**
-   * Persist one complete visual group order. Profiles are created lazily so
-   * even otherwise-unmodified OpenSSH hosts can participate in sorting.
+   * Persist one complete visual group order across both host sources. Rows
+   * for OpenSSH hosts are created lazily so even otherwise-unmodified hosts
+   * can participate in sorting; saved Telnet/serial hosts must already exist.
    */
-  reorderOpenSshHosts(aliases: readonly string[]): void {
-    if (new Set(aliases).size !== aliases.length) throw new Error('host order contains duplicate aliases');
-    for (const alias of aliases) requireNonEmpty(alias, 'alias');
+  reorderManagedHosts(refs: readonly ManagedHostRef[]): void {
+    const keys = refs.map((ref) => (ref.kind === 'ssh' ? `ssh:${ref.alias}` : `profile:${ref.id}`));
+    if (new Set(keys).size !== keys.length) throw new Error('host order contains duplicates');
+    for (const ref of refs) {
+      requireNonEmpty(ref.kind === 'ssh' ? ref.alias : ref.id, ref.kind === 'ssh' ? 'alias' : 'id');
+    }
     this.db.exec('BEGIN IMMEDIATE');
     try {
+      const savedExists = this.db.prepare(
+        `SELECT id FROM connection_profiles WHERE id = ? AND kind IN ('serial', 'telnet')`,
+      );
       const update = this.db.prepare(`
         UPDATE connection_profiles
         SET sort_order = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `);
-      aliases.forEach((alias, index) => {
-        const profile = this.ensureOpenSshProfile(alias);
-        update.run(index, String(profile.id));
+      refs.forEach((ref, index) => {
+        if (ref.kind === 'profile' && !savedExists.get(ref.id)) throw new Error('saved host not found');
+        const id = ref.kind === 'ssh' ? String(this.ensureOpenSshProfile(ref.alias).id) : ref.id;
+        update.run(index, id);
       });
       this.db.exec('COMMIT');
     } catch (err) {
@@ -436,6 +447,122 @@ export class MuxusDatabase {
       `)
       .run(id, input.kind, input.name.trim(), JSON.stringify(input.config), input.credentialRefId ?? null);
     return id;
+  }
+
+  listSavedHostProfiles(): SavedHostProfile[] {
+    return this.db
+      .prepare(`
+        SELECT profiles.*, groups.name AS group_name
+        FROM connection_profiles AS profiles
+        LEFT JOIN connection_groups AS groups ON groups.id = profiles.group_id
+        WHERE profiles.kind IN ('serial', 'telnet')
+        ORDER BY profiles.sort_order, profiles.favorite DESC, profiles.name COLLATE NOCASE
+      `)
+      .all()
+      .map(savedHostFromRow);
+  }
+
+  saveSavedHostProfile(input: SavedHostProfileInput): SavedHostProfile {
+    requireNonEmpty(input.name, 'name');
+    const kind = input.profile.kind;
+    const { kind: _kind, profileId: _profileId, ...config } = input.profile;
+    assertSecretFree(config, 'profile.config');
+    const id = input.id ?? nanoid();
+    if (input.id) {
+      const current = this.db
+        .prepare(`SELECT kind FROM connection_profiles WHERE id = ? AND kind IN ('serial', 'telnet')`)
+        .get(id);
+      if (!current) throw new Error('saved host not found');
+      this.db
+        .prepare(`
+          UPDATE connection_profiles
+          SET kind = ?, name = ?, native_config_json = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `)
+        .run(kind, input.name.trim(), JSON.stringify(config), id);
+    } else {
+      this.db
+        .prepare(`
+          INSERT INTO connection_profiles(id, kind, name, native_config_json)
+          VALUES (?, ?, ?, ?)
+        `)
+        .run(id, kind, input.name.trim(), JSON.stringify(config));
+    }
+    return this.savedHostProfile(id)!;
+  }
+
+  savedHostProfile(id: string): SavedHostProfile | undefined {
+    const row = this.db
+      .prepare(`
+        SELECT profiles.*, groups.name AS group_name
+        FROM connection_profiles AS profiles
+        LEFT JOIN connection_groups AS groups ON groups.id = profiles.group_id
+        WHERE profiles.id = ? AND profiles.kind IN ('serial', 'telnet')
+      `)
+      .get(id);
+    return row ? savedHostFromRow(row) : undefined;
+  }
+
+  updateSavedHostMetadata(id: string, patch: OpenSshMetadataPatch): SavedHostProfile {
+    const current = this.db
+      .prepare(`
+        SELECT profiles.*, groups.name AS group_name
+        FROM connection_profiles AS profiles
+        LEFT JOIN connection_groups AS groups ON groups.id = profiles.group_id
+        WHERE profiles.id = ? AND profiles.kind IN ('serial', 'telnet')
+      `)
+      .get(id);
+    if (!current) throw new Error('saved host not found');
+    const name =
+      patch.displayName === undefined ? String(current.name) : patch.displayName?.trim() || String(current.name);
+    const groupId =
+      patch.group === undefined ? nullableString(current.group_id) : this.groupIdForName(patch.group);
+    this.db
+      .prepare(`
+        UPDATE connection_profiles
+        SET name = ?,
+            group_id = ?,
+            favorite = ?,
+            color = ?,
+            icon = ?,
+            keyword_highlights_json = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `)
+      .run(
+        name,
+        groupId,
+        patch.favorite === undefined ? Number(current.favorite) : patch.favorite ? 1 : 0,
+        patch.color === undefined ? nullableString(current.color) : patch.color,
+        patch.icon === undefined ? nullableString(current.icon) : patch.icon,
+        patch.keywordHighlights === undefined
+          ? nullableString(current.keyword_highlights_json)
+          : patch.keywordHighlights === null
+            ? null
+            : JSON.stringify(patch.keywordHighlights),
+        id,
+      );
+    return this.savedHostProfile(id)!;
+  }
+
+  recordSavedHostConnection(id: string): void {
+    this.db
+      .prepare(`
+        UPDATE connection_profiles
+        SET last_connected_at = CURRENT_TIMESTAMP,
+            connect_count = connect_count + 1,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? AND kind IN ('serial', 'telnet')
+      `)
+      .run(id);
+  }
+
+  deleteSavedHostProfile(id: string): boolean {
+    return (
+      this.db
+        .prepare(`DELETE FROM connection_profiles WHERE id = ? AND kind IN ('serial', 'telnet')`)
+        .run(id).changes > 0
+    );
   }
 
   saveWorkspace(input: { id?: string; name: string; layout: unknown }): WorkspaceRecord {
@@ -692,6 +819,31 @@ function metadataFromRow(row: SqlRow): OpenSshMetadata {
     keywordHighlights: keywordHighlightsFromJson(row.keyword_highlights_json),
     lastConnectedAt: optionalString(row.last_connected_at),
     connectCount: Number(row.connect_count),
+  };
+}
+
+function savedHostFromRow(row: SqlRow): SavedHostProfile {
+  const id = String(row.id);
+  const kind = String(row.kind) as SavedHostProfile['kind'];
+  const config = JSON.parse(String(row.native_config_json)) as Record<string, unknown>;
+  return {
+    id,
+    kind,
+    name: String(row.name),
+    profile: { kind, ...config, profileId: id } as SavedHostProfile['profile'],
+    metadata: {
+      profileId: id,
+      favorite: Number(row.favorite) === 1,
+      sortOrder: row.sort_order === null || row.sort_order === undefined ? undefined : Number(row.sort_order),
+      group: optionalString(row.group_name),
+      color: optionalString(row.color),
+      icon: optionalString(row.icon),
+      keywordHighlights: keywordHighlightsFromJson(row.keyword_highlights_json),
+      lastConnectedAt: optionalString(row.last_connected_at),
+      connectCount: Number(row.connect_count),
+    },
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
   };
 }
 

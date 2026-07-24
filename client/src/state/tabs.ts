@@ -17,7 +17,7 @@ interface TabBase {
   id: string;
   paneId: string;
   title: string;
-  /** Live connection id from the server's `ready` (SSH only) — keys SFTP/forwards. */
+  /** Live SSH connection id from `ready`; absent for local, Telnet, and serial tabs. */
   connId?: string;
   /** SFTP file panel visible for this tab. */
   sftpOpen: boolean;
