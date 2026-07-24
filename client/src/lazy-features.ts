@@ -4,6 +4,7 @@ export const loadHostOrganizationDialog = () => import('./components/HostOrganiz
 export const loadSettingsDialog = () => import('./components/SettingsDialog.js');
 export const loadCommandButtonsDialog = () => import('./components/CommandButtonsDialog.js');
 export const loadShortcutsDialog = () => import('./components/ShortcutsDialog.js');
+export const loadSessionHistoryDialog = () => import('./components/SessionHistoryDialog.js');
 export const loadForwardingPanel = () => import('./components/ForwardingPanel.js');
 export const loadSftpPanel = () => import('./components/SftpPanel.js');
 export const loadRemoteEditorWorkspace = () => import('./components/RemoteEditorWorkspace.js');

@@ -87,6 +87,7 @@ export function registerSshRoutes(app: FastifyInstance, ctx: AppContext): void {
     try {
       const { alias } = req.params as { alias: string };
       deleteHost(alias);
+      ctx.database.deleteSessionLoggingPolicy(`ssh:${alias}`);
       return { ok: true };
     } catch (err) {
       return sendError(reply, err);

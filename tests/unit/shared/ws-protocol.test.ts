@@ -119,6 +119,7 @@ describe('terminalClientMessageSchema', () => {
     const parsed = terminalClientMessageSchema.safeParse({
       op: 'connect',
       profile: { kind: 'ssh', target: 'example.com' },
+      title: 'Production',
       cols: 80,
       rows: 24,
     });
@@ -135,6 +136,24 @@ describe('terminalClientMessageSchema', () => {
     expect(terminalClientMessageSchema.safeParse({ op: 'resize', cols: 120, rows: 40 }).success).toBe(true);
     expect(terminalClientMessageSchema.safeParse({ op: 'auth-response', answers: ['hunter2'] }).success).toBe(true);
     expect(terminalClientMessageSchema.safeParse({ op: 'host-key-response', accept: true }).success).toBe(true);
+  });
+
+  it('requires an actual lifecycle, pause, or privacy change for logging controls', () => {
+    expect(
+      terminalClientMessageSchema.safeParse({ op: 'set-logging', enabled: true }).success,
+    ).toBe(true);
+    expect(
+      terminalClientMessageSchema.safeParse({ op: 'set-logging', paused: true }).success,
+    ).toBe(true);
+    expect(
+      terminalClientMessageSchema.safeParse({
+        op: 'set-logging',
+        captureInput: false,
+      }).success,
+    ).toBe(true);
+    expect(
+      terminalClientMessageSchema.safeParse({ op: 'set-logging' }).success,
+    ).toBe(false);
   });
 
   it('accepts a shell-less dial for ssh targets only', () => {

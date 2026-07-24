@@ -1,4 +1,4 @@
-import { useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import Alert from '@mui/material/Alert';
 import Autocomplete from '@mui/material/Autocomplete';
 import Box from '@mui/material/Box';
@@ -9,19 +9,31 @@ import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import HighlightOutlinedIcon from '@mui/icons-material/HighlightOutlined';
+import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import LanguageOutlinedIcon from '@mui/icons-material/LanguageOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
 import UsbOutlinedIcon from '@mui/icons-material/UsbOutlined';
-import type { SerialPortInfo, SerialProfile } from '@muxus/shared';
+import type { SavedHostProfile, SerialPortInfo, SerialProfile } from '@muxus/shared';
 import { useDeleteHostProfile, useSaveHostProfile, useUpdateHostProfileMetadata } from '../api/profiles.js';
-import { useSavedHostProfiles, useSerialPorts, useSshConfig } from '../api/queries.js';
+import { useSaveSessionLoggingPolicy } from '../api/session-history.js';
+import {
+  useSavedHostProfiles,
+  useSerialPorts,
+  useSessionLoggingPolicy,
+  useSshConfig,
+} from '../api/queries.js';
 import { knownHostGroups } from '../managed-hosts.js';
 import { connectSavedHost } from '../session-actions.js';
+import {
+  hostSessionLoggingDraft,
+  sessionLoggingPolicyInput,
+} from '../session-logging-policy.js';
 import type { HostEditorState } from '../state/ui.js';
 import { useUiStore } from '../state/ui.js';
 import { EditorShell, type EditorSectionDef } from './host-editor/EditorShell.js';
 import { HighlightingSection } from './host-editor/HighlightingSection.js';
+import { LoggingSection } from './host-editor/LoggingSection.js';
 import {
   nativeDraftMetadataPatch,
   nativeDraftProblem,
@@ -35,7 +47,7 @@ const COMMON_BAUD_RATES = [
 ];
 
 type NativeEditorState = Exclude<HostEditorState, false>;
-type NativeSection = 'general' | 'line' | 'highlighting';
+type NativeSection = 'general' | 'line' | 'logging' | 'highlighting';
 
 /**
  * Telnet/serial editor rendered into the shared host-editor shell, so the
@@ -63,18 +75,35 @@ export function NativeHostEditorContent({
   // connection type flips underneath it.
   const activeSection = kind === 'telnet' && section === 'line' ? 'general' : section;
   const connectAfter = useRef(false);
+  const savedProfile = useRef<SavedHostProfile | undefined>(undefined);
+  const loggingPolicyKey =
+    state.mode === 'edit-profile' ? `profile:${state.entry.id}` : '*';
+  const { data: loggingPolicy } = useSessionLoggingPolicy(loggingPolicyKey);
 
   const close = () => setState(false);
-  const updateMetadata = useUpdateHostProfileMetadata((profile) => {
+  const saveLoggingPolicy = useSaveSessionLoggingPolicy(() => {
+    const profile = savedProfile.current;
     close();
-    if (connectAfter.current) connectSavedHost(profile);
+    if (connectAfter.current && profile) connectSavedHost(profile);
+  });
+  const updateMetadata = useUpdateHostProfileMetadata((profile) => {
+    savedProfile.current = profile;
+    saveLoggingPolicy.mutate({
+      profileKey: `profile:${profile.id}`,
+      policy: draft.sessionLogging.inherit
+        ? null
+        : sessionLoggingPolicyInput(draft.sessionLogging),
+    });
   });
   const saveProfile = useSaveHostProfile((saved) => {
+    savedProfile.current = saved;
     updateMetadata.mutate({ id: saved.id, patch: nativeDraftMetadataPatch(draft) });
   });
   const deleteProfile = useDeleteHostProfile(close);
 
-  const problem = nativeDraftProblem(draft, kind);
+  const problem = draft.sessionLogging.loaded
+    ? nativeDraftProblem(draft, kind)
+    : 'Loading session logging settings…';
   const set = (patch: Partial<NativeHostDraft>) => setDraft((d) => ({ ...d, ...patch }));
   const save = (connect: boolean) => {
     if (problem) return;
@@ -83,6 +112,20 @@ export function NativeHostEditorContent({
       nativeDraftToInput(draft, kind, state.mode === 'edit-profile' ? existing?.id : undefined),
     );
   };
+
+  useEffect(() => {
+    if (!loggingPolicy || draft.sessionLogging.loaded) return;
+    setDraft((current) => {
+      if (current.sessionLogging.loaded) return current;
+      return {
+        ...current,
+        sessionLogging: hostSessionLoggingDraft(
+          loggingPolicy,
+          state.mode !== 'edit-profile' || !loggingPolicy.overridden,
+        ),
+      };
+    });
+  }, [draft.sessionLogging.loaded, loggingPolicy, setDraft, state.mode]);
 
   const title =
     state.mode === 'edit-profile'
@@ -100,6 +143,11 @@ export function NativeHostEditorContent({
     ...(kind === 'serial'
       ? [{ value: 'line' as const, label: 'Line settings', icon: <TuneOutlinedIcon fontSize="small" /> }]
       : []),
+    {
+      value: 'logging',
+      label: 'Session logging',
+      icon: <HistoryOutlinedIcon fontSize="small" />,
+    },
     {
       value: 'highlighting',
       label: 'Highlighting',
@@ -122,7 +170,11 @@ export function NativeHostEditorContent({
       section={activeSection}
       onSection={setSection}
       problem={problem}
-      busy={saveProfile.isPending || updateMetadata.isPending}
+      busy={
+        saveProfile.isPending ||
+        updateMetadata.isPending ||
+        saveLoggingPolicy.isPending
+      }
       onDelete={
         state.mode === 'edit-profile' && existing
           ? () => deleteProfile.mutate(existing.id)
@@ -136,6 +188,16 @@ export function NativeHostEditorContent({
         <GeneralSection kind={kind} draft={draft} set={set} />
       )}
       {activeSection === 'line' && <LineSettingsSection draft={draft} set={set} />}
+      {activeSection === 'logging' && (
+        <LoggingSection
+          value={draft.sessionLogging}
+          onChange={(sessionLogging) =>
+            set({
+              sessionLogging: { ...draft.sessionLogging, ...sessionLogging },
+            })
+          }
+        />
+      )}
       {activeSection === 'highlighting' && (
         <HighlightingSection
           config={draft.keywordHighlights}

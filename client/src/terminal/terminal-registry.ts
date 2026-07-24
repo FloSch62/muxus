@@ -23,6 +23,12 @@ export interface TerminalHandle {
   /** Current zoom as a percentage (100 = preference font size). */
   zoomPercent(): number;
   paste(text: string): void;
+  /** Start/stop/pause persistence or change input capture for this live session. */
+  setLogging(patch: {
+    enabled?: boolean;
+    paused?: boolean;
+    captureInput?: boolean;
+  }): boolean;
 }
 
 const handles = new Map<string, TerminalHandle>();

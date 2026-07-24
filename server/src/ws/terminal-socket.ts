@@ -9,6 +9,10 @@ import { spawnLocalPty, DEFAULT_TERM } from '../local/pty-manager.js';
 import { SerialTransport } from '../serial/serial-transport.js';
 import { TelnetTransport } from '../telnet/telnet-transport.js';
 import type { TerminalTransport } from '../transports/terminal-transport.js';
+import {
+  SessionRecorder,
+  type SessionLoggingState,
+} from '../session-logging/session-recorder.js';
 
 const CONNECT_TIMEOUT_MS = 30_000;
 const KEEPALIVE_MS = 30_000;
@@ -40,9 +44,11 @@ class ControlChannel {
     reject: (error: Error) => void;
   }> = [];
   private closed = false;
+  intercept: ((msg: TerminalClientMessage) => boolean) | undefined;
   onMessage: ((msg: TerminalClientMessage) => void) | undefined;
 
   push(msg: TerminalClientMessage): void {
+    if (this.intercept?.(msg)) return;
     const waiter = this.waiters.shift();
     if (waiter) waiter.resolve(msg);
     else this.onMessage?.(msg);
@@ -65,10 +71,12 @@ class ControlChannel {
 async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyInstance): Promise<void> {
   const control = new ControlChannel();
   let writeInput: ((data: Buffer) => void) | undefined;
+  let recorder: SessionRecorder | undefined;
   let socketOpen = true;
 
   socket.on('message', (data: Buffer, isBinary: boolean) => {
     if (isBinary) {
+      if (writeInput) recorder?.input(data);
       writeInput?.(data);
       return;
     }
@@ -77,7 +85,9 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
       if (parsed.success) control.push(parsed.data);
     } catch {
       // Non-JSON text frames are treated as input (some clients send text).
-      writeInput?.(Buffer.from(data.toString('utf8'), 'utf8'));
+      const input = Buffer.from(data.toString('utf8'), 'utf8');
+      if (writeInput) recorder?.input(input);
+      writeInput?.(input);
     }
   });
   socket.on('close', () => {
@@ -103,7 +113,10 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
   socket.on('close', () => clearInterval(keepalive));
 
   const io: ConnectIo = {
-    status: (message) => sendControl(socket, { op: 'status', message }),
+    status: (message) => {
+      recorder?.system(message);
+      sendControl(socket, { op: 'status', message });
+    },
     prompt: async (info) => {
       sendControl(socket, { op: 'auth-prompt', ...info });
       const reply = await control.next();
@@ -146,16 +159,44 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
   }
 
   const { profile, cols, rows } = connectMsg;
+  recorder = SessionRecorder.start(
+    ctx.database,
+    ctx.history,
+    app.log,
+    profile,
+    connectMsg.title,
+  );
+  const sendLoggingState = (state: SessionLoggingState = recorder.state) =>
+    sendControl(socket, { op: 'logging-state', ...state });
+  recorder.onStateChange(sendLoggingState);
+  const handleLoggingControl = (msg: TerminalClientMessage): boolean => {
+    if (msg.op !== 'set-logging') return false;
+    sendLoggingState(
+      recorder!.setState({
+        enabled: msg.enabled,
+        paused: msg.paused,
+        captureInput: msg.captureInput,
+      }),
+    );
+    return true;
+  };
+  control.intercept = handleLoggingControl;
+  sendLoggingState();
+  socket.once('close', () => recorder?.end('disconnected'));
+
   if (profile.kind === 'local') {
     const { pty } = spawnLocalPty(profile, cols, rows);
     writeInput = (data) => pty.write(data.toString('utf8'));
     control.onMessage = (msg) => {
+      if (handleLoggingControl(msg)) return;
       if (msg.op === 'resize') pty.resize(msg.cols, msg.rows);
     };
     pty.onData((data) => {
+      recorder?.output(data);
       if (socket.readyState === socket.OPEN) socket.send(Buffer.from(data, 'utf8'), { binary: true });
     });
     pty.onExit(({ exitCode }) => {
+      recorder?.end('completed');
       sendControl(socket, { op: 'exit', code: exitCode });
       socket.close();
     });
@@ -179,6 +220,8 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
         writeInput = writer;
       },
       `serial-${nanoid(10)}`,
+      recorder,
+      handleLoggingControl,
     );
     app.log.info(
       { path: profile.path, baudRate: profile.baudRate },
@@ -203,6 +246,8 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
         writeInput = writer;
       },
       `telnet-${nanoid(10)}`,
+      recorder,
+      handleLoggingControl,
     );
     app.log.info({ host: profile.host, port: profile.port }, 'telnet session established');
     if (profile.profileId) ctx.database.recordSavedHostConnection(profile.profileId);
@@ -251,6 +296,7 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
   const stream = await conn.shell(cols, rows, DEFAULT_TERM);
   writeInput = (data) => stream.write(data);
   control.onMessage = (msg) => {
+    if (handleLoggingControl(msg)) return;
     if (msg.op === 'resize') stream.setWindow(msg.rows, msg.cols, 0, 0);
   };
 
@@ -264,6 +310,7 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
   }, BACKPRESSURE_POLL_MS);
 
   stream.on('data', (chunk: Buffer) => {
+    recorder?.output(chunk);
     if (socket.readyState !== socket.OPEN) return;
     socket.send(chunk, { binary: true });
     if (!paused && socket.bufferedAmount > BACKPRESSURE_HIGH) {
@@ -276,10 +323,12 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
     exitCode = code ?? undefined;
   });
   stream.on('close', () => {
+    recorder?.end('completed');
     sendControl(socket, { op: 'exit', code: exitCode });
     socket.close();
   });
   const unsubscribeClose = conn.onClose(() => {
+    recorder?.end('disconnected');
     sendControl(socket, { op: 'exit', message: 'connection closed' });
     socket.close();
   });
@@ -306,9 +355,12 @@ function attachTerminalTransport(
   transport: TerminalTransport,
   setWriteInput: (writer: (data: Buffer) => void) => void,
   connId: string,
+  recorder: SessionRecorder,
+  handleLoggingControl: (msg: TerminalClientMessage) => boolean,
 ): void {
   setWriteInput((data) => transport.write(data));
   control.onMessage = (msg) => {
+    if (handleLoggingControl(msg)) return;
     if (msg.op === 'resize') transport.resize(msg.cols, msg.rows);
   };
 
@@ -322,6 +374,7 @@ function attachTerminalTransport(
   }, BACKPRESSURE_POLL_MS);
 
   const unsubscribeData = transport.onData((data) => {
+    recorder.output(data);
     if (socket.readyState !== socket.OPEN) return;
     socket.send(data, { binary: true });
     if (!paused && socket.bufferedAmount > BACKPRESSURE_HIGH) {
@@ -330,10 +383,12 @@ function attachTerminalTransport(
     }
   });
   const unsubscribeError = transport.onError((error) => {
+    recorder.end('failed');
     sendControl(socket, { op: 'exit', message: error.message });
     socket.close();
   });
   const unsubscribeClose = transport.onClose(() => {
+    recorder.end('completed');
     sendControl(socket, { op: 'exit' });
     socket.close();
   });

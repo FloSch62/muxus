@@ -15,6 +15,107 @@ export interface AppInfo {
   defaultShell: string;
 }
 
+/** Effective retention and privacy policy for one host (or "*" for defaults). */
+export interface SessionLoggingPolicy {
+  profileKey: string;
+  enabled: boolean;
+  /**
+   * Record bytes sent by the user. Disabled by default because commands can
+   * contain passwords, tokens, and other values that should not be retained.
+   */
+  captureInput: boolean;
+  /** Rotate before a retained raw-log part grows beyond this many bytes. */
+  maxPartBytes: number;
+  /** Number of newest rotated parts retained for each session. */
+  maxParts: number;
+  /** True when an exact per-host override exists instead of inherited defaults. */
+  overridden: boolean;
+}
+
+export interface SessionLoggingPolicyInput {
+  enabled: boolean;
+  captureInput: boolean;
+  maxPartBytes: number;
+  maxParts: number;
+}
+
+export type SessionLogStatus = 'active' | 'completed' | 'disconnected' | 'failed';
+export type SessionLogDirection = 'input' | 'output' | 'system';
+
+/** Durable session metadata returned by history list/search. */
+export interface SessionLogSummary {
+  id: string;
+  profileKey: string;
+  title: string;
+  kind: import('./ws-protocol.js').SessionProfile['kind'];
+  host: string;
+  startedAt: string;
+  endedAt?: string;
+  status: SessionLogStatus;
+  paused: boolean;
+  captureInput: boolean;
+  eventCount: number;
+  rawBytes: number;
+  normalizedBytes: number;
+  partCount: number;
+  /** Pinned sessions are excluded from age and quota eviction. */
+  pinned: boolean;
+  /** Search-context excerpt, present only for matching full-text queries. */
+  snippet?: string;
+}
+
+/** One timestamped, normalized replay event. Raw bytes remain server-side. */
+export interface SessionLogEvent {
+  sequence: number;
+  recordedAt: string;
+  elapsedMs: number;
+  direction: SessionLogDirection;
+  text: string;
+}
+
+export interface SessionLogDetail extends SessionLogSummary {
+  events: SessionLogEvent[];
+  /** True when the API returned only the newest preview events. */
+  eventsTruncated: boolean;
+}
+
+export interface SessionHistoryResponse {
+  sessions: SessionLogSummary[];
+  /** Opaque key for the next page. Exact result counts are intentionally omitted. */
+  nextCursor?: string;
+}
+
+/** Global history limits. The per-host policy still owns segment size/count. */
+export interface SessionHistorySettings {
+  /** Configured root, or undefined when Muxus uses its platform default. */
+  storageLocation?: string;
+  /** Hard quota measured from actual files, including SQLite WAL/SHM files. */
+  maxTotalBytes: number;
+  minFreeBytes: number;
+  minFreePercent: number;
+  /** Completed, unpinned sessions older than this are removed; undefined disables it. */
+  maxAgeDays?: number;
+}
+
+export interface SessionHistorySettingsInput {
+  storageLocation?: string;
+  maxTotalBytes: number;
+  minFreeBytes: number;
+  minFreePercent: number;
+  maxAgeDays?: number;
+}
+
+export interface SessionHistoryStorageStatus {
+  settings: SessionHistorySettings;
+  activeStorageLocation: string;
+  usageBytes: number;
+  freeBytes: number;
+  quotaSuspended: boolean;
+  warning?: string;
+  /** A changed storage path is picked up on the next Muxus launch. */
+  restartRequired: boolean;
+}
+
 /** One serial device reported by the host OS through node-serialport. */
 export interface SerialPortInfo {
   /** OS-native path (COM3, /dev/ttyUSB0, /dev/tty.usbserial-…, etc.). */

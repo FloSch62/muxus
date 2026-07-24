@@ -1,10 +1,14 @@
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import type {
   AppInfo,
   ConnectionsResponse,
   ForwardInfo,
   SerialPortsResponse,
   SavedHostProfilesResponse,
+  SessionHistoryResponse,
+  SessionHistoryStorageStatus,
+  SessionLogDetail,
+  SessionLoggingPolicy,
   SftpListResponse,
   SshConfigResponse,
   SshKeysResponse,
@@ -91,5 +95,75 @@ export function useTunnels() {
   return useQuery({
     queryKey: ['tunnels'],
     queryFn: () => apiFetch<TunnelsResponse>('/api/tunnels'),
+  });
+}
+
+export interface SessionHistoryFilters {
+  host?: string;
+  kind?: 'ssh' | 'local' | 'serial' | 'telnet';
+  startedAfter?: string;
+  startedBefore?: string;
+}
+
+export function useSessionHistory(
+  query: string,
+  filters: SessionHistoryFilters = {},
+) {
+  const result = useInfiniteQuery({
+    queryKey: ['session-history', query, filters],
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) => {
+      const params = new URLSearchParams({ query, limit: '50' });
+      if (filters.host) params.set('host', filters.host);
+      if (filters.kind) params.set('kind', filters.kind);
+      if (filters.startedAfter) params.set('startedAfter', filters.startedAfter);
+      if (filters.startedBefore) params.set('startedBefore', filters.startedBefore);
+      if (pageParam) params.set('cursor', pageParam);
+      return apiFetch<SessionHistoryResponse>(
+        `/api/session-history?${params.toString()}`,
+      );
+    },
+    getNextPageParam: (page) => page.nextCursor,
+    // Keep the newest page live, but never re-run every old cursor page on a
+    // timer after the user has paged deep into history.
+    refetchInterval: (queryState) =>
+      (queryState.state.data?.pages.length ?? 0) <= 1 ? 5_000 : false,
+  });
+  return {
+    ...result,
+    data: result.data
+      ? {
+          sessions: result.data.pages.flatMap((page) => page.sessions),
+          nextCursor: result.data.pages.at(-1)?.nextCursor,
+        }
+      : undefined,
+  };
+}
+
+export function useSessionLog(id: string | undefined) {
+  return useQuery({
+    queryKey: ['session-history', 'detail', id],
+    queryFn: () => apiFetch<SessionLogDetail>(`/api/session-history/${id}`),
+    enabled: !!id,
+  });
+}
+
+export function useSessionLoggingPolicy(profileKey: string, enabled = true) {
+  return useQuery({
+    queryKey: ['session-logging-policy', profileKey],
+    queryFn: () =>
+      apiFetch<SessionLoggingPolicy>(
+        `/api/session-history/policy?profileKey=${encodeURIComponent(profileKey)}`,
+      ),
+    enabled,
+  });
+}
+
+export function useSessionHistoryStorage() {
+  return useQuery({
+    queryKey: ['session-history-storage'],
+    queryFn: () =>
+      apiFetch<SessionHistoryStorageStatus>('/api/session-history/storage'),
+    refetchInterval: 15_000,
   });
 }

@@ -24,6 +24,8 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
 import HorizontalSplitOutlinedIcon from '@mui/icons-material/HorizontalSplitOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
+import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutlineOutlined';
+import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined';
 import PodcastsOutlinedIcon from '@mui/icons-material/PodcastsOutlined';
@@ -38,6 +40,7 @@ import { useTabsStore, type TabStatus, type TerminalTab } from '../state/tabs.js
 import { findPane } from '../state/workspace-layout.js';
 import { layout, statusTextColor } from '../theme.js';
 import { useMultiExecStore } from '../state/multi-exec.js';
+import { terminalHandle } from '../terminal/terminal-registry.js';
 import { hostKindIcon } from './host-kind-icon.js';
 
 const statusDot: Record<TabStatus, 'warning' | 'success' | 'error'> = {
@@ -378,6 +381,33 @@ export function TabStrip({ paneId, focused }: { paneId: string; focused: boolean
           </ListItemIcon>
           <ListItemText>
             {menuTab && multiExecTargets.includes(menuTab.id) ? 'Remove from multi-execution' : 'Add to multi-execution'}
+          </ListItemText>
+        </MenuItem>
+        <MenuItem
+          disabled={
+            menuTab?.status !== 'connected' ||
+            menuTab.loggingEnabled === undefined
+          }
+          onClick={() => {
+            if (menuTab) {
+              terminalHandle(menuTab.id)?.setLogging({
+                enabled: !menuTab.loggingEnabled,
+              });
+            }
+            setMenu(null);
+          }}
+        >
+          <ListItemIcon>
+            {menuTab?.loggingEnabled ? (
+              <StopCircleOutlinedIcon fontSize="small" />
+            ) : (
+              <PlayCircleOutlineIcon fontSize="small" />
+            )}
+          </ListItemIcon>
+          <ListItemText>
+            {menuTab?.loggingEnabled
+              ? 'Stop session logging'
+              : 'Start session logging'}
           </ListItemText>
         </MenuItem>
         <Divider />

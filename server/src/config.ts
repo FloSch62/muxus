@@ -14,6 +14,8 @@ export interface ServerConfig {
   staticRoot?: string;
   /** Local metadata/workspace database. OpenSSH config remains an external source. */
   databasePath: string;
+  /** Optional session-history root override (also configurable in settings). */
+  historyPath?: string;
   /** Use the pino-pretty worker transport (unusable inside a bundled main process). */
   prettyLogs: boolean;
 }
@@ -36,6 +38,7 @@ export function resolveConfig(overrides: Partial<ServerConfig> = {}): ServerConf
     token: overrides.devToken ?? randomBytes(24).toString('base64url'),
     openBrowser: true,
     databasePath: defaultDatabasePath(),
+    historyPath: undefined,
     prettyLogs: process.env.NODE_ENV !== 'production',
     ...overrides,
   };
@@ -80,5 +83,6 @@ export function loadConfig(): ServerConfig {
     port: parsePort(args.get('port') ?? process.env.PORT ?? 3002),
     devToken,
     openBrowser: !dev && args.get('no-open') !== 'true' && process.env.MUXUS_NO_OPEN !== '1',
+    historyPath: args.get('history-path') ?? process.env.MUXUS_HISTORY_PATH,
   });
 }

@@ -20,6 +20,8 @@ import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
 import DeleteSweepOutlinedIcon from '@mui/icons-material/DeleteSweepOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
+import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
+import KeyboardAltOutlinedIcon from '@mui/icons-material/KeyboardAltOutlined';
 import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
 import MenuIcon from '@mui/icons-material/Menu';
 import KeyboardOutlinedIcon from '@mui/icons-material/KeyboardOutlined';
@@ -28,6 +30,10 @@ import SelectAllIcon from '@mui/icons-material/SelectAll';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
+import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutlineOutlined';
+import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutlineOutlined';
+import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
+import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import { useForwards } from '../api/queries.js';
@@ -45,6 +51,7 @@ import {
   loadCommandButtonsDialog,
   loadForwardingPanel,
   loadSettingsDialog,
+  loadSessionHistoryDialog,
   loadShortcutsDialog,
   loadSftpPanel,
 } from '../lazy-features.js';
@@ -57,6 +64,7 @@ export const TopBar = memo(function TopBar() {
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
   const setCommandButtonsOpen = useUiStore((s) => s.setCommandButtonsOpen);
   const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
+  const setHistoryOpen = useUiStore((s) => s.setHistoryOpen);
   const forwardingOpen = useUiStore((s) => s.forwardingOpen);
   const setForwardingOpen = useUiStore((s) => s.setForwardingOpen);
   const activeTab = useTabsStore((s) => s.tabs.find((t) => t.id === s.activeId));
@@ -155,6 +163,17 @@ export const TopBar = memo(function TopBar() {
             </IconButton>
           </Tooltip>
         )}
+        <Tooltip title="Session history">
+          <IconButton
+            size="small"
+            aria-label="Session history"
+            onMouseEnter={() => void loadSessionHistoryDialog()}
+            onFocus={() => void loadSessionHistoryDialog()}
+            onClick={() => setHistoryOpen(true)}
+          >
+            <HistoryOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
         <Tooltip title={mode === 'light' ? 'Switch to dark mode' : mode === 'dark' ? 'Follow system theme' : 'Switch to light mode'}>
           <IconButton size="small" aria-label="Toggle theme" onClick={toggleTheme}>
             {mode === 'light' ? <DarkModeOutlinedIcon fontSize="small" /> : mode === 'dark' ? <BrightnessAutoOutlinedIcon fontSize="small" /> : <LightModeOutlinedIcon fontSize="small" />}
@@ -250,6 +269,72 @@ export const TopBar = memo(function TopBar() {
           </ListItemIcon>
           <ListItemText>Export as HTML (colors)</ListItemText>
         </MenuItem>
+        {activeTab?.loggingEnabled !== undefined ? <Divider /> : null}
+        {activeTab?.loggingEnabled ? (
+          <>
+            <MenuItem
+              onClick={() => {
+                closeMenu();
+                handle()?.setLogging({ enabled: false });
+              }}
+            >
+              <ListItemIcon>
+                <StopCircleOutlinedIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Stop session logging</ListItemText>
+            </MenuItem>
+            <MenuItem
+              onClick={() => {
+                closeMenu();
+                handle()?.setLogging({ paused: !activeTab.loggingPaused });
+              }}
+            >
+              <ListItemIcon>
+                {activeTab.loggingPaused ? (
+                  <PlayCircleOutlineIcon fontSize="small" />
+                ) : (
+                  <PauseCircleOutlineIcon fontSize="small" />
+                )}
+              </ListItemIcon>
+              <ListItemText>
+                {activeTab.loggingPaused ? 'Resume session logging' : 'Pause session logging'}
+              </ListItemText>
+            </MenuItem>
+          </>
+        ) : activeTab?.loggingEnabled === false ? (
+          <MenuItem
+            onClick={() => {
+              closeMenu();
+              handle()?.setLogging({ enabled: true });
+            }}
+          >
+            <ListItemIcon>
+              <PlayCircleOutlineIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Start session logging</ListItemText>
+          </MenuItem>
+        ) : null}
+        {activeTab?.loggingEnabled ? (
+          <MenuItem
+            onClick={() => {
+              closeMenu();
+              handle()?.setLogging({ captureInput: !activeTab.captureInput });
+            }}
+          >
+            <ListItemIcon>
+              {activeTab.captureInput ? (
+                <VisibilityOffOutlinedIcon fontSize="small" />
+              ) : (
+                <KeyboardAltOutlinedIcon fontSize="small" />
+              )}
+            </ListItemIcon>
+            <ListItemText>
+              {activeTab.captureInput
+                ? 'Suppress sensitive input'
+                : 'Record input (may include secrets)'}
+            </ListItemText>
+          </MenuItem>
+        ) : null}
         <Divider />
         <MenuItem
           onClick={() => {

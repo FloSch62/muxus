@@ -17,8 +17,56 @@ describe('MuxusDatabase migrations', () => {
       { version: 3, name: 'host-sort-order' },
       { version: 4, name: 'tunnel-ssh-options' },
       { version: 5, name: 'host-keyword-highlights' },
+      { version: 6, name: 'persistent-session-history' },
+      { version: 7, name: 'bounded-session-history-settings' },
     ]);
   });
+});
+
+describe('persistent session history', () => {
+  it('inherits safe defaults and supports per-host logging policy overrides', () => {
+    database = new MuxusDatabase(':memory:');
+
+    expect(database.sessionLoggingPolicy('ssh:production')).toMatchObject({
+      enabled: false,
+      captureInput: false,
+      maxPartBytes: 5 * 1024 * 1024,
+      maxParts: 10,
+      overridden: false,
+    });
+
+    database.saveSessionLoggingPolicy('*', {
+      enabled: true,
+      captureInput: false,
+      maxPartBytes: 1024 * 1024,
+      maxParts: 4,
+    });
+    database.saveSessionLoggingPolicy('ssh:production', {
+      enabled: false,
+      captureInput: true,
+      maxPartBytes: 2 * 1024 * 1024,
+      maxParts: 2,
+    });
+
+    expect(database.sessionLoggingPolicy('ssh:production')).toMatchObject({
+      enabled: false,
+      captureInput: true,
+      maxPartBytes: 2 * 1024 * 1024,
+      maxParts: 2,
+      overridden: true,
+    });
+    expect(database.sessionLoggingPolicy('ssh:staging')).toMatchObject({
+      maxPartBytes: 1024 * 1024,
+      maxParts: 4,
+      overridden: false,
+    });
+    expect(database.deleteSessionLoggingPolicy('ssh:production')).toBe(true);
+    expect(database.sessionLoggingPolicy('ssh:production')).toMatchObject({
+      maxParts: 4,
+      overridden: false,
+    });
+  });
+
 });
 
 describe('saved tunnels', () => {
@@ -135,7 +183,12 @@ describe('hybrid OpenSSH metadata', () => {
     database = new MuxusDatabase(':memory:');
     const before = database.updateOpenSshMetadata('old-alias', { favorite: true });
     database.recordOpenSshConnection('old-alias');
-
+    database.saveSessionLoggingPolicy('ssh:old-alias', {
+      enabled: true,
+      captureInput: false,
+      maxPartBytes: 2 * 1024 * 1024,
+      maxParts: 3,
+    });
     database.renameOpenSshAlias('old-alias', 'new-alias');
 
     expect(database.openSshMetadata(['old-alias']).size).toBe(0);
@@ -143,6 +196,13 @@ describe('hybrid OpenSSH metadata', () => {
       profileId: before.profileId,
       favorite: true,
       connectCount: 1,
+    });
+    expect(database.sessionLoggingPolicy('ssh:old-alias').overridden).toBe(false);
+    expect(database.sessionLoggingPolicy('ssh:new-alias')).toMatchObject({
+      enabled: true,
+      maxPartBytes: 2 * 1024 * 1024,
+      maxParts: 3,
+      overridden: true,
     });
   });
 
@@ -247,8 +307,15 @@ describe('saved Telnet and serial hosts', () => {
       },
     });
     expect(database.listSavedHostProfiles()).toEqual([updated]);
+    database.saveSessionLoggingPolicy(`profile:${created.id}`, {
+      enabled: true,
+      captureInput: false,
+      maxPartBytes: 1024 * 1024,
+      maxParts: 2,
+    });
     expect(database.deleteSavedHostProfile(created.id)).toBe(true);
     expect(database.listSavedHostProfiles()).toEqual([]);
+    expect(database.sessionLoggingPolicy(`profile:${created.id}`).overridden).toBe(false);
   });
 
   it('rejects secrets in native host settings', () => {

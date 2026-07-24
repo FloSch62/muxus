@@ -4,8 +4,11 @@ import AltRouteIcon from '@mui/icons-material/AltRoute';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import HighlightOutlinedIcon from '@mui/icons-material/HighlightOutlined';
+import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
+import { useSessionLoggingPolicy } from '../api/queries.js';
+import { useSaveSessionLoggingPolicy } from '../api/session-history.js';
 import { useSshConfig, useSshKeys } from '../api/queries.js';
 import {
   fetchHostPreview,
@@ -14,6 +17,10 @@ import {
   useUpsertHost,
 } from '../api/ssh-config.js';
 import { connectTarget } from '../session-actions.js';
+import {
+  hostSessionLoggingDraft,
+  sessionLoggingPolicyInput,
+} from '../session-logging-policy.js';
 import { useUiStore, type HostEditorState } from '../state/ui.js';
 import { AdvancedSection } from './host-editor/AdvancedSection.js';
 import { AuthSection } from './host-editor/AuthSection.js';
@@ -22,6 +29,7 @@ import { EditorShell, type EditorSectionDef } from './host-editor/EditorShell.js
 import { ForwardsSection } from './host-editor/ForwardsSection.js';
 import { GeneralSection } from './host-editor/GeneralSection.js';
 import { HighlightingSection } from './host-editor/HighlightingSection.js';
+import { LoggingSection } from './host-editor/LoggingSection.js';
 import {
   blankNativeDraft,
   nativeDraftFromProfile,
@@ -30,7 +38,14 @@ import {
 import { RouteSection } from './host-editor/RouteSection.js';
 import { NativeHostEditorContent } from './NativeHostEditorContent.js';
 
-type Section = 'general' | 'auth' | 'route' | 'forwards' | 'highlighting' | 'advanced';
+type Section =
+  | 'general'
+  | 'auth'
+  | 'route'
+  | 'forwards'
+  | 'logging'
+  | 'highlighting'
+  | 'advanced';
 type OpenState = Exclude<HostEditorState, false>;
 type SshEditorState = Extract<OpenState, { mode: 'new' | 'duplicate' | 'edit' }>;
 
@@ -134,22 +149,36 @@ function SshHostEditorContent({
   const setState = useUiStore((s) => s.setHostEditor);
   const { data: config } = useSshConfig();
   const { data: keys } = useSshKeys(true);
+  const loggingPolicyKey =
+    state.mode === 'edit' ? `ssh:${state.entry.alias}` : '*';
+  const { data: loggingPolicy } = useSessionLoggingPolicy(loggingPolicyKey);
 
   const [section, setSection] = useState<Section>('general');
   const [preview, setPreview] = useState('');
   const [previewError, setPreviewError] = useState<string | null>(null);
   const connectAfter = useRef(false);
+  const savedAlias = useRef('');
 
   const editing = state.mode === 'edit' ? state.entry : undefined;
   const previousAlias = editing?.alias;
 
   const close = () => setState(false);
-  const updateMetadata = useUpdateSshMetadata(() => {
+  const finish = () => {
     close();
     const alias = draft.aliasText.trim().split(/\s+/)[0];
     if (connectAfter.current && alias) connectTarget(alias);
+  };
+  const saveLoggingPolicy = useSaveSessionLoggingPolicy(finish);
+  const updateMetadata = useUpdateSshMetadata(() => {
+    saveLoggingPolicy.mutate({
+      profileKey: `ssh:${savedAlias.current}`,
+      policy: draft.sessionLogging.inherit
+        ? null
+        : sessionLoggingPolicyInput(draft.sessionLogging),
+    });
   });
   const upsert = useUpsertHost((req) => {
+    savedAlias.current = req.aliases[0] ?? '';
     const config = draft.keywordHighlights;
     updateMetadata.mutate({
       alias: req.aliases[0] ?? '',
@@ -161,7 +190,23 @@ function SshHostEditorContent({
   });
   const deleteHost = useDeleteHost(close);
 
-  const problem = draftProblem(draft);
+  const problem = draft.sessionLogging.loaded
+    ? draftProblem(draft)
+    : 'Loading session logging settings…';
+
+  useEffect(() => {
+    if (!loggingPolicy || draft.sessionLogging.loaded) return;
+    setDraft((current) => {
+      if (current.sessionLogging.loaded) return current;
+      return {
+        ...current,
+        sessionLogging: hostSessionLoggingDraft(
+          loggingPolicy,
+          state.mode !== 'edit' || !loggingPolicy.overridden,
+        ),
+      };
+    });
+  }, [draft.sessionLogging.loaded, loggingPolicy, setDraft, state.mode]);
 
   // Live preview of the exact block text, rendered by the server (debounced).
   useEffect(() => {
@@ -190,6 +235,7 @@ function SshHostEditorContent({
     { value: 'auth', label: 'Authentication', icon: <KeyOutlinedIcon fontSize="small" /> },
     { value: 'route', label: 'Jump hosts', icon: <AltRouteIcon fontSize="small" />, count: draft.proxyJump.length },
     { value: 'forwards', label: 'Port forwarding', icon: <SwapHorizOutlinedIcon fontSize="small" />, count: draft.forwards.length },
+    { value: 'logging', label: 'Session logging', icon: <HistoryOutlinedIcon fontSize="small" /> },
     { value: 'highlighting', label: 'Highlighting', icon: <HighlightOutlinedIcon fontSize="small" />, count: draft.keywordHighlights.rules.length },
     { value: 'advanced', label: 'Advanced', icon: <CodeOutlinedIcon fontSize="small" />, count: draft.extras.length },
   ];
@@ -208,7 +254,7 @@ function SshHostEditorContent({
       section={section}
       onSection={setSection}
       problem={problem}
-      busy={upsert.isPending || updateMetadata.isPending}
+      busy={upsert.isPending || updateMetadata.isPending || saveLoggingPolicy.isPending}
       onDelete={state.mode === 'edit' ? () => deleteHost.mutate(state.entry.alias) : undefined}
       deletePending={deleteHost.isPending}
       onClose={close}
@@ -218,6 +264,16 @@ function SshHostEditorContent({
       {section === 'auth' && <AuthSection draft={draft} set={set} keys={keys} />}
       {section === 'route' && <RouteSection draft={draft} set={set} config={config} />}
       {section === 'forwards' && <ForwardsSection draft={draft} set={set} />}
+      {section === 'logging' && (
+        <LoggingSection
+          value={draft.sessionLogging}
+          onChange={(sessionLogging) =>
+            set({
+              sessionLogging: { ...draft.sessionLogging, ...sessionLogging },
+            })
+          }
+        />
+      )}
       {section === 'highlighting' && (
         <HighlightingSection
           config={draft.keywordHighlights}

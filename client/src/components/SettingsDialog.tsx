@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Autocomplete from '@mui/material/Autocomplete';
+import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
+import Divider from '@mui/material/Divider';
 import FormControl from '@mui/material/FormControl';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import InputLabel from '@mui/material/InputLabel';
@@ -23,20 +25,38 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import HighlightOutlinedIcon from '@mui/icons-material/HighlightOutlined';
+import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
-import { useAppInfo } from '../api/queries.js';
+import {
+  useSaveSessionHistorySettings,
+  useSaveSessionLoggingPolicy,
+} from '../api/session-history.js';
+import {
+  useAppInfo,
+  useSessionHistoryStorage,
+  useSessionLoggingPolicy,
+} from '../api/queries.js';
+import {
+  FALLBACK_SESSION_LOGGING_POLICY,
+  hostSessionLoggingDraft,
+  sessionLoggingPolicyInput,
+  type HostSessionLoggingDraft,
+} from '../session-logging-policy.js';
 import { usePrefsStore, type RightClickAction, type ThemeMode } from '../state/prefs.js';
+import { showToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
 import { TERMINAL_SCHEMES, terminalScheme, type TerminalScheme } from '../terminal/palette.js';
 import { KeywordHighlightRulesEditor } from './KeywordHighlightRulesEditor.js';
+import { SessionLoggingPolicyFields } from './SessionLoggingPolicyFields.js';
 
-type Section = 'appearance' | 'terminal' | 'highlighting' | 'behavior' | 'about';
+type Section = 'appearance' | 'terminal' | 'logging' | 'highlighting' | 'behavior' | 'about';
 
 const SECTIONS: Array<{ id: Section; label: string; icon: React.ReactNode }> = [
   { id: 'appearance', label: 'Appearance', icon: <PaletteOutlinedIcon fontSize="small" /> },
   { id: 'terminal', label: 'Terminal', icon: <TerminalIcon fontSize="small" /> },
+  { id: 'logging', label: 'Session logging', icon: <HistoryOutlinedIcon fontSize="small" /> },
   { id: 'highlighting', label: 'Highlighting', icon: <HighlightOutlinedIcon fontSize="small" /> },
   { id: 'behavior', label: 'Behavior', icon: <TuneOutlinedIcon fontSize="small" /> },
   { id: 'about', label: 'About', icon: <InfoOutlinedIcon fontSize="small" /> },
@@ -86,13 +106,14 @@ export function SettingsDialog() {
           <Box sx={{ flex: 1, overflowY: 'auto', p: 3, pt: 2.5 }}>
             {section === 'appearance' && <AppearanceSection />}
             {section === 'terminal' && <TerminalSection />}
+            {section === 'logging' && <SessionLoggingSection />}
             {section === 'highlighting' && <HighlightingSection />}
             {section === 'behavior' && <BehaviorSection />}
             {section === 'about' && <AboutSection />}
           </Box>
           <DialogActions sx={{ borderTop: 1, borderColor: 'divider' }}>
             <Typography variant="caption" color="text.secondary" sx={{ flex: 1, pl: 1 }}>
-              Changes apply immediately, including open terminals.
+              Terminal preferences apply immediately; logging policies apply to new sessions.
             </Typography>
             <Button variant="contained" onClick={() => setOpen(false)}>
               Done
@@ -372,6 +393,254 @@ function BehaviorSection() {
   );
 }
 
+function SessionLoggingSection() {
+  const { data: policy, isLoading } = useSessionLoggingPolicy('*');
+  const {
+    data: localPolicy,
+    isLoading: localPolicyLoading,
+  } = useSessionLoggingPolicy('local');
+  const [draft, setDraft] = useState<HostSessionLoggingDraft>({
+    ...FALLBACK_SESSION_LOGGING_POLICY,
+    inherit: false,
+    loaded: false,
+  });
+  const [localDraft, setLocalDraft] = useState<HostSessionLoggingDraft>({
+    ...FALLBACK_SESSION_LOGGING_POLICY,
+    inherit: true,
+    loaded: false,
+  });
+  const localDirty = useRef(false);
+  const savePolicy = useSaveSessionLoggingPolicy(() => {
+    showToast('success', 'Default session logging settings saved.');
+  });
+  const saveLocalPolicy = useSaveSessionLoggingPolicy(() => {
+    localDirty.current = false;
+    showToast('success', 'Local terminal logging settings saved.');
+  });
+
+  useEffect(() => {
+    if (!policy) return;
+    setDraft(hostSessionLoggingDraft(policy, false));
+  }, [policy]);
+
+  useEffect(() => {
+    if (!localPolicy || localDirty.current) return;
+    setLocalDraft(
+      hostSessionLoggingDraft(localPolicy, !localPolicy.overridden),
+    );
+  }, [localPolicy]);
+
+  const set = (patch: Partial<HostSessionLoggingDraft>) =>
+    setDraft((current) => ({ ...current, ...patch }));
+  const setLocal = (patch: Partial<HostSessionLoggingDraft>) => {
+    localDirty.current = true;
+    setLocalDraft((current) => ({ ...current, ...patch }));
+  };
+
+  return (
+    <Stack spacing={3}>
+      <Box>
+        <SectionTitle>Default session logging</SectionTitle>
+        <Typography variant="body2" color="text.secondary">
+          Logging is off by default. These settings are inherited by hosts without their own
+          override and affect newly opened sessions.
+        </Typography>
+      </Box>
+      <SessionLoggingPolicyFields value={draft} onChange={set} />
+      <Box>
+        <Button
+          variant="contained"
+          disabled={isLoading || !draft.loaded || savePolicy.isPending}
+          onClick={() =>
+            savePolicy.mutate({
+              profileKey: '*',
+              policy: sessionLoggingPolicyInput(draft),
+            })
+          }
+        >
+          Save logging settings
+        </Button>
+      </Box>
+      <Divider />
+      <Box>
+        <SectionTitle>Local terminals</SectionTitle>
+        <Typography variant="body2" color="text.secondary">
+          Local shells have no host entry, so their optional override is configured here.
+          It applies to newly opened local terminals.
+        </Typography>
+      </Box>
+      <SessionLoggingPolicyFields
+        value={localDraft}
+        onChange={setLocal}
+        allowInherit
+      />
+      <Box>
+        <Button
+          variant="contained"
+          disabled={
+            localPolicyLoading ||
+            !localDraft.loaded ||
+            saveLocalPolicy.isPending
+          }
+          onClick={() =>
+            saveLocalPolicy.mutate({
+              profileKey: 'local',
+              policy: localDraft.inherit
+                ? null
+                : sessionLoggingPolicyInput(localDraft),
+            })
+          }
+        >
+          Save local terminal settings
+        </Button>
+      </Box>
+      <Divider />
+      <HistoryStorageSettings />
+    </Stack>
+  );
+}
+
+interface HistoryStorageDraft {
+  storageLocation: string;
+  maxTotalGiB: string;
+  minFreeGiB: string;
+  minFreePercent: string;
+  maxAgeDays: string;
+}
+
+const EMPTY_HISTORY_STORAGE_DRAFT: HistoryStorageDraft = {
+  storageLocation: '',
+  maxTotalGiB: '5',
+  minFreeGiB: '2',
+  minFreePercent: '5',
+  maxAgeDays: '',
+};
+
+function HistoryStorageSettings() {
+  const { data: status, isLoading } = useSessionHistoryStorage();
+  const [draft, setDraft] = useState<HistoryStorageDraft>(
+    EMPTY_HISTORY_STORAGE_DRAFT,
+  );
+  const dirty = useRef(false);
+  const save = useSaveSessionHistorySettings((next) => {
+    dirty.current = false;
+    showToast(
+      'success',
+      next.restartRequired
+        ? 'History limits saved. Restart Muxus to use the new location.'
+        : 'History storage limits saved.',
+    );
+  });
+
+  useEffect(() => {
+    if (!status || dirty.current) return;
+    setDraft({
+      storageLocation: status.settings.storageLocation ?? '',
+      maxTotalGiB: bytesToGiB(status.settings.maxTotalBytes),
+      minFreeGiB: bytesToGiB(status.settings.minFreeBytes),
+      minFreePercent: String(status.settings.minFreePercent),
+      maxAgeDays: status.settings.maxAgeDays
+        ? String(status.settings.maxAgeDays)
+        : '',
+    });
+  }, [status]);
+
+  const set = (patch: Partial<HistoryStorageDraft>) => {
+    dirty.current = true;
+    setDraft((current) => ({ ...current, ...patch }));
+  };
+  const maxTotalBytes = gibToBytes(draft.maxTotalGiB);
+  const minFreeBytes = gibToBytes(draft.minFreeGiB);
+  const minFreePercent = Number(draft.minFreePercent);
+  const maxAgeDays = draft.maxAgeDays ? Number(draft.maxAgeDays) : undefined;
+  const valid =
+    maxTotalBytes >= 64 * 1024 * 1024 &&
+    minFreeBytes >= 0 &&
+    minFreePercent >= 0 &&
+    minFreePercent <= 100 &&
+    (maxAgeDays === undefined ||
+      (Number.isInteger(maxAgeDays) && maxAgeDays >= 1));
+
+  return (
+    <Stack spacing={2}>
+      <Box>
+        <SectionTitle>History storage and retention</SectionTitle>
+        <Typography variant="body2" color="text.secondary">
+          The hard quota measures compressed segments, the search database,
+          and its WAL. Cleanup removes the oldest unpinned completed sessions
+          down to about 85% of the limit.
+        </Typography>
+      </Box>
+      {status?.warning ? <Alert severity="warning">{status.warning}</Alert> : null}
+      <Typography variant="body2" color="text.secondary">
+        {status
+          ? `${formatStorageBytes(status.usageBytes)} used · ${formatStorageBytes(status.freeBytes)} free · active at ${status.activeStorageLocation}`
+          : 'Loading current history usage…'}
+      </Typography>
+      <TextField
+        label="History location"
+        value={draft.storageLocation}
+        onChange={(event) => set({ storageLocation: event.target.value })}
+        helperText="Leave blank for the platform default. Changes take effect after restart; existing history is left at its old location."
+        placeholder={status?.activeStorageLocation}
+        fullWidth
+      />
+      <Stack direction="row" spacing={2}>
+        <TextField
+          label="Maximum history (GiB)"
+          type="number"
+          value={draft.maxTotalGiB}
+          onChange={(event) => set({ maxTotalGiB: event.target.value })}
+          slotProps={{ htmlInput: { min: 0.0625, step: 0.25 } }}
+          fullWidth
+        />
+        <TextField
+          label="Minimum free (GiB)"
+          type="number"
+          value={draft.minFreeGiB}
+          onChange={(event) => set({ minFreeGiB: event.target.value })}
+          slotProps={{ htmlInput: { min: 0, step: 0.25 } }}
+          fullWidth
+        />
+        <TextField
+          label="Minimum free (%)"
+          type="number"
+          value={draft.minFreePercent}
+          onChange={(event) => set({ minFreePercent: event.target.value })}
+          slotProps={{ htmlInput: { min: 0, max: 100, step: 1 } }}
+          fullWidth
+        />
+      </Stack>
+      <TextField
+        label="Maximum age (days)"
+        type="number"
+        value={draft.maxAgeDays}
+        onChange={(event) => set({ maxAgeDays: event.target.value })}
+        helperText="Optional. Blank keeps sessions indefinitely, subject to size and free-space limits."
+        slotProps={{ htmlInput: { min: 1, step: 1 } }}
+        sx={{ maxWidth: 260 }}
+      />
+      <Box>
+        <Button
+          variant="contained"
+          disabled={isLoading || !valid || save.isPending}
+          onClick={() =>
+            save.mutate({
+              storageLocation: draft.storageLocation.trim() || undefined,
+              maxTotalBytes,
+              minFreeBytes,
+              minFreePercent,
+              maxAgeDays,
+            })
+          }
+        >
+          Save history storage
+        </Button>
+      </Box>
+    </Stack>
+  );
+}
+
 function HighlightingSection() {
   const rules = usePrefsStore((state) => state.keywordHighlights);
   const setPrefs = usePrefsStore((state) => state.set);
@@ -406,4 +675,23 @@ function AboutSection() {
       </Typography>
     </Stack>
   );
+}
+
+const GIB = 1024 ** 3;
+
+function gibToBytes(value: string): number {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0
+    ? Math.round(number * GIB)
+    : -1;
+}
+
+function bytesToGiB(value: number): string {
+  return String(Number((value / GIB).toFixed(3)));
+}
+
+function formatStorageBytes(value: number): string {
+  if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KiB`;
+  if (value < GIB) return `${(value / 1024 ** 2).toFixed(1)} MiB`;
+  return `${(value / GIB).toFixed(2)} GiB`;
 }

@@ -13,6 +13,10 @@ import type {
   OpenSshMetadataPatch,
   SavedHostProfile,
   SavedHostProfileInput,
+  SessionHistorySettings,
+  SessionHistorySettingsInput,
+  SessionLoggingPolicy,
+  SessionLoggingPolicyInput,
   TunnelInput,
   TunnelRecord,
 } from '@muxus/shared';
@@ -137,7 +141,109 @@ const MIGRATIONS = [
         CHECK(keyword_highlights_json IS NULL OR json_valid(keyword_highlights_json));
     `,
   },
+  {
+    version: 6,
+    name: 'persistent-session-history',
+    sql: `
+      CREATE TABLE session_logging_policies (
+        profile_key TEXT PRIMARY KEY,
+        enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)),
+        capture_input INTEGER NOT NULL CHECK(capture_input IN (0, 1)),
+        max_part_bytes INTEGER NOT NULL CHECK(max_part_bytes BETWEEN 65536 AND 1073741824),
+        max_parts INTEGER NOT NULL CHECK(max_parts BETWEEN 1 AND 1000),
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) STRICT;
+
+      CREATE TABLE session_logs (
+        id TEXT PRIMARY KEY,
+        profile_key TEXT NOT NULL,
+        title TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK(kind IN ('openssh', 'ssh', 'local', 'serial', 'telnet')),
+        host TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        ended_at TEXT,
+        status TEXT NOT NULL CHECK(status IN ('active', 'completed', 'disconnected', 'failed')),
+        paused INTEGER NOT NULL DEFAULT 0 CHECK(paused IN (0, 1)),
+        capture_input INTEGER NOT NULL CHECK(capture_input IN (0, 1)),
+        event_count INTEGER NOT NULL DEFAULT 0 CHECK(event_count >= 0),
+        raw_bytes INTEGER NOT NULL DEFAULT 0 CHECK(raw_bytes >= 0),
+        normalized_bytes INTEGER NOT NULL DEFAULT 0 CHECK(normalized_bytes >= 0),
+        current_part INTEGER NOT NULL DEFAULT 1 CHECK(current_part >= 1),
+        current_part_bytes INTEGER NOT NULL DEFAULT 0 CHECK(current_part_bytes >= 0)
+      ) STRICT;
+
+      CREATE TABLE session_log_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL REFERENCES session_logs(id) ON DELETE CASCADE,
+        part_number INTEGER NOT NULL CHECK(part_number >= 1),
+        sequence INTEGER NOT NULL CHECK(sequence >= 1),
+        recorded_at TEXT NOT NULL,
+        elapsed_ms INTEGER NOT NULL CHECK(elapsed_ms >= 0),
+        direction TEXT NOT NULL CHECK(direction IN ('input', 'output', 'system')),
+        raw_data BLOB NOT NULL,
+        normalized_text TEXT NOT NULL,
+        UNIQUE(session_id, sequence)
+      ) STRICT;
+
+      CREATE INDEX session_logs_started ON session_logs(started_at DESC);
+      CREATE INDEX session_logs_profile_started ON session_logs(profile_key, started_at DESC);
+      CREATE INDEX session_log_events_session_sequence
+        ON session_log_events(session_id, sequence);
+      CREATE INDEX session_log_events_session_part
+        ON session_log_events(session_id, part_number);
+
+      CREATE VIRTUAL TABLE session_log_events_fts USING fts5(
+        normalized_text,
+        content = 'session_log_events',
+        content_rowid = 'id',
+        tokenize = 'unicode61'
+      );
+
+      CREATE TRIGGER session_log_events_fts_insert AFTER INSERT ON session_log_events BEGIN
+        INSERT INTO session_log_events_fts(rowid, normalized_text)
+        VALUES (new.id, new.normalized_text);
+      END;
+      CREATE TRIGGER session_log_events_fts_delete AFTER DELETE ON session_log_events BEGIN
+        INSERT INTO session_log_events_fts(session_log_events_fts, rowid, normalized_text)
+        VALUES ('delete', old.id, old.normalized_text);
+      END;
+      CREATE TRIGGER session_log_events_fts_update AFTER UPDATE ON session_log_events BEGIN
+        INSERT INTO session_log_events_fts(session_log_events_fts, rowid, normalized_text)
+        VALUES ('delete', old.id, old.normalized_text);
+        INSERT INTO session_log_events_fts(rowid, normalized_text)
+        VALUES (new.id, new.normalized_text);
+      END;
+    `,
+  },
+  {
+    version: 7,
+    name: 'bounded-session-history-settings',
+    sql: `
+      CREATE TABLE session_history_settings (
+        singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+        storage_location TEXT,
+        max_total_bytes INTEGER NOT NULL CHECK(max_total_bytes >= 67108864),
+        min_free_bytes INTEGER NOT NULL CHECK(min_free_bytes >= 0),
+        min_free_percent REAL NOT NULL CHECK(min_free_percent BETWEEN 0 AND 100),
+        max_age_days INTEGER CHECK(max_age_days IS NULL OR max_age_days >= 1),
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) STRICT;
+
+      INSERT INTO session_history_settings(
+        singleton, storage_location, max_total_bytes, min_free_bytes,
+        min_free_percent, max_age_days
+      ) VALUES (1, NULL, 5368709120, 2147483648, 5, NULL);
+    `,
+  },
 ] as const;
+
+const DEFAULT_SESSION_LOGGING_POLICY: SessionLoggingPolicyInput = {
+  enabled: false,
+  captureInput: false,
+  maxPartBytes: 5 * 1024 * 1024,
+  maxParts: 10,
+};
 
 export interface OpenSshMetadata {
   profileId: string;
@@ -183,6 +289,15 @@ export interface WorkspaceRecord {
 }
 
 export type WorkspaceSummary = Omit<WorkspaceRecord, 'layout'>;
+
+export interface SessionLogCreateInput {
+  profileKey: string;
+  title: string;
+  kind: 'ssh' | 'local' | 'serial' | 'telnet';
+  host: string;
+  startedAt: string;
+  captureInput: boolean;
+}
 
 /**
  * Reject secrets at the persistence boundary. Profiles may contain key paths
@@ -371,10 +486,14 @@ export class MuxusDatabase {
     requireNonEmpty(previousAlias, 'previousAlias');
     requireNonEmpty(nextAlias, 'nextAlias');
     const previous = this.metadataByAlias.get(previousAlias);
-    if (!previous) return;
     const next = this.metadataByAlias.get(nextAlias);
     this.db.exec('BEGIN IMMEDIATE');
     try {
+      this.moveSessionLoggingPolicy(`ssh:${previousAlias}`, `ssh:${nextAlias}`);
+      if (!previous) {
+        this.db.exec('COMMIT');
+        return;
+      }
       if (next) {
         this.db
           .prepare(`
@@ -558,11 +677,16 @@ export class MuxusDatabase {
   }
 
   deleteSavedHostProfile(id: string): boolean {
-    return (
+    const deleted =
       this.db
         .prepare(`DELETE FROM connection_profiles WHERE id = ? AND kind IN ('serial', 'telnet')`)
-        .run(id).changes > 0
-    );
+        .run(id).changes > 0;
+    if (deleted) {
+      this.db
+        .prepare('DELETE FROM session_logging_policies WHERE profile_key = ?')
+        .run(`profile:${id}`);
+    }
+    return deleted;
   }
 
   saveWorkspace(input: { id?: string; name: string; layout: unknown }): WorkspaceRecord {
@@ -717,6 +841,172 @@ export class MuxusDatabase {
     return this.db.prepare('DELETE FROM tunnels WHERE id = ?').run(id).changes > 0;
   }
 
+  sessionLoggingPolicy(profileKey: string): SessionLoggingPolicy {
+    requireNonEmpty(profileKey, 'profileKey');
+    const exact = this.db
+      .prepare(`
+        SELECT enabled, capture_input, max_part_bytes, max_parts
+        FROM session_logging_policies WHERE profile_key = ?
+      `)
+      .get(profileKey);
+    const defaults =
+      profileKey === '*'
+        ? undefined
+        : this.db
+            .prepare(`
+              SELECT enabled, capture_input, max_part_bytes, max_parts
+              FROM session_logging_policies WHERE profile_key = '*'
+            `)
+            .get();
+    const row = exact ?? defaults;
+    return {
+      profileKey,
+      enabled: row ? Number(row.enabled) === 1 : DEFAULT_SESSION_LOGGING_POLICY.enabled,
+      captureInput: row
+        ? Number(row.capture_input) === 1
+        : DEFAULT_SESSION_LOGGING_POLICY.captureInput,
+      maxPartBytes: row
+        ? Number(row.max_part_bytes)
+        : DEFAULT_SESSION_LOGGING_POLICY.maxPartBytes,
+      maxParts: row ? Number(row.max_parts) : DEFAULT_SESSION_LOGGING_POLICY.maxParts,
+      overridden: !!exact,
+    };
+  }
+
+  saveSessionLoggingPolicy(
+    profileKey: string,
+    input: SessionLoggingPolicyInput,
+  ): SessionLoggingPolicy {
+    requireNonEmpty(profileKey, 'profileKey');
+    validateSessionLoggingPolicy(input);
+    this.db
+      .prepare(`
+        INSERT INTO session_logging_policies(
+          profile_key, enabled, capture_input, max_part_bytes, max_parts
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(profile_key) DO UPDATE SET
+          enabled = excluded.enabled,
+          capture_input = excluded.capture_input,
+          max_part_bytes = excluded.max_part_bytes,
+          max_parts = excluded.max_parts,
+          updated_at = CURRENT_TIMESTAMP
+      `)
+      .run(
+        profileKey,
+        input.enabled ? 1 : 0,
+        input.captureInput ? 1 : 0,
+        input.maxPartBytes,
+        input.maxParts,
+      );
+    return this.sessionLoggingPolicy(profileKey);
+  }
+
+  deleteSessionLoggingPolicy(profileKey: string): boolean {
+    requireNonEmpty(profileKey, 'profileKey');
+    return (
+      this.db
+        .prepare('DELETE FROM session_logging_policies WHERE profile_key = ?')
+        .run(profileKey).changes > 0
+    );
+  }
+
+  sessionHistorySettings(): SessionHistorySettings {
+    const row = this.db
+      .prepare(`
+        SELECT storage_location, max_total_bytes, min_free_bytes,
+               min_free_percent, max_age_days
+        FROM session_history_settings WHERE singleton = 1
+      `)
+      .get()!;
+    return {
+      storageLocation: optionalString(row.storage_location),
+      maxTotalBytes: Number(row.max_total_bytes),
+      minFreeBytes: Number(row.min_free_bytes),
+      minFreePercent: Number(row.min_free_percent),
+      maxAgeDays:
+        row.max_age_days === null || row.max_age_days === undefined
+          ? undefined
+          : Number(row.max_age_days),
+    };
+  }
+
+  saveSessionHistorySettings(
+    input: SessionHistorySettingsInput,
+  ): SessionHistorySettings {
+    validateSessionHistorySettings(input);
+    this.db
+      .prepare(`
+        UPDATE session_history_settings
+        SET storage_location = ?,
+            max_total_bytes = ?,
+            min_free_bytes = ?,
+            min_free_percent = ?,
+            max_age_days = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE singleton = 1
+      `)
+      .run(
+        input.storageLocation?.trim() || null,
+        input.maxTotalBytes,
+        input.minFreeBytes,
+        input.minFreePercent,
+        input.maxAgeDays ?? null,
+      );
+    return this.sessionHistorySettings();
+  }
+
+  /**
+   * After the worker has imported version-6 history, remove every payload row
+   * and history-only table from the application database. A one-time VACUUM
+   * reclaims old BLOB pages when an upgrade actually imported payloads.
+   */
+  finalizeSessionHistorySeparation(compact: boolean): void {
+    this.db.exec(`
+      DROP TRIGGER IF EXISTS session_log_events_fts_insert;
+      DROP TRIGGER IF EXISTS session_log_events_fts_delete;
+      DROP TRIGGER IF EXISTS session_log_events_fts_update;
+      DROP TABLE IF EXISTS session_log_events_fts;
+      DROP TABLE IF EXISTS session_log_events;
+      DROP TABLE IF EXISTS session_logs;
+      PRAGMA wal_checkpoint(TRUNCATE);
+    `);
+    if (compact) this.db.exec('VACUUM');
+  }
+
+  hasLegacySessionHistory(): boolean {
+    const table = this.db
+      .prepare(`
+        SELECT 1 FROM sqlite_master
+        WHERE type = 'table' AND name = 'session_logs'
+      `)
+      .get();
+    if (!table) return false;
+    const row = this.db.prepare('SELECT 1 FROM session_logs LIMIT 1').get();
+    return !!row;
+  }
+
+  private moveSessionLoggingPolicy(previousKey: string, nextKey: string): void {
+    this.db
+      .prepare(`
+        INSERT INTO session_logging_policies(
+          profile_key, enabled, capture_input, max_part_bytes, max_parts
+        )
+        SELECT ?, enabled, capture_input, max_part_bytes, max_parts
+        FROM session_logging_policies
+        WHERE profile_key = ?
+        ON CONFLICT(profile_key) DO UPDATE SET
+          enabled = excluded.enabled,
+          capture_input = excluded.capture_input,
+          max_part_bytes = excluded.max_part_bytes,
+          max_parts = excluded.max_parts,
+          updated_at = CURRENT_TIMESTAMP
+      `)
+      .run(nextKey, previousKey);
+    this.db
+      .prepare('DELETE FROM session_logging_policies WHERE profile_key = ?')
+      .run(previousKey);
+  }
+
   private ensureOpenSshProfile(alias: string): SqlRow {
     const existing = this.metadataByAlias.get(alias);
     if (existing) return existing;
@@ -868,4 +1158,51 @@ function nullableString(value: unknown): string | null {
 
 function requireNonEmpty(value: string, name: string): void {
   if (!value.trim()) throw new Error(`${name} is required`);
+}
+
+function validateSessionLoggingPolicy(input: SessionLoggingPolicyInput): void {
+  if (
+    !Number.isInteger(input.maxPartBytes) ||
+    input.maxPartBytes < 64 * 1024 ||
+    input.maxPartBytes > 1024 * 1024 * 1024
+  ) {
+    throw new Error('maxPartBytes must be between 64 KiB and 1 GiB');
+  }
+  if (!Number.isInteger(input.maxParts) || input.maxParts < 1 || input.maxParts > 1000) {
+    throw new Error('maxParts must be between 1 and 1000');
+  }
+}
+
+function validateSessionHistorySettings(input: SessionHistorySettingsInput): void {
+  if (input.storageLocation) {
+    const location = path.resolve(input.storageLocation);
+    if (!path.isAbsolute(input.storageLocation)) {
+      throw new Error('storageLocation must be an absolute path');
+    }
+    if (path.parse(location).root === location) {
+      throw new Error('storageLocation cannot be the filesystem root');
+    }
+  }
+  if (
+    !Number.isSafeInteger(input.maxTotalBytes) ||
+    input.maxTotalBytes < 64 * 1024 * 1024
+  ) {
+    throw new Error('maxTotalBytes must be at least 64 MiB');
+  }
+  if (!Number.isSafeInteger(input.minFreeBytes) || input.minFreeBytes < 0) {
+    throw new Error('minFreeBytes must be a non-negative integer');
+  }
+  if (
+    !Number.isFinite(input.minFreePercent) ||
+    input.minFreePercent < 0 ||
+    input.minFreePercent > 100
+  ) {
+    throw new Error('minFreePercent must be between 0 and 100');
+  }
+  if (
+    input.maxAgeDays !== undefined &&
+    (!Number.isInteger(input.maxAgeDays) || input.maxAgeDays < 1)
+  ) {
+    throw new Error('maxAgeDays must be a positive integer when enabled');
+  }
 }

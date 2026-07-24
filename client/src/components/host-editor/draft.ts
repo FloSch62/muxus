@@ -4,6 +4,10 @@ import type {
   HostUpsertRequest,
   SshHostEntry,
 } from '@muxus/shared';
+import {
+  blankHostSessionLoggingDraft,
+  type HostSessionLoggingDraft,
+} from '../../session-logging-policy.js';
 
 /** Everything the editor form holds, in form-friendly shapes (ports as text). */
 export interface HostDraft {
@@ -23,6 +27,7 @@ export interface HostDraft {
   forwards: ConfigForward[];
   extras: Array<{ keyword: string; value: string }>;
   keywordHighlights: HostKeywordHighlightConfig;
+  sessionLogging: HostSessionLoggingDraft;
 }
 
 export function blankDraft(prefillTarget = ''): HostDraft {
@@ -41,6 +46,7 @@ export function blankDraft(prefillTarget = ''): HostDraft {
     forwards: [],
     extras: [],
     keywordHighlights: { inheritGlobal: true, rules: [] },
+    sessionLogging: blankHostSessionLoggingDraft(),
   };
 }
 
@@ -65,6 +71,7 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
       inheritGlobal: true,
       rules: [],
     },
+    sessionLogging: blankHostSessionLoggingDraft(),
   };
 }
 

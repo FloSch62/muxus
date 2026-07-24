@@ -34,6 +34,19 @@ await build({
   },
 });
 
+// Session payloads, compression, FTS, and quota maintenance run in a real
+// worker. Keep it beside main.js so the bundled server's import.meta.url
+// resolves the same way as the standalone server build.
+await build({
+  entryPoints: ['../server/src/session-logging/history-worker.js'],
+  bundle: true,
+  outfile: 'dist/history-worker.js',
+  platform: 'node',
+  format: 'esm',
+  target: 'node22',
+  sourcemap: true,
+});
+
 // The preload runs in the sandboxed renderer, which only supports CJS.
 await build({
   entryPoints: ['src/preload.ts'],

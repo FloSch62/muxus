@@ -86,6 +86,8 @@ export const terminalClientMessageSchema = z.discriminatedUnion('op', [
   z.object({
     op: z.literal('connect'),
     profile: sessionProfileSchema,
+    /** User-facing tab title retained in session history. */
+    title: z.string().trim().min(1).max(500).optional(),
     cols: z.number().int().positive(),
     rows: z.number().int().positive(),
   }),
@@ -102,6 +104,18 @@ export const terminalClientMessageSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('auth-response'), answers: z.array(z.string()) }),
   /** Verdict on the last `host-key` challenge. */
   z.object({ op: z.literal('host-key-response'), accept: z.boolean() }),
+  /** Change only the current session; persisted policy is managed over REST. */
+  z.object({
+    op: z.literal('set-logging'),
+    enabled: z.boolean().optional(),
+    paused: z.boolean().optional(),
+    captureInput: z.boolean().optional(),
+  }).refine(
+    (value) =>
+      value.enabled !== undefined ||
+      value.paused !== undefined ||
+      value.captureInput !== undefined,
+  ),
 ]);
 export type TerminalClientMessage = z.infer<typeof terminalClientMessageSchema>;
 
@@ -134,4 +148,14 @@ export type TerminalServerMessage =
     }
   /** Transport attached; SSH connIds also key follow-up SFTP/forward calls. */
   | { op: 'ready'; connId: string; host?: string; user?: string }
+  /** Current durable-log state, emitted at start and after every live change. */
+  | {
+      op: 'logging-state';
+      enabled: boolean;
+      sessionId?: string;
+      paused: boolean;
+      captureInput: boolean;
+      /** Present when storage/backpressure suspended logging for this session. */
+      warning?: string;
+    }
   | { op: 'exit'; code?: number; message?: string };

@@ -5,6 +5,10 @@ import type {
   SavedHostProfileInput,
   SerialProfile,
 } from '@muxus/shared';
+import {
+  blankHostSessionLoggingDraft,
+  type HostSessionLoggingDraft,
+} from '../../session-logging-policy.js';
 
 /**
  * Form state for Muxus-owned Telnet/serial hosts. One draft carries both
@@ -23,6 +27,7 @@ export interface NativeHostDraft {
   parity: SerialProfile['parity'];
   flowControl: SerialProfile['flowControl'];
   keywordHighlights: HostKeywordHighlightConfig;
+  sessionLogging: HostSessionLoggingDraft;
 }
 
 export function blankNativeDraft(prefillTarget = ''): NativeHostDraft {
@@ -39,6 +44,7 @@ export function blankNativeDraft(prefillTarget = ''): NativeHostDraft {
     parity: 'none',
     flowControl: 'none',
     keywordHighlights: { inheritGlobal: true, rules: [] },
+    sessionLogging: blankHostSessionLoggingDraft(),
   };
 }
 

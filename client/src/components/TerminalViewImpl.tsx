@@ -304,6 +304,12 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         return Math.round(((base + zoomRef.current) / base) * 100);
       },
       paste: (text) => pasteText(text),
+      setLogging: (patch) => {
+        const socket = wsRef.current;
+        if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+        socket.send(JSON.stringify({ op: 'set-logging', ...patch }));
+        return true;
+      },
     });
 
     const onNativePaste = (event: ClipboardEvent) => {
@@ -374,7 +380,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     ws.binaryType = 'arraybuffer';
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({ op: 'connect', profile: tab.profile, cols: term.cols, rows: term.rows }));
+      ws.send(JSON.stringify({
+        op: 'connect',
+        profile: tab.profile,
+        title: tab.title,
+        cols: term.cols,
+        rows: term.rows,
+      }));
     };
     ws.onmessage = (ev) => {
       if (ev.data instanceof ArrayBuffer) {
@@ -405,6 +417,16 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             // Only SSH transport IDs are valid SFTP/forwarding lease keys.
             connId: tab.profile.kind === 'ssh' ? ctl.connId : undefined,
           });
+          break;
+        case 'logging-state':
+          updateTab(tab.id, {
+            loggingEnabled: ctl.enabled,
+            sessionLogId: ctl.sessionId,
+            loggingWarning: ctl.warning,
+            loggingPaused: ctl.paused,
+            captureInput: ctl.captureInput,
+          });
+          if (ctl.warning) showToast('warning', ctl.warning);
           break;
         case 'exit':
           term.write(`\r\n\x1b[33m[session ended${ctl.message ? `: ${ctl.message}` : ''}]\x1b[0m\r\n`);

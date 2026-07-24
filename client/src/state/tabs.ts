@@ -28,6 +28,12 @@ interface TabBase {
   /** Remote files open in the Monaco workspace attached to this session. */
   editorPaths: string[];
   activeEditorPath?: string;
+  /** Durable server-side history state for this live tab. */
+  loggingEnabled?: boolean;
+  sessionLogId?: string;
+  loggingWarning?: string;
+  loggingPaused: boolean;
+  captureInput: boolean;
 }
 
 export interface SessionTab extends TabBase {
@@ -51,6 +57,11 @@ type TabUpdate = Partial<{
   connId: string | undefined;
   sftpOpen: boolean;
   color: string | undefined;
+  loggingEnabled: boolean | undefined;
+  sessionLogId: string | undefined;
+  loggingWarning: string | undefined;
+  loggingPaused: boolean;
+  captureInput: boolean;
 }>;
 
 interface TabsState {
@@ -103,6 +114,8 @@ export const useTabsStore = create<TabsState>()((set) => ({
             sftpOpen: false,
             searchRequest: 0,
             editorPaths: [],
+            loggingPaused: false,
+            captureInput: false,
           },
         ],
         root: updatePane(state.root, pane.id, (leaf) => ({ ...leaf, activeTabId: id })),
@@ -129,6 +142,8 @@ export const useTabsStore = create<TabsState>()((set) => ({
             sftpOpen: false,
             searchRequest: 0,
             editorPaths: [],
+            loggingPaused: false,
+            captureInput: false,
           },
         ],
         root: updatePane(state.root, pane.id, (leaf) => ({ ...leaf, activeTabId: id })),
@@ -155,6 +170,11 @@ export const useTabsStore = create<TabsState>()((set) => ({
           searchRequest: 0,
           editorPaths: [],
           activeEditorPath: undefined,
+          loggingEnabled: undefined,
+          sessionLogId: undefined,
+          loggingWarning: undefined,
+          loggingPaused: false,
+          captureInput: false,
         };
       }),
     }));
@@ -282,6 +302,11 @@ export const useTabsStore = create<TabsState>()((set) => ({
           searchRequest: 0,
           editorPaths: [],
           activeEditorPath: undefined,
+          loggingEnabled: undefined,
+          sessionLogId: undefined,
+          loggingWarning: undefined,
+          loggingPaused: false,
+          captureInput: false,
         })),
       };
     }),
