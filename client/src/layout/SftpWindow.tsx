@@ -6,6 +6,7 @@ import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 import type { AppWindowLaunch } from '@muxus/shared';
 import { wsProtocols, wsUrl } from '../api/http.js';
+import { requestCloseRemoteEditor } from '../editor/remote-editor-registry.js';
 import { loadRemoteEditorWorkspace, loadSftpPanel } from '../lazy-features.js';
 import { layout } from '../theme.js';
 
@@ -36,7 +37,7 @@ export function SftpWindow({ launch }: { launch: SftpLaunch }) {
   useEffect(
     () =>
       window.muxusDesktop?.onCloseTab(() => {
-        window.muxusDesktop?.closeWindow();
+        if (!requestCloseRemoteEditor(editorId.current)) window.muxusDesktop?.closeWindow();
       }),
     [],
   );

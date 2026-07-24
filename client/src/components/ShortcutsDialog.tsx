@@ -14,6 +14,11 @@ import { useUiStore } from '../state/ui.js';
 const SHORTCUTS: Array<[string, string]> = [
   ['New tab', `${HOTKEY_MOD_LABEL}Shift+T`],
   ['Find in terminal', `${HOTKEY_MOD_LABEL}Shift+F`],
+  ['Save editor file / all files', `${HOTKEY_MOD_LABEL}S / ${HOTKEY_MOD_LABEL}K, S`],
+  ['Find / replace in editor', `${HOTKEY_MOD_LABEL}F / ${HOTKEY_MOD_LABEL}H`],
+  ['Editor command palette', `F1 / ${HOTKEY_MOD_LABEL}Shift+P`],
+  ['Go to line in editor', `${HOTKEY_MOD_LABEL}G`],
+  ['Format editor document', 'Shift+Alt+F'],
   ['Copy / Paste', `${HOTKEY_MOD_LABEL}Shift+C / ${HOTKEY_MOD_LABEL}Shift+V`],
   ['Select all', `${HOTKEY_MOD_LABEL}Shift+A`],
   ['Clear scrollback', `${HOTKEY_MOD_LABEL}Shift+K`],

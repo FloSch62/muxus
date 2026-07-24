@@ -72,9 +72,12 @@ for (const feature of [
     budget: { raw: 520_000, gzip: 140_000 },
   },
   {
-    label: 'Monaco core JavaScript',
+    // The editor is intent-preloaded and lazy. This budget covers Monaco's
+    // complete standalone contribution set (commands, formatting, folding,
+    // suggestions, navigation, accessibility, etc.), not the initial app.
+    label: 'Monaco full editor JavaScript',
     source: 'src/components/MonacoTextEditor.tsx',
-    budget: { raw: 2_800_000, gzip: 720_000 },
+    budget: { raw: 4_050_000, gzip: 1_020_000 },
   },
 ]) {
   const featureKeys = collectStaticGraph(
@@ -97,7 +100,10 @@ for (const file of assetFiles) {
   if (
     bytes.byteLength > 700_000 &&
     !file.includes('worker') &&
-    !file.startsWith('editor.api-')
+    !file.startsWith('editor.api-') &&
+    // Rolldown names Monaco's full editor-contributions chunk after its final
+    // CSS-bearing contribution. It is part of the measured lazy editor graph.
+    !file.startsWith('toggleHighContrast-')
   ) {
     failures.push(`${file} is ${format(bytes.byteLength)}; unapproved chunks must stay below 683.6 KiB`);
   }

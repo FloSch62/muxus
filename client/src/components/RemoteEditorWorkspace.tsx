@@ -12,12 +12,17 @@ import { alpha, useTheme } from '@mui/material/styles';
 import CloseIcon from '@mui/icons-material/Close';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import SaveAsOutlinedIcon from '@mui/icons-material/SaveAsOutlined';
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import type {
   SftpFileResponse,
   SftpFileSaveResponse,
 } from '@muxus/shared';
 import { ApiError, apiFetch, apiFetchRaw } from '../api/http.js';
+import {
+  GENERAL_TEXT_LANGUAGE_ID,
+  languageForPath,
+} from '../editor/language-detection.js';
 import { registerRemoteEditor } from '../editor/remote-editor-registry.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { loadMonacoTextEditor } from '../lazy-features.js';
@@ -36,55 +41,6 @@ interface EditorDocument {
 
 function baseName(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1) || path;
-}
-
-function languageForPath(path: string): string {
-  const name = baseName(path).toLowerCase();
-  const extension = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1) : '';
-  const exact: Record<string, string> = {
-    dockerfile: 'dockerfile',
-    makefile: 'plaintext',
-    '.bashrc': 'shell',
-    '.zshrc': 'shell',
-    '.profile': 'shell',
-  };
-  if (exact[name]) return exact[name];
-  const languages: Record<string, string> = {
-    bash: 'shell',
-    c: 'c',
-    cc: 'cpp',
-    conf: 'ini',
-    cpp: 'cpp',
-    css: 'css',
-    env: 'ini',
-    go: 'go',
-    h: 'c',
-    hpp: 'cpp',
-    html: 'html',
-    ini: 'ini',
-    java: 'java',
-    js: 'javascript',
-    json: 'json',
-    jsx: 'javascript',
-    log: 'plaintext',
-    lua: 'lua',
-    md: 'markdown',
-    php: 'php',
-    properties: 'ini',
-    py: 'python',
-    rb: 'ruby',
-    rs: 'rust',
-    sh: 'shell',
-    sql: 'sql',
-    toml: 'ini',
-    ts: 'typescript',
-    tsx: 'typescript',
-    txt: 'plaintext',
-    xml: 'xml',
-    yaml: 'yaml',
-    yml: 'yaml',
-  };
-  return languages[extension] ?? 'plaintext';
 }
 
 function downloadBlob(name: string, blob: Blob): void {
@@ -114,6 +70,7 @@ export function RemoteEditorWorkspace({
 }) {
   const theme = useTheme();
   const [documents, setDocuments] = useState<Record<string, EditorDocument>>({});
+  const [languageOverrides, setLanguageOverrides] = useState<Record<string, string>>({});
 
   const load = useCallback(
     async (path: string) => {
@@ -186,14 +143,9 @@ export function RemoteEditorWorkspace({
   const dirtyPathsRef = useRef(dirtyPaths);
   dirtyPathsRef.current = dirtyPaths;
 
-  useEffect(
-    () => registerRemoteEditor(tabId, { hasDirty: () => dirtyPathsRef.current.size > 0 }),
-    [tabId],
-  );
-
-  const save = async (path: string, force = false) => {
+  const save = async (path: string, force = false, notify = true): Promise<boolean> => {
     const document = documents[path];
-    if (!connId || !document || document.loading || document.saving) return;
+    if (!connId || !document || document.loading || document.saving) return false;
     const contentToSave = document.content;
     setDocuments((current) => ({
       ...current,
@@ -223,7 +175,8 @@ export function RemoteEditorWorkspace({
           error: undefined,
         },
       }));
-      showToast('success', `Saved ${baseName(path)}`);
+      if (notify) showToast('success', `Saved ${baseName(path)}`);
+      return true;
     } catch (error) {
       if (
         error instanceof ApiError &&
@@ -234,13 +187,24 @@ export function RemoteEditorWorkspace({
           ...current,
           [path]: { ...current[path]!, saving: false, conflict: true },
         }));
-        return;
+        return false;
       }
       setDocuments((current) => ({
         ...current,
         [path]: { ...current[path]!, saving: false },
       }));
       showErrorToast(error);
+      return false;
+    }
+  };
+
+  const saveAll = async () => {
+    const pathsToSave = [...dirtyPaths].filter((path) => !documents[path]?.saving);
+    if (pathsToSave.length === 0) return;
+    const results = await Promise.all(pathsToSave.map((path) => save(path, false, false)));
+    const saved = results.filter(Boolean).length;
+    if (saved > 0) {
+      showToast('success', saved === 1 ? `Saved ${baseName(pathsToSave[0]!)}` : `Saved ${saved} files`);
     }
   };
 
@@ -256,11 +220,40 @@ export function RemoteEditorWorkspace({
       delete next[path];
       return next;
     });
+    setLanguageOverrides((current) => {
+      if (!(path in current)) return current;
+      const next = { ...current };
+      delete next[path];
+      return next;
+    });
     onClose(path);
   };
+  const closeActiveRef = useRef<() => void>(() => undefined);
+  closeActiveRef.current = () => {
+    if (activePath) close(activePath);
+  };
+
+  useEffect(
+    () =>
+      registerRemoteEditor(tabId, {
+        hasDirty: () => dirtyPathsRef.current.size > 0,
+        closeActive: () => closeActiveRef.current(),
+      }),
+    [tabId],
+  );
 
   const document = activePath ? documents[activePath] : undefined;
-  const language = activePath ? languageForPath(activePath) : 'plaintext';
+  const language = activePath
+    ? languageOverrides[activePath] ?? languageForPath(activePath, document?.content)
+    : 'plaintext';
+  const savingCount = Object.values(documents).filter((candidate) => candidate.saving).length;
+
+  const activateRelative = (offset: number) => {
+    if (!activePath || paths.length < 2) return;
+    const currentIndex = paths.indexOf(activePath);
+    const nextIndex = (currentIndex + offset + paths.length) % paths.length;
+    onActivate(paths[nextIndex]!);
+  };
 
   return (
     <Box sx={{ height: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
@@ -279,11 +272,21 @@ export function RemoteEditorWorkspace({
               role="tab"
               aria-selected={active}
               tabIndex={active ? 0 : -1}
+              title={path}
               onClick={() => onActivate(path)}
+              onAuxClick={(event) => {
+                if (event.button === 1) close(path);
+              }}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
                   onActivate(path);
+                } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+                  event.preventDefault();
+                  activateRelative(event.key === 'ArrowLeft' ? -1 : 1);
+                } else if (event.key === 'Home' || event.key === 'End') {
+                  event.preventDefault();
+                  onActivate(paths[event.key === 'Home' ? 0 : paths.length - 1]!);
                 }
               }}
               sx={(currentTheme) => ({
@@ -302,24 +305,24 @@ export function RemoteEditorWorkspace({
               <Typography variant="body2" noWrap sx={{ flex: 1, fontSize: 12.5 }}>
                 {baseName(path)}
               </Typography>
-              {dirty ? (
-                <Box
-                  aria-label="Unsaved changes"
-                  sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'text.secondary', flexShrink: 0 }}
-                />
-              ) : (
-                <IconButton
-                  size="small"
-                  aria-label={`Close ${baseName(path)}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    close(path);
-                  }}
-                  sx={{ p: 0.2 }}
-                >
+              <IconButton
+                size="small"
+                aria-label={`Close ${baseName(path)}${dirty ? ', discard unsaved changes' : ''}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  close(path);
+                }}
+                sx={{ p: 0.2, width: 18, height: 18 }}
+              >
+                {dirty ? (
+                  <Box
+                    aria-label="Unsaved changes"
+                    sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'text.secondary' }}
+                  />
+                ) : (
                   <CloseIcon sx={{ fontSize: 14 }} />
-                </IconButton>
-              )}
+                )}
+              </IconButton>
             </Stack>
           );
         })}
@@ -339,7 +342,7 @@ export function RemoteEditorWorkspace({
             {activePath}
           </Typography>
           <Typography variant="caption" color="text.disabled" sx={{ mr: 0.5 }}>
-            {language}
+            {language === GENERAL_TEXT_LANGUAGE_ID ? 'General text' : language}
           </Typography>
           <Tooltip title="Reload from remote">
             <span>
@@ -387,6 +390,18 @@ export function RemoteEditorWorkspace({
               </IconButton>
             </span>
           </Tooltip>
+          <Tooltip title="Save all (Ctrl/Cmd+K, S)">
+            <span>
+              <IconButton
+                size="small"
+                color={dirtyPaths.size > 0 ? 'primary' : 'default'}
+                disabled={dirtyPaths.size === 0 || savingCount > 0 || !connId}
+                onClick={() => void saveAll()}
+              >
+                {savingCount > 0 ? <CircularProgress size={16} /> : <SaveAsOutlinedIcon fontSize="small" />}
+              </IconButton>
+            </span>
+          </Tooltip>
           <IconButton size="small" aria-label="Close editor" onClick={() => close(activePath)}>
             <CloseIcon fontSize="small" />
           </IconButton>
@@ -429,6 +444,8 @@ export function RemoteEditorWorkspace({
         ) : document && !document.loading && activePath ? (
           <Suspense fallback={<LinearProgress />}>
             <MonacoTextEditor
+              workspaceId={tabId}
+              openPaths={paths}
               path={activePath}
               language={language}
               value={document.content}
@@ -440,7 +457,17 @@ export function RemoteEditorWorkspace({
                   [activePath]: { ...current[activePath]!, content, conflict: false },
                 }))
               }
+              onLanguageChange={(nextLanguage) =>
+                setLanguageOverrides((current) => ({
+                  ...current,
+                  [activePath]: nextLanguage,
+                }))
+              }
               onSave={() => void save(activePath)}
+              onSaveAll={() => void saveAll()}
+              onClose={() => close(activePath)}
+              onNextTab={() => activateRelative(1)}
+              onPreviousTab={() => activateRelative(-1)}
             />
           </Suspense>
         ) : (

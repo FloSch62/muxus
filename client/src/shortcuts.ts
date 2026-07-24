@@ -1,4 +1,5 @@
 import { openEmptyTab, requestCloseTabs } from './session-actions.js';
+import { requestCloseRemoteEditor } from './editor/remote-editor-registry.js';
 import { usePrefsStore } from './state/prefs.js';
 import { useTabsStore } from './state/tabs.js';
 
@@ -37,6 +38,7 @@ export function installShortcuts(): () => void {
   const unsubscribers = [
     window.muxusDesktop?.onCloseTab(() => {
       const { activeId, activePaneId, root, closePane } = useTabsStore.getState();
+      if (activeId && requestCloseRemoteEditor(activeId)) return;
       if (activeId) requestCloseTabs([activeId]);
       else if (root.type === 'split') closePane(activePaneId);
       else window.muxusDesktop?.closeWindow();
