@@ -18,7 +18,6 @@ extraResources:
 icon: build/icon.png
 artifactName: muxus-${version}-${os}-${arch}.${ext}
 npmRebuild: true
-afterPack: scripts/after-pack.cjs
 win:
   target:
     - target: nsis
@@ -41,7 +40,7 @@ linux:
   icon: build/icons
   desktop:
     entry:
-      StartupWMClass: Muxus
+      StartupWMClass: muxus
   target:
     - target: AppImage
       arch: [x64]

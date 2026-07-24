@@ -21,10 +21,11 @@ import type { AppWindowLaunch } from '@muxus/shared';
 // and the user's login shell tooling need it.
 fixPath();
 
-// Without this the Linux WM_CLASS becomes the package.json name
-// ("@muxus/electron") and never matches the .desktop StartupWMClass,
-// leaving the window without taskbar/dock icon.
 app.setName('Muxus');
+// Keep the native Wayland app_id (and the X11 fallback's WM_CLASS) aligned
+// with the installed desktop file. Electron selects Wayland automatically
+// when the session supports it; no display-backend flag is needed.
+if (process.platform === 'linux') app.setDesktopName('muxus.desktop');
 
 // Not named __dirname: the esbuild banner defines that identifier for the
 // bundled CJS deps, and banner names can't be renamed around.
