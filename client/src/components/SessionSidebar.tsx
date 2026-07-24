@@ -499,6 +499,7 @@ export function SessionSidebar() {
                     live={liveByKey.get(hostKey)}
                     onConnect={() => connectManagedHost(host)}
                     onMenu={openMenu}
+                    showDragHandle={!needle}
                     dragEnabled={!needle && !mutating}
                     dragging={dragged?.groupKey === group.key && dragged.hostKey === hostKey}
                     dropEdge={
@@ -740,6 +741,7 @@ function HostRow({
   live,
   onConnect,
   onMenu,
+  showDragHandle,
   dragEnabled,
   dragging,
   dropEdge,
@@ -753,6 +755,7 @@ function HostRow({
   live?: LiveCounts;
   onConnect: () => void;
   onMenu: (host: ManagedHost, anchor: HTMLElement, position?: { top: number; left: number }) => void;
+  showDragHandle: boolean;
   dragEnabled: boolean;
   dragging: boolean;
   dropEdge?: 'before' | 'after';
@@ -808,17 +811,19 @@ function HostRow({
         }),
       }}
     >
-      {dragEnabled && (
+      {showDragHandle && (
         <Tooltip title="Drag to reorder or move to a group · Alt+↑/↓">
           <IconButton
             className="host-drag-handle"
             size="small"
             aria-label={`Move ${title}`}
-            draggable
+            aria-disabled={!dragEnabled}
+            draggable={dragEnabled}
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
             onClick={(event) => event.stopPropagation()}
             onKeyDown={(event) => {
+              if (!dragEnabled) return;
               if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
               event.preventDefault();
               event.stopPropagation();
@@ -828,8 +833,8 @@ function HostRow({
               opacity: { xs: 0.75, md: 0.2 },
               p: 0.25,
               mr: 0.25,
-              cursor: 'grab',
-              '&:active': { cursor: 'grabbing' },
+              cursor: dragEnabled ? 'grab' : 'default',
+              '&:active': { cursor: dragEnabled ? 'grabbing' : 'default' },
               transition: 'opacity 120ms',
             }}
           >
