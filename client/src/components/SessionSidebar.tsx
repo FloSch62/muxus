@@ -1,7 +1,8 @@
-import { useDeferredValue, useMemo, useRef, useState, type DragEvent } from 'react';
+import { useDeferredValue, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import ButtonBase from '@mui/material/ButtonBase';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
@@ -23,30 +24,24 @@ import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
-import AltRouteIcon from '@mui/icons-material/AltRoute';
 import BoltIcon from '@mui/icons-material/Bolt';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
-import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import LibraryAddOutlinedIcon from '@mui/icons-material/LibraryAddOutlined';
 import GridViewOutlinedIcon from '@mui/icons-material/GridViewOutlined';
-import PasswordOutlinedIcon from '@mui/icons-material/PasswordOutlined';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
-import RocketLaunchOutlinedIcon from '@mui/icons-material/RocketLaunchOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import StarIcon from '@mui/icons-material/Star';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
-import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import TabOutlinedIcon from '@mui/icons-material/TabOutlined';
 import TableRowsOutlinedIcon from '@mui/icons-material/TableRowsOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
@@ -94,7 +89,6 @@ import type { SessionSetLayout } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
 import { hostKindIcon } from './host-kind-icon.js';
 import { PanelResizeHandle } from './PanelResizeHandle.js';
-import { TruncationTooltip } from './TruncationTooltip.js';
 
 const EMPTY_HOSTS: SshHostEntry[] = [];
 type LiveCounts = { connected: number; connecting: number };
@@ -457,7 +451,6 @@ export function SessionSidebar() {
             subheader={
               <ListSubheader
                 disableSticky
-                onClick={() => setCollapsed((current) => ({ ...current, [group.key]: !current[group.key] }))}
                 onDragOver={(event) => dragOverGroup(event, group.key)}
                 onDragLeave={(event) => {
                   const related = event.relatedTarget;
@@ -472,17 +465,20 @@ export function SessionSidebar() {
                     dropTarget?.kind === 'group' && dropTarget.groupKey === group.key
                       ? 'action.selected'
                       : 'transparent',
-                  lineHeight: '28px',
+                  lineHeight: '26px',
                   fontSize: 11,
                   textTransform: 'uppercase',
                   letterSpacing: 0.6,
-                  cursor: 'pointer',
                   userSelect: 'none',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: 0.5,
+                  px: 0.75,
+                  mt: 0.5,
                   borderRadius: 1,
                   transition: 'background-color 120ms ease, color 120ms ease, box-shadow 120ms ease',
+                  // Group actions stay out of sight until the header is hovered
+                  // or tabbed to; the slot is always laid out so nothing shifts.
+                  '&:hover .group-launch, & .group-launch:focus-visible': { opacity: 1 },
                   ...(dropTarget?.kind === 'group' &&
                     dropTarget.groupKey === group.key && {
                       color: 'primary.main',
@@ -490,27 +486,64 @@ export function SessionSidebar() {
                     }),
                 }}
               >
-                {collapsed[group.key] ? <ExpandMoreIcon sx={{ fontSize: 14 }} /> : <ExpandLessIcon sx={{ fontSize: 14 }} />}
-                {group.kind === 'custom' && <FolderOutlinedIcon sx={{ fontSize: 13, color: 'text.disabled' }} />}
-                <Tooltip title={group.tooltip ?? group.label}>
-                  <span>{group.label}</span>
-                </Tooltip>
-                <Tooltip title={`Launch all ${group.hosts.length} hosts`}>
-                  <IconButton
-                    size="small"
-                    aria-label={`Launch ${group.label} group`}
-                    disabled={group.hosts.length === 0}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setLaunchGroup(group);
-                      setLaunchLayout('tabs');
+                <Tooltip title={group.tooltip ?? ''} placement="right" disableInteractive>
+                  <ButtonBase
+                    aria-expanded={!collapsed[group.key]}
+                    onClick={() =>
+                      setCollapsed((current) => ({ ...current, [group.key]: !current[group.key] }))
+                    }
+                    sx={{
+                      flex: 1,
+                      minWidth: 0,
+                      justifyContent: 'flex-start',
+                      gap: 0.5,
+                      font: 'inherit',
+                      letterSpacing: 'inherit',
+                      // Form controls drop the inherited transform in some engines.
+                      textTransform: 'inherit',
+                      color: 'inherit',
+                      borderRadius: 1,
+                      px: 0.25,
                     }}
-                    sx={{ p: 0.25, ml: 'auto' }}
                   >
-                    <RocketLaunchOutlinedIcon sx={{ fontSize: 14 }} />
-                  </IconButton>
+                    <ExpandMoreIcon
+                      sx={{
+                        fontSize: 14,
+                        flexShrink: 0,
+                        color: 'text.disabled',
+                        transition: 'transform 150ms ease',
+                        transform: collapsed[group.key] ? 'rotate(-90deg)' : 'none',
+                      }}
+                    />
+                    <Box
+                      component="span"
+                      sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    >
+                      {group.label}
+                    </Box>
+                  </ButtonBase>
                 </Tooltip>
-                <Typography component="span" sx={{ fontSize: 11, color: 'text.disabled', ml: 'auto', mr: 0.5 }}>
+                <Tooltip title={group.hosts.length > 0 ? `Launch all ${group.hosts.length} hosts…` : ''}>
+                  <span>
+                    <IconButton
+                      className="group-launch"
+                      size="small"
+                      aria-label={`Launch ${group.label} group`}
+                      disabled={group.hosts.length === 0}
+                      onClick={() => {
+                        setLaunchGroup(group);
+                        setLaunchLayout('tabs');
+                      }}
+                      sx={{ p: 0.25, opacity: { xs: 1, md: 0 }, transition: 'opacity 120ms ease' }}
+                    >
+                      <PlayArrowOutlinedIcon sx={{ fontSize: 15 }} />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+                <Typography
+                  component="span"
+                  sx={{ fontSize: 11, color: 'text.disabled', minWidth: 14, textAlign: 'right' }}
+                >
                   {group.hosts.length}
                 </Typography>
               </ListSubheader>
@@ -526,7 +559,7 @@ export function SessionSidebar() {
                     live={liveByKey.get(hostKey)}
                     onConnect={() => connectManagedHost(host)}
                     onMenu={openMenu}
-                    showDragHandle={!needle}
+                    showDragGrip={!needle}
                     dragEnabled={!needle && !mutating}
                     dragging={dragged?.groupKey === group.key && dragged.hostKey === hostKey}
                     dropEdge={
@@ -806,7 +839,7 @@ export function SessionSidebar() {
           <Button onClick={() => setLaunchGroup(null)}>Cancel</Button>
           <Button
             variant="contained"
-            startIcon={<RocketLaunchOutlinedIcon />}
+            startIcon={<PlayArrowOutlinedIcon />}
             disabled={!launchGroup?.hosts.length}
             onClick={() => {
               if (!launchGroup) return;
@@ -828,13 +861,37 @@ function shortenPath(p: string): string {
   return p.replace(/^.*(\/\.ssh\/)/, '~/.ssh/');
 }
 
-/** One sidebar row for any host source; SSH rows add resolved-config badges. */
+/**
+ * What a row deliberately does not draw. Jump chain, key, auth mode and
+ * forwards are reference material, not things you act on from the list, so
+ * they live in the row's hover card instead of as a row of grey glyphs.
+ */
+function hostDetailLines(host: ManagedHost): string[] {
+  const lines: string[] = [];
+  if (host.kind !== 'ssh') return lines;
+  if (host.entry.description) lines.push(host.entry.description);
+  const resolved = host.entry.resolved;
+  if (!resolved) return lines;
+  if (resolved.proxyJump.length > 0) lines.push(`via ${resolved.proxyJump.join(' → ')}`);
+  if (resolved.identityFiles.length > 0) {
+    lines.push(`Key ${resolved.identityFiles.map((file) => file.split(/[\\/]/).pop()).join(', ')}`);
+  }
+  if (resolved.passwordOnly) lines.push('Password authentication');
+  if (resolved.forwards.length > 0) {
+    lines.push(
+      `${resolved.forwards.length} port forward${resolved.forwards.length > 1 ? 's' : ''} on connect`,
+    );
+  }
+  return lines;
+}
+
+/** One sidebar row for any host source; details ride along in the hover card. */
 function HostRow({
   host,
   live,
   onConnect,
   onMenu,
-  showDragHandle,
+  showDragGrip,
   dragEnabled,
   dragging,
   dropEdge,
@@ -848,7 +905,7 @@ function HostRow({
   live?: LiveCounts;
   onConnect: () => void;
   onMenu: (host: ManagedHost, anchor: HTMLElement, position?: { top: number; left: number }) => void;
-  showDragHandle: boolean;
+  showDragGrip: boolean;
   dragEnabled: boolean;
   dragging: boolean;
   dropEdge?: 'before' | 'after';
@@ -862,26 +919,54 @@ function HostRow({
   const address = managedHostAddress(host);
   const secondary = host.kind === 'ssh' && address === host.entry.alias ? undefined : address;
   const color = host.entry.metadata?.color;
-  const resolved = host.kind === 'ssh' ? host.entry.resolved : undefined;
-  const Icon =
-    resolved && resolved.proxyJump.length > 0
-      ? AltRouteIcon
-      : hostKindIcon(host.kind === 'ssh' ? 'ssh' : host.entry.kind);
-  const badge = { fontSize: 14, color: 'text.disabled' } as const;
+  const Icon = hostKindIcon(host.kind === 'ssh' ? 'ssh' : host.entry.kind);
+  const details = hostDetailLines(host);
+  const connected = live?.connected ?? 0;
+  const connecting = live?.connecting ?? 0;
+  const [clipped, setClipped] = useState(false);
+
+  /** The hover card is worth showing only for what the row can't fit. */
+  const measure = (event: MouseEvent<HTMLElement>) => {
+    const name = event.currentTarget.querySelector('[data-host-name]');
+    const line = event.currentTarget.querySelector('.MuiListItemText-secondary');
+    setClipped(
+      (!!name && name.scrollWidth > name.clientWidth) ||
+        (!!line && line.scrollWidth > line.clientWidth),
+    );
+  };
 
   const row = (
     <ListItemButton
-      onMouseEnter={() => void loadTerminalViewImpl()}
+      draggable={dragEnabled}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onMouseEnter={(event) => {
+        void loadTerminalViewImpl();
+        measure(event);
+      }}
       onFocus={() => void loadTerminalViewImpl()}
       onClick={onConnect}
       onDragOver={onDragOver}
       onDrop={onDrop}
+      onKeyDown={(event) => {
+        if (!dragEnabled || !event.altKey) return;
+        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+        event.preventDefault();
+        onMove(event.key === 'ArrowUp' ? -1 : 1);
+      }}
+      aria-keyshortcuts={dragEnabled ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
       onContextMenu={(e) => {
         e.preventDefault();
         onMenu(host, e.currentTarget, { top: e.clientY, left: e.clientX });
       }}
       sx={{
-        '&:hover .host-row-menu, &:hover .host-drag-handle, &:focus-within .host-drag-handle': { opacity: 1 },
+        '&:hover .host-row-menu, & .host-row-menu:focus-visible': { opacity: 1 },
+        // The grip takes over the kind-icon slot on hover: the reorder
+        // affordance costs no width and no row is decorated at rest.
+        ...(showDragGrip && {
+          '&:hover .host-drag-grip': { opacity: 0.55 },
+          '&:hover .host-kind-icon': { opacity: 0 },
+        }),
         opacity: dragging ? 0.45 : 1,
         pr: 0.5,
         borderLeft: 3,
@@ -904,70 +989,62 @@ function HostRow({
         }),
       }}
     >
-      {showDragHandle && (
-        <Tooltip title="Drag to reorder or move to a group · Alt+↑/↓">
-          <IconButton
-            className="host-drag-handle"
-            size="small"
-            aria-label={`Move ${title}`}
-            aria-disabled={!dragEnabled}
-            draggable={dragEnabled}
-            onDragStart={onDragStart}
-            onDragEnd={onDragEnd}
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => {
-              if (!dragEnabled) return;
-              if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
-              event.preventDefault();
-              event.stopPropagation();
-              onMove(event.key === 'ArrowUp' ? -1 : 1);
-            }}
-            sx={{
-              opacity: { xs: 0.75, md: 0.2 },
-              p: 0.25,
-              mr: 0.25,
-              cursor: dragEnabled ? 'grab' : 'default',
-              '&:active': { cursor: dragEnabled ? 'grabbing' : 'default' },
-              transition: 'opacity 120ms',
-            }}
-          >
-            <DragIndicatorIcon sx={{ fontSize: 16 }} />
-          </IconButton>
-        </Tooltip>
-      )}
       <ListItemIcon sx={{ minWidth: 32 }}>
-        <Icon fontSize="small" sx={{ color: color ?? 'text.secondary' }} />
+        <Box sx={{ position: 'relative', display: 'flex', cursor: dragEnabled ? 'grab' : undefined }}>
+          <Icon
+            className="host-kind-icon"
+            fontSize="small"
+            sx={{ color: color ?? 'text.secondary', transition: 'opacity 120ms ease' }}
+          />
+          {showDragGrip && (
+            <DragIndicatorIcon
+              className="host-drag-grip"
+              sx={{
+                position: 'absolute',
+                inset: 0,
+                fontSize: 20,
+                opacity: 0,
+                pointerEvents: 'none',
+                transition: 'opacity 120ms ease',
+              }}
+            />
+          )}
+          {connected + connecting > 0 && (
+            <Box
+              sx={{
+                position: 'absolute',
+                right: -3,
+                bottom: -2,
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                bgcolor: connected > 0 ? 'success.main' : 'warning.main',
+                boxShadow: (theme) => `0 0 0 2px ${theme.palette.sidebar}`,
+                ...(connected === 0 && {
+                  animation: 'muxus-pulse 1.2s ease-in-out infinite',
+                  '@keyframes muxus-pulse': { '50%': { opacity: 0.3 } },
+                }),
+              }}
+            />
+          )}
+        </Box>
       </ListItemIcon>
       <ListItemText
         primary={
-          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', minWidth: 0 }}>
-            {(live?.connected ?? 0) + (live?.connecting ?? 0) > 0 && (
-              <Box
-                sx={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: '50%',
-                  flexShrink: 0,
-                  bgcolor: live!.connected > 0 ? 'success.main' : 'warning.main',
-                  ...(live!.connected === 0 && {
-                    animation: 'muxus-pulse 1.2s ease-in-out infinite',
-                    '@keyframes muxus-pulse': { '50%': { opacity: 0.3 } },
-                  }),
-                }}
-              />
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
+            <Box
+              component="span"
+              data-host-name
+              sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            >
+              {title}
+            </Box>
+            {host.entry.metadata?.favorite && (
+              <StarIcon sx={{ fontSize: 13, flexShrink: 0, color: 'warning.main' }} />
             )}
-            <TruncationTooltip text={title}>
-              <Box
-                component="span"
-                sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-              >
-                {title}
-              </Box>
-            </TruncationTooltip>
-            {host.entry.metadata?.favorite && <StarIcon sx={{ fontSize: 13, color: 'warning.main' }} />}
-            {(live?.connected ?? 0) > 1 && (
-              <Typography component="span" sx={{ fontSize: 10, color: 'success.main' }}>
-                ×{live!.connected}
+            {connected > 1 && (
+              <Typography component="span" sx={{ fontSize: 10, flexShrink: 0, color: 'success.main' }}>
+                ×{connected}
               </Typography>
             )}
           </Stack>
@@ -975,51 +1052,47 @@ function HostRow({
         secondary={secondary}
         slotProps={{ secondary: { sx: { fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } } }}
       />
-      <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexShrink: 0, mr: 0.25 }}>
-        {resolved && resolved.proxyJump.length > 0 && (
-          <Tooltip title={`via ${resolved.proxyJump.join(' → ')}`}>
-            <AltRouteIcon sx={badge} />
-          </Tooltip>
-        )}
-        {resolved && resolved.identityFiles.length > 0 && (
-          <Tooltip title={resolved.identityFiles.map((f) => f.split(/[\\/]/).pop()).join(', ')}>
-            <KeyOutlinedIcon sx={badge} />
-          </Tooltip>
-        )}
-        {resolved?.passwordOnly && (
-          <Tooltip title="Password authentication">
-            <PasswordOutlinedIcon sx={badge} />
-          </Tooltip>
-        )}
-        {resolved && resolved.forwards.length > 0 && (
-          <Tooltip title={`${resolved.forwards.length} port forward${resolved.forwards.length > 1 ? 's' : ''} on connect`}>
-            <SwapHorizOutlinedIcon sx={badge} />
-          </Tooltip>
-        )}
-        <IconButton
-          className="host-row-menu"
-          size="small"
-          edge="end"
-          aria-label={`Options for ${title}`}
-          sx={{ opacity: { xs: 1, md: 0 }, transition: 'opacity 120ms' }}
-          onClick={(e) => {
-            e.stopPropagation();
-            onMenu(host, e.currentTarget);
-          }}
-        >
-          <Box component="span" sx={{ fontSize: 16, lineHeight: 1 }}>
-            ⋮
-          </Box>
-        </IconButton>
-      </Stack>
+      <IconButton
+        className="host-row-menu"
+        size="small"
+        edge="end"
+        aria-label={`Options for ${title}`}
+        sx={{ flexShrink: 0, ml: 0.25, opacity: { xs: 1, md: 0 }, transition: 'opacity 120ms ease' }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onMenu(host, e.currentTarget);
+        }}
+      >
+        <MoreVertIcon sx={{ fontSize: 16 }} />
+      </IconButton>
     </ListItemButton>
   );
 
-  return host.kind === 'ssh' && host.entry.description ? (
-    <Tooltip title={host.entry.description} placement="right" enterDelay={600}>
+  return (
+    <Tooltip
+      placement="right"
+      enterDelay={500}
+      enterNextDelay={250}
+      disableInteractive
+      title={
+        details.length === 0 && !clipped ? (
+          ''
+        ) : (
+          <Stack spacing={0.25} sx={{ py: 0.25 }}>
+            <Box sx={{ fontWeight: 600 }}>{title}</Box>
+            {address !== title && <Box sx={{ opacity: 0.7 }}>{address}</Box>}
+            {details.length > 0 && (
+              <Stack spacing={0.25} sx={{ pt: 0.5, opacity: 0.7 }}>
+                {details.map((line) => (
+                  <Box key={line}>{line}</Box>
+                ))}
+              </Stack>
+            )}
+          </Stack>
+        )
+      }
+    >
       {row}
     </Tooltip>
-  ) : (
-    row
   );
 }

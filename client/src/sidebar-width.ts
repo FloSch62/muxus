@@ -1,5 +1,8 @@
-export const DEFAULT_SIDEBAR_WIDTH = 260;
-export const MIN_SIDEBAR_WIDTH = 220;
+/** The address line is what sets this floor: a full `user@host:port` stops
+ *  fitting just under 244px, so the default keeps a little headroom above it. */
+export const DEFAULT_SIDEBAR_WIDTH = 248;
+/** Host names still fit here — long addresses fall back to the row hover card. */
+export const MIN_SIDEBAR_WIDTH = 200;
 export const MAX_SIDEBAR_WIDTH = 520;
 export const MIN_MAIN_WORKSPACE_WIDTH = 320;
 
