@@ -29,6 +29,9 @@ mac:
   category: public.app-category.developer-tools
   identity: null
   notarize: false
+  # Native modules ship both Darwin prebuilds in each architecture package.
+  # They are already architecture-specific (or universal), so do not lipo them again.
+  x64ArchFiles: "**/prebuilds/darwin*/**"
   target:
     - target: dmg
       arch: [universal]
