@@ -19,11 +19,15 @@
     "test": "pnpm --filter @muxus/tests test",
     "test:watch": "pnpm --filter @muxus/tests test:watch",
     "test:coverage": "pnpm --filter @muxus/tests test:coverage",
-    "lint": "oxlint . --deny-warnings"
+    "lint": "oxlint . --deny-warnings",
+    "serve-docs": "uvx --native-tls zensical serve --open",
+    "build-docs": "uvx --native-tls zensical build --clean",
+    "capture-docs": "node hack/capture.mjs && THEME=dark node hack/capture.mjs"
   },
   "devDependencies": {
     "oxlint": "^1.74.0",
     "oxlint-tsgolint": "^7.0.2001",
+    "playwright-core": "^1.61.1",
     "typescript": "^7.0.2"
   }
 }

@@ -1,0 +1,157 @@
+# ============================================================================
+# Muxus documentation — built with Zensical (https://zensical.org)
+# Zensical reads this file natively. Build: `zensical build`, preview: `zensical serve`.
+# ============================================================================
+
+[project]
+site_name = "Muxus"
+site_description = "Muxus — a free, open-source SSH, Telnet and serial client. OpenSSH-native hosts, split panes, kitty graphics, SFTP, a remote editor and saved tunnels, in one local app."
+site_author = "Muxus authors"
+site_url = "https://flosch62.github.io/muxus/"
+
+copyright = """
+Copyright &copy; 2026 the Muxus authors — released under the MIT license.
+"""
+
+repo_name = "FloSch62/muxus"
+repo_url = "https://github.com/FloSch62/muxus"
+edit_uri = "edit/main/docs/"
+
+extra_css = ["assets/stylesheets/extra.css"]
+
+# Explicit navigation — mirrors the docs/ tree but gives us full control of
+# order and titles. Top-level entries become tabs (navigation.tabs is on below).
+nav = [
+  { "Home" = "index.md" },
+  { "Install" = [
+    "install/index.md",
+    { "Desktop app" = "install/desktop.md" },
+    { "From source" = "install/from-source.md" },
+    { "Quickstart" = "quickstart.md" },
+  ] },
+  { "User guide" = [
+    "guide/index.md",
+    { "The Muxus window" = "guide/the-window.md" },
+    { "Your hosts" = "guide/hosts.md" },
+    { "Adding & editing hosts" = "guide/adding-hosts.md" },
+    { "Telnet & serial" = "guide/telnet-serial.md" },
+    { "Connecting" = "guide/connecting.md" },
+    { "Tabs & panes" = "guide/tabs-and-panes.md" },
+    { "The terminal" = "guide/terminal.md" },
+    { "Images in the terminal" = "guide/graphics.md" },
+    { "Workspaces" = "guide/workspaces.md" },
+    { "Quick launcher" = "guide/quick-launcher.md" },
+    { "File browser (SFTP)" = "guide/files.md" },
+    { "Remote editor" = "guide/editor.md" },
+    { "Tunnels & port forwarding" = "guide/tunnels.md" },
+    { "Command buttons & multi-exec" = "guide/commands.md" },
+    { "Session history" = "guide/session-history.md" },
+    { "Settings" = "guide/settings.md" },
+  ] },
+  { "Reference" = [
+    "reference/index.md",
+    { "Keyboard shortcuts" = "reference/keyboard-shortcuts.md" },
+    { "Command-line flags" = "reference/cli.md" },
+    { "ssh_config support" = "reference/ssh-config.md" },
+    { "Architecture" = "reference/architecture.md" },
+    { "Security model" = "reference/security.md" },
+  ] },
+  { "Community" = [
+    "community/index.md",
+    { "Contributing" = "community/contributing.md" },
+    { "Building from source" = "community/development.md" },
+    { "FAQ" = "community/faq.md" },
+  ] },
+]
+
+# ----------------------------------------------------------------------------
+[project.theme]
+language = "en"
+logo = "assets/muxus.svg"
+favicon = "assets/muxus.svg"
+
+features = [
+  "announce.dismiss",
+  "content.action.edit",
+  "content.action.view",
+  "content.code.annotate",
+  "content.code.copy",
+  "content.code.select",
+  "content.footnote.tooltips",
+  "content.tabs.link",
+  "content.tooltips",
+  "navigation.footer",
+  "navigation.indexes",
+  "navigation.instant",
+  "navigation.instant.prefetch",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.tabs",
+  "navigation.top",
+  "navigation.tracking",
+  "search.highlight",
+  "search.suggest",
+  "toc.follow",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "indigo"
+accent = "indigo"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "indigo"
+accent = "cyan"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+[project.theme.font]
+text = "Inter"
+code = "JetBrains Mono"
+
+# ----------------------------------------------------------------------------
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/FloSch62/muxus"
+
+# ----------------------------------------------------------------------------
+# Markdown extensions — the same stack Material-based sites use.
+# ----------------------------------------------------------------------------
+[project.markdown_extensions.abbr]
+[project.markdown_extensions.admonition]
+[project.markdown_extensions.attr_list]
+[project.markdown_extensions.def_list]
+[project.markdown_extensions.footnotes]
+[project.markdown_extensions.md_in_html]
+[project.markdown_extensions.toc]
+permalink = true
+[project.markdown_extensions.pymdownx.betterem]
+[project.markdown_extensions.pymdownx.caret]
+[project.markdown_extensions.pymdownx.details]
+[project.markdown_extensions.pymdownx.emoji]
+emoji_generator = "zensical.extensions.emoji.to_svg"
+emoji_index = "zensical.extensions.emoji.twemoji"
+[project.markdown_extensions.pymdownx.highlight]
+anchor_linenums = true
+line_spans = "__span"
+pygments_lang_class = true
+[project.markdown_extensions.pymdownx.inlinehilite]
+[project.markdown_extensions.pymdownx.keys]
+[project.markdown_extensions.pymdownx.magiclink]
+[project.markdown_extensions.pymdownx.mark]
+[project.markdown_extensions.pymdownx.smartsymbols]
+[project.markdown_extensions.pymdownx.superfences]
+custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" }
+]
+[project.markdown_extensions.pymdownx.tabbed]
+alternate_style = true
+combine_header_slug = true
+[project.markdown_extensions.pymdownx.tasklist]
+custom_checkbox = true
+[project.markdown_extensions.pymdownx.tilde]
