@@ -11,7 +11,7 @@ const ROOT = '/home/test/.ssh/config';
 
 function sshHost(
   alias: string,
-  options: { group?: string; favorite?: boolean; hostname?: string } = {},
+  options: { group?: string; hostname?: string } = {},
 ): SshHostEntry {
   return {
     alias,
@@ -31,7 +31,6 @@ function sshHost(
     },
     metadata: {
       profileId: `ssh-${alias}`,
-      favorite: options.favorite ?? false,
       group: options.group,
       connectCount: 0,
     },
@@ -72,12 +71,12 @@ describe('host search', () => {
     expect(bestManagedHostMatch(hosts.slice(2, 3), 'gateway')).toBe(hosts[2]);
   });
 
-  it('breaks an even tie with the starred host', () => {
+  it('keeps the first host on an even tie', () => {
     const hosts = [
       managed(sshHost('edge-a', { hostname: 'core.example.test' })),
-      managed(sshHost('edge-b', { hostname: 'core.example.test', favorite: true })),
+      managed(sshHost('edge-b', { hostname: 'core.example.test' })),
     ];
-    expect(bestManagedHostMatch(hosts, 'core')).toBe(hosts[1]);
+    expect(bestManagedHostMatch(hosts, 'core')).toBe(hosts[0]);
   });
 
   it('has no answer for an empty query or a query nothing matches', () => {

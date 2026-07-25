@@ -42,7 +42,7 @@ function sshHost(alias: string, group?: string, sortOrder?: number): SshHostEntr
     },
     metadata:
       group || sortOrder !== undefined
-        ? { profileId: `ssh-${alias}`, favorite: false, group, sortOrder, connectCount: 0 }
+        ? { profileId: `ssh-${alias}`, group, sortOrder, connectCount: 0 }
         : undefined,
   };
 }

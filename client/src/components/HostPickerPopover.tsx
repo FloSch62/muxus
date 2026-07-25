@@ -15,7 +15,6 @@ import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import SearchIcon from '@mui/icons-material/Search';
-import StarIcon from '@mui/icons-material/Star';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
 import {
   groupManagedHosts,
@@ -219,18 +218,11 @@ function HostPickerRow({
       </ListItemIcon>
       <ListItemText
         primary={
-          <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center', minWidth: 0 }}>
-            <TruncationTooltip text={title}>
-              <Typography variant="body2" noWrap sx={{ minWidth: 0, fontWeight: 550 }}>
-                {title}
-              </Typography>
-            </TruncationTooltip>
-            {metadata?.favorite && (
-              <StarIcon
-                sx={{ fontSize: 12, color: 'warning.main', flexShrink: 0 }}
-              />
-            )}
-          </Stack>
+          <TruncationTooltip text={title}>
+            <Typography variant="body2" noWrap sx={{ minWidth: 0, fontWeight: 550 }}>
+              {title}
+            </Typography>
+          </TruncationTooltip>
         }
         secondary={address}
         slotProps={{ secondary: { noWrap: true, sx: { fontSize: 11 } } }}

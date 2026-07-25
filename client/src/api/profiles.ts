@@ -38,7 +38,7 @@ export function useUpdateHostProfileMetadata(
       }),
     // Telnet and serial rows sit in the same sidebar folders as SSH hosts,
     // whose metadata hook is optimistic — without this they visibly lag behind
-    // when a favorite or a folder change moves both at once.
+    // when a folder change moves both at once.
     onMutate: async ({ id, patch }) => {
       await queryClient.cancelQueries({ queryKey: ['saved-host-profiles'] });
       const previous = queryClient.getQueryData<SavedHostProfilesResponse>([

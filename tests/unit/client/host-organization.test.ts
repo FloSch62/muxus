@@ -4,7 +4,7 @@ import { groupHosts, hostOrderAfterDrop } from '../../../client/src/host-organiz
 
 const host = (
   alias: string,
-  options: { file?: string; group?: string; favorite?: boolean; displayName?: string; sortOrder?: number } = {},
+  options: { file?: string; group?: string; displayName?: string; sortOrder?: number } = {},
 ): SshHostEntry => ({
   alias,
   aliases: [alias],
@@ -22,10 +22,9 @@ const host = (
     passwordOnly: false,
   },
   metadata:
-    options.group || options.favorite || options.displayName || options.sortOrder !== undefined
+    options.group || options.displayName || options.sortOrder !== undefined
       ? {
           profileId: alias,
-          favorite: options.favorite ?? false,
           group: options.group,
           displayName: options.displayName,
           sortOrder: options.sortOrder,
@@ -54,7 +53,7 @@ describe('host organization', () => {
       [
         host('plain'),
         host('database', { group: 'Production' }),
-        host('api', { group: 'Production', favorite: true }),
+        host('api', { group: 'Production' }),
         host('lab', { file: '/home/test/.ssh/config.d/lab.conf' }),
       ],
       ['/home/test/.ssh/config', '/home/test/.ssh/config.d/lab.conf'],
@@ -79,10 +78,10 @@ describe('host organization', () => {
     expect(groupHosts(hosts, [], undefined, 'primary')[0]?.hosts[0]?.alias).toBe('db-01');
   });
 
-  it('uses a persisted drag order ahead of favorites and display names', () => {
+  it('uses a persisted drag order ahead of display names', () => {
     const groups = groupHosts(
       [
-        host('alpha', { favorite: true, sortOrder: 2 }),
+        host('alpha', { sortOrder: 2 }),
         host('bravo', { sortOrder: 0 }),
         host('charlie', { sortOrder: 1 }),
       ],

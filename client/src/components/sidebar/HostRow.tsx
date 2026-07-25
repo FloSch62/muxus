@@ -6,7 +6,6 @@ import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
-import StarIcon from '@mui/icons-material/Star';
 import { folderSegments, type VisibleNode } from '../../host-tree.js';
 import {
   managedHostAddress,
@@ -174,9 +173,6 @@ export function HostRow({
             <Box component="span" sx={{ ...treeLabelSx, minWidth: 0 }}>
               {title}
             </Box>
-            {host.entry.metadata?.favorite && (
-              <StarIcon sx={{ fontSize: 12, flexShrink: 0, color: 'warning.main' }} />
-            )}
             {connected > 1 && (
               <Typography component="span" sx={{ fontSize: 10, flexShrink: 0, color: 'success.main' }}>
                 ×{connected}

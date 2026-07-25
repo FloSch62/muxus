@@ -57,7 +57,6 @@ describe('saved host profile routes', () => {
       url: `/api/profiles/${created.id}/metadata`,
       headers: auth(),
       payload: {
-        favorite: true,
         group: 'Network lab',
         color: '#22c55e',
       },
@@ -66,7 +65,6 @@ describe('saved host profile routes', () => {
     expect(organize.json()).toMatchObject({
       id: created.id,
       metadata: {
-        favorite: true,
         group: 'Network lab',
         color: '#22c55e',
       },
@@ -131,7 +129,6 @@ describe('saved host profile routes', () => {
         baudRate: 9600,
       },
       metadata: {
-        favorite: true,
         group: 'Network lab',
       },
     });

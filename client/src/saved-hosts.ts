@@ -38,9 +38,5 @@ export function filterSavedHosts(
   const tokens = searchTokens(query.trim().toLowerCase());
   return profiles
     .filter((profile) => matchesSavedHost(profile, tokens))
-    .sort(
-      (a, b) =>
-        Number(b.metadata.favorite) - Number(a.metadata.favorite) ||
-        savedHostDisplayName(a).localeCompare(savedHostDisplayName(b)),
-    );
+    .sort((a, b) => savedHostDisplayName(a).localeCompare(savedHostDisplayName(b)));
 }

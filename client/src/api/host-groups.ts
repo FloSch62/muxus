@@ -63,7 +63,6 @@ export function useApplyFolderMoves() {
               ...host,
               metadata: {
                 profileId: host.metadata?.profileId ?? host.alias,
-                favorite: host.metadata?.favorite ?? false,
                 connectCount: host.metadata?.connectCount ?? 0,
                 ...host.metadata,
                 group: groupByKey.get(key),

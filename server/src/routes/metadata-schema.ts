@@ -19,7 +19,6 @@ export const hostKeywordHighlightsSchema = z.object({
 /** Muxus-owned display metadata, shared by OpenSSH hosts and saved profiles. */
 export const metadataPatchSchema = z
   .object({
-    favorite: z.boolean().optional(),
     displayName: z.string().max(200).nullable().optional(),
     // A group is a folder path ("Production/EU/Edge"), so the cap has to cover
     // several nested names rather than a single one.

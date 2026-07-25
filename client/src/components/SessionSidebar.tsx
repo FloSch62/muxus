@@ -278,15 +278,6 @@ export function SessionSidebar() {
     setFilter('');
   };
 
-  const toggleFavorite = (host: ManagedHost) => {
-    const favorite = !(host.entry.metadata?.favorite ?? false);
-    if (host.kind === 'ssh') {
-      updateMetadata.mutate({ alias: host.entry.alias, patch: { favorite } });
-    } else {
-      updateProfileMetadata.mutate({ id: host.entry.id, patch: { favorite } });
-    }
-  };
-
   const requestDelete = (host: ManagedHost) => {
     void confirmDeleteHost({
       name: managedHostDisplayName(host),
@@ -618,7 +609,6 @@ export function SessionSidebar() {
               onMove: (delta) => {
                 if (menu) moveHostByKey(managedHostKey(menu.host), delta);
               },
-              onToggleFavorite: toggleFavorite,
               onDelete: requestDelete,
               onMoveToFolder: (host) =>
                 setFolderDialog({

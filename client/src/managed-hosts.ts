@@ -129,11 +129,9 @@ export function bestManagedHostMatch(
       tokens,
     );
     if (score === undefined) continue;
-    // A starred host wins an otherwise even tie.
-    const ranked = score + (host.entry.metadata?.favorite ? 10 : 0);
-    if (ranked > bestScore) {
+    if (score > bestScore) {
       best = host;
-      bestScore = ranked;
+      bestScore = score;
     }
   }
   return best;
@@ -196,8 +194,6 @@ function compareManagedHosts(a: ManagedHost, b: ManagedHost): number {
   return (
     (aMetadata?.sortOrder ?? Number.MAX_SAFE_INTEGER) -
       (bMetadata?.sortOrder ?? Number.MAX_SAFE_INTEGER) ||
-    Number(bMetadata?.favorite ?? false) -
-      Number(aMetadata?.favorite ?? false) ||
     managedHostDisplayName(a).localeCompare(managedHostDisplayName(b))
   );
 }

@@ -287,7 +287,7 @@ function finalizeFolder(folder: FolderNode, rankIn: RankLookup): number {
     else count += 1;
   }
   // Folders sort before hosts; hosts keep the order groupManagedHosts settled
-  // (sortOrder → favorite → name), so the sortOrder column keeps working.
+  // (sortOrder → name), so the sortOrder column keeps working.
   const folders = folder.children.filter((child) => child.kind === 'folder');
   const rest = folder.children.filter((child) => child.kind !== 'folder');
   sortFolders(folders, rankIn(folder.key));

@@ -44,7 +44,6 @@ export function useReorderManagedHosts() {
               ...host,
               metadata: {
                 profileId: host.metadata?.profileId ?? host.alias,
-                favorite: host.metadata?.favorite ?? false,
                 connectCount: host.metadata?.connectCount ?? 0,
                 ...host.metadata,
                 sortOrder,

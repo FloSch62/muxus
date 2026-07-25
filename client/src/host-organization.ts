@@ -105,7 +105,6 @@ export function groupHosts(
       (a, b) =>
         (a.metadata?.sortOrder ?? Number.MAX_SAFE_INTEGER) -
           (b.metadata?.sortOrder ?? Number.MAX_SAFE_INTEGER) ||
-        Number(b.metadata?.favorite ?? false) - Number(a.metadata?.favorite ?? false) ||
         hostDisplayName(a).localeCompare(hostDisplayName(b)),
     );
 

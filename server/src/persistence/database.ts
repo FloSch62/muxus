@@ -252,6 +252,13 @@ const MIGRATIONS = [
         WHERE is_startup = 1;
     `,
   },
+  {
+    version: 9,
+    name: 'drop-favorites',
+    sql: `
+      ALTER TABLE connection_profiles DROP COLUMN favorite;
+    `,
+  },
 ] as const;
 
 const DEFAULT_SESSION_LOGGING_POLICY: SessionLoggingPolicyInput = {
@@ -263,7 +270,6 @@ const DEFAULT_SESSION_LOGGING_POLICY: SessionLoggingPolicyInput = {
 
 export interface OpenSshMetadata {
   profileId: string;
-  favorite: boolean;
   sortOrder?: number;
   displayName?: string;
   group?: string;
@@ -377,7 +383,6 @@ export class MuxusDatabase {
         profiles.name,
         profiles.ssh_alias,
         profiles.group_id,
-        profiles.favorite,
         profiles.sort_order,
         profiles.color,
         profiles.icon,
@@ -427,7 +432,6 @@ export class MuxusDatabase {
         UPDATE connection_profiles
         SET name = ?,
             group_id = ?,
-            favorite = ?,
             color = ?,
             icon = ?,
             keyword_highlights_json = ?,
@@ -437,7 +441,6 @@ export class MuxusDatabase {
       .run(
         displayName,
         groupId,
-        patch.favorite === undefined ? Number(current.favorite) : patch.favorite ? 1 : 0,
         patch.color === undefined ? nullableString(current.color) : patch.color,
         patch.icon === undefined ? nullableString(current.icon) : patch.icon,
         patch.keywordHighlights === undefined
@@ -516,8 +519,7 @@ export class MuxusDatabase {
         this.db
           .prepare(`
             UPDATE connection_profiles
-            SET favorite = CASE WHEN favorite = 1 OR ? = 1 THEN 1 ELSE 0 END,
-                connect_count = connect_count + ?,
+            SET connect_count = connect_count + ?,
                 last_connected_at = CASE
                   WHEN last_connected_at IS NULL OR ? > last_connected_at THEN ?
                   ELSE last_connected_at
@@ -526,7 +528,6 @@ export class MuxusDatabase {
             WHERE id = ?
           `)
           .run(
-            Number(next.favorite),
             Number(next.connect_count),
             optionalString(next.last_connected_at) ?? '',
             nullableString(next.last_connected_at),
@@ -593,7 +594,7 @@ export class MuxusDatabase {
         FROM connection_profiles AS profiles
         LEFT JOIN connection_groups AS groups ON groups.id = profiles.group_id
         WHERE profiles.kind IN ('serial', 'telnet')
-        ORDER BY profiles.sort_order, profiles.favorite DESC, profiles.name COLLATE NOCASE
+        ORDER BY profiles.sort_order, profiles.name COLLATE NOCASE
       `)
       .all()
       .map(savedHostFromRow);
@@ -659,7 +660,6 @@ export class MuxusDatabase {
         UPDATE connection_profiles
         SET name = ?,
             group_id = ?,
-            favorite = ?,
             color = ?,
             icon = ?,
             keyword_highlights_json = ?,
@@ -669,7 +669,6 @@ export class MuxusDatabase {
       .run(
         name,
         groupId,
-        patch.favorite === undefined ? Number(current.favorite) : patch.favorite ? 1 : 0,
         patch.color === undefined ? nullableString(current.color) : patch.color,
         patch.icon === undefined ? nullableString(current.icon) : patch.icon,
         patch.keywordHighlights === undefined
@@ -1181,7 +1180,6 @@ function metadataFromRow(row: SqlRow): OpenSshMetadata {
   const name = String(row.name);
   return {
     profileId: String(row.id),
-    favorite: Number(row.favorite) === 1,
     sortOrder: row.sort_order === null || row.sort_order === undefined ? undefined : Number(row.sort_order),
     displayName: name === alias ? undefined : name,
     group: optionalString(row.group_name),
@@ -1204,7 +1202,6 @@ function savedHostFromRow(row: SqlRow): SavedHostProfile {
     profile: { kind, ...config, profileId: id } as SavedHostProfile['profile'],
     metadata: {
       profileId: id,
-      favorite: Number(row.favorite) === 1,
       sortOrder: row.sort_order === null || row.sort_order === undefined ? undefined : Number(row.sort_order),
       group: optionalString(row.group_name),
       color: optionalString(row.color),

@@ -22,7 +22,6 @@ const profiles: SavedHostProfile[] = [
     },
     metadata: {
       profileId: 'serial-console',
-      favorite: false,
       group: 'Lab',
       connectCount: 0,
     },
@@ -41,7 +40,6 @@ const profiles: SavedHostProfile[] = [
     },
     metadata: {
       profileId: 'telnet-router',
-      favorite: true,
       connectCount: 4,
     },
     createdAt: '2026-01-01T00:00:00Z',
@@ -62,7 +60,7 @@ describe('saved host search', () => {
     ]);
   });
 
-  it('sorts favorites first and formats platform-native addresses', () => {
+  it('sorts by display name and formats platform-native addresses', () => {
     expect(filterSavedHosts(profiles, '').map((host) => host.id)).toEqual([
       'telnet-router',
       'serial-console',
