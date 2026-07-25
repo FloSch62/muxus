@@ -4,6 +4,7 @@ import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
 import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
@@ -19,6 +20,7 @@ import BookmarkAddOutlinedIcon from '@mui/icons-material/BookmarkAddOutlined';
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import StopIcon from '@mui/icons-material/Stop';
@@ -29,6 +31,7 @@ import { apiFetch } from '../api/http.js';
 import { useConnections, useForwards, useSshConfig, useTunnels } from '../api/queries.js';
 import { useUpsertHost } from '../api/ssh-config.js';
 import { adoptForward, deleteTunnel, saveTunnel, startTunnel, stopForward } from '../api/tunnels.js';
+import { confirmAction } from '../state/dialogs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
 import { layout, statusTextColor } from '../theme.js';
@@ -281,9 +284,7 @@ export function ForwardingPanel() {
                 sx={{ opacity: { xs: 1, md: 0 }, transition: 'opacity 120ms' }}
                 onClick={(e) => setTunnelMenu({ anchor: e.currentTarget, tunnel })}
               >
-                <Box component="span" sx={{ fontSize: 16, lineHeight: 1 }}>
-                  ⋮
-                </Box>
+                <MoreVertIcon sx={{ fontSize: 16 }} />
               </IconButton>
             </Stack>
           );
@@ -325,8 +326,19 @@ export function ForwardingPanel() {
         </MenuItem>
         <MenuItem
           onClick={() => {
-            if (tunnelMenu) removeTunnel.mutate(tunnelMenu.tunnel);
+            const target = tunnelMenu?.tunnel;
             setTunnelMenu(null);
+            if (!target) return;
+            void confirmAction({
+              title: `Delete tunnel “${target.name || target.target}”?`,
+              description: runningByTunnel.has(target.id)
+                ? `${describeForward(target)} is running — deleting the tunnel stops it and drops anything using the forwarded port.`
+                : 'The saved forwarding rule is removed. This cannot be undone.',
+              confirmLabel: 'Delete',
+              destructive: true,
+            }).then((confirmed) => {
+              if (confirmed) removeTunnel.mutate(target);
+            });
           }}
           sx={{ color: 'error.main' }}
         >
@@ -356,6 +368,9 @@ export function ForwardingPanel() {
             />
           </Box>
         </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAdhocConn(null)}>Cancel</Button>
+        </DialogActions>
       </Dialog>
 
       <AuthPromptDialog

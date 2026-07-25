@@ -4,6 +4,8 @@ import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
 import IconButton from '@mui/material/IconButton';
 import LinearProgress from '@mui/material/LinearProgress';
+import ListItemIcon from '@mui/material/ListItemIcon';
+import ListItemText from '@mui/material/ListItemText';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
@@ -18,12 +20,12 @@ import Typography from '@mui/material/Typography';
 import { alpha } from '@mui/material/styles';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import CreateNewFolderOutlinedIcon from '@mui/icons-material/CreateNewFolderOutlined';
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
-import DriveFileRenameOutlineRoundedIcon from '@mui/icons-material/DriveFileRenameOutlineRounded';
+import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import FolderOffOutlinedIcon from '@mui/icons-material/FolderOffOutlined';
-import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded';
+import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -37,6 +39,7 @@ import {
   uploadRawWithProgress,
   type ByteProgress,
 } from '../api/transfers.js';
+import { confirmAction, promptForText } from '../state/dialogs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { usePrefsStore } from '../state/prefs.js';
 import { loadMonacoTextEditor } from '../lazy-features.js';
@@ -288,7 +291,7 @@ const SftpEntryTable = memo(function SftpEntryTable({
 });
 
 /**
- * Remote Explorer bound to a live SSH connection. Files open in Monaco on
+ * The remote file browser, bound to a live SSH connection. Files open in Monaco on
  * double-click; explicit and outbound-drag downloads remain one gesture away.
  */
 export function SftpPanel({
@@ -518,7 +521,13 @@ export function SftpPanel({
             ) {
               throw uploadError;
             }
-            if (!window.confirm(`${relative} already exists on the remote host. Replace it?`)) {
+            const replace = await confirmAction({
+              title: 'Replace the existing file?',
+              description: `${relative} already exists on the remote host.`,
+              confirmLabel: 'Replace',
+              destructive: true,
+            });
+            if (!replace) {
               completedBytes += item.file.size;
               continue;
             }
@@ -574,39 +583,66 @@ export function SftpPanel({
     })();
   };
 
+  const validName = (value: string) =>
+    cleanRelativePath(value) ? null : 'Enter a name without path separators.';
+
   const mkdir = () => {
-    const name = window.prompt('New folder name');
-    if (!name) return;
-    run(() =>
-      apiFetch(`/api/sftp/${connId}/mkdir`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ path: joinPath(currentPath, cleanRelativePath(name)) }),
-      }),
-    );
+    void promptForText({
+      title: 'New folder',
+      description: `Created in ${currentPath}`,
+      label: 'Folder name',
+      confirmLabel: 'Create',
+      validate: validName,
+    }).then((name) => {
+      if (!name) return;
+      run(() =>
+        apiFetch(`/api/sftp/${connId}/mkdir`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ path: joinPath(currentPath, cleanRelativePath(name)) }),
+        }),
+      );
+    });
   };
 
   const rename = (entry: SftpEntry) => {
-    const name = window.prompt(`Rename ${entry.name} to`, entry.name);
-    if (!name || name === entry.name) return;
-    run(() =>
-      apiFetch(`/api/sftp/${connId}/rename`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ from: remotePath(entry), to: joinPath(currentPath, cleanRelativePath(name)) }),
-      }),
-    );
+    void promptForText({
+      title: `Rename ${entry.name}`,
+      label: 'New name',
+      initialValue: entry.name,
+      confirmLabel: 'Rename',
+      validate: validName,
+    }).then((name) => {
+      if (!name || name === entry.name) return;
+      run(() =>
+        apiFetch(`/api/sftp/${connId}/rename`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ from: remotePath(entry), to: joinPath(currentPath, cleanRelativePath(name)) }),
+        }),
+      );
+    });
   };
 
   const remove = (entry: SftpEntry) => {
-    if (!window.confirm(`Delete ${entry.name}${entry.type === 'dir' ? ' and everything in it' : ''}?`)) return;
-    run(() =>
-      apiFetch(`/api/sftp/${connId}/delete`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ path: remotePath(entry) }),
-      }),
-    );
+    void confirmAction({
+      title: `Delete ${entry.name}?`,
+      description:
+        entry.type === 'dir'
+          ? 'The folder and everything inside it is removed from the remote host. This cannot be undone.'
+          : 'The file is removed from the remote host. This cannot be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    }).then((confirmed) => {
+      if (!confirmed) return;
+      run(() =>
+        apiFetch(`/api/sftp/${connId}/delete`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ path: remotePath(entry) }),
+        }),
+      );
+    });
   };
 
   const hasLocalFiles = (event: React.DragEvent) =>
@@ -672,22 +708,22 @@ export function SftpPanel({
           maxWidth={maxSftpPanelWidth}
           clampWidth={clampSftpPanelWidth}
           onWidthChange={(sftpPanelWidth) => setPrefs({ sftpPanelWidth })}
-          label="Resize SFTP browser"
+          label="Resize file browser"
         />
       )}
       <Stack direction="row" sx={{ px: 1.25, pt: 1, alignItems: 'center' }}>
-        <FolderOpenRoundedIcon sx={{ mr: 0.75, fontSize: 18, color: 'primary.main' }} />
+        <FolderOpenOutlinedIcon sx={{ mr: 0.75, fontSize: 18, color: 'primary.main' }} />
         <Typography variant="subtitle2" sx={{ flex: 1 }}>
-          Remote Explorer
+          File browser
         </Typography>
         <Typography variant="caption" color="text.secondary">
           SFTP
         </Typography>
         {onOpenInNewWindow && (
-          <Tooltip title="Open SFTP in new window">
+          <Tooltip title="Open file browser in new window">
             <IconButton
               size="small"
-              aria-label="Open SFTP in new window"
+              aria-label="Open file browser in new window"
               onClick={() => onOpenInNewWindow(currentPath)}
               sx={{ ml: 0.5 }}
             >
@@ -701,6 +737,7 @@ export function SftpPanel({
           <span>
             <IconButton
               size="small"
+              aria-label="Parent directory"
               disabled={currentPath === '/'}
               onClick={() => navigate(parentPath(currentPath))}
             >
@@ -709,7 +746,7 @@ export function SftpPanel({
           </span>
         </Tooltip>
         <Tooltip title="Home">
-          <IconButton size="small" onClick={() => navigate(homePath)}>
+          <IconButton size="small" aria-label="Home directory" onClick={() => navigate(homePath)}>
             <HomeOutlinedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
@@ -723,19 +760,24 @@ export function SftpPanel({
           slotProps={{ input: { sx: { fontFamily: '"JetBrains Mono", monospace', fontSize: 11.5 } } }}
         />
         <Tooltip title="Refresh">
-          <IconButton size="small" onClick={refresh}>
+          <IconButton size="small" aria-label="Refresh listing" onClick={refresh}>
             <RefreshIcon fontSize="small" />
           </IconButton>
         </Tooltip>
       </Stack>
       <Stack direction="row" spacing={0.25} sx={{ px: 0.75, pb: 0.75, alignItems: 'center' }}>
         <Tooltip title="New folder">
-          <IconButton size="small" disabled={busy} onClick={mkdir}>
+          <IconButton size="small" aria-label="New folder" disabled={busy} onClick={mkdir}>
             <CreateNewFolderOutlinedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
         <Tooltip title="Upload files">
-          <IconButton size="small" disabled={busy} onClick={() => fileInputRef.current?.click()}>
+          <IconButton
+            size="small"
+            aria-label="Upload files"
+            disabled={busy}
+            onClick={() => fileInputRef.current?.click()}
+          >
             <UploadFileOutlinedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
@@ -759,6 +801,7 @@ export function SftpPanel({
           <span>
             <IconButton
               size="small"
+              aria-label="Open selected file in editor"
               disabled={busy || selected?.type !== 'file'}
               onMouseEnter={() => void loadMonacoTextEditor()}
               onFocus={() => void loadMonacoTextEditor()}
@@ -770,7 +813,12 @@ export function SftpPanel({
         </Tooltip>
         <Tooltip title="Download selected file">
           <span>
-            <IconButton size="small" disabled={busy || selected?.type !== 'file'} onClick={() => selected && download(selected)}>
+            <IconButton
+              size="small"
+              aria-label="Download selected file"
+              disabled={busy || selected?.type !== 'file'}
+              onClick={() => selected && download(selected)}
+            >
               <DownloadOutlinedIcon fontSize="small" />
             </IconButton>
           </span>
@@ -911,8 +959,10 @@ export function SftpPanel({
               setMenu(null);
             }}
           >
-            <EditOutlinedIcon sx={{ mr: 1.25, fontSize: 18, color: 'text.secondary' }} />
-            Open in editor
+            <ListItemIcon>
+              <EditOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Open in editor</ListItemText>
           </MenuItem>
         )}
         {menu?.entry.type === 'file' && (
@@ -922,8 +972,10 @@ export function SftpPanel({
               setMenu(null);
             }}
           >
-            <DownloadOutlinedIcon sx={{ mr: 1.25, fontSize: 18, color: 'text.secondary' }} />
-            Download
+            <ListItemIcon>
+              <DownloadOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Download</ListItemText>
           </MenuItem>
         )}
         <MenuItem
@@ -932,17 +984,22 @@ export function SftpPanel({
             setMenu(null);
           }}
         >
-          <DriveFileRenameOutlineRoundedIcon sx={{ mr: 1.25, fontSize: 18, color: 'text.secondary' }} />
-          Rename
+          <ListItemIcon>
+            <DriveFileRenameOutlineIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Rename</ListItemText>
         </MenuItem>
         <MenuItem
           onClick={() => {
             if (menu) remove(menu.entry);
             setMenu(null);
           }}
+          sx={{ color: 'error.main' }}
         >
-          <DeleteOutlineRoundedIcon sx={{ mr: 1.25, fontSize: 18, color: 'error.main' }} />
-          Delete
+          <ListItemIcon sx={{ color: 'error.main' }}>
+            <DeleteOutlineIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Delete</ListItemText>
         </MenuItem>
       </Menu>
     </Box>

@@ -15,8 +15,9 @@ import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlineOutlined';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import { newPreferenceId } from '../command-buttons.js';
+import { confirmAction } from '../state/dialogs.js';
 import { usePrefsStore, type CommandButton } from '../state/prefs.js';
 import { useUiStore } from '../state/ui.js';
 
@@ -104,9 +105,20 @@ export function CommandButtonsDialog() {
                         size="small"
                         color="error"
                         aria-label={`Delete ${button.label || 'command'} button`}
-                        onClick={() =>
-                          setButtons(buttons.filter((candidate) => candidate.id !== button.id))
-                        }
+                        onClick={() => {
+                          void confirmAction({
+                            title: `Delete “${button.label.trim() || 'this command button'}”?`,
+                            description: 'The saved command is removed from the action bar.',
+                            confirmLabel: 'Delete',
+                            destructive: true,
+                          }).then((confirmed) => {
+                            if (confirmed) {
+                              setButtons(
+                                buttons.filter((candidate) => candidate.id !== button.id),
+                              );
+                            }
+                          });
+                        }}
                       >
                         <DeleteOutlineIcon fontSize="small" />
                       </IconButton>

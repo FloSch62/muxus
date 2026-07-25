@@ -52,6 +52,7 @@ import { useDeleteHostProfile, useUpdateHostProfileMetadata } from '../api/profi
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
 import { useDeleteHost, useUpdateSshMetadata } from '../api/ssh-config.js';
 import { copyToClipboard } from '../clipboard.js';
+import { confirmDeleteHost } from '../host-actions.js';
 import { hostOrderAfterDrop } from '../host-organization.js';
 import {
   groupManagedHosts,
@@ -108,14 +109,13 @@ export function SessionSidebar() {
   const sidebarRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState('');
   const [menu, setMenu] = useState<{ anchor: HTMLElement; position?: { top: number; left: number }; host: ManagedHost } | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<ManagedHost | null>(null);
   const [launchGroup, setLaunchGroup] = useState<ManagedHostGroup | null>(null);
   const [launchLayout, setLaunchLayout] = useState<SessionSetLayout>('tabs');
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [dragged, setDragged] = useState<{ groupKey: string; hostKey: string } | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
-  const deleteHost = useDeleteHost(() => setConfirmDelete(null));
-  const deleteProfile = useDeleteHostProfile(() => setConfirmDelete(null));
+  const deleteHost = useDeleteHost();
+  const deleteProfile = useDeleteHostProfile();
   const updateMetadata = useUpdateSshMetadata();
   const updateProfileMetadata = useUpdateHostProfileMetadata();
   const reorder = useReorderManagedHosts();
@@ -331,10 +331,15 @@ export function SessionSidebar() {
     }
   };
 
-  const confirmDeleteHost = () => {
-    if (!confirmDelete) return;
-    if (confirmDelete.kind === 'ssh') deleteHost.mutate(confirmDelete.entry.alias);
-    else deleteProfile.mutate(confirmDelete.entry.id);
+  const requestDelete = (host: ManagedHost) => {
+    void confirmDeleteHost({
+      name: managedHostDisplayName(host),
+      sshFile: host.kind === 'ssh' ? host.entry.file : undefined,
+    }).then((confirmed) => {
+      if (!confirmed) return;
+      if (host.kind === 'ssh') deleteHost.mutate(host.entry.alias);
+      else deleteProfile.mutate(host.entry.id);
+    });
   };
 
   const openMenu = (host: ManagedHost, anchor: HTMLElement, position?: { top: number; left: number }) =>
@@ -367,7 +372,7 @@ export function SessionSidebar() {
         maxWidth={maxSidebarWidth}
         clampWidth={clampSidebarWidth}
         onWidthChange={(nextSidebarWidth) => setPrefs({ sidebarWidth: nextSidebarWidth })}
-        label="Resize sessions sidebar"
+        label="Resize hosts sidebar"
       />
       <Stack direction="row" spacing={1} sx={{ p: 1.25, pb: 0.75, alignItems: 'center' }}>
         <TextField
@@ -754,7 +759,7 @@ export function SessionSidebar() {
         <Divider />
         <MenuItem
           onClick={() => {
-            if (menu) setConfirmDelete(menu.host);
+            if (menu) requestDelete(menu.host);
             setMenu(null);
           }}
           sx={{ color: 'error.main' }}
@@ -765,28 +770,6 @@ export function SessionSidebar() {
           Delete host
         </MenuItem>
       </Menu>
-
-      <Dialog open={!!confirmDelete} onClose={() => setConfirmDelete(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>Delete “{confirmDelete ? managedHostDisplayName(confirmDelete) : ''}”?</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary">
-            {confirmDelete?.kind === 'ssh'
-              ? `The Host block is removed from ${shortenPath(confirmDelete.entry.file)}. A backup of the previous file is kept next to it as config.muxus.bak.`
-              : 'This removes the saved host from Muxus. It does not change the remote device or serial port.'}
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConfirmDelete(null)}>Cancel</Button>
-          <Button
-            color="error"
-            variant="contained"
-            disabled={deleteHost.isPending || deleteProfile.isPending}
-            onClick={confirmDeleteHost}
-          >
-            Delete
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       <Dialog open={!!launchGroup} onClose={() => setLaunchGroup(null)} maxWidth="xs" fullWidth>
         <DialogTitle>Launch “{launchGroup?.label}”</DialogTitle>
@@ -843,10 +826,15 @@ export function SessionSidebar() {
             disabled={!launchGroup?.hosts.length}
             onClick={() => {
               if (!launchGroup) return;
-              const count = launchManagedHostGroup(launchGroup.hosts, launchLayout).length;
-              if (count === 0) return;
-              showToast('success', `Launching ${count} session${count === 1 ? '' : 's'} in ${launchLayout}.`);
-              setLaunchGroup(null);
+              const { hosts: groupHosts, label } = launchGroup;
+              void launchManagedHostGroup(groupHosts, launchLayout).then((ids) => {
+                if (ids.length === 0) return;
+                showToast(
+                  'success',
+                  `Launching ${ids.length} session${ids.length === 1 ? '' : 's'} from “${label}” in ${launchLayout}.`,
+                );
+                setLaunchGroup(null);
+              });
             }}
           >
             Launch group
@@ -855,10 +843,6 @@ export function SessionSidebar() {
       </Dialog>
     </Box>
   );
-}
-
-function shortenPath(p: string): string {
-  return p.replace(/^.*(\/\.ssh\/)/, '~/.ssh/');
 }
 
 /**

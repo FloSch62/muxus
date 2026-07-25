@@ -24,6 +24,7 @@ import {
   languageForPath,
 } from '../editor/language-detection.js';
 import { registerRemoteEditor } from '../editor/remote-editor-registry.js';
+import { confirmAction } from '../state/dialogs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { loadMonacoTextEditor } from '../lazy-features.js';
 import { FileTypeIcon } from './FileTypeIcon.js';
@@ -209,12 +210,15 @@ export function RemoteEditorWorkspace({
     }
   };
 
-  const close = (path: string) => {
-    if (
-      dirtyPaths.has(path) &&
-      !window.confirm(`${baseName(path)} has unsaved changes. Close and discard them?`)
-    ) {
-      return;
+  const close = async (path: string) => {
+    if (dirtyPaths.has(path)) {
+      const discard = await confirmAction({
+        title: `Discard changes to ${baseName(path)}?`,
+        description: 'This file has unsaved changes. Closing it now loses those edits.',
+        confirmLabel: 'Discard changes',
+        destructive: true,
+      });
+      if (!discard) return;
     }
     setDocuments((current) => {
       const next = { ...current };
@@ -231,7 +235,7 @@ export function RemoteEditorWorkspace({
   };
   const closeActiveRef = useRef<() => void>(() => undefined);
   closeActiveRef.current = () => {
-    if (activePath) close(activePath);
+    if (activePath) void close(activePath);
   };
 
   useEffect(
@@ -276,7 +280,7 @@ export function RemoteEditorWorkspace({
               title={path}
               onClick={() => onActivate(path)}
               onAuxClick={(event) => {
-                if (event.button === 1) close(path);
+                if (event.button === 1) void close(path);
               }}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
@@ -312,18 +316,29 @@ export function RemoteEditorWorkspace({
                 aria-label={`Close ${baseName(path)}${dirty ? ', discard unsaved changes' : ''}`}
                 onClick={(event) => {
                   event.stopPropagation();
-                  close(path);
+                  void close(path);
                 }}
-                sx={{ p: 0.2, width: 18, height: 18 }}
+                sx={{
+                  p: 0.2,
+                  width: 18,
+                  height: 18,
+                  // The dot marks unsaved work at rest and steps aside for the
+                  // × on hover, so closing is never a control you cannot see.
+                  '&:hover .muxus-dirty-dot': { display: 'none' },
+                  '&:hover .muxus-close-glyph': { display: 'block' },
+                }}
               >
                 {dirty ? (
                   <Box
-                    aria-label="Unsaved changes"
+                    className="muxus-dirty-dot"
+                    aria-hidden
                     sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'text.secondary' }}
                   />
-                ) : (
-                  <CloseIcon sx={{ fontSize: 14 }} />
-                )}
+                ) : null}
+                <CloseIcon
+                  className="muxus-close-glyph"
+                  sx={{ fontSize: 14, display: dirty ? 'none' : 'block' }}
+                />
               </IconButton>
             </Stack>
           );
@@ -351,11 +366,21 @@ export function RemoteEditorWorkspace({
             <span>
               <IconButton
                 size="small"
+                aria-label="Reload from remote"
                 disabled={document?.loading}
                 onClick={() => {
-                  if (!dirtyPaths.has(activePath) || window.confirm('Discard local changes and reload the remote file?')) {
+                  if (!dirtyPaths.has(activePath)) {
                     void load(activePath);
+                    return;
                   }
+                  void confirmAction({
+                    title: 'Reload from remote?',
+                    description: 'Your local changes to this file are discarded.',
+                    confirmLabel: 'Discard and reload',
+                    destructive: true,
+                  }).then((confirmed) => {
+                    if (confirmed) void load(activePath);
+                  });
                 }}
               >
                 <RefreshIcon fontSize="small" />
@@ -366,6 +391,7 @@ export function RemoteEditorWorkspace({
             <span>
               <IconButton
                 size="small"
+                aria-label="Download this file"
                 disabled={!connId}
                 onClick={() => {
                   if (!connId) return;
@@ -385,6 +411,7 @@ export function RemoteEditorWorkspace({
             <span>
               <IconButton
                 size="small"
+                aria-label="Save this file"
                 color={dirtyPaths.has(activePath) ? 'primary' : 'default'}
                 disabled={!document || document.loading || document.saving || !connId}
                 onClick={() => void save(activePath)}
@@ -397,6 +424,7 @@ export function RemoteEditorWorkspace({
             <span>
               <IconButton
                 size="small"
+                aria-label="Save all files"
                 color={dirtyPaths.size > 0 ? 'primary' : 'default'}
                 disabled={dirtyPaths.size === 0 || savingCount > 0 || !connId}
                 onClick={() => void saveAll()}
@@ -405,7 +433,7 @@ export function RemoteEditorWorkspace({
               </IconButton>
             </span>
           </Tooltip>
-          <IconButton size="small" aria-label="Close editor" onClick={() => close(activePath)}>
+          <IconButton size="small" aria-label="Close editor" onClick={() => void close(activePath)}>
             <CloseIcon fontSize="small" />
           </IconButton>
         </Stack>
@@ -419,7 +447,14 @@ export function RemoteEditorWorkspace({
               <Button
                 color="inherit"
                 onClick={() => {
-                  if (window.confirm('Discard your local changes and load the remote version?')) void load(activePath);
+                  void confirmAction({
+                    title: 'Load the remote version?',
+                    description: 'Your local changes to this file are discarded.',
+                    confirmLabel: 'Discard and reload',
+                    destructive: true,
+                  }).then((confirmed) => {
+                    if (confirmed) void load(activePath);
+                  });
                 }}
               >
                 Reload remote
@@ -468,7 +503,7 @@ export function RemoteEditorWorkspace({
               }
               onSave={() => void save(activePath)}
               onSaveAll={() => void saveAll()}
-              onClose={() => close(activePath)}
+              onClose={() => void close(activePath)}
               onNextTab={() => activateRelative(1)}
               onPreviousTab={() => activateRelative(-1)}
             />

@@ -44,6 +44,7 @@ import {
   type WorkspaceSort,
 } from '../workspace-list.js';
 import { confirmDiscardRemoteEditors } from '../editor/remote-editor-registry.js';
+import { confirmAction } from '../state/dialogs.js';
 import { useTabsStore } from '../state/tabs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
@@ -138,7 +139,7 @@ export function WorkspaceDialog() {
   };
 
   const performOpen = async (id: string) => {
-    if (!confirmDiscardRemoteEditors(tabs.map((tab) => tab.id))) return;
+    if (!(await confirmDiscardRemoteEditors(tabs.map((tab) => tab.id)))) return;
     try {
       const workspace = await openWorkspace(id);
       setPendingOpenId(undefined);
@@ -159,6 +160,16 @@ export function WorkspaceDialog() {
   const performDelete = async (workspace: WorkspaceSummary) => {
     setWorkspaceMenu(null);
     setPendingOpenId(undefined);
+    const confirmed = await confirmAction({
+      title: `Delete workspace “${workspace.name}”?`,
+      description:
+        workspace.id === activeId
+          ? 'The saved layout is removed and the current layout becomes unsaved. Open sessions keep running.'
+          : 'The saved layout and its multi-execution groups are removed. This cannot be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!confirmed) return;
     try {
       await deleteWorkspace(workspace.id);
       if (nameAction?.kind === 'rename' && nameAction.id === workspace.id) {
@@ -636,7 +647,9 @@ export function WorkspaceDialog() {
           </Button>
         ) : null}
         <Box sx={{ flex: 1 }} />
-        <Button onClick={() => setOpen(false)}>Close</Button>
+        <Button variant="contained" onClick={() => setOpen(false)}>
+          Done
+        </Button>
       </DialogActions>
     </Dialog>
   );

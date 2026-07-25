@@ -54,7 +54,7 @@ export function installShortcuts(): () => void {
     window.muxusDesktop?.onCloseTab(() => {
       if (runKeyCommand('tab.close')) return;
       const { root, activePaneId } = useTabsStore.getState();
-      if (root.type === 'split') requestClosePane(activePaneId);
+      if (root.type === 'split') void requestClosePane(activePaneId);
       else window.muxusDesktop?.closeWindow();
     }),
     window.muxusDesktop?.onCycleTab((backwards) => {

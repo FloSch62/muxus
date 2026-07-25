@@ -10,12 +10,6 @@ export type HostEditorState =
   | { mode: 'duplicate-profile'; entry: SavedHostProfile }
   | { mode: 'edit-profile'; entry: SavedHostProfile };
 
-export interface ConfirmCloseRequest {
-  tabIds: string[];
-  /** When set, the tabs belong to a pane that should collapse after confirmation. */
-  paneId?: string;
-}
-
 interface UiState {
   settingsOpen: boolean;
   commandButtonsOpen: boolean;
@@ -30,8 +24,6 @@ interface UiState {
   hostOrganizer: SshHostEntry | SavedHostProfile | false;
   /** Global forwarding side panel (saved tunnels + live forwards). */
   forwardingOpen: boolean;
-  /** Tabs, and optionally their pane, awaiting a live-session close confirmation. */
-  confirmClose: ConfirmCloseRequest | null;
   setSettingsOpen: (open: boolean) => void;
   setCommandButtonsOpen: (open: boolean) => void;
   setShortcutsOpen: (open: boolean) => void;
@@ -42,7 +34,6 @@ interface UiState {
   setHostEditor: (value: HostEditorState) => void;
   setHostOrganizer: (value: SshHostEntry | SavedHostProfile | false) => void;
   setForwardingOpen: (open: boolean) => void;
-  setConfirmClose: (request: ConfirmCloseRequest | null) => void;
 }
 
 export const useUiStore = create<UiState>()((set) => ({
@@ -56,7 +47,6 @@ export const useUiStore = create<UiState>()((set) => ({
   hostEditor: false,
   hostOrganizer: false,
   forwardingOpen: false,
-  confirmClose: null,
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setCommandButtonsOpen: (commandButtonsOpen) => set({ commandButtonsOpen }),
   setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
@@ -72,5 +62,4 @@ export const useUiStore = create<UiState>()((set) => ({
   setHostEditor: (hostEditor) => set({ hostEditor }),
   setHostOrganizer: (hostOrganizer) => set({ hostOrganizer }),
   setForwardingOpen: (forwardingOpen) => set({ forwardingOpen }),
-  setConfirmClose: (confirmClose) => set({ confirmClose }),
 }));

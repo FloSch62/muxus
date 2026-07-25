@@ -16,6 +16,7 @@ import {
   useUpdateSshMetadata,
   useUpsertHost,
 } from '../api/ssh-config.js';
+import { confirmDeleteHost, shortenSshPath } from '../host-actions.js';
 import { connectTarget } from '../session-actions.js';
 import {
   hostSessionLoggingDraft,
@@ -191,20 +192,22 @@ function SshHostEditorContent({
   });
   const upsert = useUpsertHost((req) => {
     savedAlias.current = req.aliases[0] ?? '';
-    const config = draft.keywordHighlights;
+    const highlights = draft.keywordHighlights;
     updateMetadata.mutate({
       alias: req.aliases[0] ?? '',
       patch: {
+        displayName: draft.displayName.trim() || null,
+        group: draft.group.trim() || null,
+        color: draft.color ?? null,
         keywordHighlights:
-          config.inheritGlobal && config.rules.length === 0 ? null : config,
+          highlights.inheritGlobal && highlights.rules.length === 0 ? null : highlights,
       },
     });
   });
   const deleteHost = useDeleteHost(close);
 
-  const problem = draft.sessionLogging.loaded
-    ? draftProblem(draft)
-    : 'Loading session logging settings…';
+  const loading = draft.sessionLogging.loaded ? null : 'Loading session logging settings…';
+  const problem = loading ? null : draftProblem(draft);
 
   useEffect(() => {
     if (!loggingPolicy || draft.sessionLogging.loaded) return;
@@ -265,7 +268,7 @@ function SshHostEditorContent({
   return (
     <EditorShell
       title={title}
-      storage={`Saved to ${shorten(draft.file || config?.path || '~/.ssh/config')}`}
+      storage={`Saved to ${shortenSshPath(draft.file || config?.path || '~/.ssh/config')}`}
       typeKind={state.mode === 'new' ? 'ssh' : undefined}
       onTypeChange={
         state.mode === 'new'
@@ -276,8 +279,18 @@ function SshHostEditorContent({
       section={section}
       onSection={setSection}
       problem={problem}
+      loading={loading}
       busy={upsert.isPending || updateMetadata.isPending || saveLoggingPolicy.isPending}
-      onDelete={state.mode === 'edit' ? () => deleteHost.mutate(state.entry.alias) : undefined}
+      onDelete={
+        state.mode === 'edit'
+          ? () => {
+              const { alias, file } = state.entry;
+              void confirmDeleteHost({ name: alias, sshFile: file }).then((confirmed) => {
+                if (confirmed) deleteHost.mutate(alias);
+              });
+            }
+          : undefined
+      }
       deletePending={deleteHost.isPending}
       onClose={close}
       onSave={save}
@@ -305,8 +318,4 @@ function SshHostEditorContent({
       {section === 'advanced' && <AdvancedSection draft={draft} set={set} preview={preview} previewError={previewError} />}
     </EditorShell>
   );
-}
-
-function shorten(p: string): string {
-  return p.replace(/^.*([\\/]\.ssh[\\/])/, '~/.ssh/');
 }

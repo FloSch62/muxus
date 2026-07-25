@@ -205,7 +205,7 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
       const { activeId } = tabs();
       if (!activeId) return false;
       if (requestCloseRemoteEditor(activeId)) return true;
-      requestCloseTabs([activeId]);
+      void requestCloseTabs([activeId]);
       return true;
     },
   },
@@ -390,10 +390,10 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
   },
   {
     id: 'app.sidebar',
-    title: 'Toggle sessions sidebar',
+    title: 'Toggle hosts sidebar',
     category: 'app',
     defaultChords: ['Mod+B'],
-    keywords: ['hosts', 'hide', 'show'],
+    keywords: ['hosts', 'sessions', 'sidebar', 'hide', 'show'],
     run: () => {
       const prefs = usePrefsStore.getState();
       prefs.set({ sidebarCollapsed: !prefs.sidebarCollapsed });

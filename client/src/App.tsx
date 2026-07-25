@@ -8,6 +8,7 @@ import { setTitleBarMode } from './titlebar-overlay.js';
 import { usePrefsStore } from './state/prefs.js';
 import { useUiStore } from './state/ui.js';
 import { AppShell } from './layout/AppShell.js';
+import { DialogHost } from './components/DialogHost.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { ToastHost } from './components/ToastHost.js';
 import { BackendStatusBanner } from './components/BackendStatusBanner.js';
@@ -101,6 +102,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
         {quickLauncherOpen ? <QuickLauncherDialog /> : null}
         {workspacesOpen ? <WorkspaceDialog /> : null}
       </Suspense>
+      <DialogHost />
       <ToastHost />
       <BackendStatusBanner />
     </ThemeProvider>

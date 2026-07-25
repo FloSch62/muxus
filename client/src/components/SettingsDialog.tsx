@@ -20,6 +20,7 @@ import Slider from '@mui/material/Slider';
 import Stack from '@mui/material/Stack';
 import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
+import Tooltip from '@mui/material/Tooltip';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
@@ -52,9 +53,9 @@ import {
   interfaceZoomLabel,
 } from '../interface-zoom.js';
 import { useChordLabel } from '../keymap/hints.js';
-import { HOTKEY_MOD_LABEL } from '../platform.js';
 import { usePrefsStore, type RightClickAction, type ThemeMode } from '../state/prefs.js';
 import { showToast } from '../state/toast.js';
+import { confirmAction } from '../state/dialogs.js';
 import { useUiStore } from '../state/ui.js';
 import { TERMINAL_SCHEMES, terminalScheme, type TerminalScheme } from '../terminal/palette.js';
 import { KeywordHighlightRulesEditor } from './KeywordHighlightRulesEditor.js';
@@ -102,23 +103,67 @@ const TERMINAL_SCHEME_GROUPS = [
 
 const SCHEME_SWATCH_COLORS = ['red', 'green', 'yellow', 'blue', 'magenta', 'cyan'] as const;
 
-/** All preferences, applied live — including already-open terminals. */
+/**
+ * All preferences, applied live — including already-open terminals. The one
+ * exception is session logging, whose policies are server-side and commit on
+ * an explicit Save; that section reports back when it holds unsaved edits so
+ * leaving it cannot throw them away silently.
+ */
 export function SettingsDialog() {
   const open = useUiStore((s) => s.settingsOpen);
   const setOpen = useUiStore((s) => s.setSettingsOpen);
   const [section, setSection] = useState<Section>('appearance');
+  const [loggingDirty, setLoggingDirty] = useState(false);
+
+  /** Nothing leaves the logging section behind without the user's say-so. */
+  const leaveSection = (run: () => void) => {
+    if (!loggingDirty || section !== 'logging') {
+      run();
+      return;
+    }
+    void confirmAction({
+      title: 'Discard unsaved logging settings?',
+      description:
+        'Session logging changes are not applied until you save them. Leaving now loses your edits.',
+      confirmLabel: 'Discard changes',
+      destructive: true,
+    }).then((confirmed) => {
+      if (!confirmed) return;
+      setLoggingDirty(false);
+      run();
+    });
+  };
 
   return (
-    <Dialog open={open} onClose={() => setOpen(false)} maxWidth="md" fullWidth>
+    <Dialog
+      open={open}
+      onClose={() => leaveSection(() => setOpen(false))}
+      maxWidth="md"
+      fullWidth
+      aria-labelledby="settings-dialog-title"
+    >
       <Box sx={{ display: 'flex', height: 620, maxHeight: '82vh' }}>
         <List sx={{ width: 192, flexShrink: 0, borderRight: 1, borderColor: 'divider', py: 1 }}>
-          <Typography variant="h6" sx={{ px: 2, py: 1, fontWeight: 700 }}>
+          <Typography id="settings-dialog-title" variant="h6" sx={{ px: 2, py: 1, fontWeight: 700 }}>
             Settings
           </Typography>
           {SECTIONS.map((s) => (
-            <ListItemButton key={s.id} selected={section === s.id} onClick={() => setSection(s.id)} sx={{ borderRadius: 1, mx: 1 }}>
+            <ListItemButton
+              key={s.id}
+              selected={section === s.id}
+              onClick={() => leaveSection(() => setSection(s.id))}
+              sx={{ borderRadius: 1, mx: 1 }}
+            >
               <ListItemIcon sx={{ minWidth: 32 }}>{s.icon}</ListItemIcon>
               <ListItemText primary={s.label} slotProps={{ primary: { variant: 'body2' } }} />
+              {s.id === 'logging' && loggingDirty ? (
+                <Tooltip title="Unsaved changes">
+                  <Box
+                    aria-label="Unsaved changes"
+                    sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: 'warning.main' }}
+                  />
+                </Tooltip>
+              ) : null}
             </ListItemButton>
           ))}
         </List>
@@ -126,7 +171,7 @@ export function SettingsDialog() {
           <Box sx={{ flex: 1, overflowY: 'auto', p: 3, pt: 2.5 }}>
             {section === 'appearance' && <AppearanceSection />}
             {section === 'terminal' && <TerminalSection />}
-            {section === 'logging' && <SessionLoggingSection />}
+            {section === 'logging' && <SessionLoggingSection onDirtyChange={setLoggingDirty} />}
             {section === 'highlighting' && <HighlightingSection />}
             {section === 'behavior' && <BehaviorSection />}
             {section === 'keyboard' && <KeyboardSection />}
@@ -134,12 +179,18 @@ export function SettingsDialog() {
             {section === 'about' && <AboutSection />}
           </Box>
           <DialogActions sx={{ borderTop: 1, borderColor: 'divider' }}>
-            <Typography variant="caption" color="text.secondary" sx={{ flex: 1, pl: 1 }}>
-              {section === 'data'
-                ? 'Backups never include passwords, private key files or session recordings.'
-                : 'Terminal preferences apply immediately; logging policies apply to new sessions.'}
+            <Typography
+              variant="caption"
+              color={loggingDirty && section === 'logging' ? 'warning.main' : 'text.secondary'}
+              sx={{ flex: 1, pl: 1 }}
+            >
+              {loggingDirty && section === 'logging'
+                ? 'Unsaved changes — use the Save buttons in this section to apply them.'
+                : section === 'data'
+                  ? 'Backups never include passwords, private key files or session recordings.'
+                  : 'Everything here applies immediately, except session logging, which saves explicitly.'}
             </Typography>
-            <Button variant="contained" onClick={() => setOpen(false)}>
+            <Button variant="contained" onClick={() => leaveSection(() => setOpen(false))}>
               Done
             </Button>
           </DialogActions>
@@ -159,6 +210,8 @@ function SectionTitle({ children }: { children: string }) {
 
 function AppearanceSection() {
   const prefs = usePrefsStore();
+  const zoomInChord = useChordLabel('terminal.zoom-in');
+  const zoomOutChord = useChordLabel('terminal.zoom-out');
 
   return (
     <Stack spacing={3}>
@@ -203,7 +256,8 @@ function AppearanceSection() {
         </FormControl>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
           Scales the whole window. Terminal text has its own zoom
-          ({HOTKEY_MOD_LABEL}+ / {HOTKEY_MOD_LABEL}- or Ctrl+scroll), which this does not touch.
+          {zoomInChord && zoomOutChord ? ` (${zoomInChord} / ${zoomOutChord} or Ctrl+scroll)` : ' (Ctrl+scroll)'},
+          which this does not touch.
         </Typography>
       </Box>
       <Box>
@@ -512,7 +566,7 @@ function KeyboardSummaryRow({ label, chord }: { label: string; chord?: string })
   );
 }
 
-function SessionLoggingSection() {
+function SessionLoggingSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
   const { data: policy, isLoading } = useSessionLoggingPolicy('*');
   const {
     data: localPolicy,
@@ -528,17 +582,30 @@ function SessionLoggingSection() {
     inherit: true,
     loaded: false,
   });
+  // Refs keep a refetch from clobbering edits in progress; the mirrored state
+  // is what the rail's unsaved marker reads.
+  const defaultDirty = useRef(false);
   const localDirty = useRef(false);
+  const [defaultEdited, setDefaultEdited] = useState(false);
+  const [localEdited, setLocalEdited] = useState(false);
+  const [historyEdited, setHistoryEdited] = useState(false);
   const savePolicy = useSaveSessionLoggingPolicy(() => {
+    defaultDirty.current = false;
+    setDefaultEdited(false);
     showToast('success', 'Default session logging settings saved.');
   });
   const saveLocalPolicy = useSaveSessionLoggingPolicy(() => {
     localDirty.current = false;
+    setLocalEdited(false);
     showToast('success', 'Local terminal logging settings saved.');
   });
 
   useEffect(() => {
-    if (!policy) return;
+    onDirtyChange(defaultEdited || localEdited || historyEdited);
+  }, [defaultEdited, localEdited, historyEdited, onDirtyChange]);
+
+  useEffect(() => {
+    if (!policy || defaultDirty.current) return;
     setDraft(hostSessionLoggingDraft(policy, false));
   }, [policy]);
 
@@ -549,10 +616,14 @@ function SessionLoggingSection() {
     );
   }, [localPolicy]);
 
-  const set = (patch: Partial<HostSessionLoggingDraft>) =>
+  const set = (patch: Partial<HostSessionLoggingDraft>) => {
+    defaultDirty.current = true;
+    setDefaultEdited(true);
     setDraft((current) => ({ ...current, ...patch }));
+  };
   const setLocal = (patch: Partial<HostSessionLoggingDraft>) => {
     localDirty.current = true;
+    setLocalEdited(true);
     setLocalDraft((current) => ({ ...current, ...patch }));
   };
 
@@ -569,7 +640,7 @@ function SessionLoggingSection() {
       <Box>
         <Button
           variant="contained"
-          disabled={isLoading || !draft.loaded || savePolicy.isPending}
+          disabled={isLoading || !draft.loaded || !defaultEdited || savePolicy.isPending}
           onClick={() =>
             savePolicy.mutate({
               profileKey: '*',
@@ -599,6 +670,7 @@ function SessionLoggingSection() {
           disabled={
             localPolicyLoading ||
             !localDraft.loaded ||
+            !localEdited ||
             saveLocalPolicy.isPending
           }
           onClick={() =>
@@ -614,7 +686,7 @@ function SessionLoggingSection() {
         </Button>
       </Box>
       <Divider />
-      <HistoryStorageSettings />
+      <HistoryStorageSettings onDirtyChange={setHistoryEdited} />
     </Stack>
   );
 }
@@ -635,14 +707,17 @@ const EMPTY_HISTORY_STORAGE_DRAFT: HistoryStorageDraft = {
   maxAgeDays: '',
 };
 
-function HistoryStorageSettings() {
+function HistoryStorageSettings({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
   const { data: status, isLoading } = useSessionHistoryStorage();
   const [draft, setDraft] = useState<HistoryStorageDraft>(
     EMPTY_HISTORY_STORAGE_DRAFT,
   );
   const dirty = useRef(false);
+  const [edited, setEdited] = useState(false);
+  useEffect(() => onDirtyChange(edited), [edited, onDirtyChange]);
   const save = useSaveSessionHistorySettings((next) => {
     dirty.current = false;
+    setEdited(false);
     showToast(
       'success',
       next.restartRequired
@@ -666,6 +741,7 @@ function HistoryStorageSettings() {
 
   const set = (patch: Partial<HistoryStorageDraft>) => {
     dirty.current = true;
+    setEdited(true);
     setDraft((current) => ({ ...current, ...patch }));
   };
   const maxTotalBytes = gibToBytes(draft.maxTotalGiB);
@@ -742,7 +818,7 @@ function HistoryStorageSettings() {
       <Box>
         <Button
           variant="contained"
-          disabled={isLoading || !valid || save.isPending}
+          disabled={isLoading || !valid || !edited || save.isPending}
           onClick={() =>
             save.mutate({
               storageLocation: draft.storageLocation.trim() || undefined,

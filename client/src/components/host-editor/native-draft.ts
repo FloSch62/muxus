@@ -18,6 +18,8 @@ export interface NativeHostDraft {
   name: string;
   /** Muxus sidebar group, applied as a metadata patch after the host saves. */
   group: string;
+  /** Muxus row color, applied with the same metadata patch. */
+  color?: string;
   host: string;
   port: string;
   path: string;
@@ -35,6 +37,7 @@ export function blankNativeDraft(prefillTarget = ''): NativeHostDraft {
   return {
     name: '',
     group: '',
+    color: undefined,
     host,
     port: port ?? '23',
     path: '',
@@ -52,6 +55,7 @@ export function nativeDraftFromProfile(saved: SavedHostProfile, duplicate: boole
   const draft = blankNativeDraft();
   draft.name = duplicate ? `${saved.name} copy` : saved.name;
   draft.group = saved.metadata.group ?? '';
+  draft.color = saved.metadata.color;
   draft.keywordHighlights = saved.metadata.keywordHighlights ?? draft.keywordHighlights;
   if (saved.profile.kind === 'telnet') {
     draft.host = saved.profile.host;
@@ -109,6 +113,7 @@ export function nativeDraftMetadataPatch(draft: NativeHostDraft): OpenSshMetadat
   const highlights = draft.keywordHighlights;
   return {
     group: draft.group.trim() || null,
+    color: draft.color ?? null,
     keywordHighlights:
       highlights.inheritGlobal && highlights.rules.length === 0 ? null : highlights,
   };

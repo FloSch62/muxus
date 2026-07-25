@@ -6,19 +6,10 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
-  useState,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from 'react';
 import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
-import Checkbox from '@mui/material/Checkbox';
-import Dialog from '@mui/material/Dialog';
-import DialogActions from '@mui/material/DialogActions';
-import DialogContent from '@mui/material/DialogContent';
-import DialogTitle from '@mui/material/DialogTitle';
-import FormControlLabel from '@mui/material/FormControlLabel';
-import Typography from '@mui/material/Typography';
 import { usePrefsStore } from '../state/prefs.js';
 import {
   useTabsStore,
@@ -93,73 +84,7 @@ export function AppShell({ persistWorkspace = true }: { persistWorkspace?: boole
           </ErrorBoundary>
         )}
       </Box>
-      <ConfirmCloseDialog />
     </Box>
-  );
-}
-
-/** Pref-gated confirmation before closing tabs or panes with live sessions. */
-function ConfirmCloseDialog() {
-  const request = useUiStore((state) => state.confirmClose);
-  const setConfirmClose = useUiStore((state) => state.setConfirmClose);
-  const tabs = useTabsStore((state) => state.tabs);
-  const close = useTabsStore((state) => state.close);
-  const closePane = useTabsStore((state) => state.closePane);
-  const setPrefs = usePrefsStore((state) => state.set);
-  const [dontAskAgain, setDontAskAgain] = useState(false);
-  const confirmRef = useRef<HTMLButtonElement>(null);
-
-  // The keyboard opened this, so the keyboard finishes it: Enter closes,
-  // Escape keeps the session.
-  useEffect(() => {
-    if (!request) return;
-    const frame = requestAnimationFrame(() => confirmRef.current?.focus());
-    return () => cancelAnimationFrame(frame);
-  }, [request]);
-
-  const targets = (request?.tabIds ?? []).map((id) => tabs.find((tab) => tab.id === id)).filter((tab) => tab !== undefined);
-  const live = targets.filter((tab) => tab.status === 'connected');
-  const label = live.length === 1 ? `“${live[0]!.title}” has a live session` : `${live.length} tabs have live sessions`;
-
-  const dismiss = () => {
-    setConfirmClose(null);
-    setDontAskAgain(false);
-  };
-
-  return (
-    <Dialog open={!!request} onClose={dismiss} maxWidth="xs" fullWidth>
-      <DialogTitle>
-        {request?.paneId
-          ? 'Close this pane?'
-          : `Close ${targets.length === 1 ? 'this tab' : `${targets.length} tabs`}?`}
-      </DialogTitle>
-      <DialogContent>
-        <Typography variant="body2" color="text.secondary">
-          {label} — closing ends it.
-        </Typography>
-        <FormControlLabel
-          sx={{ mt: 1 }}
-          control={<Checkbox size="small" checked={dontAskAgain} onChange={(e) => setDontAskAgain(e.target.checked)} />}
-          label={<Typography variant="body2">Don’t ask again</Typography>}
-        />
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={dismiss}>Cancel</Button>
-        <Button
-          ref={confirmRef}
-          variant="contained"
-          color="error"
-          onClick={() => {
-            if (dontAskAgain) setPrefs({ confirmCloseConnected: false });
-            if (request?.paneId) closePane(request.paneId);
-            else for (const tab of targets) close(tab.id);
-            dismiss();
-          }}
-        >
-          Close
-        </Button>
-      </DialogActions>
-    </Dialog>
   );
 }
 

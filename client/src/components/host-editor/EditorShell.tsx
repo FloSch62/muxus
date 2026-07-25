@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import DialogActions from '@mui/material/DialogActions';
@@ -38,6 +38,7 @@ export function EditorShell<S extends string>({
   section,
   onSection,
   problem,
+  loading,
   busy,
   onDelete,
   deletePending,
@@ -54,7 +55,10 @@ export function EditorShell<S extends string>({
   sections: EditorSectionDef<S>[];
   section: S;
   onSection: (section: S) => void;
+  /** Blocks saving and is shown as a validation warning. */
   problem: string | null | undefined;
+  /** Blocks saving while something the form needs is still in flight. */
+  loading?: string | null;
   busy: boolean;
   onDelete?: () => void;
   deletePending?: boolean;
@@ -62,7 +66,6 @@ export function EditorShell<S extends string>({
   onSave: (connect: boolean) => void;
   children: ReactNode;
 }) {
-  const [armedDelete, setArmedDelete] = useState(false);
   const tabLabel = (label: string, count?: number) =>
     count && count > 0 ? `${label} (${count})` : label;
 
@@ -120,30 +123,31 @@ export function EditorShell<S extends string>({
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         {onDelete && (
-          <Button
-            color="error"
-            variant={armedDelete ? 'contained' : 'text'}
-            disabled={deletePending}
-            onClick={() => {
-              if (armedDelete) onDelete();
-              else setArmedDelete(true);
-            }}
-            onBlur={() => setArmedDelete(false)}
-          >
-            {armedDelete ? 'Really delete' : 'Delete'}
+          <Button color="error" disabled={deletePending} onClick={onDelete}>
+            Delete
           </Button>
         )}
-        {problem && (
+        {/* Validation is the user's problem to fix; a pending load is ours, so
+            they read as different things even though both hold Save back. */}
+        {problem ? (
           <Typography variant="caption" color="warning.main" sx={{ ml: 1, mr: 'auto' }}>
             {problem}
           </Typography>
-        )}
+        ) : loading ? (
+          <Typography variant="caption" color="text.secondary" sx={{ ml: 1, mr: 'auto' }}>
+            {loading}
+          </Typography>
+        ) : null}
         <Box sx={{ flex: 1 }} />
         <Button onClick={onClose}>Cancel</Button>
-        <Button disabled={!!problem || busy} onClick={() => onSave(false)}>
+        <Button disabled={!!problem || !!loading || busy} onClick={() => onSave(false)}>
           Save
         </Button>
-        <Button variant="contained" disabled={!!problem || busy} onClick={() => onSave(true)}>
+        <Button
+          variant="contained"
+          disabled={!!problem || !!loading || busy}
+          onClick={() => onSave(true)}
+        >
           Save & connect
         </Button>
       </DialogActions>

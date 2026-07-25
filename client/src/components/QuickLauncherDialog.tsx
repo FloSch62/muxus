@@ -262,7 +262,7 @@ export function QuickLauncherDialog() {
   };
 
   const performWorkspaceOpen = async (workspace: WorkspaceSummary) => {
-    if (!confirmDiscardRemoteEditors(tabs.map((tab) => tab.id))) return;
+    if (!(await confirmDiscardRemoteEditors(tabs.map((tab) => tab.id)))) return;
     setBusyResultId(`workspace:${workspace.id}`);
     try {
       const opened = await openWorkspace(workspace.id);
@@ -923,7 +923,7 @@ function buildResults({
       'proxy',
     ]),
     {
-      ...actionResult('sftp', 'Toggle SFTP browser', 'Browse files for the active SSH session', [
+      ...actionResult('sftp', 'Toggle file browser', 'Browse files over SFTP for the active SSH session', [
         'files',
         'upload',
         'download',

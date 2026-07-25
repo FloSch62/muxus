@@ -35,6 +35,7 @@ import TerminalIcon from '@mui/icons-material/Terminal';
 import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined';
 import PodcastsOutlinedIcon from '@mui/icons-material/PodcastsOutlined';
 import { useChordLabel } from '../keymap/hints.js';
+import { ChordHint, withChord } from './ChordHint.js';
 import {
   duplicateTab,
   openEmptyTab,
@@ -59,22 +60,6 @@ const statusDot: Record<TabStatus, 'warning' | 'success' | 'error'> = {
 
 /** Color flags a tab can be marked with (context menu). */
 const TAB_FLAG_COLORS = ['#ef5350', '#ffa726', '#ffee58', '#66bb6a', '#26c6da', '#42a5f5', '#ab47bc', '#ec407a'];
-
-const withChord = (label: string, chord: string | undefined) => (chord ? `${label} · ${chord}` : label);
-
-/** Trailing keyboard hint inside a menu item. */
-function ChordHint({ chord }: { chord?: string }) {
-  if (!chord) return null;
-  return (
-    <Typography
-      variant="caption"
-      color="text.secondary"
-      sx={{ ml: 3, fontFamily: '"JetBrains Mono", monospace', whiteSpace: 'nowrap' }}
-    >
-      {chord}
-    </Typography>
-  );
-}
 
 /** Browser-style terminal tab strip scoped to one split pane. */
 export function TabStrip({
@@ -132,6 +117,9 @@ export function TabStrip({
   return (
     <Stack
       direction="row"
+      role="tablist"
+      aria-label="Terminal tabs"
+      tabIndex={-1}
       sx={{
         height: layout.tabStripHeight,
         flexShrink: 0,
@@ -178,7 +166,7 @@ export function TabStrip({
             }}
             onAuxClick={(e) => {
               // Middle-click closes, the browser-tab convention.
-              if (e.button === 1) requestCloseTabs([tab.id]);
+              if (e.button === 1) void requestCloseTabs([tab.id]);
             }}
             onContextMenu={(e) => {
               e.preventDefault();
@@ -305,7 +293,7 @@ export function TabStrip({
               aria-label={`Close ${tab.title}`}
               onClick={(e) => {
                 e.stopPropagation();
-                requestCloseTabs([tab.id]);
+                void requestCloseTabs([tab.id]);
               }}
               sx={{ p: 0.25, visibility: active ? 'visible' : 'hidden' }}
             >
@@ -369,7 +357,7 @@ export function TabStrip({
           <IconButton
             size="small"
             aria-label="Close pane"
-            onClick={() => requestClosePane(paneId)}
+            onClick={() => void requestClosePane(paneId)}
             sx={{ alignSelf: 'center', mr: 0.5 }}
           >
             <CloseIcon sx={{ fontSize: 16 }} />
@@ -466,7 +454,7 @@ export function TabStrip({
           disabled={!canClosePane}
           onClick={() => {
             setPaneMenu(null);
-            requestClosePane(paneId);
+            void requestClosePane(paneId);
           }}
         >
           <ListItemIcon>
@@ -654,7 +642,7 @@ export function TabStrip({
         <Divider />
         <MenuItem
           onClick={() => {
-            if (menuTab) requestCloseTabs([menuTab.id]);
+            if (menuTab) void requestCloseTabs([menuTab.id]);
             setMenu(null);
           }}
         >
@@ -666,7 +654,7 @@ export function TabStrip({
         <MenuItem
           disabled={tabs.length < 2}
           onClick={() => {
-            if (menuTab) requestCloseTabs(tabs.filter((t) => t.id !== menuTab.id).map((t) => t.id));
+            if (menuTab) void requestCloseTabs(tabs.filter((t) => t.id !== menuTab.id).map((t) => t.id));
             setMenu(null);
           }}
         >

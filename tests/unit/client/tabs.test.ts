@@ -3,9 +3,18 @@ import {
   requestClosePane,
   splitActivePane,
 } from '../../../client/src/session-actions.js';
+import { useDialogStore } from '../../../client/src/state/dialogs.js';
 import { usePrefsStore } from '../../../client/src/state/prefs.js';
 import { useTabsStore } from '../../../client/src/state/tabs.js';
-import { useUiStore } from '../../../client/src/state/ui.js';
+
+/** Let the close flow run up to the point where it raises its dialog. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** Answer the dialog the way a click on Confirm/Cancel would. */
+const answerDialog = async (confirmed: boolean) => {
+  useDialogStore.getState().resolveHead(confirmed);
+  await settle();
+};
 
 beforeEach(() => {
   useTabsStore.setState({
@@ -16,7 +25,7 @@ beforeEach(() => {
     zoomedPaneId: null,
   });
   usePrefsStore.setState({ confirmCloseConnected: true, splitInheritsSession: true });
-  useUiStore.setState({ confirmClose: null });
+  useDialogStore.setState({ queue: [] });
 });
 
 describe('blank session tabs', () => {
@@ -309,35 +318,70 @@ describe('pane closing', () => {
     expect(state.activeId).toBe(survivingTabId);
   });
 
-  it('gates a pane containing live tabs behind the close confirmation', () => {
+  /** Splits off a second pane holding one connected SSH tab. */
+  const paneWithLiveTab = () => {
     const store = useTabsStore.getState();
     store.open({ kind: 'local' }, 'Local');
     store.split('pane-test', 'right');
-    const closingPaneId = useTabsStore.getState().activePaneId;
-    const closingTabId = useTabsStore.getState().open({ kind: 'ssh', target: 'router' }, 'Router');
-    useTabsStore.getState().update(closingTabId, { status: 'connected' });
+    const paneId = useTabsStore.getState().activePaneId;
+    const tabId = useTabsStore.getState().open({ kind: 'ssh', target: 'router' }, 'Router');
+    useTabsStore.getState().update(tabId, { status: 'connected' });
+    return { paneId, tabId };
+  };
 
-    requestClosePane(closingPaneId);
+  it('gates a pane containing live tabs behind the close confirmation', async () => {
+    const { paneId } = paneWithLiveTab();
 
-    expect(useUiStore.getState().confirmClose).toEqual({
-      tabIds: [closingTabId],
-      paneId: closingPaneId,
-    });
+    void requestClosePane(paneId);
+    await settle();
+
+    expect(useDialogStore.getState().queue).toMatchObject([
+      { kind: 'confirm', title: 'Close this pane?', destructive: true },
+    ]);
     expect(useTabsStore.getState().root.type).toBe('split');
   });
 
-  it('closes a live pane immediately when confirmation is disabled', () => {
-    const store = useTabsStore.getState();
-    store.open({ kind: 'local' }, 'Local');
-    store.split('pane-test', 'right');
-    const closingPaneId = useTabsStore.getState().activePaneId;
-    const closingTabId = useTabsStore.getState().open({ kind: 'ssh', target: 'router' }, 'Router');
-    useTabsStore.getState().update(closingTabId, { status: 'connected' });
+  it('closes the pane once the confirmation is accepted', async () => {
+    const { paneId } = paneWithLiveTab();
+
+    void requestClosePane(paneId);
+    await settle();
+    await answerDialog(true);
+
+    expect(useTabsStore.getState().root).toMatchObject({ id: 'pane-test', type: 'pane' });
+  });
+
+  it('keeps the pane when the confirmation is declined', async () => {
+    const { paneId, tabId } = paneWithLiveTab();
+
+    void requestClosePane(paneId);
+    await settle();
+    await answerDialog(false);
+
+    expect(useTabsStore.getState().root.type).toBe('split');
+    expect(useTabsStore.getState().tabs.some((tab) => tab.id === tabId)).toBe(true);
+  });
+
+  it('turns the preference off when the confirmation is accepted with "don’t ask again"', async () => {
+    const { paneId } = paneWithLiveTab();
+
+    void requestClosePane(paneId);
+    await settle();
+    const request = useDialogStore.getState().queue[0];
+    if (request?.kind !== 'confirm') throw new Error('expected a confirmation');
+    request.checkbox?.onChecked();
+    await answerDialog(true);
+
+    expect(usePrefsStore.getState().confirmCloseConnected).toBe(false);
+  });
+
+  it('closes a live pane immediately when confirmation is disabled', async () => {
     usePrefsStore.setState({ confirmCloseConnected: false });
+    const { paneId } = paneWithLiveTab();
 
-    requestClosePane(closingPaneId);
+    await requestClosePane(paneId);
 
-    expect(useUiStore.getState().confirmClose).toBeNull();
+    expect(useDialogStore.getState().queue).toHaveLength(0);
     expect(useTabsStore.getState().root).toMatchObject({ id: 'pane-test', type: 'pane' });
   });
 });

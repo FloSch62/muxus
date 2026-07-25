@@ -23,6 +23,7 @@ import {
   useSessionLoggingPolicy,
   useSshConfig,
 } from '../api/queries.js';
+import { confirmDeleteHost } from '../host-actions.js';
 import { knownHostGroups } from '../managed-hosts.js';
 import { connectSavedHost } from '../session-actions.js';
 import {
@@ -31,6 +32,7 @@ import {
 } from '../session-logging-policy.js';
 import type { HostEditorState } from '../state/ui.js';
 import { useUiStore } from '../state/ui.js';
+import { HostColorPicker } from './HostColorPicker.js';
 import { EditorShell, type EditorSectionDef } from './host-editor/EditorShell.js';
 import { HighlightingSection } from './host-editor/HighlightingSection.js';
 import { LoggingSection } from './host-editor/LoggingSection.js';
@@ -101,9 +103,8 @@ export function NativeHostEditorContent({
   });
   const deleteProfile = useDeleteHostProfile(close);
 
-  const problem = draft.sessionLogging.loaded
-    ? nativeDraftProblem(draft, kind)
-    : 'Loading session logging settings…';
+  const loading = draft.sessionLogging.loaded ? null : 'Loading session logging settings…';
+  const problem = loading ? null : nativeDraftProblem(draft, kind);
   const set = (patch: Partial<NativeHostDraft>) => setDraft((d) => ({ ...d, ...patch }));
   const save = (connect: boolean) => {
     if (problem) return;
@@ -170,6 +171,7 @@ export function NativeHostEditorContent({
       section={activeSection}
       onSection={setSection}
       problem={problem}
+      loading={loading}
       busy={
         saveProfile.isPending ||
         updateMetadata.isPending ||
@@ -177,7 +179,11 @@ export function NativeHostEditorContent({
       }
       onDelete={
         state.mode === 'edit-profile' && existing
-          ? () => deleteProfile.mutate(existing.id)
+          ? () => {
+              void confirmDeleteHost({ name: existing.name }).then((confirmed) => {
+                if (confirmed) deleteProfile.mutate(existing.id);
+              });
+            }
           : undefined
       }
       deletePending={deleteProfile.isPending}
@@ -229,7 +235,7 @@ function GeneralSection({
         required
         label="Name"
         placeholder={kind === 'telnet' ? 'Core router' : 'Console cable'}
-        helperText="How this host appears in the session list"
+        helperText="How this host appears in the host list"
         value={draft.name}
         onChange={(event) => set({ name: event.target.value })}
       />
@@ -263,10 +269,11 @@ function GeneralSection({
             {...params}
             label="Group"
             placeholder="Lab"
-            helperText="Optional — groups this host in the sidebar"
+            helperText="Optional — groups this host in the sidebar."
           />
         )}
       />
+      <HostColorPicker value={draft.color} onChange={(color) => set({ color })} />
       {kind === 'telnet' && (
         <Alert severity="warning">
           Telnet is unencrypted. Credentials and terminal traffic are sent in plaintext.
