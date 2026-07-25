@@ -174,10 +174,24 @@ describe('hybrid OpenSSH metadata', () => {
     const grouped = database.updateOpenSshMetadata('two', { group: 'production' });
     const cleared = database.updateOpenSshMetadata('one', { group: null, color: null });
 
-    expect(grouped).toMatchObject({ group: 'Production' });
+    // One group, not two — but the latest spelling wins, so renaming a sidebar
+    // folder to fix its capitalization actually takes effect.
+    expect(grouped).toMatchObject({ group: 'production' });
     expect(cleared).toMatchObject({ favorite: false });
     expect(cleared.group).toBeUndefined();
     expect(cleared.color).toBeUndefined();
+  });
+
+  it('applies a case-only group rename to every host already in it', () => {
+    database = new MuxusDatabase(':memory:');
+
+    database.updateOpenSshMetadata('one', { group: 'prod' });
+    database.updateOpenSshMetadata('two', { group: 'prod' });
+    database.updateOpenSshMetadata('one', { group: 'Prod' });
+
+    const metadata = database.openSshMetadata(['one', 'two']);
+    expect(metadata.get('one')).toMatchObject({ group: 'Prod' });
+    expect(metadata.get('two')).toMatchObject({ group: 'Prod' });
   });
 
   it('preserves the stable profile ID when an OpenSSH alias is renamed', () => {

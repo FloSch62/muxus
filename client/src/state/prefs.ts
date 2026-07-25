@@ -8,6 +8,13 @@ import type { KeywordHighlightRule } from '@muxus/shared';
 export type ThemeMode = 'light' | 'dark' | 'os';
 export type RightClickAction = 'copy-paste' | 'paste' | 'menu';
 
+/** Presentation of one sidebar folder. Folders are paths, not records, so
+ *  their looks cannot hang off a host and live here instead. */
+export interface FolderStyle {
+  color?: string;
+  icon?: string;
+}
+
 export interface CommandButton {
   id: string;
   label: string;
@@ -67,9 +74,23 @@ export interface PrefsState {
   commandButtons: CommandButton[];
   /** Rules applied to every terminal; hosts may add to or replace these. */
   keywordHighlights: KeywordHighlightRule[];
+  /** Whether the whole hosts sidebar is hidden — not to be confused with
+   *  sidebarCollapsedFolders, which collapses individual folders inside it. */
   sidebarCollapsed: boolean;
   /** Width of the sessions and hosts sidebar. */
   sidebarWidth: number;
+  /** Folder keys the user collapsed. Absent means expanded, so a new folder
+   *  shows its contents the first time it appears. */
+  sidebarCollapsedFolders: string[];
+  /** Colour and icon per folder key. */
+  sidebarFolderStyles: Record<string, FolderStyle>;
+  /** Manual sibling order per parent folder key: parent → ordered child keys.
+   *  Folders missing from a list fall back to alphabetical, after the ranked
+   *  ones — the same rule hosts already follow with sortOrder. */
+  sidebarFolderOrder: Record<string, string[]>;
+  /** Folders the user created that hold no host yet; canonical paths, since an
+   *  empty folder has no host to carry its label. */
+  sidebarEmptyFolders: string[];
   /** Width of the per-session remote file browser. */
   sftpPanelWidth: number;
   toggleTheme: () => void;
@@ -85,7 +106,37 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   if (version === 0 && state.terminalScheme === 'muxus') state.terminalScheme = 'vscode-dark';
   // TERM is fixed by the server now; remove the retired client override.
   delete state.termName;
+  // Folder presentation arrived in v5. A restored or hand-edited snapshot can
+  // carry the wrong shape here, and every reader assumes the right one.
+  if (!isStringArray(state.sidebarCollapsedFolders)) delete state.sidebarCollapsedFolders;
+  if (!isStringArray(state.sidebarEmptyFolders)) delete state.sidebarEmptyFolders;
+  if (!isFolderStyleMap(state.sidebarFolderStyles)) delete state.sidebarFolderStyles;
+  if (!isFolderOrderMap(state.sidebarFolderOrder)) delete state.sidebarFolderOrder;
   return state;
+}
+
+function isFolderOrderMap(value: unknown): value is Record<string, string[]> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  return Object.values(value).every(isStringArray);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
+function isFolderStyleMap(value: unknown): value is Record<string, FolderStyle> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  return Object.values(value).every(
+    (style) =>
+      style !== null &&
+      typeof style === 'object' &&
+      !Array.isArray(style) &&
+      Object.entries(style).every(
+        ([key, entry]) =>
+          (key === 'color' || key === 'icon') &&
+          (entry === undefined || typeof entry === 'string'),
+      ),
+  );
 }
 
 export const usePrefsStore = create<PrefsState>()(
@@ -111,6 +162,10 @@ export const usePrefsStore = create<PrefsState>()(
       keywordHighlights: [],
       sidebarCollapsed: false,
       sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
+      sidebarCollapsedFolders: [],
+      sidebarFolderStyles: {},
+      sidebarFolderOrder: {},
+      sidebarEmptyFolders: [],
       sftpPanelWidth: DEFAULT_SFTP_PANEL_WIDTH,
       toggleTheme: () =>
         set((s) => ({ themeMode: s.themeMode === 'light' ? 'dark' : s.themeMode === 'dark' ? 'os' : 'light' })),
@@ -118,7 +173,7 @@ export const usePrefsStore = create<PrefsState>()(
     }),
     {
       name: 'muxus-prefs',
-      version: 4,
+      version: 5,
       migrate: migratePrefsState,
       storage: createJSONStorage(() => muxusStateStorage),
     },

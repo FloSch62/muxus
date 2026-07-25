@@ -3,6 +3,8 @@ import {
   BACKUP_FORMAT,
   TRANSFER_VERSION,
   parseTransferDocument,
+  sanitizePreferences,
+  type BackupPreferences,
 } from '../../../client/src/data-transfer.js';
 
 const connections = {
@@ -83,5 +85,66 @@ describe('Muxus transfer file parsing', () => {
         }),
       ),
     ).toThrow('The connection data in this file is incomplete or too large.');
+  });
+});
+
+describe('restoring sidebar folder preferences', () => {
+  /** Only the folder keys matter here; the rest of the shape is unvalidated. */
+  const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
+
+  it('restores well-formed folder state', () => {
+    const input = {
+      sidebarCollapsedFolders: ['folder:prod', 'folder:prod/eu'],
+      sidebarEmptyFolders: ['Staging/Blue'],
+      sidebarFolderStyles: { 'folder:prod': { color: '#ef5350', icon: 'cloud' } },
+    };
+
+    expect(sanitizePreferences(prefs(input))).toMatchObject(input);
+  });
+
+  it('drops an oversized folder list rather than importing it', () => {
+    const tooMany = Array.from({ length: 501 }, (_entry, index) => `folder:${index}`);
+    const tooLong = ['x'.repeat(401)];
+
+    expect(sanitizePreferences(prefs({ sidebarEmptyFolders: tooMany })).sidebarEmptyFolders)
+      .toBeUndefined();
+    expect(sanitizePreferences(prefs({ sidebarCollapsedFolders: tooLong })).sidebarCollapsedFolders)
+      .toBeUndefined();
+  });
+
+  it('drops folder styles carrying a bad colour or an unknown icon', () => {
+    expect(
+      sanitizePreferences(prefs({ sidebarFolderStyles: { a: { color: 'red' } } }))
+        .sidebarFolderStyles,
+    ).toBeUndefined();
+    expect(
+      sanitizePreferences(prefs({ sidebarFolderStyles: { a: { icon: 'skull' } } }))
+        .sidebarFolderStyles,
+    ).toBeUndefined();
+    expect(
+      sanitizePreferences(prefs({ sidebarFolderStyles: { a: { icon: 'lab' } } }))
+        .sidebarFolderStyles,
+    ).toEqual({ a: { icon: 'lab' } });
+  });
+});
+
+describe('restoring manual folder order', () => {
+  const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
+
+  it('restores a well-formed order map', () => {
+    const input = { sidebarFolderOrder: { root: ['folder:prod'], 'folder:prod': ['folder:prod/eu'] } };
+    expect(sanitizePreferences(prefs(input))).toMatchObject(input);
+  });
+
+  it('drops an order map that is oversized or the wrong shape', () => {
+    expect(
+      sanitizePreferences(prefs({ sidebarFolderOrder: { root: [1, 2] } })).sidebarFolderOrder,
+    ).toBeUndefined();
+    const tooMany = Object.fromEntries(
+      Array.from({ length: 501 }, (_entry, i) => [`folder:${i}`, []]),
+    );
+    expect(
+      sanitizePreferences(prefs({ sidebarFolderOrder: tooMany })).sidebarFolderOrder,
+    ).toBeUndefined();
   });
 });

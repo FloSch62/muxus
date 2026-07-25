@@ -64,9 +64,13 @@ const initialKeys = collectStaticGraph(entry[0]);
 // shortcut has to work before any lazy chunk could load. It costs ~9 KiB raw
 // and ~0.3 KiB gzip, which this budget accounts for — everything else that
 // only the dialogs need stays lazy.
+//
+// The sidebar's folder tree adds ~12 KiB raw on top of that. Its model,
+// keyboard navigation and drag-and-drop are the host list itself and cannot be
+// deferred; the menus and dialogs it opens are lazy (see SidebarMenus).
 check('Initial JavaScript', measureGraph(initialKeys), {
-  raw: 768_000,
-  gzip: 244_000,
+  raw: 782_000,
+  gzip: 249_000,
 });
 
 for (const feature of [

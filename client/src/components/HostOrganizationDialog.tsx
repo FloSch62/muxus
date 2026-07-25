@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
-import Autocomplete from '@mui/material/Autocomplete';
+import { useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Dialog from '@mui/material/Dialog';
@@ -11,12 +10,12 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import type { SavedHostProfile, SshHostEntry } from '@muxus/shared';
 import { useUpdateHostProfileMetadata } from '../api/profiles.js';
-import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
 import { useUpdateSshMetadata } from '../api/ssh-config.js';
+import { folderSegments } from '../host-tree.js';
 import { hostAddress, hostDisplayName } from '../host-organization.js';
-import { knownHostGroups } from '../managed-hosts.js';
 import { savedHostAddress, savedHostDisplayName } from '../saved-hosts.js';
 import { useUiStore } from '../state/ui.js';
+import { FolderPathField } from './FolderPathField.js';
 import { HostColorPicker } from './HostColorPicker.js';
 import { hostKindIcon } from './host-kind-icon.js';
 
@@ -24,8 +23,6 @@ import { hostKindIcon } from './host-kind-icon.js';
 export function HostOrganizationDialog() {
   const entry = useUiStore((state) => state.hostOrganizer);
   const setEntry = useUiStore((state) => state.setHostOrganizer);
-  const { data: config } = useSshConfig();
-  const { data: savedData } = useSavedHostProfiles();
   const [displayName, setDisplayName] = useState('');
   const [group, setGroup] = useState('');
   const [color, setColor] = useState<string | undefined>();
@@ -38,11 +35,6 @@ export function HostOrganizationDialog() {
     setGroup(entry.metadata?.group ?? '');
     setColor(entry.metadata?.color);
   }, [entry]);
-
-  const groups = useMemo(
-    () => knownHostGroups(config?.hosts ?? [], savedData?.profiles ?? []),
-    [config?.hosts, savedData?.profiles],
-  );
 
   if (!entry) return null;
 
@@ -76,7 +68,7 @@ export function HostOrganizationDialog() {
         <DialogTitle sx={{ pb: 0.75 }}>Organize {managedHostName(entry)}</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
-            Display name, group, and color are local to Muxus. Connection settings
+            Display name, folder, and color are local to Muxus. Connection settings
             stay unchanged.
           </Typography>
 
@@ -89,20 +81,10 @@ export function HostOrganizationDialog() {
               helperText="Optional — only changes how this host appears in Muxus."
               fullWidth
             />
-            <Autocomplete
-              freeSolo
-              options={groups}
+            <FolderPathField
               value={group}
-              onInputChange={(_event, value) => setGroup(value)}
-              onChange={(_event, value) => setGroup(value ?? '')}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Group"
-                  placeholder="e.g. Production"
-                  helperText="Choose an existing group or type a new one."
-                />
-              )}
+              onChange={setGroup}
+              helperText="Choose a folder or type a new one — use / to nest."
             />
             <HostColorPicker value={color} onChange={setColor} />
 
@@ -126,7 +108,9 @@ export function HostOrganizationDialog() {
                   {name}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
-                  {group.trim() ? `${group.trim()} · ` : ''}
+                  {folderSegments(group).length > 0
+                    ? `${folderSegments(group).join(' / ')} · `
+                    : ''}
                   {managedHostAddress(entry)}
                 </Typography>
               </Box>
