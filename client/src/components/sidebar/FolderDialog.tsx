@@ -88,9 +88,12 @@ export function FolderDialog() {
 
   const target = movingHost
     ? normalizeGroupPath(parent)
-    : folderPath([...folderSegments(parent), sanitizeFolderName(name)]);
+    : normalizeGroupPath(folderPath([...folderSegments(parent), sanitizeFolderName(name)]));
   const problem = movingHost ? undefined : folderTargetProblem(sourcePath, target);
-  const renaming = mode === 'edit' && !!sourcePath && !isSamePath(sourcePath, target);
+  // Exact comparison, not folder identity: two paths that differ only in case
+  // are the same folder, but changing its capitalisation is still a rename and
+  // has to be written out, or the old spelling stays on screen.
+  const renaming = mode === 'edit' && !!sourcePath && target !== normalizeGroupPath(sourcePath);
   const affected = useMemo(
     () => (renaming ? folderRewritePlan(allHosts, sourcePath, target) : []),
     [renaming, allHosts, sourcePath, target],
@@ -98,10 +101,11 @@ export function FolderDialog() {
   const merging = useMemo(
     () =>
       renaming &&
-      knownFolderPaths(config?.hosts ?? [], savedData?.profiles ?? [], emptyFolders).some((path) =>
-        isSamePath(path, target),
+      knownFolderPaths(config?.hosts ?? [], savedData?.profiles ?? [], emptyFolders).some(
+        // Recapitalising a folder lands on itself, which is not a merge.
+        (path) => isSamePath(path, target) && !isSamePath(path, sourcePath),
       ),
-    [renaming, config?.hosts, savedData?.profiles, emptyFolders, target],
+    [renaming, config?.hosts, savedData?.profiles, emptyFolders, target, sourcePath],
   );
 
   if (state === false) return null;
@@ -131,7 +135,11 @@ export function FolderDialog() {
     folders.setFolderStyle(folderKey(renaming ? target : sourcePath), { color, icon });
     if (renaming) {
       folders.renameFolderPrefs(sourcePath, target);
-      folders.removeEmptyFolder(sourcePath);
+      // The rename above already carried the empty-folder markers over. Clearing
+      // the old path is only safe when it is a different folder: paths match
+      // case-insensitively, so after a recapitalisation it would take the marker
+      // it just rewrote — and every marker below it — with it.
+      if (!isSamePath(sourcePath, target)) folders.removeEmptyFolder(sourcePath);
       if (affected.length > 0) applyMoves.mutate({ moves: affected, label: target });
       else folders.addEmptyFolder(target);
       showToast('success', `Folder renamed to “${target}”.`);

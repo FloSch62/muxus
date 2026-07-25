@@ -17,6 +17,7 @@ import {
   droppedFolderPath,
   folderOrderAfterDrop,
   isPureReorder,
+  sameTarget,
   targetPath,
   type DragSource,
   type DropTarget,
@@ -282,13 +283,4 @@ function nearestRow(container: HTMLElement, clientY: number): HTMLElement | unde
   }
   // Past the end of the list means the root, not the last row.
   return best && best.distance <= 4 ? best.element : undefined;
-}
-
-function sameTarget(a: DropTarget | null, b: DropTarget): boolean {
-  if (!a || a.kind !== b.kind) return false;
-  if (a.kind === 'into-folder' && b.kind === 'into-folder') return a.folderKey === b.folderKey;
-  if (a.kind === 'host-edge' && b.kind === 'host-edge') {
-    return a.hostKey === b.hostKey && a.edge === b.edge;
-  }
-  return true;
 }

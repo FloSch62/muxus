@@ -82,8 +82,17 @@ describe('folderRewritePlan', () => {
 
   it('plans nothing for an unused folder or a no-op rename', () => {
     expect(folderRewritePlan(HOSTS, 'Nowhere', 'Elsewhere')).toEqual([]);
-    expect(folderRewritePlan(HOSTS, 'Prod', 'prod')).toEqual([]);
+    expect(folderRewritePlan(HOSTS, 'Prod', 'Prod')).toEqual([]);
+    expect(folderRewritePlan(HOSTS, 'Prod', ' Prod ')).toEqual([]);
     expect(folderRewritePlan(HOSTS, 'Prod', '  ')).toEqual([]);
+  });
+
+  it('rewrites a folder whose name changes only in capitalisation', () => {
+    expect(summary(folderRewritePlan(HOSTS, 'Prod', 'prod'))).toEqual({
+      a: 'prod',
+      b: 'prod/EU',
+      c: 'prod/EU/Edge',
+    });
   });
 });
 

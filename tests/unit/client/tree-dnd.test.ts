@@ -15,6 +15,7 @@ import {
   droppedFolderPath,
   folderOrderAfterDrop,
   isPureReorder,
+  sameTarget,
   targetPath,
   type DragSource,
 } from '../../../client/src/components/sidebar/tree-dnd.js';
@@ -267,6 +268,43 @@ describe('containerFor', () => {
       )?.key,
     ).toBe(fileGroupKey);
     expect(containerFor({ kind: 'root' }, tree)).toBeUndefined();
+  });
+});
+
+describe('sameTarget', () => {
+  const folderEdge = (path: string, edge: 'before' | 'after') =>
+    ({ kind: 'folder-edge', folderKey: folderKey(path), edge }) as const;
+
+  it('holds the current target when the pointer resolves to the same spot', () => {
+    expect(sameTarget(folderEdge('Prod', 'before'), folderEdge('Prod', 'before'))).toBe(true);
+    expect(sameTarget({ kind: 'root' }, { kind: 'root' })).toBe(true);
+  });
+
+  it('separates the two edges of one folder', () => {
+    expect(sameTarget(folderEdge('Prod', 'before'), folderEdge('Prod', 'after'))).toBe(false);
+  });
+
+  it('separates the same edge of two folders', () => {
+    expect(sameTarget(folderEdge('Prod', 'before'), folderEdge('Lab', 'before'))).toBe(false);
+  });
+
+  it('separates host edges, folders and kinds', () => {
+    const before = {
+      kind: 'host-edge',
+      hostKey: 'ssh:edge',
+      parentKey: folderKey('Prod/EU'),
+      edge: 'before',
+    } as const;
+    expect(sameTarget(before, { ...before, edge: 'after' })).toBe(false);
+    expect(sameTarget(before, { ...before, hostKey: 'ssh:core' })).toBe(false);
+    expect(sameTarget(before, folderEdge('Prod', 'before'))).toBe(false);
+    expect(
+      sameTarget(
+        { kind: 'into-folder', folderKey: folderKey('Prod') },
+        { kind: 'into-folder', folderKey: folderKey('Lab') },
+      ),
+    ).toBe(false);
+    expect(sameTarget(null, { kind: 'root' })).toBe(false);
   });
 });
 

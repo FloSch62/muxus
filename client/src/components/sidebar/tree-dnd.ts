@@ -143,6 +143,27 @@ export function folderOrderAfterDrop(
   return next;
 }
 
+/**
+ * Whether two drop targets mean the same landing spot, so a dragover that
+ * resolves to the one already held can leave state untouched.
+ *
+ * Every field that moves the drop has to be compared. Treating two edges of the
+ * same kind as interchangeable would keep the first one the pointer touched and
+ * commit there, wherever the drag was actually released.
+ */
+export function sameTarget(a: DropTarget | null, b: DropTarget): boolean {
+  if (!a || a.kind !== b.kind) return false;
+  if (a.kind === 'into-folder' && b.kind === 'into-folder') return a.folderKey === b.folderKey;
+  if (a.kind === 'host-edge' && b.kind === 'host-edge') {
+    return a.hostKey === b.hostKey && a.edge === b.edge;
+  }
+  if (a.kind === 'folder-edge' && b.kind === 'folder-edge') {
+    return a.folderKey === b.folderKey && a.edge === b.edge;
+  }
+  // Only the root is left, and there is one of it.
+  return true;
+}
+
 /** A drop that only changes order, never which container the host is in. */
 export function isPureReorder(source: DragSource, target: DropTarget): boolean {
   if (source.kind !== 'host') return false;

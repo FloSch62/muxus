@@ -31,7 +31,10 @@ export function folderRewritePlan(
   to: string,
 ): FolderMove[] {
   const target = normalizeGroupPath(to);
-  if (!target || isSamePath(from, target)) return [];
+  // Compared exactly rather than by folder identity: folders match
+  // case-insensitively, but capitalisation is still part of the name, so
+  // "prod" → "Prod" is a rename the sidebar has to carry out.
+  if (!target || target === normalizeGroupPath(from)) return [];
   return hosts.flatMap((host) => {
     const current = host.entry.metadata?.group;
     if (!current) return [];
