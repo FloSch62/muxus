@@ -5,12 +5,16 @@ import { DEFAULT_SFTP_PANEL_WIDTH } from './sftp-panel-width.js';
 
 declare module '@mui/material/styles' {
   /** Chrome surfaces (top bar, session sidebar, tab strip) share this background —
-   *  exposed on the palette so no component re-hardcodes the hex. */
+   *  exposed on the palette so no component re-hardcodes the hex. `sidebarInk`
+   *  is the label color for sidebar rows: in light mode it sits below
+   *  text.primary because a panel of near-black rows reads as a slab of ink. */
   interface Palette {
     sidebar: string;
+    sidebarInk: string;
   }
   interface PaletteOptions {
     sidebar?: string;
+    sidebarInk?: string;
   }
 }
 
@@ -50,6 +54,7 @@ const darkColors = {
   bgDefault: '#1b1b1f',
   bgPaper: '#232328',
   sidebar: '#151518',
+  sidebarInk: '#e6e6ea',
   divider: 'rgba(255, 255, 255, 0.08)',
   textPrimary: '#e6e6ea',
   textSecondary: '#9d9da7',
@@ -70,6 +75,7 @@ const lightColors = {
   bgDefault: '#fafafa',
   bgPaper: '#ffffff',
   sidebar: '#f4f4f5',
+  sidebarInk: '#3f3f49',
   divider: 'rgba(0, 0, 0, 0.08)',
   textPrimary: '#1c1c21',
   textSecondary: '#6e6e78',
@@ -123,6 +129,7 @@ export function buildTheme(mode: 'light' | 'dark', options: { modalBackdrop?: El
       info: { main: c.info, ...(dark ? {} : { dark: '#1d4ed8' }) },
       divider: c.divider,
       sidebar: c.sidebar,
+      sidebarInk: c.sidebarInk,
       background: { default: c.bgDefault, paper: c.bgPaper },
       // `disabled` is used as the dimmest text tier; keying it off the
       // secondary hue keeps the two muted greys in the same family instead

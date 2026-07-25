@@ -15,8 +15,6 @@ import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
-import ListItemIcon from '@mui/material/ListItemIcon';
-import ListItemText from '@mui/material/ListItemText';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
@@ -72,6 +70,7 @@ import { confirmAction } from '../state/dialogs.js';
 import { usePrefsStore } from '../state/prefs.js';
 import { useUiStore } from '../state/ui.js';
 import { PanelResizeHandle } from './PanelResizeHandle.js';
+import { treeLabelSx, treeRowSx } from './sidebar/tree-row-style.js';
 import { deleteFolderPlan, folderRewritePlan } from './sidebar/folder-mutations.js';
 import type { FolderMenuState } from './sidebar/FolderContextMenu.js';
 import type { HostMenuState } from './sidebar/HostContextMenu.js';
@@ -89,6 +88,9 @@ const SidebarMenus = lazy(() =>
 const EMPTY_HOSTS: SshHostEntry[] = [];
 const EMPTY_PROFILES: SavedHostProfile[] = [];
 const EMPTY_KEYS: ReadonlySet<string> = new Set();
+
+/** The fixed rows above the tree share the tree rows' exact geometry. */
+const fixedRowSx = [treeRowSx(0, undefined), { gap: 0.75 }] as const;
 
 /** Saved Telnet/serial profiles and live OpenSSH hosts in one host manager. */
 export function SessionSidebar() {
@@ -507,17 +509,21 @@ export function SessionSidebar() {
       >
         <List dense disablePadding>
           <ListItemButton
+            component="li"
+            sx={fixedRowSx}
             onMouseEnter={() => void loadTerminalViewImpl()}
             onFocus={() => void loadTerminalViewImpl()}
             onClick={() => openLocalTerminal()}
           >
-            <ListItemIcon sx={{ minWidth: 28 }}>
-              <TerminalIcon sx={{ fontSize: 16 }} />
-            </ListItemIcon>
-            <ListItemText primary="Local terminal" slotProps={{ primary: { sx: { fontSize: 13 } } }} />
+            <TerminalIcon sx={{ fontSize: 16, flexShrink: 0, color: 'text.secondary' }} />
+            <Box component="span" sx={{ ...treeLabelSx, minWidth: 0 }}>
+              Local terminal
+            </Box>
           </ListItemButton>
           {quickConnectable && (
             <ListItemButton
+              component="li"
+              sx={fixedRowSx}
               onMouseEnter={() => void loadTerminalViewImpl()}
               onFocus={() => void loadTerminalViewImpl()}
               onClick={() => {
@@ -525,13 +531,10 @@ export function SessionSidebar() {
                 setFilter('');
               }}
             >
-              <ListItemIcon sx={{ minWidth: 28 }}>
-                <BoltIcon sx={{ fontSize: 16 }} color="primary" />
-              </ListItemIcon>
-              <ListItemText
-                primary={`Connect to ${filter.trim()}`}
-                slotProps={{ primary: { sx: { fontSize: 13, color: 'primary.main' } } }}
-              />
+              <BoltIcon sx={{ fontSize: 16, flexShrink: 0 }} color="primary" />
+              <Box component="span" sx={{ ...treeLabelSx, minWidth: 0, color: 'primary.main' }}>
+                Connect to {filter.trim()}
+              </Box>
             </ListItemButton>
           )}
         </List>

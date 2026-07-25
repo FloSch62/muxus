@@ -16,7 +16,7 @@ import {
 import { loadTerminalViewImpl } from '../../lazy-features.js';
 import { hostKindIcon } from '../host-kind-icon.js';
 import { hostDetailLines } from './host-details.js';
-import { TREE_BASE_INSET, indentPx, treeRowSx } from './tree-row-style.js';
+import { TREE_BASE_INSET, indentPx, treeLabelSx, treeRowSx } from './tree-row-style.js';
 import type { LiveCounts } from './useLiveHostCounts.js';
 
 export interface HostRowProps {
@@ -131,10 +131,6 @@ export function HostRow({
             opacity: dragging ? 0.45 : 1,
             cursor: draggable ? 'grab' : 'pointer',
             ...(match && { bgcolor: 'action.selected' }),
-            // A host's own colour sits at the very edge so it never collides
-            // with the folder rail drawn inside the indent.
-            borderLeft: 3,
-            borderLeftColor: color ?? 'transparent',
             '&:hover .host-row-menu, & .host-row-menu:focus-visible': { opacity: 1 },
             ...(dropEdge && {
               [`&::${dropEdge === 'before' ? 'before' : 'after'}`]: {
@@ -175,16 +171,7 @@ export function HostRow({
         </Box>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
-            <Box
-              component="span"
-              sx={{
-                minWidth: 0,
-                fontSize: 13,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
+            <Box component="span" sx={{ ...treeLabelSx, minWidth: 0 }}>
               {title}
             </Box>
             {host.entry.metadata?.favorite && (
