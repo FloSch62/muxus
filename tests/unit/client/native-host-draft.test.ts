@@ -24,7 +24,6 @@ const serialHost: SavedHostProfile = {
   },
   metadata: {
     profileId: 'serial-console',
-    favorite: false,
     group: 'Lab',
     keywordHighlights: {
       inheritGlobal: false,

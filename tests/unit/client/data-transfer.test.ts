@@ -13,7 +13,7 @@ const connections = {
       alias: 'production',
       aliases: ['production'],
       options: { hostname: 'prod.example.com', user: 'deploy' },
-      metadata: { favorite: true, group: 'Work' },
+      metadata: { group: 'Work' },
     },
   ],
   savedHosts: [],

@@ -6,6 +6,7 @@ import {
   clampInterfaceZoom,
   interfaceZoomLabel,
 } from '../../../client/src/interface-zoom.js';
+import { DEFAULT_SIDEBAR_WIDTH } from '../../../client/src/sidebar-width.js';
 import {
   MONO_FONT_FALLBACK,
   migratePrefsState,
@@ -61,6 +62,16 @@ describe('migratePrefsState folder preferences', () => {
     ) as Record<string, unknown>;
 
     expect(migrated.sidebarFolderStyles).toBeUndefined();
+  });
+});
+
+describe('migratePrefsState sidebar width', () => {
+  it('widens a stored copy of the old default but keeps a dragged width', () => {
+    expect(migratePrefsState({ sidebarWidth: 248 }, 5)).toEqual({
+      sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
+    });
+    expect(migratePrefsState({ sidebarWidth: 320 }, 5)).toEqual({ sidebarWidth: 320 });
+    expect(migratePrefsState({ sidebarWidth: 248 }, 6)).toEqual({ sidebarWidth: 248 });
   });
 });
 

@@ -787,11 +787,9 @@ function buildCatalogResults({
         entry.resolved.user ?? '',
       ],
       priority:
-        (metadata?.favorite ? 260 : 0) +
         Math.min(metadata?.connectCount ?? 0, 80) +
         (metadata?.lastConnectedAt ? 60 : 0),
-      showWhenEmpty:
-        !!metadata?.favorite || (metadata?.connectCount ?? 0) > 0,
+      showWhenEmpty: (metadata?.connectCount ?? 0) > 0,
     });
   }
 
@@ -811,11 +809,9 @@ function buildCatalogResults({
         managedHostAddress(host),
       ],
       priority:
-        (entry.metadata.favorite ? 260 : 0) +
         Math.min(entry.metadata.connectCount, 80) +
         (entry.metadata.lastConnectedAt ? 60 : 0),
-      showWhenEmpty:
-        entry.metadata.favorite || entry.metadata.connectCount > 0,
+      showWhenEmpty: entry.metadata.connectCount > 0,
     });
   }
 

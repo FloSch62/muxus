@@ -1,4 +1,5 @@
 import type { SshHostEntry } from '@muxus/shared';
+import { matchesTokens, searchableText, searchTokens } from './host-search.js';
 
 export const HOST_COLORS = [
   { name: 'Red', value: '#ef5350' },
@@ -30,23 +31,22 @@ export function hostAddress(host: SshHostEntry): string {
   return `${resolved.user ? `${resolved.user}@` : ''}${resolved.hostname}${resolved.port !== 22 ? `:${resolved.port}` : ''}`;
 }
 
-export function matchesHost(host: SshHostEntry, needle: string): boolean {
-  return matchesNormalized(host, needle.trim().toLowerCase());
+/** Everything a search may look at, lower-cased once per entry. */
+export function hostSearchText(host: SshHostEntry): string {
+  return searchableText(host, () => [
+    ...host.aliases,
+    host.resolved.hostname,
+    host.resolved.user,
+    host.description,
+    host.metadata?.displayName,
+    host.metadata?.group,
+  ]);
 }
 
-/** Same match, with the needle normalized once by the caller for list scans. */
-export function matchesNormalized(host: SshHostEntry, normalized: string): boolean {
-  if (!normalized) return true;
-  for (const alias of host.aliases) {
-    if (alias.toLowerCase().includes(normalized)) return true;
-  }
-  return [
-    host.resolved.hostname,
-    host.resolved.user ?? '',
-    host.description ?? '',
-    host.metadata?.displayName ?? '',
-    host.metadata?.group ?? '',
-  ].some((value) => value.toLowerCase().includes(normalized));
+/** Match against tokens the caller split once, for list scans. */
+export function matchesHostTokens(host: SshHostEntry, tokens: readonly string[]): boolean {
+  if (tokens.length === 0) return true;
+  return matchesTokens(hostSearchText(host), tokens);
 }
 
 /** Build the persisted order after dropping one host before/after another, or
@@ -78,10 +78,10 @@ export function groupHosts(
 ): HostGroup[] {
   const custom = new Map<string, HostGroup>();
   const byFile = new Map<string, SshHostEntry[]>();
-  const needle = filter.trim().toLowerCase();
+  const tokens = searchTokens(filter.trim().toLowerCase());
 
   for (const host of hosts) {
-    if (!matchesNormalized(host, needle)) continue;
+    if (!matchesHostTokens(host, tokens)) continue;
     const group = host.metadata?.group?.trim();
     if (group) {
       const key = group.toLocaleLowerCase();
@@ -105,7 +105,6 @@ export function groupHosts(
       (a, b) =>
         (a.metadata?.sortOrder ?? Number.MAX_SAFE_INTEGER) -
           (b.metadata?.sortOrder ?? Number.MAX_SAFE_INTEGER) ||
-        Number(b.metadata?.favorite ?? false) - Number(a.metadata?.favorite ?? false) ||
         hostDisplayName(a).localeCompare(hostDisplayName(b)),
     );
 

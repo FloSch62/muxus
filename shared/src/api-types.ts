@@ -276,7 +276,6 @@ export interface HostKeywordHighlightConfig {
 export interface OpenSshProfileMetadata {
   /** Stable local ID survives an OpenSSH alias rename. */
   profileId: string;
-  favorite: boolean;
   /** User-defined position inside the host's current sidebar group. */
   sortOrder?: number;
   displayName?: string;
@@ -291,7 +290,6 @@ export interface OpenSshProfileMetadata {
 }
 
 export interface OpenSshMetadataPatch {
-  favorite?: boolean;
   displayName?: string | null;
   group?: string | null;
   color?: string | null;

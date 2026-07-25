@@ -39,7 +39,7 @@ function sshHost(alias: string, group?: string): SshHostEntry {
       forwards: [],
       passwordOnly: false,
     },
-    metadata: group ? { profileId: alias, favorite: false, group, connectCount: 0 } : undefined,
+    metadata: group ? { profileId: alias, group, connectCount: 0 } : undefined,
   };
 }
 

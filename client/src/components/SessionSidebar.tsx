@@ -15,15 +15,12 @@ import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
-import ListItemIcon from '@mui/material/ListItemIcon';
-import ListItemText from '@mui/material/ListItemText';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
 import BoltIcon from '@mui/icons-material/Bolt';
-import CreateNewFolderOutlinedIcon from '@mui/icons-material/CreateNewFolderOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import TerminalIcon from '@mui/icons-material/Terminal';
@@ -45,7 +42,7 @@ import {
   type VisibleNode,
 } from '../host-tree.js';
 import {
-  anyManagedHostMatches,
+  bestManagedHostMatch,
   groupManagedHosts,
   managedHostDisplayName,
   managedHostKey,
@@ -59,7 +56,6 @@ import {
   openLocalTerminal,
 } from '../session-actions.js';
 import {
-  loadFolderDialog,
   loadHostEditorDialog,
   loadSidebarMenus,
   loadTerminalViewImpl,
@@ -74,6 +70,7 @@ import { confirmAction } from '../state/dialogs.js';
 import { usePrefsStore } from '../state/prefs.js';
 import { useUiStore } from '../state/ui.js';
 import { PanelResizeHandle } from './PanelResizeHandle.js';
+import { treeLabelSx, treeRowSx } from './sidebar/tree-row-style.js';
 import { deleteFolderPlan, folderRewritePlan } from './sidebar/folder-mutations.js';
 import type { FolderMenuState } from './sidebar/FolderContextMenu.js';
 import type { HostMenuState } from './sidebar/HostContextMenu.js';
@@ -92,6 +89,9 @@ const EMPTY_HOSTS: SshHostEntry[] = [];
 const EMPTY_PROFILES: SavedHostProfile[] = [];
 const EMPTY_KEYS: ReadonlySet<string> = new Set();
 
+/** The fixed rows above the tree share the tree rows' exact geometry. */
+const fixedRowSx = [treeRowSx(0, undefined), { gap: 0.75 }] as const;
+
 /** Saved Telnet/serial profiles and live OpenSSH hosts in one host manager. */
 export function SessionSidebar() {
   const { data: config } = useSshConfig();
@@ -105,6 +105,7 @@ export function SessionSidebar() {
   const [filter, setFilter] = useState('');
   const [menu, setMenu] = useState<HostMenuState | null>(null);
   const [folderMenu, setFolderMenu] = useState<FolderMenuState | null>(null);
+  const [panelMenu, setPanelMenu] = useState<{ top: number; left: number } | null>(null);
   const [launchTarget, setLaunchTarget] = useState<LaunchTarget | null>(null);
   /** Folders collapsed during a search; discarded when the query changes. */
   const [searchCollapsed, setSearchCollapsed] = useState<ReadonlySet<string>>(EMPTY_KEYS);
@@ -136,11 +137,13 @@ export function SessionSidebar() {
     [groups, folders.emptyFolders, folders.folderOrder],
   );
   // The list itself lags behind typing, but quick-connect must answer for the
-  // text as typed — and that only needs to know whether anything matched.
-  const hasImmediateMatch = useMemo(
-    () => anyManagedHostMatches(hosts, profiles, normalizedFilter),
-    [hosts, profiles, normalizedFilter],
+  // text as typed, so the winner is scored against the flat host list instead.
+  const bestMatch = useMemo(
+    () => bestManagedHostMatch(allHosts, normalizedFilter),
+    [allHosts, normalizedFilter],
   );
+  // Highlight it in the tree, once the tree has caught up with the query.
+  const matchKey = bestMatch ? managedHostKey(bestMatch) : undefined;
   const hostByKey = useMemo(
     () => new Map(tree.hosts.map((host) => [managedHostKey(host), host])),
     [tree],
@@ -266,36 +269,13 @@ export function SessionSidebar() {
     [folders],
   );
 
-  const quickConnectable =
-    !!normalizedFilter &&
-    isQuickConnectTarget(filter) &&
-    !hasImmediateMatch &&
-    !hosts.some((h) => h.aliases.includes(filter.trim()));
+  const quickConnectable = !!normalizedFilter && !bestMatch && isQuickConnectTarget(filter);
 
   const onEnter = () => {
-    // Grouping the current filter is only worth it once Enter is pressed.
-    const currentMatch = hasImmediateMatch
-      ? groupManagedHosts(
-          hosts,
-          profiles,
-          config?.files ?? [],
-          config?.path,
-          normalizedFilter,
-        ).flatMap((group) => group.hosts)[0]
-      : undefined;
-    if (currentMatch) connectManagedHost(currentMatch);
+    if (bestMatch) connectManagedHost(bestMatch);
     else if (quickConnectable) connectTarget(filter.trim());
     else return;
     setFilter('');
-  };
-
-  const toggleFavorite = (host: ManagedHost) => {
-    const favorite = !(host.entry.metadata?.favorite ?? false);
-    if (host.kind === 'ssh') {
-      updateMetadata.mutate({ alias: host.entry.alias, patch: { favorite } });
-    } else {
-      updateProfileMetadata.mutate({ id: host.entry.id, patch: { favorite } });
-    }
   };
 
   const requestDelete = (host: ManagedHost) => {
@@ -465,7 +445,7 @@ export function SessionSidebar() {
         <TextField
           fullWidth
           inputRef={searchRef}
-          placeholder="Search / user@host ⏎"
+          placeholder="Search or user@host ⏎"
           value={filter}
           onChange={(e) => {
             const next = e.target.value;
@@ -493,20 +473,9 @@ export function SessionSidebar() {
             },
           }}
         />
-        <Tooltip title="New folder">
-          <span>
-            <IconButton
-              size="small"
-              aria-label="New folder"
-              disabled={!folderEditsEnabled}
-              onMouseEnter={() => void loadFolderDialog()}
-              onFocus={() => void loadFolderDialog()}
-              onClick={() => setFolderDialog({ mode: 'new' })}
-            >
-              <CreateNewFolderOutlinedIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
+        {/* Adding a folder lives in the panel's right-click menu: one action in
+            the header leaves the search box the width it needs to say that it
+            also connects. */}
         <Tooltip title="Add host">
           <IconButton
             size="small"
@@ -520,20 +489,32 @@ export function SessionSidebar() {
         </Tooltip>
       </Stack>
 
-      <Box sx={{ flex: 1, overflowY: 'auto', pb: 1 }}>
+      <Box
+        sx={{ flex: 1, overflowY: 'auto', pb: 1 }}
+        // Rows stop this from reaching the panel, so anything that gets here is
+        // empty space: the one place a root-level folder can be asked for.
+        onContextMenu={(event) => {
+          event.preventDefault();
+          setPanelMenu({ top: event.clientY, left: event.clientX });
+        }}
+      >
         <List dense disablePadding>
           <ListItemButton
+            component="li"
+            sx={fixedRowSx}
             onMouseEnter={() => void loadTerminalViewImpl()}
             onFocus={() => void loadTerminalViewImpl()}
             onClick={() => openLocalTerminal()}
           >
-            <ListItemIcon sx={{ minWidth: 28 }}>
-              <TerminalIcon sx={{ fontSize: 16 }} />
-            </ListItemIcon>
-            <ListItemText primary="Local terminal" slotProps={{ primary: { sx: { fontSize: 13 } } }} />
+            <TerminalIcon sx={{ fontSize: 16, flexShrink: 0, color: 'text.secondary' }} />
+            <Box component="span" sx={{ ...treeLabelSx, minWidth: 0 }}>
+              Local terminal
+            </Box>
           </ListItemButton>
           {quickConnectable && (
             <ListItemButton
+              component="li"
+              sx={fixedRowSx}
               onMouseEnter={() => void loadTerminalViewImpl()}
               onFocus={() => void loadTerminalViewImpl()}
               onClick={() => {
@@ -541,13 +522,10 @@ export function SessionSidebar() {
                 setFilter('');
               }}
             >
-              <ListItemIcon sx={{ minWidth: 28 }}>
-                <BoltIcon sx={{ fontSize: 16 }} color="primary" />
-              </ListItemIcon>
-              <ListItemText
-                primary={`Connect to ${filter.trim()}`}
-                slotProps={{ primary: { sx: { fontSize: 13, color: 'primary.main' } } }}
-              />
+              <BoltIcon sx={{ fontSize: 16, flexShrink: 0 }} color="primary" />
+              <Box component="span" sx={{ ...treeLabelSx, minWidth: 0, color: 'primary.main' }}>
+                Connect to {filter.trim()}
+              </Box>
             </ListItemButton>
           )}
         </List>
@@ -560,6 +538,7 @@ export function SessionSidebar() {
 
         <HostTree
           tree={tree}
+          matchKey={matchKey}
           isExpanded={isExpanded}
           setExpanded={setExpanded}
           folderColor={folderColor}
@@ -594,14 +573,29 @@ export function SessionSidebar() {
             </Button>
           </Stack>
         )}
-        {!empty && tree.hosts.length === 0 && !quickConnectable && (
-          <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
-            No hosts match.
-          </Typography>
-        )}
+        {!empty && tree.hosts.length === 0 ? (
+          // Nothing matched is the moment you are most likely to want the host
+          // you just typed, so offer to save it rather than only saying no.
+          <Stack spacing={1.5} sx={{ alignItems: 'center', p: 2, textAlign: 'center' }}>
+            <Typography variant="body2" color="text.secondary">
+              No hosts match.
+            </Typography>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<AddIcon />}
+              sx={{ maxWidth: '100%' }}
+              onMouseEnter={() => void loadHostEditorDialog()}
+              onFocus={() => void loadHostEditorDialog()}
+              onClick={() => setHostEditor({ mode: 'new', prefillTarget: filter.trim() })}
+            >
+              Add “{filter.trim()}”
+            </Button>
+          </Stack>
+        ) : null}
       </Box>
 
-      {(menu || folderMenu || launchTarget) && (
+      {(menu || folderMenu || panelMenu || launchTarget) && (
         <Suspense fallback={null}>
           <SidebarMenus
             host={{
@@ -615,7 +609,6 @@ export function SessionSidebar() {
               onMove: (delta) => {
                 if (menu) moveHostByKey(managedHostKey(menu.host), delta);
               },
-              onToggleFavorite: toggleFavorite,
               onDelete: requestDelete,
               onMoveToFolder: (host) =>
                 setFolderDialog({
@@ -639,6 +632,13 @@ export function SessionSidebar() {
                 reorderEnabled &&
                 folderMenuPosition.index >= 0 &&
                 folderMenuPosition.index < folderMenuPosition.total - 1,
+            }}
+            panel={{
+              position: panelMenu,
+              onClose: () => setPanelMenu(null),
+              onNewHost: () => setHostEditor({ mode: 'new' }),
+              onNewFolder: () => setFolderDialog({ mode: 'new' }),
+              folderEditsEnabled,
             }}
             launch={{ target: launchTarget, onClose: () => setLaunchTarget(null) }}
           />

@@ -28,7 +28,7 @@ function host(alias: string, group?: string): ManagedHost {
       forwards: [],
       passwordOnly: false,
     },
-    metadata: { profileId: `ssh-${alias}`, favorite: false, group, connectCount: 0 },
+    metadata: { profileId: `ssh-${alias}`, group, connectCount: 0 },
   };
   return { kind: 'ssh', entry };
 }

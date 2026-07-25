@@ -226,7 +226,12 @@ export function TabStrip({
               variant="body2"
               noWrap
               sx={{
-                fontWeight: active && focused ? 600 : 500,
+                // Flat weight on purpose: the underline, icon tint and lifted
+                // background already mark the active tab, and a weight jump
+                // would re-measure the title on every switch. Weight and
+                // tracking follow the sidebar labels (treeLabelSx).
+                fontWeight: 450,
+                letterSpacing: -0.1,
                 color: active ? 'text.primary' : 'text.secondary',
                 flex: 1,
                 minWidth: 0,

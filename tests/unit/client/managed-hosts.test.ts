@@ -29,7 +29,6 @@ function sshHost(alias: string, group?: string): SshHostEntry {
     metadata: group
       ? {
           profileId: `ssh-${alias}`,
-          favorite: false,
           group,
           connectCount: 0,
         }
@@ -50,7 +49,6 @@ function telnetHost(name: string, group?: string): SavedHostProfile {
     },
     metadata: {
       profileId: `telnet-${name}`,
-      favorite: false,
       group,
       connectCount: 0,
     },
@@ -76,7 +74,6 @@ function serialHost(name: string): SavedHostProfile {
     },
     metadata: {
       profileId: `serial-${name}`,
-      favorite: false,
       connectCount: 0,
     },
     createdAt: '2026-01-01T00:00:00Z',

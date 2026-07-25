@@ -65,10 +65,8 @@ export function useUpdateSshMetadata(onSuccess?: (metadata: OpenSshProfileMetada
             if (host.alias !== alias) return host;
             const metadata: OpenSshProfileMetadata = {
               profileId: host.metadata?.profileId ?? host.alias,
-              favorite: host.metadata?.favorite ?? false,
               connectCount: host.metadata?.connectCount ?? 0,
               ...host.metadata,
-              ...(patch.favorite !== undefined ? { favorite: patch.favorite } : {}),
               ...(patch.displayName !== undefined ? { displayName: patch.displayName ?? undefined } : {}),
               ...(patch.group !== undefined ? { group: patch.group ?? undefined } : {}),
               ...(patch.color !== undefined ? { color: patch.color ?? undefined } : {}),

@@ -2,6 +2,7 @@ import type { ComponentProps } from 'react';
 import { FolderContextMenu } from './FolderContextMenu.js';
 import { HostContextMenu } from './HostContextMenu.js';
 import { LaunchGroupDialog } from './LaunchGroupDialog.js';
+import { PanelContextMenu } from './PanelContextMenu.js';
 
 /**
  * The sidebar's on-demand surfaces in one lazy chunk.
@@ -14,16 +15,19 @@ import { LaunchGroupDialog } from './LaunchGroupDialog.js';
 export function SidebarMenus({
   host,
   folder,
+  panel,
   launch,
 }: {
   host: ComponentProps<typeof HostContextMenu>;
   folder: ComponentProps<typeof FolderContextMenu>;
+  panel: ComponentProps<typeof PanelContextMenu>;
   launch: ComponentProps<typeof LaunchGroupDialog>;
 }) {
   return (
     <>
       <HostContextMenu {...host} />
       <FolderContextMenu {...folder} />
+      <PanelContextMenu {...panel} />
       <LaunchGroupDialog {...launch} />
     </>
   );

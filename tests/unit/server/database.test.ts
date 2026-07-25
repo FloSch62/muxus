@@ -20,6 +20,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 6, name: 'persistent-session-history' },
       { version: 7, name: 'bounded-session-history-settings' },
       { version: 8, name: 'named-workspace-session-sets' },
+      { version: 9, name: 'drop-favorites' },
     ]);
   });
 });
@@ -131,8 +132,7 @@ describe('hybrid OpenSSH metadata', () => {
   it('stores Muxus metadata without copying connection details', () => {
     database = new MuxusDatabase(':memory:');
 
-    const favorite = database.updateOpenSshMetadata('production', {
-      favorite: true,
+    const organized = database.updateOpenSshMetadata('production', {
       displayName: 'Production',
       group: 'Work',
       color: '#3b82f6',
@@ -153,8 +153,7 @@ describe('hybrid OpenSSH metadata', () => {
     const connected = database.recordOpenSshConnection('production');
 
     expect(connected).toMatchObject({
-      profileId: favorite.profileId,
-      favorite: true,
+      profileId: organized.profileId,
       displayName: 'Production',
       group: 'Work',
       color: '#3b82f6',
@@ -177,7 +176,6 @@ describe('hybrid OpenSSH metadata', () => {
     // One group, not two — but the latest spelling wins, so renaming a sidebar
     // folder to fix its capitalization actually takes effect.
     expect(grouped).toMatchObject({ group: 'production' });
-    expect(cleared).toMatchObject({ favorite: false });
     expect(cleared.group).toBeUndefined();
     expect(cleared.color).toBeUndefined();
   });
@@ -196,7 +194,7 @@ describe('hybrid OpenSSH metadata', () => {
 
   it('preserves the stable profile ID when an OpenSSH alias is renamed', () => {
     database = new MuxusDatabase(':memory:');
-    const before = database.updateOpenSshMetadata('old-alias', { favorite: true });
+    const before = database.updateOpenSshMetadata('old-alias', { group: 'Work' });
     database.recordOpenSshConnection('old-alias');
     database.saveSessionLoggingPolicy('ssh:old-alias', {
       enabled: true,
@@ -209,7 +207,7 @@ describe('hybrid OpenSSH metadata', () => {
     expect(database.openSshMetadata(['old-alias']).size).toBe(0);
     expect(database.openSshMetadata(['new-alias']).get('new-alias')).toMatchObject({
       profileId: before.profileId,
-      favorite: true,
+      group: 'Work',
       connectCount: 1,
     });
     expect(database.sessionLoggingPolicy('ssh:old-alias').overridden).toBe(false);
@@ -269,7 +267,6 @@ describe('saved Telnet and serial hosts', () => {
       },
     });
     const organized = database.updateSavedHostMetadata(created.id, {
-      favorite: true,
       displayName: 'Core rack console',
       group: 'Lab',
       color: '#3b82f6',
@@ -288,7 +285,6 @@ describe('saved Telnet and serial hosts', () => {
         flowControl: 'hardware',
       },
       metadata: {
-        favorite: true,
         group: 'Lab',
         color: '#3b82f6',
       },
@@ -315,7 +311,6 @@ describe('saved Telnet and serial hosts', () => {
         port: 2323,
       },
       metadata: {
-        favorite: true,
         group: 'Lab',
         color: '#3b82f6',
         connectCount: 1,

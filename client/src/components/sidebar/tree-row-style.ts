@@ -5,9 +5,25 @@ import { MAX_INDENT_DEPTH } from '../../host-tree.js';
 type SxEntry = Exclude<SxProps<Theme>, readonly unknown[]>;
 
 /** One line of text, tight enough that nesting still leaves rows on screen. */
-export const TREE_ROW_HEIGHT = 28;
+export const TREE_ROW_HEIGHT = 26;
 export const TREE_INDENT_STEP = 14;
 export const TREE_BASE_INSET = 8;
+
+/**
+ * Label typography every row shares — hosts, folders and the fixed rows above
+ * the tree all read from here so they cannot drift apart. The 450 weight and
+ * slight negative tracking need the bundled variable Inter; a fallback font
+ * just rounds them off.
+ */
+export const treeLabelSx = {
+  fontSize: 13,
+  fontWeight: 450,
+  letterSpacing: -0.1,
+  color: 'sidebarInk',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+} as const;
 
 /** Where a row's content starts, clamped so deep trees keep a usable name column. */
 export function indentPx(depth: number): number {

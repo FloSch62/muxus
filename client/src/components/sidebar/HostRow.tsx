@@ -6,7 +6,6 @@ import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
-import StarIcon from '@mui/icons-material/Star';
 import { folderSegments, type VisibleNode } from '../../host-tree.js';
 import {
   managedHostAddress,
@@ -16,7 +15,7 @@ import {
 import { loadTerminalViewImpl } from '../../lazy-features.js';
 import { hostKindIcon } from '../host-kind-icon.js';
 import { hostDetailLines } from './host-details.js';
-import { TREE_BASE_INSET, indentPx, treeRowSx } from './tree-row-style.js';
+import { TREE_BASE_INSET, indentPx, treeLabelSx, treeRowSx } from './tree-row-style.js';
 import type { LiveCounts } from './useLiveHostCounts.js';
 
 export interface HostRowProps {
@@ -24,6 +23,8 @@ export interface HostRowProps {
   host: ManagedHost;
   live?: LiveCounts;
   focused: boolean;
+  /** The row the search box's Enter would connect. */
+  match?: boolean;
   onConnect: () => void;
   onMenu: (host: ManagedHost, anchor: HTMLElement, position?: { top: number; left: number }) => void;
   onMove: (delta: -1 | 1) => void;
@@ -46,6 +47,7 @@ export function HostRow({
   host,
   live,
   focused,
+  match,
   onConnect,
   onMenu,
   onMove,
@@ -117,6 +119,8 @@ export function HostRow({
         }}
         onContextMenu={(event) => {
           event.preventDefault();
+          // The panel offers its own menu on empty space; this row has one.
+          event.stopPropagation();
           onMenu(host, event.currentTarget, { top: event.clientY, left: event.clientX });
         }}
         sx={[
@@ -125,10 +129,7 @@ export function HostRow({
             gap: 0.75,
             opacity: dragging ? 0.45 : 1,
             cursor: draggable ? 'grab' : 'pointer',
-            // A host's own colour sits at the very edge so it never collides
-            // with the folder rail drawn inside the indent.
-            borderLeft: 3,
-            borderLeftColor: color ?? 'transparent',
+            ...(match && { bgcolor: 'action.selected' }),
             '&:hover .host-row-menu, & .host-row-menu:focus-visible': { opacity: 1 },
             ...(dropEdge && {
               [`&::${dropEdge === 'before' ? 'before' : 'after'}`]: {
@@ -169,21 +170,9 @@ export function HostRow({
         </Box>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
-            <Box
-              component="span"
-              sx={{
-                minWidth: 0,
-                fontSize: 13,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
+            <Box component="span" sx={{ ...treeLabelSx, minWidth: 0 }}>
               {title}
             </Box>
-            {host.entry.metadata?.favorite && (
-              <StarIcon sx={{ fontSize: 12, flexShrink: 0, color: 'warning.main' }} />
-            )}
             {connected > 1 && (
               <Typography component="span" sx={{ fontSize: 10, flexShrink: 0, color: 'success.main' }}>
                 ×{connected}
@@ -191,6 +180,15 @@ export function HostRow({
             )}
           </Stack>
         </Box>
+        {match ? (
+          <Typography
+            component="span"
+            aria-hidden
+            sx={{ fontSize: 11, flexShrink: 0, color: 'text.secondary' }}
+          >
+            ⏎
+          </Typography>
+        ) : null}
         <IconButton
           className="host-row-menu"
           size="small"

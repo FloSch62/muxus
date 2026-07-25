@@ -69,7 +69,7 @@ export interface ManagedConnection {
   host: string;
   port: number;
   user: string;
-  /** Concrete OpenSSH alias eligible for Muxus-owned recent/favorite metadata. */
+  /** Concrete OpenSSH alias eligible for Muxus-owned recent-use metadata. */
   metadataAlias?: string;
   /** *Forward lines resolved from ssh config — auto-started once the session is up. */
   configForwards: ConfigForward[];

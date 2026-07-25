@@ -119,10 +119,17 @@ export function nativeDraftMetadataPatch(draft: NativeHostDraft): OpenSshMetadat
   };
 }
 
-/** Split a quick-connect target like user@host:port into telnet form fields. */
-function parseHostTarget(target: string): { host: string; port?: string } {
-  const stripped = target.trim().replace(/^[^@\s]+@/, '');
+/** Split a quick-connect target like user@host:port into form fields. */
+export function parseHostTarget(target: string): {
+  host: string;
+  port?: string;
+  user?: string;
+} {
+  const trimmed = target.trim();
+  const withUser = /^([^@\s]+)@(.+)$/.exec(trimmed);
+  const user = withUser?.[1];
+  const stripped = withUser?.[2] ?? trimmed;
   const match = /^(.+):(\d{1,5})$/.exec(stripped);
-  if (match?.[1] && match[2]) return { host: match[1], port: match[2] };
-  return { host: stripped };
+  if (match?.[1] && match[2]) return { host: match[1], port: match[2], user };
+  return { host: stripped, user };
 }

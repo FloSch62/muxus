@@ -9,7 +9,7 @@ import MoreVertIcon from '@mui/icons-material/MoreVert';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
 import type { VisibleNode } from '../../host-tree.js';
 import { folderIcon } from './folder-icons.js';
-import { TREE_BASE_INSET, indentPx, treeRowSx } from './tree-row-style.js';
+import { TREE_BASE_INSET, indentPx, treeLabelSx, treeRowSx } from './tree-row-style.js';
 
 export interface FolderRowProps {
   row: VisibleNode;
@@ -94,8 +94,11 @@ export function FolderRow({
         onMove(event.key === 'ArrowUp' ? -1 : 1);
       }}
       onContextMenu={(event) => {
+        // A config-file group is not a Muxus folder and has nothing to offer, so
+        // it lets the panel's own menu answer instead.
         if (!onMenu) return;
         event.preventDefault();
+        event.stopPropagation();
         onMenu(event.currentTarget, { top: event.clientY, left: event.clientX });
       }}
       sx={[
@@ -138,15 +141,7 @@ export function FolderRow({
       <Icon sx={{ fontSize: 16, flexShrink: 0, color: color ?? 'text.secondary' }} />
       <Box
         component="span"
-        sx={{
-          flex: 1,
-          minWidth: 0,
-          fontSize: 13,
-          fontWeight: 500,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
+        sx={{ ...treeLabelSx, flex: 1, minWidth: 0, fontWeight: 550 }}
       >
         {label}
       </Box>

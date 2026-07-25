@@ -401,7 +401,6 @@ function portableMetadata(
   displayName?: string,
 ): PortableHostMetadata {
   return {
-    favorite: metadata.favorite,
     displayName,
     group: metadata.group,
     color: metadata.color,
@@ -527,7 +526,6 @@ async function restoreConnections(
 
 function metadataPatch(metadata: PortableHostMetadata): OpenSshMetadataPatch {
   return {
-    favorite: metadata.favorite,
     displayName: metadata.displayName ?? null,
     group: metadata.group ?? null,
     color: metadata.color ?? null,

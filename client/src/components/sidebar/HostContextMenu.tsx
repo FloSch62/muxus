@@ -12,8 +12,6 @@ import LibraryAddOutlinedIcon from '@mui/icons-material/LibraryAddOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
-import StarIcon from '@mui/icons-material/Star';
-import StarBorderIcon from '@mui/icons-material/StarBorder';
 import { copyToClipboard } from '../../clipboard.js';
 import { managedHostCopyCommand, type ManagedHost } from '../../managed-hosts.js';
 import {
@@ -41,7 +39,6 @@ export function HostContextMenu({
   canMoveUp,
   canMoveDown,
   onMove,
-  onToggleFavorite,
   onDelete,
   onMoveToFolder,
 }: {
@@ -50,14 +47,12 @@ export function HostContextMenu({
   canMoveUp: boolean;
   canMoveDown: boolean;
   onMove: (delta: -1 | 1) => void;
-  onToggleFavorite: (host: ManagedHost) => void;
   onDelete: (host: ManagedHost) => void;
   onMoveToFolder: (host: ManagedHost) => void;
 }) {
   const setHostEditor = useUiStore((s) => s.setHostEditor);
   const setHostOrganizer = useUiStore((s) => s.setHostOrganizer);
   const copyAction = menu ? managedHostCopyCommand(menu.host) : undefined;
-  const favorite = menu?.host.entry.metadata?.favorite ?? false;
 
   /** Every item closes the menu, so each handler is wrapped once here. */
   const run = (action: (host: ManagedHost) => void) => () => {
@@ -92,12 +87,6 @@ export function HostContextMenu({
           <OpenInNewOutlinedIcon fontSize="small" />
         </ListItemIcon>
         Open in new window
-      </MenuItem>
-      <MenuItem onClick={run(onToggleFavorite)}>
-        <ListItemIcon>
-          {favorite ? <StarIcon fontSize="small" /> : <StarBorderIcon fontSize="small" />}
-        </ListItemIcon>
-        {favorite ? 'Remove from favorites' : 'Add to favorites'}
       </MenuItem>
       <MenuItem disabled={!canMoveUp} onClick={run(() => onMove(-1))}>
         <ListItemIcon>

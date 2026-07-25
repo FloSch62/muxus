@@ -15,6 +15,8 @@ import type { LiveCounts } from './useLiveHostCounts.js';
 
 export interface HostTreeProps {
   tree: HostTreeModel;
+  /** Host the search box would connect on Enter, marked so it can be seen. */
+  matchKey?: string;
   isExpanded: (key: string) => boolean;
   setExpanded: (key: string, expanded: boolean) => void;
   folderColor: (key: string) => string | undefined;
@@ -67,6 +69,7 @@ export interface TreeDndBinding {
  */
 export function HostTree({
   tree,
+  matchKey,
   isExpanded,
   setExpanded,
   folderColor,
@@ -128,6 +131,14 @@ export function HostTree({
     );
   }, [nodes]);
 
+  // Scrolling only — focus belongs to the search box the query is being typed
+  // into, and taking it would end the search. The rows are a dependency because
+  // the winner is scored a keystroke before the filtered tree catches up, so
+  // the row to scroll to often does not exist yet on the first run.
+  useEffect(() => {
+    if (matchKey) refs.current.get(matchKey)?.scrollIntoView({ block: 'nearest' });
+  }, [matchKey, nodes]);
+
   const focusKey = useCallback((key: string) => {
     setFocusedKey(key);
     const element = refs.current.get(key);
@@ -184,6 +195,7 @@ export function HostTree({
               host={host}
               live={liveByKey.get(row.key)}
               focused={focused}
+              match={row.key === matchKey}
               onConnect={() => onConnect(host)}
               onMenu={onHostMenu}
               onMove={(delta) => onMoveHost(row, delta)}
