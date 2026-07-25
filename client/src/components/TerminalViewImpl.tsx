@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
 import Divider from '@mui/material/Divider';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
@@ -9,7 +8,6 @@ import ListItemText from '@mui/material/ListItemText';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import Paper from '@mui/material/Paper';
-import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import ToggleButton from '@mui/material/ToggleButton';
 import Tooltip from '@mui/material/Tooltip';
@@ -57,6 +55,15 @@ import { requiresPasteConfirmation } from '../terminal/paste-safety.js';
 import { AuthPromptDialog, type AuthPromptRequest } from './AuthPromptDialog.js';
 import { HostKeyDialog, type HostKeyRequest } from './HostKeyDialog.js';
 import { PasteConfirmDialog } from './PasteConfirmDialog.js';
+import {
+  CONNECTION_INTERRUPTION_GRACE_MS,
+  connectionFailureReason,
+  reattachCommand,
+  shouldDelayConnectionLost,
+  shouldWaitForTerminalOutput,
+  terminalNotice,
+  type TerminalExitMessage,
+} from '../connection-recovery.js';
 
 const SEARCH_DECORATIONS: ISearchOptions['decorations'] = {
   matchBackground: '#594b24',
@@ -67,8 +74,12 @@ const SEARCH_DECORATIONS: ISearchOptions['decorations'] = {
 
 const MIN_FONT_SIZE = 6;
 const MAX_FONT_SIZE = 40;
+/** Type-ahead held for a session that has not finished connecting. */
+const PENDING_INPUT_LIMIT = 64 * 1024;
 const ACTIVE_IMAGE_STORAGE_MB = 64;
 const BACKGROUND_IMAGE_STORAGE_MB = 16;
+/** Quiet period a container size has to hold before the terminal refits. */
+const RESIZE_SETTLE_MS = 90;
 
 /** Plain-text contents of scrollback + screen, trailing blank rows trimmed. */
 function bufferText(term: Terminal): string {
@@ -105,13 +116,12 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const [searchRegex, setSearchRegex] = useState(false);
   const [searchResult, setSearchResult] = useState({ resultIndex: -1, resultCount: 0 });
   const [ctxMenu, setCtxMenu] = useState<{ top: number; left: number; hasSelection: boolean } | null>(null);
-  const [generation, setGeneration] = useState(tab.connectOnMount ? 0 : -1);
+  const [generation, setGeneration] = useState(tab.connectOnMount ? 1 : 0);
   const reconnectRequest = useTabsStore(
     (s) => s.tabs.find((candidate) => candidate.id === tab.id)?.reconnectRequest ?? 0,
   );
   const lastReconnectRequestRef = useRef(reconnectRequest);
   const updateTab = useTabsStore((s) => s.update);
-  const status = useTabsStore((s) => s.tabs.find((t) => t.id === tab.id)?.status);
   const searchRequest = useTabsStore(
     (s) => s.tabs.find((candidate) => candidate.id === tab.id)?.searchRequest ?? 0,
   );
@@ -216,14 +226,16 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   useEffect(() => {
     if (reconnectRequest === lastReconnectRequestRef.current) return;
     lastReconnectRequestRef.current = reconnectRequest;
-    setGeneration((current) => (current < 0 ? 0 : current + 1));
+    setGeneration((current) => current + 1);
   }, [reconnectRequest]);
 
   useEffect(() => {
-    if (generation < 0) return;
     const el = containerRef.current;
     if (!el) return;
-    updateTab(tab.id, { status: 'connecting' });
+    const shouldConnect = generation > 0;
+    if (shouldConnect) {
+      updateTab(tab.id, { status: 'connecting', connId: undefined });
+    }
 
     const prefs = usePrefsStore.getState();
     const term = new Terminal({
@@ -290,10 +302,32 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       .catch(() => undefined);
 
     const encoder = new TextEncoder();
+    let ready = false;
+    // The server ignores input until the session exists, so keystrokes typed
+    // into a pane that is still connecting wait here and go out the moment it
+    // is ready — the type-ahead every real terminal gives you, which matters
+    // most right after a split.
+    let pendingInput: Uint8Array<ArrayBuffer>[] = [];
+    let pendingInputBytes = 0;
+    const flushPendingInput = () => {
+      const socket = wsRef.current;
+      if (!socket || socket.readyState !== WebSocket.OPEN) return;
+      for (const chunk of pendingInput) socket.send(chunk);
+      pendingInput = [];
+      pendingInputBytes = 0;
+    };
     const sendInput = (data: string | Uint8Array<ArrayBuffer>): boolean => {
       const socket = wsRef.current;
-      if (!socket || socket.readyState !== WebSocket.OPEN) return false;
-      socket.send(typeof data === 'string' ? encoder.encode(data) : data);
+      if (!socket || socket.readyState > WebSocket.OPEN) return false;
+      const bytes = typeof data === 'string' ? encoder.encode(data) : data;
+      if (ready && socket.readyState === WebSocket.OPEN) {
+        socket.send(bytes);
+        return true;
+      }
+      if (pendingInputBytes + bytes.length <= PENDING_INPUT_LIMIT) {
+        pendingInput.push(bytes);
+        pendingInputBytes += bytes.length;
+      }
       return true;
     };
 
@@ -343,131 +377,249 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
 
     const commandTracker = attachCommandTracker(term);
 
-    term.attachCustomKeyEventHandler((ev) => {
-      // Ctrl+Shift chords stay ours (kitty reserves ctrl+shift for the terminal).
-      if (ev.type === 'keydown' && (ev.ctrlKey || ev.metaKey) && ev.shiftKey && !ev.altKey) {
-        if (ev.code === 'KeyC' && term.hasSelection()) {
-          void copyToClipboard(term.getSelection());
-          return false;
-        }
-        if (ev.code === 'KeyV') {
-          void readFromClipboard().then((text) => {
-            if (text) pasteText(text);
-          });
-          return false;
-        }
-        if (ev.code === 'KeyF') {
-          setSearchOpen(true);
-          return false;
-        }
-        if (ev.code === 'KeyA') {
-          term.selectAll();
-          return false;
-        }
-        if (ev.code === 'KeyK') {
-          term.clear();
-          return false;
-        }
-        if (ev.code === 'Equal' || ev.code === 'Minus' || ev.code === 'Digit0') {
-          applyZoom(ev.code === 'Equal' ? 'in' : ev.code === 'Minus' ? 'out' : 'reset');
-          return false;
-        }
-        if (ev.code === 'KeyT') return true; // bubbles to the app shortcut
-      }
-      // Tab cycling works while the terminal has focus.
-      if (ev.type === 'keydown' && ev.ctrlKey && !ev.shiftKey && !ev.altKey && !ev.metaKey && (ev.code === 'PageUp' || ev.code === 'PageDown')) {
-        return true; // bubbles to the app shortcut
-      }
-      return true;
-    });
-
+    // Application chords never reach xterm: the shortcut layer consumes them
+    // in the capture phase, and anything it declines is encoded for the shell
+    // (kitty keyboard protocol included) exactly as if Muxus had no bindings.
     const onSelection = term.onSelectionChange(() => {
       if (usePrefsStore.getState().copyOnSelect && term.hasSelection()) void copyToClipboard(term.getSelection());
     });
 
-    const ws = new WebSocket(wsUrl('/ws/terminal'), wsProtocols());
-    wsRef.current = ws;
-    ws.binaryType = 'arraybuffer';
+    let ws: WebSocket | undefined;
+    let socketFailed = false;
+    let exitMessage: TerminalExitMessage | undefined;
+    let interruptionTimer: ReturnType<typeof setTimeout> | undefined;
+    let receivedTerminalOutput = false;
+    let waitingForTerminalOutput = false;
+    let transportSuspect = false;
+    let transientStatusVisible = false;
+    const clearTransientStatus = () => {
+      if (!transientStatusVisible) return;
+      transientStatusVisible = false;
+      term.write('\r\x1b[2K');
+    };
 
-    ws.onopen = () => {
-      ws.send(JSON.stringify({
-        op: 'connect',
-        profile: tab.profile,
-        title: tab.title,
-        cols: term.cols,
-        rows: term.rows,
-      }));
-    };
-    ws.onmessage = (ev) => {
-      if (ev.data instanceof ArrayBuffer) {
-        term.write(new Uint8Array(ev.data));
-        return;
-      }
-      if (typeof ev.data !== 'string') return;
-      let ctl: TerminalServerMessage;
-      try {
-        ctl = JSON.parse(ev.data) as TerminalServerMessage;
-      } catch {
-        term.write(ev.data);
-        return;
-      }
-      switch (ctl.op) {
-        case 'status':
-          term.write(`\x1b[90m${ctl.message}\x1b[0m\r\n`);
-          break;
-        case 'auth-prompt':
-          setAuthPrompt({ name: ctl.name, instructions: ctl.instructions, host: ctl.host, prompts: ctl.prompts });
-          break;
-        case 'host-key':
-          setHostKey(ctl);
-          break;
-        case 'ready':
+    if (shouldConnect) {
+      ws = new WebSocket(wsUrl('/ws/terminal'), wsProtocols());
+      wsRef.current = ws;
+      ws.binaryType = 'arraybuffer';
+      ws.onopen = () => {
+        ws?.send(JSON.stringify({
+          op: 'connect',
+          profile: tab.profile,
+          title: tab.title,
+          cols: term.cols,
+          rows: term.rows,
+        }));
+      };
+      ws.onmessage = (ev) => {
+        if (ev.data instanceof ArrayBuffer) {
+          clearTransientStatus();
+          receivedTerminalOutput = true;
+          if (waitingForTerminalOutput) {
+            waitingForTerminalOutput = false;
+            if (!transportSuspect) {
+              updateTab(tab.id, {
+                status: 'connected',
+                failureReason: undefined,
+                disconnectReason: undefined,
+              });
+            }
+          }
+          term.write(new Uint8Array(ev.data));
+          return;
+        }
+        if (typeof ev.data !== 'string') return;
+        let ctl: TerminalServerMessage;
+        try {
+          ctl = JSON.parse(ev.data) as TerminalServerMessage;
+        } catch {
+          term.write(ev.data);
+          return;
+        }
+        switch (ctl.op) {
+          case 'status': {
+            if (!ready && !transportSuspect) {
+              updateTab(tab.id, {
+                status: 'connecting',
+                connId: undefined,
+                failureReason: undefined,
+                disconnectReason: undefined,
+              });
+            }
+            clearTransientStatus();
+            if (ctl.transient) {
+              const message = terminalNotice(ctl.message).slice(
+                0,
+                Math.max(1, term.cols - 1),
+              );
+              term.write(`\r\x1b[90m${message}\x1b[0m`);
+              transientStatusVisible = true;
+            } else {
+              term.write(`\x1b[90m${ctl.message}\x1b[0m\r\n`);
+            }
+            break;
+          }
+          case 'connection-health':
+            transportSuspect = ctl.state === 'suspect';
+            if (transportSuspect) {
+              updateTab(tab.id, {
+                status: 'interrupted',
+                failureReason: 'The SSH transport is not responding.',
+                disconnectReason: undefined,
+              });
+            } else if (ready) {
+              updateTab(tab.id, {
+                status: waitingForTerminalOutput ? 'connecting' : 'connected',
+                failureReason: undefined,
+                disconnectReason: undefined,
+              });
+            }
+            break;
+          case 'auth-prompt':
+            setAuthPrompt({ name: ctl.name, instructions: ctl.instructions, host: ctl.host, prompts: ctl.prompts });
+            break;
+          case 'host-key':
+            setHostKey(ctl);
+            break;
+          case 'ready': {
+            ready = true;
+            clearTransientStatus();
+            waitingForTerminalOutput = shouldWaitForTerminalOutput(
+              tab.profile.kind,
+              receivedTerminalOutput,
+            );
+            updateTab(tab.id, {
+              status: transportSuspect
+                ? 'interrupted'
+                : waitingForTerminalOutput
+                  ? 'connecting'
+                  : 'connected',
+              failureReason: undefined,
+              disconnectReason: undefined,
+              // Only SSH transport IDs are valid SFTP/forwarding lease keys.
+              connId: tab.profile.kind === 'ssh' ? ctl.connId : undefined,
+            });
+            const current = useTabsStore
+              .getState()
+              .tabs.find((candidate) => candidate.id === tab.id);
+            if (current?.profile?.kind === 'ssh' && current.reconnectMode) {
+              ws?.send(encoder.encode(reattachCommand(current.reconnectMode)));
+            }
+            flushPendingInput();
+            break;
+          }
+          case 'logging-state':
+            updateTab(tab.id, {
+              loggingEnabled: ctl.enabled,
+              sessionLogId: ctl.sessionId,
+              loggingWarning: ctl.warning,
+              loggingPaused: ctl.paused,
+              captureInput: ctl.captureInput,
+            });
+            if (ctl.warning) showToast('warning', ctl.warning);
+            break;
+          case 'exit':
+            exitMessage = ctl;
+            break;
+        }
+      };
+      ws.onerror = () => {
+        socketFailed = true;
+      };
+      ws.onclose = (event) => {
+        clearTransientStatus();
+        const reason =
+          socketFailed && !ready && !exitMessage
+            ? 'Could not reach the Muxus backend.'
+            : connectionFailureReason(exitMessage, event);
+        const reasonKind = exitMessage?.reason ?? (ready ? 'disconnected' : 'failed');
+        setAuthPrompt(null);
+        setHostKey(null);
+
+        const showFinalState = () => {
+          term.write(
+            `\r\n\x1b[${reasonKind === 'completed' ? '33' : '31'}m[${
+              reasonKind === 'completed' ? 'session ended' : 'connection lost'
+            }: ${terminalNotice(reason)}]\x1b[0m\r\n`,
+          );
+          term.write('\x1b[1;36mPress any key to reconnect\x1b[0m\r\n');
           updateTab(tab.id, {
-            status: 'connected',
-            // Only SSH transport IDs are valid SFTP/forwarding lease keys.
-            connId: tab.profile.kind === 'ssh' ? ctl.connId : undefined,
+            status: 'closed',
+            connId: undefined,
+            failureReason: reason,
+            disconnectReason: reasonKind,
           });
-          break;
-        case 'logging-state':
-          updateTab(tab.id, {
-            loggingEnabled: ctl.enabled,
-            sessionLogId: ctl.sessionId,
-            loggingWarning: ctl.warning,
-            loggingPaused: ctl.paused,
-            captureInput: ctl.captureInput,
-          });
-          if (ctl.warning) showToast('warning', ctl.warning);
-          break;
-        case 'exit':
-          term.write(`\r\n\x1b[33m[session ended${ctl.message ? `: ${ctl.message}` : ''}]\x1b[0m\r\n`);
-          break;
-      }
-    };
-    ws.onclose = () => {
-      term.write('\r\n\x1b[90m[disconnected]\x1b[0m\r\n');
-      setAuthPrompt(null);
-      setHostKey(null);
-      updateTab(tab.id, { status: 'closed', connId: undefined });
+        };
+
+        if (!shouldDelayConnectionLost(exitMessage, ready)) {
+          showFinalState();
+          return;
+        }
+
+        updateTab(tab.id, {
+          status: 'interrupted',
+          connId: undefined,
+          failureReason: reason,
+          disconnectReason: reasonKind,
+        });
+        interruptionTimer = setTimeout(() => {
+          const current = useTabsStore
+            .getState()
+            .tabs.find((candidate) => candidate.id === tab.id);
+          if (current?.status !== 'interrupted') return;
+          showFinalState();
+        }, CONNECTION_INTERRUPTION_GRACE_MS);
+      };
+    } else {
+      term.write('\x1b[90m[restored session]\x1b[0m\r\n');
+      term.write('\x1b[1;36mPress any key to reconnect\x1b[0m\r\n');
+    }
+
+    const reconnectFromTerminalInput = (): boolean => {
+      const state = useTabsStore.getState();
+      const current = state.tabs.find((candidate) => candidate.id === tab.id);
+      if (!current?.profile || current.status !== 'closed') return false;
+      state.reconnect(
+        [tab.id],
+        current.reconnectMode ? { reattach: current.reconnectMode } : undefined,
+      );
+      return true;
     };
 
     const onData = term.onData((data) => {
       if (sendInput(data)) broadcastTerminalInput(tab.id, data);
+      else reconnectFromTerminalInput();
     });
     const onBinary = term.onBinary((data) => {
-      if (ws.readyState !== WebSocket.OPEN) return;
       const bytes = new Uint8Array(data.length);
       for (let i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i) & 0xff;
-      ws.send(bytes);
-      broadcastTerminalInput(tab.id, bytes);
+      if (sendInput(bytes)) broadcastTerminalInput(tab.id, bytes);
+      else reconnectFromTerminalInput();
     });
     const onResize = term.onResize(({ cols, rows }) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ op: 'resize', cols, rows }));
+      const socket = wsRef.current;
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ op: 'resize', cols, rows }));
+      }
     });
 
-    const observer = new ResizeObserver(() => fit.fit());
+    // Dragging a side panel — and the open/close transitions of those panels —
+    // change our width on every animation frame. Fitting each frame reflows the
+    // buffer and SIGWINCHes the remote shell dozens of times per drag, and the
+    // shell repaints its prompt at every intermediate width, which leaves
+    // redraw debris in the scrollback. Fit once the width holds still instead.
+    let fitTimer: ReturnType<typeof setTimeout> | undefined;
+    const observer = new ResizeObserver(() => {
+      if (fitTimer !== undefined) clearTimeout(fitTimer);
+      fitTimer = setTimeout(() => {
+        fitTimer = undefined;
+        fit.fit();
+      }, RESIZE_SETTLE_MS);
+    });
     observer.observe(el);
 
     return () => {
+      if (fitTimer !== undefined) clearTimeout(fitTimer);
       observer.disconnect();
       unregister();
       el.removeEventListener('paste', onNativePaste, true);
@@ -479,11 +631,14 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       onSearchResults.dispose();
       commandTracker.dispose();
       keywordHighlighterRef.current?.dispose();
-      ws.onopen = null;
-      ws.onmessage = null;
-      ws.onclose = null;
-      ws.onerror = null;
-      ws.close();
+      if (interruptionTimer !== undefined) clearTimeout(interruptionTimer);
+      if (ws) {
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onclose = null;
+        ws.onerror = null;
+        ws.close();
+      }
       term.dispose();
       searchRef.current = null;
       serializeRef.current = null;
@@ -587,33 +742,6 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           '& .xterm .xterm-viewport': { backgroundColor: 'transparent' },
         }}
       />
-      {status === 'closed' && (
-        <Stack
-          spacing={1.5}
-          sx={{
-            position: 'absolute',
-            top: theme.spacing(0.75),
-            right: theme.spacing(1),
-            bottom: theme.spacing(1),
-            left: theme.spacing(1),
-            alignItems: 'center',
-            justifyContent: 'center',
-            bgcolor: 'rgba(22, 22, 30, 0.72)',
-            borderRadius: 1,
-          }}
-        >
-          <Typography variant="body2" sx={{ color: '#c8ccd8' }}>
-            Session ended
-          </Typography>
-          <Button
-            variant="contained"
-            size="small"
-            onClick={() => setGeneration((current) => (current < 0 ? 0 : current + 1))}
-          >
-            Reconnect
-          </Button>
-        </Stack>
-      )}
       {searchOpen && (
         <Paper
           elevation={8}

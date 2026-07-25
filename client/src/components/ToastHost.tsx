@@ -22,15 +22,17 @@ export function ToastHost() {
   }, [toast?.id]);
 
   const copyable = !!toast && (toast.severity === 'error' || toast.severity === 'warning');
+  // Errors carry Details/Copy actions, so they wait to be dismissed rather
+  // than vanishing while they are being read.
+  const sticky = toast?.severity === 'error' || expanded;
   const copyText = toast ? [toast.message, toast.details].filter(Boolean).join('\n\n') : '';
   return (
     <Snackbar
       key={toast?.id}
       open={!!toast}
-      // Reading expanded details must not race the auto-hide timer.
-      autoHideDuration={expanded ? null : 5000}
+      autoHideDuration={sticky ? null : 5000}
       onClose={(_e, reason) => {
-        if (reason === 'clickaway' && expanded) return;
+        if (reason === 'clickaway' && sticky) return;
         dismiss();
       }}
       anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}

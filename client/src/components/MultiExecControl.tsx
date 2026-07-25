@@ -42,17 +42,24 @@ export function MultiExecControl() {
     () => tabs.filter((tab) => tab.profile && tab.status === 'connected'),
     [tabs],
   );
-  const connectedIds = useMemo(() => connectedTabs.map((tab) => tab.id), [connectedTabs]);
+  // Any tab change (a title, a status) rebuilds the array, so key the id list
+  // on its contents: reconciling then runs only when the ids really change.
+  const connectedKey = connectedTabs.map((tab) => tab.id).join(',');
+  const connectedIds = useMemo(
+    () => (connectedKey ? connectedKey.split(',') : []),
+    [connectedKey],
+  );
   useEffect(() => {
     reconcile(connectedIds);
   }, [connectedIds, reconcile]);
 
   const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const connected = useMemo(() => new Set(connectedIds), [connectedIds]);
   const active = selectedIds.length >= 2;
   const visibleIds = new Set(
     flattenPaneLayout(root).panes
       .map(({ pane }) => pane.activeTabId)
-      .filter((id): id is string => !!id && connectedIds.includes(id)),
+      .filter((id): id is string => !!id && connected.has(id)),
   );
   const currentPaneIds = connectedTabs
     .filter((tab) => tab.paneId === activePaneId)
@@ -110,7 +117,7 @@ export function MultiExecControl() {
             </Typography>
             <List dense disablePadding sx={{ maxHeight: 140, overflowY: 'auto', pb: 0.5 }}>
               {groups.map((group) => {
-                const connectedCount = group.tabIds.filter((id) => connectedIds.includes(id)).length;
+                const connectedCount = group.tabIds.filter((id) => connected.has(id)).length;
                 return (
                   <ListItemButton
                     key={group.id}

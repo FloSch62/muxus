@@ -41,7 +41,7 @@ import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import { useForwards } from '../api/queries.js';
 import { copyToClipboard } from '../clipboard.js';
 import { layout } from '../theme.js';
-import { HOTKEY_MOD_LABEL } from '../platform.js';
+import { useChordLabel } from '../keymap/hints.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { showToast } from '../state/toast.js';
 import { usePrefsStore } from '../state/prefs.js';
@@ -49,6 +49,7 @@ import { useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
 import { useWorkspacesStore } from '../state/workspaces.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
+import { ChordHint, withChord } from '../components/ChordHint.js';
 import { MultiExecControl } from '../components/MultiExecControl.js';
 import {
   loadCommandButtonsDialog,
@@ -82,6 +83,13 @@ export const TopBar = memo(function TopBar() {
   const sshReady = !!activeTab?.connId;
   const terminalReady = !!activeTab?.profile;
   const [terminalMenu, setTerminalMenu] = useState<HTMLElement | null>(null);
+  const sidebarChord = useChordLabel('app.sidebar');
+  const findChord = useChordLabel('terminal.find');
+  const selectAllChord = useChordLabel('terminal.select-all');
+  const clearChord = useChordLabel('terminal.clear');
+  const zoomInChord = useChordLabel('terminal.zoom-in');
+  const zoomOutChord = useChordLabel('terminal.zoom-out');
+  const zoomResetChord = useChordLabel('terminal.zoom-reset');
   // Re-render hook so the zoom percentage in the open menu stays current.
   const [, setZoomTick] = useState(0);
 
@@ -111,8 +119,8 @@ export const TopBar = memo(function TopBar() {
           },
         }}
       >
-        <Tooltip title={`Toggle sessions (${HOTKEY_MOD_LABEL}B)`}>
-          <IconButton size="small" aria-label="Toggle sessions" onClick={() => setPrefs({ sidebarCollapsed: !sidebarCollapsed })} sx={{ mr: 0.5 }}>
+        <Tooltip title={withChord(sidebarCollapsed ? 'Show hosts' : 'Hide hosts', sidebarChord)}>
+          <IconButton size="small" aria-label="Toggle hosts sidebar" onClick={() => setPrefs({ sidebarCollapsed: !sidebarCollapsed })} sx={{ mr: 0.5 }}>
             <MenuIcon fontSize="small" />
           </IconButton>
         </Tooltip>
@@ -150,7 +158,7 @@ export const TopBar = memo(function TopBar() {
           </IconButton>
         </Tooltip>
         {sshReady && (
-          <Tooltip title={activeTab.sftpOpen ? 'Hide file browser' : 'Browse files (SFTP)'}>
+          <Tooltip title={activeTab.sftpOpen ? 'Hide file browser' : 'Show file browser (SFTP)'}>
             <IconButton
               size="small"
               aria-label="Toggle file browser"
@@ -235,7 +243,7 @@ export const TopBar = memo(function TopBar() {
             <SearchOutlinedIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>Find</ListItemText>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 3 }}>{`${HOTKEY_MOD_LABEL}Shift+F`}</Typography>
+          <ChordHint chord={findChord} />
         </MenuItem>
         <MenuItem
           onClick={() => {
@@ -247,7 +255,7 @@ export const TopBar = memo(function TopBar() {
             <SelectAllIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>Select all</ListItemText>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 3 }}>{`${HOTKEY_MOD_LABEL}Shift+A`}</Typography>
+          <ChordHint chord={selectAllChord} />
         </MenuItem>
         <MenuItem
           onClick={() => {
@@ -367,7 +375,7 @@ export const TopBar = memo(function TopBar() {
             <DeleteSweepOutlinedIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>Clear scrollback</ListItemText>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 3 }}>{`${HOTKEY_MOD_LABEL}Shift+K`}</Typography>
+          <ChordHint chord={clearChord} />
         </MenuItem>
         <Divider />
         <MenuItem
@@ -380,7 +388,7 @@ export const TopBar = memo(function TopBar() {
             <ZoomInIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>Zoom in</ListItemText>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 3 }}>{`${HOTKEY_MOD_LABEL}Shift++`}</Typography>
+          <ChordHint chord={zoomInChord} />
         </MenuItem>
         <MenuItem
           onClick={() => {
@@ -392,7 +400,7 @@ export const TopBar = memo(function TopBar() {
             <ZoomOutIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>Zoom out</ListItemText>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 3 }}>{`${HOTKEY_MOD_LABEL}Shift+-`}</Typography>
+          <ChordHint chord={zoomOutChord} />
         </MenuItem>
         <MenuItem
           onClick={() => {
@@ -402,7 +410,7 @@ export const TopBar = memo(function TopBar() {
         >
           <ListItemIcon sx={{ fontSize: 12 }}>{`${handle()?.zoomPercent() ?? 100}%`}</ListItemIcon>
           <ListItemText>Reset zoom</ListItemText>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 3 }}>{`${HOTKEY_MOD_LABEL}Shift+0`}</Typography>
+          <ChordHint chord={zoomResetChord} />
         </MenuItem>
       </Menu>
     </AppBar>

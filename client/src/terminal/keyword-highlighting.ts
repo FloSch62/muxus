@@ -9,8 +9,11 @@ export interface KeywordMatch {
 
 const MAX_DECORATIONS = 500;
 
+// Tested once per candidate match boundary while highlighting a frame.
+const WORD_CHARACTER = /[A-Za-z0-9_]/;
+
 function isWordCharacter(value: string | undefined): boolean {
-  return value !== undefined && /[A-Za-z0-9_]/.test(value);
+  return value !== undefined && WORD_CHARACTER.test(value);
 }
 
 /** Find literal keyword matches in rule order, including overlapping rules. */

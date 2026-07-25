@@ -14,6 +14,10 @@ export interface HostDraft {
   /** Space-separated aliases for the Host line (usually one). */
   aliasText: string;
   description: string;
+  /** Muxus-only presentation metadata, saved alongside the block. */
+  displayName: string;
+  group: string;
+  color?: string;
   /** Target config file; '' keeps the block's file (or the root for new hosts). */
   file: string;
   hostname: string;
@@ -37,6 +41,9 @@ export function blankDraft(prefillTarget = ''): HostDraft {
   return {
     aliasText: prefillTarget,
     description: '',
+    displayName: '',
+    group: '',
+    color: undefined,
     file: '',
     hostname: '',
     user: '',
@@ -62,6 +69,9 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
   return {
     aliasText: duplicate ? `${entry.alias}-copy` : entry.aliases.join(' '),
     description: entry.description ?? '',
+    displayName: duplicate ? '' : (entry.metadata?.displayName ?? ''),
+    group: entry.metadata?.group ?? '',
+    color: entry.metadata?.color,
     file: entry.file,
     hostname: o.hostname ?? '',
     user: o.user ?? '',

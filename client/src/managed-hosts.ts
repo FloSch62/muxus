@@ -3,10 +3,12 @@ import {
   groupHosts,
   hostAddress,
   hostDisplayName,
+  matchesNormalized,
   type HostGroup,
 } from './host-organization.js';
 import {
   filterSavedHosts,
+  matchesSavedHost,
   savedHostAddress,
   savedHostDisplayName,
 } from './saved-hosts.js';
@@ -98,6 +100,22 @@ export function groupManagedHosts(
     .sort((a, b) => a.label.localeCompare(b.label));
   const fileGroups = groups.filter((group) => group.kind === 'file');
   return [...customGroups, ...fileGroups];
+}
+
+/**
+ * Whether a filter would leave any host standing. Answering this without
+ * grouping and sorting keeps quick-connect responsive on every keystroke.
+ */
+export function anyManagedHostMatches(
+  sshHosts: readonly SshHostEntry[],
+  savedProfiles: readonly SavedHostProfile[],
+  filter: string,
+): boolean {
+  const needle = filter.trim().toLowerCase();
+  return (
+    sshHosts.some((host) => matchesNormalized(host, needle)) ||
+    savedProfiles.some((profile) => matchesSavedHost(profile, needle))
+  );
 }
 
 /** Every Muxus group label in use, across both host sources, for pickers. */

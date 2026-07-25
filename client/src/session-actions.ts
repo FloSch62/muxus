@@ -9,8 +9,8 @@ import { savedHostDisplayName } from './saved-hosts.js';
 import { usePrefsStore } from './state/prefs.js';
 import { useMultiExecStore } from './state/multi-exec.js';
 import { useTabsStore } from './state/tabs.js';
-import type { SessionSetLayout } from './state/tabs.js';
-import { useUiStore } from './state/ui.js';
+import type { PaneDirection, SessionSetLayout } from './state/tabs.js';
+import { confirmAction } from './state/dialogs.js';
 import { confirmDiscardRemoteEditors } from './editor/remote-editor-registry.js';
 import { findPane } from './state/workspace-layout.js';
 import { openAppWindow } from './window-management.js';
@@ -79,12 +79,12 @@ export function connectManagedHost(host: ManagedHost, replaceTabId?: string): st
 }
 
 /** Replace the current canvas with every host in a sidebar group. */
-export function launchManagedHostGroup(
+export async function launchManagedHostGroup(
   hosts: readonly ManagedHost[],
   layout: SessionSetLayout,
-): string[] {
+): Promise<string[]> {
   const currentTabIds = useTabsStore.getState().tabs.map((tab) => tab.id);
-  if (!confirmDiscardRemoteEditors(currentTabIds)) return [];
+  if (!(await confirmDiscardRemoteEditors(currentTabIds))) return [];
   const ids = useTabsStore.getState().launchSet(
     hosts.map((host) =>
       host.kind === 'ssh'
@@ -106,9 +106,53 @@ export function launchManagedHostGroup(
 }
 
 /** Duplicate an open tab (same profile, fresh session). */
-export function duplicateTab(tabId: string): void {
+export function duplicateTab(tabId: string): boolean {
   const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId);
-  if (tab?.profile) useTabsStore.getState().open(tab.profile, tab.title);
+  if (!tab?.profile) return false;
+  const id = useTabsStore.getState().open(tab.profile, tab.title);
+  if (tab.color) useTabsStore.getState().update(id, { color: tab.color });
+  return true;
+}
+
+/**
+ * Serial consoles own the device exclusively, so a second session on the same
+ * port would only fail; everything else can be dialed again.
+ */
+function canReopen(profile: SessionProfile): boolean {
+  return profile.kind !== 'serial';
+}
+
+/**
+ * Split the focused pane and, unless the user opted out, carry the current
+ * session into it — the tmux reflex of "same box, one more pane". Panes with
+ * nothing to copy open the session chooser instead.
+ */
+export function splitActivePane(direction: PaneDirection): boolean {
+  const state = useTabsStore.getState();
+  const source = state.tabs.find((tab) => tab.id === state.activeId);
+  const paneId = state.activePaneId;
+  if (!state.split(paneId, direction)) return false;
+  if (
+    usePrefsStore.getState().splitInheritsSession &&
+    source?.profile &&
+    canReopen(source.profile)
+  ) {
+    const id = useTabsStore.getState().open(source.profile, source.title);
+    if (source.color) useTabsStore.getState().update(id, { color: source.color });
+  }
+  return true;
+}
+
+/** Close the focused pane, or the tab when the canvas has a single pane. */
+export function requestCloseActivePane(): boolean {
+  const { root, activePaneId, activeId } = useTabsStore.getState();
+  if (root.type === 'pane') {
+    if (!activeId) return false;
+    void requestCloseTabs([activeId]);
+    return true;
+  }
+  void requestClosePane(activePaneId);
+  return true;
 }
 
 /** Open the tab's profile as a fresh session in a separate app window. */
@@ -148,20 +192,46 @@ export function openManagedHostInNewWindow(host: ManagedHost): void {
 }
 
 /**
- * Close tabs, routing through a confirmation dialog when any of them still
- * has a live session (pref-gated). The dialog in AppShell performs the
- * actual close on confirm.
+ * The pref-gated "this ends a live session" question, shared by tab and pane
+ * closes. Returns false when the user backs out.
  */
-export function requestCloseTabs(tabIds: string[]): void {
-  const { tabs, close } = useTabsStore.getState();
-  const targets = tabIds.filter((id) => tabs.some((tab) => tab.id === id));
+async function confirmEndingLiveSessions(
+  targets: string[],
+  title: string,
+): Promise<boolean> {
+  const live = useTabsStore
+    .getState()
+    .tabs.filter((tab) => targets.includes(tab.id) && tab.status === 'connected');
+  if (live.length === 0 || !usePrefsStore.getState().confirmCloseConnected) return true;
+  return confirmAction({
+    title,
+    description:
+      live.length === 1
+        ? `“${live[0]!.title}” has a live session — closing ends it.`
+        : `${live.length} tabs have live sessions — closing ends them.`,
+    confirmLabel: 'Close',
+    destructive: true,
+    checkbox: {
+      label: 'Don’t ask again',
+      onChecked: () => usePrefsStore.getState().set({ confirmCloseConnected: false }),
+    },
+  });
+}
+
+/**
+ * Close tabs, asking first when any of them still has unsaved remote files or
+ * a live session (the latter is pref-gated).
+ */
+export async function requestCloseTabs(tabIds: string[]): Promise<void> {
+  const targets = tabIds.filter((id) =>
+    useTabsStore.getState().tabs.some((tab) => tab.id === id),
+  );
   if (targets.length === 0) return;
-  if (!confirmDiscardRemoteEditors(targets)) return;
-  const live = targets.some((id) => tabs.find((tab) => tab.id === id)?.status === 'connected');
-  if (live && usePrefsStore.getState().confirmCloseConnected) {
-    useUiStore.getState().setConfirmClose({ tabIds: targets });
-    return;
-  }
+  if (!(await confirmDiscardRemoteEditors(targets))) return;
+  const title =
+    targets.length === 1 ? 'Close this tab?' : `Close ${targets.length} tabs?`;
+  if (!(await confirmEndingLiveSessions(targets, title))) return;
+  const { close } = useTabsStore.getState();
   for (const id of targets) close(id);
 }
 
@@ -169,17 +239,13 @@ export function requestCloseTabs(tabIds: string[]): void {
  * Close a split pane and every tab it contains. Live sessions use the same
  * preference-gated confirmation as individual tab closes.
  */
-export function requestClosePane(paneId: string): void {
-  const { root, tabs, closePane } = useTabsStore.getState();
+export async function requestClosePane(paneId: string): Promise<void> {
+  const { root, tabs } = useTabsStore.getState();
   if (root.type === 'pane' || !findPane(root, paneId)) return;
   const targets = tabs.filter((tab) => tab.paneId === paneId).map((tab) => tab.id);
-  if (!confirmDiscardRemoteEditors(targets)) return;
-  const live = tabs.some((tab) => tab.paneId === paneId && tab.status === 'connected');
-  if (live && usePrefsStore.getState().confirmCloseConnected) {
-    useUiStore.getState().setConfirmClose({ tabIds: targets, paneId });
-    return;
-  }
-  closePane(paneId);
+  if (!(await confirmDiscardRemoteEditors(targets))) return;
+  if (!(await confirmEndingLiveSessions(targets, 'Close this pane?'))) return;
+  useTabsStore.getState().closePane(paneId);
 }
 
 /**

@@ -2,11 +2,13 @@ import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useState } from 'r
 import CssBaseline from '@mui/material/CssBaseline';
 import { ThemeProvider } from '@mui/material/styles';
 import type { AppWindowLaunch } from '@muxus/shared';
+import { applyInterfaceZoom } from './interface-zoom.js';
 import { buildTheme } from './theme.js';
 import { setTitleBarMode } from './titlebar-overlay.js';
 import { usePrefsStore } from './state/prefs.js';
 import { useUiStore } from './state/ui.js';
 import { AppShell } from './layout/AppShell.js';
+import { DialogHost } from './components/DialogHost.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { ToastHost } from './components/ToastHost.js';
 import { BackendStatusBanner } from './components/BackendStatusBanner.js';
@@ -17,6 +19,7 @@ import {
   loadSettingsDialog,
   loadShortcutsDialog,
   loadSessionHistoryDialog,
+  loadQuickLauncherDialog,
   loadWorkspaceDialog,
 } from './lazy-features.js';
 
@@ -38,6 +41,9 @@ const ShortcutsDialog = lazy(() =>
 const SessionHistoryDialog = lazy(() =>
   loadSessionHistoryDialog().then((module) => ({ default: module.SessionHistoryDialog })),
 );
+const QuickLauncherDialog = lazy(() =>
+  loadQuickLauncherDialog().then((module) => ({ default: module.QuickLauncherDialog })),
+);
 const WorkspaceDialog = lazy(() =>
   loadWorkspaceDialog().then((module) => ({ default: module.WorkspaceDialog })),
 );
@@ -47,12 +53,14 @@ const SftpWindow = lazy(() =>
 
 export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const themeMode = usePrefsStore((s) => s.themeMode);
+  const interfaceZoom = usePrefsStore((s) => s.interfaceZoom);
   const hostEditorOpen = useUiStore((s) => !!s.hostEditor);
   const hostOrganizerOpen = useUiStore((s) => !!s.hostOrganizer);
   const settingsOpen = useUiStore((s) => s.settingsOpen);
   const commandButtonsOpen = useUiStore((s) => s.commandButtonsOpen);
   const shortcutsOpen = useUiStore((s) => s.shortcutsOpen);
   const historyOpen = useUiStore((s) => s.historyOpen);
+  const quickLauncherOpen = useUiStore((s) => s.quickLauncherOpen);
   const workspacesOpen = useUiStore((s) => s.workspacesOpen);
   const [osTheme, setOsTheme] = useState<'light' | 'dark'>(() =>
     window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
@@ -63,6 +71,9 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
     // Keep the desktop app's native window controls in sync with the theme.
     setTitleBarMode(effectiveMode);
   }, [effectiveMode]);
+  useLayoutEffect(() => {
+    applyInterfaceZoom(interfaceZoom);
+  }, [interfaceZoom]);
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const handler = (e: MediaQueryListEvent) => setOsTheme(e.matches ? 'dark' : 'light');
@@ -88,8 +99,10 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
         {commandButtonsOpen ? <CommandButtonsDialog /> : null}
         {shortcutsOpen ? <ShortcutsDialog /> : null}
         {historyOpen ? <SessionHistoryDialog /> : null}
+        {quickLauncherOpen ? <QuickLauncherDialog /> : null}
         {workspacesOpen ? <WorkspaceDialog /> : null}
       </Suspense>
+      <DialogHost />
       <ToastHost />
       <BackendStatusBanner />
     </ThemeProvider>

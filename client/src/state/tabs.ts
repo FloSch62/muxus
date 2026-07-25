@@ -1,17 +1,25 @@
 import { create } from 'zustand';
 import type { SessionProfile, WorkspaceLayoutV1 } from '@muxus/shared';
+import type { ReattachMode } from '../connection-recovery.js';
 import {
+  equalizeSplits,
   findPane,
   firstPane,
+  neighborPaneId,
+  panesInOrder,
+  parentSplit,
+  placesPaneFirst,
   removePane,
   restoreWorkspace as restoreWorkspaceLayout,
+  splitAxis,
   updatePane,
   updateSplitRatio,
+  type PaneDirection,
   type PaneLeaf,
   type PaneNode,
 } from './workspace-layout.js';
 
-export type TabStatus = 'connecting' | 'connected' | 'closed';
+export type TabStatus = 'connecting' | 'connected' | 'interrupted' | 'closed';
 
 interface TabBase {
   id: string;
@@ -36,6 +44,11 @@ interface TabBase {
   captureInput: boolean;
   /** Monotonic signal used to reconnect one or many mounted terminal views. */
   reconnectRequest: number;
+  /** Optional multiplexer to attach after the replacement SSH shell is ready. */
+  reconnectMode?: ReattachMode;
+  /** Most recent connection/end reason, shown without requiring terminal scrollback. */
+  failureReason?: string;
+  disconnectReason?: 'completed' | 'failed' | 'disconnected';
 }
 
 export interface SessionTab extends TabBase {
@@ -64,7 +77,13 @@ type TabUpdate = Partial<{
   loggingWarning: string | undefined;
   loggingPaused: boolean;
   captureInput: boolean;
+  failureReason: string | undefined;
+  disconnectReason: 'completed' | 'failed' | 'disconnected' | undefined;
 }>;
+
+export interface ReconnectOptions {
+  reattach?: ReattachMode;
+}
 
 export interface SessionSetEntry {
   profile: SessionProfile;
@@ -74,11 +93,16 @@ export interface SessionSetEntry {
 
 export type SessionSetLayout = 'tabs' | 'columns' | 'rows' | 'grid';
 
+/** Keyboard resize step, as a fraction of the split's own extent. */
+export const PANE_RESIZE_STEP = 0.04;
+
 interface TabsState {
   tabs: TerminalTab[];
   root: PaneNode;
   activePaneId: string;
   activeId: string | null;
+  /** Pane temporarily filling the canvas; siblings stay mounted underneath. */
+  zoomedPaneId: string | null;
   open: (profile: SessionProfile, title: string) => string;
   openEmpty: () => string;
   replaceEmpty: (id: string, profile: SessionProfile, title: string) => boolean;
@@ -86,9 +110,25 @@ interface TabsState {
   activate: (id: string) => void;
   focusPane: (paneId: string) => void;
   cycle: (backwards: boolean) => void;
-  split: (paneId: string, direction: 'horizontal' | 'vertical') => void;
+  /** Activate the nth tab of the focused pane, or its last one. */
+  activateTabIndex: (index: number | 'last') => boolean;
+  /** Reorder the active tab inside its own pane. */
+  moveTabWithinPane: (offset: -1 | 1) => boolean;
+  split: (paneId: string, direction: PaneDirection) => string | undefined;
   closePane: (paneId: string) => void;
+  /** Focus the pane that borders the active one in a direction. */
+  focusPaneDirection: (direction: PaneDirection) => boolean;
+  /** Focus the next/previous pane in reading order. */
+  cyclePane: (backwards: boolean) => boolean;
+  /** Move the active tab to the bordering pane, splitting off a new one when there is none. */
+  moveTabToDirection: (direction: PaneDirection) => boolean;
+  /** Fill the canvas with one pane (tmux-style zoom), or restore the layout. */
+  toggleZoom: (paneId?: string) => boolean;
   resizeSplit: (splitId: string, ratio: number) => void;
+  /** Grow or shrink the focused pane inside its nearest split. */
+  resizeActivePane: (delta: number) => boolean;
+  /** Give every pane an equal share of the canvas. */
+  equalizePanes: () => boolean;
   requestSearch: () => void;
   openEditor: (tabId: string, path: string) => void;
   activateEditor: (tabId: string, path: string) => void;
@@ -97,7 +137,9 @@ interface TabsState {
   /** Replace the pane canvas with a freshly connected, arranged session set. */
   launchSet: (entries: readonly SessionSetEntry[], layout: SessionSetLayout) => string[];
   /** Start fresh connections for selected ended/restored sessions. */
-  reconnect: (tabIds: readonly string[]) => void;
+  reconnect: (tabIds: readonly string[], options?: ReconnectOptions) => void;
+  /** Reconnect every ended/restored session in the current workspace. */
+  reconnectAll: (options?: ReconnectOptions) => void;
   update: (id: string, patch: TabUpdate) => void;
 }
 
@@ -106,11 +148,48 @@ const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${nextId
 const initialPane = (): PaneLeaf => ({ id: newId('pane'), type: 'pane', activeTabId: null });
 const initial = initialPane();
 
-export const useTabsStore = create<TabsState>()((set) => ({
+/**
+ * Drop an emptied pane and hand focus to the sibling that takes over its
+ * space, so closing the last tab of a split behaves like closing the pane.
+ * Returns undefined when the pane is the whole canvas — that one stays.
+ */
+function collapsePane(
+  root: PaneNode,
+  paneId: string,
+): { root: PaneNode; focus: PaneLeaf } | undefined {
+  if (root.type === 'pane') return undefined;
+  const parent = parentSplit(root, paneId);
+  const sibling = parent ? parent.split.children[parent.branch === 0 ? 1 : 0] : undefined;
+  const next = removePane(root, paneId);
+  if (!next) return undefined;
+  return { root: next, focus: firstPane(sibling ?? next) };
+}
+
+/** Split a pane in place, returning the tree plus the pane that was added. */
+function insertSplit(
+  root: PaneNode,
+  paneId: string,
+  direction: PaneDirection,
+): { root: PaneNode; pane: PaneLeaf } {
+  const pane: PaneLeaf = { id: newId('pane'), type: 'pane', activeTabId: null };
+  return {
+    pane,
+    root: updatePane(root, paneId, (existing) => ({
+      id: newId('split'),
+      type: 'split',
+      direction: splitAxis(direction),
+      ratio: 0.5,
+      children: placesPaneFirst(direction) ? [pane, existing] : [existing, pane],
+    })),
+  };
+}
+
+export const useTabsStore = create<TabsState>()((set, get) => ({
   tabs: [],
   root: initial,
   activePaneId: initial.id,
   activeId: null,
+  zoomedPaneId: null,
   open: (profile, title) => {
     const id = newId('tab');
     set((state) => {
@@ -204,10 +283,24 @@ export const useTabsStore = create<TabsState>()((set) => ({
       const paneTabs = state.tabs.filter((tab) => tab.paneId === closing.paneId);
       const index = paneTabs.findIndex((tab) => tab.id === id);
       const replacement = paneTabs.filter((tab) => tab.id !== id)[Math.min(index, paneTabs.length - 2)]?.id ?? null;
+      const tabs = state.tabs.filter((tab) => tab.id !== id);
+      // The last tab of a split pane takes the pane with it, the way closing
+      // the last program in a tmux pane does.
+      const collapsed = replacement === null ? collapsePane(state.root, closing.paneId) : undefined;
+      if (collapsed) {
+        const focused = state.activePaneId === closing.paneId;
+        return {
+          tabs,
+          root: collapsed.root,
+          zoomedPaneId: state.zoomedPaneId === closing.paneId ? null : state.zoomedPaneId,
+          activePaneId: focused ? collapsed.focus.id : state.activePaneId,
+          activeId: focused ? collapsed.focus.activeTabId : state.activeId,
+        };
+      }
       const pane = findPane(state.root, closing.paneId);
       const paneActiveId = pane?.activeTabId === id ? replacement : (pane?.activeTabId ?? null);
       return {
-        tabs: state.tabs.filter((tab) => tab.id !== id),
+        tabs,
         root: updatePane(state.root, closing.paneId, (leaf) => ({ ...leaf, activeTabId: paneActiveId })),
         activeId: state.activeId === id ? paneActiveId : state.activeId,
       };
@@ -220,13 +313,18 @@ export const useTabsStore = create<TabsState>()((set) => ({
         root: updatePane(state.root, tab.paneId, (pane) => ({ ...pane, activeTabId: id })),
         activePaneId: tab.paneId,
         activeId: id,
+        zoomedPaneId: state.zoomedPaneId === tab.paneId ? state.zoomedPaneId : null,
       };
     }),
   focusPane: (paneId) =>
     set((state) => {
       const pane = findPane(state.root, paneId);
       if (!pane) return state;
-      return { activePaneId: paneId, activeId: pane.activeTabId };
+      return {
+        activePaneId: paneId,
+        activeId: pane.activeTabId,
+        zoomedPaneId: state.zoomedPaneId === paneId ? state.zoomedPaneId : null,
+      };
     }),
   cycle: (backwards) =>
     set((state) => {
@@ -240,33 +338,143 @@ export const useTabsStore = create<TabsState>()((set) => ({
         root: updatePane(state.root, state.activePaneId, (pane) => ({ ...pane, activeTabId: activeId })),
       };
     }),
-  split: (paneId, direction) =>
+  activateTabIndex: (index) => {
+    const state = get();
+    const paneTabs = state.tabs.filter((tab) => tab.paneId === state.activePaneId);
+    const target = index === 'last' ? paneTabs.at(-1) : paneTabs[index];
+    if (!target || target.id === state.activeId) return paneTabs.length > 0;
+    state.activate(target.id);
+    return true;
+  },
+  moveTabWithinPane: (offset) => {
+    const state = get();
+    const paneTabs = state.tabs.filter((tab) => tab.paneId === state.activePaneId);
+    const position = paneTabs.findIndex((tab) => tab.id === state.activeId);
+    const swapWith = paneTabs[position + offset];
+    if (position < 0 || !swapWith) return false;
+    const tabs = [...state.tabs];
+    const from = tabs.findIndex((tab) => tab.id === paneTabs[position]!.id);
+    const to = tabs.findIndex((tab) => tab.id === swapWith.id);
+    [tabs[from], tabs[to]] = [tabs[to]!, tabs[from]!];
+    set({ tabs });
+    return true;
+  },
+  split: (paneId, direction) => {
+    let created: string | undefined;
     set((state) => {
       if (!findPane(state.root, paneId)) return state;
-      const newPane: PaneLeaf = { id: newId('pane'), type: 'pane', activeTabId: null };
-      const root = updatePane(state.root, paneId, (pane) => ({
-        id: newId('split'),
-        type: 'split',
-        direction,
-        ratio: 0.5,
-        children: [pane, newPane],
-      }));
-      return { root, activePaneId: newPane.id, activeId: null };
-    }),
+      const { root, pane } = insertSplit(state.root, paneId, direction);
+      created = pane.id;
+      return { root, activePaneId: pane.id, activeId: null, zoomedPaneId: null };
+    });
+    return created;
+  },
   closePane: (paneId) =>
     set((state) => {
-      if (state.root.type === 'pane') return state;
-      const root = removePane(state.root, paneId);
-      if (!root) return state;
-      const activePane = firstPane(root);
+      const collapsed = collapsePane(state.root, paneId);
+      if (!collapsed) return state;
+      const focused = state.activePaneId === paneId;
       return {
         tabs: state.tabs.filter((tab) => tab.paneId !== paneId),
-        root,
-        activePaneId: state.activePaneId === paneId ? activePane.id : state.activePaneId,
-        activeId: state.activePaneId === paneId ? activePane.activeTabId : state.activeId,
+        root: collapsed.root,
+        zoomedPaneId: state.zoomedPaneId === paneId ? null : state.zoomedPaneId,
+        activePaneId: focused ? collapsed.focus.id : state.activePaneId,
+        activeId: focused ? collapsed.focus.activeTabId : state.activeId,
       };
     }),
+  focusPaneDirection: (direction) => {
+    const state = get();
+    const target = neighborPaneId(state.root, state.activePaneId, direction);
+    if (!target) return false;
+    state.focusPane(target);
+    return true;
+  },
+  cyclePane: (backwards) => {
+    const state = get();
+    const panes = panesInOrder(state.root);
+    if (panes.length < 2) return false;
+    const index = panes.findIndex((pane) => pane.id === state.activePaneId);
+    const next = panes[(index + (backwards ? -1 : 1) + panes.length) % panes.length]!;
+    state.focusPane(next.id);
+    return true;
+  },
+  moveTabToDirection: (direction) => {
+    const state = get();
+    const tab = state.tabs.find((candidate) => candidate.id === state.activeId);
+    if (!tab) return false;
+    const sourceId = tab.paneId;
+    const sourceTabs = state.tabs.filter((candidate) => candidate.paneId === sourceId);
+    const neighbor = neighborPaneId(state.root, sourceId, direction);
+    // Splitting off the only tab of a pane would just move the pane around.
+    if (!neighbor && sourceTabs.length < 2) return false;
+
+    let root = state.root;
+    let targetId = neighbor;
+    if (!targetId) {
+      const inserted = insertSplit(root, sourceId, direction);
+      root = inserted.root;
+      targetId = inserted.pane.id;
+    }
+
+    const others = state.tabs.filter((candidate) => candidate.id !== tab.id);
+    const lastOfTarget = others.reduce(
+      (found, candidate, index) => (candidate.paneId === targetId ? index : found),
+      -1,
+    );
+    const tabs = [...others];
+    tabs.splice(lastOfTarget >= 0 ? lastOfTarget + 1 : tabs.length, 0, { ...tab, paneId: targetId });
+
+    const remaining = tabs.filter((candidate) => candidate.paneId === sourceId);
+    const sourceIndex = sourceTabs.findIndex((candidate) => candidate.id === tab.id);
+    const sourceActiveId = remaining[Math.min(sourceIndex, remaining.length - 1)]?.id ?? null;
+    root = updatePane(root, targetId, (pane) => ({ ...pane, activeTabId: tab.id }));
+    root = updatePane(root, sourceId, (pane) => ({ ...pane, activeTabId: sourceActiveId }));
+
+    let zoomedPaneId = state.zoomedPaneId;
+    if (remaining.length === 0) {
+      const collapsed = collapsePane(root, sourceId);
+      if (collapsed) {
+        root = collapsed.root;
+        if (zoomedPaneId === sourceId) zoomedPaneId = null;
+      }
+    }
+    set({
+      tabs,
+      root,
+      activePaneId: targetId,
+      activeId: tab.id,
+      zoomedPaneId: zoomedPaneId === targetId ? zoomedPaneId : null,
+    });
+    return true;
+  },
+  toggleZoom: (paneId) => {
+    const state = get();
+    const target = paneId ?? state.activePaneId;
+    if (state.root.type === 'pane' && !state.zoomedPaneId) return false;
+    const pane = findPane(state.root, target);
+    if (!pane) return false;
+    set({
+      zoomedPaneId: state.zoomedPaneId === target ? null : target,
+      activePaneId: target,
+      activeId: pane.activeTabId,
+    });
+    return true;
+  },
   resizeSplit: (splitId, ratio) => set((state) => ({ root: updateSplitRatio(state.root, splitId, ratio) })),
+  resizeActivePane: (delta) => {
+    const state = get();
+    const parent = parentSplit(state.root, state.activePaneId);
+    if (!parent) return false;
+    const ratio = parent.split.ratio + (parent.branch === 0 ? delta : -delta);
+    set({ root: updateSplitRatio(state.root, parent.split.id, ratio) });
+    return true;
+  },
+  equalizePanes: () => {
+    const state = get();
+    if (state.root.type === 'pane') return false;
+    set({ root: equalizeSplits(state.root) });
+    return true;
+  },
   requestSearch: () =>
     set((state) => ({
       tabs: state.tabs.map((tab) =>
@@ -315,12 +523,14 @@ export const useTabsStore = create<TabsState>()((set) => ({
           root: pane,
           activePaneId: pane.id,
           activeId: null,
+          zoomedPaneId: null,
         };
       }
       const restored = restoreWorkspaceLayout(layout);
       if (!restored) return state;
       return {
         ...restored,
+        zoomedPaneId: null,
         tabs: restored.tabs.map((tab) => ({
           ...tab,
           status: tab.connectOnMount ? 'connecting' as const : 'closed' as const,
@@ -380,10 +590,11 @@ export const useTabsStore = create<TabsState>()((set) => ({
       root,
       activePaneId: activePane.id,
       activeId: activePane.activeTabId,
+      zoomedPaneId: null,
     });
     return ids;
   },
-  reconnect: (tabIds) => {
+  reconnect: (tabIds, options) => {
     const requested = new Set(tabIds);
     set((state) => ({
       tabs: state.tabs.map((tab) =>
@@ -393,11 +604,32 @@ export const useTabsStore = create<TabsState>()((set) => ({
               status: 'connecting' as const,
               connectOnMount: true,
               reconnectRequest: tab.reconnectRequest + 1,
+              reconnectMode:
+                tab.profile.kind === 'ssh' ? options?.reattach : undefined,
+              failureReason: undefined,
+              disconnectReason: undefined,
             }
           : tab,
       ),
     }));
   },
+  reconnectAll: (options) =>
+    set((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.profile && tab.status === 'closed'
+          ? {
+              ...tab,
+              status: 'connecting' as const,
+              connectOnMount: true,
+              reconnectRequest: tab.reconnectRequest + 1,
+              reconnectMode:
+                tab.profile.kind === 'ssh' ? options?.reattach : undefined,
+              failureReason: undefined,
+              disconnectReason: undefined,
+            }
+          : tab,
+      ),
+    })),
   update: (id, patch) =>
     set((state) => ({
       tabs: state.tabs.map((tab) => {
@@ -437,4 +669,4 @@ function buildSessionSetTree(
   };
 }
 
-export type { PaneLeaf, PaneNode };
+export type { PaneDirection, PaneLeaf, PaneNode };

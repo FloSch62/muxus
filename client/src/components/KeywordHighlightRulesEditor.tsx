@@ -11,7 +11,7 @@ import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlineOutlined';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import type { KeywordHighlightRule } from '@muxus/shared';
 import { newPreferenceId } from '../command-buttons.js';
 

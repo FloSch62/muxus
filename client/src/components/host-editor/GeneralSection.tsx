@@ -1,9 +1,14 @@
 import { useState } from 'react';
+import Autocomplete from '@mui/material/Autocomplete';
+import Divider from '@mui/material/Divider';
 import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import type { SshConfigResponse } from '@muxus/shared';
+import { useSavedHostProfiles } from '../../api/queries.js';
+import { knownHostGroups } from '../../managed-hosts.js';
+import { HostColorPicker } from '../HostColorPicker.js';
 import type { HostDraft } from './draft.js';
 import { draftAliases } from './draft.js';
 
@@ -13,7 +18,12 @@ export function shortenPath(p: string): string {
   return p.replace(/^.*([\\/]\.ssh[\\/])/, '~/.ssh/');
 }
 
-/** Alias, target address, description and which config file the block lives in. */
+/**
+ * Alias, target address, description, which config file the block lives in,
+ * and the Muxus-only presentation metadata. The Telnet/serial editor offers
+ * the same metadata in the same place, so organizing a host never depends on
+ * which kind it is.
+ */
 export function GeneralSection({
   draft,
   set,
@@ -24,6 +34,8 @@ export function GeneralSection({
   config: SshConfigResponse | undefined;
 }) {
   const [newFileName, setNewFileName] = useState('');
+  const { data: savedData } = useSavedHostProfiles();
+  const groups = knownHostGroups(config?.hosts ?? [], savedData?.profiles ?? []);
   const rootPath = config?.path ?? '~/.ssh/config';
   const files = config?.files ?? [];
   const knownFile = !draft.file || files.includes(draft.file);
@@ -71,7 +83,7 @@ export function GeneralSection({
         label="Description"
         value={draft.description}
         onChange={(e) => set({ description: e.target.value })}
-        placeholder="shown in the session list"
+        placeholder="shown in the host list"
         helperText="Stored as a # comment above the Host block"
         fullWidth
         multiline
@@ -112,6 +124,35 @@ export function GeneralSection({
           </>
         )}
       </Stack>
+
+      <Divider />
+      <Typography variant="caption" color="text.secondary">
+        Display name, group and color are local to Muxus — they never touch your
+        ssh config.
+      </Typography>
+      <TextField
+        label="Display name"
+        value={draft.displayName}
+        onChange={(e) => set({ displayName: e.target.value })}
+        placeholder={primary ?? 'the alias'}
+        helperText="Optional — only changes how this host appears in Muxus."
+        fullWidth
+      />
+      <Autocomplete
+        freeSolo
+        options={groups}
+        inputValue={draft.group}
+        onInputChange={(_event, value) => set({ group: value })}
+        renderInput={(params) => (
+          <TextField
+            {...params}
+            label="Group"
+            placeholder="e.g. Production"
+            helperText="Optional — groups this host in the sidebar."
+          />
+        )}
+      />
+      <HostColorPicker value={draft.color} onChange={(color) => set({ color })} />
     </Stack>
   );
 }

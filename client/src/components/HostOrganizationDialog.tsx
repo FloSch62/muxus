@@ -2,24 +2,22 @@ import { useEffect, useMemo, useState } from 'react';
 import Autocomplete from '@mui/material/Autocomplete';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import ButtonBase from '@mui/material/ButtonBase';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
-import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
-import CheckIcon from '@mui/icons-material/Check';
 import type { SavedHostProfile, SshHostEntry } from '@muxus/shared';
 import { useUpdateHostProfileMetadata } from '../api/profiles.js';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
 import { useUpdateSshMetadata } from '../api/ssh-config.js';
-import { HOST_COLORS, hostAddress, hostDisplayName } from '../host-organization.js';
+import { hostAddress, hostDisplayName } from '../host-organization.js';
 import { knownHostGroups } from '../managed-hosts.js';
 import { savedHostAddress, savedHostDisplayName } from '../saved-hosts.js';
 import { useUiStore } from '../state/ui.js';
+import { HostColorPicker } from './HostColorPicker.js';
 import { hostKindIcon } from './host-kind-icon.js';
 
 /** Edit presentation metadata without changing a host's connection details. */
@@ -106,47 +104,7 @@ export function HostOrganizationDialog() {
                 />
               )}
             />
-            <Box>
-              <Typography variant="body2" sx={{ mb: 1, fontWeight: 600 }}>
-                Color
-              </Typography>
-              <Stack direction="row" spacing={0.75} useFlexGap sx={{ flexWrap: 'wrap' }}>
-                <Tooltip title="No color">
-                  <ButtonBase
-                    aria-label="No host color"
-                    onClick={() => setColor(undefined)}
-                    sx={{
-                      width: 30,
-                      height: 30,
-                      borderRadius: '50%',
-                      border: 1,
-                      borderColor: color ? 'divider' : 'text.secondary',
-                    }}
-                  >
-                    {!color && <CheckIcon sx={{ fontSize: 17, color: 'text.secondary' }} />}
-                  </ButtonBase>
-                </Tooltip>
-                {HOST_COLORS.map((swatch) => (
-                  <Tooltip key={swatch.value} title={swatch.name}>
-                    <ButtonBase
-                      aria-label={`${swatch.name} host color`}
-                      onClick={() => setColor(swatch.value)}
-                      sx={{
-                        width: 30,
-                        height: 30,
-                        borderRadius: '50%',
-                        bgcolor: swatch.value,
-                        boxShadow: color === swatch.value ? (theme) => `0 0 0 2px ${theme.palette.background.paper}, 0 0 0 4px ${swatch.value}` : undefined,
-                        '&:hover': { transform: 'scale(1.08)' },
-                        transition: 'transform 120ms ease',
-                      }}
-                    >
-                      {color === swatch.value && <CheckIcon sx={{ fontSize: 17, color: 'rgba(0,0,0,0.68)' }} />}
-                    </ButtonBase>
-                  </Tooltip>
-                ))}
-              </Stack>
-            </Box>
+            <HostColorPicker value={color} onChange={setColor} />
 
             <Box
               sx={{

@@ -1,3 +1,5 @@
+import { confirmAction } from '../state/dialogs.js';
+
 interface RemoteEditorHandle {
   hasDirty(): boolean;
   closeActive(): void;
@@ -13,9 +15,16 @@ export function registerRemoteEditor(tabId: string, handle: RemoteEditorHandle):
 }
 
 /** One deliberate confirmation covers every dirty file in the requested tab set. */
-export function confirmDiscardRemoteEditors(tabIds: string[]): boolean {
+export async function confirmDiscardRemoteEditors(tabIds: string[]): Promise<boolean> {
   const dirty = tabIds.some((tabId) => handles.get(tabId)?.hasDirty());
-  return !dirty || window.confirm('One or more remote files have unsaved changes. Close and discard them?');
+  if (!dirty) return true;
+  return confirmAction({
+    title: 'Discard unsaved remote files?',
+    description:
+      'One or more remote files have unsaved changes. Closing them now loses those edits.',
+    confirmLabel: 'Discard changes',
+    destructive: true,
+  });
 }
 
 /** Route the desktop close-file chord to the active Monaco tab before the

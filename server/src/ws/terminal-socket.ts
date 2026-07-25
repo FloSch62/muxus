@@ -31,7 +31,12 @@ export function registerTerminalSocket(app: FastifyInstance, ctx: AppContext): v
   app.get('/ws/terminal', { websocket: true }, (socket) => {
     void handleSession(socket, ctx, app).catch((err) => {
       app.log.warn({ err }, 'terminal session failed');
-      sendControl(socket, { op: 'exit', code: 1, message: err instanceof Error ? err.message : String(err) });
+      sendControl(socket, {
+        op: 'exit',
+        code: 1,
+        message: err instanceof Error ? err.message : String(err),
+        reason: 'failed',
+      });
       socket.close();
     });
   });
@@ -113,9 +118,9 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
   socket.on('close', () => clearInterval(keepalive));
 
   const io: ConnectIo = {
-    status: (message) => {
+    status: (message, options) => {
       recorder?.system(message);
-      sendControl(socket, { op: 'status', message });
+      sendControl(socket, { op: 'status', message, transient: options?.transient });
     },
     prompt: async (info) => {
       sendControl(socket, { op: 'auth-prompt', ...info });
@@ -141,8 +146,12 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
     }
     const conn = dialLease.connection;
     socket.once('close', () => dialLease.release());
-    const unsubscribeDialClose = conn.onClose(() => {
-      sendControl(socket, { op: 'exit', message: 'connection closed' });
+    const unsubscribeDialClose = conn.onClose((reason) => {
+      sendControl(socket, {
+        op: 'exit',
+        message: reason ?? 'The SSH transport closed unexpectedly.',
+        reason: 'disconnected',
+      });
       socket.close();
     });
     socket.once('close', () => unsubscribeDialClose());
@@ -197,7 +206,7 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
     });
     pty.onExit(({ exitCode }) => {
       recorder?.end('completed');
-      sendControl(socket, { op: 'exit', code: exitCode });
+      sendControl(socket, { op: 'exit', code: exitCode, reason: 'completed' });
       socket.close();
     });
     socket.on('close', () => pty.kill());
@@ -206,7 +215,9 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
   }
 
   if (profile.kind === 'serial') {
-    io.status(`Opening ${profile.path} at ${profile.baudRate} baud …`);
+    io.status(`Opening ${profile.path} at ${profile.baudRate} baud …`, {
+      transient: true,
+    });
     const transport = await SerialTransport.connect(profile);
     if (!socketOpen) {
       transport.close();
@@ -232,7 +243,9 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
   }
 
   if (profile.kind === 'telnet') {
-    io.status(`Connecting to ${profile.host}:${profile.port} over Telnet …`);
+    io.status(`Connecting to ${profile.host}:${profile.port} over Telnet …`, {
+      transient: true,
+    });
     const transport = await TelnetTransport.connect(profile, cols, rows);
     if (!socketOpen) {
       transport.close();
@@ -257,6 +270,10 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
   // --- SSH ---
   const terminalLease = await ctx.connections.connect(profile, io);
   const conn = terminalLease.connection;
+  const unsubscribeHealth = conn.onHealth((state) =>
+    sendControl(socket, { op: 'connection-health', state }),
+  );
+  socket.once('close', () => unsubscribeHealth());
   // Config and ad-hoc forwards started on this terminal's connection belong
   // to the terminal. Saved/manual tunnels are marked independent and keep
   // their own lease when this socket closes.
@@ -319,19 +336,37 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
     }
   });
   let exitCode: number | undefined;
+  let receivedExit = false;
   stream.on('exit', (code: number | null) => {
+    receivedExit = true;
     exitCode = code ?? undefined;
   });
-  stream.on('close', () => {
-    recorder?.end('completed');
-    sendControl(socket, { op: 'exit', code: exitCode });
+  let finished = false;
+  const finish = (
+    reason: 'completed' | 'failed' | 'disconnected',
+    message?: string,
+  ) => {
+    if (finished) return;
+    finished = true;
+    recorder?.end(
+      reason === 'failed'
+        ? 'failed'
+        : reason === 'disconnected'
+          ? 'disconnected'
+          : 'completed',
+    );
+    sendControl(socket, { op: 'exit', code: exitCode, message, reason });
     socket.close();
-  });
-  const unsubscribeClose = conn.onClose(() => {
-    recorder?.end('disconnected');
-    sendControl(socket, { op: 'exit', message: 'connection closed' });
-    socket.close();
-  });
+  };
+  stream.on('error', (error: Error) => finish('failed', error.message));
+  stream.on('close', () =>
+    receivedExit
+      ? finish('completed')
+      : finish('disconnected', 'The SSH channel closed without an exit status.'),
+  );
+  const unsubscribeClose = conn.onClose((reason) =>
+    finish('disconnected', reason ?? 'The SSH transport closed unexpectedly.'),
+  );
   socket.on('close', () => {
     clearInterval(resumeTimer);
     unsubscribeClose();
@@ -382,16 +417,19 @@ function attachTerminalTransport(
       transport.pause();
     }
   });
-  const unsubscribeError = transport.onError((error) => {
-    recorder.end('failed');
-    sendControl(socket, { op: 'exit', message: error.message });
+  let finished = false;
+  const finish = (
+    reason: 'completed' | 'failed' | 'disconnected',
+    message?: string,
+  ) => {
+    if (finished) return;
+    finished = true;
+    recorder.end(reason === 'failed' ? 'failed' : reason === 'disconnected' ? 'disconnected' : 'completed');
+    sendControl(socket, { op: 'exit', message, reason });
     socket.close();
-  });
-  const unsubscribeClose = transport.onClose(() => {
-    recorder.end('completed');
-    sendControl(socket, { op: 'exit' });
-    socket.close();
-  });
+  };
+  const unsubscribeError = transport.onError((error) => finish('failed', error.message));
+  const unsubscribeClose = transport.onClose(() => finish('completed'));
 
   socket.once('close', () => {
     if (closed) return;

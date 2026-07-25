@@ -44,10 +44,12 @@ import {
   type WorkspaceSort,
 } from '../workspace-list.js';
 import { confirmDiscardRemoteEditors } from '../editor/remote-editor-registry.js';
+import { confirmAction } from '../state/dialogs.js';
 import { useTabsStore } from '../state/tabs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
 import { useWorkspacesStore } from '../state/workspaces.js';
+import { formatTimestamp } from '../time-format.js';
 
 type NameAction =
   | { kind: 'save-as' }
@@ -61,14 +63,7 @@ interface WorkspaceMenu {
 
 function activityLabel(workspace: WorkspaceSummary): string {
   const opened = workspace.lastOpenedAt;
-  const timestamp = opened ?? workspace.updatedAt;
-  return `${opened ? 'Opened' : 'Updated'} ${new Date(timestamp).toLocaleString(
-    undefined,
-    {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    },
-  )}`;
+  return `${opened ? 'Opened' : 'Updated'} ${formatTimestamp(opened ?? workspace.updatedAt)}`;
 }
 
 export function WorkspaceDialog() {
@@ -82,6 +77,7 @@ export function WorkspaceDialog() {
   const busy = useWorkspacesStore((state) => state.busy);
   const tabs = useTabsStore((state) => state.tabs);
   const reconnect = useTabsStore((state) => state.reconnect);
+  const reconnectAll = useTabsStore((state) => state.reconnectAll);
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<WorkspaceSort>('recent');
   const [nameAction, setNameAction] = useState<NameAction | null>(null);
@@ -137,7 +133,7 @@ export function WorkspaceDialog() {
   };
 
   const performOpen = async (id: string) => {
-    if (!confirmDiscardRemoteEditors(tabs.map((tab) => tab.id))) return;
+    if (!(await confirmDiscardRemoteEditors(tabs.map((tab) => tab.id)))) return;
     try {
       const workspace = await openWorkspace(id);
       setPendingOpenId(undefined);
@@ -158,6 +154,16 @@ export function WorkspaceDialog() {
   const performDelete = async (workspace: WorkspaceSummary) => {
     setWorkspaceMenu(null);
     setPendingOpenId(undefined);
+    const confirmed = await confirmAction({
+      title: `Delete workspace “${workspace.name}”?`,
+      description:
+        workspace.id === activeId
+          ? 'The saved layout is removed and the current layout becomes unsaved. Open sessions keep running.'
+          : 'The saved layout and its multi-execution groups are removed. This cannot be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!confirmed) return;
     try {
       await deleteWorkspace(workspace.id);
       if (nameAction?.kind === 'rename' && nameAction.id === workspace.id) {
@@ -620,21 +626,24 @@ export function WorkspaceDialog() {
         {reconnectable.length > 0 ? (
           <Button
             startIcon={<PlayArrowOutlinedIcon />}
-            disabled={selectedIds.length === 0}
             onClick={() => {
-              reconnect(selectedIds);
+              const count = selectedIds.length || reconnectable.length;
+              if (selectedIds.length) reconnect(selectedIds);
+              else reconnectAll();
               showToast(
                 'info',
-                `Reconnecting ${selectedIds.length} session${selectedIds.length === 1 ? '' : 's'}…`,
+                `Reconnecting ${count} session${count === 1 ? '' : 's'}…`,
               );
               setSelectedIds([]);
             }}
           >
-            Reconnect selected
+            {selectedIds.length ? 'Reconnect selected' : 'Reconnect all'}
           </Button>
         ) : null}
         <Box sx={{ flex: 1 }} />
-        <Button onClick={() => setOpen(false)}>Close</Button>
+        <Button variant="contained" onClick={() => setOpen(false)}>
+          Done
+        </Button>
       </DialogActions>
     </Dialog>
   );

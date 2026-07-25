@@ -10,22 +10,25 @@ export function savedHostAddress(profile: SavedHostProfile): string {
     : `${profile.profile.path} · ${profile.profile.baudRate} baud`;
 }
 
+/** Match a saved profile against an already normalized needle. */
+export function matchesSavedHost(profile: SavedHostProfile, normalized: string): boolean {
+  if (!normalized) return true;
+  return [
+    profile.name,
+    profile.metadata.displayName ?? '',
+    profile.metadata.group ?? '',
+    profile.kind,
+    savedHostAddress(profile),
+  ].some((value) => value.toLowerCase().includes(normalized));
+}
+
 export function filterSavedHosts(
   profiles: readonly SavedHostProfile[],
   query: string,
 ): SavedHostProfile[] {
   const needle = query.trim().toLowerCase();
   return profiles
-    .filter((profile) => {
-      if (!needle) return true;
-      return [
-        profile.name,
-        profile.metadata.displayName ?? '',
-        profile.metadata.group ?? '',
-        profile.kind,
-        savedHostAddress(profile),
-      ].some((value) => value.toLowerCase().includes(needle));
-    })
+    .filter((profile) => matchesSavedHost(profile, needle))
     .sort(
       (a, b) =>
         Number(b.metadata.favorite) - Number(a.metadata.favorite) ||

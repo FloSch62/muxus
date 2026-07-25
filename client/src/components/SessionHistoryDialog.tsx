@@ -26,7 +26,6 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
-import CloseIcon from '@mui/icons-material/Close';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
@@ -42,6 +41,7 @@ import {
 import { useSetSessionPinned } from '../api/session-history.js';
 import { apiFetch, apiFetchRaw } from '../api/http.js';
 import { copyToClipboard } from '../clipboard.js';
+import { confirmAction } from '../state/dialogs.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { showToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
@@ -50,7 +50,9 @@ const MAX_PREVIEW_EVENTS = 5_000;
 
 export function SessionHistoryDialog() {
   const setOpen = useUiStore((state) => state.setHistoryOpen);
-  const [query, setQuery] = useState('');
+  const initialQuery = useUiStore((state) => state.historyQuery);
+  const initialSelectedId = useUiStore((state) => state.historySelectedId);
+  const [query, setQuery] = useState(initialQuery);
   const [host, setHost] = useState('');
   const [kind, setKind] = useState('');
   const [startedAfter, setStartedAfter] = useState('');
@@ -74,7 +76,7 @@ export function SessionHistoryDialog() {
     fetchNextPage,
     isFetchingNextPage,
   } = useSessionHistory(debouncedQuery, filters);
-  const [selectedId, setSelectedId] = useState<string>();
+  const [selectedId, setSelectedId] = useState<string | undefined>(initialSelectedId);
   const selected =
     data?.sessions.find((session) => session.id === selectedId) ??
     data?.sessions[0];
@@ -115,14 +117,6 @@ export function SessionHistoryDialog() {
           label={`${data?.sessions.length ?? 0}${hasNextPage ? '+' : ''} loaded`}
           variant="outlined"
         />
-        <IconButton
-          size="small"
-          aria-label="Close session history"
-          onClick={() => setOpen(false)}
-          sx={{ ml: 'auto' }}
-        >
-          <CloseIcon fontSize="small" />
-        </IconButton>
       </DialogTitle>
       <DialogContent
         dividers
@@ -341,7 +335,9 @@ export function SessionHistoryDialog() {
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={() => setOpen(false)}>Close</Button>
+        <Button variant="contained" onClick={() => setOpen(false)}>
+          Done
+        </Button>
       </DialogActions>
     </Dialog>
   );
@@ -399,13 +395,21 @@ function DeleteSessionButton({ session }: { session: SessionLogSummary }) {
           disabled={session.status === 'active'}
           aria-label="Delete retained session"
           onClick={() => {
-            if (!window.confirm(`Delete the retained log for “${session.title}”?`)) return;
-            void apiFetch(`/api/session-history/${session.id}`, { method: 'DELETE' })
-              .then(() => {
-                void client.invalidateQueries({ queryKey: ['session-history'] });
-                showToast('success', 'Session log deleted.');
-              })
-              .catch((err: Error) => showToast('error', err.message));
+            void confirmAction({
+              title: `Delete the retained log for “${session.title}”?`,
+              description:
+                'The recorded output and its transcript are removed from the history database. This cannot be undone.',
+              confirmLabel: 'Delete',
+              destructive: true,
+            }).then((confirmed) => {
+              if (!confirmed) return;
+              void apiFetch(`/api/session-history/${session.id}`, { method: 'DELETE' })
+                .then(() => {
+                  void client.invalidateQueries({ queryKey: ['session-history'] });
+                  showToast('success', 'Session log deleted.');
+                })
+                .catch((err: Error) => showToast('error', err.message));
+            });
           }}
         >
           <DeleteOutlinedIcon fontSize="small" />
@@ -425,18 +429,20 @@ function PinSessionButton({ session }: { session: SessionLogSummary }) {
           : 'Protect this session from quota and age cleanup'
       }
     >
-      <IconButton
-        size="small"
-        aria-label={session.pinned ? 'Unpin retained session' : 'Pin retained session'}
-        disabled={pin.isPending}
-        onClick={() => pin.mutate({ id: session.id, pinned: !session.pinned })}
-      >
-        {session.pinned ? (
-          <PushPinIcon fontSize="small" />
-        ) : (
-          <PushPinOutlinedIcon fontSize="small" />
-        )}
-      </IconButton>
+      <span>
+        <IconButton
+          size="small"
+          aria-label={session.pinned ? 'Unpin retained session' : 'Pin retained session'}
+          disabled={pin.isPending}
+          onClick={() => pin.mutate({ id: session.id, pinned: !session.pinned })}
+        >
+          {session.pinned ? (
+            <PushPinIcon fontSize="small" />
+          ) : (
+            <PushPinOutlinedIcon fontSize="small" />
+          )}
+        </IconButton>
+      </span>
     </Tooltip>
   );
 }
@@ -492,9 +498,22 @@ async function copyCleanLog(session: SessionLogSummary): Promise<void> {
   }
 }
 
+// One formatter for the whole list, and each timestamp rendered once: the
+// list re-renders on every keystroke, selection, and background refetch.
+const DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'short',
+  timeStyle: 'medium',
+});
+const dateLabels = new Map<string, string>();
+
 function formatDate(value: string): string {
+  const cached = dateLabels.get(value);
+  if (cached !== undefined) return cached;
   const date = new Date(value);
-  return Number.isNaN(date.valueOf()) ? value : date.toLocaleString();
+  const label = Number.isNaN(date.valueOf()) ? value : DATE_FORMAT.format(date);
+  if (dateLabels.size > 1_000) dateLabels.clear();
+  dateLabels.set(value, label);
+  return label;
 }
 
 function formatBytes(value: number): string {

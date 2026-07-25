@@ -31,10 +31,16 @@ export function hostAddress(host: SshHostEntry): string {
 }
 
 export function matchesHost(host: SshHostEntry, needle: string): boolean {
-  const normalized = needle.trim().toLowerCase();
+  return matchesNormalized(host, needle.trim().toLowerCase());
+}
+
+/** Same match, with the needle normalized once by the caller for list scans. */
+export function matchesNormalized(host: SshHostEntry, normalized: string): boolean {
   if (!normalized) return true;
+  for (const alias of host.aliases) {
+    if (alias.toLowerCase().includes(normalized)) return true;
+  }
   return [
-    ...host.aliases,
     host.resolved.hostname,
     host.resolved.user ?? '',
     host.description ?? '',
@@ -72,9 +78,10 @@ export function groupHosts(
 ): HostGroup[] {
   const custom = new Map<string, HostGroup>();
   const byFile = new Map<string, SshHostEntry[]>();
+  const needle = filter.trim().toLowerCase();
 
   for (const host of hosts) {
-    if (!matchesHost(host, filter)) continue;
+    if (!matchesNormalized(host, needle)) continue;
     const group = host.metadata?.group?.trim();
     if (group) {
       const key = group.toLocaleLowerCase();

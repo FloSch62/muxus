@@ -20,6 +20,21 @@ export interface SplitNode {
 
 export type PaneNode = PaneLeaf | SplitNode;
 
+/** Where a new pane goes, or which neighbour to look for. */
+export type PaneDirection = 'left' | 'right' | 'up' | 'down';
+
+export const PANE_DIRECTIONS: readonly PaneDirection[] = ['left', 'right', 'up', 'down'];
+
+/** Horizontal splits stack left/right; vertical splits stack top/bottom. */
+export function splitAxis(direction: PaneDirection): SplitNode['direction'] {
+  return direction === 'left' || direction === 'right' ? 'horizontal' : 'vertical';
+}
+
+/** Left/up place the new pane before the existing one. */
+export function placesPaneFirst(direction: PaneDirection): boolean {
+  return direction === 'left' || direction === 'up';
+}
+
 export interface PersistableTerminalTab {
   id: string;
   paneId: string;
@@ -91,8 +106,93 @@ export function findPane(root: PaneNode, paneId: string): PaneLeaf | undefined {
   return findPane(root.children[0], paneId) ?? findPane(root.children[1], paneId);
 }
 
+export function containsPane(root: PaneNode, paneId: string): boolean {
+  return findPane(root, paneId) !== undefined;
+}
+
 export function firstPane(root: PaneNode): PaneLeaf {
   return root.type === 'pane' ? root : firstPane(root.children[0]);
+}
+
+/** Panes in visual reading order — the order keyboard cycling follows. */
+export function panesInOrder(root: PaneNode): PaneLeaf[] {
+  if (root.type === 'pane') return [root];
+  return [...panesInOrder(root.children[0]), ...panesInOrder(root.children[1])];
+}
+
+export function countPanes(root: PaneNode): number {
+  return root.type === 'pane' ? 1 : countPanes(root.children[0]) + countPanes(root.children[1]);
+}
+
+/** Splits from the root down to a pane, with the branch each one descends. */
+export function splitPath(root: PaneNode, paneId: string): Array<{ split: SplitNode; branch: 0 | 1 }> {
+  if (root.type === 'pane') return [];
+  for (const branch of [0, 1] as const) {
+    const child = root.children[branch];
+    if (!containsPane(child, paneId)) continue;
+    return [{ split: root, branch }, ...splitPath(child, paneId)];
+  }
+  return [];
+}
+
+/** The split a pane shares with its closest sibling subtree. */
+export function parentSplit(
+  root: PaneNode,
+  paneId: string,
+): { split: SplitNode; branch: 0 | 1 } | undefined {
+  return splitPath(root, paneId).at(-1);
+}
+
+/**
+ * The pane a directional move lands on, chosen by geometry rather than tree
+ * shape: candidates must sit on that side and overlap the source pane across
+ * the movement axis; the nearest one wins, then the one sharing the most edge.
+ */
+export function neighborPaneId(
+  root: PaneNode,
+  paneId: string,
+  direction: PaneDirection,
+): string | undefined {
+  const epsilon = 1e-6;
+  const { panes } = flattenPaneLayout(root);
+  const source = panes.find((entry) => entry.pane.id === paneId);
+  if (!source) return undefined;
+  const horizontal = splitAxis(direction) === 'horizontal';
+  const forward = direction === 'right' || direction === 'down';
+  const span = (rect: LayoutRect) =>
+    horizontal
+      ? { start: rect.x, end: rect.x + rect.width, crossStart: rect.y, crossEnd: rect.y + rect.height }
+      : { start: rect.y, end: rect.y + rect.height, crossStart: rect.x, crossEnd: rect.x + rect.width };
+  const from = span(source.rect);
+
+  let bestId: string | undefined;
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (const candidate of panes) {
+    if (candidate.pane.id === paneId) continue;
+    const to = span(candidate.rect);
+    const gap = forward ? to.start - from.end : from.start - to.end;
+    if (gap < -epsilon) continue;
+    const overlap =
+      Math.min(from.crossEnd, to.crossEnd) - Math.max(from.crossStart, to.crossStart);
+    if (overlap <= epsilon) continue;
+    const score = gap * 1_000 - overlap;
+    if (score < bestScore) {
+      bestScore = score;
+      bestId = candidate.pane.id;
+    }
+  }
+  return bestId;
+}
+
+/** Give every pane an equal share of the canvas along its split axis. */
+export function equalizeSplits(root: PaneNode): PaneNode {
+  if (root.type === 'pane') return root;
+  const first = equalizeSplits(root.children[0]);
+  const second = equalizeSplits(root.children[1]);
+  const ratio = clampRatio(countPanes(first) / (countPanes(first) + countPanes(second)));
+  return first === root.children[0] && second === root.children[1] && ratio === root.ratio
+    ? root
+    : { ...root, ratio, children: [first, second] };
 }
 
 export function updatePane(

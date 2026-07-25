@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import type {
   AppInfo,
@@ -105,13 +106,17 @@ export interface SessionHistoryFilters {
   startedBefore?: string;
 }
 
+const NO_HISTORY_FILTERS: SessionHistoryFilters = {};
+
 export function useSessionHistory(
   query: string,
-  filters: SessionHistoryFilters = {},
+  filters: SessionHistoryFilters = NO_HISTORY_FILTERS,
+  enabled = true,
 ) {
   const result = useInfiniteQuery({
     queryKey: ['session-history', query, filters],
     initialPageParam: undefined as string | undefined,
+    enabled,
     queryFn: ({ pageParam }) => {
       const params = new URLSearchParams({ query, limit: '50' });
       if (filters.host) params.set('host', filters.host);
@@ -129,14 +134,19 @@ export function useSessionHistory(
     refetchInterval: (queryState) =>
       (queryState.state.data?.pages.length ?? 0) <= 1 ? 5_000 : false,
   });
+  const data = useMemo(
+    () =>
+      result.data
+        ? {
+            sessions: result.data.pages.flatMap((page) => page.sessions),
+            nextCursor: result.data.pages.at(-1)?.nextCursor,
+          }
+        : undefined,
+    [result.data],
+  );
   return {
     ...result,
-    data: result.data
-      ? {
-          sessions: result.data.pages.flatMap((page) => page.sessions),
-          nextCursor: result.data.pages.at(-1)?.nextCursor,
-        }
-      : undefined,
+    data,
   };
 }
 

@@ -19,7 +19,7 @@ const RemoteEditorWorkspace = lazy(() =>
 
 type SftpLaunch = Extract<AppWindowLaunch, { kind: 'sftp' }>;
 
-/** Standalone Remote Explorer window attached to the source tab's transport. */
+/** Standalone file-browser window attached to the source tab's transport. */
 export function SftpWindow({ launch }: { launch: SftpLaunch }) {
   const editorId = useRef(`sftp-window-${launch.connId}`);
   const [editorPaths, setEditorPaths] = useState<string[]>([]);

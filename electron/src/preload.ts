@@ -66,6 +66,9 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   setTitleBarOverlay(options: { color: string; symbolColor: string }) {
     ipcRenderer.send('muxus:set-titlebar-overlay', options);
   },
+  setZoomFactor(factor: number) {
+    ipcRenderer.send('muxus:set-zoom-factor', factor);
+  },
   getAppInfo() {
     return ipcRenderer.invoke('muxus:get-app-info');
   },

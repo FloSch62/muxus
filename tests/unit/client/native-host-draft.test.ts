@@ -119,12 +119,23 @@ describe('nativeDraftMetadataPatch', () => {
   it('clears untouched metadata and keeps configured values', () => {
     expect(nativeDraftMetadataPatch(blankNativeDraft())).toEqual({
       group: null,
+      color: null,
       keywordHighlights: null,
     });
     const draft = nativeDraftFromProfile(serialHost, false);
     expect(nativeDraftMetadataPatch(draft)).toEqual({
       group: 'Lab',
+      color: null,
       keywordHighlights: serialHost.metadata.keywordHighlights,
     });
+  });
+
+  it('carries the row color chosen in the editor', () => {
+    const draft = { ...blankNativeDraft(), color: '#4285f4' };
+    expect(nativeDraftMetadataPatch(draft)).toMatchObject({ color: '#4285f4' });
+    expect(nativeDraftFromProfile(
+      { ...serialHost, metadata: { ...serialHost.metadata, color: '#ef5350' } },
+      false,
+    ).color).toBe('#ef5350');
   });
 });
