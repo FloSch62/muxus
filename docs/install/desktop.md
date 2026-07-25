@@ -17,7 +17,7 @@ Grab the installer for your platform from the
 | --- | --- |
 | :material-microsoft-windows: Windows | `muxus-<version>-win-x64.exe` |
 | :material-apple: macOS (universal) | `muxus-<version>-mac-universal.dmg` |
-| :material-linux: Linux | `muxus-<version>-linux-x64.AppImage` or `.deb` |
+| :material-linux: Linux | `muxus-<version>-linux-x86_64.AppImage` or `muxus-<version>-linux-amd64.deb` |
 
 ## Install & launch
 
@@ -49,14 +49,14 @@ Grab the installer for your platform from the
     === "AppImage"
 
         ```bash
-        chmod +x muxus-*-linux-x64.AppImage
-        ./muxus-*-linux-x64.AppImage
+        chmod +x muxus-*-linux-x86_64.AppImage
+        ./muxus-*-linux-x86_64.AppImage
         ```
 
     === "Debian / Ubuntu (.deb)"
 
         ```bash
-        sudo apt install ./muxus-*-linux-x64.deb
+        sudo apt install ./muxus-*-linux-amd64.deb
         muxus
         ```
 
