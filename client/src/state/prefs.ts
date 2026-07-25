@@ -112,8 +112,16 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   if (!isStringArray(state.sidebarEmptyFolders)) delete state.sidebarEmptyFolders;
   if (!isFolderStyleMap(state.sidebarFolderStyles)) delete state.sidebarFolderStyles;
   if (!isFolderOrderMap(state.sidebarFolderOrder)) delete state.sidebarFolderOrder;
+  // The sidebar grew in v6 to fit its search box. A stored copy of the old
+  // default was never a choice, so it follows; a dragged width is left alone.
+  if (version < 6 && state.sidebarWidth === PREVIOUS_DEFAULT_SIDEBAR_WIDTH) {
+    state.sidebarWidth = DEFAULT_SIDEBAR_WIDTH;
+  }
   return state;
 }
+
+/** What `DEFAULT_SIDEBAR_WIDTH` was before v6, for the migration above. */
+const PREVIOUS_DEFAULT_SIDEBAR_WIDTH = 248;
 
 function isFolderOrderMap(value: unknown): value is Record<string, string[]> {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -173,7 +181,7 @@ export const usePrefsStore = create<PrefsState>()(
     }),
     {
       name: 'muxus-prefs',
-      version: 5,
+      version: 6,
       migrate: migratePrefsState,
       storage: createJSONStorage(() => muxusStateStorage),
     },

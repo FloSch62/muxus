@@ -1,6 +1,6 @@
-/** The address line is what sets this floor: a full `user@host:port` stops
- *  fitting just under 244px, so the default keeps a little headroom above it. */
-export const DEFAULT_SIDEBAR_WIDTH = 248;
+/** The search box is what sets this floor: it has to hold `user@host` without
+ *  eliding the placeholder that says so, and still leave room for Add host. */
+export const DEFAULT_SIDEBAR_WIDTH = 288;
 /** Host names still fit here — long addresses fall back to the row hover card. */
 export const MIN_SIDEBAR_WIDTH = 200;
 export const MAX_SIDEBAR_WIDTH = 520;

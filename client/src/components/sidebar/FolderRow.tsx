@@ -94,8 +94,11 @@ export function FolderRow({
         onMove(event.key === 'ArrowUp' ? -1 : 1);
       }}
       onContextMenu={(event) => {
+        // A config-file group is not a Muxus folder and has nothing to offer, so
+        // it lets the panel's own menu answer instead.
         if (!onMenu) return;
         event.preventDefault();
+        event.stopPropagation();
         onMenu(event.currentTarget, { top: event.clientY, left: event.clientX });
       }}
       sx={[

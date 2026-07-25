@@ -120,6 +120,8 @@ export function HostRow({
         }}
         onContextMenu={(event) => {
           event.preventDefault();
+          // The panel offers its own menu on empty space; this row has one.
+          event.stopPropagation();
           onMenu(host, event.currentTarget, { top: event.clientY, left: event.clientX });
         }}
         sx={[

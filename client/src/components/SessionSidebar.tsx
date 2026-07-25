@@ -23,7 +23,6 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
 import BoltIcon from '@mui/icons-material/Bolt';
-import CreateNewFolderOutlinedIcon from '@mui/icons-material/CreateNewFolderOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import TerminalIcon from '@mui/icons-material/Terminal';
@@ -59,7 +58,6 @@ import {
   openLocalTerminal,
 } from '../session-actions.js';
 import {
-  loadFolderDialog,
   loadHostEditorDialog,
   loadSidebarMenus,
   loadTerminalViewImpl,
@@ -105,6 +103,7 @@ export function SessionSidebar() {
   const [filter, setFilter] = useState('');
   const [menu, setMenu] = useState<HostMenuState | null>(null);
   const [folderMenu, setFolderMenu] = useState<FolderMenuState | null>(null);
+  const [panelMenu, setPanelMenu] = useState<{ top: number; left: number } | null>(null);
   const [launchTarget, setLaunchTarget] = useState<LaunchTarget | null>(null);
   /** Folders collapsed during a search; discarded when the query changes. */
   const [searchCollapsed, setSearchCollapsed] = useState<ReadonlySet<string>>(EMPTY_KEYS);
@@ -453,7 +452,7 @@ export function SessionSidebar() {
         <TextField
           fullWidth
           inputRef={searchRef}
-          placeholder="Search / user@host ⏎"
+          placeholder="Search or user@host ⏎"
           value={filter}
           onChange={(e) => {
             const next = e.target.value;
@@ -481,20 +480,9 @@ export function SessionSidebar() {
             },
           }}
         />
-        <Tooltip title="New folder">
-          <span>
-            <IconButton
-              size="small"
-              aria-label="New folder"
-              disabled={!folderEditsEnabled}
-              onMouseEnter={() => void loadFolderDialog()}
-              onFocus={() => void loadFolderDialog()}
-              onClick={() => setFolderDialog({ mode: 'new' })}
-            >
-              <CreateNewFolderOutlinedIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
+        {/* Adding a folder lives in the panel's right-click menu: one action in
+            the header leaves the search box the width it needs to say that it
+            also connects. */}
         <Tooltip title="Add host">
           <IconButton
             size="small"
@@ -508,7 +496,15 @@ export function SessionSidebar() {
         </Tooltip>
       </Stack>
 
-      <Box sx={{ flex: 1, overflowY: 'auto', pb: 1 }}>
+      <Box
+        sx={{ flex: 1, overflowY: 'auto', pb: 1 }}
+        // Rows stop this from reaching the panel, so anything that gets here is
+        // empty space: the one place a root-level folder can be asked for.
+        onContextMenu={(event) => {
+          event.preventDefault();
+          setPanelMenu({ top: event.clientY, left: event.clientX });
+        }}
+      >
         <List dense disablePadding>
           <ListItemButton
             onMouseEnter={() => void loadTerminalViewImpl()}
@@ -605,7 +601,7 @@ export function SessionSidebar() {
         ) : null}
       </Box>
 
-      {(menu || folderMenu || launchTarget) && (
+      {(menu || folderMenu || panelMenu || launchTarget) && (
         <Suspense fallback={null}>
           <SidebarMenus
             host={{
@@ -643,6 +639,13 @@ export function SessionSidebar() {
                 reorderEnabled &&
                 folderMenuPosition.index >= 0 &&
                 folderMenuPosition.index < folderMenuPosition.total - 1,
+            }}
+            panel={{
+              position: panelMenu,
+              onClose: () => setPanelMenu(null),
+              onNewHost: () => setHostEditor({ mode: 'new' }),
+              onNewFolder: () => setFolderDialog({ mode: 'new' }),
+              folderEditsEnabled,
             }}
             launch={{ target: launchTarget, onClose: () => setLaunchTarget(null) }}
           />
