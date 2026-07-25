@@ -4,55 +4,54 @@ icon: lucide/folder-tree
 
 # File browser (SFTP)
 
-Every SSH tab can show the remote filesystem beside its terminal. The browser rides the
-**session's existing SSH transport** — one SFTP channel per connection, shared by every
-file operation — so there is no second connection and no second authentication.
+Every SSH tab can display the remote filesystem beside its terminal. The browser uses the
+session's existing SSH transport, with one SFTP channel per connection shared by every file
+operation, so no second connection or authentication is required.
 
 <figure markdown="span">
   ![The file browser next to a terminal](../assets/screenshots/sftp.png#only-light){ .shadow }
   ![The file browser next to a terminal](../assets/screenshots/sftp-dark.png#only-dark){ .shadow }
-  <figcaption>Open it with the folder button in the top bar; drag the divider to size it.</figcaption>
+  <figcaption>The browser is opened with the folder button in the top bar and sized by dragging the divider.</figcaption>
 </figure>
 
 ## Navigating
 
-- The path field is editable — type a path and press ++enter++.
-- :material-arrow-up: goes to the parent, :material-home: to your remote home,
-  :material-refresh: re-reads the directory.
-- Double-click a directory to enter it; sort by name, size or modification time.
-- **Open in new window** pops the browser out into its own window, still on the same
-  connection.
+- The path field is editable. Enter a path and press ++enter++.
+- :material-arrow-up: goes to the parent directory, :material-home: to the remote home
+  directory, and :material-refresh: re-reads the current directory.
+- Double-click a directory to enter it. Sorting is by name, size or modification time.
+- **Open in new window** moves the browser into its own window on the same connection.
 
 ## Transferring
 
 | Gesture | What it does |
 | --- | --- |
 | **Drag files in** | Upload them to the current directory |
-| **Drag a file out** | Download it to wherever you dropped it |
+| **Drag a file out** | Download it to the drop location |
 | :material-upload: | Upload with a file picker |
 | :material-download: | Download the selected file |
 | Double-click a file | Open it in the [remote editor](editor.md) |
 
-Uploads and downloads show progress, and large transfers do not block the terminal in the
+Uploads and downloads report progress, and large transfers do not block the terminal in the
 same tab.
 
 !!! warning "Overwrites are never silent"
 
-    Uploading onto an existing path asks first, naming the file it would replace.
-    Nothing is overwritten until you confirm.
+    Uploading onto an existing path asks for confirmation and names the file it would
+    replace.
 
 ## Managing
 
-The row menu (right-click) has **Open in editor**, **Download**, **Rename** and
-**Delete**; the toolbar adds **New folder**. Deleting a directory removes its contents,
-and is confirmed first.
+The row menu, opened with right-click, has **Open in editor**, **Download**, **Rename** and
+**Delete**. The toolbar adds **New folder**. Deleting a directory removes its contents and
+is confirmed first.
 
-## Under the hood
+## Transfer safety
 
 Uploads are written to a temporary name in the destination directory and then renamed into
-place, so an interrupted transfer cannot leave a half-written file where the real one was.
-Where the server supports it, the atomic `posix-rename` extension is used.
+place, so an interrupted transfer cannot leave a partially written file at the destination
+path. Where the server supports it, the atomic `posix-rename` extension is used.
 
-The SFTP channel belongs to the connection, not the panel: closing the browser leaves it
-available for the [remote editor](editor.md), and closing the tab releases it with the
-rest of the session's lease.
+The SFTP channel belongs to the connection rather than the panel. Closing the browser
+leaves it available for the [remote editor](editor.md), and closing the tab releases it
+with the rest of the session's lease.

@@ -4,62 +4,60 @@ icon: lucide/settings
 
 # Settings
 
-++ctrl+comma++, or the gear in the top bar. Everything here applies **immediately** to
-open terminals — except session logging, which saves explicitly, because storage policy
-should not change under a running recorder.
+Settings are opened with ++ctrl+comma++ or the gear control in the top bar. Changes apply
+immediately to open terminals. Session logging is the exception and saves explicitly,
+because storage policy should not change under a running recorder.
 
 <figure markdown="span">
   ![The settings dialog](../assets/screenshots/settings.png#only-light){ .shadow }
   ![The settings dialog](../assets/screenshots/settings-dark.png#only-dark){ .shadow }
-  <figcaption>Eight sections down the left; the footer says what applies when. Appearance covers the theme, the interface scale and the terminal's colours and font.</figcaption>
+  <figcaption>Eight sections, listed on the left. The footer states when changes apply.</figcaption>
 </figure>
 
 ## Appearance
 
-Everything about how Muxus looks:
-
-- **Application theme** — light, dark, or follow the system.
-- **Interface scale** — the size of the whole window. Terminal text has its own zoom
-  (++ctrl+shift+equal++ / ++ctrl+shift+minus++ / ++ctrl+wheel++), which this does not touch.
-- **Terminal colour scheme** — fifteen, grouped into light and dark sets.
-- **Font** — family, size and line height. JetBrains Mono and the Nerd Font symbols ship
-  with Muxus; any other family has to be installed on the machine.
+- **Application theme**: light, dark, or follow the system.
+- **Interface scale**: the size of the whole window. Terminal text has a separate zoom
+  (++ctrl+shift+equal++ / ++ctrl+shift+minus++ / ++ctrl+wheel++).
+- **Terminal colour scheme**: fifteen schemes, grouped into light and dark sets.
+- **Font**: family, size and line height. JetBrains Mono and the Nerd Font symbols are
+  bundled; any other family must be installed on the machine.
 
 ## Terminal
 
 <figure markdown="span">
   ![Terminal settings](../assets/screenshots/settings-terminal.png#only-light){ .shadow }
   ![Terminal settings](../assets/screenshots/settings-terminal-dark.png#only-dark){ .shadow }
-  <figcaption>Cursor, clipboard behaviour, scrollback — how the terminal acts, rather than how it looks.</figcaption>
+  <figcaption>Cursor, clipboard behaviour and scrollback settings.</figcaption>
 </figure>
 
-- **Cursor** — block, underline or bar, blinking or not.
-- **Right-click** — copy-selection-otherwise-paste (the terminal convention), always
-  paste, or a context menu.
+- **Cursor**: block, underline or bar, blinking or not.
+- **Right-click**: copy-selection-otherwise-paste (the terminal convention), always paste,
+  or a context menu.
 - **Copy on select** and the **multiline paste confirmation**.
 - **Scrollback lines** kept per terminal.
-- **Local shell** — which shell a local terminal starts; `auto` uses your login shell.
+- **Local shell**: the shell a local terminal starts; `auto` uses the login shell.
 
 ## Session logging
 
-Off by default. This is where you turn retention on globally, decide whether input is
-captured, and set the storage policy: **location**, **maximum total size**, **minimum free
-space** (absolute and percentage), **maximum age**, and how many parts each session keeps.
-The section also shows current usage against the quota.
+Off by default. This section enables retention globally, controls whether input is
+captured, and sets the storage policy: **location**, **maximum total size**, **minimum free
+space** (absolute and percentage), **maximum age**, and the number of parts each session
+keeps. Current usage against the quota is displayed here.
 
 <figure markdown="span">
   ![Session logging settings](../assets/screenshots/settings-logging.png#only-light){ .shadow }
   ![Session logging settings](../assets/screenshots/settings-logging-dark.png#only-dark){ .shadow }
-  <figcaption>The only section with explicit Save buttons — and a dot in the nav when it has unsaved edits.</figcaption>
+  <figcaption>The only section with explicit Save buttons, marked with a dot in the nav when it has unsaved edits.</figcaption>
 </figure>
 
 [More on session history :octicons-arrow-right-24:](session-history.md)
 
 ## Highlighting
 
-Global keyword rules applied to every terminal — keyword, foreground, optional background,
+Global keyword rules applied to every terminal: keyword, foreground, optional background,
 case sensitivity and whole-word matching. Hosts can add their own rules or replace the
-global set entirely.
+global set.
 
 <figure markdown="span">
   ![Keyword highlighting rules](../assets/screenshots/settings-highlighting.png#only-light){ .shadow }
@@ -68,34 +66,35 @@ global set entirely.
 
 ## Behavior
 
-Tab behaviour, including **confirm before closing a live session** — on by default,
+Tab behaviour, including **confirm before closing a live session**, which is on by default
 because closing a connected tab ends its shell.
 
 ## Keyboard
 
-Whether **new splits continue the current session** (on by default; SSH reuses the live
-connection, and serial always asks), a summary of the layout keys, and the way into the
+Controls whether **new splits continue the current session** (on by default; SSH reuses the
+live connection, and serial always asks), a summary of the layout keys, and access to the
 full shortcut editor.
 
 <figure markdown="span">
   ![The keyboard shortcut sheet](../assets/screenshots/shortcuts.png#only-light){ .shadow }
   ![The keyboard shortcut sheet](../assets/screenshots/shortcuts-dark.png#only-dark){ .shadow }
-  <figcaption>Search commands, add or replace chords, and see conflicts flagged as you type.</figcaption>
+  <figcaption>The shortcut sheet: search commands, add or replace chords, and view conflicts.</figcaption>
 </figure>
 
-Every command lives in one keymap. Record a chord by pressing it, add a second chord to a
-command, or restore the defaults in one click. Also reachable with ++ctrl+shift+slash++.
+All commands share one keymap. A chord is recorded by pressing it, a command can carry a
+second chord, and defaults are restored in one click. The sheet is also reachable with
+++ctrl+shift+slash++.
 
 [Every default chord :octicons-arrow-right-24:](../reference/keyboard-shortcuts.md)
 
 ## Backup & data
 
-**Create backup** writes your Muxus-side data — folders, colours, saved Telnet/serial
-hosts, workspaces, tunnels, preferences — to a file, and **Restore a backup** merges one
-back in: items missing from the file are never deleted.
+**Create backup** writes the Muxus-side data to a file: folders, colours, saved
+Telnet/serial hosts, workspaces, tunnels and preferences. **Restore a backup** merges a file
+back in; items absent from the file are not deleted.
 
-**Export OpenSSH** writes your SSH hosts out as a standard `ssh_config`, for handing to
-another SSH client. The Muxus-only settings stay in the backup.
+**Export OpenSSH** writes the SSH hosts out as a standard `ssh_config` for use with another
+client. Muxus-only settings remain in the backup.
 
 !!! info "Backups never include secrets"
 
@@ -103,4 +102,4 @@ another SSH client. The Muxus-only settings stay in the backup.
 
 ## About
 
-Version and build information, and where the application data lives on this machine.
+Version and build information, and the location of the application data on this machine.

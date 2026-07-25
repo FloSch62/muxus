@@ -4,8 +4,8 @@ icon: lucide/book-marked
 
 # Reference
 
-The precise answers: what Muxus reads and writes, which keys it takes, what it stores, and
-how it is put together.
+What Muxus reads and writes, which keys it takes, what it stores, and how it is put
+together.
 
 <div class="grid cards" markdown>
 
@@ -13,8 +13,8 @@ how it is put together.
 
     ---
 
-    Every default chord, the mouse gestures, and the rules behind which keys Muxus is
-    allowed to take from the shell.
+    Every default chord, the mouse gestures, and the rules governing which keys Muxus takes
+    from the shell.
 
     [:octicons-arrow-right-24: Shortcuts](keyboard-shortcuts.md)
 
@@ -30,8 +30,8 @@ how it is put together.
 
     ---
 
-    Which keywords are modelled, what is preserved verbatim, what is skipped, and exactly
-    how an edit is written back.
+    Which keywords are modelled, what is preserved verbatim, what is skipped, and how an
+    edit is written back.
 
     [:octicons-arrow-right-24: ssh_config](ssh-config.md)
 
@@ -39,7 +39,7 @@ how it is put together.
 
     ---
 
-    The four packages, the pane canvas, connection leases, and how one session flows
+    The four packages, the pane canvas, connection leases, and the path of one session
     through them.
 
     [:octicons-arrow-right-24: Architecture](architecture.md)

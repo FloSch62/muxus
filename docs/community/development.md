@@ -7,7 +7,7 @@ icon: lucide/hammer
 ## Requirements
 
 - **Node.js ≥ 24.17** (CI builds on 24.18)
-- **pnpm** — the version is pinned in `package.json` through `packageManager`
+- **pnpm**, with the version pinned in `package.json` through `packageManager`
 - A C/C++ toolchain for the two native modules (`node-pty`, `serialport`)
 
 ## Setup
@@ -19,7 +19,7 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` runs three things in parallel: `shared` in `tsc --watch`, the server on
+`pnpm dev` runs three processes in parallel: `shared` in `tsc --watch`, the server on
 **:3002**, and the Vite client on **:5174**. Open <http://localhost:5174>.
 
 In dev the API token is the fixed string `dev`, because the Vite client cannot learn a
@@ -45,7 +45,7 @@ hack/       Documentation sandbox and screenshot capture
 | `pnpm build` | Build every package |
 | `pnpm start` | Serve the built client from the server |
 | `pnpm electron` | Run the desktop shell in dev |
-| `pnpm test` · `pnpm test:watch` | vitest |
+| `pnpm test`, `pnpm test:watch` | vitest |
 | `pnpm lint` | oxlint (`--deny-warnings`) |
 | `pnpm typecheck` | Types across the workspace |
 | `pnpm check:bundle` | Client bundle budgets |
@@ -68,11 +68,11 @@ make dmg    # macOS .dmg
 make all    # everything electron-builder is configured for
 ```
 
-Artifacts land in `electron/release/`.
+Artifacts are written to `electron/release/`.
 
 ## Serial devices on Linux
 
-Serial ports usually need group membership:
+Serial ports usually require group membership:
 
 ```bash
 sudo usermod -aG dialout "$USER"   # or uucp, depending on the distribution
@@ -82,15 +82,15 @@ Log out and back in afterwards.
 
 ## Documentation and screenshots
 
-The site is [Zensical](https://zensical.org), driven through two scripts (they use
-`uvx`, so nothing has to be installed globally):
+The site is built with [Zensical](https://zensical.org) through two scripts. They use
+`uvx`, so nothing has to be installed globally:
 
 ```bash
 pnpm serve-docs    # live preview on :8000, opens a browser
 pnpm build-docs    # writes site/
 ```
 
-Screenshots are **generated**, so they never contain a real host:
+Screenshots are generated, so they never contain a real host:
 
 ```bash
 pnpm build         # the capture drives the built client
@@ -101,7 +101,7 @@ THEME=dark node hack/capture.mjs    # dark only   → *-dark.png
 node hack/capture.mjs sftp          # only shots whose name contains "sftp"
 ```
 
-`hack/capture.mjs` boots the sandbox in `hack/demo-env.mjs` first:
+`hack/capture.mjs` boots the sandbox in `hack/demo-env.mjs` first, which provides:
 
 - a throwaway `HOME` under `/tmp` with its own `~/.ssh/config`, keys and `known_hosts`;
 - one small in-process SSH server per demo host (shell, SFTP, port forwarding), so
@@ -109,13 +109,13 @@ node hack/capture.mjs sftp          # only shots whose name contains "sftp"
 - demo hostnames mapped onto loopback ports by a `--import` hook, so the screenshots show
   `web-01.prod.internal` while talking to `127.0.0.1`.
 
-Capture drives a real browser through `playwright-core` (a dev dependency) and expects
-Chrome at `/usr/bin/google-chrome`; point `CHROME` somewhere else if yours lives elsewhere.
+Capture drives a real browser through `playwright-core`, a dev dependency, and expects
+Chrome at `/usr/bin/google-chrome`. Set `CHROME` to override the path.
 
-Run `node hack/demo-env.mjs` on its own to get the sandbox with a URL printed, which is
-also a pleasant way to try a change without touching your own `~/.ssh`.
+Running `node hack/demo-env.mjs` on its own starts the sandbox and prints a URL, which is
+also a way to test a change without touching the real `~/.ssh`.
 
 ## CI
 
-Every push runs typecheck, lint, tests and the bundle budgets, then builds unpacked
-desktop packages on Linux, macOS and Windows.
+Every push runs typecheck, lint, tests and the bundle budgets, then builds unpacked desktop
+packages on Linux, macOS and Windows.

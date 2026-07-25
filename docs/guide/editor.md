@@ -4,41 +4,38 @@ icon: lucide/file-pen
 
 # Remote editor
 
-Double-click a file in the [file browser](files.md) and it opens in a real editor — the
-same [Monaco](https://microsoft.github.io/monaco-editor/) that powers VS Code — reading
-and writing over the **live SSH transport** of that session.
+Double-clicking a file in the [file browser](files.md) opens it in
+[Monaco](https://microsoft.github.io/monaco-editor/), the editor used by VS Code. Reads and
+writes go over the live SSH transport of that session.
 
 <figure markdown="span">
   ![Editing a remote file with Monaco](../assets/screenshots/remote-editor.png#only-light){ .shadow }
   ![Editing a remote file with Monaco](../assets/screenshots/remote-editor-dark.png#only-dark){ .shadow }
-  <figcaption>No sync folder, no scp round-trip, no second login.</figcaption>
+  <figcaption>A remote file edited in place, without a sync folder or an scp round-trip.</figcaption>
 </figure>
 
-## What you get
+## Features
 
-- Monaco's **complete built-in syntax catalog**, plus full language services for
-  **JavaScript/TypeScript, JSON, HTML and CSS**: diagnostics, completion, hover,
+- Monaco's complete built-in syntax catalog, plus full language services for
+  **JavaScript/TypeScript, JSON, HTML and CSS**: diagnostics, completion, hover and
   formatting.
 - Folding, the minimap, sticky scroll, multi-cursor editing, find & replace, and Monaco's
-  own command palette (++f1++).
-- Per-file **undo history and view state**, so switching between open files puts you back
-  where you were.
+  command palette (++f1++).
+- Per-file undo history and view state, so switching between open files restores the
+  previous position.
 - Language mode, indentation and end-of-line sequence are switchable from the status bar.
-- **Save** (++ctrl+s++) and **Save all**; unsaved files are marked in the file list.
+- **Save** (++ctrl+s++) and **Save all**. Unsaved files are marked in the file list.
 
-Several files stay open at once inside the tab, alongside the terminal — the tab keeps
-both, and switching back to the shell is one click.
+Several files stay open at once inside the tab, alongside the terminal.
 
 ## Conflict protection
 
 Saving carries the modification time the file had when it was read. If the file changed on
-the remote in the meantime, the save is refused and the editor tells you so, offering
-**Reload from remote** — your work is never silently written over someone else's, and
-theirs is never silently written over yours.
+the remote in the meantime, the save is refused and the editor offers **Reload from
+remote**.
 
-## When to reach for it
+## Scope
 
-The editor is for the edit you would otherwise do in `vi` over a laggy link: a config
-tweak, a compose file, a systemd unit. For anything that wants a project — a language
-server, a test run, a git history — use your own editor's remote support. Muxus is
-deliberately a *file* editor, not a remote IDE.
+The editor targets single-file edits: a config change, a compose file, a systemd unit. For
+project-level work requiring a language server, a test runner or git history, use an
+editor's own remote support. Muxus provides a file editor, not a remote IDE.

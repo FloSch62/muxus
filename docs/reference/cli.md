@@ -13,7 +13,7 @@ node server/dist/index.js [--port <n>] [--no-open] [--history-path <dir>]
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
-| `--port <n>` | `3002` | Port on `127.0.0.1`. Must be 1–65535. |
+| `--port <n>` | `3002` | Port on `127.0.0.1`. Must be 1-65535. |
 | `--no-open` | off | Do not open a browser after starting. |
 | `--history-path <dir>` | platform data dir | Where [session history](../guide/session-history.md) segments and index are written. Also settable in Settings. |
 
@@ -32,13 +32,13 @@ Flags accept both `--port 3010` and `--port=3010`.
 
 !!! danger "`MUXUS_DEV=1` is for development only"
 
-    It replaces the per-run random token with a well-known one. The server still listens
-    on loopback only, but anything running on your machine can then reach the API.
+    It replaces the per-run random token with a well-known one. The server still listens on
+    loopback only, but any process on the machine can then reach the API.
 
 ## Data locations
 
-The standalone server and the desktop app keep separate databases — the desktop build
-uses Electron's per-app directory:
+The standalone server and the desktop app keep separate databases, because the desktop
+build uses Electron's per-app directory:
 
 | Platform | `pnpm start` (server) | Desktop app |
 | --- | --- | --- |
@@ -46,8 +46,8 @@ uses Electron's per-app directory:
 | macOS | `~/Library/Application Support/Muxus/muxus.sqlite3` | `~/Library/Application Support/Muxus/muxus.sqlite3` |
 | Windows | `%APPDATA%\Muxus\muxus.sqlite3` | `%APPDATA%\Muxus\muxus.sqlite3` |
 
-Connection settings are **not** in there — they stay in your `~/.ssh/config`. Moving
-between the two builds is a [backup and restore](../guide/settings.md#backup-data) away.
+Connection settings are not stored there; they remain in `~/.ssh/config`. Moving between
+the two builds is done with [backup and restore](../guide/settings.md#backup-data).
 
 ## Workspace scripts
 
@@ -62,7 +62,7 @@ From a source checkout:
 | `pnpm test` | vitest unit tests |
 | `pnpm lint` | oxlint |
 | `pnpm typecheck` | Types across the workspace |
-| `make deb` · `make win` · `make dmg` · `make all` | Desktop installers via electron-builder |
+| `make deb`, `make win`, `make dmg`, `make all` | Desktop installers via electron-builder |
 
 ## Documentation tooling
 
@@ -74,7 +74,7 @@ The docs in this site are built with [Zensical](https://zensical.org):
 | `pnpm build-docs` | Writes the static site to `site/` |
 | `pnpm capture-docs` | Regenerates every screenshot, light and dark |
 
-The screenshots are generated, not hand-taken:
+Screenshots are generated rather than taken by hand:
 
 ```bash
 pnpm build

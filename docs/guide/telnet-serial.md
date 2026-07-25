@@ -4,11 +4,11 @@ icon: lucide/cable
 
 # Telnet & serial
 
-Not everything speaks SSH. Console servers, switches in a lab, a board on the desk with a
-USB adapter — Muxus keeps those in the same list, with the same folders, colours, search
-and workspaces as your SSH hosts.
+Telnet and serial hosts appear in the same list as SSH hosts, with the same folders,
+colours, search and workspaces. Typical targets are console servers, lab switches and
+directly attached boards.
 
-Because OpenSSH has nowhere to put them, these are **Muxus's own saved hosts**, stored in
+OpenSSH has no representation for these, so they are stored as Muxus's own saved hosts in
 the local database rather than in `ssh_config`.
 
 ## Telnet
@@ -16,32 +16,32 @@ the local database rather than in `ssh_config`.
 <figure markdown="span">
   ![The Telnet host editor](../assets/screenshots/telnet-editor.png#only-light){ .shadow }
   ![The Telnet host editor](../assets/screenshots/telnet-editor-dark.png#only-dark){ .shadow }
-  <figcaption>A name, a host and a port, in the same editor shell as the SSH form — plus the warning Telnet has earned.</figcaption>
+  <figcaption>The Telnet form takes a name, a host and a port.</figcaption>
 </figure>
 
-Sessions negotiate terminal type and window size, so full-screen tools on the far end know
-how big your pane is and resize with it.
+Sessions negotiate terminal type and window size, so full-screen tools on the far end
+receive the pane dimensions and resize with it.
 
 !!! danger "Telnet has no encryption and no server authentication"
 
-    Everything, including whatever you type at a login prompt, crosses the network in the
-    clear, and nothing proves the far end is who it claims to be. Use it only on a network
-    you trust — a console VLAN, a lab, a direct cable.
+    All traffic, including what is typed at a login prompt, crosses the network in the
+    clear, and nothing proves the identity of the far end. Use it only on a trusted
+    network: a console VLAN, a lab, or a direct cable.
 
 ## Serial
 
 <figure markdown="span">
   ![The serial host editor](../assets/screenshots/serial-editor.png#only-light){ .shadow }
   ![The serial host editor](../assets/screenshots/serial-editor-dark.png#only-dark){ .shadow }
-  <figcaption>Ports are discovered locally, and every line setting is there for when 115200 8N1 is not what the device wants.</figcaption>
+  <figcaption>Ports are discovered locally, and every line setting is configurable.</figcaption>
 </figure>
 
 Muxus discovers serial ports through the local backend on Linux, Windows and macOS, and
-lets you type a path when the device is not in the list. Per-profile line settings:
+accepts a typed path when the device is not listed. Line settings are per profile:
 
 | Setting | Values |
 | --- | --- |
-| **Baud rate** | 300 … 921 600, or your own |
+| **Baud rate** | 300 … 921 600, or a custom value |
 | **Data bits** | 5, 6, 7, 8 |
 | **Stop bits** | 1, 2 |
 | **Parity** | none, even, odd, mark, space |
@@ -52,8 +52,8 @@ Platform naming:
 === ":material-linux: Linux"
 
     `/dev/ttyUSB0`, `/dev/ttyACM0`. Access usually requires membership in the
-    distribution's serial group (`dialout` or `uucp`) — log out and back in after adding
-    yourself.
+    distribution's serial group, `dialout` or `uucp`. Log out and back in after adding the
+    membership.
 
 === ":material-apple: macOS"
 
@@ -68,10 +68,9 @@ Platform naming:
     A serial port cannot be shared, so splitting a pane from a serial session always asks
     what to start rather than opening a second reader on the same device.
 
-## Everything else still applies
+## Shared behaviour
 
-Telnet and serial tabs are ordinary tabs: they live in panes, take colour flags, join
-[multi-exec](commands.md#multi-execution) groups, are saved in
-[workspaces](workspaces.md), and are recorded by
-[session history](session-history.md) when you enable it. What they do not get is anything
-that needs SSH — no file browser, no remote editor, no port forwarding.
+Telnet and serial tabs behave as ordinary tabs. They live in panes, take colour flags, join
+[multi-exec](commands.md#multi-execution) groups, are saved in [workspaces](workspaces.md),
+and are recorded by [session history](session-history.md) when it is enabled. Features that
+require SSH do not apply: no file browser, no remote editor, no port forwarding.

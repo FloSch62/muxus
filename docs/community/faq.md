@@ -6,33 +6,30 @@ icon: lucide/circle-help
 
 ### Does Muxus change my `~/.ssh/config`?
 
-Only when you ask it to. Adding, editing or deleting a host rewrites **that block** and
-nothing else, atomically, leaving a `.muxus.bak` of the previous contents. Everything else
-— folders, colours, workspaces — lives in Muxus's own database.
+Only on request. Adding, editing or deleting a host rewrites that block and nothing else,
+atomically, leaving a `.muxus.bak` of the previous contents. Folders, colours and
+workspaces are stored in Muxus's own database.
 
 ### Will `ssh` on the command line still work?
 
-Yes, and that is the point. Muxus writes normal OpenSSH blocks, appends to your real
-`known_hosts`, and reads your agent. Anything you add in Muxus is usable by `ssh`, `scp`,
-`rsync` and everything else.
+Yes. Muxus writes standard OpenSSH blocks, appends to `known_hosts`, and reads the agent.
+Anything added in Muxus is usable by `ssh`, `scp` and `rsync`.
 
 ### Do I need to import my hosts?
 
-No. Every concrete `Host` block in your config — and in every file it `Include`s — is
-already in the sidebar the first time you launch.
+No. Every concrete `Host` block in the configuration is present in the sidebar on first
+launch, including the files it pulls in with `Include`.
 
 ### Why do some options in my config seem to be ignored?
 
-`Match` blocks are skipped: their conditions depend on runtime state Muxus does not
-reproduce, so guessing would be worse than not applying them. Everything in `Host` blocks
-is resolved, and unmodelled keywords are preserved verbatim. See
-[ssh_config support](../reference/ssh-config.md).
+`Match` blocks are skipped, because their conditions depend on runtime state Muxus does not
+reproduce. Everything in `Host` blocks is resolved, and unmodelled keywords are preserved
+verbatim. See [ssh_config support](../reference/ssh-config.md).
 
 ### Does it support 2FA / keyboard-interactive?
 
-Yes — as a dialog, labelled with the hop that is asking, which matters in a jump chain.
-Agent, certificates, keys with passphrases, keyboard-interactive and passwords all follow
-the OpenSSH order.
+Yes, as a dialog labelled with the hop that issued the prompt. Agent, certificates, keys
+with passphrases, keyboard-interactive and passwords follow the OpenSSH order.
 
 ### Can I use it as a web terminal on a server?
 
@@ -41,48 +38,46 @@ as a single-user local tool. Do not put it behind a reverse proxy.
 
 ### Where is my data?
 
-The application database is in your platform's data directory
-(`~/.local/share/muxus/`, `~/Library/Application Support/Muxus/`, `%APPDATA%\Muxus\`).
-Connection settings are in `~/.ssh/config`. See the
-[CLI reference](../reference/cli.md#data-locations).
+The application database is in the platform data directory (`~/.local/share/muxus/`,
+`~/Library/Application Support/Muxus/`, `%APPDATA%\Muxus\`). Connection settings are in
+`~/.ssh/config`. See the [CLI reference](../reference/cli.md#data-locations).
 
 ### Are my passwords stored anywhere?
 
 No. They exist only for the duration of an authentication attempt. The persistence layer
-actively **rejects** fields that look like credentials, so a password cannot be written to
-the database even by accident.
+rejects fields that look like credentials, so a password cannot be written to the database
+by accident.
 
 ### Why is session logging off by default?
 
-Because recording terminal output is a decision, not a default. Turn it on globally or per
-host — and remember that commands you type are echoed back as remote output, so pause
-logging before displaying secrets. See [session history](../guide/session-history.md).
+Recording terminal output is opt-in. Enable it globally or per host. Commands that are
+typed are echoed back as remote output, so pause logging before displaying secrets. See
+[session history](../guide/session-history.md).
 
-### Images do not render — what is wrong?
+### Images do not render. What is wrong?
 
-Check that the remote tool is actually emitting a supported protocol (kitty graphics,
-sixel or iTerm2). Tools usually detect support from `TERM` and terminal queries; Muxus
-advertises `xterm-256color` and answers the cell-size queries `icat` uses. A single
-transmission over 64 MiB is rejected. See
-[images in the terminal](../guide/graphics.md).
+Check that the remote tool is emitting a supported protocol: kitty graphics, sixel or
+iTerm2. Tools usually detect support from `TERM` and terminal queries; Muxus advertises
+`xterm-256color` and answers the cell-size queries `icat` uses. A single transmission over
+64 MiB is rejected. See [images in the terminal](../guide/graphics.md).
 
 ### Why is ++ctrl+w++ not "close tab"?
 
-Because ++ctrl+w++ deletes a word in every shell. Muxus refuses to take keys the shell
-needs: closing is ++ctrl+shift+w++ (++cmd+w++ on macOS), and tabs answer to
-++alt+1++ … ++alt+9++. Rebind anything you like in the
+++ctrl+w++ deletes a word in the shell, and Muxus does not take keys the shell needs.
+Closing is ++ctrl+shift+w++ (++cmd+w++ on macOS), and tabs use ++alt+1++ … ++alt+9++. Any
+binding can be changed in the
 [shortcut sheet](../reference/keyboard-shortcuts.md).
 
 ### Does splitting a pane log in twice?
 
 No. A split continues the current session over the same SSH connection, so there is no
-second login and no second 2FA prompt. You can turn that off in
+second login and no second 2FA prompt. This is configurable in
 [Settings → Keyboard](../guide/settings.md#keyboard).
 
 ### Can I keep a tunnel open without a terminal?
 
-Yes — that is what saved [tunnels](../guide/tunnels.md) are for. They hold their own
-transport lease, so closing every terminal to that host leaves the tunnel running.
+Yes. Saved [tunnels](../guide/tunnels.md) hold their own transport lease, so closing every
+terminal to that host leaves the tunnel running.
 
 ### Does it work on Windows?
 
@@ -91,5 +86,5 @@ Yes: SSH, Telnet, local shells and `COM` serial ports. The desktop installer is 
 
 ### Is there a Wayland/HiDPI/scaling issue?
 
-Interface scale is a setting (**Settings → Appearance**), deliberately separate from
-terminal font zoom, so you can size the UI and the text independently.
+Interface scale is a setting (**Settings → Appearance**), separate from terminal font zoom,
+so the UI and the text are sized independently.

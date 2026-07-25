@@ -72,7 +72,7 @@
   transition: border-color 125ms ease, box-shadow 125ms ease;
 }
 
-/* The default card border is nearly invisible in light mode — darken it. */
+/* The default card border is nearly invisible in light mode, so darken it. */
 [data-md-color-scheme="default"] .md-typeset .grid.cards > ul > li,
 [data-md-color-scheme="default"] .md-typeset .grid.cards > ol > li {
   border-color: rgba(0, 0, 0, 0.16);
