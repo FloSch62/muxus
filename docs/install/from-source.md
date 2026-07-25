@@ -4,15 +4,15 @@ icon: lucide/terminal
 
 # From source
 
-Muxus is a pnpm workspace of TypeScript packages. Running it from source gives you the
-same UI in your browser, served by a local Fastify server.
+Muxus is a pnpm workspace of TypeScript packages. Running it from source serves the same UI
+to a browser from a local Fastify server.
 
 ## Requirements
 
-- **Node.js ≥ 24.17** (the CI builds on 24.18)
-- **pnpm** (the repository pins its version through `packageManager`)
-- A C/C++ toolchain for the two native modules (`node-pty`, `serialport`) — on Debian and
-  Ubuntu `build-essential` and `python3` are enough
+- **Node.js ≥ 24.17** (CI builds on 24.18)
+- **pnpm**, with the version pinned by `packageManager` in the repository
+- A C/C++ toolchain for the two native modules (`node-pty`, `serialport`). On Debian and
+  Ubuntu, `build-essential` and `python3` are sufficient.
 
 ## Build and run
 
@@ -24,9 +24,9 @@ pnpm build
 pnpm start
 ```
 
-`pnpm start` serves the built client from the server and opens your browser. The server
-binds `127.0.0.1` only and mints a **random bearer token for that run**; the browser
-receives it in the URL fragment, which the client removes immediately.
+`pnpm start` serves the built client from the server and opens a browser. The server binds
+`127.0.0.1` only and mints a random bearer token for that run. The browser receives it in
+the URL fragment, which the client removes immediately.
 
 !!! warning "Not a shared service"
 
@@ -40,8 +40,8 @@ receives it in the URL fragment, which the client removes immediately.
 pnpm dev        # shared tsc --watch + server on :3002 + Vite client on :5174
 ```
 
-Open <http://localhost:5174>. In dev the token is the fixed string `dev` (the Vite client
-cannot learn a random one at startup); the server still listens on loopback only.
+Open <http://localhost:5174>. In dev the token is the fixed string `dev`, because the Vite
+client cannot learn a random one at startup. The server still listens on loopback only.
 
 ```bash
 pnpm build      # build every package
@@ -54,8 +54,8 @@ pnpm typecheck
 
 !!! note "Native modules and Electron"
 
-    `pnpm electron` runs against Electron's ABI, so the native bindings have to be
-    rebuilt for it once:
+    `pnpm electron` runs against Electron's ABI, so the native bindings must be rebuilt for
+    it once:
 
     ```bash
     pnpm --filter @muxus/electron rebuild
@@ -70,7 +70,7 @@ make dmg    # macOS .dmg
 make all    # everything electron-builder is configured for
 ```
 
-Artifacts land in `electron/release/`.
+Artifacts are written to `electron/release/`.
 
 ## Command-line flags
 

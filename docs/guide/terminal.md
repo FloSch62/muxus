@@ -4,41 +4,41 @@ icon: lucide/square-terminal
 
 # The terminal
 
-Every tab is a full [xterm.js](https://xtermjs.org/) terminal — the modern one, not a
-compatibility layer. This page covers what it can do and how to bend it to your taste.
+Every tab is a full [xterm.js](https://xtermjs.org/) terminal. This page covers the
+protocols it implements and the settings that control it.
 
 ## Protocols
 
 **Kitty keyboard protocol.** Muxus advertises the progressive-enhancement flag stack
 (disambiguate escape codes, report event types, report alternate keys, report all keys as
-escape codes, report associated text), so modern TUIs — Neovim, Helix, fish — receive full
-key fidelity: ++ctrl+enter++, ++shift+enter++, key releases, modifiers on keys that
-historically had nowhere to put them.
+escape codes, report associated text), so TUIs such as Neovim, Helix and fish receive full
+key fidelity: ++ctrl+enter++, ++shift+enter++, key releases, and modifiers on keys that
+otherwise have no encoding.
 
-**`TERM`.** Sessions advertise the broadly supported `TERM=xterm-256color`, so remote
-tools behave and `terminfo` lookups never fail on an exotic name.
+**`TERM`.** Sessions advertise `TERM=xterm-256color`, which is broadly supported, so remote
+`terminfo` lookups resolve.
 
-**Graphics.** Kitty graphics, sixel and iTerm2 inline images all render — see
+**Graphics.** Kitty graphics, sixel and iTerm2 inline images all render. See
 [Images in the terminal](graphics.md).
 
-**Shell integration.** Local shells (and bash/zsh SSH sessions) report the command
-lifecycle with OSC 133/633. Muxus turns that into scrollbar marks: a command that exits
-non-zero paints its line red in the overview ruler, the way VS Code does.
+**Shell integration.** Local shells, and bash/zsh SSH sessions, report the command
+lifecycle with OSC 133/633. Muxus renders that as scrollbar marks: a command that exits
+non-zero paints its line red in the overview ruler.
 
-**Unicode 11 widths** and a **minimum contrast ratio** are on, so wide glyphs measure
-correctly and a remote tool's unfortunate colour choice stays readable.
+**Unicode 11 widths** and a **minimum contrast ratio** are enabled, so wide glyphs measure
+correctly and low-contrast remote colour choices stay readable.
 
 ## Fonts and colours
 
 The bundled stack is JetBrains Mono plus a **Nerd Font / Powerline** symbol face, so
-Starship prompts, `lsd`, `eza` icons and TUI box drawing look right with no local font
-install. Point `fontFamily` at anything you like; the symbol face stays as a fallback for
-the glyphs your font does not have.
+Starship prompts, `lsd`, `eza` icons and TUI box drawing render without a local font
+install. `fontFamily` accepts any installed family; the symbol face remains as a fallback
+for missing glyphs.
 
 <figure markdown="span">
   ![The colour scheme and font settings](../assets/screenshots/settings.png#only-light){ .shadow }
   ![The colour scheme and font settings](../assets/screenshots/settings-dark.png#only-dark){ .shadow }
-  <figcaption>Fifteen schemes, applied to open terminals the moment you pick one.</figcaption>
+  <figcaption>Fifteen colour schemes, applied to open terminals on selection.</figcaption>
 </figure>
 
 Light schemes: **Paper**, **VS Code Light**, **GitHub Light**, **Gruvbox Light**,
@@ -46,50 +46,48 @@ Light schemes: **Paper**, **VS Code Light**, **GitHub Light**, **Gruvbox Light**
 **One Dark**, **Nord**, **Gruvbox Dark**, **Catppuccin Mocha**, **Monokai**, **Solarized
 Dark**.
 
-Scheme, font family, size and line height live in
-[Settings → Appearance](settings.md#appearance); cursor style (block, underline, bar),
-blink, clipboard behaviour and how many lines of scrollback to keep are in
+Scheme, font family, size and line height are in
+[Settings → Appearance](settings.md#appearance). Cursor style (block, underline, bar),
+blink, clipboard behaviour and scrollback length are in
 [Settings → Terminal](settings.md#terminal). Changes apply to every open terminal
 immediately.
 
 ### Per-tab zoom
 
-++ctrl+plus++, ++ctrl+minus++ and ++ctrl+0++ — or ++ctrl+wheel++ — change the font size of
-**that tab only**, and nothing else. The scale of the whole interface is a separate
-preference, so a chord can never surprise the shell.
+++ctrl+plus++, ++ctrl+minus++ and ++ctrl+0++, or ++ctrl+wheel++, change the font size of
+that tab only. The interface scale is a separate preference.
 
 ## Search the scrollback
 
-++ctrl+shift+f++ opens incremental search: case sensitivity, whole word and regular
-expressions, with every match marked in the scrollbar so you can see where they are.
+++ctrl+shift+f++ opens incremental search with case sensitivity, whole word and regular
+expression options. Every match is marked in the scrollbar.
 
 <figure markdown="span">
   ![Searching the scrollback](../assets/screenshots/terminal-search.png#only-light){ .shadow }
   ![Searching the scrollback](../assets/screenshots/terminal-search-dark.png#only-dark){ .shadow }
-  <figcaption>Find, next, previous — and the scrollbar shows the shape of the answer.</figcaption>
+  <figcaption>Incremental search with match positions marked in the scrollbar.</figcaption>
 </figure>
 
 ## Copy, paste and export
 
-- **Copy** ++ctrl+shift+c++, **paste** ++ctrl+shift+v++. Optional *copy on select*.
+- **Copy** ++ctrl+shift+c++, **paste** ++ctrl+shift+v++. *Copy on select* is optional.
 - **Right-click** is configurable: copy-selection-otherwise-paste (the terminal
   convention), always paste, or a context menu.
-- **Select all** ++ctrl+shift+a++, **copy all output**, and **clear scrollback**
-  ++ctrl+shift+k++ live in the terminal-actions menu.
-- **Export** the buffer as plain text, or as **HTML that keeps the colours** — useful for
-  pasting a failure into a ticket exactly as it looked.
+- **Select all** ++ctrl+shift+a++, **copy all output** and **clear scrollback**
+  ++ctrl+shift+k++ are in the terminal-actions menu.
+- **Export** writes the buffer as plain text, or as **HTML that preserves the colours**.
 
 !!! warning "Multiline paste is confirmed first"
 
     Pasting text that would run several shell commands opens a preview first, so a stray
-    newline in a copied snippet cannot execute half a script before you can read it. It is
-    a [setting](settings.md#terminal), and it is on by default.
+    newline in a copied snippet cannot execute part of a script before it is read. It is a
+    [setting](settings.md#terminal), and it is on by default.
 
 ## Keyword highlighting
 
-Rules that colour literal keywords in every terminal — `ERROR` on red, `WARN` on amber,
-whatever your logs shout at you. Each rule has a foreground, an optional background, and
-case-sensitive / whole-word switches.
+Highlighting rules colour literal keywords in every terminal, such as `ERROR` on red and
+`WARN` on amber. Each rule has a foreground, an optional background, and case-sensitive and
+whole-word switches.
 
 <figure markdown="span">
   ![Keyword highlighting rules](../assets/screenshots/settings-highlighting.png#only-light){ .shadow }
@@ -97,13 +95,13 @@ case-sensitive / whole-word switches.
   <figcaption>Global rules, with per-host rules that add to them or replace them.</figcaption>
 </figure>
 
-A host can carry its own rules — see the **Highlighting** section of the
-[host editor](adding-hosts.md#session-logging-highlighting) — either *in addition to* the
-global set or *instead of* it.
+A host can carry its own rules, either in addition to the global set or instead of it. See
+the **Highlighting** section of the
+[host editor](adding-hosts.md#session-logging-highlighting).
 
 ## Command buttons
 
-Commands you run constantly can live in a one-click bar above the terminal, running
-immediately or being inserted for review first.
+Frequently used commands can be saved to a one-click bar above the terminal, configured to
+run immediately or to be inserted for review.
 
 [More on command buttons :octicons-arrow-right-24:](commands.md)

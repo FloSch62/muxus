@@ -4,9 +4,9 @@ icon: lucide/download
 
 # Installation
 
-There are two ways to run Muxus. Most people want the **desktop app** — download an
-installer, double-click, done. If you would rather run it as a local web server (or you
-are on a platform without a packaged build), run it **from source**.
+Muxus can be run in two ways. The **desktop app** is a packaged installer for Windows,
+macOS and Linux. Running **from source** starts the server locally and serves the UI to a
+browser, which also covers platforms without a packaged build.
 
 <div class="grid cards" markdown>
 
@@ -14,8 +14,8 @@ are on a platform without a packaged build), run it **from source**.
 
     ---
 
-    A native, frameless window for Windows, macOS and Linux. No Node.js, no terminal —
-    install and launch. **Recommended.**
+    A native, frameless window for Windows, macOS and Linux. Requires no Node.js
+    installation. **Recommended.**
 
     [:octicons-arrow-right-24: Install the desktop app](desktop.md)
 
@@ -23,8 +23,7 @@ are on a platform without a packaged build), run it **from source**.
 
     ---
 
-    Run the Muxus server with `pnpm` and open it in your browser. Good for development,
-    or for a box you already SSH into.
+    Run the Muxus server with `pnpm` and open it in a browser. Suitable for development.
 
     [:octicons-arrow-right-24: Run from source](from-source.md)
 
@@ -32,24 +31,23 @@ are on a platform without a packaged build), run it **from source**.
 
 ## Before you start
 
-Muxus connects with the credentials and configuration you already have:
+Muxus uses the existing SSH credentials and configuration on the machine:
 
 | It reads | For |
 | --- | --- |
 | `~/.ssh/config` (and every `Include`) | Hosts, users, ports, keys, jump chains, forwards |
-| `~/.ssh/known_hosts`, `/etc/ssh/ssh_known_hosts` | Host-key verification, exactly like OpenSSH |
+| `~/.ssh/known_hosts`, `/etc/ssh/ssh_known_hosts` | Host-key verification |
 | `~/.ssh/*` key files | The key picker in the host editor |
 | `SSH_AUTH_SOCK` | Agent authentication and `ForwardAgent` |
 
 !!! tip "Already use `ssh`? You're ready."
 
-    If `ssh myhost` works in your terminal, Muxus will find and dial the same host with
-    the same key. It does not import your config into a database — see
-    [ssh_config support](../reference/ssh-config.md) for exactly which keywords are
-    honoured.
+    If `ssh myhost` works in a terminal, Muxus resolves and dials the same host with the
+    same key. The configuration is not imported into a database. See
+    [ssh_config support](../reference/ssh-config.md) for the keywords that are honoured.
 
-Everything Muxus adds on top — folders, colours, workspaces, saved tunnels, session
-history — lives in a small local SQLite database next to your other application data.
+The attributes Muxus adds (folders, colours, workspaces, saved tunnels, session history)
+are stored in a local SQLite database alongside the other application data.
 
 ## Platform notes
 
@@ -66,12 +64,12 @@ history — lives in a small local SQLite database next to your other applicatio
 
 === ":material-apple: macOS"
 
-    Serial ports appear as `/dev/tty.*` (for example `/dev/tty.usbserial-A50285BI`). No
-    extra permissions are needed for SSH, Telnet or serial.
+    Serial ports appear as `/dev/tty.*`, for example `/dev/tty.usbserial-A50285BI`. No
+    extra permissions are required for SSH, Telnet or serial.
 
 === ":material-microsoft-windows: Windows"
 
     Serial ports use `COM` names such as `COM3`. Muxus reads `%USERPROFILE%\.ssh\config`
     and the OpenSSH agent when one is running.
 
-Once you are installed, head to the [Quickstart](../quickstart.md).
+After installation, continue with the [Quickstart](../quickstart.md).

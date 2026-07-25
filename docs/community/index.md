@@ -4,8 +4,8 @@ icon: lucide/users
 
 # Community
 
-Muxus is free and open source under the MIT license, and contributions are welcome —
-whether that is code, docs, a bug report or a feature idea.
+Muxus is free and open source under the MIT license. Contributions of code, docs, bug
+reports and feature ideas are welcome.
 
 <div class="grid cards" markdown>
 
@@ -25,11 +25,11 @@ whether that is code, docs, a bug report or a feature idea.
 
     ---
 
-    Quick answers to the questions that come up most.
+    Answers to common questions.
 
 </div>
 
 ## Links
 
-- :simple-github: **Source & issues** — [github.com/FloSch62/muxus](https://github.com/FloSch62/muxus)
-- :material-download: **Releases** — [github.com/FloSch62/muxus/releases](https://github.com/FloSch62/muxus/releases)
+- :simple-github: **Source & issues**: [github.com/FloSch62/muxus](https://github.com/FloSch62/muxus)
+- :material-download: **Releases**: [github.com/FloSch62/muxus/releases](https://github.com/FloSch62/muxus/releases)
