@@ -17,14 +17,9 @@ import UsbOutlinedIcon from '@mui/icons-material/UsbOutlined';
 import type { SavedHostProfile, SerialPortInfo, SerialProfile } from '@muxus/shared';
 import { useDeleteHostProfile, useSaveHostProfile, useUpdateHostProfileMetadata } from '../api/profiles.js';
 import { useSaveSessionLoggingPolicy } from '../api/session-history.js';
-import {
-  useSavedHostProfiles,
-  useSerialPorts,
-  useSessionLoggingPolicy,
-  useSshConfig,
-} from '../api/queries.js';
+import { useSerialPorts, useSessionLoggingPolicy } from '../api/queries.js';
 import { confirmDeleteHost } from '../host-actions.js';
-import { knownHostGroups } from '../managed-hosts.js';
+import { FolderPathField } from './FolderPathField.js';
 import { connectSavedHost } from '../session-actions.js';
 import {
   hostSessionLoggingDraft,
@@ -224,10 +219,6 @@ function GeneralSection({
   draft: NativeHostDraft;
   set: (patch: Partial<NativeHostDraft>) => void;
 }) {
-  const { data: config } = useSshConfig();
-  const { data: savedData } = useSavedHostProfiles();
-  const groups = knownHostGroups(config?.hosts ?? [], savedData?.profiles ?? []);
-
   return (
     <Stack spacing={2}>
       <TextField
@@ -259,19 +250,10 @@ function GeneralSection({
       ) : (
         <SerialPortField draft={draft} set={set} />
       )}
-      <Autocomplete
-        freeSolo
-        options={groups}
-        inputValue={draft.group}
-        onInputChange={(_event, value) => set({ group: value })}
-        renderInput={(params) => (
-          <TextField
-            {...params}
-            label="Group"
-            placeholder="Lab"
-            helperText="Optional — groups this host in the sidebar."
-          />
-        )}
+      <FolderPathField
+        value={draft.group}
+        onChange={(group: string) => set({ group })}
+        helperText="Optional — use / to nest, e.g. Lab/Bench 3."
       />
       <HostColorPicker value={draft.color} onChange={(color) => set({ color })} />
       {kind === 'telnet' && (

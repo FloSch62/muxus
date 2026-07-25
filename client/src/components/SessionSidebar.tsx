@@ -1,81 +1,67 @@
-import { useDeferredValue, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import ButtonBase from '@mui/material/ButtonBase';
-import Dialog from '@mui/material/Dialog';
-import DialogActions from '@mui/material/DialogActions';
-import DialogContent from '@mui/material/DialogContent';
-import DialogTitle from '@mui/material/DialogTitle';
-import Divider from '@mui/material/Divider';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
-import ListSubheader from '@mui/material/ListSubheader';
-import Menu from '@mui/material/Menu';
-import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
-import ToggleButton from '@mui/material/ToggleButton';
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
 import BoltIcon from '@mui/icons-material/Bolt';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
+import CreateNewFolderOutlinedIcon from '@mui/icons-material/CreateNewFolderOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
-import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
-import LibraryAddOutlinedIcon from '@mui/icons-material/LibraryAddOutlined';
-import GridViewOutlinedIcon from '@mui/icons-material/GridViewOutlined';
-import MoreVertIcon from '@mui/icons-material/MoreVert';
-import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
-import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
-import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import SearchIcon from '@mui/icons-material/Search';
-import StarIcon from '@mui/icons-material/Star';
-import StarBorderIcon from '@mui/icons-material/StarBorder';
-import TabOutlinedIcon from '@mui/icons-material/TabOutlined';
-import TableRowsOutlinedIcon from '@mui/icons-material/TableRowsOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
-import ViewColumnOutlinedIcon from '@mui/icons-material/ViewColumnOutlined';
-import type { SshHostEntry } from '@muxus/shared';
+import type { SavedHostProfile, SshHostEntry } from '@muxus/shared';
+import { useApplyFolderMoves } from '../api/host-groups.js';
 import { useReorderManagedHosts } from '../api/host-order.js';
 import { useDeleteHostProfile, useUpdateHostProfileMetadata } from '../api/profiles.js';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
 import { useDeleteHost, useUpdateSshMetadata } from '../api/ssh-config.js';
-import { copyToClipboard } from '../clipboard.js';
 import { confirmDeleteHost } from '../host-actions.js';
 import { hostOrderAfterDrop } from '../host-organization.js';
 import {
+  buildHostTree,
+  folderParentPath,
+  folderSiblings,
+  siblingHostKeys,
+  type ContainerNode,
+  type FolderNode,
+  type VisibleNode,
+} from '../host-tree.js';
+import {
   anyManagedHostMatches,
   groupManagedHosts,
-  managedHostAddress,
-  managedHostCopyCommand,
   managedHostDisplayName,
   managedHostKey,
   managedHostRef,
   type ManagedHost,
-  type ManagedHostGroup,
 } from '../managed-hosts.js';
 import {
   connectManagedHost,
   connectTarget,
   isQuickConnectTarget,
-  launchManagedHostGroup,
   openLocalTerminal,
-  openManagedHostInNewWindow,
 } from '../session-actions.js';
 import {
+  loadFolderDialog,
   loadHostEditorDialog,
-  loadHostOrganizationDialog,
+  loadSidebarMenus,
   loadTerminalViewImpl,
 } from '../lazy-features.js';
 import {
@@ -84,225 +70,201 @@ import {
   maxSidebarWidth,
   MIN_SIDEBAR_WIDTH,
 } from '../sidebar-width.js';
+import { confirmAction } from '../state/dialogs.js';
 import { usePrefsStore } from '../state/prefs.js';
-import { showToast } from '../state/toast.js';
-import { useTabsStore } from '../state/tabs.js';
-import type { SessionSetLayout } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
-import { hostKindIcon } from './host-kind-icon.js';
 import { PanelResizeHandle } from './PanelResizeHandle.js';
+import { deleteFolderPlan, folderRewritePlan } from './sidebar/folder-mutations.js';
+import type { FolderMenuState } from './sidebar/FolderContextMenu.js';
+import type { HostMenuState } from './sidebar/HostContextMenu.js';
+import { HostTree } from './sidebar/HostTree.js';
+import type { LaunchTarget } from './sidebar/LaunchGroupDialog.js';
+import { useAllManagedHosts } from './sidebar/useAllManagedHosts.js';
+import { useFolderPrefs } from './sidebar/useFolderPrefs.js';
+import { useLiveHostCounts } from './sidebar/useLiveHostCounts.js';
+import { useTreeDnd, type FolderPlacement } from './sidebar/useTreeDnd.js';
+
+const SidebarMenus = lazy(() =>
+  loadSidebarMenus().then((module) => ({ default: module.SidebarMenus })),
+);
 
 const EMPTY_HOSTS: SshHostEntry[] = [];
-type LiveCounts = { connected: number; connecting: number };
-type DropTarget =
-  | { kind: 'row'; groupKey: string; hostKey: string; edge: 'before' | 'after' }
-  | { kind: 'group'; groupKey: string };
+const EMPTY_PROFILES: SavedHostProfile[] = [];
+const EMPTY_KEYS: ReadonlySet<string> = new Set();
 
 /** Saved Telnet/serial profiles and live OpenSSH hosts in one host manager. */
 export function SessionSidebar() {
   const { data: config } = useSshConfig();
   const { data: savedData } = useSavedHostProfiles();
   const setHostEditor = useUiStore((s) => s.setHostEditor);
-  const setHostOrganizer = useUiStore((s) => s.setHostOrganizer);
-  const tabs = useTabsStore((s) => s.tabs);
+  const setFolderDialog = useUiStore((s) => s.setFolderDialog);
   const sidebarWidth = usePrefsStore((state) => state.sidebarWidth);
   const setPrefs = usePrefsStore((state) => state.set);
   const sidebarRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [filter, setFilter] = useState('');
-  const [menu, setMenu] = useState<{ anchor: HTMLElement; position?: { top: number; left: number }; host: ManagedHost } | null>(null);
-  const [launchGroup, setLaunchGroup] = useState<ManagedHostGroup | null>(null);
-  const [launchLayout, setLaunchLayout] = useState<SessionSetLayout>('tabs');
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const [dragged, setDragged] = useState<{ groupKey: string; hostKey: string } | null>(null);
-  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
+  const [menu, setMenu] = useState<HostMenuState | null>(null);
+  const [folderMenu, setFolderMenu] = useState<FolderMenuState | null>(null);
+  const [launchTarget, setLaunchTarget] = useState<LaunchTarget | null>(null);
+  /** Folders collapsed during a search; discarded when the query changes. */
+  const [searchCollapsed, setSearchCollapsed] = useState<ReadonlySet<string>>(EMPTY_KEYS);
   const deleteHost = useDeleteHost();
   const deleteProfile = useDeleteHostProfile();
   const updateMetadata = useUpdateSshMetadata();
   const updateProfileMetadata = useUpdateHostProfileMetadata();
   const reorder = useReorderManagedHosts();
+  const applyFolderMoves = useApplyFolderMoves();
+  const liveByKey = useLiveHostCounts();
+  const folders = useFolderPrefs();
+  const allHosts = useAllManagedHosts();
 
   const normalizedFilter = filter.trim().toLowerCase();
   const needle = useDeferredValue(normalizedFilter);
   const hosts = config?.hosts ?? EMPTY_HOSTS;
+  const profiles = savedData?.profiles ?? EMPTY_PROFILES;
+
   const groups = useMemo(
+    () => groupManagedHosts(hosts, profiles, config?.files ?? [], config?.path, needle),
+    [hosts, profiles, config?.files, config?.path, needle],
+  );
+  const tree = useMemo(
     () =>
-      groupManagedHosts(
-        hosts,
-        savedData?.profiles ?? [],
-        config?.files ?? [],
-        config?.path,
-        needle,
-      ),
-    [hosts, savedData?.profiles, config?.files, config?.path, needle],
+      buildHostTree(groups, {
+        knownFolders: folders.emptyFolders,
+        folderOrder: folders.folderOrder,
+      }),
+    [groups, folders.emptyFolders, folders.folderOrder],
   );
   // The list itself lags behind typing, but quick-connect must answer for the
   // text as typed — and that only needs to know whether anything matched.
   const hasImmediateMatch = useMemo(
-    () => anyManagedHostMatches(hosts, savedData?.profiles ?? [], normalizedFilter),
-    [hosts, savedData?.profiles, normalizedFilter],
+    () => anyManagedHostMatches(hosts, profiles, normalizedFilter),
+    [hosts, profiles, normalizedFilter],
   );
-  const visible = useMemo(() => groups.flatMap((group) => group.hosts), [groups]);
   const hostByKey = useMemo(
-    () => new Map(visible.map((host) => [managedHostKey(host), host])),
-    [visible],
+    () => new Map(tree.hosts.map((host) => [managedHostKey(host), host])),
+    [tree],
   );
-  const menuGroup = menu
-    ? groups.find((group) =>
-        group.hosts.some((host) => managedHostKey(host) === managedHostKey(menu.host)),
-      )
-    : undefined;
-  const menuIndex =
-    menu && menuGroup
-      ? menuGroup.hosts.findIndex(
-          (host) => managedHostKey(host) === managedHostKey(menu.host),
-        )
-      : -1;
 
   const mutating =
-    reorder.isPending || updateMetadata.isPending || updateProfileMetadata.isPending;
+    reorder.isPending ||
+    updateMetadata.isPending ||
+    updateProfileMetadata.isPending ||
+    applyFolderMoves.isPending;
+  const filtering = !!needle;
+  const reorderEnabled = !filtering && !mutating;
+  useEffect(() => {
+    setSearchCollapsed(EMPTY_KEYS);
+  }, [needle]);
+  // Folder edits rewrite paths across hosts the filter may be hiding, so they
+  // are only offered against the full list.
+  const folderEditsEnabled = !filtering && !mutating;
 
-  const commitOrder = (keys: readonly string[]) =>
-    reorder.mutate(
-      keys.flatMap((key) => {
-        const host = hostByKey.get(key);
-        return host ? [managedHostRef(host)] : [];
-      }),
-    );
+  const commitOrder = useCallback(
+    (keys: readonly string[]) =>
+      reorder.mutate(
+        keys.flatMap((key) => {
+          const host = hostByKey.get(key);
+          return host ? [managedHostRef(host)] : [];
+        }),
+      ),
+    [reorder, hostByKey],
+  );
 
-  const reorderWithin = (groupKey: string, sourceKey: string, targetKey: string, edge: 'before' | 'after') => {
-    const group = groups.find((candidate) => candidate.key === groupKey);
-    if (!group || sourceKey === targetKey) return;
-    const keys = group.hosts.map(managedHostKey);
-    const next = hostOrderAfterDrop(keys, sourceKey, targetKey, edge);
-    if (next.every((key, index) => key === keys[index])) return;
-    commitOrder(next);
-  };
+  /** Reorder a host among its siblings — folders are always alphabetical. */
+  const moveHostByKey = useCallback(
+    (key: string, delta: -1 | 1) => {
+      if (!reorderEnabled) return;
+      for (const container of allContainers(tree.roots)) {
+        const keys = siblingHostKeys(container);
+        const from = keys.indexOf(key);
+        if (from < 0) continue;
+        const to = from + delta;
+        if (to < 0 || to >= keys.length) return;
+        [keys[from], keys[to]] = [keys[to]!, keys[from]!];
+        commitOrder(keys);
+        return;
+      }
+    },
+    [tree, commitOrder, reorderEnabled],
+  );
+  const moveHost = useCallback(
+    (row: VisibleNode, delta: -1 | 1) => moveHostByKey(row.key, delta),
+    [moveHostByKey],
+  );
 
-  const moveToGroup = (
-    targetGroupKey: string,
-    sourceKey: string,
-    targetKey?: string,
-    edge: 'before' | 'after' = 'after',
-  ) => {
-    const targetGroup = groups.find((candidate) => candidate.key === targetGroupKey);
-    const source = hostByKey.get(sourceKey);
-    if (!targetGroup || targetGroup.kind !== 'custom' || !source) return;
-    const keys = targetGroup.hosts.map(managedHostKey);
-    const next = hostOrderAfterDrop(keys, sourceKey, targetKey, edge);
-    if (targetGroup.hosts.some((host) => managedHostKey(host) === sourceKey)) {
-      if (!next.every((key, index) => key === keys[index])) commitOrder(next);
-      return;
-    }
-    const patch = { group: targetGroup.label };
-    const moved =
-      source.kind === 'ssh'
-        ? updateMetadata.mutateAsync({ alias: source.entry.alias, patch })
-        : updateProfileMetadata.mutateAsync({ id: source.entry.id, patch });
-    void moved.then(() => commitOrder(next)).catch(() => undefined);
-  };
+  /** Commit a drag: change the host's folder if it moved, then its order. */
+  const dropHost = useCallback(
+    (hostKey: string, path: string | undefined, order: string[]) => {
+      const host = hostByKey.get(hostKey);
+      if (!host) return;
+      if (path === undefined) {
+        commitOrder(order);
+        return;
+      }
+      const patch = { group: path || null };
+      const moved =
+        host.kind === 'ssh'
+          ? updateMetadata.mutateAsync({ alias: host.entry.alias, patch })
+          : updateProfileMetadata.mutateAsync({ id: host.entry.id, patch });
+      // Order is only meaningful once the host actually belongs to the folder.
+      void moved.then(() => commitOrder(order)).catch(() => undefined);
+    },
+    [hostByKey, commitOrder, updateMetadata, updateProfileMetadata],
+  );
 
-  const moveBy = (groupKey: string, hostKey: string, delta: -1 | 1) => {
-    const group = groups.find((candidate) => candidate.key === groupKey);
-    if (!group) return;
-    const keys = group.hosts.map(managedHostKey);
-    const from = keys.indexOf(hostKey);
-    const to = from + delta;
-    if (from < 0 || to < 0 || to >= keys.length) return;
-    [keys[from], keys[to]] = [keys[to]!, keys[from]!];
-    commitOrder(keys);
-  };
+  const dropFolder = useCallback(
+    (fromPath: string, toPath: string, placement?: FolderPlacement) => {
+      // The key changes with the path, so carry colour, collapse state and the
+      // sibling order across before anything is written.
+      if (fromPath !== toPath) {
+        folders.renameFolderPrefs(fromPath, toPath);
+        const moves = folderRewritePlan(allHosts, fromPath, toPath);
+        if (moves.length > 0) applyFolderMoves.mutate({ moves, label: toPath });
+        else folders.addEmptyFolder(toPath);
+        folders.removeEmptyFolder(fromPath);
+      }
+      if (placement) folders.setFolderOrder(placement.parentKey, placement.keys);
+    },
+    [allHosts, folders, applyFolderMoves],
+  );
 
-  const beginDrag = (event: DragEvent<HTMLElement>, groupKey: string, hostKey: string) => {
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', hostKey);
-    setDragged({ groupKey, hostKey });
-    setDropTarget(null);
-  };
+  /** Alt+Arrow on a folder: swap it with the sibling folder next to it. */
+  const moveFolderByKey = useCallback(
+    (key: string, delta: -1 | 1) => {
+      if (!reorderEnabled) return;
+      const siblings = folderSiblings(tree, key);
+      if (!siblings) return;
+      const keys = [...siblings.keys];
+      const from = keys.indexOf(key);
+      const to = from + delta;
+      if (from < 0 || to < 0 || to >= keys.length) return;
+      [keys[from], keys[to]] = [keys[to]!, keys[from]!];
+      folders.setFolderOrder(siblings.parentKey, keys);
+    },
+    [tree, folders, reorderEnabled],
+  );
+  const moveFolder = useCallback(
+    (row: VisibleNode, delta: -1 | 1) => moveFolderByKey(row.key, delta),
+    [moveFolderByKey],
+  );
 
-  const dragOver = (event: DragEvent<HTMLElement>, groupKey: string, hostKey: string) => {
-    if (!dragged) return;
-    const targetGroup = groups.find((candidate) => candidate.key === groupKey);
-    if (
-      dragged.hostKey === hostKey ||
-      !targetGroup ||
-      (dragged.groupKey !== groupKey && targetGroup.kind !== 'custom')
-    ) {
-      setDropTarget((current) => (current ? null : current));
-      return;
-    }
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-    const rect = event.currentTarget.getBoundingClientRect();
-    const edge = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-    setDropTarget((current) =>
-      current?.kind === 'row' &&
-      current.groupKey === groupKey &&
-      current.hostKey === hostKey &&
-      current.edge === edge
-        ? current
-        : { kind: 'row', groupKey, hostKey, edge },
-    );
-  };
+  const dnd = useTreeDnd({
+    tree,
+    enabled: reorderEnabled,
+    onDropHost: dropHost,
+    onDropFolder: dropFolder,
+    hostOrderAfterDrop,
+  });
 
-  const drop = (event: DragEvent<HTMLElement>, groupKey: string, hostKey: string) => {
-    event.preventDefault();
-    if (
-      dragged &&
-      dropTarget?.kind === 'row' &&
-      dropTarget.groupKey === groupKey &&
-      dropTarget.hostKey === hostKey
-    ) {
-      if (dragged.groupKey === groupKey) reorderWithin(groupKey, dragged.hostKey, hostKey, dropTarget.edge);
-      else moveToGroup(groupKey, dragged.hostKey, hostKey, dropTarget.edge);
-    }
-    setDragged(null);
-    setDropTarget(null);
-  };
-
-  const dragOverGroup = (event: DragEvent<HTMLElement>, groupKey: string) => {
-    const group = groups.find((candidate) => candidate.key === groupKey);
-    if (!dragged) return;
-    if (!group || group.kind !== 'custom') {
-      setDropTarget((current) => (current ? null : current));
-      return;
-    }
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-    setDropTarget((current) =>
-      current?.kind === 'group' && current.groupKey === groupKey
-        ? current
-        : { kind: 'group', groupKey },
-    );
-  };
-
-  const dropOnGroup = (event: DragEvent<HTMLElement>, groupKey: string) => {
-    event.preventDefault();
-    if (dragged && dropTarget?.kind === 'group' && dropTarget.groupKey === groupKey) {
-      moveToGroup(groupKey, dragged.hostKey);
-    }
-    setDragged(null);
-    setDropTarget(null);
-  };
-
-  /** Live session dots keyed like managedHostKey: connected/connecting tab counts. */
-  const liveByKey = useMemo(() => {
-    const map = new Map<string, LiveCounts>();
-    for (const tab of tabs) {
-      if (!tab.profile) continue;
-      const key =
-        tab.profile.kind === 'ssh'
-          ? `ssh:${tab.profile.target}`
-          : tab.profile.kind === 'telnet' || tab.profile.kind === 'serial'
-            ? tab.profile.profileId && `profile:${tab.profile.profileId}`
-            : undefined;
-      if (!key) continue;
-      const entry = map.get(key) ?? { connected: 0, connecting: 0 };
-      if (tab.status === 'connected') entry.connected++;
-      if (tab.status === 'connecting') entry.connecting++;
-      map.set(key, entry);
-    }
-    return map;
-  }, [tabs]);
+  const folderColor = useCallback(
+    (key: string) => folders.folderStyle(key)?.color,
+    [folders],
+  );
+  const folderIconId = useCallback(
+    (key: string) => folders.folderStyle(key)?.icon,
+    [folders],
+  );
 
   const quickConnectable =
     !!normalizedFilter &&
@@ -315,7 +277,7 @@ export function SessionSidebar() {
     const currentMatch = hasImmediateMatch
       ? groupManagedHosts(
           hosts,
-          savedData?.profiles ?? [],
+          profiles,
           config?.files ?? [],
           config?.path,
           normalizedFilter,
@@ -347,14 +309,134 @@ export function SessionSidebar() {
     });
   };
 
-  const openMenu = (host: ManagedHost, anchor: HTMLElement, position?: { top: number; left: number }) =>
-    setMenu({ anchor, position, host });
+  const openMenu = useCallback(
+    (host: ManagedHost, anchor: HTMLElement, position?: { top: number; left: number }) =>
+      setMenu({ anchor, position, host }),
+    [],
+  );
 
-  const copyAction = menu ? managedHostCopyCommand(menu.host) : undefined;
+  const launchNode = useCallback(
+    (node: ContainerNode) =>
+      setLaunchTarget({ label: node.label, hosts: collectHosts(node) }),
+    [],
+  );
+
+  const openFolderMenu = useCallback(
+    (node: ContainerNode, anchor: HTMLElement, position?: { top: number; left: number }) => {
+      // ssh_config file groups are defined by the config file, not by Muxus.
+      if (node.kind !== 'folder') return;
+      setFolderMenu({ anchor, position, node });
+    },
+    [],
+  );
+
+  /**
+   * Expansion has two layers. Normally it is the persisted one. While a filter
+   * is active every folder opens — `groupManagedHosts` has already dropped the
+   * non-matching hosts, so "expand what contains a hit" is just "expand all" —
+   * and collapses made during the search live in a scratch set. The persisted
+   * layer is never written to while filtering, so clearing the box restores
+   * exactly the shape the sidebar had before.
+   */
+  const isExpanded = useCallback(
+    (key: string) => (filtering ? !searchCollapsed.has(key) : folders.isExpanded(key)),
+    [filtering, searchCollapsed, folders],
+  );
+  const setCollapsedKeys = useCallback(
+    (keys: readonly string[], collapsed: boolean) => {
+      if (filtering) {
+        setSearchCollapsed((current) => {
+          const next = new Set(current);
+          for (const key of keys) {
+            if (collapsed) next.add(key);
+            else next.delete(key);
+          }
+          return next;
+        });
+        return;
+      }
+      const next = new Set(usePrefsStore.getState().sidebarCollapsedFolders);
+      for (const key of keys) {
+        if (collapsed) next.add(key);
+        else next.delete(key);
+      }
+      setPrefs({ sidebarCollapsedFolders: [...next] });
+    },
+    [filtering, setPrefs],
+  );
+  const setExpanded = useCallback(
+    (key: string, expanded: boolean) => setCollapsedKeys([key], !expanded),
+    [setCollapsedKeys],
+  );
+
+  /** Collapse a folder and everything nested inside it, in one write. */
+  const collapseSubtree = useCallback(
+    (node: FolderNode) => {
+      const keys = [node.key];
+      const walk = (folder: FolderNode) => {
+        for (const child of folder.children) {
+          if (child.kind !== 'folder') continue;
+          keys.push(child.key);
+          walk(child);
+        }
+      };
+      walk(node);
+      setCollapsedKeys(keys, true);
+    },
+    [setCollapsedKeys],
+  );
+
+  const deleteFolder = useCallback(
+    (node: FolderNode) => {
+      const moves = deleteFolderPlan(allHosts, node.path);
+      const parent = folderParentPath(node.path);
+      void confirmAction({
+        title: `Delete “${node.label}”?`,
+        description:
+          moves.length === 0
+            ? 'The folder is empty, so nothing else changes.'
+            : `${moves.length} host${moves.length === 1 ? '' : 's'} move${moves.length === 1 ? 's' : ''} ${parent ? `up into “${parent}”` : 'out of every folder'}. No connection settings change.`,
+        confirmLabel: 'Delete folder',
+        destructive: true,
+      }).then((confirmed) => {
+        if (!confirmed) return;
+        folders.removeEmptyFolder(node.path);
+        folders.setFolderStyle(node.key, undefined);
+        if (moves.length > 0) applyFolderMoves.mutate({ moves, label: node.label });
+      });
+    },
+    [allHosts, folders, applyFolderMoves],
+  );
+
+  // Where the menu's host sits among its siblings, for Move up / Move down.
+  const menuPosition = useMemo(() => {
+    if (!menu) return { index: -1, total: 0 };
+    const key = managedHostKey(menu.host);
+    for (const container of allContainers(tree.roots)) {
+      const keys = siblingHostKeys(container);
+      const index = keys.indexOf(key);
+      if (index >= 0) return { index, total: keys.length };
+    }
+    return { index: -1, total: 0 };
+  }, [menu, tree]);
+
+  /** Where the menu's folder sits among its siblings, for Move up / Move down. */
+  const folderMenuPosition = useMemo(() => {
+    const siblings = folderMenu ? folderSiblings(tree, folderMenu.node.key) : undefined;
+    return siblings
+      ? { index: siblings.keys.indexOf(folderMenu!.node.key), total: siblings.keys.length }
+      : { index: -1, total: 0 };
+  }, [folderMenu, tree]);
+
+  const empty = hosts.length === 0 && profiles.length === 0;
 
   return (
     <Box
       ref={sidebarRef}
+      // Every menu and the launch dialog live in one lazy chunk. Pointing at
+      // the sidebar at all is enough warning to have it ready by the time a
+      // right-click lands.
+      onMouseEnter={() => void loadSidebarMenus()}
       sx={{
         width: sidebarWidth,
         maxWidth: '45%',
@@ -382,6 +464,7 @@ export function SessionSidebar() {
       <Stack direction="row" spacing={1} sx={{ p: 1.25, pb: 0.75, alignItems: 'center' }}>
         <TextField
           fullWidth
+          inputRef={searchRef}
           placeholder="Search / user@host ⏎"
           value={filter}
           onChange={(e) => {
@@ -394,6 +477,11 @@ export function SessionSidebar() {
           onKeyDown={(e) => {
             if (e.key === 'Enter') onEnter();
             if (e.key === 'Escape') setFilter('');
+            if (e.key === 'ArrowDown') {
+              // Hand off to the tree rather than moving the text cursor.
+              e.preventDefault();
+              sidebarRef.current?.querySelector<HTMLElement>('[role="treeitem"]')?.focus();
+            }
           }}
           slotProps={{
             input: {
@@ -405,6 +493,20 @@ export function SessionSidebar() {
             },
           }}
         />
+        <Tooltip title="New folder">
+          <span>
+            <IconButton
+              size="small"
+              aria-label="New folder"
+              disabled={!folderEditsEnabled}
+              onMouseEnter={() => void loadFolderDialog()}
+              onFocus={() => void loadFolderDialog()}
+              onClick={() => setFolderDialog({ mode: 'new' })}
+            >
+              <CreateNewFolderOutlinedIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
         <Tooltip title="Add host">
           <IconButton
             size="small"
@@ -425,10 +527,10 @@ export function SessionSidebar() {
             onFocus={() => void loadTerminalViewImpl()}
             onClick={() => openLocalTerminal()}
           >
-            <ListItemIcon sx={{ minWidth: 32 }}>
-              <TerminalIcon fontSize="small" />
+            <ListItemIcon sx={{ minWidth: 28 }}>
+              <TerminalIcon sx={{ fontSize: 16 }} />
             </ListItemIcon>
-            <ListItemText primary="Local terminal" />
+            <ListItemText primary="Local terminal" slotProps={{ primary: { sx: { fontSize: 13 } } }} />
           </ListItemButton>
           {quickConnectable && (
             <ListItemButton
@@ -439,10 +541,13 @@ export function SessionSidebar() {
                 setFilter('');
               }}
             >
-              <ListItemIcon sx={{ minWidth: 32 }}>
-                <BoltIcon fontSize="small" color="primary" />
+              <ListItemIcon sx={{ minWidth: 28 }}>
+                <BoltIcon sx={{ fontSize: 16 }} color="primary" />
               </ListItemIcon>
-              <ListItemText primary={`Connect to ${filter.trim()}`} slotProps={{ primary: { sx: { color: 'primary.main' } } }} />
+              <ListItemText
+                primary={`Connect to ${filter.trim()}`}
+                slotProps={{ primary: { sx: { fontSize: 13, color: 'primary.main' } } }}
+              />
             </ListItemButton>
           )}
         </List>
@@ -453,147 +558,25 @@ export function SessionSidebar() {
           </Alert>
         )}
 
-        {groups.map((group) => (
-          <List
-            key={group.key}
-            dense
-            disablePadding
-            subheader={
-              <ListSubheader
-                disableSticky
-                onDragOver={(event) => dragOverGroup(event, group.key)}
-                onDragLeave={(event) => {
-                  const related = event.relatedTarget;
-                  if (related instanceof Node && event.currentTarget.contains(related)) return;
-                  setDropTarget((current) =>
-                    current?.kind === 'group' && current.groupKey === group.key ? null : current,
-                  );
-                }}
-                onDrop={(event) => dropOnGroup(event, group.key)}
-                sx={{
-                  bgcolor:
-                    dropTarget?.kind === 'group' && dropTarget.groupKey === group.key
-                      ? 'action.selected'
-                      : 'transparent',
-                  lineHeight: '26px',
-                  fontSize: 11,
-                  textTransform: 'uppercase',
-                  letterSpacing: 0.6,
-                  userSelect: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  px: 0.75,
-                  mt: 0.5,
-                  borderRadius: 1,
-                  transition: 'background-color 120ms ease, color 120ms ease, box-shadow 120ms ease',
-                  // Group actions stay out of sight until the header is hovered
-                  // or tabbed to; the slot is always laid out so nothing shifts.
-                  '&:hover .group-launch, & .group-launch:focus-visible': { opacity: 1 },
-                  ...(dropTarget?.kind === 'group' &&
-                    dropTarget.groupKey === group.key && {
-                      color: 'primary.main',
-                      boxShadow: (theme) => `inset 3px 0 ${theme.palette.primary.main}`,
-                    }),
-                }}
-              >
-                <Tooltip title={group.tooltip ?? ''} placement="right" disableInteractive>
-                  <ButtonBase
-                    aria-expanded={!collapsed[group.key]}
-                    onClick={() =>
-                      setCollapsed((current) => ({ ...current, [group.key]: !current[group.key] }))
-                    }
-                    sx={{
-                      flex: 1,
-                      minWidth: 0,
-                      justifyContent: 'flex-start',
-                      gap: 0.5,
-                      font: 'inherit',
-                      letterSpacing: 'inherit',
-                      // Form controls drop the inherited transform in some engines.
-                      textTransform: 'inherit',
-                      color: 'inherit',
-                      borderRadius: 1,
-                      px: 0.25,
-                    }}
-                  >
-                    <ExpandMoreIcon
-                      sx={{
-                        fontSize: 14,
-                        flexShrink: 0,
-                        color: 'text.disabled',
-                        transition: 'transform 150ms ease',
-                        transform: collapsed[group.key] ? 'rotate(-90deg)' : 'none',
-                      }}
-                    />
-                    <Box
-                      component="span"
-                      sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                    >
-                      {group.label}
-                    </Box>
-                  </ButtonBase>
-                </Tooltip>
-                <Tooltip title={group.hosts.length > 0 ? `Launch all ${group.hosts.length} hosts…` : ''}>
-                  <span>
-                    <IconButton
-                      className="group-launch"
-                      size="small"
-                      aria-label={`Launch ${group.label} group`}
-                      disabled={group.hosts.length === 0}
-                      onClick={() => {
-                        setLaunchGroup(group);
-                        setLaunchLayout('tabs');
-                      }}
-                      sx={{ p: 0.25, opacity: { xs: 1, md: 0 }, transition: 'opacity 120ms ease' }}
-                    >
-                      <PlayArrowOutlinedIcon sx={{ fontSize: 15 }} />
-                    </IconButton>
-                  </span>
-                </Tooltip>
-                <Typography
-                  component="span"
-                  sx={{ fontSize: 11, color: 'text.disabled', minWidth: 14, textAlign: 'right' }}
-                >
-                  {group.hosts.length}
-                </Typography>
-              </ListSubheader>
-            }
-          >
-            {!collapsed[group.key] &&
-              group.hosts.map((host) => {
-                const hostKey = managedHostKey(host);
-                return (
-                  <HostRow
-                    key={hostKey}
-                    host={host}
-                    live={liveByKey.get(hostKey)}
-                    onConnect={() => connectManagedHost(host)}
-                    onMenu={openMenu}
-                    showDragGrip={!needle}
-                    dragEnabled={!needle && !mutating}
-                    dragging={dragged?.groupKey === group.key && dragged.hostKey === hostKey}
-                    dropEdge={
-                      dropTarget?.kind === 'row' &&
-                      dropTarget.groupKey === group.key &&
-                      dropTarget.hostKey === hostKey
-                        ? dropTarget.edge
-                        : undefined
-                    }
-                    onDragStart={(event) => beginDrag(event, group.key, hostKey)}
-                    onDragOver={(event) => dragOver(event, group.key, hostKey)}
-                    onDrop={(event) => drop(event, group.key, hostKey)}
-                    onDragEnd={() => {
-                      setDragged(null);
-                      setDropTarget(null);
-                    }}
-                    onMove={(delta) => moveBy(group.key, hostKey, delta)}
-                  />
-                );
-              })}
-          </List>
-        ))}
+        <HostTree
+          tree={tree}
+          isExpanded={isExpanded}
+          setExpanded={setExpanded}
+          folderColor={folderColor}
+          folderIconId={folderIconId}
+          liveByKey={liveByKey}
+          reorderEnabled={reorderEnabled}
+          onConnect={connectManagedHost}
+          onHostMenu={openMenu}
+          onFolderMenu={openFolderMenu}
+          onLaunch={launchNode}
+          onMoveHost={moveHost}
+          onMoveFolder={moveFolder}
+          onEscape={() => searchRef.current?.focus()}
+          dnd={dnd.binding}
+        />
 
-        {hosts.length === 0 && (savedData?.profiles.length ?? 0) === 0 && (
+        {empty && (
           <Stack spacing={1.5} sx={{ alignItems: 'center', p: 3, textAlign: 'center' }}>
             <DnsOutlinedIcon sx={{ fontSize: 36, color: 'text.disabled' }} />
             <Typography variant="body2" color="text.secondary">
@@ -611,477 +594,79 @@ export function SessionSidebar() {
             </Button>
           </Stack>
         )}
-        {(hosts.length > 0 || (savedData?.profiles.length ?? 0) > 0) &&
-          visible.length === 0 &&
-          !quickConnectable && (
+        {!empty && tree.hosts.length === 0 && !quickConnectable && (
           <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
             No hosts match.
           </Typography>
-          )}
+        )}
       </Box>
 
-      <Menu
-        open={!!menu}
-        anchorEl={menu?.position ? undefined : menu?.anchor}
-        anchorReference={menu?.position ? 'anchorPosition' : 'anchorEl'}
-        anchorPosition={menu?.position}
-        onClose={() => setMenu(null)}
-      >
-        <MenuItem
-          onMouseEnter={() => void loadTerminalViewImpl()}
-          onFocus={() => void loadTerminalViewImpl()}
-          onClick={() => {
-            if (menu) connectManagedHost(menu.host);
-            setMenu(null);
-          }}
-        >
-          <ListItemIcon>
-            <PlayArrowOutlinedIcon fontSize="small" />
-          </ListItemIcon>
-          Connect
-        </MenuItem>
-        <MenuItem
-          onMouseEnter={() => void loadTerminalViewImpl()}
-          onFocus={() => void loadTerminalViewImpl()}
-          onClick={() => {
-            if (menu) openManagedHostInNewWindow(menu.host);
-            setMenu(null);
-          }}
-        >
-          <ListItemIcon>
-            <OpenInNewOutlinedIcon fontSize="small" />
-          </ListItemIcon>
-          Open in new window
-        </MenuItem>
-        <MenuItem
-          onClick={() => {
-            if (menu) toggleFavorite(menu.host);
-            setMenu(null);
-          }}
-        >
-          <ListItemIcon>
-            {menu?.host.entry.metadata?.favorite ? <StarIcon fontSize="small" /> : <StarBorderIcon fontSize="small" />}
-          </ListItemIcon>
-          {menu?.host.entry.metadata?.favorite ? 'Remove from favorites' : 'Add to favorites'}
-        </MenuItem>
-        <MenuItem
-          disabled={!!needle || menuIndex <= 0 || mutating}
-          onClick={() => {
-            if (menu && menuGroup) moveBy(menuGroup.key, managedHostKey(menu.host), -1);
-            setMenu(null);
-          }}
-        >
-          <ListItemIcon>
-            <KeyboardArrowUpIcon fontSize="small" />
-          </ListItemIcon>
-          Move up
-        </MenuItem>
-        <MenuItem
-          disabled={
-            !!needle ||
-            !menuGroup ||
-            menuIndex < 0 ||
-            menuIndex >= menuGroup.hosts.length - 1 ||
-            mutating
-          }
-          onClick={() => {
-            if (menu && menuGroup) moveBy(menuGroup.key, managedHostKey(menu.host), 1);
-            setMenu(null);
-          }}
-        >
-          <ListItemIcon>
-            <KeyboardArrowDownIcon fontSize="small" />
-          </ListItemIcon>
-          Move down
-        </MenuItem>
-        <Divider />
-        <MenuItem
-          onMouseEnter={() => void loadHostOrganizationDialog()}
-          onFocus={() => void loadHostOrganizationDialog()}
-          onClick={() => {
-            if (menu) setHostOrganizer(menu.host.entry);
-            setMenu(null);
-          }}
-        >
-          <ListItemIcon>
-            <PaletteOutlinedIcon fontSize="small" />
-          </ListItemIcon>
-          Organize & color…
-        </MenuItem>
-        <MenuItem
-          onMouseEnter={() => void loadHostEditorDialog()}
-          onFocus={() => void loadHostEditorDialog()}
-          onClick={() => {
-            if (menu) {
-              setHostEditor(
-                menu.host.kind === 'ssh'
-                  ? { mode: 'edit', entry: menu.host.entry }
-                  : { mode: 'edit-profile', entry: menu.host.entry },
-              );
-            }
-            setMenu(null);
-          }}
-        >
-          <ListItemIcon>
-            <EditOutlinedIcon fontSize="small" />
-          </ListItemIcon>
-          Edit host
-        </MenuItem>
-        <MenuItem
-          onMouseEnter={() => void loadHostEditorDialog()}
-          onFocus={() => void loadHostEditorDialog()}
-          onClick={() => {
-            if (menu) {
-              setHostEditor(
-                menu.host.kind === 'ssh'
-                  ? { mode: 'duplicate', entry: menu.host.entry }
-                  : { mode: 'duplicate-profile', entry: menu.host.entry },
-              );
-            }
-            setMenu(null);
-          }}
-        >
-          <ListItemIcon>
-            <LibraryAddOutlinedIcon fontSize="small" />
-          </ListItemIcon>
-          Duplicate
-        </MenuItem>
-        <MenuItem
-          onClick={() => {
-            if (copyAction) {
-              void copyToClipboard(copyAction.text).then((ok) => {
-                if (ok) showToast('success', `Copied "${copyAction.text}"`);
-              });
-            }
-            setMenu(null);
-          }}
-        >
-          <ListItemIcon>
-            <ContentCopyIcon fontSize="small" />
-          </ListItemIcon>
-          {copyAction?.label ?? 'Copy'}
-        </MenuItem>
-        <Divider />
-        <MenuItem
-          onClick={() => {
-            if (menu) requestDelete(menu.host);
-            setMenu(null);
-          }}
-          sx={{ color: 'error.main' }}
-        >
-          <ListItemIcon sx={{ color: 'error.main' }}>
-            <DeleteOutlineIcon fontSize="small" />
-          </ListItemIcon>
-          Delete host
-        </MenuItem>
-      </Menu>
-
-      <Dialog open={!!launchGroup} onClose={() => setLaunchGroup(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>Launch “{launchGroup?.label}”</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Start all {launchGroup?.hosts.length ?? 0} hosts and replace the current pane layout.
-          </Typography>
-          <ToggleButtonGroup
-            exclusive
-            fullWidth
-            size="small"
-            value={launchLayout}
-            onChange={(_event, value: SessionSetLayout | null) => {
-              if (value) setLaunchLayout(value);
+      {(menu || folderMenu || launchTarget) && (
+        <Suspense fallback={null}>
+          <SidebarMenus
+            host={{
+              menu,
+              onClose: () => setMenu(null),
+              canMoveUp: reorderEnabled && menuPosition.index > 0,
+              canMoveDown:
+                reorderEnabled &&
+                menuPosition.index >= 0 &&
+                menuPosition.index < menuPosition.total - 1,
+              onMove: (delta) => {
+                if (menu) moveHostByKey(managedHostKey(menu.host), delta);
+              },
+              onToggleFavorite: toggleFavorite,
+              onDelete: requestDelete,
+              onMoveToFolder: (host) =>
+                setFolderDialog({
+                  mode: 'move-host',
+                  hostKey: managedHostKey(host),
+                  hostName: managedHostDisplayName(host),
+                  currentPath: host.entry.metadata?.group ?? '',
+                }),
             }}
-            aria-label="Host group layout"
-          >
-            <ToggleButton value="tabs" aria-label="Tabs">
-              <Stack spacing={0.25} sx={{ alignItems: 'center' }}>
-                <TabOutlinedIcon fontSize="small" />
-                <Typography variant="caption">Tabs</Typography>
-              </Stack>
-            </ToggleButton>
-            <ToggleButton value="columns" aria-label="Columns">
-              <Stack spacing={0.25} sx={{ alignItems: 'center' }}>
-                <ViewColumnOutlinedIcon fontSize="small" />
-                <Typography variant="caption">Columns</Typography>
-              </Stack>
-            </ToggleButton>
-            <ToggleButton value="rows" aria-label="Rows">
-              <Stack spacing={0.25} sx={{ alignItems: 'center' }}>
-                <TableRowsOutlinedIcon fontSize="small" />
-                <Typography variant="caption">Rows</Typography>
-              </Stack>
-            </ToggleButton>
-            <ToggleButton value="grid" aria-label="Grid">
-              <Stack spacing={0.25} sx={{ alignItems: 'center' }}>
-                <GridViewOutlinedIcon fontSize="small" />
-                <Typography variant="caption">Grid</Typography>
-              </Stack>
-            </ToggleButton>
-          </ToggleButtonGroup>
-          {tabs.some((tab) => tab.profile && tab.status !== 'closed') ? (
-            <Alert severity="warning" sx={{ mt: 2 }}>
-              Existing live sessions will be closed when this group replaces the current layout.
-            </Alert>
-          ) : null}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setLaunchGroup(null)}>Cancel</Button>
-          <Button
-            variant="contained"
-            startIcon={<PlayArrowOutlinedIcon />}
-            disabled={!launchGroup?.hosts.length}
-            onClick={() => {
-              if (!launchGroup) return;
-              const { hosts: groupHosts, label } = launchGroup;
-              void launchManagedHostGroup(groupHosts, launchLayout).then((ids) => {
-                if (ids.length === 0) return;
-                showToast(
-                  'success',
-                  `Launching ${ids.length} session${ids.length === 1 ? '' : 's'} from “${label}” in ${launchLayout}.`,
-                );
-                setLaunchGroup(null);
-              });
+            folder={{
+              menu: folderMenu,
+              onClose: () => setFolderMenu(null),
+              onNewChild: (node) => setFolderDialog({ mode: 'new', parentPath: node.path }),
+              onEdit: (node) => setFolderDialog({ mode: 'edit', path: node.path }),
+              onLaunch: launchNode,
+              onCollapseAll: collapseSubtree,
+              onDelete: deleteFolder,
+              onMove: (node, delta) => moveFolderByKey(node.key, delta),
+              canMoveUp: reorderEnabled && folderMenuPosition.index > 0,
+              canMoveDown:
+                reorderEnabled &&
+                folderMenuPosition.index >= 0 &&
+                folderMenuPosition.index < folderMenuPosition.total - 1,
             }}
-          >
-            Launch group
-          </Button>
-        </DialogActions>
-      </Dialog>
+            launch={{ target: launchTarget, onClose: () => setLaunchTarget(null) }}
+          />
+        </Suspense>
+      )}
     </Box>
   );
 }
 
-/**
- * What a row deliberately does not draw. Jump chain, key, auth mode and
- * forwards are reference material, not things you act on from the list, so
- * they live in the row's hover card instead of as a row of grey glyphs.
- */
-function hostDetailLines(host: ManagedHost): string[] {
-  const lines: string[] = [];
-  if (host.kind !== 'ssh') return lines;
-  if (host.entry.description) lines.push(host.entry.description);
-  const resolved = host.entry.resolved;
-  if (!resolved) return lines;
-  if (resolved.proxyJump.length > 0) lines.push(`via ${resolved.proxyJump.join(' → ')}`);
-  if (resolved.identityFiles.length > 0) {
-    lines.push(`Key ${resolved.identityFiles.map((file) => file.split(/[\\/]/).pop()).join(', ')}`);
+/** Depth-first walk of every container, so sibling lookups can scan once. */
+function* allContainers(nodes: readonly ContainerNode[]): Generator<ContainerNode> {
+  for (const node of nodes) {
+    yield node;
+    if (node.kind === 'folder') {
+      yield* allContainers(node.children.filter((child) => child.kind === 'folder'));
+    }
   }
-  if (resolved.passwordOnly) lines.push('Password authentication');
-  if (resolved.forwards.length > 0) {
-    lines.push(
-      `${resolved.forwards.length} port forward${resolved.forwards.length > 1 ? 's' : ''} on connect`,
-    );
-  }
-  return lines;
 }
 
-/** One sidebar row for any host source; details ride along in the hover card. */
-function HostRow({
-  host,
-  live,
-  onConnect,
-  onMenu,
-  showDragGrip,
-  dragEnabled,
-  dragging,
-  dropEdge,
-  onDragStart,
-  onDragOver,
-  onDrop,
-  onDragEnd,
-  onMove,
-}: {
-  host: ManagedHost;
-  live?: LiveCounts;
-  onConnect: () => void;
-  onMenu: (host: ManagedHost, anchor: HTMLElement, position?: { top: number; left: number }) => void;
-  showDragGrip: boolean;
-  dragEnabled: boolean;
-  dragging: boolean;
-  dropEdge?: 'before' | 'after';
-  onDragStart: (event: DragEvent<HTMLElement>) => void;
-  onDragOver: (event: DragEvent<HTMLElement>) => void;
-  onDrop: (event: DragEvent<HTMLElement>) => void;
-  onDragEnd: () => void;
-  onMove: (delta: -1 | 1) => void;
-}) {
-  const title = managedHostDisplayName(host);
-  const address = managedHostAddress(host);
-  const secondary = host.kind === 'ssh' && address === host.entry.alias ? undefined : address;
-  const color = host.entry.metadata?.color;
-  const Icon = hostKindIcon(host.kind === 'ssh' ? 'ssh' : host.entry.kind);
-  const details = hostDetailLines(host);
-  const connected = live?.connected ?? 0;
-  const connecting = live?.connecting ?? 0;
-  const [clipped, setClipped] = useState(false);
-
-  /** The hover card is worth showing only for what the row can't fit. */
-  const measure = (event: MouseEvent<HTMLElement>) => {
-    const name = event.currentTarget.querySelector('[data-host-name]');
-    const line = event.currentTarget.querySelector('.MuiListItemText-secondary');
-    setClipped(
-      (!!name && name.scrollWidth > name.clientWidth) ||
-        (!!line && line.scrollWidth > line.clientWidth),
-    );
+function collectHosts(node: ContainerNode): ManagedHost[] {
+  const out: ManagedHost[] = [];
+  const walk = (container: ContainerNode) => {
+    for (const child of container.children) {
+      if (child.kind === 'host') out.push(child.host);
+      else if (child.kind === 'folder') walk(child);
+    }
   };
-
-  const row = (
-    <ListItemButton
-      draggable={dragEnabled}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      onMouseEnter={(event) => {
-        void loadTerminalViewImpl();
-        measure(event);
-      }}
-      onFocus={() => void loadTerminalViewImpl()}
-      onClick={onConnect}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
-      onKeyDown={(event) => {
-        if (!dragEnabled || !event.altKey) return;
-        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
-        event.preventDefault();
-        onMove(event.key === 'ArrowUp' ? -1 : 1);
-      }}
-      aria-keyshortcuts={dragEnabled ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        onMenu(host, e.currentTarget, { top: e.clientY, left: e.clientX });
-      }}
-      sx={{
-        '&:hover .host-row-menu, & .host-row-menu:focus-visible': { opacity: 1 },
-        // The grip takes over the kind-icon slot on hover: the reorder
-        // affordance costs no width and no row is decorated at rest.
-        ...(showDragGrip && {
-          '&:hover .host-drag-grip': { opacity: 0.55 },
-          '&:hover .host-kind-icon': { opacity: 0 },
-        }),
-        opacity: dragging ? 0.45 : 1,
-        pr: 0.5,
-        borderLeft: 3,
-        borderLeftColor: color ?? 'transparent',
-        position: 'relative',
-        contentVisibility: 'auto',
-        containIntrinsicSize: '0 48px',
-        ...(dropEdge && {
-          [`&::${dropEdge === 'before' ? 'before' : 'after'}`]: {
-            content: '""',
-            position: 'absolute',
-            left: 8,
-            right: 8,
-            [dropEdge === 'before' ? 'top' : 'bottom']: -1,
-            height: 2,
-            borderRadius: 2,
-            bgcolor: 'primary.main',
-            zIndex: 2,
-          },
-        }),
-      }}
-    >
-      <ListItemIcon sx={{ minWidth: 32 }}>
-        <Box sx={{ position: 'relative', display: 'flex', cursor: dragEnabled ? 'grab' : undefined }}>
-          <Icon
-            className="host-kind-icon"
-            fontSize="small"
-            sx={{ color: color ?? 'text.secondary', transition: 'opacity 120ms ease' }}
-          />
-          {showDragGrip && (
-            <DragIndicatorIcon
-              className="host-drag-grip"
-              sx={{
-                position: 'absolute',
-                inset: 0,
-                fontSize: 20,
-                opacity: 0,
-                pointerEvents: 'none',
-                transition: 'opacity 120ms ease',
-              }}
-            />
-          )}
-          {connected + connecting > 0 && (
-            <Box
-              sx={{
-                position: 'absolute',
-                right: -3,
-                bottom: -2,
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                bgcolor: connected > 0 ? 'success.main' : 'warning.main',
-                boxShadow: (theme) => `0 0 0 2px ${theme.palette.sidebar}`,
-                ...(connected === 0 && {
-                  animation: 'muxus-pulse 1.2s ease-in-out infinite',
-                  '@keyframes muxus-pulse': { '50%': { opacity: 0.3 } },
-                }),
-              }}
-            />
-          )}
-        </Box>
-      </ListItemIcon>
-      <ListItemText
-        primary={
-          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
-            <Box
-              component="span"
-              data-host-name
-              sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-            >
-              {title}
-            </Box>
-            {host.entry.metadata?.favorite && (
-              <StarIcon sx={{ fontSize: 13, flexShrink: 0, color: 'warning.main' }} />
-            )}
-            {connected > 1 && (
-              <Typography component="span" sx={{ fontSize: 10, flexShrink: 0, color: 'success.main' }}>
-                ×{connected}
-              </Typography>
-            )}
-          </Stack>
-        }
-        secondary={secondary}
-        slotProps={{ secondary: { sx: { fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } } }}
-      />
-      <IconButton
-        className="host-row-menu"
-        size="small"
-        edge="end"
-        aria-label={`Options for ${title}`}
-        sx={{ flexShrink: 0, ml: 0.25, opacity: { xs: 1, md: 0 }, transition: 'opacity 120ms ease' }}
-        onClick={(e) => {
-          e.stopPropagation();
-          onMenu(host, e.currentTarget);
-        }}
-      >
-        <MoreVertIcon sx={{ fontSize: 16 }} />
-      </IconButton>
-    </ListItemButton>
-  );
-
-  return (
-    <Tooltip
-      placement="right"
-      enterDelay={500}
-      enterNextDelay={250}
-      disableInteractive
-      title={
-        details.length === 0 && !clipped ? (
-          ''
-        ) : (
-          <Stack spacing={0.25} sx={{ py: 0.25 }}>
-            <Box sx={{ fontWeight: 600 }}>{title}</Box>
-            {address !== title && <Box sx={{ opacity: 0.7 }}>{address}</Box>}
-            {details.length > 0 && (
-              <Stack spacing={0.25} sx={{ pt: 0.5, opacity: 0.7 }}>
-                {details.map((line) => (
-                  <Box key={line}>{line}</Box>
-                ))}
-              </Stack>
-            )}
-          </Stack>
-        )
-      }
-    >
-      {row}
-    </Tooltip>
-  );
+  walk(node);
+  return out;
 }
+

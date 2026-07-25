@@ -49,6 +49,7 @@ import { useForwards, useSavedHostProfiles, useSessionHistory, useSshConfig, use
 import { startTunnel, stopForward } from '../api/tunnels.js';
 import { commandButtonInput } from '../command-buttons.js';
 import { confirmDiscardRemoteEditors } from '../editor/remote-editor-registry.js';
+import { folderSegments } from '../host-tree.js';
 import {
   managedHostAddress,
   managedHostDisplayName,
@@ -773,10 +774,13 @@ function buildCatalogResults({
       host,
       protocol: 'ssh',
       label: managedHostDisplayName(host),
-      detail: `${metadata?.group ? `${metadata.group} · ` : ''}${managedHostAddress(host)}`,
+      detail: `${folderDetail(metadata?.group)}${managedHostAddress(host)}`,
       keywords: [
         'ssh',
         ...entry.aliases,
+        // Each folder level is its own keyword, so typing "EU" finds the hosts
+        // in Production/EU without having to type the whole path.
+        ...folderSegments(metadata?.group),
         entry.description ?? '',
         entry.file,
         entry.resolved.hostname,
@@ -799,8 +803,13 @@ function buildCatalogResults({
       host,
       protocol: entry.kind,
       label: managedHostDisplayName(host),
-      detail: `${entry.metadata.group ? `${entry.metadata.group} · ` : ''}${managedHostAddress(host)}`,
-      keywords: [entry.kind, entry.name, managedHostAddress(host)],
+      detail: `${folderDetail(entry.metadata.group)}${managedHostAddress(host)}`,
+      keywords: [
+        entry.kind,
+        entry.name,
+        ...folderSegments(entry.metadata.group),
+        managedHostAddress(host),
+      ],
       priority:
         (entry.metadata.favorite ? 260 : 0) +
         Math.min(entry.metadata.connectCount, 80) +
@@ -1158,4 +1167,10 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
     return () => window.clearTimeout(timer);
   }, [delayMs, value]);
   return debounced;
+}
+
+/** `Production / EU · ` — spaced so a folder path does not read like a URL. */
+function folderDetail(group: string | undefined): string {
+  const segments = folderSegments(group);
+  return segments.length > 0 ? `${segments.join(' / ')} · ` : '';
 }

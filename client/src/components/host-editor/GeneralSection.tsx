@@ -1,13 +1,11 @@
 import { useState } from 'react';
-import Autocomplete from '@mui/material/Autocomplete';
 import Divider from '@mui/material/Divider';
 import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import type { SshConfigResponse } from '@muxus/shared';
-import { useSavedHostProfiles } from '../../api/queries.js';
-import { knownHostGroups } from '../../managed-hosts.js';
+import { FolderPathField } from '../FolderPathField.js';
 import { HostColorPicker } from '../HostColorPicker.js';
 import type { HostDraft } from './draft.js';
 import { draftAliases } from './draft.js';
@@ -34,8 +32,6 @@ export function GeneralSection({
   config: SshConfigResponse | undefined;
 }) {
   const [newFileName, setNewFileName] = useState('');
-  const { data: savedData } = useSavedHostProfiles();
-  const groups = knownHostGroups(config?.hosts ?? [], savedData?.profiles ?? []);
   const rootPath = config?.path ?? '~/.ssh/config';
   const files = config?.files ?? [];
   const knownFile = !draft.file || files.includes(draft.file);
@@ -138,19 +134,10 @@ export function GeneralSection({
         helperText="Optional — only changes how this host appears in Muxus."
         fullWidth
       />
-      <Autocomplete
-        freeSolo
-        options={groups}
-        inputValue={draft.group}
-        onInputChange={(_event, value) => set({ group: value })}
-        renderInput={(params) => (
-          <TextField
-            {...params}
-            label="Group"
-            placeholder="e.g. Production"
-            helperText="Optional — groups this host in the sidebar."
-          />
-        )}
+      <FolderPathField
+        value={draft.group}
+        onChange={(group: string) => set({ group })}
+        helperText="Optional — use / to nest, e.g. Production/EU."
       />
       <HostColorPicker value={draft.color} onChange={(color) => set({ color })} />
     </Stack>

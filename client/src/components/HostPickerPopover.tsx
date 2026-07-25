@@ -143,7 +143,9 @@ export function HostPickerPopover({
                   color: 'text.secondary',
                 }}
               >
-                {group.label}
+                {/* Stays a flat picker rather than a tree — it is a compact
+                    popover — but a nested group still reads as a path. */}
+                {group.label.split('/').join(' / ')}
               </ListSubheader>
             }
           >

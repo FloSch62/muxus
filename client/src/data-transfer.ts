@@ -22,7 +22,8 @@ import {
   MIN_SIDEBAR_WIDTH,
 } from './sidebar-width.js';
 import { MIN_SFTP_PANEL_WIDTH } from './sftp-panel-width.js';
-import { usePrefsStore, type PrefsState } from './state/prefs.js';
+import { usePrefsStore, type FolderStyle, type PrefsState } from './state/prefs.js';
+import { isFolderIconId } from './components/sidebar/folder-icons.js';
 
 export const BACKUP_FORMAT = 'muxus-backup';
 export const TRANSFER_VERSION = 1;
@@ -48,6 +49,10 @@ const PREFERENCE_KEYS = [
   'keywordHighlights',
   'sidebarCollapsed',
   'sidebarWidth',
+  'sidebarCollapsedFolders',
+  'sidebarFolderStyles',
+  'sidebarFolderOrder',
+  'sidebarEmptyFolders',
   'sftpPanelWidth',
 ] as const satisfies readonly (keyof PrefsState)[];
 
@@ -536,7 +541,12 @@ function portableTunnelInput(tunnel: TunnelRecord): Omit<TunnelRecord, 'createdA
   return input;
 }
 
-function sanitizePreferences(input: BackupPreferences): Partial<PrefsState> {
+/**
+ * The second half of the restore barrier, next to `parseTransferDocument`:
+ * structure is validated there, individual values here. Anything that fails
+ * is dropped rather than rejecting the whole backup.
+ */
+export function sanitizePreferences(input: BackupPreferences): Partial<PrefsState> {
   const output: Partial<PrefsState> = {};
   if (['light', 'dark', 'os'].includes(input.themeMode)) {
     output.themeMode = input.themeMode;
@@ -606,11 +616,51 @@ function sanitizePreferences(input: BackupPreferences): Partial<PrefsState> {
   if (finiteRange(input.sftpPanelWidth, MIN_SFTP_PANEL_WIDTH, 1200)) {
     output.sftpPanelWidth = input.sftpPanelWidth;
   }
+  if (boundedPathList(input.sidebarCollapsedFolders)) {
+    output.sidebarCollapsedFolders = input.sidebarCollapsedFolders;
+  }
+  if (boundedPathList(input.sidebarEmptyFolders)) {
+    output.sidebarEmptyFolders = input.sidebarEmptyFolders;
+  }
+  if (validFolderStyles(input.sidebarFolderStyles)) {
+    output.sidebarFolderStyles = input.sidebarFolderStyles;
+  }
+  if (validFolderOrder(input.sidebarFolderOrder)) {
+    output.sidebarFolderOrder = input.sidebarFolderOrder;
+  }
   return output;
+}
+
+function validFolderOrder(value: unknown): value is Record<string, string[]> {
+  if (!isRecord(value) || Object.keys(value).length > 500) return false;
+  return Object.entries(value).every(
+    ([key, keys]) => key.length <= 400 && boundedPathList(keys),
+  );
 }
 
 function finiteRange(value: unknown, min: number, max: number): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
+}
+
+/** Folder keys and paths: bounded in both count and length. */
+function boundedPathList(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= 500 &&
+    value.every((entry) => typeof entry === 'string' && entry.length <= 400)
+  );
+}
+
+function validFolderStyles(value: unknown): value is Record<string, FolderStyle> {
+  if (!isRecord(value) || Object.keys(value).length > 500) return false;
+  return Object.entries(value).every(
+    ([key, style]) =>
+      key.length <= 400 &&
+      isRecord(style) &&
+      (style.color === undefined || validHexColor(style.color)) &&
+      (style.icon === undefined ||
+        (typeof style.icon === 'string' && isFolderIconId(style.icon))),
+  );
 }
 
 function validateConnections(data: Record<string, unknown>): void {

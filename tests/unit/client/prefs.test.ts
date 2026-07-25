@@ -30,6 +30,40 @@ describe('terminalFontStack', () => {
   });
 });
 
+describe('migratePrefsState folder preferences', () => {
+  it('keeps well-formed folder state', () => {
+    const persisted = {
+      sidebarCollapsedFolders: ['folder:prod'],
+      sidebarEmptyFolders: ['Prod/EU'],
+      sidebarFolderStyles: { 'folder:prod': { color: '#ef5350', icon: 'cloud' } },
+    };
+
+    expect(migratePrefsState(persisted, 4)).toEqual(persisted);
+  });
+
+  it('drops folder state of the wrong shape so readers get the defaults', () => {
+    const persisted = {
+      monoFontSize: 16,
+      sidebarCollapsedFolders: 'folder:prod',
+      sidebarEmptyFolders: [1, 2],
+      sidebarFolderStyles: { 'folder:prod': 'red' },
+    };
+
+    expect(migratePrefsState(persisted, 4)).toEqual({ monoFontSize: 16 });
+    // The stored snapshot itself is left untouched.
+    expect(persisted.sidebarCollapsedFolders).toBe('folder:prod');
+  });
+
+  it('rejects a style record carrying unknown keys', () => {
+    const migrated = migratePrefsState(
+      { sidebarFolderStyles: { 'folder:prod': { colour: '#ef5350' } } },
+      4,
+    ) as Record<string, unknown>;
+
+    expect(migrated.sidebarFolderStyles).toBeUndefined();
+  });
+});
+
 describe('migratePrefsState', () => {
   it('removes the retired TERM preference without mutating the snapshot', () => {
     const persisted = { termName: 'xterm-kitty', monoFontSize: 16 };
@@ -63,5 +97,20 @@ describe('interface zoom', () => {
     expect(INTERFACE_ZOOM_STEPS).toContain(1);
     expect(INTERFACE_ZOOM_STEPS.every((step) => clampInterfaceZoom(step) === step)).toBe(true);
     expect(interfaceZoomLabel(1.25)).toBe('125%');
+  });
+});
+
+describe('migratePrefsState folder order', () => {
+  it('keeps a well-formed order map', () => {
+    const persisted = { sidebarFolderOrder: { root: ['folder:prod', 'folder:lab'] } };
+    expect(migratePrefsState(persisted, 4)).toEqual(persisted);
+  });
+
+  it('drops an order map of the wrong shape', () => {
+    const migrated = migratePrefsState(
+      { sidebarFolderOrder: { root: 'folder:prod' } },
+      4,
+    ) as Record<string, unknown>;
+    expect(migrated.sidebarFolderOrder).toBeUndefined();
   });
 });

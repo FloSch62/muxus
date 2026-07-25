@@ -10,6 +10,19 @@ export type HostEditorState =
   | { mode: 'duplicate-profile'; entry: SavedHostProfile }
   | { mode: 'edit-profile'; entry: SavedHostProfile };
 
+/**
+ * Sidebar folder editing. Folders are group paths rather than records, so each
+ * mode is ultimately a rewrite of one path prefix.
+ */
+export type FolderDialogState =
+  | false
+  /** Create a folder, optionally already nested under `parentPath`. */
+  | { mode: 'new'; parentPath?: string }
+  /** Rename, re-parent, colour or icon an existing folder. */
+  | { mode: 'edit'; path: string }
+  /** Pick the folder one host should live in. */
+  | { mode: 'move-host'; hostKey: string; hostName: string; currentPath: string };
+
 interface UiState {
   settingsOpen: boolean;
   commandButtonsOpen: boolean;
@@ -22,6 +35,8 @@ interface UiState {
   hostEditor: HostEditorState;
   /** Host whose Muxus-only display metadata is being organized. */
   hostOrganizer: SshHostEntry | SavedHostProfile | false;
+  /** Sidebar folder being created, renamed, styled, or picked as a target. */
+  folderDialog: FolderDialogState;
   /** Global forwarding side panel (saved tunnels + live forwards). */
   forwardingOpen: boolean;
   setSettingsOpen: (open: boolean) => void;
@@ -33,6 +48,7 @@ interface UiState {
   setWorkspacesOpen: (open: boolean) => void;
   setHostEditor: (value: HostEditorState) => void;
   setHostOrganizer: (value: SshHostEntry | SavedHostProfile | false) => void;
+  setFolderDialog: (value: FolderDialogState) => void;
   setForwardingOpen: (open: boolean) => void;
 }
 
@@ -46,6 +62,7 @@ export const useUiStore = create<UiState>()((set) => ({
   workspacesOpen: false,
   hostEditor: false,
   hostOrganizer: false,
+  folderDialog: false,
   forwardingOpen: false,
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setCommandButtonsOpen: (commandButtonsOpen) => set({ commandButtonsOpen }),
@@ -61,5 +78,6 @@ export const useUiStore = create<UiState>()((set) => ({
   setWorkspacesOpen: (workspacesOpen) => set({ workspacesOpen }),
   setHostEditor: (hostEditor) => set({ hostEditor }),
   setHostOrganizer: (hostOrganizer) => set({ hostOrganizer }),
+  setFolderDialog: (folderDialog) => set({ folderDialog }),
   setForwardingOpen: (forwardingOpen) => set({ forwardingOpen }),
 }));

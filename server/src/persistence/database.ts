@@ -1080,14 +1080,23 @@ export class MuxusDatabase {
   }
 
   /** Reuse group names case-insensitively so typing "work" and "Work" cannot
-   *  silently create two visually indistinguishable sidebar groups. */
+   *  silently create two visually indistinguishable sidebar groups. A spelling
+   *  that differs only by case updates the row instead of being discarded, so
+   *  renaming a folder to fix its capitalization actually takes effect. */
   private groupIdForName(name: string | null): string | null {
     const normalized = name?.trim();
     if (!normalized) return null;
     const existing = this.db
-      .prepare('SELECT id FROM connection_groups WHERE name = ? COLLATE NOCASE ORDER BY created_at LIMIT 1')
+      .prepare('SELECT id, name FROM connection_groups WHERE name = ? COLLATE NOCASE ORDER BY created_at LIMIT 1')
       .get(normalized);
-    if (existing) return String(existing.id);
+    if (existing) {
+      if (String(existing.name) !== normalized) {
+        this.db
+          .prepare('UPDATE connection_groups SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+          .run(normalized, String(existing.id));
+      }
+      return String(existing.id);
+    }
     const id = nanoid();
     this.db
       .prepare('INSERT INTO connection_groups(id, name) VALUES (?, ?)')
