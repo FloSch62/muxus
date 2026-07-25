@@ -134,9 +134,12 @@ export function RemoteEditorWorkspace({
     [connId],
   );
 
+  // Typing rewrites `documents`; only whether the active file has been opened
+  // at all decides whether it still needs loading.
+  const activeDocumentOpened = !activePath || documents[activePath] !== undefined;
   useEffect(() => {
-    if (activePath && !documents[activePath]) void load(activePath);
-  }, [activePath, documents, load]);
+    if (activePath && !activeDocumentOpened) void load(activePath);
+  }, [activeDocumentOpened, activePath, load]);
 
   const dirtyPaths = useMemo(
     () => new Set(Object.entries(documents).filter(([, doc]) => doc.content !== doc.savedContent).map(([path]) => path)),

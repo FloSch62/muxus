@@ -79,6 +79,7 @@ import { showErrorToast, showToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
 import { useWorkspacesStore } from '../state/workspaces.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
+import { formatTimestamp } from '../time-format.js';
 import { openWorkspace } from '../workspace-persistence.js';
 import { AuthPromptDialog, type AuthPromptRequest } from './AuthPromptDialog.js';
 import { HostKeyDialog, type HostKeyRequest } from './HostKeyDialog.js';
@@ -139,7 +140,7 @@ export function QuickLauncherDialog() {
   const historyEnabled = debouncedHistoryQuery.length >= 2;
   const historyResult = useSessionHistory(
     debouncedHistoryQuery,
-    {},
+    undefined,
     historyEnabled,
   );
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -170,9 +171,12 @@ export function QuickLauncherDialog() {
       (tab.status === 'connected' || tab.status === 'connecting'),
   ).length;
 
-  const allResults = useMemo(
+  // The catalog is the expensive half and does not depend on the query, so it
+  // is built once per data change instead of on every keystroke. Only the
+  // history and quick-connect entries follow what is typed.
+  const catalogResults = useMemo(
     () =>
-      buildResults({
+      buildCatalogResults({
         tabs,
         activeId,
         sshHosts,
@@ -182,30 +186,44 @@ export function QuickLauncherDialog() {
         commands,
         tunnels,
         forwards,
-        history,
-        historyQuery: debouncedHistoryQuery,
-        directTarget: deferredQuery,
         activeConnected: !!activeConnected,
-        activeSsh: !!activeSsh,
-        keybindings,
       }),
     [
       activeConnected,
       activeId,
-      activeSsh,
       activeWorkspaceId,
       commands,
-      debouncedHistoryQuery,
-      deferredQuery,
       forwards,
-      history,
-      keybindings,
       savedHosts,
       sshHosts,
       tabs,
       tunnels,
       workspaces,
     ],
+  );
+  const queryResults = useMemo(
+    () =>
+      buildQueryResults({
+        sshHosts,
+        savedHosts,
+        history,
+        historyQuery: debouncedHistoryQuery,
+        directTarget: deferredQuery,
+      }),
+    [debouncedHistoryQuery, deferredQuery, history, savedHosts, sshHosts],
+  );
+  const actionResults = useMemo(
+    () =>
+      buildActionResults({
+        activeConnected: !!activeConnected,
+        activeSsh: !!activeSsh,
+        keybindings,
+      }),
+    [activeConnected, activeSsh, keybindings],
+  );
+  const allResults = useMemo(
+    () => [...catalogResults, ...queryResults, ...actionResults],
+    [actionResults, catalogResults, queryResults],
   );
   const results = useMemo(
     () =>
@@ -689,7 +707,8 @@ export function QuickLauncherDialog() {
   );
 }
 
-function buildResults({
+/** Everything the launcher can offer that does not depend on the query. */
+function buildCatalogResults({
   tabs,
   activeId,
   sshHosts,
@@ -699,12 +718,7 @@ function buildResults({
   commands,
   tunnels,
   forwards,
-  history,
-  historyQuery,
-  directTarget,
   activeConnected,
-  activeSsh,
-  keybindings,
 }: {
   tabs: ReturnType<typeof useTabsStore.getState>['tabs'];
   activeId: string | null;
@@ -715,12 +729,7 @@ function buildResults({
   commands: readonly CommandButton[];
   tunnels: readonly TunnelRecord[];
   forwards: readonly ForwardInfo[];
-  history: readonly SessionLogSummary[];
-  historyQuery: string;
-  directTarget: string;
   activeConnected: boolean;
-  activeSsh: boolean;
-  keybindings: KeybindingOverrides;
 }): LauncherResult[] {
   const results: LauncherResult[] = [];
 
@@ -810,7 +819,7 @@ function buildResults({
       detail:
         workspace.id === activeWorkspaceId
           ? 'Current workspace'
-          : `Workspace · ${formatActivity(workspace.lastOpenedAt ?? workspace.updatedAt)}`,
+          : `Workspace · ${formatTimestamp(workspace.lastOpenedAt ?? workspace.updatedAt)}`,
       keywords: ['workspace', workspace.isStartup ? 'startup' : ''],
       priority: workspace.id === activeWorkspaceId ? 360 : 150,
       showWhenEmpty: workspace.id === activeWorkspaceId || index < 5,
@@ -853,6 +862,25 @@ function buildResults({
     });
   }
 
+  return results;
+}
+
+/** Session history and ad-hoc connect: the entries the query itself produces. */
+function buildQueryResults({
+  sshHosts,
+  savedHosts,
+  history,
+  historyQuery,
+  directTarget,
+}: {
+  sshHosts: readonly SshHostEntry[];
+  savedHosts: readonly SavedHostProfile[];
+  history: readonly SessionLogSummary[];
+  historyQuery: string;
+  directTarget: string;
+}): LauncherResult[] {
+  const results: LauncherResult[] = [];
+
   for (const session of history.slice(0, 12)) {
     results.push({
       id: `history:${session.id}`,
@@ -860,34 +888,55 @@ function buildResults({
       session,
       historyQuery,
       label: session.title,
-      detail: `${session.host} · ${formatActivity(session.startedAt)}${session.snippet ? ` · ${stripMarkup(session.snippet)}` : ''}`,
+      detail: `${session.host} · ${formatTimestamp(session.startedAt)}${session.snippet ? ` · ${stripMarkup(session.snippet)}` : ''}`,
       keywords: ['history', 'session log', session.kind, session.host, session.snippet ?? ''],
       priority: session.status === 'active' ? 180 : 40,
       showWhenEmpty: false,
     });
   }
 
+  // The shape check is cheap and rejects most of what gets typed, so the host
+  // scans only run for text that could actually be connected to.
   const target = directTarget.trim();
-  const exactSsh = sshHosts.some((entry) =>
-    entry.aliases.some((alias) => alias.toLocaleLowerCase() === target.toLocaleLowerCase()),
-  );
-  const exactSaved = savedHosts.some(
-    (entry) =>
-      entry.name.toLocaleLowerCase() === target.toLocaleLowerCase() ||
-      entry.metadata.displayName?.toLocaleLowerCase() === target.toLocaleLowerCase(),
-  );
-  if (isQuickConnectTarget(target) && !exactSsh && !exactSaved) {
-    results.push({
-      id: `quick-connect:${target}`,
-      kind: 'quick-connect',
-      target,
-      label: `Connect to ${target}`,
-      detail: 'Ad-hoc SSH connection',
-      keywords: ['ssh', 'connect', target],
-      priority: 720,
-      showWhenEmpty: false,
-    });
+  if (isQuickConnectTarget(target)) {
+    const normalized = target.toLocaleLowerCase();
+    const known =
+      sshHosts.some((entry) =>
+        entry.aliases.some((alias) => alias.toLocaleLowerCase() === normalized),
+      ) ||
+      savedHosts.some(
+        (entry) =>
+          entry.name.toLocaleLowerCase() === normalized ||
+          entry.metadata.displayName?.toLocaleLowerCase() === normalized,
+      );
+    if (!known) {
+      results.push({
+        id: `quick-connect:${target}`,
+        kind: 'quick-connect',
+        target,
+        label: `Connect to ${target}`,
+        detail: 'Ad-hoc SSH connection',
+        keywords: ['ssh', 'connect', target],
+        priority: 720,
+        showWhenEmpty: false,
+      });
+    }
   }
+
+  return results;
+}
+
+/** App actions and the searchable keymap, both independent of the query. */
+function buildActionResults({
+  activeConnected,
+  activeSsh,
+  keybindings,
+}: {
+  activeConnected: boolean;
+  activeSsh: boolean;
+  keybindings: KeybindingOverrides;
+}): LauncherResult[] {
+  const results: LauncherResult[] = [];
 
   results.push(
     actionResult('new-local', 'New local terminal', 'Open a fresh local shell', [
@@ -1096,13 +1145,6 @@ function oneLine(value: string): string {
 
 function basename(path: string): string {
   return path.split('/').filter(Boolean).at(-1) ?? path;
-}
-
-function formatActivity(value: string): string {
-  return new Date(value).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
 }
 
 function stripMarkup(value: string): string {

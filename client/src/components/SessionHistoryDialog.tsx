@@ -498,9 +498,22 @@ async function copyCleanLog(session: SessionLogSummary): Promise<void> {
   }
 }
 
+// One formatter for the whole list, and each timestamp rendered once: the
+// list re-renders on every keystroke, selection, and background refetch.
+const DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'short',
+  timeStyle: 'medium',
+});
+const dateLabels = new Map<string, string>();
+
 function formatDate(value: string): string {
+  const cached = dateLabels.get(value);
+  if (cached !== undefined) return cached;
   const date = new Date(value);
-  return Number.isNaN(date.valueOf()) ? value : date.toLocaleString();
+  const label = Number.isNaN(date.valueOf()) ? value : DATE_FORMAT.format(date);
+  if (dateLabels.size > 1_000) dateLabels.clear();
+  dateLabels.set(value, label);
+  return label;
 }
 
 function formatBytes(value: number): string {

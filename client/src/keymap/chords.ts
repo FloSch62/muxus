@@ -218,8 +218,16 @@ export function formatChord(chord: Chord): string {
   return parts.join('+');
 }
 
+// Chord text comes from a fixed catalog plus the user's overrides, and every
+// menu, tooltip, and palette row re-renders it. Parse each one once.
+const chordStringLabels = new Map<string, string>();
+
 /** Render a stored chord string; unparseable input is echoed unchanged. */
 export function formatChordString(text: string): string {
+  const cached = chordStringLabels.get(text);
+  if (cached !== undefined) return cached;
   const chord = parseChord(text);
-  return chord ? formatChord(chord) : text;
+  const label = chord ? formatChord(chord) : text;
+  chordStringLabels.set(text, label);
+  return label;
 }

@@ -49,6 +49,7 @@ import { useTabsStore } from '../state/tabs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
 import { useWorkspacesStore } from '../state/workspaces.js';
+import { formatTimestamp } from '../time-format.js';
 
 type NameAction =
   | { kind: 'save-as' }
@@ -62,14 +63,7 @@ interface WorkspaceMenu {
 
 function activityLabel(workspace: WorkspaceSummary): string {
   const opened = workspace.lastOpenedAt;
-  const timestamp = opened ?? workspace.updatedAt;
-  return `${opened ? 'Opened' : 'Updated'} ${new Date(timestamp).toLocaleString(
-    undefined,
-    {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    },
-  )}`;
+  return `${opened ? 'Opened' : 'Updated'} ${formatTimestamp(opened ?? workspace.updatedAt)}`;
 }
 
 export function WorkspaceDialog() {

@@ -410,8 +410,10 @@ export const TERMINAL_SCHEMES: readonly TerminalScheme[] = [
   theme: { ...scheme.theme, overviewRulerBorder: '#00000000' },
 }));
 
+const SCHEMES_BY_ID = new Map(TERMINAL_SCHEMES.map((scheme) => [scheme.id, scheme]));
+const DEFAULT_SCHEME = SCHEMES_BY_ID.get('vscode-dark')!;
+
 /** Resolve a scheme id, falling back to the VS Code dark default. */
 export function terminalScheme(id: string | undefined): TerminalScheme {
-  return TERMINAL_SCHEMES.find((scheme) => scheme.id === id)
-    ?? TERMINAL_SCHEMES.find((scheme) => scheme.id === 'vscode-dark')!;
+  return (id === undefined ? undefined : SCHEMES_BY_ID.get(id)) ?? DEFAULT_SCHEME;
 }

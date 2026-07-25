@@ -34,23 +34,51 @@ export function selectQuickLauncherItems<T extends QuickLauncherItem>(
 ): T[] {
   const normalized = normalize(query);
   const tokens = normalized.split(/\s+/).filter(Boolean);
-  return items
-    .map((item, index) => ({
-      item,
-      index,
-      score: scoreItem(item, normalized, tokens),
-    }))
-    .filter(({ item, score }) =>
-      normalized ? score !== undefined : item.showWhenEmpty,
-    )
-    .sort(
-      (left, right) =>
-        (right.score ?? right.item.priority) -
-          (left.score ?? left.item.priority) ||
-        left.index - right.index,
-    )
-    .slice(0, limit)
-    .map(({ item }) => item);
+  // One pass: scoring and filtering together, keeping only what survives.
+  const matches: Array<{ item: T; index: number; score: number | undefined }> = [];
+  for (let index = 0; index < items.length; index++) {
+    const item = items[index]!;
+    if (!normalized) {
+      if (item.showWhenEmpty) matches.push({ item, index, score: undefined });
+      continue;
+    }
+    const score = scoreItem(item, normalized, tokens);
+    if (score !== undefined) matches.push({ item, index, score });
+  }
+  matches.sort(
+    (left, right) =>
+      (right.score ?? right.item.priority) -
+        (left.score ?? left.item.priority) ||
+      left.index - right.index,
+  );
+  if (matches.length > limit) matches.length = limit;
+  return matches.map(({ item }) => item);
+}
+
+interface SearchText {
+  label: string;
+  words: string[];
+  searchable: string;
+}
+
+/**
+ * Normalizing an item costs more than matching it, and the catalog is rebuilt
+ * far less often than it is queried — so keep the normalized text alongside
+ * each item and let it die with it.
+ */
+const searchTextCache = new WeakMap<QuickLauncherItem, SearchText>();
+
+function searchText(item: QuickLauncherItem): SearchText {
+  const cached = searchTextCache.get(item);
+  if (cached) return cached;
+  const label = normalize(item.label);
+  const text: SearchText = {
+    label,
+    words: label.split(/\s+/),
+    searchable: normalize([item.label, item.detail, ...(item.keywords ?? [])].join(' ')),
+  };
+  searchTextCache.set(item, text);
+  return text;
 }
 
 function scoreItem(
@@ -59,16 +87,13 @@ function scoreItem(
   tokens: readonly string[],
 ): number | undefined {
   if (!query) return undefined;
-  const label = normalize(item.label);
-  const searchable = normalize(
-    [item.label, item.detail, ...(item.keywords ?? [])].join(' '),
-  );
+  const { label, words, searchable } = searchText(item);
   if (!tokens.every((token) => searchable.includes(token))) return undefined;
 
   let relevance = 100;
   if (label === query) relevance = 1_000;
   else if (label.startsWith(query)) relevance = 800;
-  else if (label.split(/\s+/).some((word) => word.startsWith(query))) relevance = 650;
+  else if (words.some((word) => word.startsWith(query))) relevance = 650;
   else if (label.includes(query)) relevance = 500;
   else if (tokens.every((token) => label.includes(token))) relevance = 350;
   return relevance + item.priority;

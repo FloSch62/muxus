@@ -92,20 +92,30 @@ export function ShortcutsDialog() {
     [keybindings],
   );
 
-  const matches = useMemo(() => {
+  // Filter and group in one pass: the sections below read their own bucket
+  // instead of scanning the whole match list once per category.
+  const { matchesByCategory, matchCount } = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
-    if (!needle) return KEY_COMMANDS;
-    return KEY_COMMANDS.filter((command) => {
-      const haystack = [
-        command.title,
-        COMMAND_CATEGORY_LABELS[command.category],
-        ...(command.keywords ?? []),
-        ...commandChords(command, keybindings).map(formatChordString),
-      ]
-        .join(' ')
-        .toLocaleLowerCase();
-      return haystack.includes(needle);
-    });
+    const byCategory = new Map<CommandCategory, KeyCommand[]>();
+    let count = 0;
+    for (const command of KEY_COMMANDS) {
+      if (needle) {
+        const haystack = [
+          command.title,
+          COMMAND_CATEGORY_LABELS[command.category],
+          ...(command.keywords ?? []),
+          ...commandChords(command, keybindings).map(formatChordString),
+        ]
+          .join(' ')
+          .toLocaleLowerCase();
+        if (!haystack.includes(needle)) continue;
+      }
+      const bucket = byCategory.get(command.category);
+      if (bucket) bucket.push(command);
+      else byCategory.set(command.category, [command]);
+      count++;
+    }
+    return { matchesByCategory: byCategory, matchCount: count };
   }, [keybindings, query]);
 
   const applyChords = (command: KeyCommand, chords: string[]) => {
@@ -204,8 +214,8 @@ export function ShortcutsDialog() {
         ) : null}
 
         {CATEGORY_ORDER.map((category) => {
-          const commands = matches.filter((command) => command.category === category);
-          if (commands.length === 0) return null;
+          const commands = matchesByCategory.get(category);
+          if (!commands || commands.length === 0) return null;
           return (
             <Box key={category} sx={{ mb: 2.5 }}>
               <Typography
@@ -244,7 +254,7 @@ export function ShortcutsDialog() {
           );
         })}
 
-        {matches.length === 0 ? (
+        {matchCount === 0 ? (
           <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>
             No command matches “{query.trim()}”.
           </Typography>

@@ -115,10 +115,20 @@ function formatSize(size?: number): string {
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]}`;
 }
 
+// A directory listing re-renders on every selection and transfer tick, and a
+// timestamp always renders the same string.
+const MTIME_LABELS = new Map<number, string>();
+const MTIME_CACHE_LIMIT = 4_000;
+
 function formatMtime(ms?: number): string {
   if (!ms) return '';
+  const cached = MTIME_LABELS.get(ms);
+  if (cached !== undefined) return cached;
   const date = new Date(ms);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  const label = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  if (MTIME_LABELS.size >= MTIME_CACHE_LIMIT) MTIME_LABELS.clear();
+  MTIME_LABELS.set(ms, label);
+  return label;
 }
 
 function formatSpeed(bytesPerSecond: number): string {
@@ -335,7 +345,7 @@ export function SftpPanel({
 
   const entries = useMemo(
     () =>
-      [...(data?.entries ?? [])].sort((a, b) => {
+      (data?.entries ?? []).toSorted((a, b) => {
         if ((a.type === 'dir') !== (b.type === 'dir')) return a.type === 'dir' ? -1 : 1;
         return a.name.localeCompare(b.name);
       }),

@@ -55,6 +55,7 @@ import { copyToClipboard } from '../clipboard.js';
 import { confirmDeleteHost } from '../host-actions.js';
 import { hostOrderAfterDrop } from '../host-organization.js';
 import {
+  anyManagedHostMatches,
   groupManagedHosts,
   managedHostAddress,
   managedHostCopyCommand,
@@ -134,18 +135,13 @@ export function SessionSidebar() {
       ),
     [hosts, savedData?.profiles, config?.files, config?.path, needle],
   );
-  const immediateGroups = useMemo(
-    () =>
-      groupManagedHosts(
-        hosts,
-        savedData?.profiles ?? [],
-        config?.files ?? [],
-        config?.path,
-        normalizedFilter,
-      ),
-    [hosts, savedData?.profiles, config?.files, config?.path, normalizedFilter],
+  // The list itself lags behind typing, but quick-connect must answer for the
+  // text as typed — and that only needs to know whether anything matched.
+  const hasImmediateMatch = useMemo(
+    () => anyManagedHostMatches(hosts, savedData?.profiles ?? [], normalizedFilter),
+    [hosts, savedData?.profiles, normalizedFilter],
   );
-  const visible = groups.flatMap((group) => group.hosts);
+  const visible = useMemo(() => groups.flatMap((group) => group.hosts), [groups]);
   const hostByKey = useMemo(
     () => new Map(visible.map((host) => [managedHostKey(host), host])),
     [visible],
@@ -311,11 +307,20 @@ export function SessionSidebar() {
   const quickConnectable =
     !!normalizedFilter &&
     isQuickConnectTarget(filter) &&
-    immediateGroups.every((group) => group.hosts.length === 0) &&
+    !hasImmediateMatch &&
     !hosts.some((h) => h.aliases.includes(filter.trim()));
 
   const onEnter = () => {
-    const currentMatch = immediateGroups.flatMap((group) => group.hosts)[0];
+    // Grouping the current filter is only worth it once Enter is pressed.
+    const currentMatch = hasImmediateMatch
+      ? groupManagedHosts(
+          hosts,
+          savedData?.profiles ?? [],
+          config?.files ?? [],
+          config?.path,
+          normalizedFilter,
+        ).flatMap((group) => group.hosts)[0]
+      : undefined;
     if (currentMatch) connectManagedHost(currentMatch);
     else if (quickConnectable) connectTarget(filter.trim());
     else return;

@@ -106,9 +106,11 @@ export interface SessionHistoryFilters {
   startedBefore?: string;
 }
 
+const NO_HISTORY_FILTERS: SessionHistoryFilters = {};
+
 export function useSessionHistory(
   query: string,
-  filters: SessionHistoryFilters = {},
+  filters: SessionHistoryFilters = NO_HISTORY_FILTERS,
   enabled = true,
 ) {
   const result = useInfiniteQuery({

@@ -82,6 +82,7 @@ export function TabStrip({
   const update = useTabsStore((s) => s.update);
   const reconnect = useTabsStore((s) => s.reconnect);
   const multiExecTargets = useMultiExecStore((s) => s.selectedIds);
+  const multiExecSelected = new Set(multiExecTargets);
   const toggleMultiExecTarget = useMultiExecStore((s) => s.toggleTarget);
   const [menu, setMenu] = useState<{ position: { top: number; left: number }; tab: TerminalTab } | null>(null);
   const [paneMenu, setPaneMenu] = useState<{ top: number; left: number } | null>(null);
@@ -233,7 +234,7 @@ export function TabStrip({
             >
               {tab.title}
             </Typography>
-            {multiExecTargets.includes(tab.id) && (
+            {multiExecSelected.has(tab.id) && (
               <Tooltip
                 title={
                   multiExecTargets.length >= 2
@@ -606,10 +607,10 @@ export function TabStrip({
           }}
         >
           <ListItemIcon>
-            <PodcastsOutlinedIcon fontSize="small" color={menuTab && multiExecTargets.includes(menuTab.id) ? 'warning' : 'inherit'} />
+            <PodcastsOutlinedIcon fontSize="small" color={menuTab && multiExecSelected.has(menuTab.id) ? 'warning' : 'inherit'} />
           </ListItemIcon>
           <ListItemText>
-            {menuTab && multiExecTargets.includes(menuTab.id) ? 'Remove from multi-execution' : 'Add to multi-execution'}
+            {menuTab && multiExecSelected.has(menuTab.id) ? 'Remove from multi-execution' : 'Add to multi-execution'}
           </ListItemText>
         </MenuItem>
         <MenuItem

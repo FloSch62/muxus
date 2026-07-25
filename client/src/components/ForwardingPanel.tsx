@@ -41,6 +41,7 @@ import { FORWARD_FLAG, ForwardRuleForm, describeForward } from './ForwardRuleFor
 import { TunnelEditorDialog, type TunnelEditorState } from './TunnelEditorDialog.js';
 
 const MONO = { fontFamily: '"JetBrains Mono", monospace' } as const;
+const EMPTY_FORWARDS: ForwardInfo[] = [];
 
 /**
  * Global forwarding side panel: saved tunnels started/stopped independently
@@ -70,8 +71,14 @@ export function ForwardingPanel() {
   const anyStarting = Object.keys(starting).length > 0;
   const runningByTunnel = new Map(forwards.filter((f) => f.tunnelId).map((f) => [f.tunnelId!, f]));
   const tunnelIds = new Set(tunnels.map((t) => t.id));
-  /** Forwards not realizing a saved tunnel (config/ad-hoc/orphaned). */
-  const sessionForwards = forwards.filter((f) => !f.tunnelId || !tunnelIds.has(f.tunnelId));
+  /** Forwards not realizing a saved tunnel (config/ad-hoc/orphaned), by connection. */
+  const sessionForwardsByConn = new Map<string, ForwardInfo[]>();
+  for (const forward of forwards) {
+    if (forward.tunnelId && tunnelIds.has(forward.tunnelId)) continue;
+    const group = sessionForwardsByConn.get(forward.connId);
+    if (group) group.push(forward);
+    else sessionForwardsByConn.set(forward.connId, [forward]);
+  }
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ['forwards'] });
@@ -301,7 +308,7 @@ export function ForwardingPanel() {
           <ConnectionGroup
             key={conn.id}
             conn={conn}
-            forwards={sessionForwards.filter((f) => f.connId === conn.id)}
+            forwards={sessionForwardsByConn.get(conn.id) ?? EMPTY_FORWARDS}
             hasHostEntry={!!hostEntryFor(config?.hosts, conn)}
             onAdd={() => setAdhocConn(conn)}
             onStop={(id) => stop.mutate(id)}

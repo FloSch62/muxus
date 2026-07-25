@@ -297,8 +297,22 @@ const FOLDER_ICONS: Readonly<Record<string, FolderIconKind>> = {
   web: 'public',
 };
 
+// Remote listings re-render on every navigation, selection, and transfer
+// tick, and a name always resolves to the same icon.
+const RESOLVED_FILE_ICONS = new Map<string, FileIconKind>();
+const FILE_ICON_CACHE_LIMIT = 4_000;
+
 /** Resolve a filename without touching file contents, suitable for large remote listings. */
 export function fileIconKind(name: string): FileIconKind {
+  const cached = RESOLVED_FILE_ICONS.get(name);
+  if (cached !== undefined) return cached;
+  const kind = resolveFileIconKind(name);
+  if (RESOLVED_FILE_ICONS.size >= FILE_ICON_CACHE_LIMIT) RESOLVED_FILE_ICONS.clear();
+  RESOLVED_FILE_ICONS.set(name, kind);
+  return kind;
+}
+
+function resolveFileIconKind(name: string): FileIconKind {
   const lowerName = name.toLowerCase();
 
   if (/^\.env(?:\.|$)/.test(lowerName)) return 'env';

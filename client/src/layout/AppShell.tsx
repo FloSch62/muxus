@@ -117,6 +117,11 @@ function PaneCanvas({
   const activateEditor = useTabsStore((state) => state.activateEditor);
   const closeEditor = useTabsStore((state) => state.closeEditor);
   const { panes, dividers } = useMemo(() => flattenPaneLayout(root), [root]);
+  const paneById = useMemo(
+    () => new Map(panes.map((entry) => [entry.pane.id, entry.pane])),
+    [panes],
+  );
+  const occupiedPaneIds = useMemo(() => new Set(tabs.map((tab) => tab.paneId)), [tabs]);
 
   /** Position every box from a pane tree — the live one, or a drag preview. */
   const applyLayout = useCallback(
@@ -150,7 +155,7 @@ function PaneCanvas({
         <PaneChrome
           key={pane.id}
           pane={pane}
-          tabs={tabs}
+          empty={!occupiedPaneIds.has(pane.id)}
           focused={pane.id === activePaneId}
           zoomed={pane.id === zoomedPaneId}
           onAddHost={onAddHost}
@@ -158,7 +163,7 @@ function PaneCanvas({
         />
       ))}
       {tabs.map((tab) => {
-        const pane = panes.find((entry) => entry.pane.id === tab.paneId)?.pane;
+        const pane = paneById.get(tab.paneId);
         if (!pane) return null;
         const visible = pane.activeTabId === tab.id;
         return (
@@ -297,21 +302,20 @@ function positionDivider(
 
 function PaneChrome({
   pane,
-  tabs,
+  empty,
   focused,
   zoomed,
   onAddHost,
   register,
 }: {
   pane: PaneLeaf;
-  tabs: TerminalTab[];
+  empty: boolean;
   focused: boolean;
   zoomed: boolean;
   onAddHost: () => void;
   register: (element: HTMLDivElement | null) => void;
 }) {
   const focusPane = useTabsStore((state) => state.focusPane);
-  const empty = !tabs.some((tab) => tab.paneId === pane.id);
 
   return (
     <Box
