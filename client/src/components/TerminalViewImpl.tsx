@@ -78,6 +78,8 @@ const MAX_FONT_SIZE = 40;
 const PENDING_INPUT_LIMIT = 64 * 1024;
 const ACTIVE_IMAGE_STORAGE_MB = 64;
 const BACKGROUND_IMAGE_STORAGE_MB = 16;
+/** Quiet period a container size has to hold before the terminal refits. */
+const RESIZE_SETTLE_MS = 90;
 
 /** Plain-text contents of scrollback + screen, trailing blank rows trimmed. */
 function bufferText(term: Terminal): string {
@@ -601,10 +603,23 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       }
     });
 
-    const observer = new ResizeObserver(() => fit.fit());
+    // Dragging a side panel — and the open/close transitions of those panels —
+    // change our width on every animation frame. Fitting each frame reflows the
+    // buffer and SIGWINCHes the remote shell dozens of times per drag, and the
+    // shell repaints its prompt at every intermediate width, which leaves
+    // redraw debris in the scrollback. Fit once the width holds still instead.
+    let fitTimer: ReturnType<typeof setTimeout> | undefined;
+    const observer = new ResizeObserver(() => {
+      if (fitTimer !== undefined) clearTimeout(fitTimer);
+      fitTimer = setTimeout(() => {
+        fitTimer = undefined;
+        fit.fit();
+      }, RESIZE_SETTLE_MS);
+    });
     observer.observe(el);
 
     return () => {
+      if (fitTimer !== undefined) clearTimeout(fitTimer);
       observer.disconnect();
       unregister();
       el.removeEventListener('paste', onNativePaste, true);
