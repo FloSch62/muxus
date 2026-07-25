@@ -3,14 +3,15 @@ import {
   groupHosts,
   hostAddress,
   hostDisplayName,
-  matchesNormalized,
+  hostSearchText,
   type HostGroup,
 } from './host-organization.js';
+import { matchScore, searchTokens } from './host-search.js';
 import {
   filterSavedHosts,
-  matchesSavedHost,
   savedHostAddress,
   savedHostDisplayName,
+  savedHostSearchText,
 } from './saved-hosts.js';
 
 export type ManagedHost =
@@ -103,19 +104,39 @@ export function groupManagedHosts(
 }
 
 /**
- * Whether a filter would leave any host standing. Answering this without
- * grouping and sorting keeps quick-connect responsive on every keystroke.
+ * The host a query is most likely spelling out: what Enter connects to, and
+ * what the sidebar highlights so you can see it before pressing it. Ties keep
+ * the caller's order, leaving the tree's own arrangement to break them.
+ *
+ * Scoring the flat list beats grouping it: quick-connect has to answer for the
+ * text as typed, on every keystroke.
  */
-export function anyManagedHostMatches(
-  sshHosts: readonly SshHostEntry[],
-  savedProfiles: readonly SavedHostProfile[],
-  filter: string,
-): boolean {
-  const needle = filter.trim().toLowerCase();
-  return (
-    sshHosts.some((host) => matchesNormalized(host, needle)) ||
-    savedProfiles.some((profile) => matchesSavedHost(profile, needle))
-  );
+export function bestManagedHostMatch(
+  hosts: readonly ManagedHost[],
+  normalizedQuery: string,
+): ManagedHost | undefined {
+  const tokens = searchTokens(normalizedQuery);
+  if (tokens.length === 0) return undefined;
+  let best: ManagedHost | undefined;
+  let bestScore = 0;
+  for (const host of hosts) {
+    const searchable =
+      host.kind === 'ssh' ? hostSearchText(host.entry) : savedHostSearchText(host.entry);
+    const score = matchScore(
+      managedHostDisplayName(host).toLowerCase(),
+      searchable,
+      normalizedQuery,
+      tokens,
+    );
+    if (score === undefined) continue;
+    // A starred host wins an otherwise even tie.
+    const ranked = score + (host.entry.metadata?.favorite ? 10 : 0);
+    if (ranked > bestScore) {
+      best = host;
+      bestScore = ranked;
+    }
+  }
+  return best;
 }
 
 /** Every Muxus group label in use, across both host sources, for pickers. */

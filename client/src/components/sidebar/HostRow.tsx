@@ -24,6 +24,8 @@ export interface HostRowProps {
   host: ManagedHost;
   live?: LiveCounts;
   focused: boolean;
+  /** The row the search box's Enter would connect. */
+  match?: boolean;
   onConnect: () => void;
   onMenu: (host: ManagedHost, anchor: HTMLElement, position?: { top: number; left: number }) => void;
   onMove: (delta: -1 | 1) => void;
@@ -46,6 +48,7 @@ export function HostRow({
   host,
   live,
   focused,
+  match,
   onConnect,
   onMenu,
   onMove,
@@ -125,6 +128,7 @@ export function HostRow({
             gap: 0.75,
             opacity: dragging ? 0.45 : 1,
             cursor: draggable ? 'grab' : 'pointer',
+            ...(match && { bgcolor: 'action.selected' }),
             // A host's own colour sits at the very edge so it never collides
             // with the folder rail drawn inside the indent.
             borderLeft: 3,
@@ -191,6 +195,15 @@ export function HostRow({
             )}
           </Stack>
         </Box>
+        {match ? (
+          <Typography
+            component="span"
+            aria-hidden
+            sx={{ fontSize: 11, flexShrink: 0, color: 'text.secondary' }}
+          >
+            ⏎
+          </Typography>
+        ) : null}
         <IconButton
           className="host-row-menu"
           size="small"

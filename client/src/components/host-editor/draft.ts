@@ -8,6 +8,7 @@ import {
   blankHostSessionLoggingDraft,
   type HostSessionLoggingDraft,
 } from '../../session-logging-policy.js';
+import { parseHostTarget } from './native-draft.js';
 
 /** Everything the editor form holds, in form-friendly shapes (ports as text). */
 export interface HostDraft {
@@ -38,16 +39,20 @@ export interface HostDraft {
 }
 
 export function blankDraft(prefillTarget = ''): HostDraft {
+  // A quick-connect target already carries the fields the form asks for; a bare
+  // name the sidebar could not find is just the alias.
+  const target = prefillTarget.trim();
+  const parsed = /[@:]/.test(target) ? parseHostTarget(target) : undefined;
   return {
-    aliasText: prefillTarget,
+    aliasText: parsed?.host ?? target,
     description: '',
     displayName: '',
     group: '',
     color: undefined,
     file: '',
-    hostname: '',
-    user: '',
-    port: '',
+    hostname: parsed?.host ?? '',
+    user: parsed?.user ?? '',
+    port: parsed?.port ?? '',
     authMode: 'default',
     identityFiles: [],
     certificateFiles: [],

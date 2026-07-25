@@ -45,7 +45,7 @@ import {
   type VisibleNode,
 } from '../host-tree.js';
 import {
-  anyManagedHostMatches,
+  bestManagedHostMatch,
   groupManagedHosts,
   managedHostDisplayName,
   managedHostKey,
@@ -136,11 +136,13 @@ export function SessionSidebar() {
     [groups, folders.emptyFolders, folders.folderOrder],
   );
   // The list itself lags behind typing, but quick-connect must answer for the
-  // text as typed — and that only needs to know whether anything matched.
-  const hasImmediateMatch = useMemo(
-    () => anyManagedHostMatches(hosts, profiles, normalizedFilter),
-    [hosts, profiles, normalizedFilter],
+  // text as typed, so the winner is scored against the flat host list instead.
+  const bestMatch = useMemo(
+    () => bestManagedHostMatch(allHosts, normalizedFilter),
+    [allHosts, normalizedFilter],
   );
+  // Highlight it in the tree, once the tree has caught up with the query.
+  const matchKey = bestMatch ? managedHostKey(bestMatch) : undefined;
   const hostByKey = useMemo(
     () => new Map(tree.hosts.map((host) => [managedHostKey(host), host])),
     [tree],
@@ -266,24 +268,10 @@ export function SessionSidebar() {
     [folders],
   );
 
-  const quickConnectable =
-    !!normalizedFilter &&
-    isQuickConnectTarget(filter) &&
-    !hasImmediateMatch &&
-    !hosts.some((h) => h.aliases.includes(filter.trim()));
+  const quickConnectable = !!normalizedFilter && !bestMatch && isQuickConnectTarget(filter);
 
   const onEnter = () => {
-    // Grouping the current filter is only worth it once Enter is pressed.
-    const currentMatch = hasImmediateMatch
-      ? groupManagedHosts(
-          hosts,
-          profiles,
-          config?.files ?? [],
-          config?.path,
-          normalizedFilter,
-        ).flatMap((group) => group.hosts)[0]
-      : undefined;
-    if (currentMatch) connectManagedHost(currentMatch);
+    if (bestMatch) connectManagedHost(bestMatch);
     else if (quickConnectable) connectTarget(filter.trim());
     else return;
     setFilter('');
@@ -560,6 +548,7 @@ export function SessionSidebar() {
 
         <HostTree
           tree={tree}
+          matchKey={matchKey}
           isExpanded={isExpanded}
           setExpanded={setExpanded}
           folderColor={folderColor}
@@ -594,11 +583,26 @@ export function SessionSidebar() {
             </Button>
           </Stack>
         )}
-        {!empty && tree.hosts.length === 0 && !quickConnectable && (
-          <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
-            No hosts match.
-          </Typography>
-        )}
+        {!empty && tree.hosts.length === 0 ? (
+          // Nothing matched is the moment you are most likely to want the host
+          // you just typed, so offer to save it rather than only saying no.
+          <Stack spacing={1.5} sx={{ alignItems: 'center', p: 2, textAlign: 'center' }}>
+            <Typography variant="body2" color="text.secondary">
+              No hosts match.
+            </Typography>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<AddIcon />}
+              sx={{ maxWidth: '100%' }}
+              onMouseEnter={() => void loadHostEditorDialog()}
+              onFocus={() => void loadHostEditorDialog()}
+              onClick={() => setHostEditor({ mode: 'new', prefillTarget: filter.trim() })}
+            >
+              Add “{filter.trim()}”
+            </Button>
+          </Stack>
+        ) : null}
       </Box>
 
       {(menu || folderMenu || launchTarget) && (

@@ -51,4 +51,19 @@ describe('SSH host editor draft', () => {
     expect(draft.certificateFiles).toEqual([]);
     expect(draftToRequest(draft).options.proxyCommand).toBeUndefined();
   });
+
+  it('splits a prefilled quick-connect target, and leaves a bare name as the alias', () => {
+    expect(blankDraft('ops@edge01.lab.test:2222')).toMatchObject({
+      aliasText: 'edge01.lab.test',
+      hostname: 'edge01.lab.test',
+      user: 'ops',
+      port: '2222',
+    });
+    expect(blankDraft('myairframe4')).toMatchObject({
+      aliasText: 'myairframe4',
+      hostname: '',
+      user: '',
+      port: '',
+    });
+  });
 });
