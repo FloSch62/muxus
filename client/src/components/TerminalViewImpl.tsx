@@ -52,8 +52,6 @@ import {
 } from '../terminal/keyword-highlighting.js';
 import { registerTerminal } from '../terminal/terminal-registry.js';
 import { requiresPasteConfirmation } from '../terminal/paste-safety.js';
-import { openQuickLauncher } from '../quick-launcher-control.js';
-import { isQuickLauncherShortcut } from '../quick-launcher.js';
 import { AuthPromptDialog, type AuthPromptRequest } from './AuthPromptDialog.js';
 import { HostKeyDialog, type HostKeyRequest } from './HostKeyDialog.js';
 import { PasteConfirmDialog } from './PasteConfirmDialog.js';
@@ -76,6 +74,8 @@ const SEARCH_DECORATIONS: ISearchOptions['decorations'] = {
 
 const MIN_FONT_SIZE = 6;
 const MAX_FONT_SIZE = 40;
+/** Type-ahead held for a session that has not finished connecting. */
+const PENDING_INPUT_LIMIT = 64 * 1024;
 const ACTIVE_IMAGE_STORAGE_MB = 64;
 const BACKGROUND_IMAGE_STORAGE_MB = 16;
 
@@ -300,10 +300,32 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       .catch(() => undefined);
 
     const encoder = new TextEncoder();
+    let ready = false;
+    // The server ignores input until the session exists, so keystrokes typed
+    // into a pane that is still connecting wait here and go out the moment it
+    // is ready — the type-ahead every real terminal gives you, which matters
+    // most right after a split.
+    let pendingInput: Uint8Array<ArrayBuffer>[] = [];
+    let pendingInputBytes = 0;
+    const flushPendingInput = () => {
+      const socket = wsRef.current;
+      if (!socket || socket.readyState !== WebSocket.OPEN) return;
+      for (const chunk of pendingInput) socket.send(chunk);
+      pendingInput = [];
+      pendingInputBytes = 0;
+    };
     const sendInput = (data: string | Uint8Array<ArrayBuffer>): boolean => {
       const socket = wsRef.current;
-      if (!socket || socket.readyState !== WebSocket.OPEN) return false;
-      socket.send(typeof data === 'string' ? encoder.encode(data) : data);
+      if (!socket || socket.readyState > WebSocket.OPEN) return false;
+      const bytes = typeof data === 'string' ? encoder.encode(data) : data;
+      if (ready && socket.readyState === WebSocket.OPEN) {
+        socket.send(bytes);
+        return true;
+      }
+      if (pendingInputBytes + bytes.length <= PENDING_INPUT_LIMIT) {
+        pendingInput.push(bytes);
+        pendingInputBytes += bytes.length;
+      }
       return true;
     };
 
@@ -353,54 +375,14 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
 
     const commandTracker = attachCommandTracker(term);
 
-    term.attachCustomKeyEventHandler((ev) => {
-      if (ev.type === 'keydown' && isQuickLauncherShortcut(ev)) {
-        openQuickLauncher();
-        return false;
-      }
-      // Ctrl+Shift chords stay ours (kitty reserves ctrl+shift for the terminal).
-      if (ev.type === 'keydown' && (ev.ctrlKey || ev.metaKey) && ev.shiftKey && !ev.altKey) {
-        if (ev.code === 'KeyC' && term.hasSelection()) {
-          void copyToClipboard(term.getSelection());
-          return false;
-        }
-        if (ev.code === 'KeyV') {
-          void readFromClipboard().then((text) => {
-            if (text) pasteText(text);
-          });
-          return false;
-        }
-        if (ev.code === 'KeyF') {
-          setSearchOpen(true);
-          return false;
-        }
-        if (ev.code === 'KeyA') {
-          term.selectAll();
-          return false;
-        }
-        if (ev.code === 'KeyK') {
-          term.clear();
-          return false;
-        }
-        if (ev.code === 'Equal' || ev.code === 'Minus' || ev.code === 'Digit0') {
-          applyZoom(ev.code === 'Equal' ? 'in' : ev.code === 'Minus' ? 'out' : 'reset');
-          return false;
-        }
-        if (ev.code === 'KeyT') return true; // bubbles to the app shortcut
-      }
-      // Tab cycling works while the terminal has focus.
-      if (ev.type === 'keydown' && ev.ctrlKey && !ev.shiftKey && !ev.altKey && !ev.metaKey && (ev.code === 'PageUp' || ev.code === 'PageDown')) {
-        return true; // bubbles to the app shortcut
-      }
-      return true;
-    });
-
+    // Application chords never reach xterm: the shortcut layer consumes them
+    // in the capture phase, and anything it declines is encoded for the shell
+    // (kitty keyboard protocol included) exactly as if Muxus had no bindings.
     const onSelection = term.onSelectionChange(() => {
       if (usePrefsStore.getState().copyOnSelect && term.hasSelection()) void copyToClipboard(term.getSelection());
     });
 
     let ws: WebSocket | undefined;
-    let ready = false;
     let socketFailed = false;
     let exitMessage: TerminalExitMessage | undefined;
     let interruptionTimer: ReturnType<typeof setTimeout> | undefined;
@@ -521,6 +503,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             if (current?.profile?.kind === 'ssh' && current.reconnectMode) {
               ws?.send(encoder.encode(reattachCommand(current.reconnectMode)));
             }
+            flushPendingInput();
             break;
           }
           case 'logging-state':
@@ -606,15 +589,10 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       else reconnectFromTerminalInput();
     });
     const onBinary = term.onBinary((data) => {
-      const socket = wsRef.current;
-      if (!socket || socket.readyState !== WebSocket.OPEN) {
-        reconnectFromTerminalInput();
-        return;
-      }
       const bytes = new Uint8Array(data.length);
       for (let i = 0; i < data.length; i++) bytes[i] = data.charCodeAt(i) & 0xff;
-      socket.send(bytes);
-      broadcastTerminalInput(tab.id, bytes);
+      if (sendInput(bytes)) broadcastTerminalInput(tab.id, bytes);
+      else reconnectFromTerminalInput();
     });
     const onResize = term.onResize(({ cols, rows }) => {
       const socket = wsRef.current;

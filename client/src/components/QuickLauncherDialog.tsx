@@ -27,6 +27,7 @@ import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
+import KeyboardOutlinedIcon from '@mui/icons-material/KeyboardOutlined';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
@@ -53,6 +54,13 @@ import {
   managedHostDisplayName,
   type ManagedHost,
 } from '../managed-hosts.js';
+import type { KeybindingOverrides } from '../keymap/bindings.js';
+import {
+  COMMAND_CATEGORY_LABELS,
+  KEY_COMMANDS,
+  type KeyCommand,
+} from '../keymap/commands.js';
+import { chordLabels } from '../keymap/hints.js';
 import { HOTKEY_MOD_LABEL } from '../platform.js';
 import {
   selectQuickLauncherItems,
@@ -90,6 +98,7 @@ type LauncherResult = ResultBase &
     | { kind: 'tunnel'; tunnel: TunnelRecord; running?: ForwardInfo }
     | { kind: 'history'; session: SessionLogSummary; historyQuery: string }
     | { kind: 'action'; action: LauncherAction }
+    | { kind: 'keymap'; command: KeyCommand; chord?: string }
   );
 
 type LauncherAction =
@@ -116,6 +125,7 @@ export function QuickLauncherDialog() {
   const tabs = useTabsStore((state) => state.tabs);
   const activeId = useTabsStore((state) => state.activeId);
   const commands = usePrefsStore((state) => state.commandButtons);
+  const keybindings = usePrefsStore((state) => state.keybindings);
   const workspaces = useWorkspacesStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspacesStore((state) => state.activeId);
   const workspaceBusy = useWorkspacesStore((state) => state.busy);
@@ -177,6 +187,7 @@ export function QuickLauncherDialog() {
         directTarget: deferredQuery,
         activeConnected: !!activeConnected,
         activeSsh: !!activeSsh,
+        keybindings,
       }),
     [
       activeConnected,
@@ -188,6 +199,7 @@ export function QuickLauncherDialog() {
       deferredQuery,
       forwards,
       history,
+      keybindings,
       savedHosts,
       sshHosts,
       tabs,
@@ -388,6 +400,10 @@ export function QuickLauncherDialog() {
         break;
       case 'action':
         runAction(result.action);
+        break;
+      case 'keymap':
+        close();
+        result.command.run();
         break;
     }
   };
@@ -688,6 +704,7 @@ function buildResults({
   directTarget,
   activeConnected,
   activeSsh,
+  keybindings,
 }: {
   tabs: ReturnType<typeof useTabsStore.getState>['tabs'];
   activeId: string | null;
@@ -703,6 +720,7 @@ function buildResults({
   directTarget: string;
   activeConnected: boolean;
   activeSsh: boolean;
+  keybindings: KeybindingOverrides;
 }): LauncherResult[] {
   const results: LauncherResult[] = [];
 
@@ -921,6 +939,24 @@ function buildResults({
     },
   );
 
+  // Every keyboard command is searchable here, with the chord that runs it —
+  // the palette doubles as the discovery path for the keymap.
+  for (const command of KEY_COMMANDS) {
+    if (command.palette === false) continue;
+    const chords = chordLabels(command.id, keybindings);
+    results.push({
+      id: `keymap:${command.id}`,
+      kind: 'keymap',
+      command,
+      chord: chords[0],
+      label: command.title,
+      detail: COMMAND_CATEGORY_LABELS[command.category],
+      keywords: [...(command.keywords ?? []), ...chords, command.category, 'shortcut'],
+      priority: 60,
+      showWhenEmpty: false,
+    });
+  }
+
   return results;
 }
 
@@ -968,6 +1004,7 @@ function ResultIcon({ result }: { result: LauncherResult }) {
     );
   }
   if (result.kind === 'history') return <HistoryOutlinedIcon {...props} />;
+  if (result.kind === 'keymap') return <KeyboardOutlinedIcon {...props} />;
   if (result.action === 'settings') return <SettingsOutlinedIcon {...props} />;
   if (result.action === 'workspaces') return <WorkspacesOutlinedIcon {...props} />;
   if (result.action === 'history') return <HistoryOutlinedIcon {...props} />;
@@ -986,6 +1023,17 @@ function ResultKindLabel({
   busy: boolean;
 }) {
   if (busy) return <CircularProgress size={16} sx={{ ml: 1 }} />;
+  if (result.kind === 'keymap') {
+    return result.chord ? (
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        sx={{ ml: 1.5, fontFamily: '"JetBrains Mono", monospace', whiteSpace: 'nowrap' }}
+      >
+        {result.chord}
+      </Typography>
+    ) : null;
+  }
   const label =
     result.kind === 'quick-connect'
       ? 'CONNECT'

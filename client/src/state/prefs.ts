@@ -54,6 +54,15 @@ export interface PrefsState {
   pasteWarnMultiline: boolean;
   /** Ask before closing a tab with a live session. */
   confirmCloseConnected: boolean;
+  /** Scale of the whole interface, 1 = 100%. */
+  interfaceZoom: number;
+  /** Splitting a pane opens a second session on the same host. */
+  splitInheritsSession: boolean;
+  /**
+   * Chords per command id, replacing that command's defaults. An empty array
+   * unbinds the command; commands absent from the map keep their defaults.
+   */
+  keybindings: Record<string, string[]>;
   /** One-click commands shown in the action bar. */
   commandButtons: CommandButton[];
   /** Rules applied to every terminal; hosts may add to or replace these. */
@@ -95,6 +104,9 @@ export const usePrefsStore = create<PrefsState>()(
       rightClickAction: 'copy-paste',
       pasteWarnMultiline: true,
       confirmCloseConnected: true,
+      interfaceZoom: 1,
+      splitInheritsSession: true,
+      keybindings: {},
       commandButtons: [],
       keywordHighlights: [],
       sidebarCollapsed: false,

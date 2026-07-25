@@ -19,11 +19,14 @@ import Typography from '@mui/material/Typography';
 import { alpha } from '@mui/material/styles';
 import AddIcon from '@mui/icons-material/Add';
 import CheckIcon from '@mui/icons-material/Check';
+import CloseFullscreenOutlinedIcon from '@mui/icons-material/CloseFullscreenOutlined';
 import CloseIcon from '@mui/icons-material/Close';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
+import GridViewOutlinedIcon from '@mui/icons-material/GridViewOutlined';
 import HorizontalSplitOutlinedIcon from '@mui/icons-material/HorizontalSplitOutlined';
 import LinkOffOutlinedIcon from '@mui/icons-material/LinkOffOutlined';
+import OpenInFullOutlinedIcon from '@mui/icons-material/OpenInFullOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutlineOutlined';
 import ReplayOutlinedIcon from '@mui/icons-material/ReplayOutlined';
@@ -31,14 +34,16 @@ import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined';
 import PodcastsOutlinedIcon from '@mui/icons-material/PodcastsOutlined';
+import { useChordLabel } from '../keymap/hints.js';
 import {
   duplicateTab,
   openEmptyTab,
   openTabInNewWindow,
   requestClosePane,
   requestCloseTabs,
+  splitActivePane,
 } from '../session-actions.js';
-import { useTabsStore, type TabStatus, type TerminalTab } from '../state/tabs.js';
+import { useTabsStore, type PaneDirection, type TabStatus, type TerminalTab } from '../state/tabs.js';
 import { findPane } from '../state/workspace-layout.js';
 import { layout, statusTextColor } from '../theme.js';
 import { useMultiExecStore } from '../state/multi-exec.js';
@@ -55,23 +60,61 @@ const statusDot: Record<TabStatus, 'warning' | 'success' | 'error'> = {
 /** Color flags a tab can be marked with (context menu). */
 const TAB_FLAG_COLORS = ['#ef5350', '#ffa726', '#ffee58', '#66bb6a', '#26c6da', '#42a5f5', '#ab47bc', '#ec407a'];
 
+const withChord = (label: string, chord: string | undefined) => (chord ? `${label} · ${chord}` : label);
+
+/** Trailing keyboard hint inside a menu item. */
+function ChordHint({ chord }: { chord?: string }) {
+  if (!chord) return null;
+  return (
+    <Typography
+      variant="caption"
+      color="text.secondary"
+      sx={{ ml: 3, fontFamily: '"JetBrains Mono", monospace', whiteSpace: 'nowrap' }}
+    >
+      {chord}
+    </Typography>
+  );
+}
+
 /** Browser-style terminal tab strip scoped to one split pane. */
-export function TabStrip({ paneId, focused }: { paneId: string; focused: boolean }) {
+export function TabStrip({
+  paneId,
+  focused,
+  zoomed,
+}: {
+  paneId: string;
+  focused: boolean;
+  zoomed: boolean;
+}) {
   const allTabs = useTabsStore((s) => s.tabs);
   const tabs = allTabs.filter((tab) => tab.paneId === paneId);
   const activeId = useTabsStore((s) => findPane(s.root, paneId)?.activeTabId ?? null);
   const canClosePane = useTabsStore((s) => s.root.type === 'split');
   const activate = useTabsStore((s) => s.activate);
   const focusPane = useTabsStore((s) => s.focusPane);
-  const split = useTabsStore((s) => s.split);
+  const toggleZoom = useTabsStore((s) => s.toggleZoom);
+  const equalizePanes = useTabsStore((s) => s.equalizePanes);
   const update = useTabsStore((s) => s.update);
   const reconnect = useTabsStore((s) => s.reconnect);
   const multiExecTargets = useMultiExecStore((s) => s.selectedIds);
   const toggleMultiExecTarget = useMultiExecStore((s) => s.toggleTarget);
   const [menu, setMenu] = useState<{ position: { top: number; left: number }; tab: TerminalTab } | null>(null);
+  const [paneMenu, setPaneMenu] = useState<{ top: number; left: number } | null>(null);
   const [renaming, setRenaming] = useState<TerminalTab | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const newTabChord = useChordLabel('tab.new');
+  const splitRightChord = useChordLabel('pane.split.right');
+  const splitDownChord = useChordLabel('pane.split.down');
+  const splitLeftChord = useChordLabel('pane.split.left');
+  const splitUpChord = useChordLabel('pane.split.up');
+  const zoomChord = useChordLabel('pane.zoom');
+  const closePaneChord = useChordLabel('pane.close');
+
+  const splitPane = (direction: PaneDirection) => {
+    focusPane(paneId);
+    splitActivePane(direction);
+  };
 
   useEffect(() => {
     if (!renaming) return;
@@ -106,6 +149,13 @@ export function TabStrip({ paneId, focused }: { paneId: string; focused: boolean
         }),
       }}
       onPointerDown={() => focusPane(paneId)}
+      onContextMenu={(e) => {
+        // Tabs handle their own menu first; this one belongs to the pane.
+        if (e.defaultPrevented) return;
+        e.preventDefault();
+        focusPane(paneId);
+        setPaneMenu({ top: e.clientY, left: e.clientX });
+      }}
     >
       {tabs.map((tab) => {
         const active = tab.id === activeId;
@@ -264,7 +314,7 @@ export function TabStrip({ paneId, focused }: { paneId: string; focused: boolean
           </Stack>
         );
       })}
-      <Tooltip title="New tab (Ctrl+Shift+T)">
+      <Tooltip title={withChord('New tab', newTabChord)}>
         <IconButton
           size="small"
           aria-label="New tab"
@@ -278,28 +328,44 @@ export function TabStrip({ paneId, focused }: { paneId: string; focused: boolean
         </IconButton>
       </Tooltip>
       <Box sx={{ flex: 1, minWidth: 4 }} />
-      <Tooltip title="Split right">
+      <Tooltip title={withChord('Split right', splitRightChord)}>
         <IconButton
           size="small"
           aria-label="Split pane right"
-          onClick={() => split(paneId, 'horizontal')}
+          onClick={() => splitPane('right')}
           sx={{ alignSelf: 'center' }}
         >
           <VerticalSplitOutlinedIcon sx={{ fontSize: 17 }} />
         </IconButton>
       </Tooltip>
-      <Tooltip title="Split down">
+      <Tooltip title={withChord('Split down', splitDownChord)}>
         <IconButton
           size="small"
           aria-label="Split pane down"
-          onClick={() => split(paneId, 'vertical')}
+          onClick={() => splitPane('down')}
           sx={{ alignSelf: 'center' }}
         >
           <HorizontalSplitOutlinedIcon sx={{ fontSize: 17 }} />
         </IconButton>
       </Tooltip>
       {canClosePane && (
-        <Tooltip title="Close pane">
+        <Tooltip title={withChord(zoomed ? 'Restore layout' : 'Zoom pane', zoomChord)}>
+          <IconButton
+            size="small"
+            aria-label={zoomed ? 'Restore pane layout' : 'Zoom pane'}
+            onClick={() => toggleZoom(paneId)}
+            sx={{ alignSelf: 'center', color: zoomed ? 'primary.main' : undefined }}
+          >
+            {zoomed ? (
+              <CloseFullscreenOutlinedIcon sx={{ fontSize: 15 }} />
+            ) : (
+              <OpenInFullOutlinedIcon sx={{ fontSize: 15 }} />
+            )}
+          </IconButton>
+        </Tooltip>
+      )}
+      {canClosePane && (
+        <Tooltip title={withChord('Close pane', closePaneChord)}>
           <IconButton
             size="small"
             aria-label="Close pane"
@@ -310,6 +376,106 @@ export function TabStrip({ paneId, focused }: { paneId: string; focused: boolean
           </IconButton>
         </Tooltip>
       )}
+
+      <Menu
+        open={!!paneMenu}
+        onClose={() => setPaneMenu(null)}
+        anchorReference="anchorPosition"
+        anchorPosition={paneMenu ?? undefined}
+      >
+        <MenuItem
+          onClick={() => {
+            setPaneMenu(null);
+            splitPane('right');
+          }}
+        >
+          <ListItemIcon>
+            <VerticalSplitOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Split right</ListItemText>
+          <ChordHint chord={splitRightChord} />
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setPaneMenu(null);
+            splitPane('down');
+          }}
+        >
+          <ListItemIcon>
+            <HorizontalSplitOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Split down</ListItemText>
+          <ChordHint chord={splitDownChord} />
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setPaneMenu(null);
+            splitPane('left');
+          }}
+        >
+          <ListItemIcon>
+            <VerticalSplitOutlinedIcon fontSize="small" sx={{ transform: 'scaleX(-1)' }} />
+          </ListItemIcon>
+          <ListItemText>Split left</ListItemText>
+          <ChordHint chord={splitLeftChord} />
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setPaneMenu(null);
+            splitPane('up');
+          }}
+        >
+          <ListItemIcon>
+            <HorizontalSplitOutlinedIcon fontSize="small" sx={{ transform: 'scaleY(-1)' }} />
+          </ListItemIcon>
+          <ListItemText>Split up</ListItemText>
+          <ChordHint chord={splitUpChord} />
+        </MenuItem>
+        <Divider />
+        <MenuItem
+          disabled={!canClosePane}
+          onClick={() => {
+            setPaneMenu(null);
+            toggleZoom(paneId);
+          }}
+        >
+          <ListItemIcon>
+            {zoomed ? (
+              <CloseFullscreenOutlinedIcon fontSize="small" />
+            ) : (
+              <OpenInFullOutlinedIcon fontSize="small" />
+            )}
+          </ListItemIcon>
+          <ListItemText>{zoomed ? 'Restore layout' : 'Zoom pane'}</ListItemText>
+          <ChordHint chord={zoomChord} />
+        </MenuItem>
+        <MenuItem
+          disabled={!canClosePane}
+          onClick={() => {
+            setPaneMenu(null);
+            equalizePanes();
+          }}
+        >
+          <ListItemIcon>
+            <GridViewOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Even out panes</ListItemText>
+        </MenuItem>
+        <Divider />
+        <MenuItem
+          disabled={!canClosePane}
+          onClick={() => {
+            setPaneMenu(null);
+            requestClosePane(paneId);
+          }}
+        >
+          <ListItemIcon>
+            <CloseIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Close pane</ListItemText>
+          <ChordHint chord={closePaneChord} />
+        </MenuItem>
+      </Menu>
 
       <Menu
         open={!!menu}

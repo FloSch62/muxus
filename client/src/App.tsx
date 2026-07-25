@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useState } from 'r
 import CssBaseline from '@mui/material/CssBaseline';
 import { ThemeProvider } from '@mui/material/styles';
 import type { AppWindowLaunch } from '@muxus/shared';
+import { applyInterfaceZoom } from './interface-zoom.js';
 import { buildTheme } from './theme.js';
 import { setTitleBarMode } from './titlebar-overlay.js';
 import { usePrefsStore } from './state/prefs.js';
@@ -51,6 +52,7 @@ const SftpWindow = lazy(() =>
 
 export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const themeMode = usePrefsStore((s) => s.themeMode);
+  const interfaceZoom = usePrefsStore((s) => s.interfaceZoom);
   const hostEditorOpen = useUiStore((s) => !!s.hostEditor);
   const hostOrganizerOpen = useUiStore((s) => !!s.hostOrganizer);
   const settingsOpen = useUiStore((s) => s.settingsOpen);
@@ -68,6 +70,9 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
     // Keep the desktop app's native window controls in sync with the theme.
     setTitleBarMode(effectiveMode);
   }, [effectiveMode]);
+  useLayoutEffect(() => {
+    applyInterfaceZoom(interfaceZoom);
+  }, [interfaceZoom]);
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const handler = (e: MediaQueryListEvent) => setOsTheme(e.matches ? 'dark' : 'light');

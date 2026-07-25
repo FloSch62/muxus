@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  INTERFACE_ZOOM_STEPS,
+  MAX_INTERFACE_ZOOM,
+  MIN_INTERFACE_ZOOM,
+  clampInterfaceZoom,
+  interfaceZoomLabel,
+} from '../../../client/src/interface-zoom.js';
+import {
   MONO_FONT_FALLBACK,
   migratePrefsState,
   terminalFontStack,
@@ -41,5 +48,20 @@ describe('migratePrefsState', () => {
     expect(migratePrefsState({ terminalScheme: 'muxus', termName: 'xterm-kitty' }, 0)).toEqual({
       terminalScheme: 'vscode-dark',
     });
+  });
+});
+
+describe('interface zoom', () => {
+  it('keeps the window scale inside a usable range', () => {
+    expect(clampInterfaceZoom(1)).toBe(1);
+    expect(clampInterfaceZoom(0.1)).toBe(MIN_INTERFACE_ZOOM);
+    expect(clampInterfaceZoom(9)).toBe(MAX_INTERFACE_ZOOM);
+    expect(clampInterfaceZoom(Number.NaN)).toBe(1);
+  });
+
+  it('offers 100% as a step and labels steps as percentages', () => {
+    expect(INTERFACE_ZOOM_STEPS).toContain(1);
+    expect(INTERFACE_ZOOM_STEPS.every((step) => clampInterfaceZoom(step) === step)).toBe(true);
+    expect(interfaceZoomLabel(1.25)).toBe('125%');
   });
 });

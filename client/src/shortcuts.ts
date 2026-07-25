@@ -1,62 +1,69 @@
-import { openEmptyTab, requestCloseTabs } from './session-actions.js';
-import { openQuickLauncher } from './quick-launcher-control.js';
-import { isQuickLauncherShortcut } from './quick-launcher.js';
-import { requestCloseRemoteEditor } from './editor/remote-editor-registry.js';
+import { commandsForEvent } from './keymap/bindings.js';
+import { isModifierCode } from './keymap/chords.js';
+import { runKeyCommand } from './keymap/commands.js';
+import { requestClosePane } from './session-actions.js';
 import { usePrefsStore } from './state/prefs.js';
 import { useTabsStore } from './state/tabs.js';
 
+let capturing = false;
+
 /**
- * App-level shortcuts, wired once at boot. The terminal's own key handler
- * mirrors the tab chords so they also work while a terminal has focus.
- * Desktop chords (Cmd/Ctrl+W, Ctrl+Tab) arrive over the Electron bridge —
- * the main process intercepts them before the page sees the keydown.
+ * Suspend dispatch while the shortcut editor records a chord, so the keys
+ * being captured cannot also fire the command they are about to replace.
+ */
+export function setChordCaptureActive(active: boolean): void {
+  capturing = active;
+}
+
+/**
+ * Text entry always wins: bindings never fire inside inputs, Monaco, or any
+ * editable element. The terminal is the exception — its helper textarea is
+ * where terminal chords are supposed to work.
+ */
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  if (target.closest('.xterm')) return false;
+  return !!target.closest(
+    'input, textarea, select, [contenteditable=""], [contenteditable="true"], .monaco-editor',
+  );
+}
+
+/**
+ * One capture-phase listener owns every app shortcut. Running before xterm's
+ * own key handling means a bound chord never reaches the shell, while a
+ * command that declines (no pane in that direction, no selection to copy)
+ * leaves the key untouched for the terminal to encode.
+ *
+ * Desktop chords the OS claims first (Cmd/Ctrl+W, Ctrl+Tab) arrive over the
+ * Electron bridge instead, and run the same commands.
  */
 export function installShortcuts(): () => void {
-  const onKeyDown = (e: KeyboardEvent) => {
-    const mod = e.ctrlKey || e.metaKey;
-    if (isQuickLauncherShortcut(e)) {
-      e.preventDefault();
-      openQuickLauncher();
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (capturing || event.defaultPrevented || event.isComposing) return;
+    if (isModifierCode(event.code) || isTypingTarget(event.target)) return;
+    for (const command of commandsForEvent(event, usePrefsStore.getState().keybindings)) {
+      if (!command.run()) continue;
+      event.preventDefault();
+      event.stopImmediatePropagation();
       return;
-    }
-    if (mod && e.shiftKey && !e.altKey && e.code === 'KeyT') {
-      e.preventDefault();
-      openEmptyTab();
-      return;
-    }
-    if (mod && e.shiftKey && !e.altKey && e.code === 'KeyF') {
-      e.preventDefault();
-      useTabsStore.getState().requestSearch();
-      return;
-    }
-    if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && (e.code === 'PageUp' || e.code === 'PageDown')) {
-      e.preventDefault();
-      useTabsStore.getState().cycle(e.code === 'PageUp');
-      return;
-    }
-    if (mod && !e.shiftKey && !e.altKey && e.code === 'KeyB') {
-      e.preventDefault();
-      const prefs = usePrefsStore.getState();
-      prefs.set({ sidebarCollapsed: !prefs.sidebarCollapsed });
     }
   };
-  window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('keydown', onKeyDown, true);
 
   const unsubscribers = [
     window.muxusDesktop?.onCloseTab(() => {
-      const { activeId, activePaneId, root, closePane } = useTabsStore.getState();
-      if (activeId && requestCloseRemoteEditor(activeId)) return;
-      if (activeId) requestCloseTabs([activeId]);
-      else if (root.type === 'split') closePane(activePaneId);
+      if (runKeyCommand('tab.close')) return;
+      const { root, activePaneId } = useTabsStore.getState();
+      if (root.type === 'split') requestClosePane(activePaneId);
       else window.muxusDesktop?.closeWindow();
     }),
     window.muxusDesktop?.onCycleTab((backwards) => {
-      useTabsStore.getState().cycle(backwards);
+      runKeyCommand(backwards ? 'tab.previous' : 'tab.next');
     }),
   ];
 
   return () => {
-    window.removeEventListener('keydown', onKeyDown);
+    window.removeEventListener('keydown', onKeyDown, true);
     for (const unsub of unsubscribers) unsub?.();
   };
 }

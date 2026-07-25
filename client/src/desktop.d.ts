@@ -16,6 +16,8 @@ declare global {
         removeItem(name: string): void;
       };
       setTitleBarOverlay(options: { color: string; symbolColor: string }): void;
+      /** Scale the whole window natively (the interface zoom preference). */
+      setZoomFactor(factor: number): void;
       getAppInfo(): Promise<AppInfo | undefined>;
       /** Choose an SSH private key with the operating system's file picker. */
       selectPrivateKey(): Promise<string | undefined>;

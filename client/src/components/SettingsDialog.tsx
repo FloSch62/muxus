@@ -26,6 +26,7 @@ import Typography from '@mui/material/Typography';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import HighlightOutlinedIcon from '@mui/icons-material/HighlightOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
+import KeyboardOutlinedIcon from '@mui/icons-material/KeyboardOutlined';
 import BackupOutlinedIcon from '@mui/icons-material/BackupOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
@@ -45,6 +46,13 @@ import {
   sessionLoggingPolicyInput,
   type HostSessionLoggingDraft,
 } from '../session-logging-policy.js';
+import {
+  INTERFACE_ZOOM_STEPS,
+  clampInterfaceZoom,
+  interfaceZoomLabel,
+} from '../interface-zoom.js';
+import { useChordLabel } from '../keymap/hints.js';
+import { HOTKEY_MOD_LABEL } from '../platform.js';
 import { usePrefsStore, type RightClickAction, type ThemeMode } from '../state/prefs.js';
 import { showToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
@@ -59,6 +67,7 @@ type Section =
   | 'logging'
   | 'highlighting'
   | 'behavior'
+  | 'keyboard'
   | 'data'
   | 'about';
 
@@ -68,6 +77,7 @@ const SECTIONS: Array<{ id: Section; label: string; icon: React.ReactNode }> = [
   { id: 'logging', label: 'Session logging', icon: <HistoryOutlinedIcon fontSize="small" /> },
   { id: 'highlighting', label: 'Highlighting', icon: <HighlightOutlinedIcon fontSize="small" /> },
   { id: 'behavior', label: 'Behavior', icon: <TuneOutlinedIcon fontSize="small" /> },
+  { id: 'keyboard', label: 'Keyboard', icon: <KeyboardOutlinedIcon fontSize="small" /> },
   { id: 'data', label: 'Backup & data', icon: <BackupOutlinedIcon fontSize="small" /> },
   { id: 'about', label: 'About', icon: <InfoOutlinedIcon fontSize="small" /> },
 ];
@@ -119,6 +129,7 @@ export function SettingsDialog() {
             {section === 'logging' && <SessionLoggingSection />}
             {section === 'highlighting' && <HighlightingSection />}
             {section === 'behavior' && <BehaviorSection />}
+            {section === 'keyboard' && <KeyboardSection />}
             {section === 'data' && <DataTransferSection />}
             {section === 'about' && <AboutSection />}
           </Box>
@@ -171,6 +182,29 @@ function AppearanceSection() {
             System
           </ToggleButton>
         </ToggleButtonGroup>
+      </Box>
+      <Box>
+        <SectionTitle>Interface scale</SectionTitle>
+        <FormControl sx={{ width: 200 }}>
+          <InputLabel id="interface-zoom-label">Scale</InputLabel>
+          <Select
+            labelId="interface-zoom-label"
+            value={String(clampInterfaceZoom(prefs.interfaceZoom))}
+            label="Scale"
+            onChange={(event) => prefs.set({ interfaceZoom: Number(event.target.value) })}
+          >
+            {INTERFACE_ZOOM_STEPS.map((step) => (
+              <MenuItem key={step} value={String(step)}>
+                {interfaceZoomLabel(step)}
+                {step === 1 ? ' (default)' : ''}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+          Scales the whole window. Terminal text has its own zoom
+          ({HOTKEY_MOD_LABEL}+ / {HOTKEY_MOD_LABEL}- or Ctrl+scroll), which this does not touch.
+        </Typography>
       </Box>
       <Box>
         <SectionTitle>Terminal color scheme</SectionTitle>
@@ -402,6 +436,78 @@ function BehaviorSection() {
           }
         />
       </Box>
+    </Stack>
+  );
+}
+
+/** Split behavior plus the entry point to the full shortcut editor. */
+function KeyboardSection() {
+  const splitInheritsSession = usePrefsStore((s) => s.splitInheritsSession);
+  const set = usePrefsStore((s) => s.set);
+  const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
+  const keybindings = usePrefsStore((s) => s.keybindings);
+  const customCount = Object.keys(keybindings).length;
+  const splitChord = useChordLabel('pane.split.right');
+  const focusChord = useChordLabel('pane.focus.right');
+  const moveChord = useChordLabel('tab.to-pane.right');
+  const zoomChord = useChordLabel('pane.zoom');
+
+  return (
+    <Stack spacing={3}>
+      <Box>
+        <SectionTitle>Splitting</SectionTitle>
+        <FormControlLabel
+          control={
+            <Switch
+              size="small"
+              checked={splitInheritsSession}
+              onChange={(e) => set({ splitInheritsSession: e.target.checked })}
+            />
+          }
+          label={
+            <Box>
+              <Typography variant="body2">New splits continue the current session</Typography>
+              <Typography variant="caption" color="text.secondary">
+                Splitting opens a second session on the same host (SSH reuses the live
+                connection). Off: the new pane asks what to start. Serial consoles always ask.
+              </Typography>
+            </Box>
+          }
+        />
+      </Box>
+      <Box>
+        <SectionTitle>Layout keys</SectionTitle>
+        <Stack spacing={0.75} sx={{ mb: 2 }}>
+          <KeyboardSummaryRow label="Split the focused pane in any direction" chord={splitChord} />
+          <KeyboardSummaryRow label="Move focus between panes" chord={focusChord} />
+          <KeyboardSummaryRow label="Send the current tab to another pane" chord={moveChord} />
+          <KeyboardSummaryRow label="Zoom a pane / restore the layout" chord={zoomChord} />
+        </Stack>
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<KeyboardOutlinedIcon />}
+          onClick={() => setShortcutsOpen(true)}
+        >
+          All shortcuts{customCount > 0 ? ` · ${customCount} customized` : ''}
+        </Button>
+      </Box>
+    </Stack>
+  );
+}
+
+function KeyboardSummaryRow({ label, chord }: { label: string; chord?: string }) {
+  return (
+    <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
+      <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
+        {label}
+      </Typography>
+      <Typography
+        variant="caption"
+        sx={{ fontFamily: '"JetBrains Mono", monospace', whiteSpace: 'nowrap' }}
+      >
+        {chord ?? 'Unbound'}
+      </Typography>
     </Stack>
   );
 }

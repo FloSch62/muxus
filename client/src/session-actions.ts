@@ -9,7 +9,7 @@ import { savedHostDisplayName } from './saved-hosts.js';
 import { usePrefsStore } from './state/prefs.js';
 import { useMultiExecStore } from './state/multi-exec.js';
 import { useTabsStore } from './state/tabs.js';
-import type { SessionSetLayout } from './state/tabs.js';
+import type { PaneDirection, SessionSetLayout } from './state/tabs.js';
 import { useUiStore } from './state/ui.js';
 import { confirmDiscardRemoteEditors } from './editor/remote-editor-registry.js';
 import { findPane } from './state/workspace-layout.js';
@@ -106,9 +106,53 @@ export function launchManagedHostGroup(
 }
 
 /** Duplicate an open tab (same profile, fresh session). */
-export function duplicateTab(tabId: string): void {
+export function duplicateTab(tabId: string): boolean {
   const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId);
-  if (tab?.profile) useTabsStore.getState().open(tab.profile, tab.title);
+  if (!tab?.profile) return false;
+  const id = useTabsStore.getState().open(tab.profile, tab.title);
+  if (tab.color) useTabsStore.getState().update(id, { color: tab.color });
+  return true;
+}
+
+/**
+ * Serial consoles own the device exclusively, so a second session on the same
+ * port would only fail; everything else can be dialed again.
+ */
+function canReopen(profile: SessionProfile): boolean {
+  return profile.kind !== 'serial';
+}
+
+/**
+ * Split the focused pane and, unless the user opted out, carry the current
+ * session into it — the tmux reflex of "same box, one more pane". Panes with
+ * nothing to copy open the session chooser instead.
+ */
+export function splitActivePane(direction: PaneDirection): boolean {
+  const state = useTabsStore.getState();
+  const source = state.tabs.find((tab) => tab.id === state.activeId);
+  const paneId = state.activePaneId;
+  if (!state.split(paneId, direction)) return false;
+  if (
+    usePrefsStore.getState().splitInheritsSession &&
+    source?.profile &&
+    canReopen(source.profile)
+  ) {
+    const id = useTabsStore.getState().open(source.profile, source.title);
+    if (source.color) useTabsStore.getState().update(id, { color: source.color });
+  }
+  return true;
+}
+
+/** Close the focused pane, or the tab when the canvas has a single pane. */
+export function requestCloseActivePane(): boolean {
+  const { root, activePaneId, activeId } = useTabsStore.getState();
+  if (root.type === 'pane') {
+    if (!activeId) return false;
+    requestCloseTabs([activeId]);
+    return true;
+  }
+  requestClosePane(activePaneId);
+  return true;
 }
 
 /** Open the tab's profile as a fresh session in a separate app window. */

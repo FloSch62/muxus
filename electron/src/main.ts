@@ -121,7 +121,19 @@ function buildMenu(): void {
     ...(isMac ? [{ role: 'appMenu' as const }] : []),
     { role: 'fileMenu' },
     { role: 'editMenu' },
-    { role: 'viewMenu' },
+    {
+      // The stock view menu claims Cmd/Ctrl +/-/0 for page zoom, which would
+      // scale the whole window out from under the terminal's own font zoom.
+      // Window scale is a preference instead (Settings → Appearance).
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
     { role: 'windowMenu' },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -227,13 +239,15 @@ function createWindow(url: string, launch?: AppWindowLaunch): BrowserWindow {
     event.preventDefault();
     openAllowedExternalUrl(destination);
   });
-  // Cmd/Ctrl+W is the OS "close window" accelerator. Hand it to the renderer
-  // so it can close the focused terminal tab first, and only close the whole
-  // window when no tab is open. Ctrl+Tab & friends cycle tabs.
+  // Cmd+W is the macOS "close window" accelerator: hand it to the renderer so
+  // it closes the focused terminal tab first, and only closes the whole window
+  // when no tab is open. Ctrl+W is left alone everywhere else — the shell uses
+  // it to delete a word, and Ctrl+Shift+W closes the tab instead. Ctrl+Tab &
+  // friends cycle tabs.
   win.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
     const key = input.key.toLowerCase();
-    if (key === 'w' && !input.alt && !input.shift && (isMac ? input.meta && !input.control : input.control && !input.meta)) {
+    if (isMac && key === 'w' && !input.alt && !input.shift && input.meta && !input.control) {
       event.preventDefault();
       win.webContents.send('muxus:close-tab');
       return;
@@ -256,17 +270,38 @@ ipcMain.on('muxus:close-window', (event) => {
   senderWindow(event)?.close();
 });
 
+const overlayColorsByWindow = new WeakMap<BrowserWindow, { color: string; symbolColor: string }>();
+
+/** Repaint the native overlay, sized to the window's current scale. */
+function applyTitleBarOverlay(win: BrowserWindow, colors: { color: string; symbolColor: string }): void {
+  if (isMac) return;
+  overlayColorsByWindow.set(win, colors);
+  try {
+    win.setTitleBarOverlay({
+      ...colors,
+      height: Math.round(TITLEBAR_HEIGHT * win.webContents.getZoomFactor()),
+    });
+  } catch {
+    /* overlay not supported in this environment */
+  }
+}
+
 ipcMain.on('muxus:set-titlebar-overlay', (event, options: unknown) => {
   if (isMac) return;
   const win = senderWindow(event);
   if (!win) return;
   const { color, symbolColor } = (options ?? {}) as { color?: unknown; symbolColor?: unknown };
   if (typeof color !== 'string' || typeof symbolColor !== 'string') return;
-  try {
-    win.setTitleBarOverlay({ color, symbolColor, height: TITLEBAR_HEIGHT });
-  } catch {
-    /* overlay not supported in this environment */
-  }
+  applyTitleBarOverlay(win, { color, symbolColor });
+});
+
+// Interface scale, driven by the preference rather than a zoom accelerator.
+ipcMain.on('muxus:set-zoom-factor', (event, value: unknown) => {
+  const win = senderWindow(event);
+  if (!win || typeof value !== 'number' || !Number.isFinite(value)) return;
+  win.webContents.setZoomFactor(Math.min(2, Math.max(0.5, value)));
+  const colors = overlayColorsByWindow.get(win);
+  if (colors) applyTitleBarOverlay(win, colors);
 });
 
 // One sync call, at preload time only: the boot snapshot the bridge serves

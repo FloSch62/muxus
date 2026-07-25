@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  isQuickLauncherShortcut,
   selectQuickLauncherItems,
   type QuickLauncherItem,
 } from '../../../client/src/quick-launcher.js';
@@ -70,26 +69,5 @@ describe('quick launcher search', () => {
     ], 'match', 2);
 
     expect(results.map((result) => result.id)).toEqual(['one', 'two']);
-  });
-});
-
-describe('quick launcher shortcut', () => {
-  it('accepts Ctrl+K and Cmd+K without conflicting modifiers', () => {
-    const chord = {
-      code: 'KeyK',
-      altKey: false,
-      shiftKey: false,
-    };
-
-    expect(isQuickLauncherShortcut({ ...chord, ctrlKey: true, metaKey: false })).toBe(true);
-    expect(isQuickLauncherShortcut({ ...chord, ctrlKey: false, metaKey: true })).toBe(true);
-    expect(
-      isQuickLauncherShortcut({
-        ...chord,
-        ctrlKey: true,
-        metaKey: false,
-        shiftKey: true,
-      }),
-    ).toBe(false);
   });
 });

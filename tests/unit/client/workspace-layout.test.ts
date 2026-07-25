@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  containsPane,
+  equalizeSplits,
   flattenPaneLayout,
+  neighborPaneId,
+  panesInOrder,
+  parentSplit,
   removePane,
   restoreWorkspace,
   serializeWorkspace,
@@ -68,6 +73,77 @@ describe('pane tree operations', () => {
     expect(withoutTop).toMatchObject({
       id: 'split-root',
       children: [{ id: 'pane-left' }, { id: 'pane-bottom' }],
+    });
+  });
+});
+
+describe('directional pane navigation', () => {
+  it('follows what the eye sees rather than the tree shape', () => {
+    // pane-left spans the full height, so both right-hand panes border it.
+    expect(neighborPaneId(root, 'pane-left', 'right')).toBe('pane-top');
+    expect(neighborPaneId(root, 'pane-bottom', 'left')).toBe('pane-left');
+    expect(neighborPaneId(root, 'pane-top', 'down')).toBe('pane-bottom');
+    expect(neighborPaneId(root, 'pane-bottom', 'up')).toBe('pane-top');
+  });
+
+  it('has no neighbour at the edges of the canvas', () => {
+    expect(neighborPaneId(root, 'pane-left', 'left')).toBeUndefined();
+    expect(neighborPaneId(root, 'pane-left', 'up')).toBeUndefined();
+    expect(neighborPaneId(root, 'pane-top', 'right')).toBeUndefined();
+    expect(neighborPaneId(root, 'pane-bottom', 'down')).toBeUndefined();
+    expect(neighborPaneId(root, 'missing', 'left')).toBeUndefined();
+  });
+
+  it('skips panes that only touch at a corner', () => {
+    const stacked: PaneNode = {
+      id: 'split-root',
+      type: 'split',
+      direction: 'horizontal',
+      ratio: 0.5,
+      children: [
+        {
+          id: 'split-left',
+          type: 'split',
+          direction: 'vertical',
+          ratio: 0.5,
+          children: [
+            { id: 'pane-nw', type: 'pane', activeTabId: null },
+            { id: 'pane-sw', type: 'pane', activeTabId: null },
+          ],
+        },
+        {
+          id: 'split-right',
+          type: 'split',
+          direction: 'vertical',
+          ratio: 0.5,
+          children: [
+            { id: 'pane-ne', type: 'pane', activeTabId: null },
+            { id: 'pane-se', type: 'pane', activeTabId: null },
+          ],
+        },
+      ],
+    };
+    expect(neighborPaneId(stacked, 'pane-nw', 'right')).toBe('pane-ne');
+    expect(neighborPaneId(stacked, 'pane-sw', 'right')).toBe('pane-se');
+  });
+
+  it('reports pane order, membership, and the enclosing split', () => {
+    expect(panesInOrder(root).map((pane) => pane.id)).toEqual([
+      'pane-left',
+      'pane-top',
+      'pane-bottom',
+    ]);
+    expect(containsPane(root, 'pane-bottom')).toBe(true);
+    expect(containsPane(root, 'pane-missing')).toBe(false);
+    expect(parentSplit(root, 'pane-top')).toMatchObject({ split: { id: 'split-right' }, branch: 0 });
+    expect(parentSplit(root, 'pane-left')).toMatchObject({ split: { id: 'split-root' }, branch: 0 });
+  });
+
+  it('weights an even layout by how many panes each side holds', () => {
+    expect(equalizeSplits(root)).toMatchObject({
+      id: 'split-root',
+      ratio: 1 / 3,
+      children: [{ id: 'pane-left' }, { id: 'split-right', ratio: 0.5 }],
     });
   });
 });

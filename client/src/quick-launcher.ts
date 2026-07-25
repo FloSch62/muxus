@@ -7,7 +7,8 @@ export type QuickLauncherKind =
   | 'command'
   | 'tunnel'
   | 'history'
-  | 'action';
+  | 'action'
+  | 'keymap';
 
 export interface QuickLauncherItem {
   id: string;
@@ -19,23 +20,6 @@ export interface QuickLauncherItem {
   priority: number;
   /** Initial suggestions stay deliberately small and task-oriented. */
   showWhenEmpty: boolean;
-}
-
-interface ShortcutEvent {
-  ctrlKey: boolean;
-  metaKey: boolean;
-  shiftKey: boolean;
-  altKey: boolean;
-  code: string;
-}
-
-export function isQuickLauncherShortcut(event: ShortcutEvent): boolean {
-  return (
-    (event.ctrlKey || event.metaKey) &&
-    !event.shiftKey &&
-    !event.altKey &&
-    event.code === 'KeyK'
-  );
 }
 
 /**
