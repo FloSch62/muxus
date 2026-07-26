@@ -15,6 +15,7 @@ import {
 } from 'electron';
 import fixPath from 'fix-path';
 import { startServer, type RunningServer } from '@muxus/server';
+import { isNewerVersion } from '@muxus/shared';
 import type { AppWindowLaunch, UpdateCheckResult } from '@muxus/shared';
 
 // GUI apps on macOS/Linux don't inherit the shell PATH; ssh-agent sockets
@@ -180,32 +181,8 @@ function openAllowedExternalUrl(rawUrl: string): void {
   }
 }
 
-function versionParts(version: string): [number, number, number] | undefined {
-  const match = /^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?/.exec(version.trim());
-  if (!match) return undefined;
-  return [Number(match[1]), Number(match[2] ?? 0), Number(match[3] ?? 0)];
-}
-
 function normalizeVersion(version: string): string {
   return version.trim().replace(/^v/i, '');
-}
-
-function isNewerVersion(candidate: string, current: string): boolean {
-  const next = versionParts(candidate);
-  const installed = versionParts(current);
-  if (!next || !installed) return false;
-  const [nextMajor, nextMinor, nextPatch] = next;
-  const [installedMajor, installedMinor, installedPatch] = installed;
-  const pairs = [
-    [nextMajor, installedMajor],
-    [nextMinor, installedMinor],
-    [nextPatch, installedPatch],
-  ] as const;
-  for (const [nextPart, installedPart] of pairs) {
-    if (nextPart > installedPart) return true;
-    if (nextPart < installedPart) return false;
-  }
-  return false;
 }
 
 function releaseUrl(value: unknown): string | undefined {

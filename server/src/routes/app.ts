@@ -1,6 +1,7 @@
 import os from 'node:os';
 import { readFileSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
+import { isNewerVersion } from '@muxus/shared';
 import type { AppInfo, UpdateCheckResult } from '@muxus/shared';
 import type { AppContext } from '../app.js';
 import { defaultShell } from '../local/pty-manager.js';
@@ -27,32 +28,8 @@ function serverVersion(): string {
   }
 }
 
-function versionParts(version: string): [number, number, number] | undefined {
-  const match = /^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?/.exec(version.trim());
-  if (!match) return undefined;
-  return [Number(match[1]), Number(match[2] ?? 0), Number(match[3] ?? 0)];
-}
-
 function normalizeVersion(version: string): string {
   return version.trim().replace(/^v/i, '');
-}
-
-function isNewerVersion(candidate: string, current: string): boolean {
-  const next = versionParts(candidate);
-  const installed = versionParts(current);
-  if (!next || !installed) return false;
-  const [nextMajor, nextMinor, nextPatch] = next;
-  const [installedMajor, installedMinor, installedPatch] = installed;
-  const pairs = [
-    [nextMajor, installedMajor],
-    [nextMinor, installedMinor],
-    [nextPatch, installedPatch],
-  ] as const;
-  for (const [nextPart, installedPart] of pairs) {
-    if (nextPart > installedPart) return true;
-    if (nextPart < installedPart) return false;
-  }
-  return false;
 }
 
 function releaseUrl(value: unknown): string | undefined {

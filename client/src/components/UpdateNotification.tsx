@@ -5,22 +5,23 @@ import Snackbar from '@mui/material/Snackbar';
 import Stack from '@mui/material/Stack';
 import type { UpdateCheckResult } from '@muxus/shared';
 import { checkForUpdate as checkForAppUpdate } from '../api/app.js';
+import { muxusStateStorage } from '../state/persist-storage.js';
 
 const DISMISSED_UPDATE_KEY = 'muxus-dismissed-update-version';
 
 let updateCheck: Promise<UpdateCheckResult> | undefined;
 
-function readDismissedVersion(): string | null {
+async function readDismissedVersion(): Promise<string | null> {
   try {
-    return window.localStorage.getItem(DISMISSED_UPDATE_KEY);
+    return await muxusStateStorage.getItem(DISMISSED_UPDATE_KEY);
   } catch {
     return null;
   }
 }
 
-function dismissVersion(version: string): void {
+async function dismissVersion(version: string): Promise<void> {
   try {
-    window.localStorage.setItem(DISMISSED_UPDATE_KEY, version);
+    await muxusStateStorage.setItem(DISMISSED_UPDATE_KEY, version);
   } catch {
     /* Dismissal is a nicety; ignore blocked storage. */
   }
@@ -39,9 +40,10 @@ export function UpdateNotification() {
 
     let cancelled = false;
     void check
-      .then((result) => {
-        if (cancelled || !result.available) return;
-        if (readDismissedVersion() === result.latestVersion) return;
+      .then(async (result) => {
+        if (!result.available) return;
+        const dismissedVersion = await readDismissedVersion();
+        if (cancelled || dismissedVersion === result.latestVersion) return;
         setUpdate(result);
       })
       .catch(() => undefined);
@@ -52,7 +54,7 @@ export function UpdateNotification() {
   }, []);
 
   const dismiss = () => {
-    if (update) dismissVersion(update.latestVersion);
+    if (update) void dismissVersion(update.latestVersion);
     setUpdate(null);
   };
 
