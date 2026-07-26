@@ -17,7 +17,7 @@ entry, or by pressing ++enter++ on a search that matched nothing.
   <figcaption>The editor has seven sections, and the footer names the file it writes to.</figcaption>
 </figure>
 
-!!! info "Edits are surgical"
+!!! info "What a save rewrites"
 
     Saving rewrites **only that block**. Comments, ordering, `Match` blocks and every other
     host in the file are left untouched. The write is atomic, and the previous contents are
@@ -100,7 +100,7 @@ panel shows the **exact block** that will be written.
 <figure markdown="span">
   ![The exact ssh_config block preview](../assets/screenshots/host-editor-preview.png#only-light){ .shadow }
   ![The exact ssh_config block preview](../assets/screenshots/host-editor-preview-dark.png#only-dark){ .shadow }
-  <figcaption>The preview is rendered by the same code that writes the file.</figcaption>
+  <figcaption>Free-form keywords, with a preview of the resulting block.</figcaption>
 </figure>
 
 ## Saving

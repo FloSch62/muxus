@@ -13,7 +13,7 @@ searchable, and can be replayed as it was displayed.
   <figcaption>Full-text search across retained sessions, with host, date and connection-type filters.</figcaption>
 </figure>
 
-!!! info "Off until you turn it on"
+!!! info "Disabled by default"
 
     A fresh install records nothing. Enable it globally in
     [Settings → Session logging](settings.md#session-logging), or per host in the

@@ -35,7 +35,7 @@ operation, so no second connection or authentication is required.
 Uploads and downloads report progress, and large transfers do not block the terminal in the
 same tab.
 
-!!! warning "Overwrites are never silent"
+!!! warning "Overwrite confirmation"
 
     Uploading onto an existing path asks for confirmation and names the file it would
     replace.

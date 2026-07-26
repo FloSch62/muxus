@@ -21,8 +21,8 @@ The window opens on an empty pane with your hosts in the sidebar on the left.
 ## 2. Find your hosts
 
 Every concrete `Host` block in `~/.ssh/config` is already there, grouped by the file it
-came from, including the files pulled in with `Include`. Nothing was imported and nothing
-was copied: the sidebar *is* your config.
+came from, including the files pulled in with `Include`. Nothing is imported or copied; the
+sidebar reads the file directly.
 
 <figure markdown="span">
   ![The hosts sidebar](assets/screenshots/sidebar.png#only-light){ .shadow }

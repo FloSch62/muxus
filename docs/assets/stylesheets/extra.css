@@ -32,6 +32,41 @@
   display: none;
 }
 
+/* The landing-page tour: one recording per theme, plus a still for readers who
+   asked their system for less motion. */
+.muxus-tour video,
+.muxus-tour img {
+  display: block;
+  width: 100%;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18), 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+[data-md-color-scheme="slate"] .muxus-tour video,
+[data-md-color-scheme="slate"] .muxus-tour img {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+[data-md-color-scheme="default"] .muxus-tour .only-dark,
+[data-md-color-scheme="slate"] .muxus-tour .only-light {
+  display: none;
+}
+
+.muxus-tour .tour-still {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .muxus-tour video {
+    display: none;
+  }
+
+  [data-md-color-scheme="default"] .muxus-tour .tour-still.only-light,
+  [data-md-color-scheme="slate"] .muxus-tour .tour-still.only-dark {
+    display: block;
+  }
+}
+
 .md-typeset figure figcaption {
   margin-top: 0.4rem;
   color: var(--md-default-fg-color--light);

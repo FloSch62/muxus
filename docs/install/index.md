@@ -40,7 +40,7 @@ Muxus uses the existing SSH credentials and configuration on the machine:
 | `~/.ssh/*` key files | The key picker in the host editor |
 | `SSH_AUTH_SOCK` | Agent authentication and `ForwardAgent` |
 
-!!! tip "Already use `ssh`? You're ready."
+!!! tip "No import step"
 
     If `ssh myhost` works in a terminal, Muxus resolves and dials the same host with the
     same key. The configuration is not imported into a database. See

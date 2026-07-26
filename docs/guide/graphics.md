@@ -31,8 +31,7 @@ occupies.
 
 xterm.js 6.1 streams the APC payload into the Image Addon. Chunks are parsed incrementally,
 base64 decoding runs through WebAssembly, and the result is drawn as a
-terminal-buffer-aware canvas layer. Muxus adds no second parser and no per-chunk scheduling
-queue.
+terminal-buffer-aware canvas layer.
 
 Images scroll with the buffer, survive resizes, and are dropped when their lines leave the
 scrollback.
