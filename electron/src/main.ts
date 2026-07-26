@@ -182,7 +182,11 @@ function createWindow(url: string, launch?: AppWindowLaunch): BrowserWindow {
     minWidth: 800,
     minHeight: 500,
     title: launch ? `${launch.title} — Muxus` : 'Muxus',
-    show: false,
+    // Restored terminals can keep `ready-to-show` from firing on some Windows
+    // GPU paths. Show immediately with the titlebar's background color so the
+    // native window can participate in composition while the UI initializes.
+    show: true,
+    backgroundColor: overlayColors().color,
     icon: windowIcon(),
     // Frameless look on every platform: the client's TopBar is the titlebar
     // (drag region + env(titlebar-area-*) paddings live in the client CSS).
@@ -208,7 +212,6 @@ function createWindow(url: string, launch?: AppWindowLaunch): BrowserWindow {
   // The menu stays installed so its accelerators (zoom, reload, devtools,
   // fullscreen) keep working, but the bar itself is macOS-only chrome.
   if (!isMac) win.setMenuBarVisibility(false);
-  win.once('ready-to-show', () => win.show());
   win.on('close', () => {
     if (win === primaryWindow) saveWindowState(win);
   });
