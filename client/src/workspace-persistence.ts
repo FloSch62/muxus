@@ -7,13 +7,20 @@ import type {
 } from '@muxus/shared';
 import { apiFetch, authToken } from './api/http.js';
 import { useMultiExecStore } from './state/multi-exec.js';
+import { usePrefsStore } from './state/prefs.js';
 import { useTabsStore, type SessionTab } from './state/tabs.js';
 import { serializeWorkspace } from './state/workspace-layout.js';
 import { useWorkspacesStore } from './state/workspaces.js';
+import {
+  PAGE_KEEPALIVE_BODY_LIMIT_BYTES,
+  registerUnloadKeepalive,
+  requestBodyBytes,
+} from './unload-keepalive.js';
 
 const SAVE_DELAY_MS = 350;
 const RETRY_DELAY_MS = 2_000;
 const DEFAULT_WORKSPACE_NAME = 'Workspace 1';
+const WORKSPACE_UNLOAD_PRIORITY = 100;
 
 interface WorkspaceSnapshot {
   layout: WorkspaceLayoutV1;
@@ -35,6 +42,11 @@ function currentSnapshot(): WorkspaceSnapshot {
     multiExecGroups,
     serialized: JSON.stringify({ layout, multiExecGroups }),
   };
+}
+
+/** Restores dial remote sessions too unless the preference turned that off. */
+function restoreOptions() {
+  return { connectRemote: usePrefsStore.getState().autoReconnectRemote };
 }
 
 function summaryOf(workspace: WorkspaceRecord): WorkspaceSummary {
@@ -83,7 +95,7 @@ class WorkspaceRuntime {
             layout: workspace.layout,
             multiExecGroups: workspace.multiExecGroups,
           });
-          state.restore(workspace.layout);
+          state.restore(workspace.layout, restoreOptions());
           useMultiExecStore.getState().setGroups(workspace.multiExecGroups);
           this.restoring = false;
           restored = true;
@@ -198,7 +210,7 @@ class WorkspaceRuntime {
         { method: 'POST' },
       );
       this.restoring = true;
-      useTabsStore.getState().restore(workspace.layout);
+      useTabsStore.getState().restore(workspace.layout, restoreOptions());
       useMultiExecStore.getState().setGroups(workspace.multiExecGroups);
       this.restoring = false;
       this.pending = undefined;
@@ -334,8 +346,8 @@ class WorkspaceRuntime {
     }
   }
 
-  private flushOnUnload(): void {
-    if (!this.pending) return;
+  flushOnUnload(maxBodyBytes = PAGE_KEEPALIVE_BODY_LIMIT_BYTES): number {
+    if (!this.pending) return 0;
     const { activeId, activeName } = useWorkspacesStore.getState();
     const body = JSON.stringify({
       id: activeId,
@@ -343,6 +355,9 @@ class WorkspaceRuntime {
       layout: this.pending.layout,
       multiExecGroups: this.pending.multiExecGroups,
     });
+    const bodyBytes = requestBodyBytes(body);
+    if (bodyBytes > maxBodyBytes) return 0;
+    this.pending = undefined;
     void fetch('/api/workspaces', {
       method: 'PUT',
       headers: {
@@ -352,6 +367,7 @@ class WorkspaceRuntime {
       body,
       keepalive: true,
     }).catch(() => undefined);
+    return bodyBytes;
   }
 }
 
@@ -374,11 +390,13 @@ export function useWorkspacePersistence(enabled = true): void {
     if (!enabled) return;
     const runtime = new WorkspaceRuntime();
     activeRuntime = runtime;
-    const flushOnUnload = () => runtime.stop();
-    window.addEventListener('beforeunload', flushOnUnload, { once: true });
+    const unregisterUnloadFlush = registerUnloadKeepalive(
+      (maxBodyBytes) => runtime.flushOnUnload(maxBodyBytes),
+      { priority: WORKSPACE_UNLOAD_PRIORITY },
+    );
     void runtime.start();
     return () => {
-      window.removeEventListener('beforeunload', flushOnUnload);
+      unregisterUnloadFlush();
       runtime.stop();
       if (activeRuntime === runtime) activeRuntime = undefined;
     };

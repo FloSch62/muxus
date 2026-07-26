@@ -207,7 +207,9 @@ export function registerWorkspaceRoutes(app: FastifyInstance, ctx: AppContext): 
       if (!parsed.success) {
         throw new HttpProblem(400, parsed.error.issues[0]?.message ?? 'invalid workspace');
       }
-      return ctx.database.saveWorkspace(parsed.data) as WorkspaceRecord;
+      const saved = ctx.database.saveWorkspace(parsed.data) as WorkspaceRecord;
+      ctx.database.pruneTerminalSnapshots();
+      return saved;
     } catch (err) {
       return sendError(reply, err);
     }
@@ -243,6 +245,8 @@ export function registerWorkspaceRoutes(app: FastifyInstance, ctx: AppContext): 
 
   app.delete('/api/workspaces/:id', (req) => {
     const { id } = req.params as { id: string };
-    return { deleted: ctx.database.deleteWorkspace(id) };
+    const deleted = ctx.database.deleteWorkspace(id);
+    if (deleted) ctx.database.pruneTerminalSnapshots();
+    return { deleted };
   });
 }

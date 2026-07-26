@@ -374,6 +374,17 @@ export interface WorkspaceRecord {
 
 export type WorkspaceSummary = Omit<WorkspaceRecord, 'layout' | 'multiExecGroups'>;
 
+/** Persisted scrollback for one workspace terminal tab. */
+export interface TerminalSnapshotRecord {
+  tabId: string;
+  /** Serialized terminal buffer, replayable by writing it back to a terminal. */
+  data: string;
+  updatedAt: string;
+}
+
+/** Upper bound for one tab's serialized scrollback, enforced on both sides. */
+export const TERMINAL_SNAPSHOT_MAX_CHARS = 512_000;
+
 export interface SshConfigResponse {
   /** Root config path (~/.ssh/config). */
   path: string;

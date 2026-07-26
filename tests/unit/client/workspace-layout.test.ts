@@ -222,6 +222,33 @@ describe('workspace serialization', () => {
     ]);
   });
 
+  it('dials remote tabs too when the restore opts in', () => {
+    const layout = serializeWorkspace(
+      root,
+      [
+        {
+          id: 'tab-a',
+          paneId: 'pane-left',
+          title: 'Production',
+          profile: { kind: 'ssh', target: 'production' },
+        },
+        {
+          id: 'tab-b',
+          paneId: 'pane-bottom',
+          title: 'Local',
+          profile: { kind: 'local', cwd: '/srv/app' },
+        },
+      ],
+      'pane-bottom',
+    );
+
+    const restored = restoreWorkspace(layout, { connectRemote: true })!;
+    expect(restored.tabs).toEqual([
+      expect.objectContaining({ id: 'tab-a', connectOnMount: true }),
+      expect.objectContaining({ id: 'tab-b', connectOnMount: true }),
+    ]);
+  });
+
   it('strips retired TERM overrides from restored profiles', () => {
     const layout = serializeWorkspace(
       { id: 'pane', type: 'pane', activeTabId: 'ssh-tab' },

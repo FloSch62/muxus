@@ -17,6 +17,7 @@ import {
   type PaneDirection,
   type PaneLeaf,
   type PaneNode,
+  type RestoreWorkspaceOptions,
 } from './workspace-layout.js';
 
 export type TabStatus = 'connecting' | 'connected' | 'interrupted' | 'closed';
@@ -49,6 +50,8 @@ interface TabBase {
   /** Most recent connection/end reason, shown without requiring terminal scrollback. */
   failureReason?: string;
   disconnectReason?: 'completed' | 'failed' | 'disconnected';
+  /** Tab came from a persisted workspace layout, so stored scrollback may exist. */
+  restored?: boolean;
 }
 
 export interface SessionTab extends TabBase {
@@ -133,7 +136,7 @@ interface TabsState {
   openEditor: (tabId: string, path: string) => void;
   activateEditor: (tabId: string, path: string) => void;
   closeEditor: (tabId: string, path: string) => void;
-  restore: (layout: WorkspaceLayoutV1) => void;
+  restore: (layout: WorkspaceLayoutV1, options?: RestoreWorkspaceOptions) => void;
   /** Replace the pane canvas with a freshly connected, arranged session set. */
   launchSet: (entries: readonly SessionSetEntry[], layout: SessionSetLayout) => string[];
   /** Start fresh connections for selected ended/restored sessions. */
@@ -514,7 +517,7 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
         return { ...tab, editorPaths, activeEditorPath };
       }),
     })),
-  restore: (layout) =>
+  restore: (layout, options) =>
     set((state) => {
       if (!layout.root) {
         const pane = initialPane();
@@ -526,13 +529,14 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
           zoomedPaneId: null,
         };
       }
-      const restored = restoreWorkspaceLayout(layout);
+      const restored = restoreWorkspaceLayout(layout, options);
       if (!restored) return state;
       return {
         ...restored,
         zoomedPaneId: null,
         tabs: restored.tabs.map((tab) => ({
           ...tab,
+          restored: true,
           status: tab.connectOnMount ? 'connecting' as const : 'closed' as const,
           sftpOpen: false,
           searchRequest: 0,
