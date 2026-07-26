@@ -12,6 +12,7 @@ import { DialogHost } from './components/DialogHost.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { ToastHost } from './components/ToastHost.js';
 import { BackendStatusBanner } from './components/BackendStatusBanner.js';
+import { UpdateNotification } from './components/UpdateNotification.js';
 import {
   loadHostEditorDialog,
   loadFolderDialog,
@@ -111,6 +112,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
       <DialogHost />
       <ToastHost />
       <BackendStatusBanner />
+      {!launch ? <UpdateNotification /> : null}
     </ThemeProvider>
   );
 }

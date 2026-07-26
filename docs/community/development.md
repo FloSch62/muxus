@@ -70,6 +70,11 @@ make all    # everything electron-builder is configured for
 
 Artifacts are written to `electron/release/`.
 
+Publishing a GitHub release runs the installer workflow. After the installers are
+attached, that workflow redeploys the documentation site with a `latest.json` generated
+from the newest release. The desktop app and browser-hosted UI use that manifest for
+their update checks.
+
 ## Serial devices on Linux
 
 Serial ports usually require group membership:

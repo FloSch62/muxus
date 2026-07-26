@@ -72,6 +72,9 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   getAppInfo() {
     return ipcRenderer.invoke('muxus:get-app-info');
   },
+  checkForUpdate(options?: { force?: boolean }) {
+    return ipcRenderer.invoke('muxus:check-for-update', options);
+  },
   /** Open a native single-file picker and return only the user-selected path. */
   selectPrivateKey(): Promise<string | undefined> {
     return ipcRenderer.invoke('muxus:select-private-key');
