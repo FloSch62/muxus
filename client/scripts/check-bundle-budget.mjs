@@ -68,9 +68,14 @@ const initialKeys = collectStaticGraph(entry[0]);
 // The sidebar's folder tree adds ~12 KiB raw on top of that. Its model,
 // keyboard navigation and drag-and-drop are the host list itself and cannot be
 // deferred; the menus and dialogs it opens are lazy (see SidebarMenus).
+//
+// Workspace restoration also reads the remote reconnect preference before
+// terminals mount. That startup decision adds ~0.2 KiB raw / ~0.1 KiB gzip;
+// the reconnect and scrollback implementations remain in the lazy terminal
+// feature graph measured below.
 check('Initial JavaScript', measureGraph(initialKeys), {
   raw: 782_000,
-  gzip: 249_000,
+  gzip: 250_000,
 });
 
 for (const feature of [
