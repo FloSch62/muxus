@@ -250,6 +250,21 @@ export function buildTheme(mode: 'light' | 'dark', options: { modalBackdrop?: El
           },
         },
       },
+      MuiDialogContent: {
+        styleOverrides: {
+          root: {
+            // The content is a scroll box, so it clips whatever pokes out of
+            // it — including the floating label of a field at the very top,
+            // which sits ~9px above its input. MUI drops the top padding when
+            // the content follows a title; take it back as padding and hand it
+            // straight back as margin, so the labels survive and nothing moves.
+            '.MuiDialogTitle-root + &:not(.MuiDialogContent-dividers)': {
+              paddingTop: 12,
+              marginTop: -12,
+            },
+          },
+        },
+      },
       MuiTab: {
         styleOverrides: {
           root: {
