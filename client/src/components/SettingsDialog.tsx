@@ -3,6 +3,7 @@ import Autocomplete from '@mui/material/Autocomplete';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import CircularProgress from '@mui/material/CircularProgress';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import Divider from '@mui/material/Divider';
@@ -14,6 +15,7 @@ import ListItemButton from '@mui/material/ListItemButton';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import ListSubheader from '@mui/material/ListSubheader';
+import Link from '@mui/material/Link';
 import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
 import Slider from '@mui/material/Slider';
@@ -25,6 +27,8 @@ import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import CachedOutlinedIcon from '@mui/icons-material/CachedOutlined';
+import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import HighlightOutlinedIcon from '@mui/icons-material/HighlightOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import KeyboardOutlinedIcon from '@mui/icons-material/KeyboardOutlined';
@@ -32,6 +36,8 @@ import BackupOutlinedIcon from '@mui/icons-material/BackupOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
+import type { UpdateCheckResult } from '@muxus/shared';
+import { checkForUpdate } from '../api/app.js';
 import {
   useSaveSessionHistorySettings,
   useSaveSessionLoggingPolicy,
@@ -896,18 +902,92 @@ function HighlightingSection() {
   );
 }
 
+function updateReasonLabel(reason?: string): string {
+  switch (reason) {
+    case 'timeout':
+      return 'The update check timed out.';
+    case 'network':
+      return 'The update check could not reach GitHub.';
+    case 'no-release':
+      return 'No published release was found.';
+    case 'missing-version':
+    case 'missing-release-url':
+      return 'The latest release metadata is incomplete.';
+    default:
+      return reason?.startsWith('manifest-')
+        ? `The update manifest returned ${reason.replace('manifest-', '')}.`
+        : 'The update check could not be completed.';
+  }
+}
+
 function AboutSection() {
   const { data: info } = useAppInfo();
+  const [checking, setChecking] = useState(false);
+  const [result, setResult] = useState<UpdateCheckResult | null>(null);
+
+  const checkForUpdates = () => {
+    setChecking(true);
+    setResult(null);
+    void checkForUpdate({ force: true })
+      .then(setResult)
+      .catch(() => setResult({ available: false, currentVersion: info?.version ?? '', reason: 'network' }))
+      .finally(() => setChecking(false));
+  };
+
+  const updatesAvailable = result?.available === true;
+
   return (
-    <Stack spacing={1}>
-      <SectionTitle>About</SectionTitle>
-      <Typography variant="body2">
-        Muxus {info?.version ?? ''} · {String(info?.platform ?? '')}
-      </Typography>
-      <Typography variant="body2" color="text.secondary">
-        Free, open-source SSH, Telnet, and serial client — kitty graphics, split-pane workspaces,
-        SFTP and terminal-independent port forwarding.
-      </Typography>
+    <Stack spacing={3}>
+      <Box>
+        <SectionTitle>About</SectionTitle>
+        <Stack spacing={1.25}>
+          <Typography variant="body2">
+            Muxus {info?.version ?? ''} · {String(info?.platform ?? '')}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Free, open-source SSH, Telnet, and serial client — kitty graphics, split-pane
+            workspaces, SFTP and terminal-independent port forwarding.
+          </Typography>
+          <Link href="https://github.com/FloSch62/muxus" target="_blank" rel="noreferrer">
+            github.com/FloSch62/muxus
+          </Link>
+        </Stack>
+      </Box>
+      <Box>
+        <SectionTitle>Updates</SectionTitle>
+        <Stack spacing={1.5} sx={{ alignItems: 'flex-start' }}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+            <Button
+              variant="contained"
+              startIcon={checking ? <CircularProgress color="inherit" size={16} /> : <CachedOutlinedIcon />}
+              disabled={checking}
+              onClick={checkForUpdates}
+            >
+              Check for updates
+            </Button>
+            {updatesAvailable ? (
+              <Button startIcon={<DownloadOutlinedIcon />} href={result.releaseUrl} target="_blank" rel="noreferrer">
+                Download
+              </Button>
+            ) : null}
+          </Stack>
+          {result?.available === false && result.latestVersion ? (
+            <Alert severity="success" variant="outlined">
+              Muxus is up to date. Latest release: {result.latestVersion}.
+            </Alert>
+          ) : null}
+          {result?.available === false && !result.latestVersion ? (
+            <Alert severity="warning" variant="outlined">
+              {updateReasonLabel(result.reason)}
+            </Alert>
+          ) : null}
+          {updatesAvailable ? (
+            <Alert severity="info" variant="outlined">
+              Muxus {result.latestVersion} is available. You are running {result.currentVersion}.
+            </Alert>
+          ) : null}
+        </Stack>
+      </Box>
     </Stack>
   );
 }

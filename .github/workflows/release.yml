@@ -117,6 +117,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
+      actions: write
       contents: write
     steps:
       - name: Download installers
@@ -129,3 +130,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$RELEASE_TAG" release-assets/* --clobber --repo "$GITHUB_REPOSITORY"
+
+      # The docs deploy writes site/latest.json from the latest GitHub release,
+      # which powers the in-app update check for all installed versions.
+      - name: Refresh Pages update manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run docs.yml --ref main --repo "$GITHUB_REPOSITORY"

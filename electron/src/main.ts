@@ -15,7 +15,8 @@ import {
 } from 'electron';
 import fixPath from 'fix-path';
 import { startServer, type RunningServer } from '@muxus/server';
-import type { AppWindowLaunch } from '@muxus/shared';
+import { isNewerVersion } from '@muxus/shared';
+import type { AppWindowLaunch, UpdateCheckResult } from '@muxus/shared';
 
 // GUI apps on macOS/Linux don't inherit the shell PATH; ssh-agent sockets
 // and the user's login shell tooling need it.
@@ -36,6 +37,8 @@ const EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 
 // Must match the client TopBar height: its toolbar doubles as the titlebar.
 const TITLEBAR_HEIGHT = 52;
+const UPDATE_MANIFEST_URL = 'https://flosch62.github.io/muxus/latest.json';
+const UPDATE_CHECK_TIMEOUT_MS = 10_000;
 
 let primaryWindow: BrowserWindow | undefined;
 let appUrl: string | undefined;
@@ -43,6 +46,7 @@ const managedWindows = new Set<BrowserWindow>();
 const windowLaunches = new Map<number, AppWindowLaunch>();
 let server: RunningServer | undefined;
 let closing: Promise<void> | undefined;
+let updateCheck: Promise<UpdateCheckResult> | undefined;
 
 interface WindowState {
   width: number;
@@ -55,6 +59,13 @@ interface WindowState {
 interface AppInfo {
   name: string;
   version: string;
+}
+
+interface UpdateManifest {
+  version?: unknown;
+  releaseName?: unknown;
+  releaseUrl?: unknown;
+  publishedAt?: unknown;
 }
 
 const windowStateFile = () => path.join(app.getPath('userData'), 'window-state.json');
@@ -167,6 +178,68 @@ function openAllowedExternalUrl(rawUrl: string): void {
     void shell.openExternal(parsed.toString()).catch(() => undefined);
   } catch {
     /* malformed or relative URLs are never handed to the OS */
+  }
+}
+
+function normalizeVersion(version: string): string {
+  return version.trim().replace(/^v/i, '');
+}
+
+function releaseUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || url.hostname !== 'github.com') return undefined;
+    if (!url.pathname.startsWith('/FloSch62/muxus/releases/')) return undefined;
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+async function checkForUpdate(force = false): Promise<UpdateCheckResult> {
+  const currentVersion = app.getVersion();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), UPDATE_CHECK_TIMEOUT_MS);
+  try {
+    const url = new URL(UPDATE_MANIFEST_URL);
+    if (force) url.searchParams.set('t', String(Date.now()));
+    const response = await fetch(url, {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': `Muxus/${currentVersion}`,
+      },
+      signal: controller.signal,
+    });
+    if (response.status === 404) return { available: false, currentVersion, reason: 'no-release' };
+    if (!response.ok) return { available: false, currentVersion, reason: `manifest-${response.status}` };
+
+    const manifest = (await response.json()) as UpdateManifest;
+    const version = typeof manifest.version === 'string' ? manifest.version : undefined;
+    if (!version) return { available: false, currentVersion, reason: 'missing-version' };
+
+    const latestVersion = normalizeVersion(version);
+    if (!isNewerVersion(latestVersion, currentVersion)) return { available: false, currentVersion, latestVersion };
+
+    const downloadUrl = releaseUrl(manifest.releaseUrl);
+    if (!downloadUrl) return { available: false, currentVersion, latestVersion, reason: 'missing-release-url' };
+
+    return {
+      available: true,
+      currentVersion,
+      latestVersion,
+      releaseName: typeof manifest.releaseName === 'string' && manifest.releaseName ? manifest.releaseName : undefined,
+      releaseUrl: downloadUrl,
+      publishedAt: typeof manifest.publishedAt === 'string' ? manifest.publishedAt : undefined,
+    };
+  } catch (err) {
+    return {
+      available: false,
+      currentVersion,
+      reason: err instanceof Error && err.name === 'AbortError' ? 'timeout' : 'network',
+    };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -388,6 +461,15 @@ ipcMain.on('muxus:state:remove-item', (event, name: unknown) => {
 ipcMain.handle('muxus:get-app-info', (event): AppInfo | undefined => {
   if (!isManagedWindowSender(event)) return undefined;
   return { name: app.getName(), version: app.getVersion() };
+});
+
+ipcMain.handle('muxus:check-for-update', async (event, options?: { force?: unknown }): Promise<UpdateCheckResult> => {
+  if (!isManagedWindowSender(event)) {
+    return { available: false, currentVersion: app.getVersion(), reason: 'invalid-sender' };
+  }
+  if (options?.force === true) updateCheck = checkForUpdate(true);
+  updateCheck ??= checkForUpdate();
+  return updateCheck;
 });
 
 ipcMain.handle('muxus:select-private-key', async (event): Promise<string | undefined> => {

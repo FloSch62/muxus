@@ -15,6 +15,22 @@ export interface AppInfo {
   defaultShell: string;
 }
 
+export type UpdateCheckResult =
+  | {
+      available: true;
+      currentVersion: string;
+      latestVersion: string;
+      releaseName?: string;
+      releaseUrl: string;
+      publishedAt?: string;
+    }
+  | {
+      available: false;
+      currentVersion: string;
+      latestVersion?: string;
+      reason?: string;
+    };
+
 /** Effective retention and privacy policy for one host (or "*" for defaults). */
 export interface SessionLoggingPolicy {
   profileKey: string;

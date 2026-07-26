@@ -91,7 +91,10 @@ the window loads is served from the local server.
 
 ## What Muxus does not do
 
-- It does not phone home, check for updates in the background, or collect telemetry.
+- It does not collect telemetry. Its only background request is a version check against
+  the static `latest.json` on the Muxus documentation site; the request contains the
+  installed version in its user agent and can only direct downloads to the Muxus GitHub
+  releases page.
 - It does not proxy traffic through anything.
 - It does not store passwords.
 - It does not run as a service or accept connections from other machines.

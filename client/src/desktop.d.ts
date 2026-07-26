@@ -1,4 +1,4 @@
-import type { AppInfo, AppWindowLaunch } from '@muxus/shared';
+import type { AppInfo, AppWindowLaunch, UpdateCheckResult } from '@muxus/shared';
 
 declare global {
   /** Bridge exposed by the Electron preload (absent in regular browsers). */
@@ -19,6 +19,7 @@ declare global {
       /** Scale the whole window natively (the interface zoom preference). */
       setZoomFactor(factor: number): void;
       getAppInfo(): Promise<AppInfo | undefined>;
+      checkForUpdate(options?: { force?: boolean }): Promise<UpdateCheckResult>;
       /** Choose an SSH private key with the operating system's file picker. */
       selectPrivateKey(): Promise<string | undefined>;
       /** Open a secondary native application window. */
