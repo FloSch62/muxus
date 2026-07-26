@@ -19,8 +19,22 @@ a remote editor, saved tunnels, and images in the terminal.
 
 </div>
 
-![The Muxus window](assets/screenshots/overview.png#only-light){ .shadow }
-![The Muxus window](assets/screenshots/overview-dark.png#only-dark){ .shadow }
+<div class="muxus-tour">
+  <video class="only-light" poster="assets/screenshots/tour-poster.png"
+         autoplay loop muted playsinline preload="metadata"
+         aria-label="A tour of Muxus: opening a saved host, splitting the pane, a chart drawn in the terminal, the quick launcher, and a remote file open in the editor">
+    <source src="assets/screenshots/tour.mp4" type="video/mp4">
+  </video>
+  <video class="only-dark" poster="assets/screenshots/tour-dark-poster.png"
+         autoplay loop muted playsinline preload="metadata"
+         aria-label="A tour of Muxus: opening a saved host, splitting the pane, a chart drawn in the terminal, the quick launcher, and a remote file open in the editor">
+    <source src="assets/screenshots/tour-dark.mp4" type="video/mp4">
+  </video>
+  <img class="tour-still only-light" src="assets/screenshots/tour-poster.png"
+       alt="The Muxus window: saved hosts in the sidebar, two split panes over one SSH connection, a latency chart drawn in the terminal">
+  <img class="tour-still only-dark" src="assets/screenshots/tour-dark-poster.png"
+       alt="The Muxus window: saved hosts in the sidebar, two split panes over one SSH connection, a latency chart drawn in the terminal">
+</div>
 
 ## What it is
 

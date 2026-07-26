@@ -73,6 +73,7 @@ The docs in this site are built with [Zensical](https://zensical.org):
 | `pnpm serve-docs` | Live preview on <http://localhost:8000>, opens a browser |
 | `pnpm build-docs` | Writes the static site to `site/` |
 | `pnpm capture-docs` | Regenerates every screenshot, light and dark |
+| `pnpm record-docs` | Re-records the animated tour on the landing page |
 
 Screenshots are generated rather than taken by hand:
 
@@ -81,6 +82,7 @@ pnpm build
 node hack/demo-env.mjs     # a sandbox: fake HOME, invented hosts, in-process sshds
 node hack/capture.mjs      # light theme
 THEME=dark node hack/capture.mjs
+node hack/record.mjs       # the landing-page tour, as an mp4 (needs ffmpeg)
 ```
 
 `hack/demo-env.mjs` builds a throwaway home directory under `/tmp`, generates keys, and
