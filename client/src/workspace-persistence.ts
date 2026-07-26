@@ -7,6 +7,7 @@ import type {
 } from '@muxus/shared';
 import { apiFetch, authToken } from './api/http.js';
 import { useMultiExecStore } from './state/multi-exec.js';
+import { usePrefsStore } from './state/prefs.js';
 import { useTabsStore, type SessionTab } from './state/tabs.js';
 import { serializeWorkspace } from './state/workspace-layout.js';
 import { useWorkspacesStore } from './state/workspaces.js';
@@ -35,6 +36,11 @@ function currentSnapshot(): WorkspaceSnapshot {
     multiExecGroups,
     serialized: JSON.stringify({ layout, multiExecGroups }),
   };
+}
+
+/** Restores dial remote sessions too unless the preference turned that off. */
+function restoreOptions() {
+  return { connectRemote: usePrefsStore.getState().autoReconnectRemote };
 }
 
 function summaryOf(workspace: WorkspaceRecord): WorkspaceSummary {
@@ -83,7 +89,7 @@ class WorkspaceRuntime {
             layout: workspace.layout,
             multiExecGroups: workspace.multiExecGroups,
           });
-          state.restore(workspace.layout);
+          state.restore(workspace.layout, restoreOptions());
           useMultiExecStore.getState().setGroups(workspace.multiExecGroups);
           this.restoring = false;
           restored = true;
@@ -198,7 +204,7 @@ class WorkspaceRuntime {
         { method: 'POST' },
       );
       this.restoring = true;
-      useTabsStore.getState().restore(workspace.layout);
+      useTabsStore.getState().restore(workspace.layout, restoreOptions());
       useMultiExecStore.getState().setGroups(workspace.multiExecGroups);
       this.restoring = false;
       this.pending = undefined;

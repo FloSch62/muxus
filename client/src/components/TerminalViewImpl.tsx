@@ -57,6 +57,9 @@ import { AuthPromptDialog, type AuthPromptRequest } from './AuthPromptDialog.js'
 import { HostKeyDialog, type HostKeyRequest } from './HostKeyDialog.js';
 import { PasteConfirmDialog } from './PasteConfirmDialog.js';
 import {
+  AUTO_RECONNECT_DELAYS_MS,
+  AUTO_RECONNECT_STABLE_MS,
+  autoReconnectDelayMs,
   CONNECTION_INTERRUPTION_GRACE_MS,
   connectionFailureReason,
   reattachCommand,
@@ -65,6 +68,15 @@ import {
   terminalNotice,
   type TerminalExitMessage,
 } from '../connection-recovery.js';
+import {
+  fetchTerminalSnapshot,
+  KEEPALIVE_BODY_LIMIT_BYTES,
+  putTerminalSnapshot,
+  serializeScrollback,
+  TERMINAL_HISTORY_DIVIDER,
+  TERMINAL_SNAPSHOT_INTERVAL_MS,
+  TERMINAL_SNAPSHOT_QUIET_MS,
+} from '../terminal/scrollback-snapshots.js';
 
 const SEARCH_DECORATIONS: ISearchOptions['decorations'] = {
   matchBackground: '#594b24',
@@ -106,6 +118,12 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const lastSearchRequestRef = useRef(tab.searchRequest);
   /** Per-tab zoom offset added to the preference font size. */
   const zoomRef = useRef(0);
+  /** Automatic redials since the last stable connection; survives remounts of the socket. */
+  const autoReconnectAttemptsRef = useRef(0);
+  /** Serialized buffer carried across socket generations by a reconnect. */
+  const carryBufferRef = useRef<string | null>(null);
+  /** Stored history is fetched at most once per mounted tab. */
+  const snapshotFetchedRef = useRef(false);
   const theme = useTheme();
   const [authPrompt, setAuthPrompt] = useState<AuthPromptRequest | null>(null);
   const [hostKey, setHostKey] = useState<HostKeyRequest | null>(null);
@@ -253,6 +271,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       cursorBlink: prefs.cursorBlink,
       cursorStyle: prefs.cursorStyle,
       scrollback: prefs.scrollback,
+      // ED2 pushes the screen into scrollback instead of blanking it, so a
+      // shell that clears on login cannot destroy freshly restored history.
+      scrollOnEraseInDisplay: true,
       allowProposedApi: true,
       // ImageAddon uses a bottom layer for negative-z Kitty placements.
       allowTransparency: true,
@@ -396,9 +417,14 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     });
 
     let ws: WebSocket | undefined;
+    let disposed = false;
     let socketFailed = false;
     let exitMessage: TerminalExitMessage | undefined;
     let interruptionTimer: ReturnType<typeof setTimeout> | undefined;
+    let autoReconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let sawAuthPrompt = false;
+    let readyAt = 0;
+    let snapshotDirty = false;
     let receivedTerminalOutput = false;
     let waitingForTerminalOutput = false;
     let transportSuspect = false;
@@ -409,7 +435,35 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       term.write('\r\x1b[2K');
     };
 
-    if (shouldConnect) {
+    // Persist recent output in the background so a later restore can replay it.
+    // A closing window can only send a keepalive request, which browsers cap
+    // at 64 KiB, so that path serializes into the smaller budget.
+    const persistSnapshot = (keepalive = false) => {
+      if (!snapshotDirty || !usePrefsStore.getState().restoreScrollback) return;
+      const data = serializeScrollback(
+        serialize,
+        keepalive ? { maxBodyBytes: KEEPALIVE_BODY_LIMIT_BYTES } : {},
+      );
+      if (data === undefined) return;
+      snapshotDirty = false;
+      putTerminalSnapshot(tab.id, data, { keepalive });
+    };
+    const snapshotTimer = setInterval(() => persistSnapshot(), TERMINAL_SNAPSHOT_INTERVAL_MS);
+    // The interval alone would lose a command run seconds before the window
+    // closes, so snapshot once output goes quiet as well.
+    let quietSnapshotTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleQuietSnapshot = () => {
+      if (quietSnapshotTimer !== undefined) clearTimeout(quietSnapshotTimer);
+      quietSnapshotTimer = setTimeout(() => {
+        quietSnapshotTimer = undefined;
+        persistSnapshot();
+      }, TERMINAL_SNAPSHOT_QUIET_MS);
+    };
+    const flushSnapshotOnUnload = () => persistSnapshot(true);
+    window.addEventListener('beforeunload', flushSnapshotOnUnload);
+    window.addEventListener('pagehide', flushSnapshotOnUnload);
+
+    const openSocket = () => {
       ws = new WebSocket(wsUrl('/ws/terminal'), wsProtocols());
       wsRef.current = ws;
       ws.binaryType = 'arraybuffer';
@@ -430,6 +484,8 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         if (ev.data instanceof ArrayBuffer) {
           clearTransientStatus();
           receivedTerminalOutput = true;
+          snapshotDirty = true;
+          scheduleQuietSnapshot();
           if (waitingForTerminalOutput) {
             waitingForTerminalOutput = false;
             if (!transportSuspect) {
@@ -491,6 +547,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             }
             break;
           case 'auth-prompt':
+            sawAuthPrompt = true;
             setAuthPrompt({ name: ctl.name, instructions: ctl.instructions, host: ctl.host, prompts: ctl.prompts });
             break;
           case 'host-key':
@@ -498,6 +555,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             break;
           case 'ready': {
             ready = true;
+            readyAt = Date.now();
             clearTransientStatus();
             waitingForTerminalOutput = shouldWaitForTerminalOutput(
               tab.profile.kind,
@@ -552,12 +610,40 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         setHostKey(null);
 
         const showFinalState = () => {
+          // A drop after a stable stretch is a fresh incident, not one more
+          // failure of the previous redial chain.
+          if (readyAt !== 0 && Date.now() - readyAt >= AUTO_RECONNECT_STABLE_MS) {
+            autoReconnectAttemptsRef.current = 0;
+          }
+          const redialDelay = autoReconnectDelayMs({
+            enabled: usePrefsStore.getState().autoReconnectRemote,
+            profileKind: tab.profile.kind,
+            reason: reasonKind,
+            attempts: autoReconnectAttemptsRef.current,
+            sawAuthPrompt,
+          });
           term.write(
             `\r\n\x1b[${reasonKind === 'completed' ? '33' : '31'}m[${
               reasonKind === 'completed' ? 'session ended' : 'connection lost'
             }: ${terminalNotice(reason)}]\x1b[0m\r\n`,
           );
-          term.write('\x1b[1;36mPress any key to reconnect\x1b[0m\r\n');
+          if (redialDelay === undefined) {
+            term.write('\x1b[1;36mPress any key to reconnect\x1b[0m\r\n');
+          } else {
+            autoReconnectAttemptsRef.current += 1;
+            term.write(
+              `\x1b[1;36mReconnecting in ${Math.round(redialDelay / 1000)}s (attempt ${autoReconnectAttemptsRef.current} of ${AUTO_RECONNECT_DELAYS_MS.length}) — any key reconnects now\x1b[0m\r\n`,
+            );
+            autoReconnectTimer = setTimeout(() => {
+              const state = useTabsStore.getState();
+              const current = state.tabs.find((candidate) => candidate.id === tab.id);
+              if (current?.status !== 'closed') return;
+              state.reconnect(
+                [tab.id],
+                current.reconnectMode ? { reattach: current.reconnectMode } : undefined,
+              );
+            }, redialDelay);
+          }
           updateTab(tab.id, {
             status: 'closed',
             connId: undefined,
@@ -585,10 +671,41 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           showFinalState();
         }, CONNECTION_INTERRUPTION_GRACE_MS);
       };
-    } else {
-      term.write('\x1b[90m[restored session]\x1b[0m\r\n');
-      term.write('\x1b[1;36mPress any key to reconnect\x1b[0m\r\n');
-    }
+    };
+
+    // Replay what this tab showed before — buffer carried over a reconnect,
+    // or the stored snapshot on the first mount of a restored tab — and only
+    // then let the new session write, so its output lands below the divider.
+    const boot = async () => {
+      let replay = carryBufferRef.current;
+      carryBufferRef.current = null;
+      if (
+        replay === null &&
+        tab.restored &&
+        !snapshotFetchedRef.current &&
+        usePrefsStore.getState().restoreScrollback
+      ) {
+        const fetched = await fetchTerminalSnapshot(tab.id);
+        // A torn-down run must not latch the ref: the replacement effect run
+        // repeats the fetch instead of silently restoring nothing.
+        if (disposed) return;
+        snapshotFetchedRef.current = true;
+        replay = fetched;
+      }
+      if (replay) {
+        term.write(replay);
+        term.write(TERMINAL_HISTORY_DIVIDER);
+        snapshotDirty = true;
+        scheduleQuietSnapshot();
+      }
+      if (shouldConnect) {
+        openSocket();
+      } else {
+        term.write('\x1b[90m[restored session]\x1b[0m\r\n');
+        term.write('\x1b[1;36mPress any key to reconnect\x1b[0m\r\n');
+      }
+    };
+    void boot();
 
     const reconnectFromTerminalInput = (): boolean => {
       const state = useTabsStore.getState();
@@ -641,6 +758,23 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     observer.observe(el);
 
     return () => {
+      disposed = true;
+      clearInterval(snapshotTimer);
+      if (quietSnapshotTimer !== undefined) clearTimeout(quietSnapshotTimer);
+      window.removeEventListener('beforeunload', flushSnapshotOnUnload);
+      window.removeEventListener('pagehide', flushSnapshotOnUnload);
+      // The buffer outlives this socket generation: a reconnect replays it in
+      // place, and the stored copy keeps the tail output a restart would lose.
+      if (usePrefsStore.getState().restoreScrollback) {
+        const data = serializeScrollback(serialize);
+        carryBufferRef.current = data ?? null;
+        if (snapshotDirty && data !== undefined) {
+          snapshotDirty = false;
+          putTerminalSnapshot(tab.id, data);
+        }
+      } else {
+        carryBufferRef.current = null;
+      }
       if (fitTimer !== undefined) clearTimeout(fitTimer);
       observer.disconnect();
       unregister();
@@ -654,6 +788,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       commandTracker.dispose();
       keywordHighlighterRef.current?.dispose();
       if (interruptionTimer !== undefined) clearTimeout(interruptionTimer);
+      if (autoReconnectTimer !== undefined) clearTimeout(autoReconnectTimer);
       if (ws) {
         ws.onopen = null;
         ws.onmessage = null;

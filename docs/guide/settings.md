@@ -67,7 +67,12 @@ global set.
 ## Behavior
 
 Tab behaviour, including **confirm before closing a live session**, which is on by default
-because closing a connected tab ends its shell.
+because closing a connected tab ends its shell, and the restore switches, both on by
+default: **automatically reconnect remote sessions** — restoring a workspace dials its
+remote tabs, and a dropped connection redials a few times on its own; turn it off to
+restore remote tabs without logging in — and **restore terminal history**, which saves
+recent output locally every few seconds and replays it above the new session after a
+restore or reconnect.
 
 ## Keyboard
 

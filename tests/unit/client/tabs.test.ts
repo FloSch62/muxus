@@ -112,11 +112,45 @@ describe('workspace restoration', () => {
         id: 'local-tab',
         status: 'connecting',
         connectOnMount: true,
+        restored: true,
       }),
       expect.objectContaining({
         id: 'ssh-tab',
         status: 'closed',
         connectOnMount: false,
+        restored: true,
+      }),
+    ]);
+  });
+
+  it('dials restored remote sessions when the restore opts in', () => {
+    useTabsStore.getState().restore(
+      {
+        version: 1,
+        root: {
+          id: 'pane-restored',
+          type: 'pane',
+          activeTabId: 'ssh-tab',
+          tabs: [
+            {
+              id: 'ssh-tab',
+              kind: 'terminal',
+              title: 'Router',
+              profile: { kind: 'ssh', target: 'router' },
+              offerReconnect: true,
+            },
+          ],
+        },
+        activePaneId: 'pane-restored',
+      },
+      { connectRemote: true },
+    );
+
+    expect(useTabsStore.getState().tabs).toEqual([
+      expect.objectContaining({
+        id: 'ssh-tab',
+        status: 'connecting',
+        connectOnMount: true,
       }),
     ]);
   });

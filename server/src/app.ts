@@ -18,6 +18,7 @@ import { registerSftpLeaseSocket } from './ws/sftp-lease-socket.js';
 import { websocketHeaderHasToken } from './auth.js';
 import { MuxusDatabase } from './persistence/database.js';
 import { registerWorkspaceRoutes } from './routes/workspaces.js';
+import { registerTerminalSnapshotRoutes } from './routes/terminal-snapshots.js';
 import { registerSerialRoutes } from './routes/serial.js';
 import { registerProfileRoutes } from './routes/profiles.js';
 import { registerHostOrderRoutes } from './routes/host-order.js';
@@ -78,6 +79,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   });
   database.finalizeSessionHistorySeparation(hadLegacyHistory);
   const ctx: AppContext = { config, connections, forwards, database, history };
+  database.pruneTerminalSnapshots();
 
   // SFTP uploads stream through as-is — no buffering, no size limit.
   app.addContentTypeParser('application/octet-stream', (_req, payload, done) => done(null, payload));
@@ -135,6 +137,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   registerForwardRoutes(app, ctx);
   registerTunnelRoutes(app, ctx);
   registerWorkspaceRoutes(app, ctx);
+  registerTerminalSnapshotRoutes(app, ctx);
   registerSerialRoutes(app);
   registerProfileRoutes(app, ctx);
   registerHostOrderRoutes(app, ctx);

@@ -34,15 +34,25 @@ closes with live tabs flushes its layout on exit.
 
 ## What restore does
 
-Restore treats local and remote sessions differently:
+By default, restore brings the whole workspace back:
 
 - **Local shells start fresh.** A new PTY, in the same pane, in the same position.
-- **Remote sessions wait.** SSH, Telnet and serial tabs are restored as tabs, with their
-  titles and colours, but are not dialled until requested, so restoring a layout does not
-  trigger a set of simultaneous logins and 2FA prompts.
+- **Remote sessions reconnect.** SSH, Telnet and serial tabs are dialled again with their
+  titles and colours; hosts that authenticate interactively prompt as usual. Restoring a
+  layout never resumes a remote process — pair it with tmux or screen for that.
+- **Terminal history comes back.** Each tab replays its recent output (about the last
+  thousand lines, saved locally every few seconds while you work) above a dim divider;
+  the new session continues below it. Reconnects keep the buffer the same way.
 
-Reconnect them individually from the tab menu, or use the workspace dialog to reconnect
-selected sessions or all of them.
+The reconnect setting also covers a session lost mid-flight: a dropped connection redials
+a few times with growing delays before falling back to *press any key to reconnect*.
+
+Both behaviours have switches in Settings → Behavior. Turning **Automatically reconnect
+remote sessions** off restores remote tabs without dialling them, so a large layout does
+not trigger a set of simultaneous logins and 2FA prompts — reconnect them individually
+from the tab menu, or use the workspace dialog to reconnect selected sessions or all of
+them. Turning **Restore terminal history** off keeps scrollback out of local storage and
+restores every tab empty.
 
 ## Launching a set at once
 
@@ -67,4 +77,7 @@ restores each group whose layout still contains at least two of its tabs.
 ## Storage
 
 Workspaces are stored in the local SQLite database, next to folders, colours and saved
-tunnels. They are not written to `ssh_config` and are not sent off the machine.
+tunnels. They are not written to `ssh_config` and are not sent off the machine. Terminal
+history snapshots live in the same local database and are dropped when their tab leaves
+every stored workspace; disable **Restore terminal history** to keep scrollback out of
+storage entirely.

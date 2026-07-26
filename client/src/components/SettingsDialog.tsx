@@ -491,6 +491,48 @@ function BehaviorSection() {
           }
         />
       </Box>
+      <Box>
+        <SectionTitle>Restore & reconnect</SectionTitle>
+        <Stack spacing={1.5}>
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={prefs.autoReconnectRemote}
+                onChange={(e) => prefs.set({ autoReconnectRemote: e.target.checked })}
+              />
+            }
+            label={
+              <Box>
+                <Typography variant="body2">Automatically reconnect remote sessions</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Restoring a workspace dials its SSH, Telnet and serial tabs, and a dropped
+                  connection redials a few times before waiting for a key press. Off: remote
+                  tabs wait until asked.
+                </Typography>
+              </Box>
+            }
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={prefs.restoreScrollback}
+                onChange={(e) => prefs.set({ restoreScrollback: e.target.checked })}
+              />
+            }
+            label={
+              <Box>
+                <Typography variant="body2">Restore terminal history</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Recent output is saved locally every few seconds and shown again above the
+                  new session after a restore or reconnect.
+                </Typography>
+              </Box>
+            }
+          />
+        </Stack>
+      </Box>
     </Stack>
   );
 }

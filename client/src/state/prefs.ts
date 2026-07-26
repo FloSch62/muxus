@@ -61,6 +61,10 @@ export interface PrefsState {
   pasteWarnMultiline: boolean;
   /** Ask before closing a tab with a live session. */
   confirmCloseConnected: boolean;
+  /** Dial remote sessions on workspace restore and retry dropped connections. */
+  autoReconnectRemote: boolean;
+  /** Persist recent terminal output and replay it on restore and reconnect. */
+  restoreScrollback: boolean;
   /** Scale of the whole interface, 1 = 100%. */
   interfaceZoom: number;
   /** Splitting a pane opens a second session on the same host. */
@@ -163,6 +167,8 @@ export const usePrefsStore = create<PrefsState>()(
       rightClickAction: 'copy-paste',
       pasteWarnMultiline: true,
       confirmCloseConnected: true,
+      autoReconnectRemote: true,
+      restoreScrollback: true,
       interfaceZoom: 1,
       splitInheritsSession: true,
       keybindings: {},

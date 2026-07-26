@@ -21,7 +21,55 @@ describe('MuxusDatabase migrations', () => {
       { version: 7, name: 'bounded-session-history-settings' },
       { version: 8, name: 'named-workspace-session-sets' },
       { version: 9, name: 'drop-favorites' },
+      { version: 10, name: 'terminal-scrollback-snapshots' },
     ]);
+  });
+});
+
+describe('terminal scrollback snapshots', () => {
+  const layoutWith = (tabId: string) => ({
+    version: 1,
+    root: {
+      id: 'pane-1',
+      type: 'pane',
+      tabs: [
+        {
+          id: tabId,
+          kind: 'terminal',
+          title: 'Router',
+          profile: { kind: 'ssh', target: 'router' },
+          offerReconnect: true,
+        },
+      ],
+    },
+  });
+
+  it('stores and replaces one snapshot per tab', () => {
+    database = new MuxusDatabase(':memory:');
+    database.saveTerminalSnapshot('tab-1', 'first');
+    database.saveTerminalSnapshot('tab-1', 'second');
+
+    expect(database.terminalSnapshot('tab-1')).toMatchObject({ tabId: 'tab-1', data: 'second' });
+    expect(database.terminalSnapshot('tab-2')).toBeUndefined();
+  });
+
+  it('prunes snapshots no stored workspace references', () => {
+    database = new MuxusDatabase(':memory:');
+    database.saveWorkspace({ name: 'Ops', layout: layoutWith('kept-tab') });
+    database.saveTerminalSnapshot('kept-tab', 'kept');
+    database.saveTerminalSnapshot('orphan-tab', 'orphan');
+
+    expect(database.pruneTerminalSnapshots(0)).toBe(1);
+    expect(database.terminalSnapshot('kept-tab')).toBeDefined();
+    expect(database.terminalSnapshot('orphan-tab')).toBeUndefined();
+  });
+
+  it('spares fresh snapshots that may precede their first layout autosave', () => {
+    database = new MuxusDatabase(':memory:');
+    database.saveTerminalSnapshot('brand-new-tab', 'early output');
+
+    expect(database.pruneTerminalSnapshots()).toBe(0);
+    expect(database.terminalSnapshot('brand-new-tab')).toBeDefined();
   });
 });
 

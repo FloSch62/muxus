@@ -4,6 +4,36 @@ export type ReattachMode = 'tmux' | 'screen';
 export type TerminalExitMessage = Extract<TerminalServerMessage, { op: 'exit' }>;
 export const CONNECTION_INTERRUPTION_GRACE_MS = 5_000;
 
+/** Delays before each automatic reconnect attempt after a lost connection. */
+export const AUTO_RECONNECT_DELAYS_MS: readonly number[] = [2_000, 5_000, 15_000];
+
+/** Uptime after which a drop is a fresh incident with a fresh attempt budget. */
+export const AUTO_RECONNECT_STABLE_MS = 30_000;
+
+export interface AutoReconnectInput {
+  /** The auto-reconnect preference. */
+  enabled: boolean;
+  profileKind: 'ssh' | 'local' | 'telnet' | 'serial';
+  reason: 'completed' | 'failed' | 'disconnected';
+  /** Automatic attempts already made since the last stable connection. */
+  attempts: number;
+  /** An interactive auth prompt was shown; redialling would only re-prompt. */
+  sawAuthPrompt: boolean;
+}
+
+/** Delay before the next automatic redial, or undefined to wait for the user. */
+export function autoReconnectDelayMs(input: AutoReconnectInput): number | undefined {
+  if (!input.enabled || input.profileKind === 'local') return undefined;
+  if (input.reason === 'completed') return undefined;
+  // A failed dial may continue a chain that a real drop started, but never
+  // start one — that would loop on hosts that refuse to connect at all — and
+  // never talk over an auth prompt the user walked away from.
+  if (input.reason === 'failed' && (input.attempts === 0 || input.sawAuthPrompt)) {
+    return undefined;
+  }
+  return AUTO_RECONNECT_DELAYS_MS[input.attempts];
+}
+
 const ANSI_CSI_PATTERN = new RegExp(
   `${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`,
   'g',

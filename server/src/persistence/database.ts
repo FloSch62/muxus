@@ -259,6 +259,17 @@ const MIGRATIONS = [
       ALTER TABLE connection_profiles DROP COLUMN favorite;
     `,
   },
+  {
+    version: 10,
+    name: 'terminal-scrollback-snapshots',
+    sql: `
+      CREATE TABLE terminal_snapshots (
+        tab_id TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `,
+  },
 ] as const;
 
 const DEFAULT_SESSION_LOGGING_POLICY: SessionLoggingPolicyInput = {
@@ -313,6 +324,12 @@ export interface WorkspaceRecord {
 }
 
 export type WorkspaceSummary = Omit<WorkspaceRecord, 'layout' | 'multiExecGroups'>;
+
+export interface TerminalSnapshotRecord {
+  tabId: string;
+  data: string;
+  updatedAt: string;
+}
 
 export interface SessionLogCreateInput {
   profileKey: string;
@@ -843,6 +860,54 @@ export class MuxusDatabase {
     return this.db.prepare('DELETE FROM workspaces WHERE id = ?').run(id).changes > 0;
   }
 
+  saveTerminalSnapshot(tabId: string, data: string): void {
+    requireNonEmpty(tabId, 'tabId');
+    this.db
+      .prepare(`
+        INSERT INTO terminal_snapshots(tab_id, data, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(tab_id) DO UPDATE SET
+          data = excluded.data,
+          updated_at = CURRENT_TIMESTAMP
+      `)
+      .run(tabId, data);
+  }
+
+  terminalSnapshot(tabId: string): TerminalSnapshotRecord | undefined {
+    const row = this.db
+      .prepare('SELECT tab_id, data, updated_at FROM terminal_snapshots WHERE tab_id = ?')
+      .get(tabId);
+    if (!row) return undefined;
+    return {
+      tabId: String(row.tab_id),
+      data: String(row.data),
+      updatedAt: String(row.updated_at),
+    };
+  }
+
+  /**
+   * Drop snapshots for tabs no stored workspace references. Recent rows are
+   * spared: a fresh tab's snapshot can land before its first layout autosave.
+   */
+  pruneTerminalSnapshots(graceSeconds = 3600): number {
+    const referenced = new Set<string>();
+    for (const workspace of this.listWorkspaces()) {
+      const layout = workspace.layout as { root?: unknown } | null | undefined;
+      collectLayoutTabIds(layout?.root, referenced);
+    }
+    const stale = this.db
+      .prepare(`SELECT tab_id FROM terminal_snapshots WHERE updated_at <= datetime('now', ?)`)
+      .all(`-${graceSeconds} seconds`);
+    let pruned = 0;
+    for (const row of stale) {
+      const tabId = String(row.tab_id);
+      if (referenced.has(tabId)) continue;
+      this.db.prepare('DELETE FROM terminal_snapshots WHERE tab_id = ?').run(tabId);
+      pruned++;
+    }
+    return pruned;
+  }
+
   listTunnels(): TunnelRecord[] {
     return this.db
       .prepare(`
@@ -1141,6 +1206,22 @@ export class MuxusDatabase {
 }
 
 type SqlRow = Record<string, SQLOutputValue>;
+
+/** Walk a stored layout tree defensively — its shape is `unknown` in the DB. */
+function collectLayoutTabIds(node: unknown, into: Set<string>): void {
+  if (!node || typeof node !== 'object') return;
+  const record = node as { type?: unknown; children?: unknown; tabs?: unknown };
+  if (record.type === 'split' && Array.isArray(record.children)) {
+    for (const child of record.children) collectLayoutTabIds(child, into);
+    return;
+  }
+  if (!Array.isArray(record.tabs)) return;
+  for (const tab of record.tabs) {
+    if (tab && typeof tab === 'object' && typeof (tab as { id?: unknown }).id === 'string') {
+      into.add((tab as { id: string }).id);
+    }
+  }
+}
 
 function workspaceFromRow(row: SqlRow): WorkspaceRecord {
   return {

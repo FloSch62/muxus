@@ -44,8 +44,13 @@ export interface PersistableTerminalTab {
 }
 
 export interface RestoredTerminalTab extends PersistableTerminalTab {
-  /** Local shells start fresh immediately; remote sessions still wait for consent. */
+  /** Local shells start fresh immediately; remote sessions dial only when the restore opts in. */
   connectOnMount: boolean;
+}
+
+export interface RestoreWorkspaceOptions {
+  /** Dial restored remote sessions instead of waiting for a key press. */
+  connectRemote?: boolean;
 }
 
 export interface LayoutRect {
@@ -272,6 +277,7 @@ export function serializeWorkspace(
 
 export function restoreWorkspace(
   layout: WorkspaceLayoutV1,
+  options?: RestoreWorkspaceOptions,
 ): {
   root: PaneNode;
   tabs: RestoredTerminalTab[];
@@ -302,7 +308,8 @@ export function restoreWorkspace(
         title: tab.title,
         profile,
         color: tab.color,
-        connectOnMount: profile.kind === 'local',
+        connectOnMount:
+          profile.kind === 'local' || (options?.connectRemote === true && tab.offerReconnect),
       });
     }
     const activeTabId =
