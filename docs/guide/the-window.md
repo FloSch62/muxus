@@ -64,7 +64,7 @@ moving a tab toward a direction with no pane splits one off.
 
 [More on tabs & panes :octicons-arrow-right-24:](tabs-and-panes.md)
 
-!!! note "Layout changes never touch your sessions"
+!!! note "Layout changes and running sessions"
 
     Panes, tab contents and dividers are siblings in one absolutely positioned layer.
     Reshaping the tree only moves boxes, so terminals are never unmounted. Splitting,

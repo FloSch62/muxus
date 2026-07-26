@@ -5,7 +5,7 @@
 
 [project]
 site_name = "Muxus"
-site_description = "Muxus — a free, open-source SSH, Telnet and serial client. OpenSSH-native hosts, split panes, kitty graphics, SFTP, a remote editor and saved tunnels, in one local app."
+site_description = "Muxus — a free, open-source SSH, Telnet and serial client. OpenSSH-native hosts, split panes, kitty graphics, SFTP, a remote editor and saved tunnels."
 site_author = "Muxus authors"
 site_url = "https://flosch62.github.io/muxus/"
 

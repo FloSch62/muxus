@@ -10,9 +10,8 @@ hide:
 # ![](assets/muxus.svg){ .muxus-hero-logo } Muxus
 
 <p class="tagline">
-A free, open-source SSH, Telnet and serial client. Your OpenSSH config stays the source of
-truth, your sessions live in split panes and saved workspaces, and the terminal draws
-images. Everything runs on your machine.
+A free, open-source SSH, Telnet and serial client. Split panes, saved workspaces, SFTP,
+a remote editor, saved tunnels, and images in the terminal.
 </p>
 
 [Get started :material-arrow-right:](install/index.md){ .md-button .md-button--primary }
@@ -23,18 +22,20 @@ images. Everything runs on your machine.
 ![The Muxus window](assets/screenshots/overview.png#only-light){ .shadow }
 ![The Muxus window](assets/screenshots/overview-dark.png#only-dark){ .shadow }
 
-## Why Muxus?
+## What it is
 
-A plain `ssh` in a terminal emulator is fast, but everything around it is manual. You
-remember the jump chain, you re-type the tunnel, you rebuild the same four panes every
-morning. Graphical clients that fix this usually invent their own host database, so your
-`~/.ssh/config` rots and nothing else on your machine can use what you saved.
+A desktop terminal client built around the session rather than the shell. Open a host and
+you get a terminal — then split it, drag a tab into the pane beside it, open the file
+browser, edit a remote file in Monaco and start a tunnel, all over the same connection and
+without a second login. Save the arrangement as a workspace and reopen it tomorrow.
 
-Muxus takes the MobaXterm workflow and keeps **OpenSSH as the source of truth**. Every
-`Host` block shows up in the sidebar, and adding or editing one writes that block back in
-place. Only what OpenSSH has no field for goes into a local database: folders, colours,
-workspaces, history. The terminal underneath is a modern one, with kitty graphics, the
-kitty keyboard protocol and bundled Nerd Font coverage so remote prompts render correctly.
+The terminal is a current one: kitty graphics, so `kitten icat`, yazi previews and
+matplotlib render inline over SSH, plus the kitty keyboard protocol, bundled Nerd Font
+coverage and fifteen colour schemes.
+
+Hosts come from `~/.ssh/config` — Muxus reads it, resolves it, and writes edits back into
+it, so the list is the same one `ssh` uses. Folders, colours, workspaces and history go in
+a local database, because OpenSSH has no field for them.
 
 <div class="grid cards" markdown>
 
@@ -112,7 +113,7 @@ kitty keyboard protocol and bundled Nerd Font coverage so remote prompts render 
 
 </div>
 
-## Ready?
+## Get started
 
 <div class="grid cards" markdown>
 
@@ -133,10 +134,3 @@ kitty keyboard protocol and bundled Nerd Font coverage so remote prompts render 
     [:octicons-arrow-right-24: Quickstart](quickstart.md)
 
 </div>
-
-!!! info "Muxus is a local tool"
-
-    The server binds `127.0.0.1` only, every request carries a per-run token, and nothing
-    is sent anywhere else. Passwords and passphrases live only for the length of an
-    authentication attempt, and the persistence layer rejects credential material
-    outright. See the [security model](reference/security.md).

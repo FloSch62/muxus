@@ -96,7 +96,7 @@ back in; items absent from the file are not deleted.
 **Export OpenSSH** writes the SSH hosts out as a standard `ssh_config` for use with another
 client. Muxus-only settings remain in the backup.
 
-!!! info "Backups never include secrets"
+!!! info "What a backup excludes"
 
     Private key files, passwords and recorded session history are never part of a backup.
 

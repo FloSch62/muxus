@@ -1,8 +1,7 @@
 # Muxus
 
-Muxus is a free, open-source SSH, Telnet and serial client. Your `~/.ssh/config` stays the
-source of truth, your sessions live in split panes and saved workspaces, and the terminal
-draws images. Everything runs on your machine.
+Muxus is a free, open-source SSH, Telnet and serial client. Split panes, saved workspaces,
+SFTP, a remote editor, saved tunnels, and images in the terminal.
 
 **The docs are the main entry point:** [flosch62.github.io/muxus](https://flosch62.github.io/muxus/)
 
