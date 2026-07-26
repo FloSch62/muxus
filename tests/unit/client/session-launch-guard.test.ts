@@ -103,6 +103,16 @@ describe('repeat launch guard', () => {
     expect(useTabsStore.getState().tabs).toHaveLength(1);
   });
 
+  it('reopens a host whose fresh tab was closed inside the window', () => {
+    const first = connectTarget('edge-router');
+    useTabsStore.getState().close(first);
+
+    const second = connectTarget('edge-router');
+
+    expect(second).not.toBe(first);
+    expect(useTabsStore.getState().tabs.map((tab) => tab.id)).toEqual([second]);
+  });
+
   it('fills a blank tab once instead of leaving a stray session behind', () => {
     const blank = useTabsStore.getState().openEmpty();
 

@@ -35,7 +35,12 @@ function launchOnce(key: string, launch: () => string): string {
   // A clock that steps backwards must not wedge a host shut, so only an
   // elapsed time inside the window counts as a repeat.
   const elapsed = now - (lastLaunch?.at ?? 0);
-  if (lastLaunch?.key === key && elapsed >= 0 && elapsed < REPEAT_LAUNCH_MS) {
+  // A guard that outlives its tab would swallow the very click meant to bring
+  // the session back, so a closed tab ends the window early.
+  const guarded =
+    lastLaunch !== undefined &&
+    useTabsStore.getState().tabs.some((tab) => tab.id === lastLaunch?.id);
+  if (guarded && lastLaunch?.key === key && elapsed >= 0 && elapsed < REPEAT_LAUNCH_MS) {
     lastLaunch = { ...lastLaunch, at: now };
     return lastLaunch.id;
   }
