@@ -27,9 +27,9 @@ describe('app routes', () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       new Response(
         JSON.stringify({
-          version: 'v0.2.0',
-          releaseName: 'Muxus 0.2',
-          releaseUrl: 'https://github.com/FloSch62/muxus/releases/tag/v0.2.0',
+          version: 'v0.3.0',
+          releaseName: 'Muxus 0.3',
+          releaseUrl: 'https://github.com/FloSch62/muxus/releases/tag/v0.3.0',
           publishedAt: '2026-07-26T08:00:00Z',
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },
@@ -46,17 +46,17 @@ describe('app routes', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       available: true,
-      currentVersion: '0.1.1',
-      latestVersion: '0.2.0',
-      releaseName: 'Muxus 0.2',
-      releaseUrl: 'https://github.com/FloSch62/muxus/releases/tag/v0.2.0',
+      currentVersion: '0.2.0',
+      latestVersion: '0.3.0',
+      releaseName: 'Muxus 0.3',
+      releaseUrl: 'https://github.com/FloSch62/muxus/releases/tag/v0.3.0',
       publishedAt: '2026-07-26T08:00:00Z',
     });
     expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(
       /^https:\/\/flosch62\.github\.io\/muxus\/latest\.json\?t=\d+$/,
     );
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
-      headers: { Accept: 'application/json', 'User-Agent': 'Muxus/0.1.1' },
+      headers: { Accept: 'application/json', 'User-Agent': 'Muxus/0.2.0' },
     });
   });
 
@@ -83,7 +83,7 @@ describe('app routes', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       available: false,
-      currentVersion: '0.1.1',
+      currentVersion: '0.2.0',
       latestVersion: '0.3.0',
       reason: 'missing-release-url',
     });
