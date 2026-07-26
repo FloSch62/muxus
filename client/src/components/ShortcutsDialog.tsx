@@ -40,28 +40,37 @@ import {
   type CommandCategory,
   type KeyCommand,
 } from '../keymap/commands.js';
-import { HOTKEY_MOD_LABEL } from '../platform.js';
+import { IS_MAC } from '../platform.js';
 import { setChordCaptureActive } from '../shortcuts.js';
 import { usePrefsStore } from '../state/prefs.js';
 import { useUiStore } from '../state/ui.js';
+import { chordSx } from './chord-style.js';
 
 const CATEGORY_ORDER: CommandCategory[] = ['panes', 'tabs', 'terminal', 'app'];
 
 /** Interactions worth documenting that no keymap entry can express. */
 const EXTRAS: Array<[string, string]> = [
-  ['Zoom the terminal with the mouse', 'Ctrl+Scroll wheel'],
+  ['Zoom the terminal with the mouse', `${IS_MAC ? '⌃ ' : 'Ctrl+'}Scroll wheel`],
   ['Resize a split / reset it to half', 'Drag the divider · double-click'],
   ['Pane actions (split, zoom, close)', 'Right-click the tab strip'],
   ['Rename a tab / close a tab', 'Double-click it · middle-click it'],
-  ['Search next / previous match', 'Enter / Shift+Enter'],
+  ['Search next / previous match', `Enter / ${formatChordString('Shift+Enter')}`],
 ];
 
+/**
+ * Monaco's own bindings, written as chords so they print in the platform's
+ * notation — and picked per platform where Monaco itself diverges: replace is
+ * ⌥⌘F rather than Ctrl+H on macOS, and Go to line is ⌃G rather than ⌘G.
+ */
 const EDITOR_SHORTCUTS: Array<[string, string]> = [
-  ['Save file / all files', `${HOTKEY_MOD_LABEL}S · ${HOTKEY_MOD_LABEL}K, S`],
-  ['Find / replace', `${HOTKEY_MOD_LABEL}F · ${HOTKEY_MOD_LABEL}H`],
-  ['Command palette', `F1 · ${HOTKEY_MOD_LABEL}Shift+P`],
-  ['Go to line', `${HOTKEY_MOD_LABEL}G`],
-  ['Format document', 'Shift+Alt+F'],
+  ['Save file / all files', `${formatChordString('Mod+S')} · ${formatChordString('Mod+K')}, S`],
+  [
+    'Find / replace',
+    `${formatChordString('Mod+F')} · ${formatChordString(IS_MAC ? 'Alt+Mod+F' : 'Mod+H')}`,
+  ],
+  ['Command palette', `F1 · ${formatChordString('Mod+Shift+P')}`],
+  ['Go to line', formatChordString(IS_MAC ? 'Ctrl+G' : 'Mod+G')],
+  ['Format document', formatChordString('Shift+Alt+F')],
 ];
 
 interface Recording {
@@ -339,8 +348,7 @@ function CommandRow({
             onClick={() => onRecord(index)}
             onDelete={() => onRemove(index)}
             sx={{
-              fontFamily: '"JetBrains Mono", monospace',
-              fontSize: 11,
+              ...chordSx(),
               ...(recording && recording.index === index
                 ? { borderColor: 'primary.main', color: 'primary.main' }
                 : {}),
@@ -357,12 +365,7 @@ function CommandRow({
             size="small"
             variant="outlined"
             label="Press keys…"
-            sx={{
-              fontFamily: '"JetBrains Mono", monospace',
-              fontSize: 11,
-              borderColor: 'primary.main',
-              color: 'primary.main',
-            }}
+            sx={{ ...chordSx(), borderColor: 'primary.main', color: 'primary.main' }}
           />
         )}
       </Stack>
@@ -404,11 +407,7 @@ function StaticSection({ title, rows }: { title: string; rows: Array<[string, st
           <Typography variant="body2" sx={{ flex: 1 }}>
             {label}
           </Typography>
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ fontFamily: '"JetBrains Mono", monospace', whiteSpace: 'nowrap' }}
-          >
+          <Typography variant="caption" color="text.secondary" sx={chordSx()}>
             {keys}
           </Typography>
         </Stack>

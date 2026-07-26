@@ -83,6 +83,7 @@ import { terminalHandle } from '../terminal/terminal-registry.js';
 import { formatTimestamp } from '../time-format.js';
 import { openWorkspace } from '../workspace-persistence.js';
 import { AuthPromptDialog, type AuthPromptRequest } from './AuthPromptDialog.js';
+import { chordSx } from './chord-style.js';
 import { HostKeyDialog, type HostKeyRequest } from './HostKeyDialog.js';
 
 type ResultBase = Omit<QuickLauncherItem, 'kind'> & {
@@ -542,7 +543,7 @@ export function QuickLauncherDialog() {
                     size="small"
                     variant="outlined"
                     label={`${HOTKEY_MOD_LABEL}K`}
-                    sx={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 10 }}
+                    sx={chordSx(10)}
                   />
                 </InputAdornment>
               ),
@@ -1079,11 +1080,7 @@ function ResultKindLabel({
   if (busy) return <CircularProgress size={16} sx={{ ml: 1 }} />;
   if (result.kind === 'keymap') {
     return result.chord ? (
-      <Typography
-        variant="caption"
-        color="text.secondary"
-        sx={{ ml: 1.5, fontFamily: '"JetBrains Mono", monospace', whiteSpace: 'nowrap' }}
-      >
+      <Typography variant="caption" color="text.secondary" sx={{ ml: 1.5, ...chordSx() }}>
         {result.chord}
       </Typography>
     ) : null;
@@ -1108,14 +1105,7 @@ function ResultKindLabel({
 function KeyHint({ keys, label }: { keys: string; label: string }) {
   return (
     <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-      <Box
-        component="kbd"
-        sx={{
-          fontFamily: '"JetBrains Mono", monospace',
-          fontSize: 10,
-          color: 'text.primary',
-        }}
-      >
+      <Box component="kbd" sx={{ ...chordSx(10), color: 'text.primary' }}>
         {keys}
       </Box>
       <Typography variant="caption">{label}</Typography>
