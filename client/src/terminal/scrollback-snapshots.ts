@@ -1,6 +1,7 @@
 import type { SerializeAddon } from '@xterm/addon-serialize';
 import { TERMINAL_SNAPSHOT_MAX_CHARS, type TerminalSnapshotRecord } from '@muxus/shared';
 import { apiFetch, authToken } from '../api/http.js';
+import { requestBodyBytes } from '../unload-keepalive.js';
 
 /** Scrollback depths a snapshot tries, largest first, until one fits its budget. */
 export const SNAPSHOT_SCROLLBACK_LADDER: readonly number[] = [1_000, 400, 150, 50, 10];
@@ -11,12 +12,6 @@ export const TERMINAL_SNAPSHOT_INTERVAL_MS = 10_000;
 /** Idle gap after which output is snapshotted, so closing right after a
  *  command does not lose it to the interval above. */
 export const TERMINAL_SNAPSHOT_QUIET_MS = 1_500;
-
-/**
- * Browsers cap the total body of keepalive requests at 64 KiB, and a request
- * that exceeds it fails outright — the unload snapshot has to fit under it.
- */
-export const KEEPALIVE_BODY_LIMIT_BYTES = 60_000;
 
 /** Written after replayed history, before the new session's output. */
 export const TERMINAL_HISTORY_DIVIDER = '\r\n\x1b[90m[end of restored output]\x1b[0m\r\n';
@@ -61,7 +56,7 @@ export function snapshotRequestBody(data: string): string {
 /** Wire size of a snapshot. JSON escapes every ESC to six characters, so the
  *  body is several times the buffer and has to be measured, not estimated. */
 export function snapshotBodyBytes(data: string): number {
-  return new TextEncoder().encode(snapshotRequestBody(data)).length;
+  return requestBodyBytes(snapshotRequestBody(data));
 }
 
 /**
@@ -103,31 +98,36 @@ export async function fetchTerminalSnapshot(tabId: string): Promise<string | nul
   }
 }
 
-/** Fire-and-forget: losing a snapshot only costs some replayable history. */
-export function putTerminalSnapshot(
+/** Save a snapshot without surfacing an optional-history failure to the UI. */
+export async function putTerminalSnapshot(
   tabId: string,
   data: string,
   options: { keepalive?: boolean } = {},
-): void {
+): Promise<boolean> {
   const path = `/api/terminal-snapshots/${encodeURIComponent(tabId)}`;
   const body = snapshotRequestBody(data);
-  if (!options.keepalive) {
-    void apiFetch(path, {
+  try {
+    if (!options.keepalive) {
+      await apiFetch(path, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body,
+      });
+      return true;
+    }
+    // A closing window cancels its in-flight requests; keepalive lets this
+    // last snapshot outlive the page.
+    const response = await fetch(path, {
       method: 'PUT',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        authorization: `Bearer ${authToken()}`,
+        'content-type': 'application/json',
+      },
       body,
-    }).catch(() => undefined);
-    return;
+      keepalive: true,
+    });
+    return response.ok;
+  } catch {
+    return false;
   }
-  // A closing window cancels its in-flight requests; keepalive lets this last
-  // snapshot outlive the page, the way the workspace layout flush does.
-  void fetch(path, {
-    method: 'PUT',
-    headers: {
-      authorization: `Bearer ${authToken()}`,
-      'content-type': 'application/json',
-    },
-    body,
-    keepalive: true,
-  }).catch(() => undefined);
 }

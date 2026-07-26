@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  KEEPALIVE_BODY_LIMIT_BYTES,
   serializeScrollback,
   snapshotBodyBytes,
   SNAPSHOT_SCROLLBACK_LADDER,
   TERMINAL_HISTORY_DIVIDER,
   trimReplayTail,
 } from '../../../client/src/terminal/scrollback-snapshots.js';
+import { PAGE_KEEPALIVE_BODY_LIMIT_BYTES } from '../../../client/src/unload-keepalive.js';
 
 /** Stand-in addon whose output shrinks with the requested scrollback depth.
  *  Typed off serializeScrollback so the tests package needs no xterm dependency. */
@@ -85,10 +85,10 @@ describe('snapshot size budgeting', () => {
 
   it('keeps a colour-heavy buffer under the keepalive cap', () => {
     const data = serializeScrollback(fakeAddon(80, { escapes: true }), {
-      maxBodyBytes: KEEPALIVE_BODY_LIMIT_BYTES,
+      maxBodyBytes: PAGE_KEEPALIVE_BODY_LIMIT_BYTES,
     });
     expect(data).toBeDefined();
-    expect(snapshotBodyBytes(data!)).toBeLessThanOrEqual(KEEPALIVE_BODY_LIMIT_BYTES);
+    expect(snapshotBodyBytes(data!)).toBeLessThanOrEqual(PAGE_KEEPALIVE_BODY_LIMIT_BYTES);
   });
 
   it('takes the full depth when no budget is imposed', () => {

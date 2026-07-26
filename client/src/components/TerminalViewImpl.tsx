@@ -70,13 +70,14 @@ import {
 } from '../connection-recovery.js';
 import {
   fetchTerminalSnapshot,
-  KEEPALIVE_BODY_LIMIT_BYTES,
   putTerminalSnapshot,
   serializeScrollback,
+  snapshotBodyBytes,
   TERMINAL_HISTORY_DIVIDER,
   TERMINAL_SNAPSHOT_INTERVAL_MS,
   TERMINAL_SNAPSHOT_QUIET_MS,
 } from '../terminal/scrollback-snapshots.js';
+import { registerUnloadKeepalive } from '../unload-keepalive.js';
 
 const SEARCH_DECORATIONS: ISearchOptions['decorations'] = {
   matchBackground: '#594b24',
@@ -425,6 +426,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     let sawAuthPrompt = false;
     let readyAt = 0;
     let snapshotDirty = false;
+    let snapshotRevision = 0;
+    let snapshotSaving = false;
+    let unloadQueuedRevision: number | undefined;
     let receivedTerminalOutput = false;
     let waitingForTerminalOutput = false;
     let transportSuspect = false;
@@ -436,17 +440,24 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     };
 
     // Persist recent output in the background so a later restore can replay it.
-    // A closing window can only send a keepalive request, which browsers cap
-    // at 64 KiB, so that path serializes into the smaller budget.
-    const persistSnapshot = (keepalive = false) => {
-      if (!snapshotDirty || !usePrefsStore.getState().restoreScrollback) return;
-      const data = serializeScrollback(
-        serialize,
-        keepalive ? { maxBodyBytes: KEEPALIVE_BODY_LIMIT_BYTES } : {},
-      );
+    // Keep the buffer dirty until the request succeeds: an unload that races
+    // an ordinary fetch must still queue a keepalive copy.
+    const persistSnapshot = () => {
+      if (
+        !snapshotDirty ||
+        snapshotSaving ||
+        !usePrefsStore.getState().restoreScrollback
+      ) {
+        return;
+      }
+      const data = serializeScrollback(serialize);
       if (data === undefined) return;
-      snapshotDirty = false;
-      putTerminalSnapshot(tab.id, data, { keepalive });
+      const savedRevision = snapshotRevision;
+      snapshotSaving = true;
+      void putTerminalSnapshot(tab.id, data).then((saved) => {
+        snapshotSaving = false;
+        if (saved && snapshotRevision === savedRevision) snapshotDirty = false;
+      });
     };
     const snapshotTimer = setInterval(() => persistSnapshot(), TERMINAL_SNAPSHOT_INTERVAL_MS);
     // The interval alone would lose a command run seconds before the window
@@ -459,9 +470,45 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         persistSnapshot();
       }, TERMINAL_SNAPSHOT_QUIET_MS);
     };
-    const flushSnapshotOnUnload = () => persistSnapshot(true);
-    window.addEventListener('beforeunload', flushSnapshotOnUnload);
-    window.addEventListener('pagehide', flushSnapshotOnUnload);
+    const unregisterUnloadFlush = registerUnloadKeepalive(
+      (maxBodyBytes) => {
+        if (!snapshotDirty || !usePrefsStore.getState().restoreScrollback) return 0;
+        if (unloadQueuedRevision === snapshotRevision) return 0;
+        const data = serializeScrollback(serialize, { maxBodyBytes });
+        if (data === undefined) return 0;
+        const savedRevision = snapshotRevision;
+        unloadQueuedRevision = savedRevision;
+        void putTerminalSnapshot(tab.id, data, { keepalive: true }).then((saved) => {
+          if (saved && snapshotRevision === savedRevision) snapshotDirty = false;
+          if (unloadQueuedRevision === savedRevision) unloadQueuedRevision = undefined;
+        });
+        return snapshotBodyBytes(data);
+      },
+      {
+        priority: 0,
+        isPending: () =>
+          snapshotDirty &&
+          usePrefsStore.getState().restoreScrollback &&
+          unloadQueuedRevision !== snapshotRevision,
+      },
+    );
+    const unsubscribeReconnectPreference = usePrefsStore.subscribe((state, previous) => {
+      if (
+        previous.autoReconnectRemote &&
+        !state.autoReconnectRemote &&
+        autoReconnectTimer !== undefined
+      ) {
+        clearTimeout(autoReconnectTimer);
+        autoReconnectTimer = undefined;
+        autoReconnectAttemptsRef.current = Math.max(
+          0,
+          autoReconnectAttemptsRef.current - 1,
+        );
+        term.write(
+          '\x1b[1;36mAutomatic reconnect disabled — press any key to reconnect\x1b[0m\r\n',
+        );
+      }
+    });
 
     const openSocket = () => {
       ws = new WebSocket(wsUrl('/ws/terminal'), wsProtocols());
@@ -485,6 +532,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           clearTransientStatus();
           receivedTerminalOutput = true;
           snapshotDirty = true;
+          snapshotRevision += 1;
           scheduleQuietSnapshot();
           if (waitingForTerminalOutput) {
             waitingForTerminalOutput = false;
@@ -635,6 +683,14 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
               `\x1b[1;36mReconnecting in ${Math.round(redialDelay / 1000)}s (attempt ${autoReconnectAttemptsRef.current} of ${AUTO_RECONNECT_DELAYS_MS.length}) — any key reconnects now\x1b[0m\r\n`,
             );
             autoReconnectTimer = setTimeout(() => {
+              autoReconnectTimer = undefined;
+              if (!usePrefsStore.getState().autoReconnectRemote) {
+                autoReconnectAttemptsRef.current = Math.max(
+                  0,
+                  autoReconnectAttemptsRef.current - 1,
+                );
+                return;
+              }
               const state = useTabsStore.getState();
               const current = state.tabs.find((candidate) => candidate.id === tab.id);
               if (current?.status !== 'closed') return;
@@ -695,8 +751,6 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       if (replay) {
         term.write(replay);
         term.write(TERMINAL_HISTORY_DIVIDER);
-        snapshotDirty = true;
-        scheduleQuietSnapshot();
       }
       if (shouldConnect) {
         openSocket();
@@ -761,16 +815,15 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       disposed = true;
       clearInterval(snapshotTimer);
       if (quietSnapshotTimer !== undefined) clearTimeout(quietSnapshotTimer);
-      window.removeEventListener('beforeunload', flushSnapshotOnUnload);
-      window.removeEventListener('pagehide', flushSnapshotOnUnload);
+      unregisterUnloadFlush();
+      unsubscribeReconnectPreference();
       // The buffer outlives this socket generation: a reconnect replays it in
       // place, and the stored copy keeps the tail output a restart would lose.
       if (usePrefsStore.getState().restoreScrollback) {
         const data = serializeScrollback(serialize);
         carryBufferRef.current = data ?? null;
         if (snapshotDirty && data !== undefined) {
-          snapshotDirty = false;
-          putTerminalSnapshot(tab.id, data);
+          void putTerminalSnapshot(tab.id, data);
         }
       } else {
         carryBufferRef.current = null;
