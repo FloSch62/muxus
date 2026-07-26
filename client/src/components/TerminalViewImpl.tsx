@@ -52,6 +52,7 @@ import {
 } from '../terminal/keyword-highlighting.js';
 import { registerTerminal } from '../terminal/terminal-registry.js';
 import { requiresPasteConfirmation } from '../terminal/paste-safety.js';
+import { shouldFitTerminal } from '../terminal/terminal-fit.js';
 import { AuthPromptDialog, type AuthPromptRequest } from './AuthPromptDialog.js';
 import { HostKeyDialog, type HostKeyRequest } from './HostKeyDialog.js';
 import { PasteConfirmDialog } from './PasteConfirmDialog.js';
@@ -174,6 +175,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     termRef.current?.paste(text);
   };
 
+  /** Refit, unless the pane is hidden and there is nothing to measure. */
+  const fitTerminal = (): boolean => {
+    if (!shouldFitTerminal(containerRef.current)) return false;
+    fitRef.current?.fit();
+    return true;
+  };
+
   const applyZoom = (action: 'in' | 'out' | 'reset') => {
     const base = usePrefsStore.getState().monoFontSize;
     const next =
@@ -184,7 +192,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     const term = termRef.current;
     if (term) {
       term.options.fontSize = next;
-      fitRef.current?.fit();
+      fitTerminal();
     }
   };
 
@@ -286,7 +294,10 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     term.loadAddon(serialize);
     const onSearchResults = search.onDidChangeResults(setSearchResult);
     term.open(el);
-    fit.fit();
+    // The pane is not always laid out by the time the terminal mounts, and a
+    // pane opened behind another tab never is. The observer below catches the
+    // first real size; until then the session keeps xterm's own default.
+    let fitted = fitTerminal();
     keywordHighlighterRef.current = attachKeywordHighlighter(term, keywordHighlights);
     // Webfonts load lazily. Force the bundled Nerd Font face to load, then
     // repaint any prompt glyphs that arrived while the browser still had a
@@ -297,7 +308,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       .then(() => {
         if (termRef.current !== term) return;
         term.refresh(0, term.rows - 1);
-        fit.fit();
+        fitTerminal();
       })
       .catch(() => undefined);
 
@@ -403,6 +414,10 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       wsRef.current = ws;
       ws.binaryType = 'arraybuffer';
       ws.onopen = () => {
+        // The pane is usually laid out by the time the socket opens, even when
+        // it was not when the terminal mounted. Measure now so the remote PTY
+        // starts at the size on screen instead of being resized a beat later.
+        if (!fitted) fitted = fitTerminal();
         ws?.send(JSON.stringify({
           op: 'connect',
           profile: tab.profile,
@@ -610,10 +625,17 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     // redraw debris in the scrollback. Fit once the width holds still instead.
     let fitTimer: ReturnType<typeof setTimeout> | undefined;
     const observer = new ResizeObserver(() => {
+      // The first measurable size — the layout landing, or a pane opened
+      // behind another tab finally coming to the front — is not a drag, and
+      // waiting it out would let the session connect at the wrong width.
+      if (!fitted) {
+        fitted = fitTerminal();
+        if (fitted) return;
+      }
       if (fitTimer !== undefined) clearTimeout(fitTimer);
       fitTimer = setTimeout(() => {
         fitTimer = undefined;
-        fit.fit();
+        fitTerminal();
       }, RESIZE_SETTLE_MS);
     });
     observer.observe(el);
@@ -661,7 +683,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     term.options.cursorStyle = cursorStyle;
     term.options.scrollback = scrollback;
     term.options.theme = scheme.theme;
-    fitRef.current?.fit();
+    fitTerminal();
   }, [monoFontSize, fontFamily, lineHeight, cursorBlink, cursorStyle, scrollback, scheme, generation]);
 
   useEffect(() => {
@@ -699,7 +721,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     }
     if (active) {
       requestAnimationFrame(() => {
-        fitRef.current?.fit();
+        fitTerminal();
         termRef.current?.focus();
       });
     }

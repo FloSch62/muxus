@@ -15,6 +15,40 @@ import { confirmDiscardRemoteEditors } from './editor/remote-editor-registry.js'
 import { findPane } from './state/workspace-layout.js';
 import { openAppWindow } from './window-management.js';
 
+/**
+ * How long a launch swallows an identical repeat. A tab appears instantly but
+ * spends its first second connecting, so a double-click on a host reads as "the
+ * first click missed" long before there is anything on screen to say otherwise.
+ */
+const REPEAT_LAUNCH_MS = 500;
+
+let lastLaunch: { key: string; id: string; at: number } | undefined;
+
+/**
+ * Collapse a burst of identical launches into one session, handing every caller
+ * in the burst the same tab. The window slides with each suppressed click, so
+ * mashing a row still yields one tab; a deliberate second session is one short
+ * pause away.
+ */
+function launchOnce(key: string, launch: () => string): string {
+  const now = Date.now();
+  // A clock that steps backwards must not wedge a host shut, so only an
+  // elapsed time inside the window counts as a repeat.
+  const elapsed = now - (lastLaunch?.at ?? 0);
+  // A guard that outlives its tab would swallow the very click meant to bring
+  // the session back, so a closed tab ends the window early.
+  const guarded =
+    lastLaunch !== undefined &&
+    useTabsStore.getState().tabs.some((tab) => tab.id === lastLaunch?.id);
+  if (guarded && lastLaunch?.key === key && elapsed >= 0 && elapsed < REPEAT_LAUNCH_MS) {
+    lastLaunch = { ...lastLaunch, at: now };
+    return lastLaunch.id;
+  }
+  const id = launch();
+  lastLaunch = { key, id, at: now };
+  return id;
+}
+
 function replaceActiveEmpty(
   profile: SessionProfile,
   title: string,
@@ -33,9 +67,10 @@ export function openLocalTerminal(replaceTabId?: string): string {
     kind: 'local',
     shell: localShell !== 'auto' && localShell.trim() ? localShell.trim() : undefined,
   };
-  const replacedId = replaceActiveEmpty(profile, 'Local', replaceTabId);
-  if (replacedId) return replacedId;
-  return useTabsStore.getState().open(profile, 'Local');
+  return launchOnce(`local:${profile.shell ?? ''}:${replaceTabId ?? ''}`, () => {
+    const replacedId = replaceActiveEmpty(profile, 'Local', replaceTabId);
+    return replacedId ?? useTabsStore.getState().open(profile, 'Local');
+  });
 }
 
 /** Open a blank tab that lets the user choose what kind of session to start. */
@@ -49,16 +84,19 @@ export function openEmptyTab(): string {
  */
 export function connectTarget(target: string, title = target, replaceTabId?: string): string {
   const profile: SessionProfile = { kind: 'ssh', target };
-  const replacedId = replaceActiveEmpty(profile, title, replaceTabId);
-  if (replacedId) return replacedId;
-  return useTabsStore.getState().open(profile, title);
+  return launchOnce(`ssh:${target}:${replaceTabId ?? ''}`, () => {
+    const replacedId = replaceActiveEmpty(profile, title, replaceTabId);
+    return replacedId ?? useTabsStore.getState().open(profile, title);
+  });
 }
 
 export function connectSavedHost(host: SavedHostProfile, replaceTabId?: string): string {
   const profile = { ...host.profile, profileId: host.id };
   const title = savedHostDisplayName(host);
-  const replacedId = replaceActiveEmpty(profile, title, replaceTabId);
-  const id = replacedId ?? useTabsStore.getState().open(profile, title);
+  const id = launchOnce(`saved:${host.id}:${replaceTabId ?? ''}`, () => {
+    const replacedId = replaceActiveEmpty(profile, title, replaceTabId);
+    return replacedId ?? useTabsStore.getState().open(profile, title);
+  });
   if (host.metadata.color) useTabsStore.getState().update(id, { color: host.metadata.color });
   return id;
 }

@@ -58,6 +58,7 @@ import { showToast } from '../state/toast.js';
 import { confirmAction } from '../state/dialogs.js';
 import { useUiStore } from '../state/ui.js';
 import { TERMINAL_SCHEMES, terminalScheme, type TerminalScheme } from '../terminal/palette.js';
+import { chordSx } from './chord-style.js';
 import { KeywordHighlightRulesEditor } from './KeywordHighlightRulesEditor.js';
 import { SessionLoggingPolicyFields } from './SessionLoggingPolicyFields.js';
 import { DataTransferSection } from './DataTransferSection.js';
@@ -556,10 +557,7 @@ function KeyboardSummaryRow({ label, chord }: { label: string; chord?: string })
       <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
         {label}
       </Typography>
-      <Typography
-        variant="caption"
-        sx={{ fontFamily: '"JetBrains Mono", monospace', whiteSpace: 'nowrap' }}
-      >
+      <Typography variant="caption" sx={chordSx()}>
         {chord ?? 'Unbound'}
       </Typography>
     </Stack>
