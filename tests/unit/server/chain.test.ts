@@ -7,6 +7,7 @@ import {
   buildChain,
   expandProxyCommand,
   findMetadataAlias,
+  muxKey,
   observeSshTransportHealth,
   terminalPtyOptions,
 } from '../../../server/src/ssh/connection-manager.js';
@@ -212,5 +213,54 @@ describe('passive SSH transport health', () => {
     vi.advanceTimersByTime(120_000);
     expect(listener).not.toHaveBeenCalled();
     transport.destroy();
+  });
+});
+
+describe('muxKey', () => {
+  it('matches when different targets resolve to the same dial plan', () => {
+    const doc = docOf(
+      [
+        'Host web web-alias',
+        '  HostName web.example.com',
+        '  User deploy',
+        '  Port 2222',
+      ].join('\n'),
+    );
+    const direct = muxKey(buildChain(doc, { target: 'web' }));
+    const aliased = muxKey(buildChain(doc, { target: 'web-alias' }));
+    expect(direct).toBe('deploy@web.example.com:2222');
+    expect(aliased).toBe(direct);
+  });
+
+  it('separates plans that differ in user, port, or jump chain', () => {
+    const doc = docOf(
+      [
+        'Host app',
+        '  HostName app.internal',
+        '  ProxyJump bastion',
+        '',
+        'Host bastion',
+        '  HostName bastion.example.com',
+      ].join('\n'),
+    );
+    const viaJump = muxKey(buildChain(doc, { target: 'app' }));
+    const otherUser = muxKey(buildChain(doc, { target: 'app', user: 'admin' }));
+    const otherPort = muxKey(buildChain(doc, { target: 'app', port: 2200 }));
+    expect(viaJump).toContain('bastion.example.com:22 -> ');
+    expect(new Set([viaJump, otherUser, otherPort]).size).toBe(3);
+  });
+
+  it('includes the ProxyCommand transport in the plan identity', () => {
+    const doc = docOf(
+      [
+        'Host tunneled',
+        '  HostName inner.example.com',
+        '  ProxyCommand nc -x proxy:1080 %h %p',
+      ].join('\n'),
+    );
+    const plain = muxKey(buildChain(docOf('Host tunneled\n  HostName inner.example.com'), { target: 'tunneled' }));
+    const proxied = muxKey(buildChain(doc, { target: 'tunneled' }));
+    expect(proxied).toContain('proxy(nc -x proxy:1080 %h %p)');
+    expect(proxied).not.toBe(plain);
   });
 });

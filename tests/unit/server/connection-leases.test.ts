@@ -57,6 +57,26 @@ describe('ConnectionLeaseRegistry', () => {
     expect(registry.list()).toEqual([]);
   });
 
+  it('counts live leases, optionally by owner kind', () => {
+    const registry = new ConnectionLeaseRegistry<ReturnType<typeof connection>>();
+    const transport = connection();
+    const terminal = registry.register(transport, 'terminal');
+    registry.acquire(transport.id, 'terminal');
+    const forward = registry.acquire(transport.id, 'forward')!;
+
+    expect(registry.leaseCount(transport.id)).toBe(3);
+    expect(registry.leaseCount(transport.id, ['terminal', 'dial'])).toBe(2);
+    expect(registry.leaseCount(transport.id, ['sftp'])).toBe(0);
+    expect(registry.leaseCount('missing')).toBe(0);
+
+    terminal.release();
+    expect(registry.leaseCount(transport.id, ['terminal', 'dial'])).toBe(1);
+
+    registry.markClosed(transport);
+    expect(registry.leaseCount(transport.id)).toBe(0);
+    forward.release();
+  });
+
   it('force-closes every registered transport during application shutdown', () => {
     const registry = new ConnectionLeaseRegistry<ReturnType<typeof connection>>();
     const first = connection('first');

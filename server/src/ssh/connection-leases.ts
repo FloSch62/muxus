@@ -50,6 +50,16 @@ export class ConnectionLeaseRegistry<T extends LeaseableConnection> {
     return [...this.records.values()].filter((record) => !record.closing).map((record) => record.connection);
   }
 
+  /** Live leases on `id`, optionally counting only the given owner kinds. */
+  leaseCount(id: string, owners?: readonly ConnectionLeaseOwner[]): number {
+    const record = this.records.get(id);
+    if (!record || record.closing) return 0;
+    if (!owners) return record.leases.size;
+    let count = 0;
+    for (const owner of record.leases.values()) if (owners.includes(owner)) count += 1;
+    return count;
+  }
+
   acquire(id: string, owner: ConnectionLeaseOwner): TransportLease<T> | undefined {
     const record = this.records.get(id);
     if (!record || record.closing) return undefined;

@@ -155,7 +155,7 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
       socket.close();
     });
     socket.once('close', () => unsubscribeDialClose());
-    app.log.info({ target: connectMsg.profile.target, host: conn.host, user: conn.user, connId: conn.id }, 'ssh transport dialed');
+    app.log.info({ target: connectMsg.profile.target, host: conn.host, user: conn.user, connId: conn.id, reused: dialLease.reused }, 'ssh transport dialed');
     if (conn.metadataAlias) {
       try {
         ctx.database.recordOpenSshConnection(conn.metadataAlias);
@@ -268,49 +268,64 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
   }
 
   // --- SSH ---
-  const terminalLease = await ctx.connections.connect(profile, io);
+  const { lease: terminalLease, stream, transport } = await ctx.connections.connectShell(profile, io, cols, rows, DEFAULT_TERM);
   const conn = terminalLease.connection;
+  // Session forwards belong to the terminal sessions using this transport;
+  // stop them when the last terminal/dial lease leaves. Saved/manual tunnels
+  // are marked independent and keep their own leases.
+  const releaseSession = () => {
+    // On a shared transport the connection (and the remote shell with it)
+    // outlives this tab, so the channel must be closed explicitly.
+    stream.close();
+    terminalLease.release();
+    if (ctx.connections.leaseCount(conn.id, ['terminal', 'dial']) === 0) {
+      ctx.forwards.stopSessionForConnection(conn.id);
+    }
+  };
+  if (!socketOpen) {
+    releaseSession();
+    return;
+  }
+  socket.once('close', releaseSession);
   const unsubscribeHealth = conn.onHealth((state) =>
     sendControl(socket, { op: 'connection-health', state }),
   );
   socket.once('close', () => unsubscribeHealth());
-  // Config and ad-hoc forwards started on this terminal's connection belong
-  // to the terminal. Saved/manual tunnels are marked independent and keep
-  // their own lease when this socket closes.
-  socket.once('close', () => ctx.forwards.stopSessionForConnection(conn.id));
 
-  // Forwards declared on the host in ssh config start with the session,
+  // Forwards declared on the host in ssh config start with the transport,
   // exactly like `ssh` honoring LocalForward/RemoteForward/DynamicForward.
+  // A session multiplexed onto a live transport — or overflowing next to
+  // one — finds them already bound; starting them again would only collide.
   const configForwardIds: string[] = [];
-  for (const fwd of conn.configForwards) {
-    if (!socketOpen) break;
-    try {
-      const started = await ctx.forwards.start(
-        {
-          connId: conn.id,
-          type: fwd.type,
-          bindPort: fwd.bindPort,
-          targetHost: fwd.targetHost,
-          targetPort: fwd.targetPort,
-        },
-        'config',
-      );
-      configForwardIds.push(started.id);
-    } catch (err) {
-      sendControl(socket, { op: 'status', message: `forward -${fwd.type[0]?.toUpperCase()} ${fwd.bindPort} failed: ${err instanceof Error ? err.message : String(err)}` });
+  if (transport === 'new') {
+    for (const fwd of conn.configForwards) {
+      if (!socketOpen) break;
+      try {
+        const started = await ctx.forwards.start(
+          {
+            connId: conn.id,
+            type: fwd.type,
+            bindPort: fwd.bindPort,
+            targetHost: fwd.targetHost,
+            targetPort: fwd.targetPort,
+          },
+          'config',
+        );
+        configForwardIds.push(started.id);
+      } catch (err) {
+        sendControl(socket, { op: 'status', message: `forward -${fwd.type[0]?.toUpperCase()} ${fwd.bindPort} failed: ${err instanceof Error ? err.message : String(err)}` });
+      }
     }
   }
 
   if (!socketOpen) {
     // The tab disappeared before setup reached `ready`; do not leave
     // half-created config forwards running with no visible owning session.
+    // releaseSession already ran via the close handler.
     for (const id of configForwardIds) ctx.forwards.stop(id);
-    terminalLease.release();
     return;
   }
-  socket.once('close', () => terminalLease.release());
 
-  const stream = await conn.shell(cols, rows, DEFAULT_TERM);
   writeInput = (data) => stream.write(data);
   control.onMessage = (msg) => {
     if (handleLoggingControl(msg)) return;
@@ -372,7 +387,7 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
     unsubscribeClose();
   });
 
-  app.log.info({ target: profile.target, host: conn.host, user: conn.user, connId: conn.id }, 'ssh session established');
+  app.log.info({ target: profile.target, host: conn.host, user: conn.user, connId: conn.id, transport }, 'ssh session established');
   if (conn.metadataAlias) {
     try {
       ctx.database.recordOpenSshConnection(conn.metadataAlias);

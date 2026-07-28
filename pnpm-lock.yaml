@@ -219,9 +219,15 @@ importers:
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3
+      '@types/ssh2':
+        specifier: ^1.15.5
+        version: 1.15.5
       '@vitest/coverage-v8':
         specifier: ^4.0.5
         version: 4.1.10(vitest@4.1.10)
+      ssh2:
+        specifier: ^1.17.0
+        version: 1.17.0
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
