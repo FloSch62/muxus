@@ -228,7 +228,7 @@ describe('muxKey', () => {
     );
     const direct = muxKey(buildChain(doc, { target: 'web' }));
     const aliased = muxKey(buildChain(doc, { target: 'web-alias' }));
-    expect(direct).toBe('deploy@web.example.com:2222');
+    expect(direct).toBe('deploy@web.example.com:2222;agentForward=no');
     expect(aliased).toBe(direct);
   });
 
@@ -246,21 +246,42 @@ describe('muxKey', () => {
     const viaJump = muxKey(buildChain(doc, { target: 'app' }));
     const otherUser = muxKey(buildChain(doc, { target: 'app', user: 'admin' }));
     const otherPort = muxKey(buildChain(doc, { target: 'app', port: 2200 }));
-    expect(viaJump).toContain('bastion.example.com:22 -> ');
+    expect(viaJump).toContain('bastion.example.com:22;agentForward=no -> ');
     expect(new Set([viaJump, otherUser, otherPort]).size).toBe(3);
   });
 
-  it('includes the ProxyCommand transport in the plan identity', () => {
+  it('includes the expanded ProxyCommand transport in the plan identity', () => {
     const doc = docOf(
       [
-        'Host tunneled',
+        'Host tunneled tunneled-alias',
         '  HostName inner.example.com',
-        '  ProxyCommand nc -x proxy:1080 %h %p',
+        '  ProxyCommand route --alias %n --host %h --port %p',
       ].join('\n'),
     );
     const plain = muxKey(buildChain(docOf('Host tunneled\n  HostName inner.example.com'), { target: 'tunneled' }));
     const proxied = muxKey(buildChain(doc, { target: 'tunneled' }));
-    expect(proxied).toContain('proxy(nc -x proxy:1080 %h %p)');
+    const aliased = muxKey(buildChain(doc, { target: 'tunneled-alias' }));
+    expect(proxied).toContain('proxy(route --alias tunneled --host inner.example.com --port 22)');
     expect(proxied).not.toBe(plain);
+    expect(aliased).not.toBe(proxied);
+  });
+
+  it('separates plans by effective agent-forwarding policy', () => {
+    const doc = docOf(
+      [
+        'Host no-agent',
+        '  HostName app.example.com',
+        '  ForwardAgent no',
+        '',
+        'Host with-agent',
+        '  HostName app.example.com',
+        '  ForwardAgent yes',
+      ].join('\n'),
+    );
+    const noAgent = muxKey(buildChain(doc, { target: 'no-agent' }));
+    const withAgent = muxKey(buildChain(doc, { target: 'with-agent' }));
+    expect(noAgent).toContain('agentForward=no');
+    expect(withAgent).toContain('agentForward=yes');
+    expect(withAgent).not.toBe(noAgent);
   });
 });

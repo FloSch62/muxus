@@ -17,6 +17,8 @@ interface ActiveForward {
  */
 export class ForwardManager {
   private readonly forwards = new Map<string, ActiveForward>();
+  /** Config forwards currently being created, keyed by connection and rule. */
+  private readonly pendingConfigStarts = new Map<string, Promise<ForwardInfo>>();
   /** Connections whose remote 'tcp connection' dispatcher is installed. */
   private readonly remoteDispatch = new Map<string, Map<number, ForwardInfo>>();
 
@@ -76,6 +78,34 @@ export class ForwardManager {
     this.forwards.set(info.id, { info, stop });
     unsubscribe = conn.onClose(() => this.stop(info.id));
     return info;
+  }
+
+  /**
+   * Start an ssh-config forward once per connection and rule. Every terminal
+   * on a multiplexed transport runs its resolved config through this method,
+   * so aliases can add distinct rules while repeated/concurrent sessions do
+   * not race into duplicate listener binds.
+   */
+  async startConfig(req: ForwardRequest): Promise<{ info: ForwardInfo; started: boolean }> {
+    const key = configForwardKey(req);
+    const existing = [...this.forwards.values()].find(
+      (active) =>
+        active.info.origin === 'config' &&
+        active.info.lifecycle === 'session' &&
+        configForwardKey(active.info) === key,
+    );
+    if (existing) return { info: existing.info, started: false };
+
+    const pending = this.pendingConfigStarts.get(key);
+    if (pending) return { info: await pending, started: false };
+
+    const start = this.start(req, 'config');
+    this.pendingConfigStarts.set(key, start);
+    try {
+      return { info: await start, started: true };
+    } finally {
+      if (this.pendingConfigStarts.get(key) === start) this.pendingConfigStarts.delete(key);
+    }
   }
 
   stop(id: string): void {
@@ -181,6 +211,18 @@ export class ForwardManager {
     await listen(server, info.bindPort);
     return () => server.close();
   }
+}
+
+function configForwardKey(
+  forward: Pick<ForwardRequest, 'connId' | 'type' | 'bindPort' | 'targetHost' | 'targetPort'>,
+): string {
+  return JSON.stringify([
+    forward.connId,
+    forward.type,
+    forward.bindPort,
+    forward.targetHost,
+    forward.targetPort,
+  ]);
 }
 
 function listen(server: net.Server, port: number): Promise<void> {

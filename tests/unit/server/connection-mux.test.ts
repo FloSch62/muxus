@@ -87,14 +87,14 @@ function startServer(opts: { maxShellsPerConnection?: number } = {}): Promise<{
 }
 
 let knownHostsCounter = 0;
-function makeManager(): SshConnectionManager {
+function makeManager(configFile = emptyConfig): SshConnectionManager {
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   return new SshConnectionManager(log as never, {
     knownHosts: new KnownHostsStore(
       path.join(tmp, `known_hosts-${knownHostsCounter++}`),
       path.join(tmp, 'no-global-known-hosts'),
     ),
-    loadConfig: () => loadConfigDocument(emptyConfig),
+    loadConfig: () => loadConfigDocument(configFile),
   });
 }
 
@@ -157,6 +157,51 @@ describe('SSH connection multiplexing', () => {
     a.stream.close();
     a.lease.release();
     await vi.waitFor(() => expect(manager!.list()).toHaveLength(0));
+  }, 15_000);
+
+  it('adds config forwards requested by another alias on a shared transport', async () => {
+    const started = await startServer();
+    server = started.server;
+    const configFile = path.join(tmp, `ssh_config-forwards-${knownHostsCounter}`);
+    writeFileSync(
+      configFile,
+      [
+        'Host first',
+        '  HostName 127.0.0.1',
+        '  User tester',
+        `  Port ${started.port}`,
+        '  DynamicForward 1080',
+        '',
+        'Host second',
+        '  HostName 127.0.0.1',
+        '  User tester',
+        `  Port ${started.port}`,
+        '  DynamicForward 1081',
+      ].join('\n'),
+    );
+    manager = makeManager(configFile);
+
+    const a = await manager.connectShell(
+      { kind: 'ssh', target: 'first', passwordOnly: true },
+      makeIo().io,
+      80,
+      24,
+      'xterm-256color',
+    );
+    const b = await manager.connectShell(
+      { kind: 'ssh', target: 'second', passwordOnly: true },
+      makeIo().io,
+      80,
+      24,
+      'xterm-256color',
+    );
+
+    expect(b.transport).toBe('shared');
+    expect(b.lease.connection.id).toBe(a.lease.connection.id);
+    expect(b.lease.connection.configForwards).toEqual([
+      { type: 'dynamic', bindPort: 1080 },
+      { type: 'dynamic', bindPort: 1081 },
+    ]);
   }, 15_000);
 
   it('collapses concurrent dials into one connection and one auth round-trip', async () => {

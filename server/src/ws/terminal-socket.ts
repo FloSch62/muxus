@@ -292,29 +292,23 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
   );
   socket.once('close', () => unsubscribeHealth());
 
-  // Forwards declared on the host in ssh config start with the transport,
-  // exactly like `ssh` honoring LocalForward/RemoteForward/DynamicForward.
-  // A session multiplexed onto a live transport — or overflowing next to
-  // one — finds them already bound; starting them again would only collide.
+  // Every multiplexed alias contributes its resolved *Forward rules to the
+  // shared transport. startConfig deduplicates rules already started by a
+  // sibling session and collapses concurrent attempts for the same listener.
   const configForwardIds: string[] = [];
-  if (transport === 'new') {
-    for (const fwd of conn.configForwards) {
-      if (!socketOpen) break;
-      try {
-        const started = await ctx.forwards.start(
-          {
-            connId: conn.id,
-            type: fwd.type,
-            bindPort: fwd.bindPort,
-            targetHost: fwd.targetHost,
-            targetPort: fwd.targetPort,
-          },
-          'config',
-        );
-        configForwardIds.push(started.id);
-      } catch (err) {
-        sendControl(socket, { op: 'status', message: `forward -${fwd.type[0]?.toUpperCase()} ${fwd.bindPort} failed: ${err instanceof Error ? err.message : String(err)}` });
-      }
+  for (const fwd of conn.configForwards) {
+    if (!socketOpen) break;
+    try {
+      const started = await ctx.forwards.startConfig({
+        connId: conn.id,
+        type: fwd.type,
+        bindPort: fwd.bindPort,
+        targetHost: fwd.targetHost,
+        targetPort: fwd.targetPort,
+      });
+      if (started.started) configForwardIds.push(started.info.id);
+    } catch (err) {
+      sendControl(socket, { op: 'status', message: `forward -${fwd.type[0]?.toUpperCase()} ${fwd.bindPort} failed: ${err instanceof Error ? err.message : String(err)}` });
     }
   }
 
@@ -322,7 +316,9 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
     // The tab disappeared before setup reached `ready`; do not leave
     // half-created config forwards running with no visible owning session.
     // releaseSession already ran via the close handler.
-    for (const id of configForwardIds) ctx.forwards.stop(id);
+    if (ctx.connections.leaseCount(conn.id, ['terminal', 'dial']) === 0) {
+      for (const id of configForwardIds) ctx.forwards.stop(id);
+    }
     return;
   }
 

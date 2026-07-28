@@ -78,10 +78,10 @@ with the session, and `ForwardAgent` applies when an agent is present.
 ## One connection per host
 
 Connections are multiplexed, the way OpenSSH `ControlMaster` sharing works. A session whose
-resolved dial plan — every hop's user, host and port, plus any `ProxyCommand` — matches a
-live connection opens a new channel on it instead of a new TCP connection. Splitting a
-pane, opening a second tab on the same host, the file browser, the remote editor, tunnels
-and ad-hoc forwards all share one SSH transport:
+resolved dial plan — every hop's user, host, port and agent-forwarding policy, plus any
+expanded `ProxyCommand` — matches a live connection opens a new channel on it instead of a
+new TCP connection. Splitting a pane, opening a second tab on the same host, the file
+browser, the remote editor, tunnels and ad-hoc forwards all share one SSH transport:
 
 - no second login and no second 2FA prompt;
 - servers that cap connections per user (`MaxStartups`, firewall rules) see one connection,

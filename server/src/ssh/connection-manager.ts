@@ -235,11 +235,16 @@ export class SshConnectionManager {
     const chain = buildChain(doc, profile);
     const key = muxKey(chain);
     const target = chain[chain.length - 1]!;
+    const configForwards = target.resolved.forwards;
     const label = `${target.user}@${target.resolved.hostname}:${target.port}`;
 
     if (!opts.freshTransport) {
       const shared = this.acquireShared(key, owner);
       if (shared) {
+        shared.connection.configForwards = mergeConfigForwards(
+          shared.connection.configForwards,
+          configForwards,
+        );
         io.status(`Reusing the SSH connection to ${label} (multiplexed).`, { transient: true });
         return shared;
       }
@@ -250,7 +255,10 @@ export class SshConnectionManager {
         // errors surface on the session that started the dial.
         const conn = await pending;
         const lease = this.connections.acquire(conn.id, owner);
-        if (lease) return { ...lease, reused: true };
+        if (lease) {
+          conn.configForwards = mergeConfigForwards(conn.configForwards, configForwards);
+          return { ...lease, reused: true };
+        }
         // The transport died between ready and acquire; dial our own below.
       }
     }
@@ -481,16 +489,7 @@ export class SshConnectionManager {
     const agent = agentSocket();
     const auth = new AuthLadder(hop, io);
     const proxySocket =
-      !sock && hop.resolved.proxyCommand
-        ? openProxyCommand(
-            expandProxyCommand(hop.resolved.proxyCommand, {
-              hostname: hop.resolved.hostname,
-              originalHost: hop.spec.host,
-              port: hop.port,
-              user: hop.user,
-            }),
-          )
-        : undefined;
+      !sock && hop.resolved.proxyCommand ? openProxyCommand(expandedProxyCommand(hop)!) : undefined;
     const transport = sock ?? proxySocket;
     const config: ConnectConfig = {
       username: hop.user,
@@ -564,15 +563,40 @@ export class SshConnectionManager {
 
 /**
  * Identity of a dial plan for connection sharing: the resolved hop sequence
- * (user@hostname:port each) plus the ProxyCommand transport when one applies.
- * Sessions whose plans agree may share one SSH transport. Auth settings are
+ * (user@hostname:port and agent-forwarding policy for each hop) plus the
+ * expanded ProxyCommand transport when one applies. Other auth settings are
  * deliberately absent — they matter while establishing a transport, not for
  * attaching to an established one.
  */
 export function muxKey(chain: ChainHop[]): string {
-  const hops = chain.map((hop) => `${hop.user}@${hop.resolved.hostname}:${hop.port}`);
-  const proxy = chain[0]?.resolved.proxyCommand;
+  const hops = chain.map(
+    (hop) =>
+      `${hop.user}@${hop.resolved.hostname}:${hop.port};agentForward=${hop.resolved.forwardAgent ? 'yes' : 'no'}`,
+  );
+  const first = chain[0];
+  const proxy = first?.resolved.proxyCommand ? expandedProxyCommand(first) : undefined;
   return (proxy ? [`proxy(${proxy})`, ...hops] : hops).join(' -> ');
+}
+
+function mergeConfigForwards(
+  current: readonly ConfigForward[],
+  requested: readonly ConfigForward[],
+): ConfigForward[] {
+  const merged = [...current];
+  for (const forward of requested) {
+    if (
+      !merged.some(
+        (existing) =>
+          existing.type === forward.type &&
+          existing.bindPort === forward.bindPort &&
+          existing.targetHost === forward.targetHost &&
+          existing.targetPort === forward.targetPort,
+      )
+    ) {
+      merged.push(forward);
+    }
+  }
+  return merged;
 }
 
 /**
@@ -657,6 +681,16 @@ export function expandProxyCommand(
       default:
         return tokens.user;
     }
+  });
+}
+
+function expandedProxyCommand(hop: ChainHop): string | undefined {
+  if (!hop.resolved.proxyCommand) return undefined;
+  return expandProxyCommand(hop.resolved.proxyCommand, {
+    hostname: hop.resolved.hostname,
+    originalHost: hop.spec.host,
+    port: hop.port,
+    user: hop.user,
   });
 }
 

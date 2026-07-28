@@ -57,4 +57,29 @@ describe('ForwardManager lifecycle', () => {
     ]);
     expect(release).not.toHaveBeenCalled();
   });
+
+  it('deduplicates concurrent config forwards on a multiplexed connection', async () => {
+    const release = vi.fn();
+    const connection = {
+      id: 'connection-1',
+      client: {},
+      onClose: () => () => undefined,
+    } as unknown as ManagedConnection;
+    const acquire = vi.fn(() => ({ connection, owner: 'forward' as const, release }));
+    manager = new ForwardManager({ acquire } as never, { warn: vi.fn() } as never);
+    const request = { connId: connection.id, type: 'dynamic' as const, bindPort: 0 };
+
+    const [first, second] = await Promise.all([
+      manager.startConfig(request),
+      manager.startConfig(request),
+    ]);
+
+    expect(new Set([first.started, second.started])).toEqual(new Set([false, true]));
+    expect(first.info.id).toBe(second.info.id);
+    expect(manager.list()).toEqual([first.info]);
+    expect(acquire).toHaveBeenCalledTimes(1);
+
+    manager.stop(first.info.id);
+    expect(release).toHaveBeenCalledTimes(1);
+  });
 });
