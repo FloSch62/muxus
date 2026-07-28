@@ -6,6 +6,7 @@ electron/build/
 electron/release/
 .env
 .DS_Store
+promo/
 
 # Zensical docs build output & cache
 site/

@@ -7,6 +7,7 @@ import {
   buildChain,
   expandProxyCommand,
   findMetadataAlias,
+  muxKey,
   observeSshTransportHealth,
   terminalPtyOptions,
 } from '../../../server/src/ssh/connection-manager.js';
@@ -212,5 +213,75 @@ describe('passive SSH transport health', () => {
     vi.advanceTimersByTime(120_000);
     expect(listener).not.toHaveBeenCalled();
     transport.destroy();
+  });
+});
+
+describe('muxKey', () => {
+  it('matches when different targets resolve to the same dial plan', () => {
+    const doc = docOf(
+      [
+        'Host web web-alias',
+        '  HostName web.example.com',
+        '  User deploy',
+        '  Port 2222',
+      ].join('\n'),
+    );
+    const direct = muxKey(buildChain(doc, { target: 'web' }));
+    const aliased = muxKey(buildChain(doc, { target: 'web-alias' }));
+    expect(direct).toBe('deploy@web.example.com:2222;agentForward=no');
+    expect(aliased).toBe(direct);
+  });
+
+  it('separates plans that differ in user, port, or jump chain', () => {
+    const doc = docOf(
+      [
+        'Host app',
+        '  HostName app.internal',
+        '  ProxyJump bastion',
+        '',
+        'Host bastion',
+        '  HostName bastion.example.com',
+      ].join('\n'),
+    );
+    const viaJump = muxKey(buildChain(doc, { target: 'app' }));
+    const otherUser = muxKey(buildChain(doc, { target: 'app', user: 'admin' }));
+    const otherPort = muxKey(buildChain(doc, { target: 'app', port: 2200 }));
+    expect(viaJump).toContain('bastion.example.com:22;agentForward=no -> ');
+    expect(new Set([viaJump, otherUser, otherPort]).size).toBe(3);
+  });
+
+  it('includes the expanded ProxyCommand transport in the plan identity', () => {
+    const doc = docOf(
+      [
+        'Host tunneled tunneled-alias',
+        '  HostName inner.example.com',
+        '  ProxyCommand route --alias %n --host %h --port %p',
+      ].join('\n'),
+    );
+    const plain = muxKey(buildChain(docOf('Host tunneled\n  HostName inner.example.com'), { target: 'tunneled' }));
+    const proxied = muxKey(buildChain(doc, { target: 'tunneled' }));
+    const aliased = muxKey(buildChain(doc, { target: 'tunneled-alias' }));
+    expect(proxied).toContain('proxy(route --alias tunneled --host inner.example.com --port 22)');
+    expect(proxied).not.toBe(plain);
+    expect(aliased).not.toBe(proxied);
+  });
+
+  it('separates plans by effective agent-forwarding policy', () => {
+    const doc = docOf(
+      [
+        'Host no-agent',
+        '  HostName app.example.com',
+        '  ForwardAgent no',
+        '',
+        'Host with-agent',
+        '  HostName app.example.com',
+        '  ForwardAgent yes',
+      ].join('\n'),
+    );
+    const noAgent = muxKey(buildChain(doc, { target: 'no-agent' }));
+    const withAgent = muxKey(buildChain(doc, { target: 'with-agent' }));
+    expect(noAgent).toContain('agentForward=no');
+    expect(withAgent).toContain('agentForward=yes');
+    expect(withAgent).not.toBe(noAgent);
   });
 });

@@ -69,10 +69,14 @@ export interface ManagedConnection {
   host: string;
   port: number;
   user: string;
+  /** Dial-plan identity for connection sharing; see {@link muxKey}. */
+  muxKey: string;
   /** Concrete OpenSSH alias eligible for Muxus-owned recent-use metadata. */
   metadataAlias?: string;
   /** *Forward lines resolved from ssh config — auto-started once the session is up. */
   configForwards: ConfigForward[];
+  /** Current passive keepalive health of the transport. */
+  health(): SshTransportHealth;
   shell(cols: number, rows: number, term: string): Promise<ClientChannel>;
   sftp(): Promise<SFTPWrapper>;
   /** Subscribe to passive keepalive health; returns an unsubscribe function. */
@@ -85,6 +89,23 @@ export interface ManagedConnection {
 
 export type ConnectionLease = TransportLease<ManagedConnection>;
 export type SshTransportHealth = 'healthy' | 'suspect';
+
+export interface MuxedConnectionLease extends TransportLease<ManagedConnection> {
+  /** True when this lease multiplexes onto a pre-existing transport instead of a fresh dial. */
+  reused: boolean;
+}
+
+export interface TerminalShell {
+  lease: MuxedConnectionLease;
+  stream: ClientChannel;
+  /**
+   * 'new' — fresh transport, this session owns starting its config forwards;
+   * 'shared' — multiplexed onto a live transport that already has them;
+   * 'overflow' — dedicated transport dialed because the shared one refused
+   * another session; its sibling still owns the config forwards.
+   */
+  transport: 'new' | 'shared' | 'overflow';
+}
 
 const MAX_JUMP_DEPTH = 8;
 const MAX_PASSWORD_ATTEMPTS = 3;
@@ -160,13 +181,27 @@ export interface ChainHop {
 export class SshConnectionManager {
   private readonly connections = new ConnectionLeaseRegistry<ManagedConnection>();
   private readonly closeReasons = new WeakMap<Client, string>();
-  readonly knownHosts = new KnownHostsStore();
+  /** In-flight dials by mux key, so simultaneous sessions share one TCP connection and one auth round-trip. */
+  private readonly pendingDials = new Map<string, Promise<ManagedConnection>>();
+  private readonly loadConfig: () => ConfigDocument;
+  readonly knownHosts: KnownHostsStore;
 
-  constructor(private readonly log: FastifyBaseLogger) {}
+  constructor(
+    private readonly log: FastifyBaseLogger,
+    options: { knownHosts?: KnownHostsStore; loadConfig?: () => ConfigDocument } = {},
+  ) {
+    this.knownHosts = options.knownHosts ?? new KnownHostsStore();
+    this.loadConfig = options.loadConfig ?? (() => loadConfigDocument());
+  }
 
   /** Acquire an independent consumer lease on an existing SSH transport. */
   acquire(id: string, owner: ConnectionLeaseOwner): ConnectionLease | undefined {
     return this.connections.acquire(id, owner);
+  }
+
+  /** Live lease count on a connection, optionally restricted to owner kinds. */
+  leaseCount(id: string, owners?: readonly ConnectionLeaseOwner[]): number {
+    return this.connections.leaseCount(id, owners);
   }
 
   /** Live transports (forwarding panel, connection reuse when starting tunnels). */
@@ -181,10 +216,123 @@ export class SshConnectionManager {
     }));
   }
 
-  async connect(profile: SshProfile, io: ConnectIo, owner: ConnectionLeaseOwner = 'terminal'): Promise<ConnectionLease> {
-    const doc = loadConfigDocument();
+  /**
+   * Connect with OpenSSH-ControlMaster-style multiplexing: a session whose
+   * dial plan matches a live, healthy transport attaches to it as a new
+   * lease instead of opening another TCP connection — split panes, SFTP,
+   * tunnels and repeated connects to one host share a single SSH connection,
+   * which also keeps Muxus inside server-side connection caps (MaxStartups,
+   * per-user limits). Concurrent dials to the same plan (workspace restore)
+   * collapse into one connection and one auth round-trip.
+   */
+  async connect(
+    profile: SshProfile,
+    io: ConnectIo,
+    owner: ConnectionLeaseOwner = 'terminal',
+    opts: { freshTransport?: boolean } = {},
+  ): Promise<MuxedConnectionLease> {
+    const doc = this.loadConfig();
     const chain = buildChain(doc, profile);
+    const key = muxKey(chain);
+    const target = chain[chain.length - 1]!;
+    const configForwards = target.resolved.forwards;
+    const label = `${target.user}@${target.resolved.hostname}:${target.port}`;
 
+    if (!opts.freshTransport) {
+      const shared = this.acquireShared(key, owner);
+      if (shared) {
+        shared.connection.configForwards = mergeConfigForwards(
+          shared.connection.configForwards,
+          configForwards,
+        );
+        io.status(`Reusing the SSH connection to ${label} (multiplexed).`, { transient: true });
+        return shared;
+      }
+      const pending = this.pendingDials.get(key);
+      if (pending) {
+        io.status(`Waiting for the SSH connection to ${label} …`, { transient: true });
+        // A failed dial fails every session waiting on it — auth prompts and
+        // errors surface on the session that started the dial.
+        const conn = await pending;
+        const lease = this.connections.acquire(conn.id, owner);
+        if (lease) {
+          conn.configForwards = mergeConfigForwards(conn.configForwards, configForwards);
+          return { ...lease, reused: true };
+        }
+        // The transport died between ready and acquire; dial our own below.
+      }
+    }
+
+    const dial = this.dialChain(doc, chain, profile, io, owner, key);
+    const tracked = dial.then((lease) => lease.connection);
+    tracked.catch(() => undefined); // waiters observe the rejection through their own await
+    this.pendingDials.set(key, tracked);
+    try {
+      const lease = await dial;
+      return { ...lease, reused: false };
+    } finally {
+      if (this.pendingDials.get(key) === tracked) this.pendingDials.delete(key);
+    }
+  }
+
+  /** Least-busy live, healthy transport with the same dial plan, if any. */
+  private acquireShared(key: string, owner: ConnectionLeaseOwner): MuxedConnectionLease | undefined {
+    const candidates = this.connections
+      .list()
+      .filter((conn) => conn.muxKey === key && conn.health() === 'healthy')
+      .sort((a, b) => this.connections.leaseCount(a.id) - this.connections.leaseCount(b.id));
+    for (const conn of candidates) {
+      const lease = this.connections.acquire(conn.id, owner);
+      if (lease) return { ...lease, reused: true };
+    }
+    return undefined;
+  }
+
+  /**
+   * Terminal entry point: connect (sharing a transport when possible) and
+   * open the shell channel. When a shared transport refuses another session
+   * channel (sshd MaxSessions and similar per-connection caps), falls back
+   * to a dedicated transport — a new pane never fails just because the
+   * multiplexed connection is full.
+   */
+  async connectShell(
+    profile: SshProfile,
+    io: ConnectIo,
+    cols: number,
+    rows: number,
+    term: string,
+  ): Promise<TerminalShell> {
+    const lease = await this.connect(profile, io);
+    try {
+      const stream = await lease.connection.shell(cols, rows, term);
+      return { lease, stream, transport: lease.reused ? 'shared' : 'new' };
+    } catch (err) {
+      lease.release();
+      if (!lease.reused) throw err;
+      this.log.info(
+        { host: lease.connection.host, err: String(err) },
+        'shared ssh transport refused a session; dialing a dedicated connection',
+      );
+      io.status('The shared SSH connection refused another session — opening a dedicated one …', { transient: true });
+      const dedicated = await this.connect(profile, io, 'terminal', { freshTransport: true });
+      try {
+        const stream = await dedicated.connection.shell(cols, rows, term);
+        return { lease: dedicated, stream, transport: 'overflow' };
+      } catch (retryErr) {
+        dedicated.release();
+        throw retryErr;
+      }
+    }
+  }
+
+  private async dialChain(
+    doc: ConfigDocument,
+    chain: ChainHop[],
+    profile: SshProfile,
+    io: ConnectIo,
+    owner: ConnectionLeaseOwner,
+    key: string,
+  ): Promise<ConnectionLease> {
     const clients: Client[] = [];
     const healthListeners = new Set<(state: SshTransportHealth) => void>();
     const hopHealth = new Map<number, SshTransportHealth>();
@@ -270,7 +418,9 @@ export class SshConnectionManager {
       host: target.resolved.hostname,
       port: target.port,
       user: target.user,
+      muxKey: key,
       metadataAlias,
+      health: () => transportHealth,
       configForwards: target.resolved.forwards,
       shell: async (cols, rows, term) => {
         const pty = terminalPtyOptions(cols, rows, term);
@@ -339,16 +489,7 @@ export class SshConnectionManager {
     const agent = agentSocket();
     const auth = new AuthLadder(hop, io);
     const proxySocket =
-      !sock && hop.resolved.proxyCommand
-        ? openProxyCommand(
-            expandProxyCommand(hop.resolved.proxyCommand, {
-              hostname: hop.resolved.hostname,
-              originalHost: hop.spec.host,
-              port: hop.port,
-              user: hop.user,
-            }),
-          )
-        : undefined;
+      !sock && hop.resolved.proxyCommand ? openProxyCommand(expandedProxyCommand(hop)!) : undefined;
     const transport = sock ?? proxySocket;
     const config: ConnectConfig = {
       username: hop.user,
@@ -419,6 +560,44 @@ export class SshConnectionManager {
 // ---------------------------------------------------------------------------
 // Dial plan
 // ---------------------------------------------------------------------------
+
+/**
+ * Identity of a dial plan for connection sharing: the resolved hop sequence
+ * (user@hostname:port and agent-forwarding policy for each hop) plus the
+ * expanded ProxyCommand transport when one applies. Other auth settings are
+ * deliberately absent — they matter while establishing a transport, not for
+ * attaching to an established one.
+ */
+export function muxKey(chain: ChainHop[]): string {
+  const hops = chain.map(
+    (hop) =>
+      `${hop.user}@${hop.resolved.hostname}:${hop.port};agentForward=${hop.resolved.forwardAgent ? 'yes' : 'no'}`,
+  );
+  const first = chain[0];
+  const proxy = first?.resolved.proxyCommand ? expandedProxyCommand(first) : undefined;
+  return (proxy ? [`proxy(${proxy})`, ...hops] : hops).join(' -> ');
+}
+
+function mergeConfigForwards(
+  current: readonly ConfigForward[],
+  requested: readonly ConfigForward[],
+): ConfigForward[] {
+  const merged = [...current];
+  for (const forward of requested) {
+    if (
+      !merged.some(
+        (existing) =>
+          existing.type === forward.type &&
+          existing.bindPort === forward.bindPort &&
+          existing.targetHost === forward.targetHost &&
+          existing.targetPort === forward.targetPort,
+      )
+    ) {
+      merged.push(forward);
+    }
+  }
+  return merged;
+}
 
 /**
  * Expand a profile into the ordered list of hosts to dial: every ProxyJump
@@ -502,6 +681,16 @@ export function expandProxyCommand(
       default:
         return tokens.user;
     }
+  });
+}
+
+function expandedProxyCommand(hop: ChainHop): string | undefined {
+  if (!hop.resolved.proxyCommand) return undefined;
+  return expandProxyCommand(hop.resolved.proxyCommand, {
+    hostname: hop.resolved.hostname,
+    originalHost: hop.spec.host,
+    port: hop.port,
+    user: hop.user,
   });
 }
 

@@ -75,13 +75,27 @@ stdin/stdout, which supports tools such as `cloudflared access ssh` and corporat
 Forwards declared on the block (`LocalForward`, `RemoteForward`, `DynamicForward`) start
 with the session, and `ForwardAgent` applies when an agent is present.
 
-## Connection leases
+## One connection per host
 
-Connections are leased. Splitting a pane, opening a second tab on the same host, the file
-browser, the remote editor and an ad-hoc forward all use the same SSH transport:
+Connections are multiplexed, the way OpenSSH `ControlMaster` sharing works. A session whose
+resolved dial plan — every hop's user, host, port and agent-forwarding policy, plus any
+expanded `ProxyCommand` — matches a live connection opens a new channel on it instead of a
+new TCP connection. Splitting a pane, opening a second tab on the same host, the file
+browser, the remote editor, tunnels and ad-hoc forwards all share one SSH transport:
 
 - no second login and no second 2FA prompt;
-- closing one tab does not affect the others;
+- servers that cap connections per user (`MaxStartups`, firewall rules) see one connection,
+  no matter how many panes are open;
+- sessions started together, such as a restored workspace, collapse into a single dial with
+  a single authentication round-trip.
+
+Sharing is safe by construction: a connection whose keepalives have gone quiet is not
+reused, and if the server refuses another channel on a shared connection (`MaxSessions`),
+Muxus silently dials a dedicated connection for that pane instead.
+
+Each consumer holds its own lease on the transport:
+
+- closing one tab does not affect the others; the connection closes with its last consumer;
 - a [tunnel](tunnels.md) holds its own lease, so closing every terminal leaves it running.
 
 ## Connection loss
