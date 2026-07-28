@@ -17,7 +17,7 @@ import path from 'node:path';
 
 import { chartPng, kittySequence } from './demo-image.mjs';
 
-const require = createRequire(path.join(process.cwd(), 'server/'));
+const require = createRequire(path.join(process.cwd(), 'package.json'));
 const ssh2 = require('ssh2');
 const pty = require('node-pty');
 
@@ -543,7 +543,7 @@ function startSshd(host, keys, hostMap) {
 
       // Forwarding: what makes ProxyJump chains and the tunnel panel real. A
       // jump target is a demo hostname too, so it needs the same mapping the
-      // server got through hack/demo-resolve.mjs.
+      // Go server got through MUXUS_DEMO_HOSTMAP.
       client.on('tcpip', (accept, reject, info) => {
         const mapped = hostMap[info.destIP];
         const socket = net.connect(mapped ?? info.destPort, mapped ? '127.0.0.1' : info.destIP, () => {
@@ -610,10 +610,12 @@ async function assertPortFree(port) {
   }
 }
 
-/** Boot the sandbox: sshds, a fake HOME and a muxus server bound to it. */
+/** Boot the sandbox: sshds, a fake HOME and a muxus server bound to it.
+ *  MUXUS_SERVER_BIN can point at an alternative Go binary. */
 export async function startDemoEnv() {
-  await fs.access('server/dist/index.js', fsConstants.R_OK).catch(() => {
-    throw new Error('build first: pnpm build');
+  const serverBin = process.env.MUXUS_SERVER_BIN || path.join(process.cwd(), 'build', 'muxus');
+  await fs.access(serverBin, fsConstants.X_OK).catch(() => {
+    throw new Error(`Muxus binary not executable: ${serverBin} (build first: pnpm build)`);
   });
   await assertPortFree(APP_PORT);
 
@@ -625,8 +627,8 @@ export async function startDemoEnv() {
   const sshds = await Promise.all(hosts.map((host) => startSshd(host, keys, hostMap)));
 
   const server = spawn(
-    process.execPath,
-    ['--import', './hack/demo-resolve.mjs', 'server/dist/index.js', '--port', String(APP_PORT)],
+    serverBin,
+    ['serve', '--port', String(APP_PORT)],
     {
       env: {
         ...process.env,

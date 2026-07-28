@@ -12,7 +12,7 @@ function browserStorage(): Storage | undefined {
   }
 }
 
-/** Prefers the Electron desktop store (survives the random-port origin),
+/** Prefers the Wails desktop store (survives the random-port origin),
  *  falling back to localStorage — and migrating between the two. */
 export const muxusStateStorage: StateStorage = {
   getItem(name) {

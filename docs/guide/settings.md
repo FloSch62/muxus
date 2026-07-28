@@ -109,4 +109,4 @@ client. Muxus-only settings remain in the backup.
 
 Version and platform information, a link to the source repository, and a manual update
 check. When a newer release exists, Muxus links to its GitHub release so the appropriate
-installer can be downloaded.
+portable package can be downloaded.

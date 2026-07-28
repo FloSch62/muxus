@@ -26,7 +26,7 @@ and sends nothing elsewhere. This page states what that means in detail.
 | Client | How it gets the token |
 | --- | --- |
 | Browser | In the URL **fragment**, which browsers never send to servers; the client removes it from the address bar immediately |
-| Desktop app | An isolated **preload bridge**, so the renderer never sees a URL containing it |
+| Desktop app | In the initial URL **fragment** created in memory by the shell; the client consumes and removes it immediately |
 | Terminal sockets | A **WebSocket subprotocol**, not a query parameter |
 
 `?token=…` is not accepted for terminal sockets, because query strings are recorded in logs
@@ -85,9 +85,11 @@ which on Linux means group membership.
 
 ## The desktop shell
 
-The Electron build embeds the server in-process, uses context isolation with a narrow
-preload bridge, and blocks unexpected navigation. There is no remote content: everything
-the window loads is served from the local server.
+Wails uses the operating system webview rather than shipping Chromium. It
+starts the same Go server in-process on a random loopback port and loads only
+the embedded client from that origin. The Wails runtime transport exists only
+in desktop mode at `/wails/runtime`; regular `muxus serve` does not mount it.
+There is no Node integration or remote application content.
 
 ## What Muxus does not do
 

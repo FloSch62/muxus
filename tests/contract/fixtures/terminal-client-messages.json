@@ -1,0 +1,114 @@
+[
+  {
+    "name": "connect local",
+    "valid": true,
+    "data": { "op": "connect", "profile": { "kind": "local" }, "cols": 80, "rows": 24 }
+  },
+  {
+    "name": "connect with title trimmed",
+    "valid": true,
+    "data": {
+      "op": "connect",
+      "profile": { "kind": "ssh", "target": "web1" },
+      "title": "  web1 session  ",
+      "cols": 120,
+      "rows": 40
+    }
+  },
+  {
+    "name": "connect whitespace-only title",
+    "valid": false,
+    "data": {
+      "op": "connect",
+      "profile": { "kind": "local" },
+      "title": "   ",
+      "cols": 80,
+      "rows": 24
+    }
+  },
+  {
+    "name": "connect zero cols",
+    "valid": false,
+    "data": { "op": "connect", "profile": { "kind": "local" }, "cols": 0, "rows": 24 }
+  },
+  {
+    "name": "connect missing rows",
+    "valid": false,
+    "data": { "op": "connect", "profile": { "kind": "local" }, "cols": 80 }
+  },
+  {
+    "name": "connect fractional cols",
+    "valid": false,
+    "data": { "op": "connect", "profile": { "kind": "local" }, "cols": 80.5, "rows": 24 }
+  },
+  {
+    "name": "connect invalid profile",
+    "valid": false,
+    "data": { "op": "connect", "profile": { "kind": "ssh", "target": "" }, "cols": 80, "rows": 24 }
+  },
+  {
+    "name": "dial ssh",
+    "valid": true,
+    "data": { "op": "dial", "profile": { "kind": "ssh", "target": "bastion" } }
+  },
+  {
+    "name": "dial rejects non-ssh profile",
+    "valid": false,
+    "data": { "op": "dial", "profile": { "kind": "telnet", "host": "router1" } }
+  },
+  {
+    "name": "resize",
+    "valid": true,
+    "data": { "op": "resize", "cols": 132, "rows": 43 }
+  },
+  {
+    "name": "resize negative rows",
+    "valid": false,
+    "data": { "op": "resize", "cols": 132, "rows": -1 }
+  },
+  {
+    "name": "auth response",
+    "valid": true,
+    "data": { "op": "auth-response", "answers": ["hunter2", "123456"] }
+  },
+  {
+    "name": "auth response empty list",
+    "valid": true,
+    "data": { "op": "auth-response", "answers": [] }
+  },
+  {
+    "name": "auth response missing answers",
+    "valid": false,
+    "data": { "op": "auth-response" }
+  },
+  {
+    "name": "host key accept",
+    "valid": true,
+    "data": { "op": "host-key-response", "accept": true }
+  },
+  {
+    "name": "host key missing verdict",
+    "valid": false,
+    "data": { "op": "host-key-response" }
+  },
+  {
+    "name": "set-logging single field",
+    "valid": true,
+    "data": { "op": "set-logging", "paused": true }
+  },
+  {
+    "name": "set-logging all fields",
+    "valid": true,
+    "data": { "op": "set-logging", "enabled": true, "paused": false, "captureInput": true }
+  },
+  {
+    "name": "set-logging no fields",
+    "valid": false,
+    "data": { "op": "set-logging" }
+  },
+  {
+    "name": "unknown op",
+    "valid": false,
+    "data": { "op": "self-destruct" }
+  }
+]

@@ -18,13 +18,16 @@ SFTP, a remote editor, saved tunnels, and images in the terminal.
 
 ## Run From Source
 
-Requires Node.js >= 24.17 and pnpm:
+Requires Go >= 1.25, Node.js >= 24.17 and pnpm:
 
 ```bash
 pnpm install
 pnpm build
 pnpm start
 ```
+
+`pnpm start` runs browser mode. Use `pnpm desktop` for the Wails desktop
+window; neither mode uses Electron or a Node server.
 
 For development setup, architecture, the security model and how the screenshots are
 generated, use the docs.

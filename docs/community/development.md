@@ -6,9 +6,19 @@ icon: lucide/hammer
 
 ## Requirements
 
+- **Go ≥ 1.25**
 - **Node.js ≥ 24.17** (CI builds on 24.18)
 - **pnpm**, with the version pinned in `package.json` through `packageManager`
-- A C/C++ toolchain for the two native modules (`node-pty`, `serialport`)
+- On Linux: a C toolchain, `pkg-config`, GTK 3 and WebKitGTK 4.1 headers
+
+On Debian/Ubuntu:
+
+```bash
+sudo apt install build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+```
+
+The installed application is one Go executable. Node and pnpm are build-time
+tools for the React client, not runtime dependencies.
 
 ## Setup
 
@@ -19,21 +29,22 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` runs three processes in parallel: `shared` in `tsc --watch`, the server on
-**:3002**, and the Vite client on **:5174**. Open <http://localhost:5174>.
+`pnpm dev` runs the shared TypeScript watcher, Vite on **:5174**, and
+`go run -tags gtk3 ./cmd/muxus serve --port 3002`. Open
+<http://localhost:5174>.
 
-In dev the API token is the fixed string `dev`, because the Vite client cannot learn a
-random one at startup. The server still binds loopback only.
+In development the API token is the fixed string `dev`, because Vite cannot
+learn a random token at startup. The Go server still binds loopback only.
 
 ## Project layout
 
 ```text
+app/        Go backend, Wails shell, persistence, transports and embedded client
 shared/     REST DTOs + the zod WebSocket protocol
-server/     Fastify server: ssh_config engine, leases, SFTP, forwards, history
-client/     React 19 + MUI, pane canvas, keymap, xterm.js
-electron/   Desktop shell (embeds the server in-process)
-tests/      vitest units
-hack/       Documentation sandbox and screenshot capture
+client/     React 19 + MUI, pane canvas, keymap and xterm.js
+tests/      vitest client/shared tests and cross-language contract fixtures
+packaging/  Native bundle metadata
+hack/       Build, development and documentation tooling
 ```
 
 [The architecture in more detail :octicons-arrow-right-24:](../reference/architecture.md)
@@ -42,38 +53,35 @@ hack/       Documentation sandbox and screenshot capture
 
 | Command | What it does |
 | --- | --- |
-| `pnpm build` | Build every package |
-| `pnpm start` | Serve the built client from the server |
-| `pnpm electron` | Run the desktop shell in dev |
-| `pnpm test`, `pnpm test:watch` | vitest |
+| `pnpm dev` | Go browser server + Vite + shared watcher |
+| `pnpm start` | Run `muxus serve` from source against the built client |
+| `pnpm desktop` | Build the web client and run the Wails desktop shell |
+| `pnpm build` | Build the client, embed it and create `build/muxus[.exe]` |
+| `pnpm package` | Build and create the current platform's release archive |
+| `pnpm test`, `pnpm test:watch` | vitest client/shared/contract tests |
+| `pnpm test:go` | Go contract, backend, transport and shell tests |
 | `pnpm lint` | oxlint (`--deny-warnings`) |
-| `pnpm typecheck` | Types across the workspace |
+| `pnpm typecheck` | Types across the TypeScript workspace |
 | `pnpm check:bundle` | Client bundle budgets |
 
-## Native modules and Electron
+Linux Go commands intentionally use `-tags gtk3`, which selects
+webkit2gtk-4.1 rather than the newer GTK 4/WebKitGTK 6 stack.
 
-The desktop build rebuilds `node-pty` and `serialport` against Electron's ABI. Before a
-`pnpm electron` dev run:
-
-```bash
-pnpm --filter @muxus/electron rebuild
-```
-
-## Installers
+## Release packages
 
 ```bash
-make deb    # Linux .deb
-make win    # Windows NSIS installer
-make dmg    # macOS .dmg
-make all    # everything electron-builder is configured for
+pnpm package
 ```
 
-Artifacts are written to `electron/release/`.
+The command writes a portable archive to `build/`:
 
-Publishing a GitHub release runs the installer workflow. After the installers are
-attached, that workflow redeploys the documentation site with a `latest.json` generated
-from the newest release. The desktop app and browser-hosted UI use that manifest for
-their update checks.
+- Linux: `muxus-v<version>-linux-<arch>.tar.gz`
+- Windows: `muxus-v<version>-windows-<arch>.zip`
+- macOS: `muxus-v<version>-macos-<arch>.zip` containing `Muxus.app`
+
+The packaging step fails if the uncompressed production executable exceeds
+30,000,000 bytes. Publishing a GitHub release builds all three platforms and
+then refreshes the documentation site's `latest.json` update manifest.
 
 ## Serial devices on Linux
 
@@ -87,8 +95,8 @@ Log out and back in afterwards.
 
 ## Documentation and screenshots
 
-The site is built with [Zensical](https://zensical.org) through two scripts. They use
-`uvx`, so nothing has to be installed globally:
+The site is built with [Zensical](https://zensical.org) through two scripts.
+They use `uvx`, so nothing has to be installed globally:
 
 ```bash
 pnpm serve-docs    # live preview on :8000, opens a browser
@@ -98,45 +106,36 @@ pnpm build-docs    # writes site/
 Screenshots are generated, so they never contain a real host:
 
 ```bash
-pnpm build         # the capture drives the built client
+pnpm build
 pnpm capture-docs  # both themes
 
-node hack/capture.mjs               # light only  → docs/assets/screenshots/*.png
-THEME=dark node hack/capture.mjs    # dark only   → *-dark.png
-node hack/capture.mjs sftp          # only shots whose name contains "sftp"
+node hack/capture.mjs               # light only
+THEME=dark node hack/capture.mjs    # dark only
+node hack/capture.mjs sftp          # only matching shots
 ```
 
-`hack/capture.mjs` boots the sandbox in `hack/demo-env.mjs` first, which provides:
+`hack/capture.mjs` boots `hack/demo-env.mjs`, which provides a throwaway
+home directory and small in-process SSH servers for shell, SFTP and
+forwarding. `MUXUS_DEMO_HOSTMAP` makes invented documentation hostnames dial
+those loopback servers without changing what the UI displays.
 
-- a throwaway `HOME` under `/tmp` with its own `~/.ssh/config`, keys and `known_hosts`;
-- one small in-process SSH server per demo host (shell, SFTP, port forwarding), so
-  connections, jump chains, the file browser and the editor are all real;
-- demo hostnames mapped onto loopback ports by a `--import` hook, so the screenshots show
-  `web-01.prod.internal` while talking to `127.0.0.1`.
+Capture uses `playwright-core` and expects Chrome at
+`/usr/bin/google-chrome`; set `CHROME` to override it.
 
-Capture drives a real browser through `playwright-core`, a dev dependency, and expects
-Chrome at `/usr/bin/google-chrome`. Set `CHROME` to override the path.
-
-The animated tour on the landing page comes out of the same sandbox:
+The animated tour comes from the same sandbox:
 
 ```bash
-pnpm record-docs   # both themes → docs/assets/screenshots/tour[-dark].mp4
+pnpm record-docs   # both themes
 
-node hack/record.mjs               # light only, plus tour-poster.png
-THEME=dark node hack/record.mjs    # dark only
-KEEP=1 node hack/record.mjs        # leave the frames in /tmp to re-encode by hand
+node hack/record.mjs
+THEME=dark node hack/record.mjs
+KEEP=1 node hack/record.mjs
 ```
 
-`hack/record.mjs` walks one window through five beats — open a saved host, split the pane,
-draw a chart in the terminal, the quick launcher, the file browser and the editor — with a
-pointer and a caption drawn over the page, because a screen recording captures neither the
-mouse nor the keys that drove it. Frames come off Chrome's screencast at device resolution
-and are stitched with `ffmpeg`, which has to be on `PATH`.
-
-Running `node hack/demo-env.mjs` on its own starts the sandbox and prints a URL, which is
-also a way to test a change without touching the real `~/.ssh`.
+`ffmpeg` must be on `PATH` for recording.
 
 ## CI
 
-Every push runs typecheck, lint, tests and the bundle budgets, then builds unpacked desktop
-packages on Linux, macOS and Windows.
+Every push runs the TypeScript and Go test suites, contract checks, lint,
+typecheck and bundle budgets. It then builds and packages the Wails
+application on Linux, macOS and Windows.

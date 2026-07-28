@@ -4,18 +4,20 @@ icon: lucide/terminal-square
 
 # Command-line flags
 
-The server is `server/dist/index.js`, started by `pnpm start` or embedded in the desktop
-app. It always binds `127.0.0.1`.
+Running `muxus` with no subcommand launches the Wails desktop shell. Browser
+mode is explicit and always binds `127.0.0.1`:
 
 ```bash
-node server/dist/index.js [--port <n>] [--no-open] [--history-path <dir>]
+muxus
+muxus serve [--port <n>] [--no-open] [--history-path <dir>]
 ```
 
-| Flag | Default | Meaning |
-| --- | --- | --- |
-| `--port <n>` | `3002` | Port on `127.0.0.1`. Must be 1-65535. |
-| `--no-open` | off | Do not open a browser after starting. |
-| `--history-path <dir>` | platform data dir | Where [session history](../guide/session-history.md) segments and index are written. Also settable in Settings. |
+| Flag | Mode | Default | Meaning |
+| --- | --- | --- | --- |
+| `--port <n>` | `serve` | `3002` | Port on `127.0.0.1`; must be 1–65535. |
+| `--no-open` | `serve` | off | Do not open a browser after starting. |
+| `--history-path <dir>` | both | platform data dir | Session-history segments and FTS index. |
+| `--static-root <dir>` | desktop | embedded client | Development override for client assets. |
 
 Flags accept both `--port 3010` and `--port=3010`.
 
@@ -23,68 +25,51 @@ Flags accept both `--port 3010` and `--port=3010`.
 
 | Variable | Meaning |
 | --- | --- |
-| `PORT` | Same as `--port`; the flag wins. |
+| `PORT` | Browser-mode port; the flag wins. |
 | `MUXUS_NO_OPEN=1` | Same as `--no-open`. |
 | `MUXUS_HISTORY_PATH` | Same as `--history-path`; the flag wins. |
-| `MUXUS_DEV=1` | Development mode: the API token is the fixed string `dev` instead of a random one. Only honoured when `NODE_ENV` is not `production`. |
-| `XDG_DATA_HOME` | Linux: where the application database lives (`$XDG_DATA_HOME/muxus/`). |
-| `APPDATA` | Windows: same role (`%APPDATA%\Muxus\`). |
+| `MUXUS_STATIC_ROOT` | Desktop development asset override. |
+| `MUXUS_DEV=1` | Browser development uses the fixed API token `dev`; desktop also enables readable logs. |
+| `XDG_DATA_HOME` | Linux browser-mode application data root. |
+| `XDG_CONFIG_HOME` | Linux desktop data root, preserving the former desktop location. |
+| `APPDATA` | Windows application data root. |
 
 !!! danger "`MUXUS_DEV=1` is for development only"
 
-    It replaces the per-run random token with a well-known one. The server still listens on
-    loopback only, but any process on the machine can then reach the API.
+    It replaces browser mode's random token with a well-known one. The server
+    remains loopback-only, but any local process can then reach its API.
 
 ## Data locations
 
-The standalone server and the desktop app keep separate databases, because the desktop
-build uses Electron's per-app directory:
+The historical browser and desktop locations remain distinct on Linux so
+existing installations open the same data without migration:
 
-| Platform | `pnpm start` (server) | Desktop app |
+| Platform | `muxus serve` | Desktop |
 | --- | --- | --- |
-| Linux | `$XDG_DATA_HOME/muxus/muxus.sqlite3` (default `~/.local/share/muxus/`) | `~/.config/Muxus/muxus.sqlite3` |
-| macOS | `~/Library/Application Support/Muxus/muxus.sqlite3` | `~/Library/Application Support/Muxus/muxus.sqlite3` |
-| Windows | `%APPDATA%\Muxus\muxus.sqlite3` | `%APPDATA%\Muxus\muxus.sqlite3` |
+| Linux | `$XDG_DATA_HOME/muxus/muxus.sqlite3` (default `~/.local/share/muxus/`) | `$XDG_CONFIG_HOME/Muxus/muxus.sqlite3` (default `~/.config/Muxus/`) |
+| macOS | `~/Library/Application Support/Muxus/muxus.sqlite3` | same |
+| Windows | `%APPDATA%\Muxus\muxus.sqlite3` | same |
 
-Connection settings are not stored there; they remain in `~/.ssh/config`. Moving between
-the two builds is done with [backup and restore](../guide/settings.md#backup-data).
+Desktop `client-state.json` and `window-state.json` stay beside its database.
+Connection settings remain in `~/.ssh/config`.
 
 ## Workspace scripts
 
-From a source checkout:
-
 | Command | What it does |
 | --- | --- |
-| `pnpm dev` | shared `tsc --watch` + server on `:3002` + Vite client on `:5174` |
-| `pnpm build` | Build every package |
-| `pnpm start` | Serve the built client from the server |
-| `pnpm electron` | Run the desktop shell in dev |
-| `pnpm test` | vitest unit tests |
-| `pnpm lint` | oxlint |
-| `pnpm typecheck` | Types across the workspace |
-| `make deb`, `make win`, `make dmg`, `make all` | Desktop installers via electron-builder |
+| `pnpm dev` | Go server on `:3002`, Vite on `:5174`, shared watcher |
+| `pnpm start` | Run browser mode from source |
+| `pnpm desktop` | Run the Wails desktop shell from source |
+| `pnpm build` | Produce the embedded single binary |
+| `pnpm package` | Produce the current platform's release packages |
+| `pnpm test`, `pnpm test:go` | TypeScript and Go suites |
+| `pnpm lint`, `pnpm typecheck` | Static checks |
 
 ## Documentation tooling
 
-The docs in this site are built with [Zensical](https://zensical.org):
-
 | Command | What it does |
 | --- | --- |
-| `pnpm serve-docs` | Live preview on <http://localhost:8000>, opens a browser |
-| `pnpm build-docs` | Writes the static site to `site/` |
-| `pnpm capture-docs` | Regenerates every screenshot, light and dark |
-| `pnpm record-docs` | Re-records the animated tour on the landing page |
-
-Screenshots are generated rather than taken by hand:
-
-```bash
-pnpm build
-node hack/demo-env.mjs     # a sandbox: fake HOME, invented hosts, in-process sshds
-node hack/capture.mjs      # light theme
-THEME=dark node hack/capture.mjs
-node hack/record.mjs       # the landing-page tour, as an mp4 (needs ffmpeg)
-```
-
-`hack/demo-env.mjs` builds a throwaway home directory under `/tmp`, generates keys, and
-starts a small SSH server per demo host, so every screenshot shows a real session against
-hosts that do not exist.
+| `pnpm serve-docs` | Preview on <http://localhost:8000> |
+| `pnpm build-docs` | Write `site/` |
+| `pnpm capture-docs` | Regenerate screenshots in both themes |
+| `pnpm record-docs` | Re-record the animated tour |

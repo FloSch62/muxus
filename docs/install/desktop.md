@@ -4,86 +4,88 @@ icon: lucide/monitor
 
 # Desktop app
 
-The desktop build wraps the Muxus server and UI in a native window. The server runs
-in-process on a random localhost port, the window is frameless with the top bar serving as
-the titlebar, and its size and position persist between launches.
+The desktop build is one Go executable wrapped by Wails v3. It uses WebView2
+on Windows, WKWebView on macOS and WebKitGTK on Linux. The React UI is the
+same build used by browser mode.
 
 ## Download
 
-Installers are published on the
+Portable archives are published on the
 **[releases page](https://github.com/FloSch62/muxus/releases)**:
 
 | Platform | File |
 | --- | --- |
-| :material-microsoft-windows: Windows | `muxus-<version>-win-x64.exe` |
-| :material-apple: macOS (universal) | `muxus-<version>-mac-universal.dmg` |
-| :material-linux: Linux | `muxus-<version>-linux-x86_64.AppImage` or `muxus-<version>-linux-amd64.deb` |
+| :material-microsoft-windows: Windows | `muxus-v<version>-windows-<arch>.zip` |
+| :material-apple: macOS | `muxus-v<version>-macos-<arch>.zip` |
+| :material-linux: Linux | `muxus_<version>_<arch>.deb` or `muxus-v<version>-linux-<arch>.tar.gz` |
 
-## Install & launch
+The uncompressed application executable is capped at 30 MB during packaging.
+Node.js and a bundled Chromium are not required.
+
+## Install and launch
 
 === ":material-microsoft-windows: Windows"
 
-    1. Run the installer and follow the prompts. The install directory is selectable.
-    2. Launch **Muxus** from the Start menu.
+    Extract the archive and run `muxus.exe`.
 
-    The builds are not code-signed yet, so SmartScreen may report an unrecognised
-    publisher. Choose **More info → Run anyway**.
+    Muxus uses the installed Microsoft Edge WebView2 runtime. Current Windows
+    releases normally include it. Builds are not code-signed yet, so
+    SmartScreen may require **More info → Run anyway**.
 
 === ":material-apple: macOS"
 
-    1. Open the `.dmg` and drag **Muxus** into **Applications**.
-    2. The builds are not notarised yet, so the first launch requires one extra step:
+    Extract `Muxus.app`, move it to **Applications**, then launch it.
 
-        - **Right-click** the app → **Open**, then confirm in the dialog, *or*
-        - clear the quarantine flag from a terminal:
+    Builds are ad-hoc signed but not notarised. On first launch, right-click
+    the app and choose **Open**, or clear quarantine:
 
-        ```bash
-        xattr -dr com.apple.quarantine /Applications/Muxus.app
-        ```
-
-    Subsequent launches work normally from Spotlight or the Dock.
+    ```bash
+    xattr -dr com.apple.quarantine /Applications/Muxus.app
+    ```
 
 === ":material-linux: Linux"
 
-    === "AppImage"
+    On Debian or Ubuntu, install the `.deb`; APT also installs the GTK 3 and
+    WebKitGTK 4.1 runtime dependencies:
 
-        ```bash
-        chmod +x muxus-*-linux-x86_64.AppImage
-        ./muxus-*-linux-x86_64.AppImage
-        ```
+    ```bash
+    sudo apt install ./muxus_*_*.deb
+    muxus
+    ```
 
-    === "Debian / Ubuntu (.deb)"
+    For other distributions, install GTK 3 and WebKitGTK 4.1, then use the
+    portable archive:
 
-        ```bash
-        sudo apt install ./muxus-*-linux-amd64.deb
-        muxus
-        ```
+    ```bash
+    tar -xzf muxus-v*-linux-*.tar.gz
+    chmod +x muxus
+    ./muxus
+    ```
 
-## What the desktop build adds
+    The Debian package accepts both the current `libgtk-3-0t64` name and the
+    older `libgtk-3-0` name.
 
-- **A frameless window.** The top bar is the titlebar: it is a drag region, and the native
-  window controls sit inside it (traffic lights on the left on macOS, minimise / maximise /
-  close on the right elsewhere).
-- **Native serial access.** `serialport` and `node-pty` are compiled against Electron's ABI
-  in the packaged app, so local shells and COM/TTY consoles work without further setup.
-- **A hardened shell.** The renderer receives its bootstrap credentials through an isolated
-  preload bridge instead of the URL, and unexpected navigation is blocked. See the
-  [security model](../reference/security.md).
-- **Extra windows.** The file browser and any tab can be moved into their own window, which
-  reuses the same in-process server and the same live SSH transports.
+## What desktop mode adds
+
+- A frameless native window whose web toolbar is the drag region and titlebar
+- Native macOS menu, keyboard chords, file picker and window controls
+- Secondary terminal and SFTP windows sharing live SSH transports
+- Single-instance focus and ordered shutdown
+- Stable `client-state.json` storage despite the random localhost port
+
+Local PTY and serial support are implemented in Go and use the operating
+system directly.
 
 ## Where your data lives
 
-The desktop app keeps its data in Electron's per-app directory:
+The Wails cutover deliberately keeps the previous desktop data paths:
 
-| Platform | Application database (folders, colours, workspaces, tunnels, saved Telnet/serial hosts) |
+| Platform | Application database |
 | --- | --- |
 | :material-microsoft-windows: Windows | `%APPDATA%\Muxus\muxus.sqlite3` |
 | :material-apple: macOS | `~/Library/Application Support/Muxus/muxus.sqlite3` |
-| :material-linux: Linux | `~/.config/Muxus/muxus.sqlite3` |
+| :material-linux: Linux | `$XDG_CONFIG_HOME/Muxus/muxus.sqlite3` (default `~/.config/Muxus/`) |
 
-Session history, when enabled, is stored alongside it or at the location set in
-[Settings](../guide/settings.md). Connection settings are not stored there; they remain in
-`~/.ssh/config`.
-
-Uninstalling the app leaves `~/.ssh` untouched.
+`client-state.json` and `window-state.json` stay in the same directory.
+Session history is stored alongside it or at the location selected in
+Settings. SSH configuration and keys remain in `~/.ssh`.

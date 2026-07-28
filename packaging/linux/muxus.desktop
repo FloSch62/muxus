@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Muxus
+Comment=SSH, Telnet and serial terminal
+Exec=muxus
+Icon=muxus
+Terminal=false
+Categories=Network;RemoteAccess;
+Keywords=SSH;SFTP;Telnet;Serial;Terminal;
+StartupNotify=true
+StartupWMClass=muxus

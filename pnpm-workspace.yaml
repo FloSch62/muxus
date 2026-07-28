@@ -1,18 +1,12 @@
 packages:
   - shared
-  - server
   - client
-  - electron
   - tests
 # Keep local lockfile updates aligned with pnpm 11's CI supply-chain policy.
 minimumReleaseAge: 1440
 allowBuilds:
   esbuild: true
-  electron: true
-  sharp: true
   node-pty: true
+  sharp: true
   ssh2: true
   core-js-pure: false
-  electron-winstaller: false
-  cpu-features: false
-  '@serialport/bindings-cpp': true

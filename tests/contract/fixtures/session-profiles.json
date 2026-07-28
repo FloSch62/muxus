@@ -1,0 +1,137 @@
+[
+  {
+    "name": "local minimal",
+    "valid": true,
+    "data": { "kind": "local" },
+    "normalized": { "kind": "local" }
+  },
+  {
+    "name": "local with shell and cwd",
+    "valid": true,
+    "data": { "kind": "local", "shell": "/bin/fish", "cwd": "/tmp" },
+    "normalized": { "kind": "local", "shell": "/bin/fish", "cwd": "/tmp" }
+  },
+  {
+    "name": "ssh minimal target",
+    "valid": true,
+    "data": { "kind": "ssh", "target": "web1" },
+    "normalized": { "kind": "ssh", "target": "web1" }
+  },
+  {
+    "name": "ssh full overrides",
+    "valid": true,
+    "data": {
+      "kind": "ssh",
+      "target": "user@host:2222",
+      "useConfig": false,
+      "user": "deploy",
+      "port": 2222,
+      "identityFiles": ["~/.ssh/id_ed25519"],
+      "identitiesOnly": true,
+      "forwardAgent": false,
+      "proxyJump": ["bastion", "inner"],
+      "passwordOnly": false
+    },
+    "normalized": {
+      "kind": "ssh",
+      "target": "user@host:2222",
+      "useConfig": false,
+      "user": "deploy",
+      "port": 2222,
+      "identityFiles": ["~/.ssh/id_ed25519"],
+      "identitiesOnly": true,
+      "forwardAgent": false,
+      "proxyJump": ["bastion", "inner"],
+      "passwordOnly": false
+    }
+  },
+  {
+    "name": "ssh empty target",
+    "valid": false,
+    "data": { "kind": "ssh", "target": "" }
+  },
+  {
+    "name": "ssh port out of range",
+    "valid": false,
+    "data": { "kind": "ssh", "target": "web1", "port": 70000 }
+  },
+  {
+    "name": "ssh too many proxy hops",
+    "valid": false,
+    "data": {
+      "kind": "ssh",
+      "target": "web1",
+      "proxyJump": ["a", "b", "c", "d", "e", "f", "g", "h", "i"]
+    }
+  },
+  {
+    "name": "telnet defaults port and trims host",
+    "valid": true,
+    "data": { "kind": "telnet", "host": "  router1  " },
+    "normalized": { "kind": "telnet", "host": "router1", "port": 23 }
+  },
+  {
+    "name": "telnet explicit port",
+    "valid": true,
+    "data": { "kind": "telnet", "host": "router1", "port": 2323 },
+    "normalized": { "kind": "telnet", "host": "router1", "port": 2323 }
+  },
+  {
+    "name": "telnet whitespace-only host",
+    "valid": false,
+    "data": { "kind": "telnet", "host": "   " }
+  },
+  {
+    "name": "telnet port zero",
+    "valid": false,
+    "data": { "kind": "telnet", "host": "router1", "port": 0 }
+  },
+  {
+    "name": "serial applies all defaults",
+    "valid": true,
+    "data": { "kind": "serial", "path": "/dev/ttyUSB0" },
+    "normalized": {
+      "kind": "serial",
+      "path": "/dev/ttyUSB0",
+      "baudRate": 115200,
+      "dataBits": 8,
+      "stopBits": 1,
+      "parity": "none",
+      "flowControl": "none"
+    }
+  },
+  {
+    "name": "serial fractional stop bits",
+    "valid": true,
+    "data": { "kind": "serial", "path": "COM3", "baudRate": 9600, "stopBits": 1.5 },
+    "normalized": {
+      "kind": "serial",
+      "path": "COM3",
+      "baudRate": 9600,
+      "dataBits": 8,
+      "stopBits": 1.5,
+      "parity": "none",
+      "flowControl": "none"
+    }
+  },
+  {
+    "name": "serial invalid data bits",
+    "valid": false,
+    "data": { "kind": "serial", "path": "/dev/ttyUSB0", "dataBits": 9 }
+  },
+  {
+    "name": "serial invalid parity",
+    "valid": false,
+    "data": { "kind": "serial", "path": "/dev/ttyUSB0", "parity": "weird" }
+  },
+  {
+    "name": "serial empty path",
+    "valid": false,
+    "data": { "kind": "serial", "path": "  " }
+  },
+  {
+    "name": "unknown kind",
+    "valid": false,
+    "data": { "kind": "gopher", "target": "x" }
+  }
+]

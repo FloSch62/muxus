@@ -4,7 +4,7 @@ icon: lucide/download
 
 # Installation
 
-Muxus can be run in two ways. The **desktop app** is a packaged installer for Windows,
+Muxus can be run in two ways. The **desktop app** is a portable download for Windows,
 macOS and Linux. Running **from source** starts the server locally and serves the UI to a
 browser, which also covers platforms without a packaged build.
 
@@ -14,7 +14,7 @@ browser, which also covers platforms without a packaged build.
 
     ---
 
-    A native, frameless window for Windows, macOS and Linux. Requires no Node.js
+    A native Wails window for Windows, macOS and Linux. Requires no Node.js
     installation. **Recommended.**
 
     [:octicons-arrow-right-24: Install the desktop app](desktop.md)

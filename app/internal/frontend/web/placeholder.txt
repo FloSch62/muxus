@@ -1,0 +1,1 @@
+Production builds replace this directory with client/dist before Go compiles.

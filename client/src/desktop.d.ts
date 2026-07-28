@@ -1,12 +1,14 @@
 import type { AppInfo, AppWindowLaunch, UpdateCheckResult } from '@muxus/shared';
 
 declare global {
-  /** Bridge exposed by the Electron preload (absent in regular browsers). */
+  /** Native desktop bridge (absent in regular browsers). */
   interface Window {
     muxusDesktop?: {
-      /** Electron's process.platform ('linux', 'win32', 'darwin', …). */
+      /** Native runtime implementation. */
+      runtime?: 'wails';
+      /** Wails host platform ('linux', 'win32', 'darwin', …). */
       platform: string;
-      /** Per-run backend credential delivered over the isolated preload bridge. */
+      /** Per-run backend credential delivered in the never-transmitted URL fragment. */
       authToken: string;
       /** One-shot payload describing the content of a secondary app window. */
       windowLaunch?: AppWindowLaunch;
@@ -30,6 +32,10 @@ declare global {
       onCycleTab(callback: (backwards: boolean) => void): () => void;
       /** Close the main window (fallback when no terminal tab is open). */
       closeWindow(): void;
+      /** Frameless-window controls used by Wails on Windows and Linux. */
+      minimizeWindow(): void;
+      toggleMaximizeWindow(): Promise<boolean>;
+      isWindowMaximized(): Promise<boolean>;
     };
   }
 }

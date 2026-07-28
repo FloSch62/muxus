@@ -4,82 +4,96 @@ icon: lucide/layers
 
 # Architecture
 
-Muxus is a pnpm workspace of four TypeScript/ESM packages plus a test package: a Fastify
-server on loopback, a React client, and an Electron shell that embeds both.
+Muxus is a single Go executable with two entry points: the Wails desktop
+shell and `muxus serve` browser mode. Both use the same authenticated Go HTTP
+router and the same embedded React client.
 
 ```mermaid
 flowchart LR
-  subgraph Desktop["Electron shell"]
-    Client["client/: React 19 + MUI<br/>pane canvas · keymap · xterm.js"]
-    Server["server/: Fastify on 127.0.0.1<br/>ssh_config engine · leases · SFTP · forwards"]
+  subgraph Binary["muxus Go binary"]
+    Shell["Wails v3<br/>native windows · macOS menu · dialogs"]
+    Server["Go HTTP server on 127.0.0.1<br/>SSH · SFTP · PTY · serial · history"]
+    DB[("SQLite<br/>metadata · workspaces")]
+    History[("Session history<br/>zstd segments + FTS5")]
+    Shell -->|"random port + bearer token"| Server
+    Server --> DB
+    Server --> History
   end
-  Client <-->|"REST + /ws/terminal"| Server
-  Server -->|ssh2| Hosts["Your hosts"]
-  Server -->|node-pty| Local["Local shells"]
-  Server -->|serialport| Serial["COM / TTY"]
-  Server --> DB[("SQLite<br/>metadata · workspaces")]
-  Server --> History[("Session history<br/>zstd segments + FTS5")]
+  Webview["System webview<br/>React + MUI + xterm.js"] <-->|"REST + WebSocket"| Server
+  Browser["Regular browser<br/>muxus serve"] <-->|"same REST + WebSocket"| Server
+  Shell --> Webview
+  Server -->|"x/crypto/ssh"| Hosts["Your hosts"]
+  Server -->|"native PTY"| Local["Local shells"]
+  Server -->|"native serial"| Serial["COM / TTY"]
   Server -.reads.-> Config[["~/.ssh/config<br/>known_hosts"]]
 ```
+
+Desktop mode starts the server on a random loopback port and loads that
+origin in WebView2, WKWebView or WebKitGTK. Wails' HTTP transport is mounted
+at `/wails/runtime` on the same router. Browser mode omits the native runtime
+but otherwise remains a first-class deployment.
 
 ## Packages
 
 | Package | What it is |
 | --- | --- |
-| `shared/` | REST DTOs and the zod-validated WebSocket protocol. On `/ws/terminal`, **binary frames are bytes** and **text frames are control messages**, with no framing layered on top of either. |
-| `server/` | Fastify bound to `127.0.0.1` with a per-run bearer token; a versioned SQLite database; the line-preserving `ssh_config` parser/resolver/editor; leased `ssh2` transports with ProxyJump and OpenSSH-order authentication; `known_hosts` verification; `node-pty` local shells; Telnet negotiation; cross-platform `serialport` access; SFTP routes and the forward manager; the session-history worker. |
-| `client/` | React 19 + MUI. A **flat pane canvas over a split tree**, so layout changes never remount a session; one declarative keymap dispatched ahead of the terminal; xterm.js with the Image Addon and native kitty keyboard support. |
-| `electron/` | The hardened desktop shell: embeds the server in-process, bridges bootstrap credentials through an isolated preload, blocks unexpected navigation. |
-| `tests/` | vitest units for the security and auth boundaries, persistence and migrations, connection leases, workspace and pane behaviour, SFTP overwrite policy, paste safety and the terminal protocols. |
+| `app/` | The Go executable: chi router, bearer/origin checks, SQLite migrations, line-preserving OpenSSH config engine, `x/crypto/ssh` connection leases, host-key verification, local PTY, Telnet, serial, SFTP, forwards, session history and Wails lifecycle. |
+| `shared/` | TypeScript REST DTOs and zod-validated WebSocket protocol. On `/ws/terminal`, binary frames are bytes and text frames are control messages. |
+| `client/` | React 19 + MUI. A flat pane canvas over a split tree, one declarative keymap, xterm.js with Image Addon and native kitty keyboard support. |
+| `tests/` | Client/shared vitest units plus fixtures validated by both zod and `app/internal/api`, preventing wire-contract drift. |
+
+The production client is precompressed and embedded with `go:embed`, so the
+release has one executable and does not ship a JavaScript runtime or browser
+engine.
 
 ## Design decisions
 
-**The pane canvas is flat.** Panes, tab contents and dividers are siblings in one
-absolutely positioned layer, each keyed by its own id. Reshaping the tree only moves boxes,
-so terminals are never unmounted, and splitting, closing and moving tabs cannot disturb a
-running shell, its scrollback, or its SSH channel.
+**The pane canvas is flat.** Panes, tab contents and dividers are siblings in
+one absolutely positioned layer, each keyed by its own id. Reshaping the tree
+only moves boxes, so terminals are never unmounted.
 
-**Connections are leased.** One SSH transport serves every consumer that requests the same
-host: extra terminals, the SFTP panel, the remote editor, ad-hoc forwards. A saved tunnel
-takes its own lease and survives the closing of every terminal.
+**Connections are leased.** One SSH transport serves every consumer that
+requests the same host: extra terminals, SFTP, the remote editor and
+forwards. A saved tunnel takes its own lease and survives terminal closure.
 
-**The config is a document, not a model.** The parser records which lines in which file
-each block owns, so an edit rewrites those lines and nothing else. Comments, ordering and
-unmodelled options are preserved. Writes are atomic with a `.muxus.bak`.
+**The config is a document, not a model.** The parser records which lines in
+which file each block owns, so edits preserve comments, ordering and
+unmodelled options. Writes are atomic with a `.muxus.bak`.
 
-**Session history is not in the application database.** A dedicated worker writes framed raw
-events into rotated zstd segments and batches normalized transcript chunks into a separate
-FTS5 database, with its own quota, eviction and recovery. The recorder never blocks a
-terminal.
+**Session history is separate.** A dedicated goroutine writes framed raw
+events into rotated zstd segments and batches searchable text into a
+separate FTS5 database. Bounded queuing keeps persistence off the terminal
+data path.
 
-**Graphics stream rather than buffer.** Kitty APC sequences flow from xterm.js 6.1 into the
-Image Addon: chunked payloads are parsed incrementally, base64 decoding runs through
-WebAssembly, and images render as terminal-buffer-aware canvas layers. Muxus adds no second
-parser and no per-chunk scheduling queue.
+**Graphics stream rather than buffer.** Kitty APC sequences flow from
+xterm.js into the Image Addon. Muxus adds no second parser or per-chunk
+scheduling queue.
 
-**Keys are one table.** Every command across panes, tabs, terminal and application is a
-keymap entry with default chords, dispatched before the terminal sees the event. A command
-that is not applicable returns "not handled", and the key falls through to the shell.
+**Keys are one table.** Commands across panes, tabs, terminals and the
+application use one keymap. A command that is not applicable falls through
+to the shell.
 
-## Data flow of one session
+## Data flow of one SSH session
 
-1. The client asks the server to resolve the target through `ssh_config`.
-2. The server dials it, hop by hop for a jump chain, verifying host keys and running the
-   OpenSSH authentication order, prompting through the socket when input is required.
-3. A shell channel opens; **binary frames** carry bytes in both directions.
-4. Resize, logging control and status arrive as **text frames** validated by the shared zod
-   schema.
-5. The lease keeps the transport alive for the file browser, the editor and any forwards
-   until the last consumer releases it.
+1. The client sends a profile through `/ws/terminal`.
+2. Go resolves the target through `ssh_config`, including ProxyJump or
+   ProxyCommand.
+3. Each hop is dialled with host-key verification and OpenSSH-order
+   authentication; prompts travel as validated text control frames.
+4. A shell channel opens and binary frames carry bytes in both directions.
+5. Resize, logging and status use text frames mirrored in both languages.
+6. Leases keep the transport available to SFTP and forwards until its last
+   consumer releases it.
 
 ## Build
 
 ```bash
-pnpm build      # shared → server → client → electron
-pnpm test       # vitest
-pnpm lint       # oxlint
+pnpm build      # shared + client + embedded, stripped Go executable
+pnpm package    # portable release archive for this platform
+pnpm test       # TypeScript client/shared/contract tests
+pnpm test:go    # Go backend/transport/contract tests
+pnpm lint
 pnpm typecheck
 ```
 
-CI runs typecheck, lint, tests and bundle budgets, then builds unpacked desktop packages on
-Linux, macOS and Windows.
+Linux builds and tests use `-tags gtk3` for WebKitGTK 4.1 compatibility.

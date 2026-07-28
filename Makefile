@@ -1,16 +1,18 @@
-.PHONY: all deb win dmg clean
+.PHONY: all build package test clean
 
-all:
-	pnpm build && pnpm --filter @muxus/electron dist
+all: build
 
-deb:
-	pnpm build && pnpm --filter @muxus/electron exec electron-builder --linux deb --x64
+build:
+	pnpm build
 
-win:
-	pnpm build && pnpm --filter @muxus/electron exec electron-builder --win --x64
+package:
+	pnpm package
 
-dmg:
-	pnpm build && pnpm --filter @muxus/electron exec electron-builder --mac dmg
+test:
+	pnpm typecheck
+	pnpm lint
+	pnpm test
+	pnpm test:go
 
 clean:
-	rm -rf electron/release
+	rm -rf build client/dist shared/dist

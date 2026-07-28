@@ -4,17 +4,21 @@ icon: lucide/terminal
 
 # From source
 
-Muxus is a pnpm workspace of TypeScript packages. Running it from source serves the same UI
-to a browser from a local Fastify server.
+Muxus builds a React client into one Go executable. The executable can open
+the Wails desktop shell or serve the identical UI to a regular browser.
 
 ## Requirements
 
-- **Node.js ≥ 24.17** (CI builds on 24.18)
-- **pnpm**, with the version pinned by `packageManager` in the repository
-- A C/C++ toolchain for the two native modules (`node-pty`, `serialport`). On Debian and
-  Ubuntu, `build-essential` and `python3` are sufficient.
+- **Go ≥ 1.25**
+- **Node.js ≥ 24.17**
+- **pnpm**, using the version pinned by `packageManager`
+- Linux build dependencies:
 
-## Build and run
+```bash
+sudo apt install build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+```
+
+## Build and run in a browser
 
 ```bash
 git clone https://github.com/FloSch62/muxus.git
@@ -24,61 +28,53 @@ pnpm build
 pnpm start
 ```
 
-`pnpm start` serves the built client from the server and opens a browser. The server binds
-`127.0.0.1` only and mints a random bearer token for that run. The browser receives it in
-the URL fragment, which the client removes immediately.
+`pnpm start` runs `muxus serve`, binds `127.0.0.1`, mints a random bearer
+token and opens a browser. The token arrives in a URL fragment and is removed
+immediately.
 
 !!! warning "Not a shared service"
 
-    Muxus is a single-user local tool, not a hosted terminal. Do not put it behind a
-    reverse proxy or expose the port. See the
-    [security model](../reference/security.md).
+    Muxus is a local single-user tool. Do not expose its port or put it behind
+    a reverse proxy.
+
+## Run the desktop shell
+
+```bash
+pnpm desktop
+```
+
+This launches the same Go backend in a Wails v3 system webview. No Electron
+or Node server is involved.
 
 ## Development mode
 
 ```bash
-pnpm dev        # shared tsc --watch + server on :3002 + Vite client on :5174
+pnpm dev
 ```
 
-Open <http://localhost:5174>. In dev the token is the fixed string `dev`, because the Vite
-client cannot learn a random one at startup. The server still listens on loopback only.
+Open <http://localhost:5174>. Vite proxies to the Go server on `:3002`; the
+development token is `dev`, and the server remains loopback-only.
+
+## Build release packages
 
 ```bash
-pnpm build      # build every package
-pnpm start      # serve the built client from the server
-pnpm electron   # run the desktop shell in dev
-pnpm test       # vitest unit tests
-pnpm lint       # oxlint
+pnpm package
+```
+
+The archive and executable are written to `build/`. Linux additionally
+produces an installable `.deb`. Production Linux builds use `-tags gtk3` for
+WebKitGTK 4.1. Packaging enforces the 30,000,000-byte uncompressed executable
+limit.
+
+## Useful checks
+
+```bash
 pnpm typecheck
+pnpm lint
+pnpm test
+pnpm test:go
+pnpm check:bundle
 ```
 
-!!! note "Native modules and Electron"
-
-    `pnpm electron` runs against Electron's ABI, so the native bindings must be rebuilt for
-    it once:
-
-    ```bash
-    pnpm --filter @muxus/electron rebuild
-    ```
-
-## Desktop installers
-
-```bash
-make deb    # Linux .deb
-make win    # Windows NSIS installer
-make dmg    # macOS .dmg
-make all    # everything electron-builder is configured for
-```
-
-Artifacts are written to `electron/release/`.
-
-## Command-line flags
-
-| Flag | Meaning |
-| --- | --- |
-| `--port <n>` | Port to bind on `127.0.0.1` (default `3002`, or `$PORT`) |
-| `--no-open` | Do not open a browser on start (also `MUXUS_NO_OPEN=1`) |
-| `--history-path <dir>` | Where session history is written (also `MUXUS_HISTORY_PATH`) |
-
-The full list, including environment variables, is in the
-[command-line reference](../reference/cli.md).
+See the [command-line reference](../reference/cli.md) for flags and data
+locations.

@@ -9,6 +9,7 @@ import { wsProtocols, wsUrl } from '../api/http.js';
 import { requestCloseRemoteEditor } from '../editor/remote-editor-registry.js';
 import { loadRemoteEditorWorkspace, loadSftpPanel } from '../lazy-features.js';
 import { layout } from '../theme.js';
+import { WindowControls } from '../components/WindowControls.js';
 
 const SftpPanel = lazy(() =>
   loadSftpPanel().then((module) => ({ default: module.SftpPanel })),
@@ -65,6 +66,8 @@ export function SftpWindow({ launch }: { launch: SftpLaunch }) {
             gap: 1.25,
             minHeight: layout.topBarHeight,
             WebkitAppRegion: 'drag',
+            '--wails-draggable': 'drag',
+            '--wails-non-client-region': 'caption',
             '&&': {
               pl: 'calc(env(titlebar-area-x, 0px) + 16px)',
               pr: 'calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 16px)',
@@ -80,6 +83,8 @@ export function SftpWindow({ launch }: { launch: SftpLaunch }) {
               SFTP
             </Typography>
           </Stack>
+          <Box sx={{ flex: 1 }} />
+          <WindowControls />
         </Toolbar>
       </AppBar>
       <Box sx={{ flex: 1, display: 'flex', minHeight: 0 }}>

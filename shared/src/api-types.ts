@@ -132,7 +132,7 @@ export interface SessionHistoryStorageStatus {
   restartRequired: boolean;
 }
 
-/** One serial device reported by the host OS through node-serialport. */
+/** One serial device reported by the host OS through the native serial API. */
 export interface SerialPortInfo {
   /** OS-native path (COM3, /dev/ttyUSB0, /dev/tty.usbserial-…, etc.). */
   path: string;

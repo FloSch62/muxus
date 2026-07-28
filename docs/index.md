@@ -135,7 +135,7 @@ a local database, because OpenSSH has no field for them.
 
     ---
 
-    Desktop installers for Windows, macOS and Linux, or run it from source.
+    Desktop downloads for Windows, macOS and Linux, or run it from source.
 
     [:octicons-arrow-right-24: Installation](install/index.md)
 

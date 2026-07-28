@@ -13,14 +13,29 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  NODE_VERSION: 24.18.0
+  GO_VERSION: 1.25.x
+
 jobs:
   validate:
     name: Validate
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Check out source
         uses: actions/checkout@v6
+
+      - name: Install Linux webview headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: app/go.sum
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
@@ -28,7 +43,7 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 24.18.0
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - name: Install dependencies
@@ -40,8 +55,11 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      - name: Test
+      - name: Test TypeScript contracts and client
         run: pnpm test
+
+      - name: Test Go contracts, backend, and shell
+        run: pnpm test:go
 
       - name: Check bundle budgets
         run: pnpm check:bundle
@@ -57,10 +75,22 @@ jobs:
           - macos-latest
           - windows-latest
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Check out source
         uses: actions/checkout@v6
+
+      - name: Install Linux webview headers
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: app/go.sum
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
@@ -68,14 +98,19 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 24.18.0
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build workspace
-        run: pnpm build
+      - name: Build and package the Wails application
+        run: pnpm package
 
-      - name: Build unpacked desktop application
-        run: pnpm --filter @muxus/electron pack:dir
+      - name: Verify release archive exists
+        run: >-
+          node -e "const fs=require('fs');
+          const files=fs.readdirSync('build').filter(x=>/muxus-v.*\\.(zip|tar\\.gz)$/.test(x)||/^muxus_.*\\.deb$/.test(x));
+          const expected=process.platform==='linux'?2:1;
+          if(files.length!==expected) throw new Error('expected '+expected+' release packages, got '+files);
+          console.log(files[0]);"

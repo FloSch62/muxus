@@ -2,8 +2,8 @@ node_modules/
 dist/
 *.tsbuildinfo
 
-electron/build/
-electron/release/
+/build/
+/bin/
 .env
 .DS_Store
 promo/
@@ -11,3 +11,7 @@ promo/
 # Zensical docs build output & cache
 site/
 .cache/
+
+# Generated production client copied into the Go embed package.
+app/internal/frontend/web/*
+!app/internal/frontend/web/placeholder.txt

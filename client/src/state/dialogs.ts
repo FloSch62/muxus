@@ -5,7 +5,7 @@ import { create } from 'zustand';
  * The app's one "ask the user something" queue. Everything that used to reach
  * for `window.confirm`/`window.prompt` posts a request here instead, so every
  * question is themed, keyboard-driven and identical wherever it comes from —
- * and so it works in the desktop app, where Electron replaces `window.prompt`
+ * and so it works in the desktop app, where Wails replaces `window.prompt`
  * with a function that throws.
  */
 

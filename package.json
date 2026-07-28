@@ -9,14 +9,18 @@
     "node": ">=24.17.0"
   },
   "scripts": {
-    "dev": "pnpm -r --parallel --stream dev",
-    "build": "pnpm -r build",
+    "dev": "node hack/dev.mjs",
+    "build:web": "pnpm --filter @muxus/shared build && pnpm --filter @muxus/client build && node hack/sync-client.mjs",
+    "build:go": "node hack/build-go.mjs",
+    "build": "pnpm build:web && pnpm build:go",
+    "package": "pnpm build && node hack/package-go.mjs",
     "check:bundle": "pnpm --filter @muxus/client build && pnpm --filter @muxus/client check:bundle",
-    "start": "node server/dist/index.js",
-    "electron": "pnpm build && pnpm --filter @muxus/electron start",
-    "dist": "pnpm build && pnpm --filter @muxus/electron dist",
-    "typecheck": "pnpm --filter @muxus/shared --filter @muxus/server build && pnpm -r typecheck",
+    "start": "node hack/run-go.mjs serve",
+    "desktop": "pnpm build:web && node hack/run-go.mjs --static-root ../client/dist",
+    "dist": "pnpm build",
+    "typecheck": "pnpm --filter @muxus/shared --filter @muxus/client --filter @muxus/tests typecheck",
     "test": "pnpm --filter @muxus/tests test",
+    "test:go": "cd app && go test -tags gtk3 ./...",
     "test:watch": "pnpm --filter @muxus/tests test:watch",
     "test:coverage": "pnpm --filter @muxus/tests test:coverage",
     "lint": "oxlint . --deny-warnings",
@@ -28,7 +32,9 @@
   "devDependencies": {
     "oxlint": "^1.74.0",
     "oxlint-tsgolint": "^7.0.2001",
+    "node-pty": "^1.1.0",
     "playwright-core": "^1.61.1",
+    "ssh2": "^1.17.0",
     "typescript": "^7.0.2"
   }
 }

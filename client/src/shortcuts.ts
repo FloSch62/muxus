@@ -35,7 +35,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
  * leaves the key untouched for the terminal to encode.
  *
  * Desktop chords the OS claims first (Cmd/Ctrl+W, Ctrl+Tab) arrive over the
- * Electron bridge instead, and run the same commands.
+ * desktop bridge instead, and run the same commands.
  */
 export function installShortcuts(): () => void {
   const onKeyDown = (event: KeyboardEvent) => {

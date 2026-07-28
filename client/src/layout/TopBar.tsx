@@ -51,6 +51,7 @@ import { useWorkspacesStore } from '../state/workspaces.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
 import { ChordHint, withChord } from '../components/ChordHint.js';
 import { MultiExecControl } from '../components/MultiExecControl.js';
+import { WindowControls } from '../components/WindowControls.js';
 import {
   loadCommandButtonsDialog,
   loadForwardingPanel,
@@ -109,6 +110,8 @@ export const TopBar = memo(function TopBar() {
           gap: 1.5,
           minHeight: layout.topBarHeight,
           WebkitAppRegion: 'drag',
+          '--wails-draggable': 'drag',
+          '--wails-non-client-region': 'caption',
           // double the specificity: MUI's responsive gutter rule wins otherwise
           '&&': {
             pl: 'calc(env(titlebar-area-x, 0px) + 16px)',
@@ -116,6 +119,7 @@ export const TopBar = memo(function TopBar() {
           },
           '& button, & input, & a, & [role="button"]': {
             WebkitAppRegion: 'no-drag',
+            '--wails-draggable': 'no-drag',
           },
         }}
       >
@@ -230,6 +234,7 @@ export const TopBar = memo(function TopBar() {
             <SettingsOutlinedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
+        <WindowControls />
       </Toolbar>
 
       <Menu open={!!terminalMenu} anchorEl={terminalMenu} onClose={closeMenu}>

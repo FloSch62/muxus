@@ -24,7 +24,7 @@ declare module '@mui/material/styles' {
  * read the same token instead of repeating the number.
  */
 export const layout = {
-  /** TopBar toolbar height; the Electron titlebar overlay uses the same value. */
+  /** TopBar toolbar height; the Wails native titlebar uses the same value. */
   topBarHeight: 52,
   /** Session sidebar width. */
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,

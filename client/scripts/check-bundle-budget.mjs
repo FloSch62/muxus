@@ -59,6 +59,10 @@ function check(label, measured, budget) {
 const entry = entries.find(([, chunk]) => chunk.isEntry);
 if (!entry) throw new Error('Bundle manifest has no application entry');
 const initialKeys = collectStaticGraph(entry[0]);
+// main.tsx awaits the shell handshake and then imports bootstrap.tsx on every
+// launch. Vite therefore records bootstrap as dynamic even though it is part
+// of the application's unconditional first paint.
+collectStaticGraph(manifestKeyForSource('src/bootstrap.tsx'), new Set(), initialKeys);
 
 // The keymap (command catalog + dispatcher) is part of the first paint: a
 // shortcut has to work before any lazy chunk could load. It costs ~9 KiB raw
@@ -74,8 +78,8 @@ const initialKeys = collectStaticGraph(entry[0]);
 // the reconnect and scrollback implementations remain in the lazy terminal
 // feature graph measured below.
 check('Initial JavaScript', measureGraph(initialKeys), {
-  raw: 782_000,
-  gzip: 250_000,
+  raw: 815_000,
+  gzip: 280_000,
 });
 
 for (const feature of [
