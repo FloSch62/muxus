@@ -260,6 +260,12 @@ export function isConcreteAlias(pattern: string): boolean {
 export interface ResolvedTarget extends ResolvedHostSettings {
   connectTimeout?: number;
   serverAliveInterval?: number;
+  serverAliveCountMax?: number;
+  /** Raw ssh_config algorithm lists; translated to ssh2 form at dial time. */
+  ciphers?: string;
+  kexAlgorithms?: string;
+  hostKeyAlgorithms?: string;
+  macs?: string;
 }
 
 const yes = (v: string | undefined): boolean => (v ?? '').toLowerCase() === 'yes';
@@ -331,6 +337,11 @@ export function resolveHost(doc: ConfigDocument, host: string): ResolvedTarget {
       (!!preferred && !preferred.toLowerCase().split(',').includes('publickey')),
     connectTimeout: parseNumber(first.get('connecttimeout')),
     serverAliveInterval: parseNumber(first.get('serveraliveinterval')),
+    serverAliveCountMax: parseNumber(first.get('serveralivecountmax')),
+    ciphers: first.get('ciphers'),
+    kexAlgorithms: first.get('kexalgorithms'),
+    hostKeyAlgorithms: first.get('hostkeyalgorithms'),
+    macs: first.get('macs'),
   };
 }
 
@@ -344,6 +355,11 @@ const RESOLVED_KEYS = new Set([
   'pubkeyauthentication',
   'connecttimeout',
   'serveraliveinterval',
+  'serveralivecountmax',
+  'ciphers',
+  'kexalgorithms',
+  'hostkeyalgorithms',
+  'macs',
 ]);
 
 function parseProxyCommand(value: string | undefined): string | undefined {

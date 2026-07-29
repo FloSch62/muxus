@@ -55,10 +55,18 @@ These keywords are modelled as fields. They appear as controls in the
 | `PubkeyAuthentication no` | The editor's "password / interactive" mode |
 | `PreferredAuthentications keyboard-interactive,password` | Written alongside the above |
 
+These keywords never become editor fields — they are edited under **Advanced** — but the
+dialler still applies them the way `ssh` would:
+
+| Keyword | Used for |
+| --- | --- |
+| `Ciphers`, `KexAlgorithms`, `HostKeyAlgorithms`, `MACs` | Algorithm negotiation, including the `+`/`^`/`-` list syntax and `*` patterns. Entries the SSH engine does not implement are skipped with a notice, so a config shared with OpenSSH keeps working. |
+| `ConnectTimeout` | Dial timeout; defaults to 20 seconds |
+| `ServerAliveInterval`, `ServerAliveCountMax` | Keepalives; default 15 seconds / 3 missed replies |
+
 **Everything else is preserved.** Unmodelled keywords are kept verbatim and shown in the
 editor's **Advanced** section, so keywords Muxus does not model survive an edit untouched:
-`Compression`, `ServerAliveInterval`, `StrictHostKeyChecking`, and any site-specific
-options.
+`Compression`, `StrictHostKeyChecking`, and any site-specific options.
 
 ## How edits are written
 

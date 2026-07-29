@@ -195,6 +195,27 @@ describe('resolveHost', () => {
     expect(r.serverAliveInterval).toBe(30);
   });
 
+  it('reads ServerAliveCountMax and the raw algorithm lists', () => {
+    const doc = loadConfigDocument(
+      write(
+        [
+          'Host console',
+          '  ServerAliveCountMax 5',
+          '  Ciphers aes128-cbc',
+          '  KexAlgorithms +diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1',
+          '  HostKeyAlgorithms +ssh-rsa',
+          '  MACs hmac-sha1',
+        ].join('\n'),
+      ),
+    );
+    const r = resolveHost(doc, 'console');
+    expect(r.serverAliveCountMax).toBe(5);
+    expect(r.ciphers).toBe('aes128-cbc');
+    expect(r.kexAlgorithms).toBe('+diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1');
+    expect(r.hostKeyAlgorithms).toBe('+ssh-rsa');
+    expect(r.macs).toBe('hmac-sha1');
+  });
+
   it('follows Include files with evaluation order intact', () => {
     const inc = write(['Host from-include', '  User inc'].join('\n'), 'conf.d/extra');
     const doc = loadConfigDocument(write([`Include ${inc}`, '', 'Host base', '  User base'].join('\n')));

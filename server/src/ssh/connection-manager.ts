@@ -31,6 +31,7 @@ import {
   type ConnectionLeaseOwner,
   type TransportLease,
 } from './connection-leases.js';
+import { connectionAlgorithms } from './algorithms.js';
 import { openIntegratedRemoteShell } from './remote-shell-integration.js';
 import {
   expandIdentityPath,
@@ -488,6 +489,8 @@ export class SshConnectionManager {
   private dial(hop: ChainHop, sock: Duplex | undefined, io: ConnectIo): Promise<Client> {
     const agent = agentSocket();
     const auth = new AuthLadder(hop, io);
+    const { algorithms, notes } = connectionAlgorithms(hop.resolved);
+    for (const note of notes) io.status(note);
     const proxySocket =
       !sock && hop.resolved.proxyCommand ? openProxyCommand(expandedProxyCommand(hop)!) : undefined;
     const transport = sock ?? proxySocket;
@@ -495,7 +498,8 @@ export class SshConnectionManager {
       username: hop.user,
       readyTimeout: (hop.resolved.connectTimeout ?? 20) * 1000,
       keepaliveInterval: (hop.resolved.serverAliveInterval ?? 15) * 1000,
-      keepaliveCountMax: 3,
+      keepaliveCountMax: hop.resolved.serverAliveCountMax ?? 3,
+      ...(algorithms ? { algorithms } : {}),
       hostVerifier: (key: Buffer, verify: (valid: boolean) => void) => {
         void this.verifyHostKey(hop, key, io).then(verify);
       },
@@ -1006,5 +1010,10 @@ function friendlyConnectError(err: Error, hop: ChainHop): Error {
   if (/ENOTFOUND|EAI_AGAIN/.test(msg)) return new Error(`could not resolve host ${hop.resolved.hostname}`);
   if (/ETIMEDOUT|Timed out/i.test(msg)) return new Error(`connection to ${where} timed out`);
   if (/All configured authentication methods failed/.test(msg)) return new Error(`authentication to ${where} failed`);
+  if (/Handshake failed: no matching/i.test(msg)) {
+    return new Error(
+      `${msg} — if ${where} only speaks legacy algorithms, add KexAlgorithms/Ciphers/HostKeyAlgorithms lines to this host's ssh config (Advanced options in the host editor)`,
+    );
+  }
   return err;
 }
