@@ -11,7 +11,7 @@ because storage policy should not change under a running recorder.
 <figure markdown="span">
   ![The settings dialog](../assets/screenshots/settings.png#only-light){ .shadow }
   ![The settings dialog](../assets/screenshots/settings-dark.png#only-dark){ .shadow }
-  <figcaption>Eight sections, listed on the left. The footer states when changes apply.</figcaption>
+  <figcaption>Nine sections, listed on the left. The footer states when changes apply.</figcaption>
 </figure>
 
 ## Appearance
@@ -91,6 +91,27 @@ second chord, and defaults are restored in one click. The sheet is also reachabl
 ++ctrl+shift+slash++.
 
 [Every default chord :octicons-arrow-right-24:](../reference/keyboard-shortcuts.md)
+
+## Passwords
+
+The password vault is optional and works the same way on Windows, macOS and Linux;
+it does not depend on an operating-system keyring.
+
+- **Create password vault** sets a master password of at least 8 characters.
+- SSH connections use saved passwords automatically, including after restarting Muxus.
+- **View or edit password** asks for the master password before revealing the saved value.
+- **Change master password** changes that management password without rewriting every
+  credential.
+- **Repair automatic access** appears if a database was restored without its companion
+  device-key file.
+- Saved-password rows can be forgotten individually. **Delete vault** forgets all of them
+  without removing hosts, keys or other settings.
+
+The master password cannot be recovered. Saved-password ciphertext is local to the
+application database, while the automatic-access device key is stored beside it. Neither
+is included in Muxus backups. Anyone who can copy the complete application-data directory
+can obtain both, so the master password protects the management interface rather than
+full-directory theft.
 
 ## Backup & data
 

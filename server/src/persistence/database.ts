@@ -279,6 +279,65 @@ const MIGRATIONS = [
         CHECK(format_version >= 1);
     `,
   },
+  {
+    version: 12,
+    name: 'master-password-vault',
+    sql: `
+      CREATE TABLE password_vault (
+        singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+        format_version INTEGER NOT NULL CHECK(format_version = 1),
+        kdf_algorithm TEXT NOT NULL CHECK(kdf_algorithm = 'argon2id'),
+        kdf_salt BLOB NOT NULL CHECK(length(kdf_salt) = 16),
+        kdf_memory INTEGER NOT NULL CHECK(kdf_memory BETWEEN 8192 AND 1048576),
+        kdf_passes INTEGER NOT NULL CHECK(kdf_passes BETWEEN 2 AND 10),
+        kdf_parallelism INTEGER NOT NULL CHECK(kdf_parallelism BETWEEN 2 AND 16),
+        wrapped_key_nonce BLOB NOT NULL CHECK(length(wrapped_key_nonce) = 12),
+        wrapped_key_ciphertext BLOB NOT NULL CHECK(length(wrapped_key_ciphertext) = 32),
+        wrapped_key_tag BLOB NOT NULL CHECK(length(wrapped_key_tag) = 16),
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) STRICT;
+
+      CREATE TABLE credential_secrets (
+        credential_ref_id TEXT PRIMARY KEY
+          REFERENCES credential_refs(id) ON DELETE CASCADE,
+        format_version INTEGER NOT NULL CHECK(format_version = 1),
+        nonce BLOB NOT NULL CHECK(length(nonce) = 12),
+        ciphertext BLOB NOT NULL,
+        auth_tag BLOB NOT NULL CHECK(length(auth_tag) = 16),
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) STRICT;
+    `,
+  },
+  {
+    version: 13,
+    name: 'automatic-password-vault',
+    sql: `
+      DELETE FROM credential_refs
+      WHERE provider = 'muxus-master-vault';
+
+      DROP TABLE password_vault;
+
+      CREATE TABLE password_vault (
+        singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+        format_version INTEGER NOT NULL CHECK(format_version = 2),
+        kdf_algorithm TEXT NOT NULL CHECK(kdf_algorithm = 'scrypt'),
+        kdf_salt BLOB NOT NULL CHECK(length(kdf_salt) = 16),
+        kdf_cost INTEGER NOT NULL CHECK(kdf_cost BETWEEN 1024 AND 1048576),
+        kdf_block_size INTEGER NOT NULL CHECK(kdf_block_size BETWEEN 1 AND 32),
+        kdf_parallelism INTEGER NOT NULL CHECK(kdf_parallelism BETWEEN 1 AND 16),
+        master_key_nonce BLOB NOT NULL CHECK(length(master_key_nonce) = 12),
+        master_key_ciphertext BLOB NOT NULL CHECK(length(master_key_ciphertext) = 32),
+        master_key_tag BLOB NOT NULL CHECK(length(master_key_tag) = 16),
+        device_key_nonce BLOB NOT NULL CHECK(length(device_key_nonce) = 12),
+        device_key_ciphertext BLOB NOT NULL CHECK(length(device_key_ciphertext) = 32),
+        device_key_tag BLOB NOT NULL CHECK(length(device_key_tag) = 16),
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) STRICT;
+    `,
+  },
 ] as const;
 
 const DEFAULT_SESSION_LOGGING_POLICY: SessionLoggingPolicyInput = {
@@ -308,17 +367,50 @@ export interface NativeConnectionInput {
 }
 
 export interface CredentialRefInput {
-  /** Logical OS store adapter, for example "os-keychain". */
+  /** Logical credential provider, for example "muxus-master-vault". */
   provider: string;
-  /** Stable application/service namespace in that store. */
+  /** Stable application/service namespace in that provider. */
   service: string;
-  /** Account/key used to retrieve the secret from the OS store. */
+  /** Account/key used to retrieve the secret from the provider. */
   account: string;
   label?: string;
 }
 
 export interface CredentialRefRecord extends CredentialRefInput {
   id: string;
+}
+
+export interface PasswordVaultConfigInput {
+  formatVersion: 2;
+  kdfAlgorithm: 'scrypt';
+  kdfSalt: Buffer;
+  kdfCost: number;
+  kdfBlockSize: number;
+  kdfParallelism: number;
+  masterKeyNonce: Buffer;
+  masterKeyCiphertext: Buffer;
+  masterKeyTag: Buffer;
+  deviceKeyNonce: Buffer;
+  deviceKeyCiphertext: Buffer;
+  deviceKeyTag: Buffer;
+}
+
+export interface PasswordVaultConfigRecord extends PasswordVaultConfigInput {
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EncryptedCredentialInput extends CredentialRefInput {
+  formatVersion: 1;
+  nonce: Buffer;
+  ciphertext: Buffer;
+  authTag: Buffer;
+}
+
+export interface EncryptedCredentialRecord extends EncryptedCredentialInput {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface WorkspaceRecord {
@@ -379,7 +471,9 @@ export function assertSecretFree(value: unknown, location = 'config'): void {
     const referenceOnly =
       ['path', 'file', 'filename', 'ref', 'reference', 'id'].includes(words.at(-1) ?? '');
     if (sensitive && !referenceOnly) {
-      throw new Error(`${location}.${key} must be stored in the OS credential store, not the Muxus database`);
+      throw new Error(
+        `${location}.${key} must not be stored in profile or workspace data; use the encrypted password vault`,
+      );
     }
     assertSecretFree(child, `${location}.${key}`);
   }
@@ -598,6 +692,170 @@ export class MuxusDatabase {
       `)
       .run(id, input.provider, input.service, input.account, input.label?.trim() || null);
     return { id, ...input, label: input.label?.trim() || undefined };
+  }
+
+  passwordVaultConfig(): PasswordVaultConfigRecord | undefined {
+    const row = this.db.prepare('SELECT * FROM password_vault WHERE singleton = 1').get();
+    if (!row) return undefined;
+    return passwordVaultConfigFromRow(row);
+  }
+
+  createPasswordVaultConfig(input: PasswordVaultConfigInput): void {
+    this.db
+      .prepare(`
+        INSERT INTO password_vault(
+          singleton, format_version, kdf_algorithm, kdf_salt, kdf_cost,
+          kdf_block_size, kdf_parallelism, master_key_nonce,
+          master_key_ciphertext, master_key_tag, device_key_nonce,
+          device_key_ciphertext, device_key_tag
+        ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .run(
+        input.formatVersion,
+        input.kdfAlgorithm,
+        input.kdfSalt,
+        input.kdfCost,
+        input.kdfBlockSize,
+        input.kdfParallelism,
+        input.masterKeyNonce,
+        input.masterKeyCiphertext,
+        input.masterKeyTag,
+        input.deviceKeyNonce,
+        input.deviceKeyCiphertext,
+        input.deviceKeyTag,
+      );
+  }
+
+  updatePasswordVaultConfig(input: PasswordVaultConfigInput): void {
+    const changed = this.db
+      .prepare(`
+        UPDATE password_vault
+        SET format_version = ?, kdf_algorithm = ?, kdf_salt = ?,
+            kdf_cost = ?, kdf_block_size = ?, kdf_parallelism = ?,
+            master_key_nonce = ?, master_key_ciphertext = ?,
+            master_key_tag = ?, device_key_nonce = ?,
+            device_key_ciphertext = ?, device_key_tag = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE singleton = 1
+      `)
+      .run(
+        input.formatVersion,
+        input.kdfAlgorithm,
+        input.kdfSalt,
+        input.kdfCost,
+        input.kdfBlockSize,
+        input.kdfParallelism,
+        input.masterKeyNonce,
+        input.masterKeyCiphertext,
+        input.masterKeyTag,
+        input.deviceKeyNonce,
+        input.deviceKeyCiphertext,
+        input.deviceKeyTag,
+      );
+    if (Number(changed.changes) !== 1) throw new Error('password vault is not configured');
+  }
+
+  encryptedCredential(
+    provider: string,
+    service: string,
+    account: string,
+  ): EncryptedCredentialRecord | undefined {
+    const row = this.db
+      .prepare(`
+        SELECT refs.id, refs.provider, refs.service, refs.account, refs.label,
+               refs.created_at, secrets.updated_at, secrets.format_version,
+               secrets.nonce, secrets.ciphertext, secrets.auth_tag
+        FROM credential_refs AS refs
+        JOIN credential_secrets AS secrets ON secrets.credential_ref_id = refs.id
+        WHERE refs.provider = ? AND refs.service = ? AND refs.account = ?
+      `)
+      .get(provider, service, account);
+    return row ? encryptedCredentialFromRow(row) : undefined;
+  }
+
+  encryptedCredentialById(
+    id: string,
+    provider: string,
+  ): EncryptedCredentialRecord | undefined {
+    const row = this.db
+      .prepare(`
+        SELECT refs.id, refs.provider, refs.service, refs.account, refs.label,
+               refs.created_at, secrets.updated_at, secrets.format_version,
+               secrets.nonce, secrets.ciphertext, secrets.auth_tag
+        FROM credential_refs AS refs
+        JOIN credential_secrets AS secrets ON secrets.credential_ref_id = refs.id
+        WHERE refs.id = ? AND refs.provider = ?
+      `)
+      .get(id, provider);
+    return row ? encryptedCredentialFromRow(row) : undefined;
+  }
+
+  listEncryptedCredentials(provider: string, service: string): EncryptedCredentialRecord[] {
+    return this.db
+      .prepare(`
+        SELECT refs.id, refs.provider, refs.service, refs.account, refs.label,
+               refs.created_at, secrets.updated_at, secrets.format_version,
+               secrets.nonce, secrets.ciphertext, secrets.auth_tag
+        FROM credential_refs AS refs
+        JOIN credential_secrets AS secrets ON secrets.credential_ref_id = refs.id
+        WHERE refs.provider = ? AND refs.service = ?
+        ORDER BY refs.label COLLATE NOCASE, refs.account
+      `)
+      .all(provider, service)
+      .map(encryptedCredentialFromRow);
+  }
+
+  upsertEncryptedCredential(input: EncryptedCredentialInput): EncryptedCredentialRecord {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const ref = this.upsertCredentialRef(input);
+      this.db
+        .prepare(`
+          INSERT INTO credential_secrets(
+            credential_ref_id, format_version, nonce, ciphertext, auth_tag
+          ) VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(credential_ref_id) DO UPDATE SET
+            format_version = excluded.format_version,
+            nonce = excluded.nonce,
+            ciphertext = excluded.ciphertext,
+            auth_tag = excluded.auth_tag,
+            updated_at = CURRENT_TIMESTAMP
+        `)
+        .run(
+          ref.id,
+          input.formatVersion,
+          input.nonce,
+          input.ciphertext,
+          input.authTag,
+        );
+      this.db.exec('COMMIT');
+      return this.encryptedCredential(input.provider, input.service, input.account)!;
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  deleteEncryptedCredential(id: string, provider: string): boolean {
+    return (
+      Number(
+        this.db
+          .prepare('DELETE FROM credential_refs WHERE id = ? AND provider = ?')
+          .run(id, provider).changes,
+      ) === 1
+    );
+  }
+
+  deletePasswordVaultData(provider: string): void {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      this.db.prepare('DELETE FROM credential_refs WHERE provider = ?').run(provider);
+      this.db.prepare('DELETE FROM password_vault WHERE singleton = 1').run();
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
   }
 
   createNativeConnection(input: NativeConnectionInput): string {
@@ -1220,6 +1478,47 @@ export class MuxusDatabase {
 }
 
 type SqlRow = Record<string, SQLOutputValue>;
+
+function blob(row: SqlRow, key: string): Buffer {
+  const value = row[key];
+  if (!(value instanceof Uint8Array)) throw new Error(`invalid database blob: ${key}`);
+  return Buffer.from(value);
+}
+
+function passwordVaultConfigFromRow(row: SqlRow): PasswordVaultConfigRecord {
+  return {
+    formatVersion: Number(row.format_version) as 2,
+    kdfAlgorithm: String(row.kdf_algorithm) as 'scrypt',
+    kdfSalt: blob(row, 'kdf_salt'),
+    kdfCost: Number(row.kdf_cost),
+    kdfBlockSize: Number(row.kdf_block_size),
+    kdfParallelism: Number(row.kdf_parallelism),
+    masterKeyNonce: blob(row, 'master_key_nonce'),
+    masterKeyCiphertext: blob(row, 'master_key_ciphertext'),
+    masterKeyTag: blob(row, 'master_key_tag'),
+    deviceKeyNonce: blob(row, 'device_key_nonce'),
+    deviceKeyCiphertext: blob(row, 'device_key_ciphertext'),
+    deviceKeyTag: blob(row, 'device_key_tag'),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
+
+function encryptedCredentialFromRow(row: SqlRow): EncryptedCredentialRecord {
+  return {
+    id: String(row.id),
+    provider: String(row.provider),
+    service: String(row.service),
+    account: String(row.account),
+    label: nullableString(row.label) ?? undefined,
+    formatVersion: Number(row.format_version) as 1,
+    nonce: blob(row, 'nonce'),
+    ciphertext: blob(row, 'ciphertext'),
+    authTag: blob(row, 'auth_tag'),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
 
 /** Walk a stored layout tree defensively — its shape is `unknown` in the DB. */
 function collectLayoutTabIds(node: unknown, into: Set<string>): void {

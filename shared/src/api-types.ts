@@ -21,6 +21,23 @@ export interface AppInfo {
   sshAlgorithms: Record<string, string[]>;
 }
 
+/** Public metadata for one SSH password encrypted in the local password vault. */
+export interface PasswordVaultCredential {
+  id: string;
+  label: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Runtime state of the local, platform-independent password vault. */
+export interface PasswordVaultStatus {
+  configured: boolean;
+  /** Saved passwords are available to SSH without a master-password prompt. */
+  automaticAccess: boolean;
+  credentialCount: number;
+  credentials: PasswordVaultCredential[];
+}
+
 /** Raw bookmark data discovered from a local Windows MobaXterm installation. */
 export interface MobaXtermSessionSource {
   /** Human-readable origin shown before the user confirms the import. */

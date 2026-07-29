@@ -134,8 +134,30 @@ describe('terminalClientMessageSchema', () => {
 
   it('accepts resize / auth-response / host-key-response', () => {
     expect(terminalClientMessageSchema.safeParse({ op: 'resize', cols: 120, rows: 40 }).success).toBe(true);
-    expect(terminalClientMessageSchema.safeParse({ op: 'auth-response', answers: ['hunter2'] }).success).toBe(true);
+    expect(
+      terminalClientMessageSchema.safeParse({
+        op: 'auth-response',
+        answers: ['hunter2'],
+        rememberPassword: true,
+      }).success,
+    ).toBe(true);
+    expect(
+      terminalClientMessageSchema.safeParse({
+        op: 'auth-response',
+        answers: [],
+        skipped: true,
+      }).success,
+    ).toBe(true);
     expect(terminalClientMessageSchema.safeParse({ op: 'host-key-response', accept: true }).success).toBe(true);
+  });
+
+  it('bounds authentication answers', () => {
+    expect(
+      terminalClientMessageSchema.safeParse({
+        op: 'auth-response',
+        answers: ['x'.repeat(8193)],
+      }).success,
+    ).toBe(false);
   });
 
   it('requires an actual lifecycle, pause, or privacy change for logging controls', () => {

@@ -82,7 +82,11 @@ import { useWorkspacesStore } from '../state/workspaces.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
 import { formatTimestamp } from '../time-format.js';
 import { openWorkspace } from '../workspace-persistence.js';
-import { AuthPromptDialog, type AuthPromptRequest } from './AuthPromptDialog.js';
+import {
+  AuthPromptDialog,
+  type AuthPromptRequest,
+  type AuthPromptResult,
+} from './AuthPromptDialog.js';
 import { chordSx } from './chord-style.js';
 import { HostKeyDialog, type HostKeyRequest } from './HostKeyDialog.js';
 
@@ -150,7 +154,7 @@ export function QuickLauncherDialog() {
   const [busyResultId, setBusyResultId] = useState<string>();
   const [dialAuth, setDialAuth] = useState<{
     request: AuthPromptRequest;
-    resolve: (answers: string[] | null) => void;
+    resolve: (result: AuthPromptResult | null) => void;
   } | null>(null);
   const [dialHostKey, setDialHostKey] = useState<{
     request: HostKeyRequest;
@@ -691,10 +695,10 @@ export function QuickLauncherDialog() {
 
       <AuthPromptDialog
         request={dialAuth?.request ?? null}
-        onSubmit={(answers) => {
+        onSubmit={(result) => {
           const pending = dialAuth;
           setDialAuth(null);
-          pending?.resolve(answers);
+          pending?.resolve(result);
         }}
       />
       <HostKeyDialog

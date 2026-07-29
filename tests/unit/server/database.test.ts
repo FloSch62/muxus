@@ -23,6 +23,8 @@ describe('MuxusDatabase migrations', () => {
       { version: 9, name: 'drop-favorites' },
       { version: 10, name: 'terminal-scrollback-snapshots' },
       { version: 11, name: 'version-terminal-scrollback-snapshots' },
+      { version: 12, name: 'master-password-vault' },
+      { version: 13, name: 'automatic-password-vault' },
     ]);
   });
 });
@@ -395,12 +397,12 @@ describe('saved Telnet and serial hosts', () => {
           password: 'do-not-save',
         } as never,
       }),
-    ).toThrow(/OS credential store/);
+    ).toThrow(/password vault/);
   });
 });
 
 describe('credential and workspace safety', () => {
-  it('stores only an OS credential reference alongside native profile data', () => {
+  it('stores only a credential reference alongside native profile data', () => {
     database = new MuxusDatabase(':memory:');
     const credential = database.upsertCredentialRef({
       provider: 'os-keychain',
@@ -421,11 +423,11 @@ describe('credential and workspace safety', () => {
 
   it('rejects secrets anywhere in persisted profile or workspace JSON', () => {
     database = new MuxusDatabase(':memory:');
-    expect(() => assertSecretFree({ nested: { password: 'hunter2' } })).toThrow(/OS credential store/);
+    expect(() => assertSecretFree({ nested: { password: 'hunter2' } })).toThrow(/password vault/);
     expect(() => assertSecretFree({ auth: { privateKeyPem: '-----BEGIN PRIVATE KEY-----' } })).toThrow(
-      /OS credential store/,
+      /password vault/,
     );
-    expect(() => assertSecretFree({ auth: { api_token_value: 'secret' } })).toThrow(/OS credential store/);
+    expect(() => assertSecretFree({ auth: { api_token_value: 'secret' } })).toThrow(/password vault/);
     expect(() =>
       assertSecretFree({
         auth: {
@@ -440,13 +442,13 @@ describe('credential and workspace safety', () => {
         name: 'Unsafe',
         config: { auth: { passphrase: 'secret' } },
       }),
-    ).toThrow(/OS credential store/);
+    ).toThrow(/password vault/);
     expect(() =>
       database!.saveWorkspace({
         name: 'Unsafe',
         layout: { pane: { token: 'secret' } },
       }),
-    ).toThrow(/OS credential store/);
+    ).toThrow(/password vault/);
   });
 
   it('round-trips a secret-free recoverable workspace layout', () => {

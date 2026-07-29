@@ -58,9 +58,16 @@ succeeds:
   <figcaption>Each prompt names the hop that issued it, which identifies the hop in a jump chain.</figcaption>
 </figure>
 
-Passwords and passphrases are transient. They exist only for the duration of the
-authentication attempt, and the persistence layer refuses to store them. See the
-[security model](../reference/security.md).
+An SSH password prompt offers **Remember this password**. The password is saved only after
+authentication succeeds. The first save creates a vault and asks for a master password of
+at least eight characters. Later launches use the saved password automatically; the master
+password is required only to view or edit saved values in **Settings → Passwords**.
+
+If the database is restored without its companion device-key file, automatic use pauses
+until **Repair automatic access** is completed with the master password. Private-key
+passphrases, keyboard-interactive answers and 2FA codes remain transient and are never
+remembered. See the
+[security model](../reference/security.md#password-vault).
 
 ## Jump chains and ProxyCommand
 

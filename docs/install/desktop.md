@@ -76,14 +76,17 @@ Installers are published on the
 
 The desktop app keeps its data in Electron's per-app directory:
 
-| Platform | Application database (folders, colours, workspaces, tunnels, saved Telnet/serial hosts) |
+| Platform | Application database (folders, colours, workspaces, tunnels, saved hosts, optional encrypted passwords) |
 | --- | --- |
 | :material-microsoft-windows: Windows | `%APPDATA%\Muxus\muxus.sqlite3` |
 | :material-apple: macOS | `~/Library/Application Support/Muxus/muxus.sqlite3` |
 | :material-linux: Linux | `~/.config/Muxus/muxus.sqlite3` |
 
 Session history, when enabled, is stored alongside it or at the location set in
-[Settings](../guide/settings.md). Connection settings are not stored there; they remain in
-`~/.ssh/config`.
+[Settings](../guide/settings.md). SSH connection settings still come from `~/.ssh/config`.
+Passwords you explicitly choose to remember are encrypted in the application database by
+the password vault. Its automatic-access device key is stored as
+`muxus-vault-device.key` in the same directory; see the
+[security model](../reference/security.md).
 
 Uninstalling the app leaves `~/.ssh` untouched.

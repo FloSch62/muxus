@@ -105,7 +105,10 @@ Its own database holds only what OpenSSH has no field for:
 - display name, folder, colour and sidebar order;
 - per-host keyword-highlighting rules and session-logging policy;
 - last-connected timestamps and connection counts;
-- workspaces, saved tunnels, and saved Telnet/serial hosts.
+- workspaces, saved tunnels, and saved Telnet/serial hosts;
+- opt-in SSH password ciphertext in the password vault.
 
-Passwords, passphrases and private keys are **never** stored. The persistence layer rejects
-them. See the [security model](security.md).
+Unencrypted passwords, passphrases and private keys are never stored. Private-key
+passphrases and 2FA answers are always transient; an SSH password is persisted only when
+**Remember this password** is selected. See the
+[security model](security.md#password-vault).

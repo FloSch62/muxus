@@ -277,8 +277,9 @@ function TunnelEditorForm({
                   />
                 </ProfileAccordion>
                 <Typography variant="caption" color="text.secondary">
-                  Passwords and key passphrases are never saved; Muxus asks for
-                  them when the tunnel starts.
+                  Muxus asks when the tunnel starts. SSH password prompts can
+                  save an accepted password in the password vault; key
+                  passphrases and 2FA answers remain transient.
                 </Typography>
               </Stack>
             )}

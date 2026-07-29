@@ -15,7 +15,13 @@ import {
 } from 'ssh2';
 import { nanoid } from 'nanoid';
 import type { FastifyBaseLogger } from 'fastify';
-import type { ConfigForward, ConnectionInfo, SshProfile } from '@muxus/shared';
+import type {
+  AuthPromptInfo,
+  AuthPromptResponse,
+  ConfigForward,
+  ConnectionInfo,
+  SshProfile,
+} from '@muxus/shared';
 import {
   certificateAlgorithms,
   certificateMatchesKey,
@@ -33,6 +39,16 @@ import {
 } from './connection-leases.js';
 import { connectionAlgorithms } from './algorithms.js';
 import { openIntegratedRemoteShell } from './remote-shell-integration.js';
+import {
+  CredentialVaultCorruptError,
+  InvalidMasterPasswordError,
+  InvalidMasterPasswordFormatError,
+  PasswordVault,
+  VaultAlreadyConfiguredError,
+  VaultAutomaticAccessError,
+  sshPasswordAccount,
+  sshPasswordLabel,
+} from '../security/password-vault.js';
 import {
   expandIdentityPath,
   listHosts,
@@ -59,7 +75,7 @@ export interface HostKeyChallenge {
 export interface ConnectIo {
   status(message: string, options?: { transient?: boolean }): void;
   /** Ask the user to answer auth prompts (password, 2FA, key passphrase). */
-  prompt(info: { name?: string; instructions?: string; host?: string; prompts: Array<{ prompt: string; echo: boolean }> }): Promise<string[]>;
+  prompt(info: AuthPromptInfo): Promise<AuthPromptResponse>;
   /** Ask the user to accept a new or changed host key. */
   hostKey(challenge: HostKeyChallenge): Promise<boolean>;
 }
@@ -216,14 +232,20 @@ export class SshConnectionManager {
   /** In-flight dials by mux key, so simultaneous sessions share one TCP connection and one auth round-trip. */
   private readonly pendingDials = new Map<string, Promise<ManagedConnection>>();
   private readonly loadConfig: () => ConfigDocument;
+  private readonly vault: PasswordVault | undefined;
   readonly knownHosts: KnownHostsStore;
 
   constructor(
     private readonly log: FastifyBaseLogger,
-    options: { knownHosts?: KnownHostsStore; loadConfig?: () => ConfigDocument } = {},
+    options: {
+      knownHosts?: KnownHostsStore;
+      loadConfig?: () => ConfigDocument;
+      vault?: PasswordVault;
+    } = {},
   ) {
     this.knownHosts = options.knownHosts ?? new KnownHostsStore();
     this.loadConfig = options.loadConfig ?? (() => loadConfigDocument());
+    this.vault = options.vault;
   }
 
   /** Acquire an independent consumer lease on an existing SSH transport. */
@@ -532,7 +554,7 @@ export class SshConnectionManager {
 
   private dial(hop: ChainHop, sock: Duplex | undefined, io: ConnectIo): Promise<Client> {
     const agent = resolveAgentSocket(hop.resolved.identityAgent);
-    const auth = new AuthLadder(hop, io);
+    const auth = new AuthLadder(hop, io, this.vault);
     const { algorithms, notes } = connectionAlgorithms(hop.resolved);
     for (const note of notes) io.status(note);
     const proxySocket =
@@ -547,8 +569,12 @@ export class SshConnectionManager {
       hostVerifier: (key: Buffer, verify: (valid: boolean) => void) => {
         void this.verifyHostKey(hop, key, io).then(verify);
       },
-      authHandler: (authsLeft, _partialSuccess, next) => {
-        auth.next(authsLeft, next as (method: AnyAuthMethod | false) => void);
+      authHandler: (authsLeft, partialSuccess, next) => {
+        auth.next(
+          authsLeft,
+          partialSuccess,
+          next as (method: AnyAuthMethod | false) => void,
+        );
       },
       ...(transport ? { sock: transport } : { host: hop.resolved.hostname, port: hop.port }),
       ...(agent ? { agent, agentForward: hop.resolved.forwardAgent } : {}),
@@ -560,11 +586,24 @@ export class SshConnectionManager {
       client.on('banner', (message: string) => io.status(message.trimEnd()));
       client.on('ready', () => {
         settled = true;
-        resolve(client);
+        void auth
+          .commitRememberedPassword()
+          .catch((err) => {
+            io.status(
+              err instanceof Error
+                ? `Connected, but the password was not remembered: ${err.message}`
+                : 'Connected, but the password was not remembered.',
+            );
+          })
+          .finally(() => {
+            auth.dispose();
+            resolve(client);
+          });
       });
       client.on('error', (err) => {
         if (!settled) {
           settled = true;
+          auth.dispose();
           proxySocket?.destroy();
           reject(friendlyConnectError(auth.cancelled ? new Error('authentication cancelled') : err, hop));
         } else {
@@ -832,6 +871,12 @@ interface AuthAttempt {
   get(): Promise<AnyAuthMethod | undefined>;
 }
 
+interface RememberedPasswordCandidate {
+  account: string;
+  label: string;
+  password: string;
+}
+
 /**
  * OpenSSH's client auth order as an ssh2 authHandler: none → agent (unless
  * IdentitiesOnly) → configured certificates with their matching private keys
@@ -847,16 +892,37 @@ class AuthLadder {
     Promise<ParsedKey | undefined>
   >();
   private index = 0;
+  private lastPasswordCandidate: RememberedPasswordCandidate | undefined;
+  private partialPasswordCandidate: RememberedPasswordCandidate | undefined;
+  private savedPasswordAttempted = false;
   cancelled = false;
 
   constructor(
     private readonly hop: ChainHop,
     private readonly io: ConnectIo,
+    private readonly vault?: PasswordVault,
   ) {
     this.attempts = this.build();
   }
 
-  next(authsLeft: AuthenticationType[] | null, cb: (method: AnyAuthMethod | false) => void): void {
+  next(
+    authsLeft: AuthenticationType[] | null,
+    partialSuccess: boolean,
+    cb: (method: AnyAuthMethod | false) => void,
+  ): void {
+    if (this.lastPasswordCandidate) {
+      if (partialSuccess) {
+        this.partialPasswordCandidate = this.lastPasswordCandidate;
+      }
+      this.lastPasswordCandidate = undefined;
+    }
+    this.advance(authsLeft, cb);
+  }
+
+  private advance(
+    authsLeft: AuthenticationType[] | null,
+    cb: (method: AnyAuthMethod | false) => void,
+  ): void {
     const attempt = this.attempts[this.index++];
     if (!attempt || this.cancelled) {
       cb(false);
@@ -864,19 +930,44 @@ class AuthLadder {
     }
     // The server told us which methods can still succeed; skip the rest.
     if (authsLeft && attempt.type !== 'none' && !authsLeft.includes(attempt.type)) {
-      this.next(authsLeft, cb);
+      this.advance(authsLeft, cb);
       return;
     }
     attempt
       .get()
       .then((method) => {
         if (method) cb(method);
-        else this.next(authsLeft, cb);
+        else this.advance(authsLeft, cb);
       })
       .catch(() => {
         this.cancelled = true;
         cb(false);
       });
+  }
+
+  async commitRememberedPassword(): Promise<void> {
+    const candidate =
+      this.lastPasswordCandidate ?? this.partialPasswordCandidate;
+    if (!candidate || !this.vault) return;
+    try {
+      if (!(await this.ensureVaultAvailableForSave(candidate.label))) return;
+      this.vault.rememberSshPassword(
+        candidate.account,
+        candidate.label,
+        candidate.password,
+      );
+      this.io.status(`Remembered the password for ${candidate.label}.`);
+    } finally {
+      this.lastPasswordCandidate = undefined;
+      this.partialPasswordCandidate = undefined;
+    }
+  }
+
+  dispose(): void {
+    this.lastPasswordCandidate = undefined;
+    this.partialPasswordCandidate = undefined;
+    this.privateKeys.clear();
+    this.certificateKeys.clear();
   }
 
   private build(): AuthAttempt[] {
@@ -942,9 +1033,10 @@ class AuthLadder {
                   name: name || undefined,
                   instructions: instructions || undefined,
                   host: label,
+                  purpose: 'authentication',
                   prompts: prompts.map((p) => ({ prompt: p.prompt, echo: p.echo !== false })),
                 })
-                .then(finish)
+                .then((response) => finish(response.answers))
                 .catch(() => {
                   this.cancelled = true;
                   finish(prompts.map(() => ''));
@@ -958,17 +1050,170 @@ class AuthLadder {
       for (let attempt = 1; attempt <= MAX_PASSWORD_ATTEMPTS; attempt++) {
         attempts.push({
           type: 'password',
-          get: async () => {
-            const [password] = await this.io.prompt({
-              host: label,
-              prompts: [{ prompt: attempt === 1 ? `${user}@${label}'s password` : 'Permission denied, please try again. Password', echo: false }],
-            });
-            return { type: 'password', username: user, password: password ?? '' };
-          },
+          get: () => this.passwordMethod(attempt, label),
         });
       }
     }
     return attempts;
+  }
+
+  private async passwordMethod(
+    attempt: number,
+    promptLabel: string,
+  ): Promise<AnyAuthMethod> {
+    const { user, resolved, port } = this.hop;
+    const account = sshPasswordAccount({
+      user,
+      host: resolved.hostname,
+      port,
+    });
+    const credentialLabel = sshPasswordLabel({
+      user,
+      host: resolved.hostname,
+      port,
+    });
+    const existing = this.vault?.hasSshPassword(account) ?? false;
+
+    if (existing && !this.savedPasswordAttempted && this.vault) {
+      this.savedPasswordAttempted = true;
+      const saved = await this.savedPassword(account, credentialLabel);
+      if (saved !== undefined) {
+        this.io.status(`Using the saved password for ${credentialLabel}.`, {
+          transient: true,
+        });
+        return { type: 'password', username: user, password: saved };
+      }
+    }
+
+    const response = await this.io.prompt({
+      host: promptLabel,
+      purpose: 'ssh-password',
+      instructions:
+        existing && this.savedPasswordAttempted
+          ? 'The saved password was unavailable or was not accepted. Enter the current password.'
+          : undefined,
+      prompts: [
+        {
+          prompt:
+            attempt === 1
+              ? `${user}@${promptLabel}'s password`
+              : 'Permission denied, please try again. Password',
+          echo: false,
+        },
+      ],
+      ...(this.vault
+        ? {
+            rememberPassword: {
+              label: credentialLabel,
+              existing,
+            },
+          }
+        : {}),
+    });
+    if (response.skipped) throw new Error('authentication cancelled');
+    const password = response.answers[0] ?? '';
+    this.lastPasswordCandidate = response.rememberPassword
+      ? { account, label: credentialLabel, password }
+      : undefined;
+    return { type: 'password', username: user, password };
+  }
+
+  private async savedPassword(
+    account: string,
+    label: string,
+  ): Promise<string | undefined> {
+    if (!this.vault) return undefined;
+    if (!this.vault.status().automaticAccess) {
+      this.io.status(
+        `The saved password for ${label} is unavailable because automatic vault access needs repair.`,
+      );
+      return undefined;
+    }
+    try {
+      return this.vault.sshPassword(account);
+    } catch (err) {
+      if (err instanceof CredentialVaultCorruptError) {
+        this.io.status(
+          `The saved password for ${label} is damaged. Enter it again to replace the saved copy.`,
+        );
+        return undefined;
+      }
+      if (err instanceof VaultAutomaticAccessError) return undefined;
+      throw err;
+    }
+  }
+
+  private async ensureVaultAvailableForSave(label: string): Promise<boolean> {
+    if (!this.vault) return false;
+    const status = this.vault.status();
+    if (status.automaticAccess) return true;
+    if (status.configured) {
+      return this.promptToRepairAutomaticAccess(
+        `Repair automatic vault access to remember the password for ${label}.`,
+        'Not now',
+      );
+    }
+
+    const response = await this.io.prompt({
+      name: 'Create password vault',
+      purpose: 'vault-create',
+      instructions:
+        `Create a master password to protect viewing and editing saved SSH passwords. ` +
+        `Routine SSH connections will use them automatically.`,
+      prompts: [
+        { prompt: 'Master password', echo: false },
+        { prompt: 'Confirm master password', echo: false },
+      ],
+      skipLabel: 'Not now',
+    });
+    if (response.skipped) return false;
+    const [masterPassword = '', confirmation = ''] = response.answers;
+    if (masterPassword !== confirmation) {
+      throw new InvalidMasterPasswordFormatError(
+        'The master-password confirmation did not match.',
+      );
+    }
+    try {
+      await this.vault.create(masterPassword);
+    } catch (err) {
+      if (!(err instanceof VaultAlreadyConfiguredError)) throw err;
+      await this.vault.repairAutomaticAccess(masterPassword);
+    }
+    return true;
+  }
+
+  private async promptToRepairAutomaticAccess(
+    instructions: string,
+    skipLabel: string,
+  ): Promise<boolean> {
+    if (!this.vault) return false;
+    let error: string | undefined;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (this.vault.status().automaticAccess) return true;
+      const response = await this.io.prompt({
+        name: 'Repair automatic password access',
+        purpose: 'vault-repair',
+        instructions: error ? `${error}\n\n${instructions}` : instructions,
+        prompts: [{ prompt: 'Master password', echo: false }],
+        skipLabel,
+      });
+      if (response.skipped) return false;
+      try {
+        await this.vault.repairAutomaticAccess(response.answers[0] ?? '');
+        return true;
+      } catch (err) {
+        if (
+          err instanceof InvalidMasterPasswordError ||
+          err instanceof InvalidMasterPasswordFormatError
+        ) {
+          error = err.message;
+          continue;
+        }
+        throw err;
+      }
+    }
+    this.io.status('Automatic password access remains unavailable.');
+    return false;
   }
 
   private loadCertificate(
@@ -1055,10 +1300,12 @@ class AuthLadder {
       // skipped silently — the agent attempt already covered the loaded ones.
       if (!explicit && agentAvailable) return undefined;
       for (let i = 0; i < MAX_PASSPHRASE_ATTEMPTS && parsed instanceof Error; i++) {
-        const [passphrase] = await this.io.prompt({
+        const response = await this.io.prompt({
           host: label,
+          purpose: 'authentication',
           prompts: [{ prompt: `${i > 0 ? 'Bad passphrase, try again. ' : ''}Passphrase for ${path.basename(file)}`, echo: false }],
         });
+        const [passphrase] = response.answers;
         if (!passphrase) return undefined; // empty answer = skip this key
         parsed = parseSshKey(content, passphrase);
       }

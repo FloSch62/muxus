@@ -9,6 +9,11 @@ import type { SshProfile } from '@muxus/shared/ws-protocol';
 import { SshConnectionManager, type ConnectIo } from '../../../server/src/ssh/connection-manager.js';
 import { KnownHostsStore } from '../../../server/src/ssh/known-hosts.js';
 import { loadConfigDocument } from '../../../server/src/ssh/ssh-config.js';
+import { MuxusDatabase } from '../../../server/src/persistence/database.js';
+import {
+  PasswordVault,
+  sshPasswordAccount,
+} from '../../../server/src/security/password-vault.js';
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'muxus-session-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -71,7 +76,10 @@ function startCapturingServer(): Promise<{ server: Server; port: number; capture
 }
 
 let counter = 0;
-function makeManager(configFile: string): SshConnectionManager {
+function makeManager(
+  configFile: string,
+  vault?: PasswordVault,
+): SshConnectionManager {
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   return new SshConnectionManager(log as never, {
     knownHosts: new KnownHostsStore(
@@ -79,6 +87,7 @@ function makeManager(configFile: string): SshConnectionManager {
       path.join(tmp, 'no-global-known-hosts'),
     ),
     loadConfig: () => loadConfigDocument(configFile),
+    vault,
   });
 }
 
@@ -88,7 +97,9 @@ function makeIo(overrides: Partial<ConnectIo> = {}): ConnectIo & { passwordPromp
     status: () => undefined,
     prompt: (info: { prompts: Array<{ prompt: string }> }) => {
       io.passwordPrompts += info.prompts.length;
-      return Promise.resolve(info.prompts.map(() => PASSWORD));
+      return Promise.resolve({
+        answers: info.prompts.map(() => PASSWORD),
+      });
     },
     hostKey: () => Promise.resolve(true),
     ...overrides,
@@ -114,10 +125,16 @@ async function firstData(stream: NodeJS.ReadableStream): Promise<string> {
 describe('session settings from ssh config', () => {
   let manager: SshConnectionManager | undefined;
   let server: Server | undefined;
+  let database: MuxusDatabase | undefined;
+  let vault: PasswordVault | undefined;
 
   afterEach(async () => {
     manager?.closeAll();
     manager = undefined;
+    vault?.lock();
+    database?.close();
+    vault = undefined;
+    database = undefined;
     if (server) {
       await new Promise<void>((resolve) => server!.close(() => resolve()));
       server = undefined;
@@ -179,5 +196,89 @@ describe('session settings from ssh config', () => {
     await expect(manager.connect(profile, io)).rejects.toThrow(/authentication/);
     expect(io.passwordPrompts).toBe(0);
     expect(started.capture.authMethods).not.toContain('password');
+  }, 15_000);
+
+  it('remembers a successful password and unlocks the vault on the next connection', async () => {
+    const started = await startCapturingServer();
+    server = started.server;
+    const config = writeConfig(started.port, []);
+    database = new MuxusDatabase(':memory:');
+    vault = new PasswordVault(database, {
+      kdf: { cost: 1024, blockSize: 8, parallelism: 1 },
+    });
+    manager = makeManager(config, vault);
+    const master = 'correct horse battery staple';
+
+    const firstIo = makeIo({
+      prompt: (info) => {
+        if (info.purpose === 'ssh-password') {
+          return Promise.resolve({
+            answers: [PASSWORD],
+            rememberPassword: true,
+          });
+        }
+        if (info.purpose === 'vault-create') {
+          return Promise.resolve({ answers: [master, master] });
+        }
+        throw new Error(`unexpected prompt: ${info.purpose}`);
+      },
+    });
+    const first = await manager.connect(profile, firstIo);
+    expect(vault.status()).toMatchObject({
+      configured: true,
+      automaticAccess: true,
+      credentialCount: 1,
+    });
+    first.release();
+    manager.closeAll();
+
+    vault.lock();
+    manager = makeManager(config, vault);
+    const secondIo = makeIo({
+      prompt: (info) => {
+        throw new Error(`remote password prompt was not expected: ${info.purpose}`);
+      },
+    });
+    const second = await manager.connect(profile, secondIo);
+    expect(vault.status().automaticAccess).toBe(true);
+    expect(secondIo.passwordPrompts).toBe(0);
+    second.release();
+  }, 15_000);
+
+  it('replaces a rejected saved password only after the new password succeeds', async () => {
+    const started = await startCapturingServer();
+    server = started.server;
+    const config = writeConfig(started.port, []);
+    database = new MuxusDatabase(':memory:');
+    vault = new PasswordVault(database, {
+      kdf: { cost: 1024, blockSize: 8, parallelism: 1 },
+    });
+    await vault.create('correct horse battery staple');
+    const account = sshPasswordAccount({
+      user: 'tester',
+      host: '127.0.0.1',
+      port: started.port,
+    });
+    vault.rememberSshPassword(
+      account,
+      `tester@127.0.0.1:${started.port}`,
+      'stale-password',
+    );
+    manager = makeManager(config, vault);
+
+    const io = makeIo({
+      prompt: (info) => {
+        if (info.purpose !== 'ssh-password') {
+          throw new Error(`unexpected prompt: ${info.purpose}`);
+        }
+        return Promise.resolve({
+          answers: [PASSWORD],
+          rememberPassword: true,
+        });
+      },
+    });
+    const lease = await manager.connect(profile, io);
+    expect(vault.sshPassword(account)).toBe(PASSWORD);
+    lease.release();
   }, 15_000);
 });

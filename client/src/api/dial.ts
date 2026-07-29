@@ -1,13 +1,16 @@
 import type { TerminalServerMessage, TunnelSshOptions } from '@muxus/shared';
-import type { AuthPromptRequest } from '../components/AuthPromptDialog.js';
+import type {
+  AuthPromptRequest,
+  AuthPromptResult,
+} from '../components/AuthPromptDialog.js';
 import type { HostKeyRequest } from '../components/HostKeyDialog.js';
 import { wsProtocols, wsUrl } from './http.js';
 
 /** Interactive hooks a shell-less dial needs from the UI. */
 export interface DialHandlers {
   onStatus?(message: string): void;
-  /** Resolve with answers, or null to cancel the connection attempt. */
-  onAuthPrompt(request: AuthPromptRequest): Promise<string[] | null>;
+  /** Resolve with answers and prompt options, or null to cancel the connection attempt. */
+  onAuthPrompt(request: AuthPromptRequest): Promise<AuthPromptResult | null>;
   onHostKey(request: HostKeyRequest): Promise<boolean>;
 }
 
@@ -71,11 +74,19 @@ export function dialConnection(
           break;
         case 'auth-prompt':
           void handlers
-            .onAuthPrompt({ name: msg.name, instructions: msg.instructions, host: msg.host, prompts: msg.prompts })
-            .then((answers) => {
+            .onAuthPrompt({
+              name: msg.name,
+              instructions: msg.instructions,
+              host: msg.host,
+              prompts: msg.prompts,
+              purpose: msg.purpose,
+              rememberPassword: msg.rememberPassword,
+              skipLabel: msg.skipLabel,
+            })
+            .then((response) => {
               if (ws.readyState !== WebSocket.OPEN) return;
-              if (answers === null) ws.close();
-              else ws.send(JSON.stringify({ op: 'auth-response', answers }));
+              if (response === null) ws.close();
+              else ws.send(JSON.stringify({ op: 'auth-response', ...response }));
             });
           break;
         case 'host-key':

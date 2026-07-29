@@ -53,7 +53,11 @@ import {
 import { registerTerminal } from '../terminal/terminal-registry.js';
 import { requiresPasteConfirmation } from '../terminal/paste-safety.js';
 import { shouldFitTerminal } from '../terminal/terminal-fit.js';
-import { AuthPromptDialog, type AuthPromptRequest } from './AuthPromptDialog.js';
+import {
+  AuthPromptDialog,
+  type AuthPromptRequest,
+  type AuthPromptResult,
+} from './AuthPromptDialog.js';
 import { HostKeyDialog, type HostKeyRequest } from './HostKeyDialog.js';
 import { PasteConfirmDialog } from './PasteConfirmDialog.js';
 import {
@@ -596,7 +600,15 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             break;
           case 'auth-prompt':
             sawAuthPrompt = true;
-            setAuthPrompt({ name: ctl.name, instructions: ctl.instructions, host: ctl.host, prompts: ctl.prompts });
+            setAuthPrompt({
+              name: ctl.name,
+              instructions: ctl.instructions,
+              host: ctl.host,
+              prompts: ctl.prompts,
+              purpose: ctl.purpose,
+              rememberPassword: ctl.rememberPassword,
+              skipLabel: ctl.skipLabel,
+            });
             break;
           case 'host-key':
             setHostKey(ctl);
@@ -915,12 +927,12 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     }
   }, [active, generation]);
 
-  const answerAuth = (answers: string[] | null) => {
+  const answerAuth = (response: AuthPromptResult | null) => {
     setAuthPrompt(null);
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    if (answers === null) ws.close();
-    else ws.send(JSON.stringify({ op: 'auth-response', answers }));
+    if (response === null) ws.close();
+    else ws.send(JSON.stringify({ op: 'auth-response', ...response }));
   };
 
   const answerHostKey = (accept: boolean) => {

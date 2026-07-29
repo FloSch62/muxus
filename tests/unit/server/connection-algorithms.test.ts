@@ -81,7 +81,8 @@ function makeManager(configFile: string): SshConnectionManager {
 function makeIo(): ConnectIo {
   return {
     status: () => undefined,
-    prompt: (info) => Promise.resolve(info.prompts.map(() => PASSWORD)),
+    prompt: (info) =>
+      Promise.resolve({ answers: info.prompts.map(() => PASSWORD) }),
     hostKey: () => Promise.resolve(true),
   };
 }
