@@ -5,6 +5,7 @@ import { isNewerVersion } from '@muxus/shared';
 import type { AppInfo, UpdateCheckResult } from '@muxus/shared';
 import type { AppContext } from '../app.js';
 import { defaultShell } from '../local/pty-manager.js';
+import { supportedAlgorithms } from '../ssh/algorithms.js';
 
 const UPDATE_MANIFEST_URL = 'https://flosch62.github.io/muxus/latest.json';
 const UPDATE_CHECK_TIMEOUT_MS = 10_000;
@@ -51,6 +52,7 @@ function appInfo(): AppInfo {
     platform: process.platform,
     homeDir: os.homedir(),
     defaultShell: defaultShell(),
+    sshAlgorithms: supportedAlgorithms(),
   };
 }
 

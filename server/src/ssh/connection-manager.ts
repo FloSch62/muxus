@@ -25,12 +25,13 @@ import {
   type OpenSshCertificate,
 } from './certificates.js';
 import { KnownHostsStore, fingerprintSha256, hostKeyType } from './known-hosts.js';
-import { agentSocket } from './key-scan.js';
+import { resolveAgentSocket } from './key-scan.js';
 import {
   ConnectionLeaseRegistry,
   type ConnectionLeaseOwner,
   type TransportLease,
 } from './connection-leases.js';
+import { connectionAlgorithms } from './algorithms.js';
 import { openIntegratedRemoteShell } from './remote-shell-integration.js';
 import {
   expandIdentityPath,
@@ -38,6 +39,7 @@ import {
   loadConfigDocument,
   parseHostSpec,
   resolveHost,
+  sessionEnvironment,
   type ConfigDocument,
   type ResolvedTarget,
 } from './ssh-config.js';
@@ -62,6 +64,32 @@ export interface ConnectIo {
   hostKey(challenge: HostKeyChallenge): Promise<boolean>;
 }
 
+/**
+ * Per-session channel settings from ssh config. Resolved per connect call —
+ * two aliases multiplexed onto one transport keep their own environment and
+ * RemoteCommand, the way each `ssh` invocation does under ControlMaster.
+ */
+export interface SessionSettings {
+  env?: Record<string, string>;
+  remoteCommand?: string;
+  requestTty?: ResolvedTarget['requestTty'];
+}
+
+export function sessionSettings(resolved: ResolvedTarget): SessionSettings {
+  return {
+    env: sessionEnvironment(resolved),
+    remoteCommand: resolved.remoteCommand,
+    requestTty: resolved.requestTty,
+  };
+}
+
+/** RequestTTY the way ssh(1) treats it: auto ⇒ a tty only for plain shells. */
+function wantsPty(requestTty: ResolvedTarget['requestTty'], hasCommand: boolean): boolean {
+  if (requestTty === 'no') return false;
+  if (requestTty === 'yes' || requestTty === 'force') return true;
+  return !hasCommand;
+}
+
 export interface ManagedConnection {
   id: string;
   client: Client;
@@ -77,7 +105,8 @@ export interface ManagedConnection {
   configForwards: ConfigForward[];
   /** Current passive keepalive health of the transport. */
   health(): SshTransportHealth;
-  shell(cols: number, rows: number, term: string): Promise<ClientChannel>;
+  /** Session defaults come from the dialed target when none are passed. */
+  shell(cols: number, rows: number, term: string, session?: SessionSettings): Promise<ClientChannel>;
   sftp(): Promise<SFTPWrapper>;
   /** Subscribe to passive keepalive health; returns an unsubscribe function. */
   onHealth(listener: (state: SshTransportHealth) => void): () => void;
@@ -93,6 +122,9 @@ export type SshTransportHealth = 'healthy' | 'suspect';
 export interface MuxedConnectionLease extends TransportLease<ManagedConnection> {
   /** True when this lease multiplexes onto a pre-existing transport instead of a fresh dial. */
   reused: boolean;
+  /** This connect call's resolved final hop (not the dialing call's) — the
+   *  source for per-alias session settings on a shared transport. */
+  target: ChainHop;
 }
 
 export interface TerminalShell {
@@ -239,7 +271,7 @@ export class SshConnectionManager {
     const label = `${target.user}@${target.resolved.hostname}:${target.port}`;
 
     if (!opts.freshTransport) {
-      const shared = this.acquireShared(key, owner);
+      const shared = this.acquireShared(key, owner, target);
       if (shared) {
         shared.connection.configForwards = mergeConfigForwards(
           shared.connection.configForwards,
@@ -257,7 +289,7 @@ export class SshConnectionManager {
         const lease = this.connections.acquire(conn.id, owner);
         if (lease) {
           conn.configForwards = mergeConfigForwards(conn.configForwards, configForwards);
-          return { ...lease, reused: true };
+          return { ...lease, reused: true, target };
         }
         // The transport died between ready and acquire; dial our own below.
       }
@@ -269,21 +301,25 @@ export class SshConnectionManager {
     this.pendingDials.set(key, tracked);
     try {
       const lease = await dial;
-      return { ...lease, reused: false };
+      return { ...lease, reused: false, target };
     } finally {
       if (this.pendingDials.get(key) === tracked) this.pendingDials.delete(key);
     }
   }
 
   /** Least-busy live, healthy transport with the same dial plan, if any. */
-  private acquireShared(key: string, owner: ConnectionLeaseOwner): MuxedConnectionLease | undefined {
+  private acquireShared(
+    key: string,
+    owner: ConnectionLeaseOwner,
+    target: ChainHop,
+  ): MuxedConnectionLease | undefined {
     const candidates = this.connections
       .list()
       .filter((conn) => conn.muxKey === key && conn.health() === 'healthy')
       .sort((a, b) => this.connections.leaseCount(a.id) - this.connections.leaseCount(b.id));
     for (const conn of candidates) {
       const lease = this.connections.acquire(conn.id, owner);
-      if (lease) return { ...lease, reused: true };
+      if (lease) return { ...lease, reused: true, target };
     }
     return undefined;
   }
@@ -304,7 +340,7 @@ export class SshConnectionManager {
   ): Promise<TerminalShell> {
     const lease = await this.connect(profile, io);
     try {
-      const stream = await lease.connection.shell(cols, rows, term);
+      const stream = await lease.connection.shell(cols, rows, term, sessionSettings(lease.target.resolved));
       return { lease, stream, transport: lease.reused ? 'shared' : 'new' };
     } catch (err) {
       lease.release();
@@ -316,7 +352,7 @@ export class SshConnectionManager {
       io.status('The shared SSH connection refused another session — opening a dedicated one …', { transient: true });
       const dedicated = await this.connect(profile, io, 'terminal', { freshTransport: true });
       try {
-        const stream = await dedicated.connection.shell(cols, rows, term);
+        const stream = await dedicated.connection.shell(cols, rows, term, sessionSettings(dedicated.target.resolved));
         return { lease: dedicated, stream, transport: 'overflow' };
       } catch (retryErr) {
         dedicated.release();
@@ -422,12 +458,21 @@ export class SshConnectionManager {
       metadataAlias,
       health: () => transportHealth,
       configForwards: target.resolved.forwards,
-      shell: async (cols, rows, term) => {
-        const pty = terminalPtyOptions(cols, rows, term);
-        const integrated = await openIntegratedRemoteShell(client, getSftp, pty);
-        if (integrated) return integrated;
+      shell: async (cols, rows, term, session = sessionSettings(target.resolved)) => {
+        const pty = wantsPty(session.requestTty, !!session.remoteCommand)
+          ? terminalPtyOptions(cols, rows, term)
+          : undefined;
+        if (session.remoteCommand) {
+          return openSessionExec(client, session.remoteCommand, pty, session.env);
+        }
+        if (pty) {
+          const integrated = await openIntegratedRemoteShell(client, getSftp, pty, session.env);
+          if (integrated) return integrated;
+        }
         return new Promise((resolve, reject) => {
-          client.shell(pty, (err, stream) => (err ? reject(err) : resolve(stream)));
+          client.shell(pty ?? false, { env: session.env }, (err, stream) =>
+            err ? reject(err) : resolve(stream),
+          );
         });
       },
       // One SFTP channel per connection, shared by every file operation.
@@ -486,8 +531,10 @@ export class SshConnectionManager {
   }
 
   private dial(hop: ChainHop, sock: Duplex | undefined, io: ConnectIo): Promise<Client> {
-    const agent = agentSocket();
+    const agent = resolveAgentSocket(hop.resolved.identityAgent);
     const auth = new AuthLadder(hop, io);
+    const { algorithms, notes } = connectionAlgorithms(hop.resolved);
+    for (const note of notes) io.status(note);
     const proxySocket =
       !sock && hop.resolved.proxyCommand ? openProxyCommand(expandedProxyCommand(hop)!) : undefined;
     const transport = sock ?? proxySocket;
@@ -495,7 +542,8 @@ export class SshConnectionManager {
       username: hop.user,
       readyTimeout: (hop.resolved.connectTimeout ?? 20) * 1000,
       keepaliveInterval: (hop.resolved.serverAliveInterval ?? 15) * 1000,
-      keepaliveCountMax: 3,
+      keepaliveCountMax: hop.resolved.serverAliveCountMax ?? 3,
+      ...(algorithms ? { algorithms } : {}),
       hostVerifier: (key: Buffer, verify: (valid: boolean) => void) => {
         void this.verifyHostKey(hop, key, io).then(verify);
       },
@@ -532,14 +580,38 @@ export class SshConnectionManager {
     });
   }
 
+  /** The default store, or a per-host one when the config redirects the files. */
+  private knownHostsFor(hop: ChainHop): KnownHostsStore {
+    const { userKnownHostsFiles, globalKnownHostsFiles } = hop.resolved;
+    if (!userKnownHostsFiles && !globalKnownHostsFiles) return this.knownHosts;
+    return new KnownHostsStore(userKnownHostsFiles, globalKnownHostsFiles);
+  }
+
   private async verifyHostKey(hop: ChainHop, key: Buffer, io: ConnectIo): Promise<boolean> {
     const host = hop.resolved.hostname;
     const port = hop.port;
-    const verdict = this.knownHosts.verify(host, port, key);
+    const store = this.knownHostsFor(hop);
+    const verdict = store.verify(host, port, key);
     if (verdict.state === 'ok') return true;
     if (verdict.state === 'revoked') {
       io.status(`HOST KEY REVOKED for ${host} — remove the @revoked entry from known_hosts if this is intentional.`);
       return false;
+    }
+    const strict = hop.resolved.strictHostKeyChecking ?? 'ask';
+    if (strict === 'yes') {
+      io.status(
+        verdict.state === 'changed'
+          ? `HOST KEY CHANGED for ${host} and StrictHostKeyChecking is yes — refusing to connect.`
+          : `No ${hostKeyType(key)} host key for ${host} in known_hosts and StrictHostKeyChecking is yes — refusing to connect.`,
+      );
+      return false;
+    }
+    // `no` on a *changed* key still asks below: silently trusting a swapped
+    // key is a footgun OpenSSH's degraded continue-mode doesn't map to.
+    if (verdict.state === 'unknown' && (strict === 'accept-new' || strict === 'no')) {
+      store.record(host, port, key);
+      io.status(`Automatically accepted the new host key for ${host} (${fingerprintSha256(key)}).`);
+      return true;
     }
     const accepted = await io
       .hostKey({
@@ -552,7 +624,7 @@ export class SshConnectionManager {
         hop: hop.hopLabel,
       })
       .catch(() => false);
-    if (accepted) this.knownHosts.record(host, port, key);
+    if (accepted) store.record(host, port, key);
     return accepted;
   }
 }
@@ -660,6 +732,8 @@ function directSettings(hostname: string): ResolvedTarget {
     proxyJump: [],
     forwards: [],
     passwordOnly: false,
+    setEnv: {},
+    sendEnv: [],
   };
 }
 
@@ -809,7 +883,7 @@ class AuthLadder {
     const { resolved, user, hopLabel } = this.hop;
     const label = hopLabel ?? this.hop.spec.host;
     const attempts: AuthAttempt[] = [{ type: 'none', get: () => Promise.resolve({ type: 'none', username: user }) }];
-    const agent = agentSocket();
+    const agent = resolveAgentSocket(resolved.identityAgent);
 
     if (!resolved.passwordOnly) {
       if (agent && !resolved.identitiesOnly) {
@@ -855,40 +929,44 @@ class AuthLadder {
       }
     }
 
-    attempts.push({
-      type: 'keyboard-interactive',
-      get: () =>
-        Promise.resolve({
-          type: 'keyboard-interactive',
-          username: user,
-          prompt: (name, instructions, _lang, prompts, finish) => {
-            this.io
-              .prompt({
-                name: name || undefined,
-                instructions: instructions || undefined,
-                host: label,
-                prompts: prompts.map((p) => ({ prompt: p.prompt, echo: p.echo !== false })),
-              })
-              .then(finish)
-              .catch(() => {
-                this.cancelled = true;
-                finish(prompts.map(() => ''));
-              });
-          },
-        }),
-    });
-
-    for (let attempt = 1; attempt <= MAX_PASSWORD_ATTEMPTS; attempt++) {
+    if (resolved.kbdInteractiveAuthentication !== false) {
       attempts.push({
-        type: 'password',
-        get: async () => {
-          const [password] = await this.io.prompt({
-            host: label,
-            prompts: [{ prompt: attempt === 1 ? `${user}@${label}'s password` : 'Permission denied, please try again. Password', echo: false }],
-          });
-          return { type: 'password', username: user, password: password ?? '' };
-        },
+        type: 'keyboard-interactive',
+        get: () =>
+          Promise.resolve({
+            type: 'keyboard-interactive',
+            username: user,
+            prompt: (name, instructions, _lang, prompts, finish) => {
+              this.io
+                .prompt({
+                  name: name || undefined,
+                  instructions: instructions || undefined,
+                  host: label,
+                  prompts: prompts.map((p) => ({ prompt: p.prompt, echo: p.echo !== false })),
+                })
+                .then(finish)
+                .catch(() => {
+                  this.cancelled = true;
+                  finish(prompts.map(() => ''));
+                });
+            },
+          }),
       });
+    }
+
+    if (resolved.passwordAuthentication !== false) {
+      for (let attempt = 1; attempt <= MAX_PASSWORD_ATTEMPTS; attempt++) {
+        attempts.push({
+          type: 'password',
+          get: async () => {
+            const [password] = await this.io.prompt({
+              host: label,
+              prompts: [{ prompt: attempt === 1 ? `${user}@${label}'s password` : 'Permission denied, please try again. Password', echo: false }],
+            });
+            return { type: 'password', username: user, password: password ?? '' };
+          },
+        });
+      }
     }
     return attempts;
   }
@@ -998,6 +1076,20 @@ function defaultIdentityFiles(): string[] {
   return DEFAULT_IDENTITY_NAMES.map((name) => path.join(dir, name)).filter((p) => fs.existsSync(p));
 }
 
+/** RemoteCommand session: exec instead of a shell, tty per RequestTTY. */
+function openSessionExec(
+  client: Client,
+  command: string,
+  pty: PseudoTtyOptions | undefined,
+  env?: Record<string, string>,
+): Promise<ClientChannel> {
+  return new Promise((resolve, reject) => {
+    client.exec(command, { ...(pty ? { pty } : {}), ...(env ? { env } : {}) }, (err, stream) =>
+      err ? reject(err) : resolve(stream),
+    );
+  });
+}
+
 /** Translate the common ssh2 failure modes into user-actionable messages. */
 function friendlyConnectError(err: Error, hop: ChainHop): Error {
   const msg = err.message;
@@ -1006,5 +1098,10 @@ function friendlyConnectError(err: Error, hop: ChainHop): Error {
   if (/ENOTFOUND|EAI_AGAIN/.test(msg)) return new Error(`could not resolve host ${hop.resolved.hostname}`);
   if (/ETIMEDOUT|Timed out/i.test(msg)) return new Error(`connection to ${where} timed out`);
   if (/All configured authentication methods failed/.test(msg)) return new Error(`authentication to ${where} failed`);
+  if (/Handshake failed: no matching/i.test(msg)) {
+    return new Error(
+      `${msg} — if ${where} only speaks legacy algorithms, add KexAlgorithms/Ciphers/HostKeyAlgorithms lines to this host's ssh config (Advanced options in the host editor)`,
+    );
+  }
   return err;
 }

@@ -106,6 +106,7 @@ function validateUpsert(req: HostUpsertRequest): void {
   for (const v of [
     o.hostname,
     o.user,
+    o.identityAgent,
     ...(o.identityFiles ?? []),
     ...(o.certificateFiles ?? []),
   ]) {
@@ -121,6 +122,9 @@ function validateUpsert(req: HostUpsertRequest): void {
   }
   if (o.proxyCommand !== undefined && o.proxyJump !== undefined) {
     bad('ProxyJump and ProxyCommand are mutually exclusive');
+  }
+  if (o.remoteCommand !== undefined && (!o.remoteCommand.trim() || /[\r\n]/.test(o.remoteCommand))) {
+    bad('RemoteCommand must be non-empty single-line text');
   }
   for (const f of o.forwards ?? []) validateForward(f);
   for (const extra of o.extras ?? []) {
@@ -170,6 +174,7 @@ export function renderHostBlock(req: HostUpsertRequest, indent: string, extraPat
   for (const file of o.identityFiles ?? []) opt('IdentityFile', singleToken(file));
   for (const file of o.certificateFiles ?? []) opt('CertificateFile', singleToken(file));
   if (o.identitiesOnly !== undefined) opt('IdentitiesOnly', o.identitiesOnly ? 'yes' : 'no');
+  opt('IdentityAgent', singleToken(o.identityAgent));
   if (o.proxyJump !== undefined) opt('ProxyJump', o.proxyJump.length ? o.proxyJump.join(',') : 'none');
   opt('ProxyCommand', o.proxyCommand?.trim());
   if (o.forwardAgent !== undefined) opt('ForwardAgent', o.forwardAgent ? 'yes' : 'no');
@@ -181,6 +186,9 @@ export function renderHostBlock(req: HostUpsertRequest, indent: string, extraPat
     if (f.type === 'dynamic') opt('DynamicForward', String(f.bindPort));
     else opt(f.type === 'local' ? 'LocalForward' : 'RemoteForward', `${f.bindPort} ${forwardTarget(f.targetHost!, f.targetPort!)}`);
   }
+  opt('StrictHostKeyChecking', o.strictHostKeyChecking);
+  opt('RemoteCommand', o.remoteCommand?.trim());
+  opt('RequestTTY', o.requestTty);
   for (const extra of o.extras ?? []) opt(extra.keyword, extra.value.trim());
   return lines;
 }

@@ -38,6 +38,26 @@ describe('KnownHostsStore', () => {
     expect(store.verify('example.com', 22, key)).toEqual({ state: 'ok' });
   });
 
+  it('reads every configured user file but records into the first', () => {
+    const primary = freshFile();
+    const extra = freshFile();
+    const key = makeKey();
+    writeFileSync(extra, `readonly.example ${hostKeyType(key)} ${key.toString('base64')}\n`);
+    const store = new KnownHostsStore([primary, extra], missing);
+    expect(store.verify('readonly.example', 22, key)).toEqual({ state: 'ok' });
+    store.record('new.example', 22, key);
+    expect(readFileSync(primary, 'utf8')).toContain('new.example');
+    expect(readFileSync(extra, 'utf8')).not.toContain('new.example');
+  });
+
+  it('UserKnownHostsFile none: nothing matches and record is a no-op', () => {
+    const store = new KnownHostsStore([], missing);
+    const key = makeKey();
+    expect(store.verify('example.com', 22, key)).toEqual({ state: 'unknown' });
+    expect(() => store.record('example.com', 22, key)).not.toThrow();
+    expect(store.verify('example.com', 22, key)).toEqual({ state: 'unknown' });
+  });
+
   it('stores non-22 ports in [host]:port notation', () => {
     const file = freshFile();
     const store = new KnownHostsStore(file, missing);

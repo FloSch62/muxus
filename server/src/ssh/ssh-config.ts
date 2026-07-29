@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -26,7 +27,6 @@ const MAX_INCLUDE_DEPTH = 8;
 
 const CONFIG_LINE_RE = /^([A-Za-z][A-Za-z0-9]*)\s*(?:=|\s)\s*(.*?)\s*$/;
 const WILDCARD_RE = /[*?]/;
-const ARG_TOKEN_RE = /"([^"]*)"|(\S+)/g;
 
 /** ~/.ssh/config — the OpenSSH per-user config location on macOS, Linux and Windows. */
 export function defaultSshConfigPath(): string {
@@ -209,11 +209,27 @@ function preludeText(lines: string[], commentStart: number, hostLine: number): s
   return text || undefined;
 }
 
-/** Split a config value into tokens, honoring double quotes. */
+/** Split a config value into tokens, honoring double quotes anywhere in a token. */
 export function splitArgs(value: string): string[] {
   const out: string[] = [];
-  ARG_TOKEN_RE.lastIndex = 0;
-  for (let m = ARG_TOKEN_RE.exec(value); m; m = ARG_TOKEN_RE.exec(value)) out.push(m[1] ?? m[2] ?? '');
+  let token = '';
+  let quoted = false;
+  let started = false;
+  for (const char of value) {
+    if (char === '"') {
+      quoted = !quoted;
+      started = true;
+    } else if (/\s/.test(char) && !quoted) {
+      if (!started) continue;
+      out.push(token);
+      token = '';
+      started = false;
+    } else {
+      token += char;
+      started = true;
+    }
+  }
+  if (started) out.push(token);
   return out;
 }
 
@@ -260,6 +276,28 @@ export function isConcreteAlias(pattern: string): boolean {
 export interface ResolvedTarget extends ResolvedHostSettings {
   connectTimeout?: number;
   serverAliveInterval?: number;
+  serverAliveCountMax?: number;
+  /** Raw ssh_config algorithm lists; translated to ssh2 form at dial time. */
+  ciphers?: string;
+  kexAlgorithms?: string;
+  hostKeyAlgorithms?: string;
+  macs?: string;
+  compression?: boolean;
+  /** Agent socket override: a path, `$VAR`/`${VAR}`, `SSH_AUTH_SOCK`, or `none`. */
+  identityAgent?: string;
+  /** false ⇒ never try this method (`PasswordAuthentication no`). */
+  passwordAuthentication?: boolean;
+  kbdInteractiveAuthentication?: boolean;
+  /** Expanded paths; [] means `none`. undefined ⇒ OpenSSH defaults. */
+  userKnownHostsFiles?: string[];
+  globalKnownHostsFiles?: string[];
+  /** First-obtained value per variable, ssh_config SetEnv order. */
+  setEnv: Record<string, string>;
+  /** SendEnv patterns in obtained order, `-` removals included. */
+  sendEnv: string[];
+  remoteCommand?: string;
+  requestTty?: 'no' | 'yes' | 'force' | 'auto';
+  strictHostKeyChecking?: 'yes' | 'no' | 'accept-new' | 'ask';
 }
 
 const yes = (v: string | undefined): boolean => (v ?? '').toLowerCase() === 'yes';
@@ -275,16 +313,33 @@ export function resolveHost(doc: ConfigDocument, host: string): ResolvedTarget {
   const identityFiles: string[] = [];
   const certificateFiles: string[] = [];
   const forwards: ConfigForward[] = [];
+  const setEnv: Record<string, string> = {};
+  const sendEnv: string[] = [];
 
   for (const entry of doc.sequence) {
     if (entry.patterns && !hostPatternsMatch(entry.patterns, host)) continue;
     for (const opt of entry.options) {
+      // OpenSSH treats ChallengeResponseAuthentication as an exact alias, so
+      // both spellings share one first-obtained slot.
+      const resolvedKey =
+        opt.key === 'challengeresponseauthentication' ? 'kbdinteractiveauthentication' : opt.key;
       switch (opt.key) {
         case 'identityfile': {
           const file = opt.args[0];
           if (file && !identityFiles.includes(file)) identityFiles.push(file);
           break;
         }
+        case 'setenv':
+          for (const arg of opt.args) {
+            const eq = arg.indexOf('=');
+            if (eq <= 0) continue;
+            const name = arg.slice(0, eq);
+            if (!(name in setEnv)) setEnv[name] = arg.slice(eq + 1);
+          }
+          break;
+        case 'sendenv':
+          sendEnv.push(...opt.args.filter(Boolean));
+          break;
         case 'certificatefile': {
           const file = opt.args[0];
           if (file && !certificateFiles.includes(file)) certificateFiles.push(file);
@@ -304,7 +359,9 @@ export function resolveHost(doc: ConfigDocument, host: string): ResolvedTarget {
           break;
         }
         default:
-          if (RESOLVED_KEYS.has(opt.key) && !first.has(opt.key) && opt.value) first.set(opt.key, opt.value);
+          if (RESOLVED_KEYS.has(resolvedKey) && !first.has(resolvedKey) && opt.value) {
+            first.set(resolvedKey, opt.value);
+          }
       }
     }
   }
@@ -313,14 +370,24 @@ export function resolveHost(doc: ConfigDocument, host: string): ResolvedTarget {
   const user = first.get('user');
   const port = parsePort(first.get('port')) ?? 22;
   const preferred = first.get('preferredauthentications');
-  const tokens = { h: hostname, r: user ?? os.userInfo().username };
+  const remoteUser = user ?? os.userInfo().username;
+  const identityTokens = { h: hostname, r: remoteUser };
+  const proxyJump = first.get('proxyjump');
+  const knownHostsTokens: KnownHostsPathTokens = {
+    h: hostname,
+    n: host,
+    p: port,
+    r: remoteUser,
+    j: proxyJump?.toLowerCase() === 'none' ? '' : (proxyJump ?? ''),
+    k: host,
+  };
 
   return {
     hostname,
     user,
     port,
-    identityFiles: identityFiles.map((f) => expandIdentityPath(f, tokens)),
-    certificateFiles: certificateFiles.map((f) => expandIdentityPath(f, tokens)),
+    identityFiles: identityFiles.map((f) => expandIdentityPath(f, identityTokens)),
+    certificateFiles: certificateFiles.map((f) => expandIdentityPath(f, identityTokens)),
     identitiesOnly: yes(first.get('identitiesonly')),
     forwardAgent: yes(first.get('forwardagent')),
     proxyJump: parseProxyJumpList(first.get('proxyjump')),
@@ -331,7 +398,76 @@ export function resolveHost(doc: ConfigDocument, host: string): ResolvedTarget {
       (!!preferred && !preferred.toLowerCase().split(',').includes('publickey')),
     connectTimeout: parseNumber(first.get('connecttimeout')),
     serverAliveInterval: parseNumber(first.get('serveraliveinterval')),
+    serverAliveCountMax: parseNumber(first.get('serveralivecountmax')),
+    ciphers: first.get('ciphers'),
+    kexAlgorithms: first.get('kexalgorithms'),
+    hostKeyAlgorithms: first.get('hostkeyalgorithms'),
+    macs: first.get('macs'),
+    compression: flag(first.get('compression')),
+    identityAgent: parseIdentityAgent(first.get('identityagent'), identityTokens),
+    passwordAuthentication: flag(first.get('passwordauthentication')),
+    kbdInteractiveAuthentication: flag(first.get('kbdinteractiveauthentication')),
+    userKnownHostsFiles: parseKnownHostsFiles(first.get('userknownhostsfile'), knownHostsTokens),
+    globalKnownHostsFiles: parseKnownHostsFiles(first.get('globalknownhostsfile'), knownHostsTokens),
+    setEnv,
+    sendEnv,
+    remoteCommand: parseRemoteCommand(first.get('remotecommand')),
+    requestTty: parseChoice(first.get('requesttty'), ['no', 'yes', 'force', 'auto']),
+    strictHostKeyChecking: parseChoice(first.get('stricthostkeychecking'), ['yes', 'no', 'accept-new', 'ask']),
   };
+}
+
+/** yes/no → boolean; anything else (including unset) → undefined. */
+function flag(value: string | undefined): boolean | undefined {
+  const v = (value ?? '').toLowerCase();
+  return v === 'yes' ? true : v === 'no' ? false : undefined;
+}
+
+function parseChoice<T extends string>(value: string | undefined, choices: readonly T[]): T | undefined {
+  const v = (value ?? '').toLowerCase();
+  return choices.includes(v as T) ? (v as T) : undefined;
+}
+
+/** `none`, `$VAR`/`${VAR}`, and `SSH_AUTH_SOCK` indirections pass through; paths expand. */
+function parseIdentityAgent(value: string | undefined, tokens: { h: string; r: string }): string | undefined {
+  const arg = value === undefined ? undefined : splitArgs(value)[0];
+  if (!arg) return undefined;
+  if (arg.toLowerCase() === 'none' || arg.startsWith('$') || arg === 'SSH_AUTH_SOCK') return arg;
+  return expandIdentityPath(arg, tokens);
+}
+
+/** Space-separated path list; `none` → []; unset → undefined (defaults). */
+function parseKnownHostsFiles(value: string | undefined, tokens: KnownHostsPathTokens): string[] | undefined {
+  if (value === undefined) return undefined;
+  const args = splitArgs(value).filter(Boolean);
+  if (args.length === 1 && args[0]!.toLowerCase() === 'none') return [];
+  return args.map((f) => expandKnownHostsPath(f, tokens));
+}
+
+/**
+ * The environment for a session channel: process variables matched by the
+ * SendEnv patterns (later `-pattern` entries remove earlier matches, as in
+ * ssh_config), overridden by explicit SetEnv values. undefined when empty.
+ */
+export function sessionEnvironment(
+  resolved: Pick<ResolvedTarget, 'setEnv' | 'sendEnv'>,
+  source: NodeJS.ProcessEnv = process.env,
+): Record<string, string> | undefined {
+  const names = new Set<string>();
+  for (const pattern of resolved.sendEnv) {
+    if (pattern.startsWith('-')) {
+      for (const name of names) if (globMatch(pattern.slice(1), name)) names.delete(name);
+    } else {
+      for (const name of Object.keys(source)) if (globMatch(pattern, name)) names.add(name);
+    }
+  }
+  const env: Record<string, string> = {};
+  for (const name of names) {
+    const value = source[name];
+    if (value !== undefined) env[name] = value;
+  }
+  Object.assign(env, resolved.setEnv);
+  return Object.keys(env).length ? env : undefined;
 }
 
 const RESOLVED_KEYS = new Set([
@@ -344,9 +480,27 @@ const RESOLVED_KEYS = new Set([
   'pubkeyauthentication',
   'connecttimeout',
   'serveraliveinterval',
+  'serveralivecountmax',
+  'ciphers',
+  'kexalgorithms',
+  'hostkeyalgorithms',
+  'macs',
+  'compression',
+  'identityagent',
+  'passwordauthentication',
+  'kbdinteractiveauthentication',
+  'userknownhostsfile',
+  'globalknownhostsfile',
+  'remotecommand',
+  'requesttty',
+  'stricthostkeychecking',
 ]);
 
 function parseProxyCommand(value: string | undefined): string | undefined {
+  return value && value.toLowerCase() !== 'none' ? value : undefined;
+}
+
+function parseRemoteCommand(value: string | undefined): string | undefined {
   return value && value.toLowerCase() !== 'none' ? value : undefined;
 }
 
@@ -407,6 +561,49 @@ export function expandIdentityPath(value: string, tokens: { h: string; r: string
     return os.userInfo().username; // %u
   });
   return p;
+}
+
+interface KnownHostsPathTokens {
+  /** Resolved remote hostname. */
+  h: string;
+  /** Original host argument. */
+  n: string;
+  /** Resolved remote port. */
+  p: number;
+  /** Resolved remote username. */
+  r: string;
+  /** ProxyJump contents, or empty when unset. */
+  j: string;
+  /** HostKeyAlias, or the original host when none is configured. */
+  k: string;
+}
+
+/** Expand the full token set OpenSSH accepts in UserKnownHostsFile paths. */
+function expandKnownHostsPath(value: string, tokens: KnownHostsPathTokens): string {
+  const home = os.homedir();
+  const local = os.userInfo();
+  const localHostname = os.hostname();
+  const connectionHash = createHash('sha1')
+    .update(`${localHostname}${tokens.h}${tokens.p}${tokens.r}${tokens.j}`)
+    .digest('hex');
+  const replacements: Record<string, string> = {
+    '%%': '%',
+    '%C': connectionHash,
+    '%d': home,
+    '%h': tokens.h,
+    '%i': String(local.uid),
+    '%j': tokens.j,
+    '%k': tokens.k,
+    '%L': localHostname.split('.')[0] ?? localHostname,
+    '%l': localHostname,
+    '%n': tokens.n,
+    '%p': String(tokens.p),
+    '%r': tokens.r,
+    '%u': local.username,
+  };
+  return value
+    .replace(/^~(?=$|[\\/])/, home)
+    .replace(/%%|%[CdhijkLlnpru]/g, (token) => replacements[token] ?? token);
 }
 
 /** Parse a LocalForward/RemoteForward/DynamicForward option's arguments. */
@@ -472,6 +669,10 @@ export function blockToOptions(block: HostBlock): HostBlockOptions {
       case 'identitiesonly':
         out.identitiesOnly = yes(opt.args[0]);
         break;
+      case 'identityagent':
+        if (out.identityAgent === undefined && opt.args[0]) out.identityAgent = opt.args[0];
+        else extras.push({ keyword: opt.keyword, value: opt.value });
+        break;
       case 'forwardagent':
         out.forwardAgent = yes(opt.args[0]);
         break;
@@ -506,6 +707,22 @@ export function blockToOptions(block: HostBlock): HostBlockOptions {
         if (opt.value.toLowerCase() === 'keyboard-interactive,password') preferredConsumed = true;
         else extras.push({ keyword: opt.keyword, value: opt.value });
         break;
+      case 'remotecommand':
+        if (out.remoteCommand === undefined && opt.value) out.remoteCommand = opt.value;
+        else extras.push({ keyword: opt.keyword, value: opt.value });
+        break;
+      case 'requesttty': {
+        const requestTty = parseChoice(opt.value, ['no', 'yes', 'force', 'auto']);
+        if (requestTty && out.requestTty === undefined) out.requestTty = requestTty;
+        else extras.push({ keyword: opt.keyword, value: opt.value });
+        break;
+      }
+      case 'stricthostkeychecking': {
+        const strict = parseChoice(opt.value, ['yes', 'no', 'accept-new', 'ask']);
+        if (strict && out.strictHostKeyChecking === undefined) out.strictHostKeyChecking = strict;
+        else extras.push({ keyword: opt.keyword, value: opt.value });
+        break;
+      }
       default:
         extras.push({ keyword: opt.keyword, value: opt.value });
     }

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Box from '@mui/material/Box';
 import Divider from '@mui/material/Divider';
 import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
@@ -7,7 +8,7 @@ import Typography from '@mui/material/Typography';
 import type { SshConfigResponse } from '@muxus/shared';
 import { FolderPathField } from '../FolderPathField.js';
 import { HostColorPicker } from '../HostColorPicker.js';
-import type { HostDraft } from './draft.js';
+import type { HostDraft, RemoteCommandMode, RequestTtyMode } from './draft.js';
 import { draftAliases } from './draft.js';
 
 const NEW_FILE = '__new__';
@@ -122,6 +123,52 @@ export function GeneralSection({
       </Stack>
 
       <Divider />
+      <Stack spacing={1.5}>
+        <Box>
+          <Typography variant="subtitle2">Startup behavior</Typography>
+          <Typography variant="caption" color="text.secondary">
+            Choose what opens after authentication and whether the server should allocate a terminal.
+          </Typography>
+        </Box>
+        <TextField
+          select
+          label="After connecting"
+          value={draft.remoteCommandMode}
+          onChange={(e) => set({ remoteCommandMode: e.target.value as RemoteCommandMode })}
+          helperText={remoteCommandHelp(draft.remoteCommandMode)}
+          fullWidth
+        >
+          <MenuItem value="inherit">Use SSH configuration</MenuItem>
+          <MenuItem value="shell">Open a login shell</MenuItem>
+          <MenuItem value="command">Run a startup command</MenuItem>
+        </TextField>
+        {draft.remoteCommandMode === 'command' ? (
+          <TextField
+            label="Startup command"
+            value={draft.remoteCommand}
+            onChange={(e) => set({ remoteCommand: e.target.value })}
+            placeholder="tmux new -A -s main"
+            helperText="Runs on the remote host instead of its login shell."
+            fullWidth
+          />
+        ) : null}
+        <TextField
+          select
+          label="Terminal allocation (TTY)"
+          value={draft.requestTty}
+          onChange={(e) => set({ requestTty: e.target.value as RequestTtyMode })}
+          helperText={requestTtyHelp(draft.requestTty, draft.remoteCommandMode)}
+          fullWidth
+        >
+          <MenuItem value="inherit">Use SSH configuration</MenuItem>
+          <MenuItem value="auto">Automatic</MenuItem>
+          <MenuItem value="yes">Always allocate a terminal</MenuItem>
+          <MenuItem value="no">Do not allocate a terminal</MenuItem>
+          <MenuItem value="force">Force terminal allocation</MenuItem>
+        </TextField>
+      </Stack>
+
+      <Divider />
       <Typography variant="caption" color="text.secondary">
         Display name, group and color are local to Muxus — they never touch your
         ssh config.
@@ -142,4 +189,34 @@ export function GeneralSection({
       <HostColorPicker value={draft.color} onChange={(color) => set({ color })} />
     </Stack>
   );
+}
+
+function remoteCommandHelp(mode: RemoteCommandMode): string {
+  switch (mode) {
+    case 'shell':
+      return 'Explicitly disables an inherited RemoteCommand and opens the normal shell.';
+    case 'command':
+      return 'Runs one command after authentication instead of opening the normal shell.';
+    default:
+      return 'Uses any RemoteCommand inherited from matching SSH configuration.';
+  }
+}
+
+function requestTtyHelp(value: RequestTtyMode, commandMode: RemoteCommandMode): string {
+  switch (value) {
+    case 'auto':
+      return commandMode === 'command'
+        ? 'A startup command runs without a terminal; choose “Always” for interactive tools such as tmux.'
+        : 'Allocates a terminal for a login shell.';
+    case 'yes':
+      return 'Allocates a terminal for both login shells and startup commands.';
+    case 'force':
+      return 'Forces a terminal even when the local session is not interactive.';
+    case 'no':
+      return 'Runs without a terminal.';
+    default:
+      return commandMode === 'command'
+        ? 'Inherits RequestTTY; SSH normally runs startup commands without a terminal.'
+        : 'Inherits RequestTTY; SSH normally allocates a terminal for a login shell.';
+  }
 }

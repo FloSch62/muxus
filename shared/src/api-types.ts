@@ -13,7 +13,42 @@ export interface AppInfo {
   homeDir: string;
   /** Default login shell the server would spawn for local terminals. */
   defaultShell: string;
+  /**
+   * Algorithm names the SSH engine can negotiate, per ssh_config keyword
+   * ("Ciphers", "KexAlgorithms", "HostKeyAlgorithms", "MACs") — the editor
+   * warns about entries the dialer would have to skip.
+   */
+  sshAlgorithms: Record<string, string[]>;
 }
+
+/**
+ * ssh_config keywords the dialer applies even though they have no editor
+ * field of their own (they are edited under Advanced). Everything else in
+ * Advanced is preserved for OpenSSH but never used by Muxus itself.
+ * Lowercased for comparison, per ssh_config's case-insensitive keywords.
+ */
+export const DIAL_TIME_KEYWORDS: ReadonlySet<string> = new Set([
+  'ciphers',
+  'kexalgorithms',
+  'hostkeyalgorithms',
+  'macs',
+  'compression',
+  'connecttimeout',
+  'serveraliveinterval',
+  'serveralivecountmax',
+  'identityagent',
+  'passwordauthentication',
+  'kbdinteractiveauthentication',
+  'challengeresponseauthentication',
+  'preferredauthentications',
+  'userknownhostsfile',
+  'globalknownhostsfile',
+  'setenv',
+  'sendenv',
+  'remotecommand',
+  'requesttty',
+  'stricthostkeychecking',
+]);
 
 export type UpdateCheckResult =
   | {
@@ -224,6 +259,8 @@ export interface HostBlockOptions {
   /** OpenSSH user certificates paired to matching IdentityFile keys. */
   certificateFiles?: string[];
   identitiesOnly?: boolean;
+  /** Per-host authentication agent: socket path, environment indirection, SSH_AUTH_SOCK, or none. */
+  identityAgent?: string;
   forwardAgent?: boolean;
   /** ProxyJump hops in order ("bastion", "user@host:2222"); absent = none. */
   proxyJump?: string[];
@@ -232,6 +269,10 @@ export interface HostBlockOptions {
   forwards?: ConfigForward[];
   /** Skip public keys and go straight to password/keyboard-interactive. */
   passwordOnly?: boolean;
+  /** Command to run after connecting; `none` explicitly restores a login shell. */
+  remoteCommand?: string;
+  requestTty?: 'no' | 'yes' | 'force' | 'auto';
+  strictHostKeyChecking?: 'yes' | 'no' | 'accept-new' | 'ask';
   /** Unmodeled options, order-preserved ("Compression yes", …). */
   extras?: Array<{ keyword: string; value: string }>;
 }

@@ -66,6 +66,7 @@ export async function openIntegratedRemoteShell(
   client: Client,
   getSftp: () => Promise<SFTPWrapper>,
   pty: PseudoTtyOptions,
+  env?: Record<string, string>,
 ): Promise<ClientChannel | undefined> {
   try {
     // Shell detection and SFTP channel setup are independent network
@@ -73,7 +74,7 @@ export async function openIntegratedRemoteShell(
     const [shell, sftp] = await Promise.all([probeShell(client), getSftp()]);
     if (!shell) return undefined;
     const root = await installIntegration(sftp, shell);
-    return await openExec(client, remoteShellCommand(shell, root), { pty });
+    return await openExec(client, remoteShellCommand(shell, root), { pty, ...(env ? { env } : {}) });
   } catch {
     return undefined;
   }
@@ -187,7 +188,7 @@ function writeFile(sftp: SFTPWrapper, remotePath: string, content: string): Prom
 function openExec(
   client: Client,
   command: string,
-  options?: { pty: PseudoTtyOptions },
+  options?: { pty: PseudoTtyOptions; env?: Record<string, string> },
 ): Promise<ClientChannel> {
   return new Promise((resolve, reject) => {
     const callback = (error: Error | undefined, channel: ClientChannel) =>

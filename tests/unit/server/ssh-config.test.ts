@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -9,6 +10,7 @@ import {
   parseHostSpec,
   parseProxyJumpList,
   resolveHost,
+  sessionEnvironment,
 } from '../../../server/src/ssh/ssh-config.js';
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'muxus-sshconf-'));
@@ -96,6 +98,25 @@ describe('listHosts', () => {
     expect(hosts[0]!.options.proxyCommand).toBe(
       'cloudflared access ssh --hostname %h',
     );
+    expect(hosts[0]!.options.extras).toBeUndefined();
+  });
+
+  it('models agent, host verification, and startup behavior as first-class options', () => {
+    const hosts = hostsOf(
+      [
+        'Host console',
+        '  IdentityAgent ${ONEPASSWORD_SSH_AUTH_SOCK}',
+        '  StrictHostKeyChecking accept-new',
+        '  RemoteCommand tmux new -A -s main',
+        '  RequestTTY yes',
+      ].join('\n'),
+    );
+    expect(hosts[0]!.options).toMatchObject({
+      identityAgent: '${ONEPASSWORD_SSH_AUTH_SOCK}',
+      strictHostKeyChecking: 'accept-new',
+      remoteCommand: 'tmux new -A -s main',
+      requestTty: 'yes',
+    });
     expect(hosts[0]!.options.extras).toBeUndefined();
   });
 
@@ -195,6 +216,192 @@ describe('resolveHost', () => {
     expect(r.serverAliveInterval).toBe(30);
   });
 
+  it('resolves the dial-time tunables Muxus applies from Advanced options', () => {
+    const doc = loadConfigDocument(
+      write(
+        [
+          'Host lab',
+          '  Compression yes',
+          '  IdentityAgent ~/.1password/agent.sock',
+          '  PasswordAuthentication no',
+          '  KbdInteractiveAuthentication no',
+          '  RemoteCommand tmux new -A -s main',
+          '  RequestTTY yes',
+          '  StrictHostKeyChecking accept-new',
+          '  UserKnownHostsFile ~/.ssh/lab_hosts ~/.ssh/extra_hosts',
+        ].join('\n'),
+      ),
+    );
+    const r = resolveHost(doc, 'lab');
+    expect(r.compression).toBe(true);
+    expect(r.identityAgent).toBe(path.join(os.homedir(), '.1password', 'agent.sock'));
+    expect(r.passwordAuthentication).toBe(false);
+    expect(r.kbdInteractiveAuthentication).toBe(false);
+    expect(r.remoteCommand).toBe('tmux new -A -s main');
+    expect(r.requestTty).toBe('yes');
+    expect(r.strictHostKeyChecking).toBe('accept-new');
+    expect(r.userKnownHostsFiles).toEqual([
+      path.join(os.homedir(), '.ssh', 'lab_hosts'),
+      path.join(os.homedir(), '.ssh', 'extra_hosts'),
+    ]);
+    expect(r.globalKnownHostsFiles).toBeUndefined();
+  });
+
+  it('keeps IdentityAgent indirections verbatim and maps `none` known_hosts to []', () => {
+    const doc = loadConfigDocument(
+      write(
+        [
+          'Host a',
+          '  IdentityAgent $CUSTOM_SOCK',
+          '  UserKnownHostsFile none',
+          '',
+          'Host b',
+          '  IdentityAgent ${CUSTOM_SOCK}',
+          '',
+          'Host c',
+          '  IdentityAgent none',
+        ].join('\n'),
+      ),
+    );
+    expect(resolveHost(doc, 'a').identityAgent).toBe('$CUSTOM_SOCK');
+    expect(resolveHost(doc, 'a').userKnownHostsFiles).toEqual([]);
+    expect(resolveHost(doc, 'b').identityAgent).toBe('${CUSTOM_SOCK}');
+    expect(resolveHost(doc, 'c').identityAgent).toBe('none');
+  });
+
+  it('leaves unset flags undefined and rejects invalid choice values', () => {
+    const doc = loadConfigDocument(write(['Host plain', '  RequestTTY sometimes', '  StrictHostKeyChecking maybe'].join('\n')));
+    const r = resolveHost(doc, 'plain');
+    expect(r.compression).toBeUndefined();
+    expect(r.passwordAuthentication).toBeUndefined();
+    expect(r.kbdInteractiveAuthentication).toBeUndefined();
+    expect(r.requestTty).toBeUndefined();
+    expect(r.strictHostKeyChecking).toBeUndefined();
+  });
+
+  it('honors the legacy ChallengeResponseAuthentication spelling', () => {
+    const doc = loadConfigDocument(write(['Host old', '  ChallengeResponseAuthentication no'].join('\n')));
+    expect(resolveHost(doc, 'old').kbdInteractiveAuthentication).toBe(false);
+  });
+
+  it('preserves first-obtained wins across keyboard-interactive auth aliases', () => {
+    const doc = loadConfigDocument(
+      write(
+        [
+          'Host legacy-first',
+          '  ChallengeResponseAuthentication no',
+          '',
+          'Host modern-first',
+          '  KbdInteractiveAuthentication no',
+          '',
+          'Host *',
+          '  KbdInteractiveAuthentication yes',
+          '  ChallengeResponseAuthentication yes',
+        ].join('\n'),
+      ),
+    );
+    expect(resolveHost(doc, 'legacy-first').kbdInteractiveAuthentication).toBe(false);
+    expect(resolveHost(doc, 'modern-first').kbdInteractiveAuthentication).toBe(false);
+  });
+
+  it('accumulates SetEnv first-wins per variable and SendEnv patterns in order', () => {
+    const doc = loadConfigDocument(
+      write(
+        [
+          'Host env',
+          '  SetEnv FOO=bar BAZ=qux',
+          '  SendEnv LANG LC_*',
+          '',
+          'Host *',
+          '  SetEnv FOO=global EXTRA=yes',
+          '  SendEnv -LC_ALL EDITOR',
+        ].join('\n'),
+      ),
+    );
+    const r = resolveHost(doc, 'env');
+    expect(r.setEnv).toEqual({ FOO: 'bar', BAZ: 'qux', EXTRA: 'yes' });
+    expect(r.sendEnv).toEqual(['LANG', 'LC_*', '-LC_ALL', 'EDITOR']);
+  });
+
+  it('preserves quoted spaces in SetEnv assignments', () => {
+    const doc = loadConfigDocument(
+      write(['Host env', '  SetEnv GREETING="hello world" EMPTY="" PLAIN=value'].join('\n')),
+    );
+    expect(resolveHost(doc, 'env').setEnv).toEqual({
+      GREETING: 'hello world',
+      EMPTY: '',
+      PLAIN: 'value',
+    });
+  });
+
+  it('treats RemoteCommand none as disabled', () => {
+    const doc = loadConfigDocument(write(['Host shell', '  RemoteCommand NoNe'].join('\n')));
+    expect(resolveHost(doc, 'shell').remoteCommand).toBeUndefined();
+  });
+
+  it('expands the full UserKnownHostsFile token context', () => {
+    const local = os.userInfo();
+    const localHostname = os.hostname();
+    const connectionHash = createHash('sha1')
+      .update(`${localHostname}server.example.com2200remotejump`)
+      .digest('hex');
+    const doc = loadConfigDocument(
+      write(
+        [
+          'Host alias',
+          '  HostName server.example.com',
+          '  Port 2200',
+          '  User remote',
+          '  ProxyJump jump',
+          '  UserKnownHostsFile ~/.ssh/known_hosts-%C-%d-%h-%i-%j-%k-%L-%l-%n-%p-%r-%u-%%',
+        ].join('\n'),
+      ),
+    );
+    expect(resolveHost(doc, 'alias').userKnownHostsFiles).toEqual([
+      path.join(
+        os.homedir(),
+        '.ssh',
+        [
+          'known_hosts',
+          connectionHash,
+          os.homedir(),
+          'server.example.com',
+          String(local.uid),
+          'jump',
+          'alias',
+          localHostname.split('.')[0],
+          localHostname,
+          'alias',
+          '2200',
+          'remote',
+          local.username,
+          '%',
+        ].join('-'),
+      ),
+    ]);
+  });
+
+  it('reads ServerAliveCountMax and the raw algorithm lists', () => {
+    const doc = loadConfigDocument(
+      write(
+        [
+          'Host console',
+          '  ServerAliveCountMax 5',
+          '  Ciphers aes128-cbc',
+          '  KexAlgorithms +diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1',
+          '  HostKeyAlgorithms +ssh-rsa',
+          '  MACs hmac-sha1',
+        ].join('\n'),
+      ),
+    );
+    const r = resolveHost(doc, 'console');
+    expect(r.serverAliveCountMax).toBe(5);
+    expect(r.ciphers).toBe('aes128-cbc');
+    expect(r.kexAlgorithms).toBe('+diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1');
+    expect(r.hostKeyAlgorithms).toBe('+ssh-rsa');
+    expect(r.macs).toBe('hmac-sha1');
+  });
+
   it('follows Include files with evaluation order intact', () => {
     const inc = write(['Host from-include', '  User inc'].join('\n'), 'conf.d/extra');
     const doc = loadConfigDocument(write([`Include ${inc}`, '', 'Host base', '  User base'].join('\n')));
@@ -206,6 +413,21 @@ describe('resolveHost', () => {
     const doc = loadConfigDocument(write([`Include ${path.join(tmp, 'nope', 'missing')}`, 'Host still-here'].join('\n')));
     expect(doc.error).toMatch(/could not read/);
     expect(listHosts(doc).map((h) => h.alias)).toEqual(['still-here']);
+  });
+});
+
+describe('sessionEnvironment', () => {
+  it('sends variables matched by SendEnv, honoring later removals', () => {
+    const env = sessionEnvironment(
+      { setEnv: {}, sendEnv: ['LANG', 'LC_*', '-LC_ALL'] },
+      { LANG: 'en_US.UTF-8', LC_ALL: 'C', LC_TIME: 'de_DE', PATH: '/bin' },
+    );
+    expect(env).toEqual({ LANG: 'en_US.UTF-8', LC_TIME: 'de_DE' });
+  });
+
+  it('lets SetEnv override sent variables and returns undefined when empty', () => {
+    expect(sessionEnvironment({ setEnv: { FOO: 'bar' }, sendEnv: ['FOO'] }, { FOO: 'host' })).toEqual({ FOO: 'bar' });
+    expect(sessionEnvironment({ setEnv: {}, sendEnv: [] }, { FOO: 'x' })).toBeUndefined();
   });
 });
 

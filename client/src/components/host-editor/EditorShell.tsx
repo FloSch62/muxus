@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import DialogActions from '@mui/material/DialogActions';
@@ -17,7 +17,7 @@ export type ConnectionKind = 'ssh' | 'telnet' | 'serial';
 export interface EditorSectionDef<S extends string> {
   value: S;
   label: string;
-  icon: ReactNode;
+  icon: ReactElement;
   /** Shown as "Label (n)" when > 0, matching the SSH editor's rail. */
   count?: number;
 }
@@ -110,7 +110,7 @@ export function EditorShell<S extends string>({
               <Tab
                 key={def.value}
                 value={def.value}
-                icon={<>{def.icon}</>}
+                icon={def.icon}
                 iconPosition="start"
                 label={tabLabel(def.label, def.count)}
               />

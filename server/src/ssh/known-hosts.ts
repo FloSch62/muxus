@@ -48,10 +48,18 @@ export function hostKeyType(key: Buffer): string {
 }
 
 export class KnownHostsStore {
+  /** New entries land in the first user file; the rest are read-only. */
+  private readonly userFiles: string[];
+  private readonly globalFiles: string[];
+
+  /** Arrays follow UserKnownHostsFile/GlobalKnownHostsFile: [] means `none`. */
   constructor(
-    private readonly userFile = defaultKnownHostsPath(),
-    private readonly globalFile = GLOBAL_KNOWN_HOSTS,
-  ) {}
+    userFiles: string | string[] = defaultKnownHostsPath(),
+    globalFiles: string | string[] = GLOBAL_KNOWN_HOSTS,
+  ) {
+    this.userFiles = Array.isArray(userFiles) ? userFiles : [userFiles];
+    this.globalFiles = Array.isArray(globalFiles) ? globalFiles : [globalFiles];
+  }
 
   verify(host: string, port: number, key: Buffer): KnownHostVerdict {
     const names = hostNames(host, port);
@@ -59,7 +67,7 @@ export class KnownHostsStore {
     const keyB64 = key.toString('base64');
     let previous: string | undefined;
 
-    for (const file of [this.userFile, this.globalFile]) {
+    for (const file of [...this.userFiles, ...this.globalFiles]) {
       for (const entry of readEntries(file)) {
         if (entry.marker === 'cert-authority') continue; // CA validation is out of scope
         if (entry.keyType !== keyType || !entryMatches(entry.hosts, names)) continue;
@@ -78,14 +86,16 @@ export class KnownHostsStore {
    * `ssh-keygen -R` part, backing up to known_hosts.old), then append.
    */
   record(host: string, port: number, key: Buffer): void {
+    const target = this.userFiles[0];
+    if (!target) return; // UserKnownHostsFile none — nowhere to remember it
     const names = hostNames(host, port);
     const keyType = hostKeyType(key);
-    fs.mkdirSync(path.dirname(this.userFile), { recursive: true, mode: 0o700 });
+    fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
 
     let lines: string[] = [];
     try {
-      const text = fs.readFileSync(this.userFile, 'utf8');
-      fs.writeFileSync(`${this.userFile}.old`, text, { mode: 0o600 });
+      const text = fs.readFileSync(target, 'utf8');
+      fs.writeFileSync(`${target}.old`, text, { mode: 0o600 });
       lines = text.split(/\r?\n/);
       while (lines.length && lines[lines.length - 1] === '') lines.pop();
     } catch {
@@ -98,9 +108,9 @@ export class KnownHostsStore {
     });
     kept.push(`${names[0]} ${keyType} ${key.toString('base64')}`);
 
-    const tmp = `${this.userFile}.muxus.tmp`;
+    const tmp = `${target}.muxus.tmp`;
     fs.writeFileSync(tmp, `${kept.join('\n')}\n`, { mode: 0o600 });
-    fs.renameSync(tmp, this.userFile);
+    fs.renameSync(tmp, target);
   }
 }
 
