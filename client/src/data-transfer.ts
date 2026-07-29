@@ -335,6 +335,16 @@ export async function restoreTransferDocument(
   return result;
 }
 
+/** Restore a reviewed third-party connection set through the same conflict-safe path as backups. */
+export async function restoreImportedConnections(
+  data: PortableConnections,
+  conflicts: TransferConflictStrategy,
+): Promise<RestoreResult> {
+  const result: RestoreResult = { added: 0, updated: 0, skipped: 0 };
+  await restoreConnections(data, conflicts, result);
+  return result;
+}
+
 function fetchBaseSnapshot(): Promise<BaseSnapshot> {
   return Promise.all([
     apiFetch<SshConfigResponse>('/api/ssh/config'),

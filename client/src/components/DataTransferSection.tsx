@@ -30,6 +30,7 @@ import CloudDoneOutlinedIcon from '@mui/icons-material/CloudDoneOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
+import LaptopWindowsOutlinedIcon from '@mui/icons-material/LaptopWindowsOutlined';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
@@ -61,7 +62,11 @@ interface PendingFile {
   filename: string;
 }
 
-export function DataTransferSection() {
+export function DataTransferSection({
+  onImportMobaXterm,
+}: {
+  onImportMobaXterm: () => void;
+}) {
   const queryClient = useQueryClient();
   const { data: appInfo } = useAppInfo();
   const { data: summary, isLoading: summaryLoading } = useQuery({
@@ -385,6 +390,32 @@ export function DataTransferSection() {
             embedded. Key file paths are retained so profiles still know where
             to look.
           </Typography>
+        </Stack>
+      </Paper>
+
+      <Paper variant="outlined">
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={2}
+          sx={{ alignItems: { sm: 'center' }, p: 2.25 }}
+        >
+          <IconTile icon={LaptopWindowsOutlinedIcon} tone="primary" />
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+              MobaXterm import
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+              Review and import SSH sessions from a local Windows installation
+              or a MobaXterm session file.
+            </Typography>
+          </Box>
+          <Button
+            variant="outlined"
+            startIcon={<LaptopWindowsOutlinedIcon />}
+            onClick={onImportMobaXterm}
+          >
+            Import sessions
+          </Button>
         </Stack>
       </Paper>
 

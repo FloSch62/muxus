@@ -16,7 +16,12 @@ import {
 import fixPath from 'fix-path';
 import { startServer, type RunningServer } from '@muxus/server';
 import { isNewerVersion } from '@muxus/shared';
-import type { AppWindowLaunch, UpdateCheckResult } from '@muxus/shared';
+import type {
+  AppWindowLaunch,
+  MobaXtermSessionSource,
+  UpdateCheckResult,
+} from '@muxus/shared';
+import { readLocalMobaXtermSessions } from './mobaxterm.js';
 
 // GUI apps on macOS/Linux don't inherit the shell PATH; ssh-agent sockets
 // and the user's login shell tooling need it.
@@ -483,6 +488,14 @@ ipcMain.handle('muxus:select-private-key', async (event): Promise<string | undef
   });
   return result.canceled ? undefined : result.filePaths[0];
 });
+
+ipcMain.handle(
+  'muxus:read-mobaxterm-sessions',
+  async (event): Promise<MobaXtermSessionSource | undefined> => {
+    if (!isManagedWindowSender(event)) return undefined;
+    return readLocalMobaXtermSessions();
+  },
+);
 
 function parseWindowLaunch(value: unknown): AppWindowLaunch | undefined {
   if (!value || typeof value !== 'object') return undefined;

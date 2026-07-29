@@ -21,6 +21,14 @@ export interface AppInfo {
   sshAlgorithms: Record<string, string[]>;
 }
 
+/** Raw bookmark data discovered from a local Windows MobaXterm installation. */
+export interface MobaXtermSessionSource {
+  /** Human-readable origin shown before the user confirms the import. */
+  source: string;
+  /** Reconstructed MobaXterm INI bookmark sections. Never contains passwords. */
+  content: string;
+}
+
 /**
  * ssh_config keywords the dialer applies even though they have no editor
  * field of their own (they are edited under Advanced). Everything else in

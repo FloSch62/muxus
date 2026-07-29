@@ -1,4 +1,9 @@
-import type { AppInfo, AppWindowLaunch, UpdateCheckResult } from '@muxus/shared';
+import type {
+  AppInfo,
+  AppWindowLaunch,
+  MobaXtermSessionSource,
+  UpdateCheckResult,
+} from '@muxus/shared';
 
 declare global {
   /** Bridge exposed by the Electron preload (absent in regular browsers). */
@@ -22,6 +27,8 @@ declare global {
       checkForUpdate(options?: { force?: boolean }): Promise<UpdateCheckResult>;
       /** Choose an SSH private key with the operating system's file picker. */
       selectPrivateKey(): Promise<string | undefined>;
+      /** Read bookmark-only sessions from the current Windows user's MobaXterm install. */
+      readMobaXtermSessions(): Promise<MobaXtermSessionSource | undefined>;
       /** Open a secondary native application window. */
       openWindow(launch: AppWindowLaunch): void;
       /** Subscribe to the OS close-window chord (Cmd/Ctrl+W); returns unsubscribe. */

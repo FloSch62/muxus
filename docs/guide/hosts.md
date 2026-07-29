@@ -10,6 +10,21 @@ pulled in with `Include`, together with the Telnet and serial hosts stored by Mu
 Muxus does not import the configuration. It reads `~/.ssh/config` directly and writes edits
 back to the same file in place.
 
+## Import from MobaXterm
+
+Open **Settings → Backup & data → Import sessions** to bring MobaXterm SSH bookmarks into
+Muxus. On Windows, **Find sessions** reads bookmarks from the current user's local
+MobaXterm installation. On every platform, you can choose `MobaXterm.ini`, `.mxtsessions`,
+`.mobaconf` or a text export instead.
+
+The review lists every detected SSH session and flags aliases that already exist. Choose
+which sessions to include and whether existing aliases should be kept or replaced. Muxus
+preserves the display name, host, port, username, password-vs-key authentication intent and
+the `SubRep` folder hierarchy.
+
+Passwords and private key files are not copied. They remain outside `ssh_config`; Muxus
+uses your SSH agent or asks for credentials when you connect.
+
 <figure markdown="span">
   ![The hosts sidebar with folders and colours](../assets/screenshots/sidebar.png#only-light){ .shadow }
   ![The hosts sidebar with folders and colours](../assets/screenshots/sidebar-dark.png#only-dark){ .shadow }
