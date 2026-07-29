@@ -101,6 +101,25 @@ describe('listHosts', () => {
     expect(hosts[0]!.options.extras).toBeUndefined();
   });
 
+  it('models agent, host verification, and startup behavior as first-class options', () => {
+    const hosts = hostsOf(
+      [
+        'Host console',
+        '  IdentityAgent ${ONEPASSWORD_SSH_AUTH_SOCK}',
+        '  StrictHostKeyChecking accept-new',
+        '  RemoteCommand tmux new -A -s main',
+        '  RequestTTY yes',
+      ].join('\n'),
+    );
+    expect(hosts[0]!.options).toMatchObject({
+      identityAgent: '${ONEPASSWORD_SSH_AUTH_SOCK}',
+      strictHostKeyChecking: 'accept-new',
+      remoteCommand: 'tmux new -A -s main',
+      requestTty: 'yes',
+    });
+    expect(hosts[0]!.options.extras).toBeUndefined();
+  });
+
   it('maps PubkeyAuthentication no to passwordOnly', () => {
     const hosts = hostsOf(['Host legacy', '  PubkeyAuthentication no', '  PreferredAuthentications keyboard-interactive,password'].join('\n'));
     expect(hosts[0]!.options.passwordOnly).toBe(true);

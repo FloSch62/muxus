@@ -259,6 +259,8 @@ export interface HostBlockOptions {
   /** OpenSSH user certificates paired to matching IdentityFile keys. */
   certificateFiles?: string[];
   identitiesOnly?: boolean;
+  /** Per-host authentication agent: socket path, environment indirection, SSH_AUTH_SOCK, or none. */
+  identityAgent?: string;
   forwardAgent?: boolean;
   /** ProxyJump hops in order ("bastion", "user@host:2222"); absent = none. */
   proxyJump?: string[];
@@ -267,6 +269,10 @@ export interface HostBlockOptions {
   forwards?: ConfigForward[];
   /** Skip public keys and go straight to password/keyboard-interactive. */
   passwordOnly?: boolean;
+  /** Command to run after connecting; `none` explicitly restores a login shell. */
+  remoteCommand?: string;
+  requestTty?: 'no' | 'yes' | 'force' | 'auto';
+  strictHostKeyChecking?: 'yes' | 'no' | 'accept-new' | 'ask';
   /** Unmodeled options, order-preserved ("Compression yes", …). */
   extras?: Array<{ keyword: string; value: string }>;
 }

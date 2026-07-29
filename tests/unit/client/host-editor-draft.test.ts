@@ -14,7 +14,11 @@ const entry: SshHostEntry = {
     hostname: 'cloud.example.test',
     identityFiles: ['~/.ssh/cloud'],
     certificateFiles: ['~/.ssh/cloud-cert.pub'],
+    identityAgent: '${ONEPASSWORD_SSH_AUTH_SOCK}',
     proxyCommand: 'cloudflared access ssh --hostname %h',
+    remoteCommand: 'tmux new -A -s main',
+    requestTty: 'yes',
+    strictHostKeyChecking: 'accept-new',
   },
   resolved: {
     hostname: 'cloud.example.test',
@@ -31,17 +35,27 @@ const entry: SshHostEntry = {
 };
 
 describe('SSH host editor draft', () => {
-  it('loads and saves CertificateFile and ProxyCommand as first-class fields', () => {
+  it('loads and saves modeled connection options as first-class fields', () => {
     const draft = draftFromEntry(entry, false);
     expect(draft.authMode).toBe('key');
     expect(draft.certificateFiles).toEqual(['~/.ssh/cloud-cert.pub']);
+    expect(draft.identityAgentMode).toBe('custom');
+    expect(draft.identityAgent).toBe('${ONEPASSWORD_SSH_AUTH_SOCK}');
     expect(draft.routeMode).toBe('command');
     expect(draft.proxyCommand).toBe('cloudflared access ssh --hostname %h');
+    expect(draft.remoteCommandMode).toBe('command');
+    expect(draft.remoteCommand).toBe('tmux new -A -s main');
+    expect(draft.requestTty).toBe('yes');
+    expect(draft.strictHostKeyChecking).toBe('accept-new');
 
     expect(draftToRequest(draft, 'cloud').options).toMatchObject({
       identityFiles: ['~/.ssh/cloud'],
       certificateFiles: ['~/.ssh/cloud-cert.pub'],
+      identityAgent: '${ONEPASSWORD_SSH_AUTH_SOCK}',
       proxyCommand: 'cloudflared access ssh --hostname %h',
+      remoteCommand: 'tmux new -A -s main',
+      requestTty: 'yes',
+      strictHostKeyChecking: 'accept-new',
     });
   });
 
@@ -49,7 +63,23 @@ describe('SSH host editor draft', () => {
     const draft = blankDraft();
     expect(draft.routeMode).toBe('direct');
     expect(draft.certificateFiles).toEqual([]);
+    expect(draft.identityAgentMode).toBe('default');
+    expect(draft.remoteCommandMode).toBe('inherit');
+    expect(draft.requestTty).toBe('inherit');
+    expect(draft.strictHostKeyChecking).toBe('inherit');
     expect(draftToRequest(draft).options.proxyCommand).toBeUndefined();
+  });
+
+  it('round-trips explicit agent and login-shell choices', () => {
+    const draft = blankDraft();
+    draft.identityAgentMode = 'environment';
+    draft.remoteCommandMode = 'shell';
+    draft.requestTty = 'auto';
+    expect(draftToRequest(draft).options).toMatchObject({
+      identityAgent: 'SSH_AUTH_SOCK',
+      remoteCommand: 'none',
+      requestTty: 'auto',
+    });
   });
 
   it('splits a prefilled quick-connect target, and leaves a bare name as the alias', () => {

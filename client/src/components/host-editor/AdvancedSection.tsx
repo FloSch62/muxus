@@ -11,7 +11,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import SettingsEthernetIcon from '@mui/icons-material/SettingsEthernet';
 import { DIAL_TIME_KEYWORDS } from '@muxus/shared';
 import { useAppInfo } from '../../api/queries.js';
-import { LEGACY_ALGORITHM_PRESET, unsupportedEntries } from './advanced-options.js';
+import { applyLegacyPreset, legacyPresetState, unsupportedEntries } from './advanced-options.js';
 import type { HostDraft } from './draft.js';
 
 /**
@@ -34,27 +34,34 @@ export function AdvancedSection({
   previewError: string | null;
 }) {
   const sshAlgorithms = useAppInfo().data?.sshAlgorithms;
+  const legacyState = legacyPresetState(draft.extras);
 
   const update = (i: number, patch: Partial<{ keyword: string; value: string }>) =>
     set({ extras: draft.extras.map((e, j) => (j === i ? { ...e, ...patch } : e)) });
-
-  const missingLegacy = LEGACY_ALGORITHM_PRESET.filter(
-    (row) => !draft.extras.some((e) => e.keyword.trim().toLowerCase() === row.keyword.toLowerCase()),
-  );
 
   return (
     <Stack spacing={2}>
       <Stack spacing={1}>
         <Typography variant="body2" color="text.secondary">
-          Extra ssh_config options written into the block as-is. Rows marked{' '}
-          <em>applied</em> are honoured by Muxus when connecting; the rest are kept for OpenSSH.
+          Raw ssh_config options for algorithm policies, environment variables, known-hosts files,
+          keepalives, and other expert settings. Rows marked <em>applied</em> are honoured by Muxus;
+          the rest are kept for OpenSSH.
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          Agent selection and host-key security have dedicated controls in Authentication;
+          startup commands and TTY behavior are in General.
         </Typography>
         {draft.extras.map((e, i) => {
           const keyword = e.keyword.trim().toLowerCase();
           const unsupported = unsupportedEntries(e.keyword, e.value, sshAlgorithms);
           return (
             <Stack key={i} direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
-              <TextField label="Option" value={e.keyword} onChange={(ev) => update(i, { keyword: ev.target.value })} sx={{ width: 220 }} />
+              <TextField
+                label="Option"
+                value={e.keyword}
+                onChange={(ev) => update(i, { keyword: ev.target.value })}
+                sx={{ width: 180, flexShrink: 0 }}
+              />
               <TextField
                 label="Value"
                 value={e.value}
@@ -89,13 +96,19 @@ export function AdvancedSection({
           <Button size="small" startIcon={<AddIcon />} onClick={() => set({ extras: [...draft.extras, { keyword: '', value: '' }] })}>
             Add option
           </Button>
-          <Tooltip title="Adds the key exchange, host key and cipher options old console servers and network gear need. Appended to the modern defaults, so current hosts keep working.">
+          <Tooltip
+            title={
+              legacyState === 'conflict'
+                ? 'An algorithm list uses a removal (-) policy the preset will not rewrite. Adjust the lists manually.'
+                : 'Adds the key exchange, host key and cipher options old console servers and network gear need. Merged into the modern defaults, so current hosts keep working.'
+            }
+          >
             <span>
               <Button
                 size="small"
                 startIcon={<SettingsEthernetIcon />}
-                disabled={missingLegacy.length === 0}
-                onClick={() => set({ extras: [...draft.extras, ...missingLegacy] })}
+                disabled={legacyState === 'enabled' || legacyState === 'conflict'}
+                onClick={() => set({ extras: applyLegacyPreset(draft.extras) })}
               >
                 Legacy device algorithms
               </Button>

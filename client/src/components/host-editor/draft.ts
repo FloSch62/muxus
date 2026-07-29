@@ -10,6 +10,11 @@ import {
 } from '../../session-logging-policy.js';
 import { parseHostTarget } from './native-draft.js';
 
+export type IdentityAgentMode = 'default' | 'environment' | 'custom' | 'none';
+export type RemoteCommandMode = 'inherit' | 'shell' | 'command';
+export type RequestTtyMode = 'inherit' | 'no' | 'yes' | 'force' | 'auto';
+export type StrictHostKeyCheckingMode = 'inherit' | 'yes' | 'no' | 'accept-new' | 'ask';
+
 /** Everything the editor form holds, in form-friendly shapes (ports as text). */
 export interface HostDraft {
   /** Space-separated aliases for the Host line (usually one). */
@@ -28,11 +33,18 @@ export interface HostDraft {
   identityFiles: string[];
   certificateFiles: string[];
   identitiesOnly: boolean;
+  identityAgentMode: IdentityAgentMode;
+  /** Custom agent socket path or environment indirection. */
+  identityAgent: string;
   forwardAgent: boolean;
   routeMode: 'direct' | 'jump' | 'command';
   proxyJump: string[];
   proxyCommand: string;
   forwards: ConfigForward[];
+  remoteCommandMode: RemoteCommandMode;
+  remoteCommand: string;
+  requestTty: RequestTtyMode;
+  strictHostKeyChecking: StrictHostKeyCheckingMode;
   extras: Array<{ keyword: string; value: string }>;
   keywordHighlights: HostKeywordHighlightConfig;
   sessionLogging: HostSessionLoggingDraft;
@@ -57,11 +69,17 @@ export function blankDraft(prefillTarget = ''): HostDraft {
     identityFiles: [],
     certificateFiles: [],
     identitiesOnly: false,
+    identityAgentMode: 'default',
+    identityAgent: '',
     forwardAgent: false,
     routeMode: 'direct',
     proxyJump: [],
     proxyCommand: '',
     forwards: [],
+    remoteCommandMode: 'inherit',
+    remoteCommand: '',
+    requestTty: 'inherit',
+    strictHostKeyChecking: 'inherit',
     extras: [],
     keywordHighlights: { inheritGlobal: true, rules: [] },
     sessionLogging: blankHostSessionLoggingDraft(),
@@ -71,6 +89,8 @@ export function blankDraft(prefillTarget = ''): HostDraft {
 /** Build the form state from a listed entry's own block options. */
 export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDraft {
   const o = entry.options;
+  const identityAgent = identityAgentDraft(o.identityAgent);
+  const remoteCommand = remoteCommandDraft(o.remoteCommand);
   return {
     aliasText: duplicate ? `${entry.alias}-copy` : entry.aliases.join(' '),
     description: entry.description ?? '',
@@ -90,6 +110,8 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
     identityFiles: o.identityFiles ?? [],
     certificateFiles: o.certificateFiles ?? [],
     identitiesOnly: o.identitiesOnly ?? false,
+    identityAgentMode: identityAgent.mode,
+    identityAgent: identityAgent.value,
     forwardAgent: o.forwardAgent ?? false,
     routeMode: o.proxyCommand
       ? 'command'
@@ -99,6 +121,10 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
     proxyJump: o.proxyJump ?? [],
     proxyCommand: o.proxyCommand ?? '',
     forwards: o.forwards ?? [],
+    remoteCommandMode: remoteCommand.mode,
+    remoteCommand: remoteCommand.value,
+    requestTty: o.requestTty ?? 'inherit',
+    strictHostKeyChecking: o.strictHostKeyChecking ?? 'inherit',
     extras: o.extras ?? [],
     keywordHighlights: entry.metadata?.keywordHighlights ?? {
       inheritGlobal: true,
@@ -122,8 +148,14 @@ export function draftProblem(draft: HostDraft): string | null {
   }
   if (draft.port && !portOk(draft.port)) return 'Port must be 1–65535.';
   if (draft.authMode === 'key' && !draft.identityFiles.some((f) => f.trim())) return 'Pick at least one key file, or switch the auth mode.';
+  if (draft.identityAgentMode === 'custom' && !draft.identityAgent.trim()) {
+    return 'Enter an agent socket path or choose another agent source.';
+  }
   if (draft.routeMode === 'command' && !draft.proxyCommand.trim()) {
     return 'Proxy command is required when ProxyCommand routing is selected.';
+  }
+  if (draft.remoteCommandMode === 'command' && !draft.remoteCommand.trim()) {
+    return 'Enter a startup command or choose a login shell.';
   }
   for (const f of draft.forwards) {
     if (!portOk(String(f.bindPort))) return 'Every forward needs a listen port (1–65535).';
@@ -160,6 +192,14 @@ export function draftToRequest(draft: HostDraft, previousAlias?: string): HostUp
           ? draft.certificateFiles.map((f) => f.trim()).filter(Boolean)
           : undefined,
       identitiesOnly: draft.authMode === 'key' && draft.identitiesOnly ? true : undefined,
+      identityAgent:
+        draft.identityAgentMode === 'environment'
+          ? 'SSH_AUTH_SOCK'
+          : draft.identityAgentMode === 'none'
+            ? 'none'
+            : draft.identityAgentMode === 'custom'
+              ? text(draft.identityAgent)
+              : undefined,
       forwardAgent: draft.forwardAgent ? true : undefined,
       proxyJump:
         draft.routeMode === 'jump' && draft.proxyJump.length
@@ -169,7 +209,37 @@ export function draftToRequest(draft: HostDraft, previousAlias?: string): HostUp
         draft.routeMode === 'command' ? text(draft.proxyCommand) : undefined,
       forwards: draft.forwards.length ? draft.forwards : undefined,
       passwordOnly: draft.authMode === 'password' ? true : undefined,
+      remoteCommand:
+        draft.remoteCommandMode === 'shell'
+          ? 'none'
+          : draft.remoteCommandMode === 'command'
+            ? text(draft.remoteCommand)
+            : undefined,
+      requestTty: draft.requestTty === 'inherit' ? undefined : draft.requestTty,
+      strictHostKeyChecking:
+        draft.strictHostKeyChecking === 'inherit'
+          ? undefined
+          : draft.strictHostKeyChecking,
       extras: draft.extras.length ? draft.extras : undefined,
     },
   };
+}
+
+function identityAgentDraft(value: string | undefined): {
+  mode: IdentityAgentMode;
+  value: string;
+} {
+  if (value === undefined) return { mode: 'default', value: '' };
+  if (value === 'SSH_AUTH_SOCK') return { mode: 'environment', value: '' };
+  if (value.toLowerCase() === 'none') return { mode: 'none', value: '' };
+  return { mode: 'custom', value };
+}
+
+function remoteCommandDraft(value: string | undefined): {
+  mode: RemoteCommandMode;
+  value: string;
+} {
+  if (value === undefined) return { mode: 'inherit', value: '' };
+  if (value.toLowerCase() === 'none') return { mode: 'shell', value: '' };
+  return { mode: 'command', value };
 }

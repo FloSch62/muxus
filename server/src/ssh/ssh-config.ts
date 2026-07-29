@@ -669,6 +669,10 @@ export function blockToOptions(block: HostBlock): HostBlockOptions {
       case 'identitiesonly':
         out.identitiesOnly = yes(opt.args[0]);
         break;
+      case 'identityagent':
+        if (out.identityAgent === undefined && opt.args[0]) out.identityAgent = opt.args[0];
+        else extras.push({ keyword: opt.keyword, value: opt.value });
+        break;
       case 'forwardagent':
         out.forwardAgent = yes(opt.args[0]);
         break;
@@ -703,6 +707,22 @@ export function blockToOptions(block: HostBlock): HostBlockOptions {
         if (opt.value.toLowerCase() === 'keyboard-interactive,password') preferredConsumed = true;
         else extras.push({ keyword: opt.keyword, value: opt.value });
         break;
+      case 'remotecommand':
+        if (out.remoteCommand === undefined && opt.value) out.remoteCommand = opt.value;
+        else extras.push({ keyword: opt.keyword, value: opt.value });
+        break;
+      case 'requesttty': {
+        const requestTty = parseChoice(opt.value, ['no', 'yes', 'force', 'auto']);
+        if (requestTty && out.requestTty === undefined) out.requestTty = requestTty;
+        else extras.push({ keyword: opt.keyword, value: opt.value });
+        break;
+      }
+      case 'stricthostkeychecking': {
+        const strict = parseChoice(opt.value, ['yes', 'no', 'accept-new', 'ask']);
+        if (strict && out.strictHostKeyChecking === undefined) out.strictHostKeyChecking = strict;
+        else extras.push({ keyword: opt.keyword, value: opt.value });
+        break;
+      }
       default:
         extras.push({ keyword: opt.keyword, value: opt.value });
     }

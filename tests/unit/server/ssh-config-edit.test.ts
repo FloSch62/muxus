@@ -97,8 +97,12 @@ describe('upsertHost', () => {
         '  ProxyJump bastion',
         '  IdentityFile ~/.ssh/app',
         '  CertificateFile ~/.ssh/app-cert.pub',
+        '  IdentityAgent ${ONEPASSWORD_SSH_AUTH_SOCK}',
         '  ProxyCommand custom-proxy %h %p',
         '  LocalForward 8080 localhost:80',
+        '  StrictHostKeyChecking accept-new',
+        '  RemoteCommand tmux new -A -s main',
+        '  RequestTTY yes',
         '  Compression yes',
         '',
       ].join('\n'),
@@ -174,20 +178,28 @@ describe('previewHost', () => {
     expect(existsSync(`${root}.muxus.tmp`)).toBe(false);
   });
 
-  it('renders CertificateFile and ProxyCommand from modeled options', () => {
+  it('renders modeled authentication, security, and startup options', () => {
     const root = seed('');
     const text = previewHost(
       req({
         options: {
           identityFiles: ['~/.ssh/app'],
           certificateFiles: ['~/.ssh/app-cert.pub'],
+          identityAgent: '${ONEPASSWORD_SSH_AUTH_SOCK}',
           proxyCommand: 'cloudflared access ssh --hostname %h',
+          strictHostKeyChecking: 'accept-new',
+          remoteCommand: 'tmux new -A -s main',
+          requestTty: 'yes',
         },
       }),
       root,
     );
     expect(text).toContain('  IdentityFile ~/.ssh/app');
     expect(text).toContain('  CertificateFile ~/.ssh/app-cert.pub');
+    expect(text).toContain('  IdentityAgent ${ONEPASSWORD_SSH_AUTH_SOCK}');
     expect(text).toContain('  ProxyCommand cloudflared access ssh --hostname %h');
+    expect(text).toContain('  StrictHostKeyChecking accept-new');
+    expect(text).toContain('  RemoteCommand tmux new -A -s main');
+    expect(text).toContain('  RequestTTY yes');
   });
 });

@@ -48,15 +48,19 @@ These keywords are modelled as fields. They appear as controls in the
 | `IdentityFile` | Keys offered, in order |
 | `CertificateFile` | User certificates, paired with their key |
 | `IdentitiesOnly` | Restricts authentication to the listed identities |
+| `IdentityAgent` | Agent source — inherited, `SSH_AUTH_SOCK`, custom socket/variable, or disabled |
 | `ForwardAgent` | Agent forwarding, when an agent is present |
 | `ProxyJump` | Jump chain, comma-separated and nestable |
 | `ProxyCommand` | External transport command (`%h`, `%p`, `%r` expand at dial time) |
 | `LocalForward`, `RemoteForward`, `DynamicForward` | Forwards started with the session |
 | `PubkeyAuthentication no` | The editor's "password / interactive" mode |
 | `PreferredAuthentications keyboard-interactive,password` | Written alongside the above |
+| `StrictHostKeyChecking` | Host-key verification policy |
+| `RemoteCommand` | Login shell or a command to run after connecting |
+| `RequestTTY` | Terminal allocation for shells and startup commands |
 
-These keywords never become editor fields — they are edited under **Advanced**, where the
-editor badges them **applied** — but the dialler still applies them the way `ssh` would:
+These expert policies remain under **Advanced**, where the editor badges them **applied**,
+but the dialler still applies them the way `ssh` would:
 
 | Keyword | Used for |
 | --- | --- |
@@ -64,18 +68,14 @@ editor badges them **applied** — but the dialler still applies them the way `s
 | `Compression` | `yes` prefers zlib like `ssh -C` |
 | `ConnectTimeout` | Dial timeout; defaults to 20 seconds |
 | `ServerAliveInterval`, `ServerAliveCountMax` | Keepalives; default 15 seconds / 3 missed replies |
-| `IdentityAgent` | Agent socket override — a path (1Password, Secretive, …), `$VAR`/`${VAR}`, `SSH_AUTH_SOCK`, or `none` |
 | `PasswordAuthentication no`, `KbdInteractiveAuthentication no` | Removes that rung from the auth ladder (the legacy `ChallengeResponseAuthentication` spelling works too) |
 | `UserKnownHostsFile`, `GlobalKnownHostsFile` | Host keys verify against these files instead; new keys are recorded into the first user file, `none` disables, and user-file path tokens such as `%h`, `%n`, and `%p` expand per connection |
-| `StrictHostKeyChecking` | `accept-new`/`no` accept first-contact keys silently; `yes` refuses unknown or changed keys. A **changed** key always asks, even under `no` — silently trusting a swapped key is a footgun Muxus does not reproduce |
 | `SetEnv`, `SendEnv` | Session environment, with `-pattern` removals and SetEnv overriding |
-| `RemoteCommand` | Runs instead of the login shell (`tmux new -A` workflows) |
-| `RequestTTY` | `ssh(1)` semantics: `auto` allocates a tty only for plain shells, so a `RemoteCommand` needs `RequestTTY yes` — the same pairing OpenSSH requires |
 
 The editor's **Advanced** section shows a badge per row: **applied** for the keywords above,
 **kept** for everything Muxus preserves but does not use. A one-click **Legacy device
 algorithms** button adds the `KexAlgorithms`/`HostKeyAlgorithms`/`Ciphers` lines old console
-servers and network appliances need.
+servers and network appliances need, merging them into any algorithm lists already present.
 
 **Everything else is preserved.** Unmodelled keywords are kept verbatim and shown in the
 editor's **Advanced** section, so keywords Muxus does not model survive an edit untouched:
