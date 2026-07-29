@@ -13,11 +13,15 @@ export const TERMINAL_SNAPSHOT_INTERVAL_MS = 10_000;
  *  command does not lose it to the interval above. */
 export const TERMINAL_SNAPSHOT_QUIET_MS = 1_500;
 
+const TERMINAL_HISTORY_DIVIDER_TEXT = '[end of restored output]';
+
 /** Written after replayed history, before the new session's output. */
-export const TERMINAL_HISTORY_DIVIDER = '\r\n\x1b[90m[end of restored output]\x1b[0m\r\n';
+export const TERMINAL_HISTORY_DIVIDER =
+  `\r\n\x1b[90m${TERMINAL_HISTORY_DIVIDER_TEXT}\x1b[0m\r\n`;
 
 const ESC = String.fromCharCode(27);
 const CURSOR_MOVE_FINALS = 'ABCDEFGHdf`';
+const CSI_SEQUENCE = new RegExp(`${ESC}\\[[0-?]*[ -/]*[@-~]`, 'g');
 
 /** Start index of a cursor-move sequence (ESC [ params final) ending exactly
  *  at `end`, or `end` itself when none does. A plain scan — regexes over
@@ -49,6 +53,22 @@ export function trimReplayTail(data: string): string {
   }
 }
 
+/**
+ * Remove the visual replay boundary before a terminal buffer becomes the next
+ * snapshot. Otherwise every restore serializes the client-injected divider
+ * and accumulates another copy on the following restore.
+ *
+ * SerializeAddon emits logical row breaks as CRLF and may choose different
+ * SGR sequences as surrounding cell attributes change, so compare visible row
+ * text instead of relying on the exact bytes used when the divider was drawn.
+ */
+export function stripTerminalHistoryDividers(data: string): string {
+  return data
+    .split('\r\n')
+    .filter((row) => row.replace(CSI_SEQUENCE, '') !== TERMINAL_HISTORY_DIVIDER_TEXT)
+    .join('\r\n');
+}
+
 export function snapshotRequestBody(data: string): string {
   return JSON.stringify({ data });
 }
@@ -72,7 +92,9 @@ export function serializeScrollback(
   try {
     for (const scrollback of SNAPSHOT_SCROLLBACK_LADDER) {
       const data = trimReplayTail(
-        addon.serialize({ scrollback, excludeModes: true, excludeAltBuffer: true }),
+        stripTerminalHistoryDividers(
+          addon.serialize({ scrollback, excludeModes: true, excludeAltBuffer: true }),
+        ),
       );
       if (data.length === 0) return undefined;
       if (data.length > TERMINAL_SNAPSHOT_MAX_CHARS) continue;
@@ -92,7 +114,7 @@ export async function fetchTerminalSnapshot(tabId: string): Promise<string | nul
     const { snapshot } = await apiFetch<{ snapshot: TerminalSnapshotRecord | null }>(
       `/api/terminal-snapshots/${encodeURIComponent(tabId)}`,
     );
-    return snapshot?.data ?? null;
+    return snapshot ? stripTerminalHistoryDividers(snapshot.data) : null;
   } catch {
     return null;
   }

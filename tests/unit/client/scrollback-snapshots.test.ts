@@ -3,6 +3,7 @@ import {
   serializeScrollback,
   snapshotBodyBytes,
   SNAPSHOT_SCROLLBACK_LADDER,
+  stripTerminalHistoryDividers,
   TERMINAL_HISTORY_DIVIDER,
   trimReplayTail,
 } from '../../../client/src/terminal/scrollback-snapshots.js';
@@ -17,6 +18,12 @@ function fakeAddon(charsPerLine: number, options: { escapes?: boolean } = {}): A
   return {
     serialize: ({ scrollback = 0 }: { scrollback?: number } = {}) =>
       unit.repeat(scrollback * charsPerLine),
+  } as unknown as Addon;
+}
+
+function literalAddon(data: string): Addon {
+  return {
+    serialize: () => data,
   } as unknown as Addon;
 }
 
@@ -65,6 +72,33 @@ describe('history divider', () => {
     expect(TERMINAL_HISTORY_DIVIDER).toContain('[end of restored output]');
     expect(TERMINAL_HISTORY_DIVIDER.startsWith('\r\n')).toBe(true);
     expect(TERMINAL_HISTORY_DIVIDER.endsWith('\r\n')).toBe(true);
+  });
+
+  it('does not retain injected dividers in the next snapshot', () => {
+    const nested =
+      `first restore${TERMINAL_HISTORY_DIVIDER}` +
+      `second restore${TERMINAL_HISTORY_DIVIDER}` +
+      'live output';
+
+    expect(stripTerminalHistoryDividers(nested)).toBe(
+      'first restore\r\nsecond restore\r\nlive output',
+    );
+    expect(serializeScrollback(literalAddon(nested))).toBe(
+      'first restore\r\nsecond restore\r\nlive output',
+    );
+  });
+
+  it('recognizes serialized divider rows independent of their SGR encoding', () => {
+    const serialized =
+      'before\r\n\x1b[38;5;8m[end of restored output]\x1b[39m\r\nafter';
+
+    expect(stripTerminalHistoryDividers(serialized)).toBe('before\r\nafter');
+  });
+
+  it('keeps terminal output that merely mentions the divider text', () => {
+    const output = 'echo [end of restored output]\r\n[end of restored output] from remote';
+
+    expect(stripTerminalHistoryDividers(output)).toBe(output);
   });
 });
 
