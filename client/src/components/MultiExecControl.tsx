@@ -18,15 +18,18 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import PodcastsOutlinedIcon from '@mui/icons-material/PodcastsOutlined';
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import { alpha } from '@mui/material/styles';
+import { useChordLabel } from '../keymap/hints.js';
 import { useMultiExecStore } from '../state/multi-exec.js';
 import { useTabsStore } from '../state/tabs.js';
-import { flattenPaneLayout } from '../state/workspace-layout.js';
+import { visibleTabIds } from '../state/workspace-layout.js';
+import { withChord } from './ChordHint.js';
 
 /** Target picker for automatic mirrored terminal input. */
 export function MultiExecControl() {
   const tabs = useTabsStore((state) => state.tabs);
   const root = useTabsStore((state) => state.root);
   const activePaneId = useTabsStore((state) => state.activePaneId);
+  const zoomedPaneId = useTabsStore((state) => state.zoomedPaneId);
   const selectedIds = useMultiExecStore((state) => state.selectedIds);
   const groups = useMultiExecStore((state) => state.groups);
   const setSelection = useMultiExecStore((state) => state.setSelection);
@@ -37,6 +40,7 @@ export function MultiExecControl() {
   const activateGroup = useMultiExecStore((state) => state.activateGroup);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [groupName, setGroupName] = useState('');
+  const toggleChord = useChordLabel('terminal.multi-exec');
 
   const connectedTabs = useMemo(
     () => tabs.filter((tab) => tab.profile && tab.status === 'connected'),
@@ -57,9 +61,7 @@ export function MultiExecControl() {
   const connected = useMemo(() => new Set(connectedIds), [connectedIds]);
   const active = selectedIds.length >= 2;
   const visibleIds = new Set(
-    flattenPaneLayout(root).panes
-      .map(({ pane }) => pane.activeTabId)
-      .filter((id): id is string => !!id && connected.has(id)),
+    visibleTabIds(root, zoomedPaneId).filter((tabId) => connected.has(tabId)),
   );
   const currentPaneIds = connectedTabs
     .filter((tab) => tab.paneId === activePaneId)
@@ -67,7 +69,16 @@ export function MultiExecControl() {
 
   return (
     <>
-      <Tooltip title={active ? `Mirroring input across ${selectedIds.length} terminals` : 'Select terminals for multi-execution'}>
+      <Tooltip
+        title={withChord(
+          active
+            ? `Mirroring input across ${selectedIds.length} terminals`
+            : 'Select terminals for multi-execution',
+          // The chord toggles mirroring rather than opening this picker, so it
+          // says so instead of standing alone as the button's own shortcut.
+          toggleChord && `${toggleChord} toggles mirroring`,
+        )}
+      >
         <IconButton
           size="small"
           aria-label="Configure multi-execution"

@@ -73,9 +73,15 @@ const initialKeys = collectStaticGraph(entry[0]);
 // terminals mount. That startup decision adds ~0.2 KiB raw / ~0.1 KiB gzip;
 // the reconnect and scrollback implementations remain in the lazy terminal
 // feature graph measured below.
+//
+// A command in that catalog pays there as well. The multi-execution toggle —
+// the selection it resumes and the reason it gives when there is nothing to
+// mirror — adds ~1 KiB raw / ~0.4 KiB gzip to the keymap and the multi-exec
+// store, both of which the first paint already carries, and the gzip budget
+// moves to cover it.
 check('Initial JavaScript', measureGraph(initialKeys), {
   raw: 782_000,
-  gzip: 250_000,
+  gzip: 251_000,
 });
 
 for (const feature of [

@@ -50,6 +50,18 @@ Multi-execution mirrors keystrokes into several live terminals at once.
     This includes any session where a prompt is waiting for confirmation. The control stays
     visibly **Active** while mirroring is on.
 
+### Switching it off and on
+
+++ctrl+shift+m++ toggles mirroring without opening the control, so a mirrored command can be
+followed by a single-session one and back. Switching it on again restores the same
+selection, minus any session that has since closed.
+
+Pressed with nothing selected yet, it mirrors the sessions currently on screen — one per
+split. With fewer than two of those, it says so and leaves mirroring off.
+
+The chord is rebindable like every other, under **Terminal → Toggle multi-execution** in the
+[keyboard sheet](../reference/keyboard-shortcuts.md).
+
 ### Saved groups
 
 A selection of two or more sessions can be saved as a named **group** and re-activated in

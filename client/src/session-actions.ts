@@ -11,8 +11,9 @@ import { useMultiExecStore } from './state/multi-exec.js';
 import { useTabsStore } from './state/tabs.js';
 import type { PaneDirection, SessionSetLayout } from './state/tabs.js';
 import { confirmAction } from './state/dialogs.js';
+import { showToast } from './state/toast.js';
 import { confirmDiscardRemoteEditors } from './editor/remote-editor-registry.js';
-import { findPane } from './state/workspace-layout.js';
+import { findPane, visibleTabIds } from './state/workspace-layout.js';
 import { openAppWindow } from './window-management.js';
 
 /**
@@ -141,6 +142,25 @@ export async function launchManagedHostGroup(
   );
   useMultiExecStore.getState().setGroups([]);
   return ids;
+}
+
+/**
+ * Switch mirrored input on or off from the keyboard. Switching it on resumes
+ * the terminals that were mirroring last, and for a first press falls back to
+ * the sessions on screen — the ones visibly receiving the keystrokes.
+ */
+export function toggleMultiExec(): boolean {
+  const { tabs, root, zoomedPaneId } = useTabsStore.getState();
+  const connected = tabs.filter((tab) => tab.status === 'connected').map((tab) => tab.id);
+  const onScreen = visibleTabIds(root, zoomedPaneId);
+  if (useMultiExecStore.getState().toggleMirroring(connected, onScreen)) return true;
+  showToast(
+    'info',
+    connected.length < 2
+      ? 'Connect at least two sessions to mirror input.'
+      : 'Pick the terminals to mirror input into from the multi-exec control.',
+  );
+  return true;
 }
 
 /** Duplicate an open tab (same profile, fresh session). */

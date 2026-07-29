@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { toggleMultiExec } from '../../../client/src/session-actions.js';
 import {
   broadcastTerminalInput,
   useMultiExecStore,
 } from '../../../client/src/state/multi-exec.js';
+import { useTabsStore } from '../../../client/src/state/tabs.js';
+import { useToastStore } from '../../../client/src/state/toast.js';
 import {
   registerTerminal,
   type TerminalHandle,
@@ -28,8 +31,23 @@ function handle(sendInput: TerminalHandle['sendInput']): TerminalHandle {
 }
 
 beforeEach(() => {
-  useMultiExecStore.setState({ selectedIds: [], groups: [] });
+  useMultiExecStore.setState({ selectedIds: [], lastMirroredIds: [], groups: [] });
+  useTabsStore.setState({
+    tabs: [],
+    root: { id: 'pane-test', type: 'pane', activeTabId: null },
+    activePaneId: 'pane-test',
+    activeId: null,
+    zoomedPaneId: null,
+  });
+  useToastStore.setState({ toast: null });
 });
+
+/** A connected session in the focused pane. */
+function connectTab(title: string): string {
+  const id = useTabsStore.getState().open({ kind: 'local' }, title);
+  useTabsStore.getState().update(id, { status: 'connected' });
+  return id;
+}
 
 describe('multi-execution routing', () => {
   it('mirrors source input only to the other selected terminals', () => {
@@ -68,6 +86,72 @@ describe('multi-execution routing', () => {
     useMultiExecStore.getState().reconcile(['tab-a']);
     expect(useMultiExecStore.getState()).toMatchObject({
       selectedIds: ['tab-a'],
+    });
+  });
+
+  it('switches mirroring off and back on over the same terminals', () => {
+    const multiExec = () => useMultiExecStore.getState();
+    multiExec().setSelection(['tab-a', 'tab-b']);
+
+    expect(multiExec().toggleMirroring(['tab-a', 'tab-b'], [])).toBe(true);
+    expect(multiExec().selectedIds).toEqual([]);
+    expect(multiExec().toggleMirroring(['tab-a', 'tab-b'], [])).toBe(true);
+    expect(multiExec().selectedIds).toEqual(['tab-a', 'tab-b']);
+  });
+
+  it('resumes only the terminals still live, else the ones on screen', () => {
+    const multiExec = () => useMultiExecStore.getState();
+    multiExec().setSelection(['tab-a', 'tab-b']);
+    multiExec().toggleMirroring(['tab-a', 'tab-b'], []);
+
+    // "tab-b" went away while mirroring was off, leaving too little to resume.
+    multiExec().toggleMirroring(['tab-a', 'tab-c', 'tab-d'], ['tab-c', 'tab-d', 'tab-gone']);
+    expect(multiExec().selectedIds).toEqual(['tab-c', 'tab-d']);
+  });
+
+  it('declines to mirror when fewer than two terminals are available', () => {
+    const multiExec = () => useMultiExecStore.getState();
+    multiExec().setSelection(['tab-a', 'tab-b']);
+    multiExec().toggleMirroring(['tab-a', 'tab-b'], []);
+
+    expect(multiExec().toggleMirroring(['tab-a'], ['tab-a'])).toBe(false);
+    expect(multiExec().selectedIds).toEqual([]);
+  });
+
+  it('mirrors the sessions on screen the first time the shortcut is pressed', () => {
+    const first = connectTab('edge-1');
+    useTabsStore.getState().split(useTabsStore.getState().activePaneId, 'right');
+    const second = connectTab('edge-2');
+
+    expect(toggleMultiExec()).toBe(true);
+    expect(useMultiExecStore.getState().selectedIds).toEqual([first, second]);
+
+    expect(toggleMultiExec()).toBe(true);
+    expect(useMultiExecStore.getState().selectedIds).toEqual([]);
+    expect(useToastStore.getState().toast).toBeNull();
+  });
+
+  it('leaves the panes hidden behind a zoomed one out of the shortcut', () => {
+    connectTab('edge-1');
+    useTabsStore.getState().split(useTabsStore.getState().activePaneId, 'right');
+    connectTab('edge-2');
+    // A zoomed pane covers the canvas, so the other session is off screen and
+    // must not receive a command typed into the one that is visible.
+    expect(useTabsStore.getState().toggleZoom()).toBe(true);
+
+    expect(toggleMultiExec()).toBe(true);
+    expect(useMultiExecStore.getState().selectedIds).toEqual([]);
+    expect(useToastStore.getState().toast).toMatchObject({ severity: 'info' });
+  });
+
+  it('says why the shortcut did nothing when there is nothing to mirror', () => {
+    connectTab('edge-1');
+
+    expect(toggleMultiExec()).toBe(true);
+    expect(useMultiExecStore.getState().selectedIds).toEqual([]);
+    expect(useToastStore.getState().toast).toMatchObject({
+      severity: 'info',
+      message: expect.stringContaining('two sessions'),
     });
   });
 

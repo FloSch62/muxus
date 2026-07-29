@@ -7,6 +7,7 @@ import {
   requestCloseActivePane,
   requestCloseTabs,
   splitActivePane,
+  toggleMultiExec,
 } from '../session-actions.js';
 import { usePrefsStore } from '../state/prefs.js';
 import { PANE_RESIZE_STEP, useTabsStore } from '../state/tabs.js';
@@ -335,6 +336,14 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
       handle.clear();
       return true;
     },
+  },
+  {
+    id: 'terminal.multi-exec',
+    title: 'Toggle multi-execution',
+    category: 'terminal',
+    defaultChords: ['Mod+Shift+M'],
+    keywords: ['multi-exec', 'mirror', 'broadcast', 'sync input', 'all sessions'],
+    run: () => toggleMultiExec(),
   },
   {
     id: 'terminal.zoom-in',
