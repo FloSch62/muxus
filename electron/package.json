@@ -1,6 +1,6 @@
 {
   "name": "@muxus/electron",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": true,
   "description": "Muxus desktop app",
   "license": "MIT",
@@ -43,7 +43,7 @@
     "@electron/rebuild": "^4.0.1",
     "@muxus/server": "workspace:*",
     "@types/node": "^24.13.3",
-    "electron": "43.1.1",
+    "electron": "43.2.0",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.1",
     "shell-env": "^4.0.3",
