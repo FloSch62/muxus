@@ -407,8 +407,16 @@ describe('session settings from ssh config', () => {
     const lease = await manager.connect(profile, io);
     await vi.waitFor(() => expect(createPromptSeen).toBe(true));
     expect(vault.status().configured).toBe(false);
+    let postAuthSettled = false;
+    void lease.connection.waitForPostAuth().then(() => {
+      postAuthSettled = true;
+    });
+    await Promise.resolve();
+    expect(postAuthSettled).toBe(false);
 
     finishCreate!({ answers: [master, master] });
+    await lease.connection.waitForPostAuth();
+    expect(postAuthSettled).toBe(true);
     await vi.waitFor(() => {
       expect(vault!.status()).toMatchObject({
         configured: true,

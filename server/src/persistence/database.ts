@@ -332,6 +332,16 @@ const MIGRATIONS = [
     name: 'password-vault-key-check',
     run: addPasswordVaultKeyCheck,
   },
+  {
+    version: 16,
+    name: 'password-vault-key-cleanup',
+    sql: `
+      CREATE TABLE password_vault_key_cleanup (
+        vault_id TEXT PRIMARY KEY CHECK(length(vault_id) BETWEEN 16 AND 64),
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) STRICT;
+    `,
+  },
 ] as const;
 
 function migrateDraftPasswordVault(db: DatabaseSync): void {
@@ -818,6 +828,29 @@ export class MuxusDatabase {
       );
     if (Number(changed.changes) !== 1) throw new Error('password vault is not configured');
     this.flushSensitivePages();
+  }
+
+  pendingPasswordVaultKeyCleanup(): string[] {
+    return this.db
+      .prepare(
+        'SELECT vault_id FROM password_vault_key_cleanup ORDER BY created_at',
+      )
+      .all()
+      .map((row) => String(row.vault_id));
+  }
+
+  queuePasswordVaultKeyCleanup(vaultId: string): void {
+    this.db
+      .prepare(
+        'INSERT OR IGNORE INTO password_vault_key_cleanup(vault_id) VALUES (?)',
+      )
+      .run(vaultId);
+  }
+
+  finishPasswordVaultKeyCleanup(vaultId: string): void {
+    this.db
+      .prepare('DELETE FROM password_vault_key_cleanup WHERE vault_id = ?')
+      .run(vaultId);
   }
 
   encryptedCredential(

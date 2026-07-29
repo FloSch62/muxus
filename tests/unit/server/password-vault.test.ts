@@ -292,6 +292,7 @@ describe('password vault', () => {
     const keyStore = new ToggleVaultKeyStore();
     const store = await setup(':memory:', keyStore);
     await store.create(MASTER, 'never');
+    const vaultId = database!.passwordVaultConfig()!.vaultId;
     await store.rememberSshPassword(
       account(),
       'alice@router.example:22',
@@ -320,6 +321,19 @@ describe('password vault', () => {
       unlockPolicy: 'startup',
       locked: false,
       osKeyStoreAvailable: false,
+    });
+    expect(database!.pendingPasswordVaultKeyCleanup()).toEqual([vaultId]);
+
+    store.dispose();
+    keyStore.unavailable = false;
+    vault = new PasswordVault(database!, { kdf: TEST_KDF, keyStore });
+    await vault.initialize();
+    expect(database!.pendingPasswordVaultKeyCleanup()).toEqual([]);
+    await expect(keyStore.get(vaultId)).resolves.toBeUndefined();
+    expect(vault.status()).toMatchObject({
+      unlockPolicy: 'startup',
+      locked: true,
+      osKeyStoreAvailable: true,
     });
   });
 

@@ -167,6 +167,14 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
         app.log.warn({ err, target: conn.metadataAlias }, 'could not record recent connection');
       }
     }
+    // A dial client closes this socket as soon as it has handed the connection
+    // to a forward. Finish any post-auth vault prompt first so closing the dial
+    // lease cannot reject the prompt before the password is saved.
+    await conn.waitForPostAuth();
+    if (!socketOpen) {
+      dialLease.release();
+      return;
+    }
     sendControl(socket, { op: 'ready', connId: conn.id, host: conn.host, user: conn.user });
     return;
   }

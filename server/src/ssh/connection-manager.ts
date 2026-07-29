@@ -129,6 +129,8 @@ export interface ManagedConnection {
   onHealth(listener: (state: SshTransportHealth) => void): () => void;
   /** Subscribe to transport loss; returns an unsubscribe function. */
   onClose(listener: (reason?: string) => void): () => void;
+  /** Wait for post-authentication password-vault prompts and saving. */
+  waitForPostAuth(): Promise<void>;
   /** Force-close the transport, regardless of active leases. */
   close(): void;
 }
@@ -230,6 +232,7 @@ export interface ChainHop {
 export class SshConnectionManager {
   private readonly connections = new ConnectionLeaseRegistry<ManagedConnection>();
   private readonly closeReasons = new WeakMap<Client, string>();
+  private readonly postAuth = new WeakMap<Client, Promise<void>>();
   /** In-flight dials by mux key, so simultaneous sessions share one TCP connection and one auth round-trip. */
   private readonly pendingDials = new Map<string, Promise<ManagedConnection>>();
   private readonly loadConfig: () => ConfigDocument;
@@ -393,6 +396,7 @@ export class SshConnectionManager {
     key: string,
   ): Promise<ConnectionLease> {
     const clients: Client[] = [];
+    const postAuth: Promise<void>[] = [];
     const healthListeners = new Set<(state: SshTransportHealth) => void>();
     const hopHealth = new Map<number, SshTransportHealth>();
     const stopHealthObservers: Array<() => void> = [];
@@ -418,6 +422,8 @@ export class SshConnectionManager {
         );
         const client = await this.dial(hop, sock, io);
         clients.push(client);
+        const pendingPostAuth = this.postAuth.get(client);
+        if (pendingPostAuth) postAuth.push(pendingPostAuth);
         hopHealth.set(i, 'healthy');
         const transport = (client as Client & { _sock?: Duplex })._sock;
         if (transport) {
@@ -445,6 +451,7 @@ export class SshConnectionManager {
       profile.useConfig === false ? undefined : findMetadataAlias(doc, target.spec.host);
     const id = nanoid(10);
     const closeListeners = new Set<(reason?: string) => void>();
+    const postAuthSettled = Promise.all(postAuth).then(() => undefined);
     let sftpPromise: Promise<SFTPWrapper> | undefined;
     let closed = false;
     let ending = false;
@@ -517,6 +524,7 @@ export class SshConnectionManager {
         closeListeners.add(listener);
         return () => closeListeners.delete(listener);
       },
+      waitForPostAuth: () => postAuthSettled,
       close: () => {
         if (ending) return;
         ending = true;
@@ -615,8 +623,7 @@ export class SshConnectionManager {
         ready = true;
         settled = true;
         readyDeadline?.clear();
-        resolve(client);
-        void auth
+        const postAuth = auth
           .commitRememberedPassword()
           .catch((err) => {
             io.status(
@@ -628,6 +635,8 @@ export class SshConnectionManager {
           .finally(() => {
             auth.dispose();
           });
+        this.postAuth.set(client, postAuth);
+        resolve(client);
       });
       client.on('error', (err) => {
         if (!settled) {

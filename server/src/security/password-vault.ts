@@ -164,6 +164,9 @@ export class PasswordVault {
     if (this.initialized) return;
     await removeLegacyDeviceKey(this.database.filename);
     const config = this.database.passwordVaultConfig();
+    await this.retryPendingOsKeyCleanup(
+      config?.unlockPolicy === 'never' ? config.vaultId : undefined,
+    );
     if (config?.unlockPolicy === 'never') {
       try {
         const key = await this.keyStore.get(config.vaultId);
@@ -324,12 +327,15 @@ export class PasswordVault {
       }
 
       if (checkedConfig.unlockPolicy === 'never') {
-        await this.deleteOsKeyBestEffort(checkedConfig.vaultId);
+        this.database.queuePasswordVaultKeyCleanup(checkedConfig.vaultId);
       }
       this.database.updatePasswordVaultConfig({
         ...checkedConfig,
         unlockPolicy,
       });
+      if (checkedConfig.unlockPolicy === 'never') {
+        await this.deletePendingOsKeyBestEffort(checkedConfig.vaultId);
+      }
       if (unlockPolicy === 'startup') this.setKey(vaultKey);
       else this.lock();
     } finally {
@@ -514,10 +520,13 @@ export class PasswordVault {
   async deleteAll(): Promise<void> {
     const config = this.database.passwordVaultConfig();
     if (config?.unlockPolicy === 'never') {
-      await this.deleteOsKeyBestEffort(config.vaultId);
+      this.database.queuePasswordVaultKeyCleanup(config.vaultId);
     }
     this.lock();
     this.database.deletePasswordVaultData(PASSWORD_VAULT_PROVIDER);
+    if (config?.unlockPolicy === 'never') {
+      await this.deletePendingOsKeyBestEffort(config.vaultId);
+    }
   }
 
   private requireConfig(): PasswordVaultConfigRecord {
@@ -608,15 +617,32 @@ export class PasswordVault {
     }
   }
 
-  private async deleteOsKeyBestEffort(vaultId: string): Promise<void> {
+  private async retryPendingOsKeyCleanup(
+    activeAutomaticVaultId?: string,
+  ): Promise<void> {
+    for (const vaultId of this.database.pendingPasswordVaultKeyCleanup()) {
+      if (vaultId === activeAutomaticVaultId) {
+        // The policy change never committed, so automatic access is still the
+        // configured policy and its key must remain available.
+        this.database.finishPasswordVaultKeyCleanup(vaultId);
+        continue;
+      }
+      await this.deletePendingOsKeyBestEffort(vaultId);
+    }
+  }
+
+  private async deletePendingOsKeyBestEffort(vaultId: string): Promise<void> {
     try {
       await this.keyStore.delete(vaultId);
       this.osKeyStoreAvailable = true;
     } catch {
       // Moving away from automatic access and resetting the vault are recovery
       // paths; an unavailable credential store must not block either action.
+      // The durable queue retries deletion on the next initialization.
       this.osKeyStoreAvailable = false;
+      return;
     }
+    this.database.finishPasswordVaultKeyCleanup(vaultId);
   }
 
   private isVerifiedKey(

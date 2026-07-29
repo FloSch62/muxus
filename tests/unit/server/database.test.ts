@@ -36,6 +36,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 13, name: 'automatic-password-vault' },
       { version: 14, name: 'password-vault-os-keystore' },
       { version: 15, name: 'password-vault-key-check' },
+      { version: 16, name: 'password-vault-key-cleanup' },
     ]);
   });
 
@@ -61,10 +62,11 @@ describe('MuxusDatabase migrations', () => {
     const draft = new DatabaseSync(filename);
     try {
       draft.exec(`
-        DELETE FROM schema_migrations WHERE version IN (13, 14, 15);
+        DELETE FROM schema_migrations WHERE version IN (13, 14, 15, 16);
         UPDATE schema_migrations
         SET name = 'master-password-vault'
         WHERE version = 12;
+        DROP TABLE password_vault_key_cleanup;
         DROP TABLE password_vault;
         CREATE TABLE password_vault (
           singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
@@ -111,8 +113,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 15,
-      name: 'password-vault-key-check',
+      version: 16,
+      name: 'password-vault-key-cleanup',
     });
     expect(database.passwordVaultConfig()).toMatchObject({
       formatVersion: 2,
