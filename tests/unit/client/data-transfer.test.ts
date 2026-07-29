@@ -1,11 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { apiFetch } from '../../../client/src/api/http.js';
 import {
   BACKUP_FORMAT,
   TRANSFER_VERSION,
   parseTransferDocument,
+  restoreImportedConnections,
   sanitizePreferences,
   type BackupPreferences,
 } from '../../../client/src/data-transfer.js';
+
+vi.mock('../../../client/src/api/http.js', () => ({
+  apiFetch: vi.fn(),
+}));
+
+const apiFetchMock = vi.mocked(apiFetch);
+
+beforeEach(() => {
+  apiFetchMock.mockReset();
+});
 
 const connections = {
   sshHosts: [
@@ -19,6 +31,22 @@ const connections = {
   savedHosts: [],
   hostOrder: [{ kind: 'ssh', alias: 'production' }],
 };
+
+function mockExistingMultiAliasHost(): void {
+  apiFetchMock
+    .mockResolvedValueOnce({
+      path: '/home/test/.ssh/config',
+      files: ['/home/test/.ssh/config'],
+      hosts: [
+        {
+          alias: 'production',
+          aliases: ['production', 'prod-alt'],
+          file: '/home/test/.ssh/config',
+        },
+      ],
+    })
+    .mockResolvedValueOnce({ profiles: [] });
+}
 
 describe('Muxus transfer file parsing', () => {
   it('accepts a versioned full backup', () => {
@@ -85,6 +113,52 @@ describe('Muxus transfer file parsing', () => {
         }),
       ),
     ).toThrow('The connection data in this file is incomplete or too large.');
+  });
+});
+
+describe('restoring SSH hosts', () => {
+  const importedSecondaryAlias = {
+    sshHosts: [
+      {
+        alias: 'prod-alt',
+        aliases: ['prod-alt'],
+        options: { hostname: 'new.example.com' },
+      },
+    ],
+    savedHosts: [],
+    hostOrder: [],
+  };
+
+  it('keeps a host when an imported alias matches one of its secondary aliases', async () => {
+    mockExistingMultiAliasHost();
+
+    await expect(
+      restoreImportedConnections(importedSecondaryAlias, 'keep'),
+    ).resolves.toEqual({ added: 0, updated: 0, skipped: 1 });
+    expect(apiFetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses the owning primary alias when replacing through a secondary alias', async () => {
+    mockExistingMultiAliasHost();
+    apiFetchMock.mockResolvedValueOnce({ file: '/home/test/.ssh/config' });
+
+    await expect(
+      restoreImportedConnections(importedSecondaryAlias, 'replace'),
+    ).resolves.toEqual({ added: 0, updated: 1, skipped: 0 });
+
+    expect(apiFetchMock).toHaveBeenNthCalledWith(
+      3,
+      '/api/ssh/config/hosts',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          aliases: ['prod-alt'],
+          options: { hostname: 'new.example.com' },
+          previousAlias: 'production',
+          file: '/home/test/.ssh/config',
+        }),
+      }),
+    );
   });
 });
 

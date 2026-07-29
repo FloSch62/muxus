@@ -69,7 +69,7 @@ export function MobaXtermImportDialog({
     typeof window.muxusDesktop.readMobaXtermSessions === 'function';
 
   const existingAliases = useMemo(
-    () => new Set(sshConfig?.hosts.map((host) => host.alias) ?? []),
+    () => new Set(sshConfig?.hosts.flatMap((host) => host.aliases) ?? []),
     [sshConfig?.hosts],
   );
   const conflictingSessions = useMemo(
