@@ -58,6 +58,14 @@ describe('connectionAlgorithms', () => {
     expect(() => connectionAlgorithms({ ciphers: 'chacha8-poly1305' })).toThrow(/Ciphers/);
   });
 
+  it('maps Compression yes/no to a compress preference and leaves unset alone', () => {
+    expect(connectionAlgorithms({ compression: true }).algorithms).toEqual({
+      compress: ['zlib@openssh.com', 'zlib', 'none'],
+    });
+    expect(connectionAlgorithms({ compression: false }).algorithms).toEqual({ compress: ['none'] });
+    expect(connectionAlgorithms({}).algorithms).toBeUndefined();
+  });
+
   it('handles the legacy console-server recipe end to end', () => {
     const { algorithms, notes } = connectionAlgorithms({
       ciphers: 'aes128-cbc',

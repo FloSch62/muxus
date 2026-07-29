@@ -13,7 +13,42 @@ export interface AppInfo {
   homeDir: string;
   /** Default login shell the server would spawn for local terminals. */
   defaultShell: string;
+  /**
+   * Algorithm names the SSH engine can negotiate, per ssh_config keyword
+   * ("Ciphers", "KexAlgorithms", "HostKeyAlgorithms", "MACs") — the editor
+   * warns about entries the dialer would have to skip.
+   */
+  sshAlgorithms: Record<string, string[]>;
 }
+
+/**
+ * ssh_config keywords the dialer applies even though they have no editor
+ * field of their own (they are edited under Advanced). Everything else in
+ * Advanced is preserved for OpenSSH but never used by Muxus itself.
+ * Lowercased for comparison, per ssh_config's case-insensitive keywords.
+ */
+export const DIAL_TIME_KEYWORDS: ReadonlySet<string> = new Set([
+  'ciphers',
+  'kexalgorithms',
+  'hostkeyalgorithms',
+  'macs',
+  'compression',
+  'connecttimeout',
+  'serveraliveinterval',
+  'serveralivecountmax',
+  'identityagent',
+  'passwordauthentication',
+  'kbdinteractiveauthentication',
+  'challengeresponseauthentication',
+  'preferredauthentications',
+  'userknownhostsfile',
+  'globalknownhostsfile',
+  'setenv',
+  'sendenv',
+  'remotecommand',
+  'requesttty',
+  'stricthostkeychecking',
+]);
 
 export type UpdateCheckResult =
   | {

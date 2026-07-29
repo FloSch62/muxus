@@ -1,17 +1,26 @@
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
+import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
+import SettingsEthernetIcon from '@mui/icons-material/SettingsEthernet';
+import { DIAL_TIME_KEYWORDS } from '@muxus/shared';
+import { useAppInfo } from '../../api/queries.js';
+import { LEGACY_ALGORITHM_PRESET, unsupportedEntries } from './advanced-options.js';
 import type { HostDraft } from './draft.js';
 
 /**
- * Everything ssh_config knows that Muxus doesn't model: free-form option
- * rows (kept verbatim through edits), plus the live preview of the exact
- * block text a save writes — rendered by the server so it can't drift.
+ * Everything ssh_config knows that Muxus doesn't model as a field: free-form
+ * option rows (kept verbatim through edits), plus the live preview of the
+ * exact block text a save writes — rendered by the server so it can't drift.
+ * Rows are badged by whether the dialer applies the keyword or merely
+ * preserves it for OpenSSH, and algorithm values the SSH engine can't offer
+ * are flagged as they are typed instead of at connect time.
  */
 export function AdvancedSection({
   draft,
@@ -24,32 +33,75 @@ export function AdvancedSection({
   preview: string;
   previewError: string | null;
 }) {
+  const sshAlgorithms = useAppInfo().data?.sshAlgorithms;
+
   const update = (i: number, patch: Partial<{ keyword: string; value: string }>) =>
     set({ extras: draft.extras.map((e, j) => (j === i ? { ...e, ...patch } : e)) });
+
+  const missingLegacy = LEGACY_ALGORITHM_PRESET.filter(
+    (row) => !draft.extras.some((e) => e.keyword.trim().toLowerCase() === row.keyword.toLowerCase()),
+  );
 
   return (
     <Stack spacing={2}>
       <Stack spacing={1}>
         <Typography variant="body2" color="text.secondary">
-          Extra ssh_config options written into the block as-is (Compression, ServerAliveInterval, RequestTTY, …).
+          Extra ssh_config options written into the block as-is. Rows marked{' '}
+          <em>applied</em> are honoured by Muxus when connecting; the rest are kept for OpenSSH.
         </Typography>
-        {draft.extras.map((e, i) => (
-          <Stack key={i} direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-            <TextField label="Option" value={e.keyword} onChange={(ev) => update(i, { keyword: ev.target.value })} sx={{ width: 220 }} />
-            <TextField label="Value" value={e.value} onChange={(ev) => update(i, { value: ev.target.value })} fullWidth />
-            <IconButton size="small" aria-label="Remove option" onClick={() => set({ extras: draft.extras.filter((_, j) => j !== i) })}>
-              <DeleteOutlineIcon fontSize="small" />
-            </IconButton>
-          </Stack>
-        ))}
-        <Button
-          size="small"
-          startIcon={<AddIcon />}
-          onClick={() => set({ extras: [...draft.extras, { keyword: '', value: '' }] })}
-          sx={{ alignSelf: 'flex-start' }}
-        >
-          Add option
-        </Button>
+        {draft.extras.map((e, i) => {
+          const keyword = e.keyword.trim().toLowerCase();
+          const unsupported = unsupportedEntries(e.keyword, e.value, sshAlgorithms);
+          return (
+            <Stack key={i} direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+              <TextField label="Option" value={e.keyword} onChange={(ev) => update(i, { keyword: ev.target.value })} sx={{ width: 220 }} />
+              <TextField
+                label="Value"
+                value={e.value}
+                onChange={(ev) => update(i, { value: ev.target.value })}
+                fullWidth
+                error={unsupported.length > 0}
+                helperText={
+                  unsupported.length
+                    ? `Skipped when connecting — not supported by the SSH engine: ${unsupported.join(', ')}`
+                    : undefined
+                }
+              />
+              <Box sx={{ width: 62, flexShrink: 0, display: 'flex', justifyContent: 'center', pt: 1.25 }}>
+                {keyword &&
+                  (DIAL_TIME_KEYWORDS.has(keyword) ? (
+                    <Tooltip title="Muxus applies this option when connecting.">
+                      <Chip size="small" label="applied" color="success" variant="outlined" sx={{ height: 18, fontSize: 10 }} />
+                    </Tooltip>
+                  ) : (
+                    <Tooltip title="Kept in the config for OpenSSH — Muxus does not use this option.">
+                      <Chip size="small" label="kept" variant="outlined" sx={{ height: 18, fontSize: 10, color: 'text.secondary' }} />
+                    </Tooltip>
+                  ))}
+              </Box>
+              <IconButton size="small" aria-label="Remove option" sx={{ mt: 0.75 }} onClick={() => set({ extras: draft.extras.filter((_, j) => j !== i) })}>
+                <DeleteOutlineIcon fontSize="small" />
+              </IconButton>
+            </Stack>
+          );
+        })}
+        <Stack direction="row" spacing={1}>
+          <Button size="small" startIcon={<AddIcon />} onClick={() => set({ extras: [...draft.extras, { keyword: '', value: '' }] })}>
+            Add option
+          </Button>
+          <Tooltip title="Adds the key exchange, host key and cipher options old console servers and network gear need. Appended to the modern defaults, so current hosts keep working.">
+            <span>
+              <Button
+                size="small"
+                startIcon={<SettingsEthernetIcon />}
+                disabled={missingLegacy.length === 0}
+                onClick={() => set({ extras: [...draft.extras, ...missingLegacy] })}
+              >
+                Legacy device algorithms
+              </Button>
+            </span>
+          </Tooltip>
+        </Stack>
       </Stack>
 
       <Stack spacing={0.75}>

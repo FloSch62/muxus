@@ -266,6 +266,22 @@ export interface ResolvedTarget extends ResolvedHostSettings {
   kexAlgorithms?: string;
   hostKeyAlgorithms?: string;
   macs?: string;
+  compression?: boolean;
+  /** Agent socket override: a path, `$VAR`, `SSH_AUTH_SOCK`, or `none`. */
+  identityAgent?: string;
+  /** false ⇒ never try this method (`PasswordAuthentication no`). */
+  passwordAuthentication?: boolean;
+  kbdInteractiveAuthentication?: boolean;
+  /** Expanded paths; [] means `none`. undefined ⇒ OpenSSH defaults. */
+  userKnownHostsFiles?: string[];
+  globalKnownHostsFiles?: string[];
+  /** First-obtained value per variable, ssh_config SetEnv order. */
+  setEnv: Record<string, string>;
+  /** SendEnv patterns in obtained order, `-` removals included. */
+  sendEnv: string[];
+  remoteCommand?: string;
+  requestTty?: 'no' | 'yes' | 'force' | 'auto';
+  strictHostKeyChecking?: 'yes' | 'no' | 'accept-new' | 'ask';
 }
 
 const yes = (v: string | undefined): boolean => (v ?? '').toLowerCase() === 'yes';
@@ -281,6 +297,8 @@ export function resolveHost(doc: ConfigDocument, host: string): ResolvedTarget {
   const identityFiles: string[] = [];
   const certificateFiles: string[] = [];
   const forwards: ConfigForward[] = [];
+  const setEnv: Record<string, string> = {};
+  const sendEnv: string[] = [];
 
   for (const entry of doc.sequence) {
     if (entry.patterns && !hostPatternsMatch(entry.patterns, host)) continue;
@@ -291,6 +309,17 @@ export function resolveHost(doc: ConfigDocument, host: string): ResolvedTarget {
           if (file && !identityFiles.includes(file)) identityFiles.push(file);
           break;
         }
+        case 'setenv':
+          for (const arg of opt.args) {
+            const eq = arg.indexOf('=');
+            if (eq <= 0) continue;
+            const name = arg.slice(0, eq);
+            if (!(name in setEnv)) setEnv[name] = arg.slice(eq + 1);
+          }
+          break;
+        case 'sendenv':
+          sendEnv.push(...opt.args.filter(Boolean));
+          break;
         case 'certificatefile': {
           const file = opt.args[0];
           if (file && !certificateFiles.includes(file)) certificateFiles.push(file);
@@ -342,7 +371,73 @@ export function resolveHost(doc: ConfigDocument, host: string): ResolvedTarget {
     kexAlgorithms: first.get('kexalgorithms'),
     hostKeyAlgorithms: first.get('hostkeyalgorithms'),
     macs: first.get('macs'),
+    compression: flag(first.get('compression')),
+    identityAgent: parseIdentityAgent(first.get('identityagent'), tokens),
+    passwordAuthentication: flag(first.get('passwordauthentication')),
+    kbdInteractiveAuthentication: flag(
+      first.get('kbdinteractiveauthentication') ?? first.get('challengeresponseauthentication'),
+    ),
+    userKnownHostsFiles: parseKnownHostsFiles(first.get('userknownhostsfile'), tokens),
+    globalKnownHostsFiles: parseKnownHostsFiles(first.get('globalknownhostsfile'), tokens),
+    setEnv,
+    sendEnv,
+    remoteCommand: first.get('remotecommand'),
+    requestTty: parseChoice(first.get('requesttty'), ['no', 'yes', 'force', 'auto']),
+    strictHostKeyChecking: parseChoice(first.get('stricthostkeychecking'), ['yes', 'no', 'accept-new', 'ask']),
   };
+}
+
+/** yes/no → boolean; anything else (including unset) → undefined. */
+function flag(value: string | undefined): boolean | undefined {
+  const v = (value ?? '').toLowerCase();
+  return v === 'yes' ? true : v === 'no' ? false : undefined;
+}
+
+function parseChoice<T extends string>(value: string | undefined, choices: readonly T[]): T | undefined {
+  const v = (value ?? '').toLowerCase();
+  return choices.includes(v as T) ? (v as T) : undefined;
+}
+
+/** `none` and `$VAR`/`SSH_AUTH_SOCK` indirections pass through; paths expand. */
+function parseIdentityAgent(value: string | undefined, tokens: { h: string; r: string }): string | undefined {
+  const arg = value === undefined ? undefined : splitArgs(value)[0];
+  if (!arg) return undefined;
+  if (arg.toLowerCase() === 'none' || arg.startsWith('$') || arg === 'SSH_AUTH_SOCK') return arg;
+  return expandIdentityPath(arg, tokens);
+}
+
+/** Space-separated path list; `none` → []; unset → undefined (defaults). */
+function parseKnownHostsFiles(value: string | undefined, tokens: { h: string; r: string }): string[] | undefined {
+  if (value === undefined) return undefined;
+  const args = splitArgs(value).filter(Boolean);
+  if (args.length === 1 && args[0]!.toLowerCase() === 'none') return [];
+  return args.map((f) => expandIdentityPath(f, tokens));
+}
+
+/**
+ * The environment for a session channel: process variables matched by the
+ * SendEnv patterns (later `-pattern` entries remove earlier matches, as in
+ * ssh_config), overridden by explicit SetEnv values. undefined when empty.
+ */
+export function sessionEnvironment(
+  resolved: Pick<ResolvedTarget, 'setEnv' | 'sendEnv'>,
+  source: NodeJS.ProcessEnv = process.env,
+): Record<string, string> | undefined {
+  const names = new Set<string>();
+  for (const pattern of resolved.sendEnv) {
+    if (pattern.startsWith('-')) {
+      for (const name of names) if (globMatch(pattern.slice(1), name)) names.delete(name);
+    } else {
+      for (const name of Object.keys(source)) if (globMatch(pattern, name)) names.add(name);
+    }
+  }
+  const env: Record<string, string> = {};
+  for (const name of names) {
+    const value = source[name];
+    if (value !== undefined) env[name] = value;
+  }
+  Object.assign(env, resolved.setEnv);
+  return Object.keys(env).length ? env : undefined;
 }
 
 const RESOLVED_KEYS = new Set([
@@ -360,6 +455,16 @@ const RESOLVED_KEYS = new Set([
   'kexalgorithms',
   'hostkeyalgorithms',
   'macs',
+  'compression',
+  'identityagent',
+  'passwordauthentication',
+  'kbdinteractiveauthentication',
+  'challengeresponseauthentication',
+  'userknownhostsfile',
+  'globalknownhostsfile',
+  'remotecommand',
+  'requesttty',
+  'stricthostkeychecking',
 ]);
 
 function parseProxyCommand(value: string | undefined): string | undefined {

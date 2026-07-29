@@ -9,6 +9,7 @@ import {
   parseHostSpec,
   parseProxyJumpList,
   resolveHost,
+  sessionEnvironment,
 } from '../../../server/src/ssh/ssh-config.js';
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'muxus-sshconf-'));
@@ -195,6 +196,80 @@ describe('resolveHost', () => {
     expect(r.serverAliveInterval).toBe(30);
   });
 
+  it('resolves the dial-time tunables Muxus applies from Advanced options', () => {
+    const doc = loadConfigDocument(
+      write(
+        [
+          'Host lab',
+          '  Compression yes',
+          '  IdentityAgent ~/.1password/agent.sock',
+          '  PasswordAuthentication no',
+          '  KbdInteractiveAuthentication no',
+          '  RemoteCommand tmux new -A -s main',
+          '  RequestTTY yes',
+          '  StrictHostKeyChecking accept-new',
+          '  UserKnownHostsFile ~/.ssh/lab_hosts ~/.ssh/extra_hosts',
+        ].join('\n'),
+      ),
+    );
+    const r = resolveHost(doc, 'lab');
+    expect(r.compression).toBe(true);
+    expect(r.identityAgent).toBe(path.join(os.homedir(), '.1password', 'agent.sock'));
+    expect(r.passwordAuthentication).toBe(false);
+    expect(r.kbdInteractiveAuthentication).toBe(false);
+    expect(r.remoteCommand).toBe('tmux new -A -s main');
+    expect(r.requestTty).toBe('yes');
+    expect(r.strictHostKeyChecking).toBe('accept-new');
+    expect(r.userKnownHostsFiles).toEqual([
+      path.join(os.homedir(), '.ssh', 'lab_hosts'),
+      path.join(os.homedir(), '.ssh', 'extra_hosts'),
+    ]);
+    expect(r.globalKnownHostsFiles).toBeUndefined();
+  });
+
+  it('keeps IdentityAgent indirections verbatim and maps `none` known_hosts to []', () => {
+    const doc = loadConfigDocument(
+      write(['Host a', '  IdentityAgent $CUSTOM_SOCK', '  UserKnownHostsFile none', '', 'Host b', '  IdentityAgent none'].join('\n')),
+    );
+    expect(resolveHost(doc, 'a').identityAgent).toBe('$CUSTOM_SOCK');
+    expect(resolveHost(doc, 'a').userKnownHostsFiles).toEqual([]);
+    expect(resolveHost(doc, 'b').identityAgent).toBe('none');
+  });
+
+  it('leaves unset flags undefined and rejects invalid choice values', () => {
+    const doc = loadConfigDocument(write(['Host plain', '  RequestTTY sometimes', '  StrictHostKeyChecking maybe'].join('\n')));
+    const r = resolveHost(doc, 'plain');
+    expect(r.compression).toBeUndefined();
+    expect(r.passwordAuthentication).toBeUndefined();
+    expect(r.kbdInteractiveAuthentication).toBeUndefined();
+    expect(r.requestTty).toBeUndefined();
+    expect(r.strictHostKeyChecking).toBeUndefined();
+  });
+
+  it('honors the legacy ChallengeResponseAuthentication spelling', () => {
+    const doc = loadConfigDocument(write(['Host old', '  ChallengeResponseAuthentication no'].join('\n')));
+    expect(resolveHost(doc, 'old').kbdInteractiveAuthentication).toBe(false);
+  });
+
+  it('accumulates SetEnv first-wins per variable and SendEnv patterns in order', () => {
+    const doc = loadConfigDocument(
+      write(
+        [
+          'Host env',
+          '  SetEnv FOO=bar BAZ=qux',
+          '  SendEnv LANG LC_*',
+          '',
+          'Host *',
+          '  SetEnv FOO=global EXTRA=yes',
+          '  SendEnv -LC_ALL EDITOR',
+        ].join('\n'),
+      ),
+    );
+    const r = resolveHost(doc, 'env');
+    expect(r.setEnv).toEqual({ FOO: 'bar', BAZ: 'qux', EXTRA: 'yes' });
+    expect(r.sendEnv).toEqual(['LANG', 'LC_*', '-LC_ALL', 'EDITOR']);
+  });
+
   it('reads ServerAliveCountMax and the raw algorithm lists', () => {
     const doc = loadConfigDocument(
       write(
@@ -227,6 +302,21 @@ describe('resolveHost', () => {
     const doc = loadConfigDocument(write([`Include ${path.join(tmp, 'nope', 'missing')}`, 'Host still-here'].join('\n')));
     expect(doc.error).toMatch(/could not read/);
     expect(listHosts(doc).map((h) => h.alias)).toEqual(['still-here']);
+  });
+});
+
+describe('sessionEnvironment', () => {
+  it('sends variables matched by SendEnv, honoring later removals', () => {
+    const env = sessionEnvironment(
+      { setEnv: {}, sendEnv: ['LANG', 'LC_*', '-LC_ALL'] },
+      { LANG: 'en_US.UTF-8', LC_ALL: 'C', LC_TIME: 'de_DE', PATH: '/bin' },
+    );
+    expect(env).toEqual({ LANG: 'en_US.UTF-8', LC_TIME: 'de_DE' });
+  });
+
+  it('lets SetEnv override sent variables and returns undefined when empty', () => {
+    expect(sessionEnvironment({ setEnv: { FOO: 'bar' }, sendEnv: ['FOO'] }, { FOO: 'host' })).toEqual({ FOO: 'bar' });
+    expect(sessionEnvironment({ setEnv: {}, sendEnv: [] }, { FOO: 'x' })).toBeUndefined();
   });
 });
 

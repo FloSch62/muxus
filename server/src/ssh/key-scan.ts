@@ -36,6 +36,19 @@ export function agentSocket(): string | undefined {
   return process.platform === 'win32' ? '\\\\.\\pipe\\openssh-ssh-agent' : undefined;
 }
 
+/**
+ * The agent socket for one host: the IdentityAgent override when set
+ * (`none`, `$VAR`, the literal `SSH_AUTH_SOCK`, or a path — 1Password and
+ * friends), otherwise the environment default.
+ */
+export function resolveAgentSocket(identityAgent?: string): string | undefined {
+  if (identityAgent === undefined) return agentSocket();
+  if (identityAgent.toLowerCase() === 'none') return undefined;
+  if (identityAgent === 'SSH_AUTH_SOCK') return process.env.SSH_AUTH_SOCK || undefined;
+  if (identityAgent.startsWith('$')) return process.env[identityAgent.slice(1)] || undefined;
+  return identityAgent;
+}
+
 export async function listAgentKeys(): Promise<SshAgentKey[]> {
   const sock = agentSocket();
   if (!sock) return [];

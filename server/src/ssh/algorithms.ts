@@ -1,6 +1,6 @@
-import { createRequire } from 'node:module';
 import type { Algorithms } from 'ssh2';
 import type { ResolvedTarget } from './ssh-config.js';
+import ssh2Constants from './ssh2-internals.js';
 
 /**
  * Translate the ssh_config algorithm lists (Ciphers, KexAlgorithms,
@@ -20,14 +20,6 @@ import type { ResolvedTarget } from './ssh-config.js';
 // ssh2 publishes no API for its algorithm tables; read them from the same
 // module instance the Client uses so this filter can never disagree with the
 // handshake.
-const requireFromHere = createRequire(import.meta.url);
-const ssh2Constants = requireFromHere('ssh2/lib/protocol/constants.js') as {
-  SUPPORTED_KEX: string[];
-  SUPPORTED_CIPHER: string[];
-  SUPPORTED_SERVER_HOST_KEY: string[];
-  SUPPORTED_MAC: string[];
-};
-
 const CATEGORIES = [
   { option: 'ciphers', keyword: 'Ciphers', ssh2Key: 'cipher', supported: ssh2Constants.SUPPORTED_CIPHER },
   { option: 'kexAlgorithms', keyword: 'KexAlgorithms', ssh2Key: 'kex', supported: ssh2Constants.SUPPORTED_KEX },
@@ -44,9 +36,14 @@ export interface ConnectionAlgorithms {
   notes: string[];
 }
 
+/** Per-keyword algorithm names ssh2 can negotiate (edit-time validation). */
+export function supportedAlgorithms(): Record<string, string[]> {
+  return Object.fromEntries(CATEGORIES.map((c) => [c.keyword, [...c.supported]]));
+}
+
 /** Throws when an exact list leaves no algorithm ssh2 could offer at all. */
 export function connectionAlgorithms(
-  resolved: Pick<ResolvedTarget, 'ciphers' | 'kexAlgorithms' | 'hostKeyAlgorithms' | 'macs'>,
+  resolved: Pick<ResolvedTarget, 'ciphers' | 'kexAlgorithms' | 'hostKeyAlgorithms' | 'macs' | 'compression'>,
 ): ConnectionAlgorithms {
   const out: Record<string, TranslatedList> = {};
   const notes: string[] = [];
@@ -55,6 +52,11 @@ export function connectionAlgorithms(
     if (!value) continue;
     const translated = translateList(value, category.keyword, category.supported, notes);
     if (translated) out[category.ssh2Key] = translated;
+  }
+  if (resolved.compression !== undefined) {
+    // `Compression yes` prefers zlib the way `ssh -C` does; `no` pins the
+    // ssh2 default of none but stops a zlib-preferring server from winning.
+    out.compress = resolved.compression ? ['zlib@openssh.com', 'zlib', 'none'] : ['none'];
   }
   return {
     // Every name was filtered against ssh2's own supported tables above, so
