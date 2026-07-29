@@ -270,6 +270,15 @@ const MIGRATIONS = [
       );
     `,
   },
+  {
+    version: 11,
+    name: 'version-terminal-scrollback-snapshots',
+    sql: `
+      ALTER TABLE terminal_snapshots
+        ADD COLUMN format_version INTEGER NOT NULL DEFAULT 1
+        CHECK(format_version >= 1);
+    `,
+  },
 ] as const;
 
 const DEFAULT_SESSION_LOGGING_POLICY: SessionLoggingPolicyInput = {
@@ -328,6 +337,7 @@ export type WorkspaceSummary = Omit<WorkspaceRecord, 'layout' | 'multiExecGroups
 export interface TerminalSnapshotRecord {
   tabId: string;
   data: string;
+  formatVersion: number;
   updatedAt: string;
 }
 
@@ -860,27 +870,31 @@ export class MuxusDatabase {
     return this.db.prepare('DELETE FROM workspaces WHERE id = ?').run(id).changes > 0;
   }
 
-  saveTerminalSnapshot(tabId: string, data: string): void {
+  saveTerminalSnapshot(tabId: string, data: string, formatVersion = 1): void {
     requireNonEmpty(tabId, 'tabId');
     this.db
       .prepare(`
-        INSERT INTO terminal_snapshots(tab_id, data, updated_at)
-        VALUES (?, ?, CURRENT_TIMESTAMP)
+        INSERT INTO terminal_snapshots(tab_id, data, format_version, updated_at)
+        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(tab_id) DO UPDATE SET
           data = excluded.data,
+          format_version = excluded.format_version,
           updated_at = CURRENT_TIMESTAMP
       `)
-      .run(tabId, data);
+      .run(tabId, data, formatVersion);
   }
 
   terminalSnapshot(tabId: string): TerminalSnapshotRecord | undefined {
     const row = this.db
-      .prepare('SELECT tab_id, data, updated_at FROM terminal_snapshots WHERE tab_id = ?')
+      .prepare(
+        'SELECT tab_id, data, format_version, updated_at FROM terminal_snapshots WHERE tab_id = ?',
+      )
       .get(tabId);
     if (!row) return undefined;
     return {
       tabId: String(row.tab_id),
       data: String(row.data),
+      formatVersion: Number(row.format_version),
       updatedAt: String(row.updated_at),
     };
   }

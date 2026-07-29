@@ -1,11 +1,15 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { TERMINAL_SNAPSHOT_MAX_CHARS, type TerminalSnapshotRecord } from '@muxus/shared';
+import {
+  TERMINAL_SNAPSHOT_MAX_CHARS,
+  type TerminalSnapshotRecord,
+} from '@muxus/shared';
 import type { AppContext } from '../app.js';
 import { HttpProblem, sendError } from '../util/errors.js';
 
 const snapshotSaveSchema = z.object({
   data: z.string().min(1).max(TERMINAL_SNAPSHOT_MAX_CHARS),
+  formatVersion: z.number().int().positive().optional(),
 });
 
 // Serialized scrollback rides in a JSON string, where every ESC byte inflates
@@ -30,7 +34,11 @@ export function registerTerminalSnapshotRoutes(app: FastifyInstance, ctx: AppCon
       if (!parsed.success) {
         return sendError(reply, new HttpProblem(400, 'invalid terminal snapshot'));
       }
-      ctx.database.saveTerminalSnapshot(tabId, parsed.data.data);
+      ctx.database.saveTerminalSnapshot(
+        tabId,
+        parsed.data.data,
+        parsed.data.formatVersion,
+      );
       return { saved: true };
     },
   );

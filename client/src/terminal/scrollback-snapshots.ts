@@ -1,5 +1,9 @@
 import type { SerializeAddon } from '@xterm/addon-serialize';
-import { TERMINAL_SNAPSHOT_MAX_CHARS, type TerminalSnapshotRecord } from '@muxus/shared';
+import {
+  TERMINAL_SNAPSHOT_FORMAT_VERSION,
+  TERMINAL_SNAPSHOT_MAX_CHARS,
+  type TerminalSnapshotRecord,
+} from '@muxus/shared';
 import { apiFetch, authToken } from '../api/http.js';
 import { requestBodyBytes } from '../unload-keepalive.js';
 
@@ -14,14 +18,23 @@ export const TERMINAL_SNAPSHOT_INTERVAL_MS = 10_000;
 export const TERMINAL_SNAPSHOT_QUIET_MS = 1_500;
 
 const TERMINAL_HISTORY_DIVIDER_TEXT = '[end of restored output]';
+// Zero-width characters survive xterm serialization without changing the
+// divider's appearance. They give client-injected rows provenance that genuine
+// terminal output containing the same visible text does not have.
+const TERMINAL_HISTORY_DIVIDER_MARKER = '\u2063\u2060\u200b\u2063';
+const MARKED_TERMINAL_HISTORY_DIVIDER_TEXT =
+  `[${TERMINAL_HISTORY_DIVIDER_MARKER}end of restored output]`;
 
 /** Written after replayed history, before the new session's output. */
 export const TERMINAL_HISTORY_DIVIDER =
-  `\r\n\x1b[90m${TERMINAL_HISTORY_DIVIDER_TEXT}\x1b[0m\r\n`;
+  `\r\n\x1b[90m${MARKED_TERMINAL_HISTORY_DIVIDER_TEXT}\x1b[0m\r\n`;
 
 const ESC = String.fromCharCode(27);
 const CURSOR_MOVE_FINALS = 'ABCDEFGHdf`';
 const CSI_SEQUENCE = new RegExp(`${ESC}\\[[0-?]*[ -/]*[@-~]`, 'g');
+const LEGACY_DIVIDER_COLOR = new RegExp(
+  `${ESC}\\[(?:[0-9:;]*;)?(?:90|38[;:]5[;:]8)(?:;[0-9:;]*)?m`,
+);
 
 /** Start index of a cursor-move sequence (ESC [ params final) ending exactly
  *  at `end`, or `end` itself when none does. A plain scan — regexes over
@@ -58,19 +71,29 @@ export function trimReplayTail(data: string): string {
  * snapshot. Otherwise every restore serializes the client-injected divider
  * and accumulates another copy on the following restore.
  *
- * SerializeAddon emits logical row breaks as CRLF and may choose different
- * SGR sequences as surrounding cell attributes change, so compare visible row
- * text instead of relying on the exact bytes used when the divider was drawn.
+ * New dividers carry an invisible marker, so a remote process can safely emit
+ * the same visible text. Previously saved dividers have no provenance; migrate
+ * only rows that also use the dark-gray color written by older clients.
  */
-export function stripTerminalHistoryDividers(data: string): string {
+export function stripTerminalHistoryDividers(
+  data: string,
+  options: { includeLegacy?: boolean } = {},
+): string {
   return data
     .split('\r\n')
-    .filter((row) => row.replace(CSI_SEQUENCE, '') !== TERMINAL_HISTORY_DIVIDER_TEXT)
+    .filter((row) => {
+      const visible = row.replace(CSI_SEQUENCE, '');
+      if (visible === MARKED_TERMINAL_HISTORY_DIVIDER_TEXT) return false;
+      if (!options.includeLegacy || visible !== TERMINAL_HISTORY_DIVIDER_TEXT) return true;
+
+      const textStart = row.indexOf(TERMINAL_HISTORY_DIVIDER_TEXT);
+      return !LEGACY_DIVIDER_COLOR.test(row.slice(0, textStart));
+    })
     .join('\r\n');
 }
 
 export function snapshotRequestBody(data: string): string {
-  return JSON.stringify({ data });
+  return JSON.stringify({ data, formatVersion: TERMINAL_SNAPSHOT_FORMAT_VERSION });
 }
 
 /** Wire size of a snapshot. JSON escapes every ESC to six characters, so the
@@ -114,7 +137,11 @@ export async function fetchTerminalSnapshot(tabId: string): Promise<string | nul
     const { snapshot } = await apiFetch<{ snapshot: TerminalSnapshotRecord | null }>(
       `/api/terminal-snapshots/${encodeURIComponent(tabId)}`,
     );
-    return snapshot ? stripTerminalHistoryDividers(snapshot.data) : null;
+    if (!snapshot) return null;
+    return stripTerminalHistoryDividers(snapshot.data, {
+      includeLegacy:
+        (snapshot.formatVersion ?? 1) < TERMINAL_SNAPSHOT_FORMAT_VERSION,
+    });
   } catch {
     return null;
   }

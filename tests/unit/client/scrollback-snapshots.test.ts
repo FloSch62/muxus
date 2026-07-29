@@ -69,7 +69,9 @@ describe('replay tail trimming', () => {
 
 describe('history divider', () => {
   it('is a dim single line between restored and live output', () => {
-    expect(TERMINAL_HISTORY_DIVIDER).toContain('[end of restored output]');
+    expect(TERMINAL_HISTORY_DIVIDER.replace(/[\u200b\u2060\u2063]/g, '')).toContain(
+      '[end of restored output]',
+    );
     expect(TERMINAL_HISTORY_DIVIDER.startsWith('\r\n')).toBe(true);
     expect(TERMINAL_HISTORY_DIVIDER.endsWith('\r\n')).toBe(true);
   });
@@ -89,24 +91,46 @@ describe('history divider', () => {
   });
 
   it('recognizes serialized divider rows independent of their SGR encoding', () => {
-    const serialized =
-      'before\r\n\x1b[38;5;8m[end of restored output]\x1b[39m\r\nafter';
+    const serializedDivider = TERMINAL_HISTORY_DIVIDER
+      .replace('\x1b[90m', '\x1b[38;5;8m')
+      .replace('\x1b[0m', '\x1b[39m');
+    const serialized = `before${serializedDivider}after`;
 
     expect(stripTerminalHistoryDividers(serialized)).toBe('before\r\nafter');
   });
 
-  it('keeps terminal output that merely mentions the divider text', () => {
-    const output = 'echo [end of restored output]\r\n[end of restored output] from remote';
+  it('keeps genuine terminal output equal to the divider text', () => {
+    const output =
+      'echo "[end of restored output]"\r\n' +
+      '[end of restored output]\r\n' +
+      '\x1b[90m[end of restored output]\r\n' +
+      '[end of restored output] from remote';
 
     expect(stripTerminalHistoryDividers(output)).toBe(output);
+  });
+
+  it('only migrates unmarked dividers with the legacy client styling', () => {
+    const stored =
+      'before\r\n' +
+      '\x1b[90m[end of restored output]\r\n' +
+      '\x1b[38;5;8m[end of restored output]\x1b[39m\r\n' +
+      'after';
+
+    expect(stripTerminalHistoryDividers(stored, { includeLegacy: true })).toBe(
+      'before\r\nafter',
+    );
   });
 });
 
 describe('snapshot size budgeting', () => {
   it('measures the JSON body, not the buffer — escapes inflate ESC sixfold', () => {
-    expect(snapshotBodyBytes('ab')).toBe('{"data":"ab"}'.length);
+    expect(snapshotBodyBytes('ab')).toBe(
+      '{"data":"ab","formatVersion":2}'.length,
+    );
     // One ESC becomes the six characters \u001b in the JSON body.
-    expect(snapshotBodyBytes('\u001b')).toBe('{"data":""}'.length + 6);
+    expect(snapshotBodyBytes('\u001b')).toBe(
+      '{"data":"","formatVersion":2}'.length + 6,
+    );
   });
 
   it('serializes at the deepest scrollback that fits the wire budget', () => {
