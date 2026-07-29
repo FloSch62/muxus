@@ -249,18 +249,40 @@ function ensureIncluded(doc: ConfigDocument, targetFile: string): boolean {
   return true;
 }
 
+/** Follow the final path component so an atomic rename does not replace a symlink. */
+function resolveWriteTarget(filePath: string): string {
+  let target = path.resolve(filePath);
+  const seen = new Set<string>();
+
+  while (true) {
+    if (seen.has(target)) throw new Error(`symbolic link cycle while resolving ${filePath}`);
+    seen.add(target);
+
+    try {
+      const stat = fs.lstatSync(target);
+      if (!stat.isSymbolicLink()) return target;
+      const link = fs.readlinkSync(target);
+      target = path.resolve(path.dirname(target), link);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return target;
+      throw err;
+    }
+  }
+}
+
 function writeConfigFile(filePath: string, lines: string[]): void {
-  const dir = path.dirname(filePath);
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
+  const writeTarget = resolveWriteTarget(filePath);
+  fs.mkdirSync(path.dirname(writeTarget), { recursive: true, mode: 0o700 });
   let mode = 0o600;
   try {
-    mode = fs.statSync(filePath).mode & 0o777;
-    fs.copyFileSync(filePath, `${filePath}.muxus.bak`);
+    mode = fs.statSync(writeTarget).mode & 0o777;
+    fs.copyFileSync(writeTarget, `${filePath}.muxus.bak`);
     fs.chmodSync(`${filePath}.muxus.bak`, 0o600);
   } catch {
     // New file — nothing to back up.
   }
-  const tmp = `${filePath}.muxus.tmp`;
+  const tmp = `${writeTarget}.muxus.tmp`;
   fs.writeFileSync(tmp, lines.length ? `${lines.join('\n')}\n` : '', { mode });
-  fs.renameSync(tmp, filePath);
+  fs.renameSync(tmp, writeTarget);
 }
