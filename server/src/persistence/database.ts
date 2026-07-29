@@ -327,6 +327,11 @@ const MIGRATIONS = [
     name: 'password-vault-os-keystore',
     run: migrateDraftPasswordVault,
   },
+  {
+    version: 15,
+    name: 'password-vault-key-check',
+    run: addPasswordVaultKeyCheck,
+  },
 ] as const;
 
 function migrateDraftPasswordVault(db: DatabaseSync): void {
@@ -374,6 +379,21 @@ function migrateDraftPasswordVault(db: DatabaseSync): void {
     FROM password_vault_draft_v13
   `).run(nanoid());
   db.exec('DROP TABLE password_vault_draft_v13');
+}
+
+function addPasswordVaultKeyCheck(db: DatabaseSync): void {
+  const columns = new Set(
+    db
+      .prepare('PRAGMA table_info(password_vault)')
+      .all()
+      .map((row) => String(row.name)),
+  );
+  if (columns.has('key_check')) return;
+  db.exec(`
+    ALTER TABLE password_vault
+      ADD COLUMN key_check BLOB
+      CHECK(key_check IS NULL OR length(key_check) = 32);
+  `);
 }
 
 const DEFAULT_SESSION_LOGGING_POLICY: SessionLoggingPolicyInput = {
@@ -428,6 +448,8 @@ export interface PasswordVaultConfigInput {
   masterKeyNonce: Buffer;
   masterKeyCiphertext: Buffer;
   masterKeyTag: Buffer;
+  /** HMAC proof for rejecting stale or corrupted OS credential-store keys. */
+  keyCheck?: Buffer;
 }
 
 export interface PasswordVaultConfigRecord extends PasswordVaultConfigInput {
@@ -441,6 +463,11 @@ export interface EncryptedCredentialInput extends CredentialRefInput {
   ciphertext: Buffer;
   authTag: Buffer;
 }
+
+export type EncryptedCredentialSecretInput = Omit<
+  EncryptedCredentialInput,
+  keyof CredentialRefInput
+>;
 
 export interface EncryptedCredentialRecord extends EncryptedCredentialInput {
   id: string;
@@ -744,8 +771,8 @@ export class MuxusDatabase {
           singleton, format_version, vault_id, unlock_policy,
           kdf_algorithm, kdf_salt, kdf_cost,
           kdf_block_size, kdf_parallelism, master_key_nonce,
-          master_key_ciphertext, master_key_tag
-        ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          master_key_ciphertext, master_key_tag, key_check
+        ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         input.formatVersion,
@@ -759,6 +786,7 @@ export class MuxusDatabase {
         input.masterKeyNonce,
         input.masterKeyCiphertext,
         input.masterKeyTag,
+        input.keyCheck ?? null,
       );
   }
 
@@ -770,7 +798,7 @@ export class MuxusDatabase {
             kdf_algorithm = ?, kdf_salt = ?,
             kdf_cost = ?, kdf_block_size = ?, kdf_parallelism = ?,
             master_key_nonce = ?, master_key_ciphertext = ?,
-            master_key_tag = ?,
+            master_key_tag = ?, key_check = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE singleton = 1
       `)
@@ -786,6 +814,7 @@ export class MuxusDatabase {
         input.masterKeyNonce,
         input.masterKeyCiphertext,
         input.masterKeyTag,
+        input.keyCheck ?? null,
       );
     if (Number(changed.changes) !== 1) throw new Error('password vault is not configured');
     this.flushSensitivePages();
@@ -842,9 +871,21 @@ export class MuxusDatabase {
   }
 
   upsertEncryptedCredential(input: EncryptedCredentialInput): EncryptedCredentialRecord {
+    return this.upsertEncryptedCredentialAtomically(input, () => input);
+  }
+
+  /**
+   * Reserve the credential reference and create its authenticated ciphertext
+   * in one transaction. If sealing throws, no reference-only row survives.
+   */
+  upsertEncryptedCredentialAtomically(
+    input: CredentialRefInput,
+    seal: (ref: CredentialRefRecord) => EncryptedCredentialSecretInput,
+  ): EncryptedCredentialRecord {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const ref = this.upsertCredentialRef(input);
+      const encrypted = seal(ref);
       this.db
         .prepare(`
           INSERT INTO credential_secrets(
@@ -859,10 +900,10 @@ export class MuxusDatabase {
         `)
         .run(
           ref.id,
-          input.formatVersion,
-          input.nonce,
-          input.ciphertext,
-          input.authTag,
+          encrypted.formatVersion,
+          encrypted.nonce,
+          encrypted.ciphertext,
+          encrypted.authTag,
         );
       this.db.exec('COMMIT');
     } catch (err) {
@@ -1549,6 +1590,10 @@ function passwordVaultConfigFromRow(row: SqlRow): PasswordVaultConfigRecord {
     masterKeyNonce: blob(row, 'master_key_nonce'),
     masterKeyCiphertext: blob(row, 'master_key_ciphertext'),
     masterKeyTag: blob(row, 'master_key_tag'),
+    keyCheck:
+      row.key_check instanceof Uint8Array
+        ? Buffer.from(row.key_check)
+        : undefined,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };

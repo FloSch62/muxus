@@ -35,6 +35,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 12, name: 'password-vault' },
       { version: 13, name: 'automatic-password-vault' },
       { version: 14, name: 'password-vault-os-keystore' },
+      { version: 15, name: 'password-vault-key-check' },
     ]);
   });
 
@@ -60,7 +61,7 @@ describe('MuxusDatabase migrations', () => {
     const draft = new DatabaseSync(filename);
     try {
       draft.exec(`
-        DELETE FROM schema_migrations WHERE version IN (13, 14);
+        DELETE FROM schema_migrations WHERE version IN (13, 14, 15);
         UPDATE schema_migrations
         SET name = 'master-password-vault'
         WHERE version = 12;
@@ -110,14 +111,15 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 14,
-      name: 'password-vault-os-keystore',
+      version: 15,
+      name: 'password-vault-key-check',
     });
     expect(database.passwordVaultConfig()).toMatchObject({
       formatVersion: 2,
       unlockPolicy: 'startup',
     });
     expect(database.passwordVaultConfig()!.vaultId).toHaveLength(21);
+    expect(database.passwordVaultConfig()!.keyCheck).toBeUndefined();
     expect(
       database.listEncryptedCredentials(
         'muxus-master-vault',
@@ -500,6 +502,27 @@ describe('saved Telnet and serial hosts', () => {
 });
 
 describe('credential and workspace safety', () => {
+  it('rolls back a new credential reference when encryption fails', () => {
+    database = new MuxusDatabase(':memory:');
+    const input = {
+      provider: 'muxus-master-vault',
+      service: 'muxus/ssh-password/v1',
+      account: 'failed-encryption',
+      label: 'Failed encryption',
+    };
+    let rolledBackId = '';
+
+    expect(() =>
+      database!.upsertEncryptedCredentialAtomically(input, (ref) => {
+        rolledBackId = ref.id;
+        throw new Error('sealing failed');
+      }),
+    ).toThrow('sealing failed');
+
+    const next = database.upsertCredentialRef(input);
+    expect(next.id).not.toBe(rolledBackId);
+  });
+
   it('stores only a credential reference alongside native profile data', () => {
     database = new MuxusDatabase(':memory:');
     const credential = database.upsertCredentialRef({

@@ -1,8 +1,10 @@
 import {
   createCipheriv,
   createDecipheriv,
+  createHmac,
   randomBytes,
   scrypt,
+  timingSafeEqual,
 } from 'node:crypto';
 import { open as openFile, unlink } from 'node:fs/promises';
 import path from 'node:path';
@@ -44,6 +46,10 @@ const LEGACY_MASTER_KEY_AAD = Buffer.from(
 );
 const MASTER_KEY_AAD = Buffer.from(
   'muxus:password-vault:master-key:v3',
+  'utf8',
+);
+const KEY_CHECK_CONTEXT = Buffer.from(
+  'muxus:password-vault:key-check:v1',
   'utf8',
 );
 
@@ -156,20 +162,27 @@ export class PasswordVault {
 
   async initialize(): Promise<void> {
     if (this.initialized) return;
-    this.initialized = true;
     await removeLegacyDeviceKey(this.database.filename);
     const config = this.database.passwordVaultConfig();
-    if (!config || config.unlockPolicy !== 'never') return;
-    try {
-      const key = await this.keyStore.get(config.vaultId);
-      if (key) {
-        this.setKey(key);
-        key.fill(0);
+    if (config?.unlockPolicy === 'never') {
+      try {
+        const key = await this.keyStore.get(config.vaultId);
+        if (key) {
+          try {
+            if (this.isVerifiedKey(config, key)) {
+              this.ensureKeyCheck(config, key);
+              this.setKey(key);
+            }
+          } finally {
+            key.fill(0);
+          }
+        }
+      } catch (err) {
+        if (!(err instanceof VaultKeyStoreUnavailableError)) throw err;
+        this.osKeyStoreAvailable = false;
       }
-    } catch (err) {
-      if (!(err instanceof VaultKeyStoreUnavailableError)) throw err;
-      this.osKeyStoreAvailable = false;
     }
+    this.initialized = true;
   }
 
   status(): PasswordVaultStatus {
@@ -229,6 +242,7 @@ export class PasswordVault {
         masterKeyNonce: masterWrapped.nonce,
         masterKeyCiphertext: masterWrapped.ciphertext,
         masterKeyTag: masterWrapped.authTag,
+        keyCheck: vaultKeyCheck(vaultKey),
       });
       if (unlockPolicy !== 'credential') this.setKey(vaultKey);
     } catch (err) {
@@ -251,6 +265,7 @@ export class PasswordVault {
     }
     const vaultKey = await unwrapMasterKey(masterPassword, config);
     try {
+      this.ensureKeyCheck(config, vaultKey);
       this.setKey(vaultKey);
     } finally {
       vaultKey.fill(0);
@@ -264,14 +279,17 @@ export class PasswordVault {
     const config = this.requireConfig();
     const vaultKey = await unwrapMasterKey(masterPassword, config);
     try {
-      await this.storeOsKey(config.vaultId, vaultKey);
+      const checkedConfig = this.ensureKeyCheck(config, vaultKey);
+      await this.storeOsKey(checkedConfig.vaultId, vaultKey);
       try {
         this.database.updatePasswordVaultConfig({
-          ...config,
+          ...checkedConfig,
           unlockPolicy: 'never',
         });
       } catch (err) {
-        await this.keyStore.delete(config.vaultId).catch(() => undefined);
+        await this.keyStore
+          .delete(checkedConfig.vaultId)
+          .catch(() => undefined);
         throw err;
       }
       this.setKey(vaultKey);
@@ -287,26 +305,29 @@ export class PasswordVault {
     const config = this.requireConfig();
     const vaultKey = await unwrapMasterKey(masterPassword, config);
     try {
+      const checkedConfig = this.ensureKeyCheck(config, vaultKey);
       if (unlockPolicy === 'never') {
-        await this.storeOsKey(config.vaultId, vaultKey);
+        await this.storeOsKey(checkedConfig.vaultId, vaultKey);
         try {
           this.database.updatePasswordVaultConfig({
-            ...config,
+            ...checkedConfig,
             unlockPolicy,
           });
         } catch (err) {
-          await this.keyStore.delete(config.vaultId).catch(() => undefined);
+          await this.keyStore
+            .delete(checkedConfig.vaultId)
+            .catch(() => undefined);
           throw err;
         }
         this.setKey(vaultKey);
         return;
       }
 
-      if (config.unlockPolicy === 'never') {
-        await this.keyStore.delete(config.vaultId);
+      if (checkedConfig.unlockPolicy === 'never') {
+        await this.deleteOsKeyBestEffort(checkedConfig.vaultId);
       }
       this.database.updatePasswordVaultConfig({
-        ...config,
+        ...checkedConfig,
         unlockPolicy,
       });
       if (unlockPolicy === 'startup') this.setKey(vaultKey);
@@ -335,14 +356,12 @@ export class PasswordVault {
     const nextSalt = randomBytes(SALT_BYTES);
     let nextMasterKey: Buffer | undefined;
     try {
+      const checkedConfig = this.ensureKeyCheck(config, vaultKey);
       const kdf = this.options.kdf ?? DEFAULT_KDF;
       nextMasterKey = await deriveKey(nextPassword, nextSalt, kdf);
       const masterWrapped = seal(vaultKey, nextMasterKey, MASTER_KEY_AAD);
-      if (config.unlockPolicy === 'never') {
-        await this.storeOsKey(config.vaultId, vaultKey);
-      }
       this.database.updatePasswordVaultConfig({
-        ...config,
+        ...checkedConfig,
         formatVersion: FORMAT_VERSION,
         kdfAlgorithm: 'scrypt',
         kdfSalt: nextSalt,
@@ -353,7 +372,10 @@ export class PasswordVault {
         masterKeyCiphertext: masterWrapped.ciphertext,
         masterKeyTag: masterWrapped.authTag,
       });
-      if (config.unlockPolicy !== 'credential') this.setKey(vaultKey);
+      if (checkedConfig.unlockPolicy === 'never') {
+        await this.storeOsKeyBestEffort(checkedConfig.vaultId, vaultKey);
+      }
+      if (checkedConfig.unlockPolicy !== 'credential') this.setKey(vaultKey);
     } finally {
       vaultKey.fill(0);
       nextMasterKey?.fill(0);
@@ -396,29 +418,29 @@ export class PasswordVault {
   ): Promise<void> {
     validateSavedPassword(password);
     const access = await this.credentialKey(masterPassword);
-    const ref = this.database.upsertCredentialRef({
-      provider: PASSWORD_VAULT_PROVIDER,
-      service: SSH_PASSWORD_SERVICE,
-      account,
-      label,
-    });
     const plaintext = Buffer.from(password, 'utf8');
     try {
-      const encrypted = seal(
-        plaintext,
-        access.key,
-        credentialAad(ref.id),
+      this.database.upsertEncryptedCredentialAtomically(
+        {
+          provider: PASSWORD_VAULT_PROVIDER,
+          service: SSH_PASSWORD_SERVICE,
+          account,
+          label,
+        },
+        (ref) => {
+          const encrypted = seal(
+            plaintext,
+            access.key,
+            credentialAad(ref.id),
+          );
+          return {
+            formatVersion: CREDENTIAL_FORMAT_VERSION,
+            nonce: encrypted.nonce,
+            ciphertext: encrypted.ciphertext,
+            authTag: encrypted.authTag,
+          };
+        },
       );
-      this.database.upsertEncryptedCredential({
-        provider: PASSWORD_VAULT_PROVIDER,
-        service: SSH_PASSWORD_SERVICE,
-        account,
-        label,
-        formatVersion: CREDENTIAL_FORMAT_VERSION,
-        nonce: encrypted.nonce,
-        ciphertext: encrypted.ciphertext,
-        authTag: encrypted.authTag,
-      });
     } finally {
       plaintext.fill(0);
       if (access.ephemeral) access.key.fill(0);
@@ -434,11 +456,10 @@ export class PasswordVault {
       PASSWORD_VAULT_PROVIDER,
     );
     if (!record) return undefined;
-    const managementKey = await unwrapMasterKey(
-      masterPassword,
-      this.requireConfig(),
-    );
+    const config = this.requireConfig();
+    const managementKey = await unwrapMasterKey(masterPassword, config);
     try {
+      this.ensureKeyCheck(config, managementKey);
       return this.decryptRecord(record, managementKey);
     } finally {
       managementKey.fill(0);
@@ -456,12 +477,11 @@ export class PasswordVault {
       PASSWORD_VAULT_PROVIDER,
     );
     if (!record) return false;
-    const managementKey = await unwrapMasterKey(
-      masterPassword,
-      this.requireConfig(),
-    );
+    const config = this.requireConfig();
+    const managementKey = await unwrapMasterKey(masterPassword, config);
     const plaintext = Buffer.from(password, 'utf8');
     try {
+      this.ensureKeyCheck(config, managementKey);
       const encrypted = seal(
         plaintext,
         managementKey,
@@ -494,7 +514,7 @@ export class PasswordVault {
   async deleteAll(): Promise<void> {
     const config = this.database.passwordVaultConfig();
     if (config?.unlockPolicy === 'never') {
-      await this.keyStore.delete(config.vaultId);
+      await this.deleteOsKeyBestEffort(config.vaultId);
     }
     this.lock();
     this.database.deletePasswordVaultData(PASSWORD_VAULT_PROVIDER);
@@ -519,20 +539,21 @@ export class PasswordVault {
     }
 
     const vaultKey = await unwrapMasterKey(masterPassword, config);
-    if (config.unlockPolicy === 'credential') {
-      return { key: vaultKey, ephemeral: true };
-    }
-    if (config.unlockPolicy === 'never') {
-      try {
-        await this.storeOsKey(config.vaultId, vaultKey);
-      } catch (err) {
-        vaultKey.fill(0);
-        throw err;
+    try {
+      const checkedConfig = this.ensureKeyCheck(config, vaultKey);
+      if (checkedConfig.unlockPolicy === 'credential') {
+        return { key: vaultKey, ephemeral: true };
       }
+      if (checkedConfig.unlockPolicy === 'never') {
+        await this.storeOsKeyBestEffort(checkedConfig.vaultId, vaultKey);
+      }
+      this.setKey(vaultKey);
+      vaultKey.fill(0);
+      return { key: this.key!, ephemeral: false };
+    } catch (err) {
+      vaultKey.fill(0);
+      throw err;
     }
-    this.setKey(vaultKey);
-    vaultKey.fill(0);
-    return { key: this.key!, ephemeral: false };
   }
 
   private decryptRecord(
@@ -571,6 +592,86 @@ export class PasswordVault {
       this.osKeyStoreAvailable = true;
     } catch (err) {
       this.osKeyStoreAvailable = false;
+      throw err;
+    }
+  }
+
+  private async storeOsKeyBestEffort(
+    vaultId: string,
+    key: Buffer,
+  ): Promise<void> {
+    try {
+      await this.storeOsKey(vaultId, key);
+    } catch {
+      // The master-password copy remains authoritative. A cache write must not
+      // discard a key that was successfully unwrapped.
+    }
+  }
+
+  private async deleteOsKeyBestEffort(vaultId: string): Promise<void> {
+    try {
+      await this.keyStore.delete(vaultId);
+      this.osKeyStoreAvailable = true;
+    } catch {
+      // Moving away from automatic access and resetting the vault are recovery
+      // paths; an unavailable credential store must not block either action.
+      this.osKeyStoreAvailable = false;
+    }
+  }
+
+  private isVerifiedKey(
+    config: PasswordVaultConfigRecord,
+    key: Buffer,
+  ): boolean {
+    if (config.keyCheck) {
+      const actual = vaultKeyCheck(key);
+      try {
+        return timingSafeEqual(actual, config.keyCheck);
+      } finally {
+        actual.fill(0);
+      }
+    }
+
+    // Draft vaults predate the durable key check. An existing credential can
+    // authenticate their stored key once; empty vaults require the master
+    // password before automatic access is enabled.
+    const [record] = this.database.listEncryptedCredentials(
+      PASSWORD_VAULT_PROVIDER,
+      SSH_PASSWORD_SERVICE,
+    );
+    if (!record) return false;
+    try {
+      const plaintext = open(
+        {
+          nonce: record.nonce,
+          ciphertext: record.ciphertext,
+          authTag: record.authTag,
+        },
+        key,
+        credentialAad(record.id),
+      );
+      plaintext.fill(0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private ensureKeyCheck(
+    config: PasswordVaultConfigRecord,
+    key: Buffer,
+  ): PasswordVaultConfigRecord {
+    const check = vaultKeyCheck(key);
+    if (config.keyCheck && timingSafeEqual(check, config.keyCheck)) {
+      check.fill(0);
+      return config;
+    }
+    const next = { ...config, keyCheck: check };
+    try {
+      this.database.updatePasswordVaultConfig(next);
+      return next;
+    } catch (err) {
+      check.fill(0);
       throw err;
     }
   }
@@ -694,6 +795,11 @@ async function unwrapMasterKey(
       blockSize: config.kdfBlockSize,
       parallelism: config.kdfParallelism,
     });
+  } catch (err) {
+    masterKey?.fill(0);
+    throw err;
+  }
+  try {
     const key = open(
       {
         nonce: config.masterKeyNonce,
@@ -708,12 +814,15 @@ async function unwrapMasterKey(
       throw new InvalidMasterPasswordError();
     }
     return key;
-  } catch (err) {
-    if (err instanceof InvalidMasterPasswordFormatError) throw err;
+  } catch {
     throw new InvalidMasterPasswordError();
   } finally {
     masterKey?.fill(0);
   }
+}
+
+function vaultKeyCheck(key: Buffer): Buffer {
+  return createHmac('sha256', key).update(KEY_CHECK_CONTEXT).digest();
 }
 
 async function removeLegacyDeviceKey(databaseFilename: string): Promise<void> {
@@ -741,12 +850,10 @@ async function removeLegacyDeviceKey(databaseFilename: string): Promise<void> {
     try {
       await handle?.close();
     } catch {
-      // Preserve the original cleanup failure.
+      // The original cleanup failure is already intentionally ignored.
     }
-    throw new Error(
-      'Muxus could not remove the obsolete on-disk password-vault key.',
-      { cause: err },
-    );
+    // This file belongs to an obsolete draft implementation. Cleanup is
+    // retried on the next process start, but must never prevent boot.
   }
 }
 

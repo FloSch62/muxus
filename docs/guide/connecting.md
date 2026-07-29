@@ -65,10 +65,11 @@ so routine SSH use does not prompt for the master password. In **Settings → Pa
 the policy can instead ask once when Muxus starts or whenever a saved credential is
 needed. The master password is always required to view or edit saved values.
 
-If a never-prompt vault is restored without its OS credential-store entry, automatic use
-pauses until **Restore OS access** is completed with the master password. Private-key
-passphrases, keyboard-interactive answers and 2FA codes remain transient and are never
-remembered. See the
+If a never-prompt vault is restored without its OS credential-store entry, the next saved
+password use asks for the master password and attempts to restore automatic access. The
+credential can still be used for that connection if the OS store remains unavailable;
+the prompt policy can also be changed or the vault reset. Private-key passphrases,
+keyboard-interactive answers and 2FA codes remain transient and are never remembered. See the
 [security model](../reference/security.md#password-vault).
 
 ## Jump chains and ProxyCommand

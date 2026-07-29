@@ -49,6 +49,7 @@ import {
   sshPasswordAccount,
   sshPasswordLabel,
 } from '../security/password-vault.js';
+import { VaultKeyStoreUnavailableError } from '../security/vault-key-store.js';
 import {
   expandIdentityPath,
   listHosts,
@@ -554,20 +555,32 @@ export class SshConnectionManager {
 
   private dial(hop: ChainHop, sock: Duplex | undefined, io: ConnectIo): Promise<Client> {
     const agent = resolveAgentSocket(hop.resolved.identityAgent);
-    const auth = new AuthLadder(hop, io, this.vault);
+    let readyDeadline: PausableDeadline | undefined;
+    const runInteraction: InteractionRunner = async (interaction) => {
+      readyDeadline?.pause();
+      try {
+        return await interaction();
+      } finally {
+        readyDeadline?.resume();
+      }
+    };
+    const auth = new AuthLadder(hop, io, this.vault, runInteraction);
     const { algorithms, notes } = connectionAlgorithms(hop.resolved);
     for (const note of notes) io.status(note);
     const proxySocket =
       !sock && hop.resolved.proxyCommand ? openProxyCommand(expandedProxyCommand(hop)!) : undefined;
     const transport = sock ?? proxySocket;
+    const readyTimeoutMs = (hop.resolved.connectTimeout ?? 20) * 1000;
     const config: ConnectConfig = {
       username: hop.user,
-      readyTimeout: (hop.resolved.connectTimeout ?? 20) * 1000,
+      // ssh2's deadline includes time spent in UI prompts and cannot be
+      // paused. An equivalent pausable deadline is installed below.
+      readyTimeout: 0,
       keepaliveInterval: (hop.resolved.serverAliveInterval ?? 15) * 1000,
       keepaliveCountMax: hop.resolved.serverAliveCountMax ?? 3,
       ...(algorithms ? { algorithms } : {}),
       hostVerifier: (key: Buffer, verify: (valid: boolean) => void) => {
-        void this.verifyHostKey(hop, key, io).then(verify);
+        void this.verifyHostKey(hop, key, io, runInteraction).then(verify);
       },
       authHandler: (authsLeft, partialSuccess, next) => {
         auth.next(
@@ -583,9 +596,26 @@ export class SshConnectionManager {
     return new Promise((resolve, reject) => {
       const client = new Client();
       let settled = false;
+      let ready = false;
+      const rejectBeforeReady = (err: Error) => {
+        if (settled) return;
+        settled = true;
+        readyDeadline?.clear();
+        auth.dispose();
+        proxySocket?.destroy();
+        reject(friendlyConnectError(err, hop));
+      };
+      readyDeadline = new PausableDeadline(readyTimeoutMs, () => {
+        rejectBeforeReady(new Error('Timed out while waiting for SSH readiness.'));
+        client.destroy();
+      });
       client.on('banner', (message: string) => io.status(message.trimEnd()));
       client.on('ready', () => {
+        if (settled) return;
+        ready = true;
         settled = true;
+        readyDeadline?.clear();
+        resolve(client);
         void auth
           .commitRememberedPassword()
           .catch((err) => {
@@ -597,21 +627,24 @@ export class SshConnectionManager {
           })
           .finally(() => {
             auth.dispose();
-            resolve(client);
           });
       });
       client.on('error', (err) => {
         if (!settled) {
-          settled = true;
-          auth.dispose();
-          proxySocket?.destroy();
-          reject(friendlyConnectError(auth.cancelled ? new Error('authentication cancelled') : err, hop));
-        } else {
+          rejectBeforeReady(
+            auth.cancelled ? new Error('authentication cancelled') : err,
+          );
+        } else if (ready) {
           this.closeReasons.set(client, friendlyConnectError(err, hop).message);
           this.log.warn({ err, host: hop.resolved.hostname }, 'ssh connection error');
         }
       });
-      client.on('close', () => proxySocket?.destroy());
+      client.on('close', () => {
+        proxySocket?.destroy();
+        rejectBeforeReady(
+          new Error('SSH connection closed before it became ready.'),
+        );
+      });
       client.connect(config);
       // Interactive input consists of tiny packets. Disable Nagle explicitly
       // so a keystroke never waits for a previous packet's acknowledgement.
@@ -626,7 +659,12 @@ export class SshConnectionManager {
     return new KnownHostsStore(userKnownHostsFiles, globalKnownHostsFiles);
   }
 
-  private async verifyHostKey(hop: ChainHop, key: Buffer, io: ConnectIo): Promise<boolean> {
+  private async verifyHostKey(
+    hop: ChainHop,
+    key: Buffer,
+    io: ConnectIo,
+    runInteraction: InteractionRunner,
+  ): Promise<boolean> {
     const host = hop.resolved.hostname;
     const port = hop.port;
     const store = this.knownHostsFor(hop);
@@ -652,8 +690,8 @@ export class SshConnectionManager {
       io.status(`Automatically accepted the new host key for ${host} (${fingerprintSha256(key)}).`);
       return true;
     }
-    const accepted = await io
-      .hostKey({
+    const accepted = await runInteraction(() =>
+      io.hostKey({
         host,
         port,
         keyType: hostKeyType(key),
@@ -661,8 +699,8 @@ export class SshConnectionManager {
         state: verdict.state === 'changed' ? 'mismatch' : 'new',
         previous: verdict.state === 'changed' ? verdict.previous : undefined,
         hop: hop.hopLabel,
-      })
-      .catch(() => false);
+      }),
+    ).catch(() => false);
     if (accepted) store.record(host, port, key);
     return accepted;
   }
@@ -877,6 +915,64 @@ interface RememberedPasswordCandidate {
   password: string;
 }
 
+type InteractionRunner = <T>(interaction: () => Promise<T>) => Promise<T>;
+
+class PausableDeadline {
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  private remainingMs: number;
+  private startedAt = 0;
+  private pauseDepth = 0;
+  private active: boolean;
+
+  constructor(
+    durationMs: number,
+    private readonly expire: () => void,
+  ) {
+    this.remainingMs = durationMs;
+    this.active = durationMs > 0;
+    this.arm();
+  }
+
+  pause(): void {
+    if (!this.active) return;
+    this.pauseDepth += 1;
+    if (this.pauseDepth !== 1) return;
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = undefined;
+      this.remainingMs = Math.max(
+        0,
+        this.remainingMs - (Date.now() - this.startedAt),
+      );
+    }
+  }
+
+  resume(): void {
+    if (!this.active || this.pauseDepth === 0) return;
+    this.pauseDepth -= 1;
+    if (this.pauseDepth === 0) this.arm();
+  }
+
+  clear(): void {
+    this.active = false;
+    this.pauseDepth = 0;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = undefined;
+  }
+
+  private arm(): void {
+    if (!this.active || this.pauseDepth > 0) return;
+    this.startedAt = Date.now();
+    this.timer = setTimeout(() => {
+      this.timer = undefined;
+      if (!this.active) return;
+      this.active = false;
+      this.expire();
+    }, this.remainingMs);
+    this.timer.unref?.();
+  }
+}
+
 /**
  * OpenSSH's client auth order as an ssh2 authHandler: none → agent (unless
  * IdentitiesOnly) → configured certificates with their matching private keys
@@ -901,6 +997,8 @@ class AuthLadder {
     private readonly hop: ChainHop,
     private readonly io: ConnectIo,
     private readonly vault?: PasswordVault,
+    private readonly runInteraction: InteractionRunner = (interaction) =>
+      interaction(),
   ) {
     this.attempts = this.build();
   }
@@ -1047,14 +1145,15 @@ class AuthLadder {
             type: 'keyboard-interactive',
             username: user,
             prompt: (name, instructions, _lang, prompts, finish) => {
-              this.io
-                .prompt({
+              this.runInteraction(() =>
+                this.io.prompt({
                   name: name || undefined,
                   instructions: instructions || undefined,
                   host: label,
                   purpose: 'authentication',
                   prompts: prompts.map((p) => ({ prompt: p.prompt, echo: p.echo !== false })),
-                })
+                }),
+              )
                 .then((response) => finish(response.answers))
                 .catch(() => {
                   this.cancelled = true;
@@ -1104,31 +1203,33 @@ class AuthLadder {
       }
     }
 
-    const response = await this.io.prompt({
-      host: promptLabel,
-      purpose: 'ssh-password',
-      instructions:
-        existing && this.savedPasswordAttempted
-          ? 'The saved password was unavailable or was not accepted. Enter the current password.'
-          : undefined,
-      prompts: [
-        {
-          prompt:
-            attempt === 1
-              ? `${user}@${promptLabel}'s password`
-              : 'Permission denied, please try again. Password',
-          echo: false,
-        },
-      ],
-      ...(this.vault
-        ? {
-            rememberPassword: {
-              label: credentialLabel,
-              existing,
-            },
-          }
-        : {}),
-    });
+    const response = await this.runInteraction(() =>
+      this.io.prompt({
+        host: promptLabel,
+        purpose: 'ssh-password',
+        instructions:
+          existing && this.savedPasswordAttempted
+            ? 'The saved password was unavailable or was not accepted. Enter the current password.'
+            : undefined,
+        prompts: [
+          {
+            prompt:
+              attempt === 1
+                ? `${user}@${promptLabel}'s password`
+                : 'Permission denied, please try again. Password',
+            echo: false,
+          },
+        ],
+        ...(this.vault
+          ? {
+              rememberPassword: {
+                label: credentialLabel,
+                existing,
+              },
+            }
+          : {}),
+      }),
+    );
     if (response.skipped) throw new Error('authentication cancelled');
     const password = response.answers[0] ?? '';
     this.lastPasswordCandidate = response.rememberPassword
@@ -1161,6 +1262,12 @@ class AuthLadder {
         );
         return undefined;
       }
+      if (err instanceof VaultKeyStoreUnavailableError) {
+        this.io.status(
+          `The OS credential store is unavailable. Enter the current password for ${label}.`,
+        );
+        return undefined;
+      }
       throw err;
     }
   }
@@ -1168,19 +1275,21 @@ class AuthLadder {
   private async createVaultForSave(label: string): Promise<boolean> {
     if (!this.vault) return false;
 
-    const response = await this.io.prompt({
-      name: 'Create password vault',
-      purpose: 'vault-create',
-      instructions:
-        `Create a master password to protect viewing and editing saved SSH passwords. ` +
-        `By default, Muxus stores the vault key in the operating-system credential store ` +
-        `so saved passwords can be used without another master-password prompt.`,
-      prompts: [
-        { prompt: 'Master password', echo: false },
-        { prompt: 'Confirm master password', echo: false },
-      ],
-      skipLabel: 'Not now',
-    });
+    const response = await this.runInteraction(() =>
+      this.io.prompt({
+        name: 'Create password vault',
+        purpose: 'vault-create',
+        instructions:
+          `Create a master password to protect viewing and editing saved SSH passwords. ` +
+          `By default, Muxus stores the vault key in the operating-system credential store ` +
+          `so saved passwords can be used without another master-password prompt.`,
+        prompts: [
+          { prompt: 'Master password', echo: false },
+          { prompt: 'Confirm master password', echo: false },
+        ],
+        skipLabel: 'Not now',
+      }),
+    );
     if (response.skipped) return false;
     const [masterPassword = '', confirmation = ''] = response.answers;
     if (masterPassword !== confirmation) {
@@ -1209,32 +1318,34 @@ class AuthLadder {
     operation: (masterPassword: string) => Promise<T>,
   ): Promise<{ ok: true; value: T } | { ok: false }> {
     if (!this.vault) return { ok: false };
-    let error: string | undefined;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const response = await this.io.prompt({
-        name,
-        purpose: 'vault-unlock',
-        instructions: error ? `${error}\n\n${instructions}` : instructions,
-        prompts: [{ prompt: 'Master password', echo: false }],
-        skipLabel,
-      });
-      if (response.skipped) return { ok: false };
-      try {
-        const value = await operation(response.answers[0] ?? '');
-        return { ok: true, value };
-      } catch (err) {
-        if (
-          err instanceof InvalidMasterPasswordError ||
-          err instanceof InvalidMasterPasswordFormatError
-        ) {
-          error = err.message;
-          continue;
+    return this.runInteraction(async () => {
+      let error: string | undefined;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const response = await this.io.prompt({
+          name,
+          purpose: 'vault-unlock',
+          instructions: error ? `${error}\n\n${instructions}` : instructions,
+          prompts: [{ prompt: 'Master password', echo: false }],
+          skipLabel,
+        });
+        if (response.skipped) return { ok: false };
+        try {
+          const value = await operation(response.answers[0] ?? '');
+          return { ok: true, value };
+        } catch (err) {
+          if (
+            err instanceof InvalidMasterPasswordError ||
+            err instanceof InvalidMasterPasswordFormatError
+          ) {
+            error = err.message;
+            continue;
+          }
+          throw err;
         }
-        throw err;
       }
-    }
-    this.io.status('The password vault remains locked.');
-    return { ok: false };
+      this.io.status('The password vault remains locked.');
+      return { ok: false };
+    });
   }
 
   private loadCertificate(
@@ -1321,11 +1432,13 @@ class AuthLadder {
       // skipped silently — the agent attempt already covered the loaded ones.
       if (!explicit && agentAvailable) return undefined;
       for (let i = 0; i < MAX_PASSPHRASE_ATTEMPTS && parsed instanceof Error; i++) {
-        const response = await this.io.prompt({
-          host: label,
-          purpose: 'authentication',
-          prompts: [{ prompt: `${i > 0 ? 'Bad passphrase, try again. ' : ''}Passphrase for ${path.basename(file)}`, echo: false }],
-        });
+        const response = await this.runInteraction(() =>
+          this.io.prompt({
+            host: label,
+            purpose: 'authentication',
+            prompts: [{ prompt: `${i > 0 ? 'Bad passphrase, try again. ' : ''}Passphrase for ${path.basename(file)}`, echo: false }],
+          }),
+        );
         const [passphrase] = response.answers;
         if (!passphrase) return undefined; // empty answer = skip this key
         parsed = parseSshKey(content, passphrase);

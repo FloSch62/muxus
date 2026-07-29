@@ -70,9 +70,9 @@ jobs:
             artifact_path: electron/release/*.exe
           - name: macOS universal
             os: macos-latest
-            # The override also backfills tags created before x64ArchFiles was added
-            # to electron-builder.yml, including v0.1.0.
-            build_args: --mac dmg --universal -c.mac.x64ArchFiles="**/prebuilds/darwin*/**"
+            # These overrides also backfill tags created before the universal
+            # native-module rules were added to electron-builder.yml.
+            build_args: --mac dmg --universal -c.mac.x64ArchFiles="**/prebuilds/darwin*/**" -c.mac.singleArchFiles="**/node_modules/@napi-rs/keyring-darwin-*{,/**}"
             artifact_name: macos-universal
             artifact_path: electron/release/*.dmg
     runs-on: ${{ matrix.os }}

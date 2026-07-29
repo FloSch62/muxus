@@ -108,7 +108,8 @@ the operating-system credential store.
 - **Restore OS access** appears if the never-prompt policy is selected but the credential
   store entry is missing.
 - Saved-password rows can be forgotten individually. **Delete vault** forgets all of them
-  without removing hosts, keys or other settings.
+  without removing hosts, keys or other settings. Reset intentionally needs no master
+  password, so a forgotten password cannot make the vault impossible to remove.
 
 The master password cannot be recovered. Saved-password ciphertext is local to the
 application database and is not included in Muxus backups. The raw vault key is never

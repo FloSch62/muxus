@@ -69,7 +69,7 @@ follows:
 - changing the master password re-wraps the random vault key without decrypting and
   rewriting every saved password;
 - the master password itself is never stored. It cannot be recovered; resetting the vault
-  deletes every saved password.
+  deliberately requires no master password and deletes every saved password.
 
 There is no application-owned key file. A copied database does not contain a directly
 usable vault key and can be unlocked only with the master password. On Linux, **Never**
@@ -90,9 +90,12 @@ remain in garbage-collected memory for an unspecified short period after use. Ma
 controlling the logged-in session or Muxus can capture credentials while they are used.
 
 Deleting a credential enables SQLite secure deletion, checkpoints and truncates the WAL.
-Deleting the whole vault additionally compacts the active database and removes its OS
-credential-store entry. Existing backups, filesystem snapshots, storage-device remapping
-and forensic copies are outside that guarantee.
+Deleting the whole vault additionally compacts the active database and attempts to remove
+its OS credential-store entry. Reset still completes if the credential store is
+unavailable, because the orphaned random key has no ciphertext or vault metadata to open.
+An existing backup paired with an entry that could not be removed may still be usable;
+backups, filesystem snapshots, storage-device remapping and forensic copies are outside
+the deletion guarantee.
 
 The portable Muxus backup format deliberately excludes the vault and all password
 ciphertext.

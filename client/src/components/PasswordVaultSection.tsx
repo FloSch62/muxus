@@ -84,7 +84,7 @@ export function PasswordVaultSection() {
     const confirmed = await confirmAction({
       title: 'Delete the password vault?',
       description:
-        'Every saved SSH password will be securely removed from the active database and OS credential store. Existing backups or filesystem snapshots are not affected. Connection profiles and SSH keys are not affected.',
+        'Every saved SSH password will be securely removed from the active database. Muxus also removes the OS credential-store copy when that store is available. No master password is required, so deletion remains possible if it is forgotten. Existing backups or filesystem snapshots are not affected. Connection profiles and SSH keys are not affected.',
       confirmLabel: 'Delete vault',
       destructive: true,
     });
@@ -521,7 +521,9 @@ function EditSavedPasswordDialog({
   };
 
   const reveal = async () => {
-    if (Array.from(masterPassword).length < 8) {
+    // Legacy v2 vaults accepted eight-character passwords. Let the server
+    // apply the format-specific minimum instead of duplicating it here.
+    if (masterPassword.length === 0) {
       setError('Enter the master password.');
       return;
     }

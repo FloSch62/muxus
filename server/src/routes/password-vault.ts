@@ -178,6 +178,8 @@ export function registerPasswordVaultRoutes(
   });
 
   app.delete('/api/password-vault', async (): Promise<PasswordVaultStatus> => {
+    // Intentionally master-password-free: reset is the recovery path when the
+    // password is forgotten. This endpoint can only delete, never reveal data.
     await ctx.vault.deleteAll();
     return ctx.vault.status();
   });
