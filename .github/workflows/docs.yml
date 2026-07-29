@@ -1,60 +1,61 @@
-name: Docs
+name: macOS SSH hotfix artifact
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "docs/**"
-      - "zensical.toml"
-      - "hack/write-latest-manifest.mjs"
-      - ".github/workflows/docs.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Allow one concurrent deployment; cancel in-progress runs for the same ref.
-concurrency:
-  group: pages
-  cancel-in-progress: true
+env:
+  NODE_VERSION: 24.18.0
 
 jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  build:
+    name: Build universal macOS DMG
+    runs-on: macos-latest
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7
         with:
-          node-version: 24
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.x"
-      - run: pip install zensical
-      - run: zensical build --clean --strict
-      - name: Write update manifest
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace
+        run: pnpm build
+
+      - name: Build universal DMG
+        run: >-
+          pnpm --filter @muxus/electron exec electron-builder
+          --mac dmg --universal --publish never
+          '-c.artifactName=muxus-0.3.0-ssh-hotfix-${os}-${arch}.${ext}'
+          -c.mac.x64ArchFiles="{**/prebuilds/darwin*/**,**/node_modules/@napi-rs/keyring-darwin-*/**}"
+          -c.mac.singleArchFiles="**/node_modules/@napi-rs/keyring-darwin-*{,/**}"
+
+      - name: Verify universal app and fix payload
         run: |
-          if gh release view --repo "$GH_REPO" --json tagName,name,url,publishedAt > /tmp/muxus-latest-release.json; then
-            node hack/write-latest-manifest.mjs /tmp/muxus-latest-release.json site/latest.json
-          else
-            echo "No release published yet; skipping update manifest."
-          fi
-      - uses: actions/configure-pages@v6
-      - uses: actions/upload-pages-artifact@v5
+          app="electron/release/mac-universal/Muxus.app"
+          test -d "$app"
+          file "$app/Contents/MacOS/muxus" | grep -q "universal binary"
+          for arch in x64 arm64; do
+            ls "$app/Contents/Resources/app.asar.unpacked/node_modules/@napi-rs/keyring-darwin-$arch/"*.node
+          done
+          grep -a -q "SSH agent did not respond while" "$app/Contents/Resources/app.asar"
+          ls electron/release/muxus-0.3.0-ssh-hotfix-mac-universal.dmg
+
+      - name: Store DMG
+        uses: actions/upload-artifact@v7
         with:
-          name: github-pages-${{ github.run_attempt }}
-          path: site
-      - id: deployment
-        uses: actions/deploy-pages@v5
-        with:
-          artifact_name: github-pages-${{ github.run_attempt }}
+          name: muxus-macos-universal-ssh-hotfix
+          path: electron/release/muxus-0.3.0-ssh-hotfix-mac-universal.dmg
+          if-no-files-found: error
+          retention-days: 1
