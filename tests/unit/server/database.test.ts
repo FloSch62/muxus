@@ -22,6 +22,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 8, name: 'named-workspace-session-sets' },
       { version: 9, name: 'drop-favorites' },
       { version: 10, name: 'terminal-scrollback-snapshots' },
+      { version: 11, name: 'version-terminal-scrollback-snapshots' },
     ]);
   });
 });
@@ -47,9 +48,14 @@ describe('terminal scrollback snapshots', () => {
   it('stores and replaces one snapshot per tab', () => {
     database = new MuxusDatabase(':memory:');
     database.saveTerminalSnapshot('tab-1', 'first');
-    database.saveTerminalSnapshot('tab-1', 'second');
+    expect(database.terminalSnapshot('tab-1')).toMatchObject({ formatVersion: 1 });
 
-    expect(database.terminalSnapshot('tab-1')).toMatchObject({ tabId: 'tab-1', data: 'second' });
+    database.saveTerminalSnapshot('tab-1', 'second', 2);
+    expect(database.terminalSnapshot('tab-1')).toMatchObject({
+      tabId: 'tab-1',
+      data: 'second',
+      formatVersion: 2,
+    });
     expect(database.terminalSnapshot('tab-2')).toBeUndefined();
   });
 

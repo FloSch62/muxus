@@ -31,7 +31,10 @@ describe('terminal snapshot routes', () => {
       method: 'PUT',
       url: '/api/terminal-snapshots/tab-1',
       headers: auth(),
-      payload: { data: 'deploy@web-01:~$ uptime\r\n 09:15 up 42 days' },
+      payload: {
+        data: 'deploy@web-01:~$ uptime\r\n 09:15 up 42 days',
+        formatVersion: 2,
+      },
     });
     expect(put.statusCode).toBe(200);
     expect(put.json()).toEqual({ saved: true });
@@ -45,6 +48,7 @@ describe('terminal snapshot routes', () => {
     expect(get.json().snapshot).toMatchObject({
       tabId: 'tab-1',
       data: 'deploy@web-01:~$ uptime\r\n 09:15 up 42 days',
+      formatVersion: 2,
     });
   });
 

@@ -436,11 +436,14 @@ export interface TerminalSnapshotRecord {
   tabId: string;
   /** Serialized terminal buffer, replayable by writing it back to a terminal. */
   data: string;
+  /** Encoding version used to distinguish legacy unmarked UI dividers. */
+  formatVersion: number;
   updatedAt: string;
 }
 
 /** Upper bound for one tab's serialized scrollback, enforced on both sides. */
 export const TERMINAL_SNAPSHOT_MAX_CHARS = 512_000;
+export const TERMINAL_SNAPSHOT_FORMAT_VERSION = 2;
 
 export interface SshConfigResponse {
   /** Root config path (~/.ssh/config). */
