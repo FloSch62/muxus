@@ -14,6 +14,7 @@ import {
   PasswordVault,
   sshPasswordAccount,
 } from '../../../server/src/security/password-vault.js';
+import { MemoryVaultKeyStore } from '../../../server/src/security/vault-key-store.js';
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'muxus-session-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -198,13 +199,15 @@ describe('session settings from ssh config', () => {
     expect(started.capture.authMethods).not.toContain('password');
   }, 15_000);
 
-  it('remembers a successful password and unlocks the vault on the next connection', async () => {
+  it('remembers a successful password in the OS keyring and reuses it after restart', async () => {
     const started = await startCapturingServer();
     server = started.server;
     const config = writeConfig(started.port, []);
     database = new MuxusDatabase(':memory:');
+    const keyStore = new MemoryVaultKeyStore();
     vault = new PasswordVault(database, {
       kdf: { cost: 1024, blockSize: 8, parallelism: 1 },
+      keyStore,
     });
     manager = makeManager(config, vault);
     const master = 'correct horse battery staple';
@@ -226,21 +229,29 @@ describe('session settings from ssh config', () => {
     const first = await manager.connect(profile, firstIo);
     expect(vault.status()).toMatchObject({
       configured: true,
-      automaticAccess: true,
+      unlockPolicy: 'never',
+      locked: false,
       credentialCount: 1,
     });
     first.release();
     manager.closeAll();
 
-    vault.lock();
+    vault.dispose();
+    vault = new PasswordVault(database, {
+      kdf: { cost: 1024, blockSize: 8, parallelism: 1 },
+      keyStore,
+    });
+    await vault.initialize();
     manager = makeManager(config, vault);
     const secondIo = makeIo({
       prompt: (info) => {
-        throw new Error(`remote password prompt was not expected: ${info.purpose}`);
+        throw new Error(
+          `authentication prompt was not expected: ${info.purpose}`,
+        );
       },
     });
     const second = await manager.connect(profile, secondIo);
-    expect(vault.status().automaticAccess).toBe(true);
+    expect(vault.status().locked).toBe(false);
     expect(secondIo.passwordPrompts).toBe(0);
     second.release();
   }, 15_000);
@@ -259,7 +270,7 @@ describe('session settings from ssh config', () => {
       host: '127.0.0.1',
       port: started.port,
     });
-    vault.rememberSshPassword(
+    await vault.rememberSshPassword(
       account,
       `tester@127.0.0.1:${started.port}`,
       'stale-password',
@@ -278,7 +289,7 @@ describe('session settings from ssh config', () => {
       },
     });
     const lease = await manager.connect(profile, io);
-    expect(vault.sshPassword(account)).toBe(PASSWORD);
+    await expect(vault.sshPassword(account)).resolves.toBe(PASSWORD);
     lease.release();
   }, 15_000);
 });

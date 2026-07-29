@@ -6,6 +6,9 @@ packages:
   - tests
 # Keep local lockfile updates aligned with pnpm 11's CI supply-chain policy.
 minimumReleaseAge: 1440
+overrides:
+  'brace-expansion@>=5.0.0 <5.0.8': 5.0.8
+  'dompurify@>=3.4.0 <3.4.12': 3.4.12
 allowBuilds:
   esbuild: true
   electron: true

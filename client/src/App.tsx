@@ -1,4 +1,12 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+} from 'react';
 import CssBaseline from '@mui/material/CssBaseline';
 import { ThemeProvider } from '@mui/material/styles';
 import type { AppWindowLaunch } from '@muxus/shared';
@@ -8,11 +16,11 @@ import { setTitleBarMode } from './titlebar-overlay.js';
 import { usePrefsStore } from './state/prefs.js';
 import { useUiStore } from './state/ui.js';
 import { AppShell } from './layout/AppShell.js';
-import { DialogHost } from './components/DialogHost.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
-import { ToastHost } from './components/ToastHost.js';
 import { BackendStatusBanner } from './components/BackendStatusBanner.js';
 import { UpdateNotification } from './components/UpdateNotification.js';
+import { useDialogStore } from './state/dialogs.js';
+import { useToastStore } from './state/toast.js';
 import {
   loadHostEditorDialog,
   loadFolderDialog,
@@ -36,6 +44,21 @@ const FolderDialog = lazy(() =>
 );
 const SettingsDialog = lazy(() =>
   loadSettingsDialog().then((module) => ({ default: module.SettingsDialog })),
+);
+const PasswordVaultStartupUnlock = lazy(() =>
+  import('./components/PasswordVaultStartupUnlock.js').then((module) => ({
+    default: module.PasswordVaultStartupUnlock,
+  })),
+);
+const DialogHost = lazy(() =>
+  import('./components/DialogHost.js').then((module) => ({
+    default: module.DialogHost,
+  })),
+);
+const ToastHost = lazy(() =>
+  import('./components/ToastHost.js').then((module) => ({
+    default: module.ToastHost,
+  })),
 );
 const CommandButtonsDialog = lazy(() =>
   loadCommandButtonsDialog().then((module) => ({ default: module.CommandButtonsDialog })),
@@ -68,9 +91,13 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const historyOpen = useUiStore((s) => s.historyOpen);
   const quickLauncherOpen = useUiStore((s) => s.quickLauncherOpen);
   const workspacesOpen = useUiStore((s) => s.workspacesOpen);
+  const dialogOpen = useDialogStore((s) => s.queue.length > 0);
+  const toastOpen = useToastStore((s) => !!s.toast);
+  const [startupReady, setStartupReady] = useState(false);
   const [osTheme, setOsTheme] = useState<'light' | 'dark'>(() =>
     window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
   );
+  const finishStartup = useCallback(() => setStartupReady(true), []);
   const effectiveMode = themeMode === 'os' ? osTheme : themeMode;
   const theme = useMemo(() => buildTheme(effectiveMode), [effectiveMode]);
   useLayoutEffect(() => {
@@ -95,7 +122,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
             <SftpWindow launch={launch} />
           </Suspense>
         ) : (
-          <AppShell persistWorkspace={!launch} />
+          <AppShell persistWorkspace={!launch && startupReady} />
         )}
       </ErrorBoundary>
       <Suspense fallback={null}>
@@ -108,9 +135,10 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
         {historyOpen ? <SessionHistoryDialog /> : null}
         {quickLauncherOpen ? <QuickLauncherDialog /> : null}
         {workspacesOpen ? <WorkspaceDialog /> : null}
+        {!launch ? <PasswordVaultStartupUnlock onReady={finishStartup} /> : null}
+        {dialogOpen ? <DialogHost /> : null}
+        {toastOpen ? <ToastHost /> : null}
       </Suspense>
-      <DialogHost />
-      <ToastHost />
       <BackendStatusBanner />
       {!launch ? <UpdateNotification /> : null}
     </ThemeProvider>

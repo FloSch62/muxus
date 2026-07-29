@@ -1,6 +1,9 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import type { PasswordVaultStatus } from '@muxus/shared';
+import {
+  DEFAULT_PASSWORD_VAULT_UNLOCK_POLICY,
+  type PasswordVaultStatus,
+} from '@muxus/shared';
 import type { AppContext } from '../app.js';
 import {
   InvalidMasterPasswordError,
@@ -9,11 +12,16 @@ import {
   VaultAlreadyConfiguredError,
   VaultAutomaticAccessError,
   VaultNotConfiguredError,
+  VaultPolicyMismatchError,
 } from '../security/password-vault.js';
+import { VaultKeyStoreUnavailableError } from '../security/vault-key-store.js';
 import { HttpProblem, sendError } from '../util/errors.js';
 
 const passwordSchema = z.object({
   password: z.string().min(1).max(1024),
+  unlockPolicy: z
+    .enum(['never', 'startup', 'credential'])
+    .default(DEFAULT_PASSWORD_VAULT_UNLOCK_POLICY),
 });
 
 const managementSchema = z.object({
@@ -29,6 +37,10 @@ const changePasswordSchema = z.object({
   nextPassword: z.string().min(1).max(1024),
 });
 
+const changeUnlockPolicySchema = managementSchema.extend({
+  unlockPolicy: z.enum(['never', 'startup', 'credential']),
+});
+
 /** Master-password lifecycle and saved-credential management. */
 export function registerPasswordVaultRoutes(
   app: FastifyInstance,
@@ -42,7 +54,10 @@ export function registerPasswordVaultRoutes(
       return reply.code(400).send({ message: 'A valid master password is required.' });
     }
     try {
-      await ctx.vault.create(parsed.data.password);
+      await ctx.vault.create(
+        parsed.data.password,
+        parsed.data.unlockPolicy,
+      );
       return ctx.vault.status();
     } catch (err) {
       return sendVaultError(reply, err);
@@ -56,6 +71,39 @@ export function registerPasswordVaultRoutes(
     }
     try {
       await ctx.vault.repairAutomaticAccess(parsed.data.masterPassword);
+      return ctx.vault.status();
+    } catch (err) {
+      return sendVaultError(reply, err);
+    }
+  });
+
+  app.post('/api/password-vault/unlock', async (req, reply) => {
+    const parsed = managementSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send({ message: 'A valid master password is required.' });
+    }
+    try {
+      await ctx.vault.unlockForSession(parsed.data.masterPassword);
+      return ctx.vault.status();
+    } catch (err) {
+      return sendVaultError(reply, err);
+    }
+  });
+
+  app.put('/api/password-vault/unlock-policy', async (req, reply) => {
+    const parsed = changeUnlockPolicySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({
+        message: 'A valid master password and unlock policy are required.',
+      });
+    }
+    try {
+      await ctx.vault.changeUnlockPolicy(
+        parsed.data.masterPassword,
+        parsed.data.unlockPolicy,
+      );
       return ctx.vault.status();
     } catch (err) {
       return sendVaultError(reply, err);
@@ -129,8 +177,8 @@ export function registerPasswordVaultRoutes(
     };
   });
 
-  app.delete('/api/password-vault', (): PasswordVaultStatus => {
-    ctx.vault.deleteAll();
+  app.delete('/api/password-vault', async (): Promise<PasswordVaultStatus> => {
+    await ctx.vault.deleteAll();
     return ctx.vault.status();
   });
 }
@@ -152,11 +200,23 @@ function sendVaultError(reply: FastifyReply, err: unknown): Promise<void> {
   if (err instanceof VaultNotConfiguredError) {
     return sendError(reply, new HttpProblem(409, err.message, 'vault-not-configured'));
   }
+  if (err instanceof VaultPolicyMismatchError) {
+    return sendError(
+      reply,
+      new HttpProblem(409, err.message, 'vault-policy-mismatch'),
+    );
+  }
   if (err instanceof VaultAutomaticAccessError) {
     return sendError(reply, new HttpProblem(423, err.message, 'vault-automatic-access-unavailable'));
   }
   if (err instanceof InvalidSavedPasswordFormatError) {
     return sendError(reply, new HttpProblem(400, err.message, 'invalid-saved-password-format'));
+  }
+  if (err instanceof VaultKeyStoreUnavailableError) {
+    return sendError(
+      reply,
+      new HttpProblem(503, err.message, 'os-key-store-unavailable'),
+    );
   }
   return sendError(reply, err);
 }

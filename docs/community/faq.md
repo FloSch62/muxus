@@ -46,9 +46,10 @@ The application database is in the platform data directory (`~/.local/share/muxu
 
 Not by default. Passwords are transient unless **Remember this password** is selected on
 an SSH password prompt. Remembering creates the platform-independent password vault and
-writes authenticated ciphertext to the local database. A companion local device key lets
-SSH use the password automatically after future launches; the master password is required
-to view or edit the saved value and is never stored. Private-key passphrases, 2FA codes
+writes authenticated ciphertext to the local database. The prompt policy can use the OS
+credential store (the default), ask once at startup, or ask whenever a credential is
+needed. The master password is always required to view or edit the saved value and is
+never stored. Private-key passphrases, 2FA codes
 and keyboard-interactive answers are never remembered. See the
 [security model](../reference/security.md#password-vault).
 

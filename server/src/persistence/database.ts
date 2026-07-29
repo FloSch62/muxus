@@ -11,6 +11,7 @@ import type {
   HostKeywordHighlightConfig,
   ManagedHostRef,
   OpenSshMetadataPatch,
+  PasswordVaultUnlockPolicy,
   SavedHostProfile,
   SavedHostProfileInput,
   SessionHistorySettings,
@@ -281,19 +282,22 @@ const MIGRATIONS = [
   },
   {
     version: 12,
-    name: 'master-password-vault',
+    name: 'password-vault',
     sql: `
       CREATE TABLE password_vault (
         singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
-        format_version INTEGER NOT NULL CHECK(format_version = 1),
-        kdf_algorithm TEXT NOT NULL CHECK(kdf_algorithm = 'argon2id'),
+        format_version INTEGER NOT NULL CHECK(format_version IN (2, 3)),
+        vault_id TEXT NOT NULL UNIQUE CHECK(length(vault_id) BETWEEN 16 AND 64),
+        unlock_policy TEXT NOT NULL
+          CHECK(unlock_policy IN ('never', 'startup', 'credential')),
+        kdf_algorithm TEXT NOT NULL CHECK(kdf_algorithm = 'scrypt'),
         kdf_salt BLOB NOT NULL CHECK(length(kdf_salt) = 16),
-        kdf_memory INTEGER NOT NULL CHECK(kdf_memory BETWEEN 8192 AND 1048576),
-        kdf_passes INTEGER NOT NULL CHECK(kdf_passes BETWEEN 2 AND 10),
-        kdf_parallelism INTEGER NOT NULL CHECK(kdf_parallelism BETWEEN 2 AND 16),
-        wrapped_key_nonce BLOB NOT NULL CHECK(length(wrapped_key_nonce) = 12),
-        wrapped_key_ciphertext BLOB NOT NULL CHECK(length(wrapped_key_ciphertext) = 32),
-        wrapped_key_tag BLOB NOT NULL CHECK(length(wrapped_key_tag) = 16),
+        kdf_cost INTEGER NOT NULL CHECK(kdf_cost BETWEEN 1024 AND 1048576),
+        kdf_block_size INTEGER NOT NULL CHECK(kdf_block_size BETWEEN 1 AND 32),
+        kdf_parallelism INTEGER NOT NULL CHECK(kdf_parallelism BETWEEN 1 AND 16),
+        master_key_nonce BLOB NOT NULL CHECK(length(master_key_nonce) = 12),
+        master_key_ciphertext BLOB NOT NULL CHECK(length(master_key_ciphertext) = 32),
+        master_key_tag BLOB NOT NULL CHECK(length(master_key_tag) = 16),
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       ) STRICT;
@@ -311,34 +315,66 @@ const MIGRATIONS = [
     `,
   },
   {
+    // Version 13 existed briefly on the feature branch. Keep the number
+    // reserved so fresh databases and databases created by that draft can
+    // converge on the same migration history.
     version: 13,
     name: 'automatic-password-vault',
-    sql: `
-      DELETE FROM credential_refs
-      WHERE provider = 'muxus-master-vault';
-
-      DROP TABLE password_vault;
-
-      CREATE TABLE password_vault (
-        singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
-        format_version INTEGER NOT NULL CHECK(format_version = 2),
-        kdf_algorithm TEXT NOT NULL CHECK(kdf_algorithm = 'scrypt'),
-        kdf_salt BLOB NOT NULL CHECK(length(kdf_salt) = 16),
-        kdf_cost INTEGER NOT NULL CHECK(kdf_cost BETWEEN 1024 AND 1048576),
-        kdf_block_size INTEGER NOT NULL CHECK(kdf_block_size BETWEEN 1 AND 32),
-        kdf_parallelism INTEGER NOT NULL CHECK(kdf_parallelism BETWEEN 1 AND 16),
-        master_key_nonce BLOB NOT NULL CHECK(length(master_key_nonce) = 12),
-        master_key_ciphertext BLOB NOT NULL CHECK(length(master_key_ciphertext) = 32),
-        master_key_tag BLOB NOT NULL CHECK(length(master_key_tag) = 16),
-        device_key_nonce BLOB NOT NULL CHECK(length(device_key_nonce) = 12),
-        device_key_ciphertext BLOB NOT NULL CHECK(length(device_key_ciphertext) = 32),
-        device_key_tag BLOB NOT NULL CHECK(length(device_key_tag) = 16),
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-      ) STRICT;
-    `,
+    sql: 'SELECT 1;',
+  },
+  {
+    version: 14,
+    name: 'password-vault-os-keystore',
+    run: migrateDraftPasswordVault,
   },
 ] as const;
+
+function migrateDraftPasswordVault(db: DatabaseSync): void {
+  const columns = new Set(
+    db
+      .prepare('PRAGMA table_info(password_vault)')
+      .all()
+      .map((row) => String(row.name)),
+  );
+  if (!columns.has('device_key_nonce')) return;
+
+  db.exec(`
+    ALTER TABLE password_vault RENAME TO password_vault_draft_v13;
+
+    CREATE TABLE password_vault (
+      singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+      format_version INTEGER NOT NULL CHECK(format_version IN (2, 3)),
+      vault_id TEXT NOT NULL UNIQUE CHECK(length(vault_id) BETWEEN 16 AND 64),
+      unlock_policy TEXT NOT NULL
+        CHECK(unlock_policy IN ('never', 'startup', 'credential')),
+      kdf_algorithm TEXT NOT NULL CHECK(kdf_algorithm = 'scrypt'),
+      kdf_salt BLOB NOT NULL CHECK(length(kdf_salt) = 16),
+      kdf_cost INTEGER NOT NULL CHECK(kdf_cost BETWEEN 1024 AND 1048576),
+      kdf_block_size INTEGER NOT NULL CHECK(kdf_block_size BETWEEN 1 AND 32),
+      kdf_parallelism INTEGER NOT NULL CHECK(kdf_parallelism BETWEEN 1 AND 16),
+      master_key_nonce BLOB NOT NULL CHECK(length(master_key_nonce) = 12),
+      master_key_ciphertext BLOB NOT NULL CHECK(length(master_key_ciphertext) = 32),
+      master_key_tag BLOB NOT NULL CHECK(length(master_key_tag) = 16),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) STRICT;
+  `);
+  db.prepare(`
+    INSERT INTO password_vault(
+      singleton, format_version, vault_id, unlock_policy,
+      kdf_algorithm, kdf_salt, kdf_cost, kdf_block_size,
+      kdf_parallelism, master_key_nonce, master_key_ciphertext,
+      master_key_tag, created_at, updated_at
+    )
+    SELECT
+      singleton, format_version, ?, 'startup',
+      kdf_algorithm, kdf_salt, kdf_cost, kdf_block_size,
+      kdf_parallelism, master_key_nonce, master_key_ciphertext,
+      master_key_tag, created_at, updated_at
+    FROM password_vault_draft_v13
+  `).run(nanoid());
+  db.exec('DROP TABLE password_vault_draft_v13');
+}
 
 const DEFAULT_SESSION_LOGGING_POLICY: SessionLoggingPolicyInput = {
   enabled: false,
@@ -381,7 +417,9 @@ export interface CredentialRefRecord extends CredentialRefInput {
 }
 
 export interface PasswordVaultConfigInput {
-  formatVersion: 2;
+  formatVersion: 2 | 3;
+  vaultId: string;
+  unlockPolicy: PasswordVaultUnlockPolicy;
   kdfAlgorithm: 'scrypt';
   kdfSalt: Buffer;
   kdfCost: number;
@@ -390,9 +428,6 @@ export interface PasswordVaultConfigInput {
   masterKeyNonce: Buffer;
   masterKeyCiphertext: Buffer;
   masterKeyTag: Buffer;
-  deviceKeyNonce: Buffer;
-  deviceKeyCiphertext: Buffer;
-  deviceKeyTag: Buffer;
 }
 
 export interface PasswordVaultConfigRecord extends PasswordVaultConfigInput {
@@ -495,7 +530,9 @@ export class MuxusDatabase {
         /* permissions may be controlled by the platform/filesystem */
       }
     }
-    this.db.exec('PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+    this.db.exec(
+      'PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA secure_delete = ON;',
+    );
     if (filename !== ':memory:') this.db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
     this.migrate();
     this.metadataByAlias = this.db.prepare(`
@@ -704,14 +741,16 @@ export class MuxusDatabase {
     this.db
       .prepare(`
         INSERT INTO password_vault(
-          singleton, format_version, kdf_algorithm, kdf_salt, kdf_cost,
+          singleton, format_version, vault_id, unlock_policy,
+          kdf_algorithm, kdf_salt, kdf_cost,
           kdf_block_size, kdf_parallelism, master_key_nonce,
-          master_key_ciphertext, master_key_tag, device_key_nonce,
-          device_key_ciphertext, device_key_tag
-        ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          master_key_ciphertext, master_key_tag
+        ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `)
       .run(
         input.formatVersion,
+        input.vaultId,
+        input.unlockPolicy,
         input.kdfAlgorithm,
         input.kdfSalt,
         input.kdfCost,
@@ -720,9 +759,6 @@ export class MuxusDatabase {
         input.masterKeyNonce,
         input.masterKeyCiphertext,
         input.masterKeyTag,
-        input.deviceKeyNonce,
-        input.deviceKeyCiphertext,
-        input.deviceKeyTag,
       );
   }
 
@@ -730,16 +766,18 @@ export class MuxusDatabase {
     const changed = this.db
       .prepare(`
         UPDATE password_vault
-        SET format_version = ?, kdf_algorithm = ?, kdf_salt = ?,
+        SET format_version = ?, vault_id = ?, unlock_policy = ?,
+            kdf_algorithm = ?, kdf_salt = ?,
             kdf_cost = ?, kdf_block_size = ?, kdf_parallelism = ?,
             master_key_nonce = ?, master_key_ciphertext = ?,
-            master_key_tag = ?, device_key_nonce = ?,
-            device_key_ciphertext = ?, device_key_tag = ?,
+            master_key_tag = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE singleton = 1
       `)
       .run(
         input.formatVersion,
+        input.vaultId,
+        input.unlockPolicy,
         input.kdfAlgorithm,
         input.kdfSalt,
         input.kdfCost,
@@ -748,11 +786,9 @@ export class MuxusDatabase {
         input.masterKeyNonce,
         input.masterKeyCiphertext,
         input.masterKeyTag,
-        input.deviceKeyNonce,
-        input.deviceKeyCiphertext,
-        input.deviceKeyTag,
       );
     if (Number(changed.changes) !== 1) throw new Error('password vault is not configured');
+    this.flushSensitivePages();
   }
 
   encryptedCredential(
@@ -829,21 +865,23 @@ export class MuxusDatabase {
           input.authTag,
         );
       this.db.exec('COMMIT');
-      return this.encryptedCredential(input.provider, input.service, input.account)!;
     } catch (err) {
       this.db.exec('ROLLBACK');
       throw err;
     }
+    this.flushSensitivePages();
+    return this.encryptedCredential(input.provider, input.service, input.account)!;
   }
 
   deleteEncryptedCredential(id: string, provider: string): boolean {
-    return (
+    const deleted =
       Number(
         this.db
           .prepare('DELETE FROM credential_refs WHERE id = ? AND provider = ?')
           .run(id, provider).changes,
-      ) === 1
-    );
+      ) === 1;
+    if (deleted) this.flushSensitivePages();
+    return deleted;
   }
 
   deletePasswordVaultData(provider: string): void {
@@ -855,6 +893,16 @@ export class MuxusDatabase {
     } catch (err) {
       this.db.exec('ROLLBACK');
       throw err;
+    }
+    this.flushSensitivePages(true);
+  }
+
+  private flushSensitivePages(compact = false): void {
+    if (this.filename === ':memory:') return;
+    this.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    if (compact) {
+      this.db.exec('VACUUM');
+      this.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
     }
   }
 
@@ -1463,7 +1511,8 @@ export class MuxusDatabase {
       if (applied.has(migration.version)) continue;
       this.db.exec('BEGIN IMMEDIATE');
       try {
-        this.db.exec(migration.sql);
+        if ('sql' in migration) this.db.exec(migration.sql);
+        else migration.run(this.db);
         this.db
           .prepare('INSERT INTO schema_migrations(version, name) VALUES (?, ?)')
           .run(migration.version, migration.name);
@@ -1487,7 +1536,11 @@ function blob(row: SqlRow, key: string): Buffer {
 
 function passwordVaultConfigFromRow(row: SqlRow): PasswordVaultConfigRecord {
   return {
-    formatVersion: Number(row.format_version) as 2,
+    formatVersion: Number(row.format_version) as 2 | 3,
+    vaultId: String(row.vault_id),
+    unlockPolicy: String(
+      row.unlock_policy,
+    ) as PasswordVaultConfigRecord['unlockPolicy'],
     kdfAlgorithm: String(row.kdf_algorithm) as 'scrypt',
     kdfSalt: blob(row, 'kdf_salt'),
     kdfCost: Number(row.kdf_cost),
@@ -1496,9 +1549,6 @@ function passwordVaultConfigFromRow(row: SqlRow): PasswordVaultConfigRecord {
     masterKeyNonce: blob(row, 'master_key_nonce'),
     masterKeyCiphertext: blob(row, 'master_key_ciphertext'),
     masterKeyTag: blob(row, 'master_key_tag'),
-    deviceKeyNonce: blob(row, 'device_key_nonce'),
-    deviceKeyCiphertext: blob(row, 'device_key_ciphertext'),
-    deviceKeyTag: blob(row, 'device_key_tag'),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };

@@ -46,8 +46,8 @@ export function AuthPromptDialog({
 
   const submit = () => {
     if (request.purpose === 'vault-create') {
-      if (Array.from(answers[0] ?? '').length < 8) {
-        setError('Use at least 8 characters for the master password.');
+      if (Array.from(answers[0] ?? '').length < 12) {
+        setError('Use at least 12 characters for the master password.');
         return;
       }
       if (new TextEncoder().encode(answers[0] ?? '').byteLength > 1024) {
@@ -66,7 +66,18 @@ export function AuthPromptDialog({
   };
 
   return (
-    <Dialog open onClose={() => finish(null)} maxWidth="xs" fullWidth>
+    <Dialog
+      open
+      onClose={() =>
+        finish(
+          request.skipLabel
+            ? { answers: [], skipped: true }
+            : null,
+        )
+      }
+      maxWidth="xs"
+      fullWidth
+    >
       <DialogTitle>
         {request.name || 'Authentication'}
         {request.host && (
@@ -114,7 +125,7 @@ export function AuthPromptDialog({
                       : 'Remember this password'}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    Encrypted locally and available automatically for SSH.
+                    Encrypted locally under your password-vault policy.
                   </Typography>
                 </Stack>
               }

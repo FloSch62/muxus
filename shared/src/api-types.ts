@@ -29,11 +29,30 @@ export interface PasswordVaultCredential {
   updatedAt: string;
 }
 
-/** Runtime state of the local, platform-independent password vault. */
+/**
+ * Controls when a master password is required to use a saved credential.
+ *
+ * - never: keep the vault key in the operating-system credential store;
+ * - startup: unlock once for the lifetime of the server process;
+ * - credential: unlock separately for every saved-credential operation.
+ */
+export type PasswordVaultUnlockPolicy =
+  | 'never'
+  | 'startup'
+  | 'credential';
+
+/** New vaults use the operating-system credential store unless explicitly overridden. */
+export const DEFAULT_PASSWORD_VAULT_UNLOCK_POLICY =
+  'never' as const satisfies PasswordVaultUnlockPolicy;
+
+/** Runtime state of the local password vault. */
 export interface PasswordVaultStatus {
   configured: boolean;
-  /** Saved passwords are available to SSH without a master-password prompt. */
-  automaticAccess: boolean;
+  unlockPolicy?: PasswordVaultUnlockPolicy;
+  /** True when using a saved credential currently requires the master password. */
+  locked: boolean;
+  /** Whether the native OS credential-store integration loaded successfully. */
+  osKeyStoreAvailable: boolean;
   credentialCount: number;
   credentials: PasswordVaultCredential[];
 }

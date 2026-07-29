@@ -15,7 +15,16 @@ await build({
   sourcemap: true,
   // bufferutil/utf-8-validate are optional ws natives we don't install;
   // cpu-features/sshcrypto are ssh2's optional native accelerators.
-  external: ['electron', 'node-pty', 'serialport', 'bufferutil', 'utf-8-validate', 'cpu-features', './crypto/build/Release/sshcrypto.node'],
+  external: [
+    'electron',
+    '@napi-rs/keyring',
+    'node-pty',
+    'serialport',
+    'bufferutil',
+    'utf-8-validate',
+    'cpu-features',
+    './crypto/build/Release/sshcrypto.node',
+  ],
   define: { 'process.env.NODE_ENV': '"production"' },
   banner: {
     // CJS deps converted into the ESM bundle still call require() and read

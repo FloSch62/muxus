@@ -1,4 +1,7 @@
-import type { PasswordVaultStatus } from '@muxus/shared';
+import type {
+  PasswordVaultStatus,
+  PasswordVaultUnlockPolicy,
+} from '@muxus/shared';
 import { apiFetch } from './http.js';
 
 const JSON_HEADERS = { 'content-type': 'application/json' };
@@ -9,12 +12,37 @@ export function fetchPasswordVaultStatus(): Promise<PasswordVaultStatus> {
 
 export function createPasswordVault(
   password: string,
+  unlockPolicy: PasswordVaultUnlockPolicy,
 ): Promise<PasswordVaultStatus> {
   return apiFetch<PasswordVaultStatus>('/api/password-vault/create', {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({ password, unlockPolicy }),
   });
+}
+
+export function unlockPasswordVault(
+  masterPassword: string,
+): Promise<PasswordVaultStatus> {
+  return apiFetch<PasswordVaultStatus>('/api/password-vault/unlock', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ masterPassword }),
+  });
+}
+
+export function changePasswordVaultUnlockPolicy(
+  masterPassword: string,
+  unlockPolicy: PasswordVaultUnlockPolicy,
+): Promise<PasswordVaultStatus> {
+  return apiFetch<PasswordVaultStatus>(
+    '/api/password-vault/unlock-policy',
+    {
+      method: 'PUT',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ masterPassword, unlockPolicy }),
+    },
+  );
 }
 
 export function repairPasswordVaultAutomaticAccess(

@@ -22,8 +22,22 @@
   },
   "dependencies": {
     "@muxus/shared": "workspace:*",
+    "@napi-rs/keyring": "^1.3.0",
     "node-pty": "^1.1.0",
     "serialport": "^13.0.0"
+  },
+  "optionalDependencies": {
+    "@napi-rs/keyring-darwin-arm64": "1.3.0",
+    "@napi-rs/keyring-darwin-x64": "1.3.0",
+    "@napi-rs/keyring-linux-arm-gnueabihf": "1.3.0",
+    "@napi-rs/keyring-linux-arm64-gnu": "1.3.0",
+    "@napi-rs/keyring-linux-arm64-musl": "1.3.0",
+    "@napi-rs/keyring-linux-riscv64-gnu": "1.3.0",
+    "@napi-rs/keyring-linux-x64-gnu": "1.3.0",
+    "@napi-rs/keyring-linux-x64-musl": "1.3.0",
+    "@napi-rs/keyring-win32-arm64-msvc": "1.3.0",
+    "@napi-rs/keyring-win32-ia32-msvc": "1.3.0",
+    "@napi-rs/keyring-win32-x64-msvc": "1.3.0"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",

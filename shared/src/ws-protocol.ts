@@ -84,6 +84,7 @@ export type SerialProfile = Extract<SessionProfile, { kind: 'serial' }>;
 export type AuthPromptPurpose =
   | 'authentication'
   | 'ssh-password'
+  | 'vault-unlock'
   | 'vault-repair'
   | 'vault-create';
 

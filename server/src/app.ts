@@ -66,6 +66,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
 
   const database = new MuxusDatabase(config.databasePath);
   const vault = new PasswordVault(database);
+  await vault.initialize();
   const connections = new SshConnectionManager(app.log, { vault });
   const forwards = new ForwardManager(connections, app.log);
   const historySettings = database.sessionHistorySettings();

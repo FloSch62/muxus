@@ -1,11 +1,20 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MuxusDatabase, assertSecretFree } from '../../../server/src/persistence/database.js';
 
 let database: MuxusDatabase | undefined;
+let temporaryDirectory: string | undefined;
 
 afterEach(() => {
   database?.close();
   database = undefined;
+  if (temporaryDirectory) {
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+    temporaryDirectory = undefined;
+  }
 });
 
 describe('MuxusDatabase migrations', () => {
@@ -23,9 +32,98 @@ describe('MuxusDatabase migrations', () => {
       { version: 9, name: 'drop-favorites' },
       { version: 10, name: 'terminal-scrollback-snapshots' },
       { version: 11, name: 'version-terminal-scrollback-snapshots' },
-      { version: 12, name: 'master-password-vault' },
+      { version: 12, name: 'password-vault' },
       { version: 13, name: 'automatic-password-vault' },
+      { version: 14, name: 'password-vault-os-keystore' },
     ]);
+  });
+
+  it('upgrades the draft version 13 vault without deleting credentials', () => {
+    temporaryDirectory = mkdtempSync(
+      path.join(os.tmpdir(), 'muxus-v13-migration-'),
+    );
+    const filename = path.join(temporaryDirectory, 'muxus.sqlite3');
+    database = new MuxusDatabase(filename);
+    database.upsertEncryptedCredential({
+      provider: 'muxus-master-vault',
+      service: 'muxus/ssh-password/v1',
+      account: 'legacy-account',
+      label: 'legacy credential',
+      formatVersion: 1,
+      nonce: Buffer.alloc(12, 1),
+      ciphertext: Buffer.from('legacy-ciphertext'),
+      authTag: Buffer.alloc(16, 2),
+    });
+    database.close();
+    database = undefined;
+
+    const draft = new DatabaseSync(filename);
+    try {
+      draft.exec(`
+        DELETE FROM schema_migrations WHERE version IN (13, 14);
+        UPDATE schema_migrations
+        SET name = 'master-password-vault'
+        WHERE version = 12;
+        DROP TABLE password_vault;
+        CREATE TABLE password_vault (
+          singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+          format_version INTEGER NOT NULL CHECK(format_version = 2),
+          kdf_algorithm TEXT NOT NULL CHECK(kdf_algorithm = 'scrypt'),
+          kdf_salt BLOB NOT NULL CHECK(length(kdf_salt) = 16),
+          kdf_cost INTEGER NOT NULL CHECK(kdf_cost BETWEEN 1024 AND 1048576),
+          kdf_block_size INTEGER NOT NULL CHECK(kdf_block_size BETWEEN 1 AND 32),
+          kdf_parallelism INTEGER NOT NULL CHECK(kdf_parallelism BETWEEN 1 AND 16),
+          master_key_nonce BLOB NOT NULL CHECK(length(master_key_nonce) = 12),
+          master_key_ciphertext BLOB NOT NULL CHECK(length(master_key_ciphertext) = 32),
+          master_key_tag BLOB NOT NULL CHECK(length(master_key_tag) = 16),
+          device_key_nonce BLOB NOT NULL CHECK(length(device_key_nonce) = 12),
+          device_key_ciphertext BLOB NOT NULL CHECK(length(device_key_ciphertext) = 32),
+          device_key_tag BLOB NOT NULL CHECK(length(device_key_tag) = 16),
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) STRICT;
+        INSERT INTO schema_migrations(version, name)
+        VALUES (13, 'automatic-password-vault');
+        PRAGMA user_version = 13;
+      `);
+      draft
+        .prepare(`
+          INSERT INTO password_vault(
+            singleton, format_version, kdf_algorithm, kdf_salt,
+            kdf_cost, kdf_block_size, kdf_parallelism,
+            master_key_nonce, master_key_ciphertext, master_key_tag,
+            device_key_nonce, device_key_ciphertext, device_key_tag
+          ) VALUES (1, 2, 'scrypt', ?, 1024, 8, 1, ?, ?, ?, ?, ?, ?)
+        `)
+        .run(
+          Buffer.alloc(16, 3),
+          Buffer.alloc(12, 4),
+          Buffer.alloc(32, 5),
+          Buffer.alloc(16, 6),
+          Buffer.alloc(12, 7),
+          Buffer.alloc(32, 8),
+          Buffer.alloc(16, 9),
+        );
+    } finally {
+      draft.close();
+    }
+
+    database = new MuxusDatabase(filename);
+    expect(database.appliedMigrations().at(-1)).toEqual({
+      version: 14,
+      name: 'password-vault-os-keystore',
+    });
+    expect(database.passwordVaultConfig()).toMatchObject({
+      formatVersion: 2,
+      unlockPolicy: 'startup',
+    });
+    expect(database.passwordVaultConfig()!.vaultId).toHaveLength(21);
+    expect(
+      database.listEncryptedCredentials(
+        'muxus-master-vault',
+        'muxus/ssh-password/v1',
+      ),
+    ).toHaveLength(1);
   });
 });
 

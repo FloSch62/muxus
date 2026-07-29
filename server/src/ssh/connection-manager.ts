@@ -15,12 +15,13 @@ import {
 } from 'ssh2';
 import { nanoid } from 'nanoid';
 import type { FastifyBaseLogger } from 'fastify';
-import type {
-  AuthPromptInfo,
-  AuthPromptResponse,
-  ConfigForward,
-  ConnectionInfo,
-  SshProfile,
+import {
+  DEFAULT_PASSWORD_VAULT_UNLOCK_POLICY,
+  type AuthPromptInfo,
+  type AuthPromptResponse,
+  type ConfigForward,
+  type ConnectionInfo,
+  type SshProfile,
 } from '@muxus/shared';
 import {
   certificateAlgorithms,
@@ -45,7 +46,6 @@ import {
   InvalidMasterPasswordFormatError,
   PasswordVault,
   VaultAlreadyConfiguredError,
-  VaultAutomaticAccessError,
   sshPasswordAccount,
   sshPasswordLabel,
 } from '../security/password-vault.js';
@@ -950,12 +950,31 @@ class AuthLadder {
       this.lastPasswordCandidate ?? this.partialPasswordCandidate;
     if (!candidate || !this.vault) return;
     try {
-      if (!(await this.ensureVaultAvailableForSave(candidate.label))) return;
-      this.vault.rememberSshPassword(
-        candidate.account,
-        candidate.label,
-        candidate.password,
-      );
+      const status = this.vault.status();
+      if (!status.configured) {
+        if (!(await this.createVaultForSave(candidate.label))) return;
+      }
+      if (this.vault.status().locked) {
+        const result = await this.promptForVaultOperation(
+          'Unlock password vault',
+          `Enter the master password to remember the password for ${candidate.label}.`,
+          'Not now',
+          (masterPassword) =>
+            this.vault!.rememberSshPassword(
+              candidate.account,
+              candidate.label,
+              candidate.password,
+              masterPassword,
+            ),
+        );
+        if (!result.ok) return;
+      } else {
+        await this.vault.rememberSshPassword(
+          candidate.account,
+          candidate.label,
+          candidate.password,
+        );
+      }
       this.io.status(`Remembered the password for ${candidate.label}.`);
     } finally {
       this.lastPasswordCandidate = undefined;
@@ -1123,14 +1142,18 @@ class AuthLadder {
     label: string,
   ): Promise<string | undefined> {
     if (!this.vault) return undefined;
-    if (!this.vault.status().automaticAccess) {
-      this.io.status(
-        `The saved password for ${label} is unavailable because automatic vault access needs repair.`,
-      );
-      return undefined;
-    }
     try {
-      return this.vault.sshPassword(account);
+      if (!this.vault.status().locked) {
+        return await this.vault.sshPassword(account);
+      }
+      const result = await this.promptForVaultOperation(
+        'Unlock password vault',
+        `Enter the master password to use the saved password for ${label}.`,
+        'Use another password',
+        (masterPassword) =>
+          this.vault!.sshPassword(account, masterPassword),
+      );
+      return result.ok ? result.value : undefined;
     } catch (err) {
       if (err instanceof CredentialVaultCorruptError) {
         this.io.status(
@@ -1138,28 +1161,20 @@ class AuthLadder {
         );
         return undefined;
       }
-      if (err instanceof VaultAutomaticAccessError) return undefined;
       throw err;
     }
   }
 
-  private async ensureVaultAvailableForSave(label: string): Promise<boolean> {
+  private async createVaultForSave(label: string): Promise<boolean> {
     if (!this.vault) return false;
-    const status = this.vault.status();
-    if (status.automaticAccess) return true;
-    if (status.configured) {
-      return this.promptToRepairAutomaticAccess(
-        `Repair automatic vault access to remember the password for ${label}.`,
-        'Not now',
-      );
-    }
 
     const response = await this.io.prompt({
       name: 'Create password vault',
       purpose: 'vault-create',
       instructions:
         `Create a master password to protect viewing and editing saved SSH passwords. ` +
-        `Routine SSH connections will use them automatically.`,
+        `By default, Muxus stores the vault key in the operating-system credential store ` +
+        `so saved passwords can be used without another master-password prompt.`,
       prompts: [
         { prompt: 'Master password', echo: false },
         { prompt: 'Confirm master password', echo: false },
@@ -1174,33 +1189,39 @@ class AuthLadder {
       );
     }
     try {
-      await this.vault.create(masterPassword);
+      await this.vault.create(
+        masterPassword,
+        DEFAULT_PASSWORD_VAULT_UNLOCK_POLICY,
+      );
     } catch (err) {
       if (!(err instanceof VaultAlreadyConfiguredError)) throw err;
-      await this.vault.repairAutomaticAccess(masterPassword);
+      this.io.status(
+        `The vault was created in another session; unlock it to remember the password for ${label}.`,
+      );
     }
     return true;
   }
 
-  private async promptToRepairAutomaticAccess(
+  private async promptForVaultOperation<T>(
+    name: string,
     instructions: string,
     skipLabel: string,
-  ): Promise<boolean> {
-    if (!this.vault) return false;
+    operation: (masterPassword: string) => Promise<T>,
+  ): Promise<{ ok: true; value: T } | { ok: false }> {
+    if (!this.vault) return { ok: false };
     let error: string | undefined;
     for (let attempt = 0; attempt < 3; attempt++) {
-      if (this.vault.status().automaticAccess) return true;
       const response = await this.io.prompt({
-        name: 'Repair automatic password access',
-        purpose: 'vault-repair',
+        name,
+        purpose: 'vault-unlock',
         instructions: error ? `${error}\n\n${instructions}` : instructions,
         prompts: [{ prompt: 'Master password', echo: false }],
         skipLabel,
       });
-      if (response.skipped) return false;
+      if (response.skipped) return { ok: false };
       try {
-        await this.vault.repairAutomaticAccess(response.answers[0] ?? '');
-        return true;
+        const value = await operation(response.answers[0] ?? '');
+        return { ok: true, value };
       } catch (err) {
         if (
           err instanceof InvalidMasterPasswordError ||
@@ -1212,8 +1233,8 @@ class AuthLadder {
         throw err;
       }
     }
-    this.io.status('Automatic password access remains unavailable.');
-    return false;
+    this.io.status('The password vault remains locked.');
+    return { ok: false };
   }
 
   private loadCertificate(

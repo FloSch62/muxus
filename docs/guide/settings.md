@@ -94,24 +94,25 @@ second chord, and defaults are restored in one click. The sheet is also reachabl
 
 ## Passwords
 
-The password vault is optional and works the same way on Windows, macOS and Linux;
-it does not depend on an operating-system keyring.
+The password vault is optional. New vaults default to the never-prompt policy, which uses
+the operating-system credential store.
 
-- **Create password vault** sets a master password of at least 8 characters.
-- SSH connections use saved passwords automatically, including after restarting Muxus.
+- **Create password vault** sets a master password of at least 12 characters.
+- **Change prompt policy** chooses when routine SSH use needs the master password:
+  **Never for saved credentials** stores the vault key in the OS credential store,
+  **When Muxus starts** unlocks it into memory once, and **Whenever a saved credential is
+  needed** prompts for each use.
 - **View or edit password** asks for the master password before revealing the saved value.
 - **Change master password** changes that management password without rewriting every
   credential.
-- **Repair automatic access** appears if a database was restored without its companion
-  device-key file.
+- **Restore OS access** appears if the never-prompt policy is selected but the credential
+  store entry is missing.
 - Saved-password rows can be forgotten individually. **Delete vault** forgets all of them
   without removing hosts, keys or other settings.
 
 The master password cannot be recovered. Saved-password ciphertext is local to the
-application database, while the automatic-access device key is stored beside it. Neither
-is included in Muxus backups. Anyone who can copy the complete application-data directory
-can obtain both, so the master password protects the management interface rather than
-full-directory theft.
+application database and is not included in Muxus backups. The raw vault key is never
+stored in the application-data directory.
 
 ## Backup & data
 

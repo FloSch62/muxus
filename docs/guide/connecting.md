@@ -60,11 +60,13 @@ succeeds:
 
 An SSH password prompt offers **Remember this password**. The password is saved only after
 authentication succeeds. The first save creates a vault and asks for a master password of
-at least eight characters. Later launches use the saved password automatically; the master
-password is required only to view or edit saved values in **Settings → Passwords**.
+at least twelve characters. By default, the vault key is kept in the OS credential store,
+so routine SSH use does not prompt for the master password. In **Settings → Passwords**,
+the policy can instead ask once when Muxus starts or whenever a saved credential is
+needed. The master password is always required to view or edit saved values.
 
-If the database is restored without its companion device-key file, automatic use pauses
-until **Repair automatic access** is completed with the master password. Private-key
+If a never-prompt vault is restored without its OS credential-store entry, automatic use
+pauses until **Restore OS access** is completed with the master password. Private-key
 passphrases, keyboard-interactive answers and 2FA codes remain transient and are never
 remembered. See the
 [security model](../reference/security.md#password-vault).

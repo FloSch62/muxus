@@ -4,7 +4,6 @@ import type {
   AppInfo,
   ConnectionsResponse,
   ForwardInfo,
-  PasswordVaultStatus,
   SerialPortsResponse,
   SavedHostProfilesResponse,
   SessionHistoryResponse,
@@ -17,20 +16,12 @@ import type {
   TunnelsResponse,
 } from '@muxus/shared';
 import { apiFetch } from './http.js';
-import { fetchPasswordVaultStatus } from './password-vault.js';
 
 export function useAppInfo() {
   return useQuery({
     queryKey: ['app-info'],
     queryFn: () => apiFetch<AppInfo>('/api/app/info'),
     staleTime: Infinity,
-  });
-}
-
-export function usePasswordVaultStatus() {
-  return useQuery<PasswordVaultStatus>({
-    queryKey: ['password-vault'],
-    queryFn: fetchPasswordVaultStatus,
   });
 }
 

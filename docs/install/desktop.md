@@ -85,8 +85,8 @@ The desktop app keeps its data in Electron's per-app directory:
 Session history, when enabled, is stored alongside it or at the location set in
 [Settings](../guide/settings.md). SSH connection settings still come from `~/.ssh/config`.
 Passwords you explicitly choose to remember are encrypted in the application database by
-the password vault. Its automatic-access device key is stored as
-`muxus-vault-device.key` in the same directory; see the
+the password vault. The raw vault key is never stored in this directory; the default
+never-prompt policy uses the OS credential store. See the
 [security model](../reference/security.md).
 
 Uninstalling the app leaves `~/.ssh` untouched.

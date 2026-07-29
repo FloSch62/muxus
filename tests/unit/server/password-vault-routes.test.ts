@@ -5,7 +5,7 @@ import { resolveConfig } from '../../../server/src/config.js';
 import { sshPasswordAccount } from '../../../server/src/security/password-vault.js';
 
 const TOKEN = 'password-vault-route-token';
-const MASTER = 'master-8';
+const MASTER = 'master-pass-12';
 const REMOTE_PASSWORD = 'remote-password';
 let app: Awaited<ReturnType<typeof buildApp>>['app'];
 let ctx: AppContext;
@@ -39,7 +39,7 @@ describe('password vault routes', () => {
     });
     expect(initial.json()).toMatchObject({
       configured: false,
-      automaticAccess: false,
+      locked: true,
       credentialCount: 0,
     });
 
@@ -47,7 +47,7 @@ describe('password vault routes', () => {
       method: 'POST',
       url: '/api/password-vault/create',
       headers: auth(),
-      payload: { password: '1234567' },
+      payload: { password: '12345678901' },
     });
     expect(short.statusCode).toBe(400);
 
@@ -60,7 +60,8 @@ describe('password vault routes', () => {
     expect(created.statusCode).toBe(200);
     expect(created.json()).toMatchObject({
       configured: true,
-      automaticAccess: true,
+      unlockPolicy: 'never',
+      locked: false,
     });
 
     const account = sshPasswordAccount({
@@ -68,7 +69,7 @@ describe('password vault routes', () => {
       host: 'router.example',
       port: 22,
     });
-    ctx.vault.rememberSshPassword(
+    await ctx.vault.rememberSshPassword(
       account,
       'alice@router.example:22',
       REMOTE_PASSWORD,
@@ -80,7 +81,7 @@ describe('password vault routes', () => {
       method: 'POST',
       url: `/api/password-vault/credentials/${credential!.id}/reveal`,
       headers: auth(),
-      payload: { masterPassword: 'incorrect' },
+      payload: { masterPassword: 'incorrect-pass' },
     });
     expect(wrongReveal.statusCode).toBe(401);
     expect(wrongReveal.json().code).toBe('invalid-master-password');
@@ -105,7 +106,44 @@ describe('password vault routes', () => {
       },
     });
     expect(updated.statusCode).toBe(200);
-    expect(ctx.vault.sshPassword(account)).toBe('changed-password');
+    await expect(ctx.vault.sshPassword(account)).resolves.toBe(
+      'changed-password',
+    );
+
+    const perCredential = await app.inject({
+      method: 'PUT',
+      url: '/api/password-vault/unlock-policy',
+      headers: auth(),
+      payload: {
+        masterPassword: MASTER,
+        unlockPolicy: 'credential',
+      },
+    });
+    expect(perCredential.statusCode).toBe(200);
+    expect(perCredential.json()).toMatchObject({
+      unlockPolicy: 'credential',
+      locked: true,
+    });
+
+    const startup = await app.inject({
+      method: 'PUT',
+      url: '/api/password-vault/unlock-policy',
+      headers: auth(),
+      payload: {
+        masterPassword: MASTER,
+        unlockPolicy: 'startup',
+      },
+    });
+    expect(startup.statusCode).toBe(200);
+    ctx.vault.lock();
+    const unlocked = await app.inject({
+      method: 'POST',
+      url: '/api/password-vault/unlock',
+      headers: auth(),
+      payload: { masterPassword: MASTER },
+    });
+    expect(unlocked.statusCode).toBe(200);
+    expect(unlocked.json().locked).toBe(false);
 
     const deleted = await app.inject({
       method: 'DELETE',
@@ -114,7 +152,7 @@ describe('password vault routes', () => {
     });
     expect(deleted.json()).toMatchObject({
       configured: false,
-      automaticAccess: false,
+      locked: true,
       credentialCount: 0,
     });
   }, 15_000);
