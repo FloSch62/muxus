@@ -21,6 +21,10 @@ const forwardSchema = z.object({
   targetPort: z.number().int().min(1).max(65535).optional(),
 });
 
+const sshKeysQuerySchema = z.object({
+  identityAgent: z.string().max(4096).optional(),
+});
+
 const upsertSchema = z.object({
   aliases: z.array(z.string().min(1)).min(1),
   description: z.string().max(2000).optional(),
@@ -33,6 +37,7 @@ const upsertSchema = z.object({
     identityFiles: z.array(z.string()).optional(),
     certificateFiles: z.array(z.string()).optional(),
     identitiesOnly: z.boolean().optional(),
+    identityAgent: z.string().optional(),
     forwardAgent: z.boolean().optional(),
     proxyJump: z.array(z.string()).optional(),
     proxyCommand: z.string().optional(),
@@ -109,5 +114,11 @@ export function registerSshRoutes(app: FastifyInstance, ctx: AppContext): void {
     }
   });
 
-  app.get('/api/ssh/keys', async (): Promise<SshKeysResponse> => listSshKeys());
+  app.get('/api/ssh/keys', async (req, reply): Promise<SshKeysResponse | void> => {
+    const parsed = sshKeysQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return await reply.code(400).send({ message: parsed.error.issues[0]?.message ?? 'invalid SSH key query' });
+    }
+    return listSshKeys({ identityAgent: parsed.data.identityAgent });
+  });
 }

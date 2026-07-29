@@ -259,11 +259,7 @@ export function AuthSection({
         />
 
         <Typography variant="caption" color="text.secondary">
-          {keys
-            ? keys.agentAvailable
-              ? `Agent detected — ${keys.agentKeys.length} key${keys.agentKeys.length === 1 ? '' : 's'} loaded.`
-              : 'No agent detected in SSH_AUTH_SOCK. A custom agent may still be available.'
-            : ''}
+          {agentDetectionStatus(draft, keys)}
         </Typography>
       </Stack>
 
@@ -325,6 +321,18 @@ function agentSourceHelp(mode: IdentityAgentMode): string {
     default:
       return 'Inherits the normal SSH configuration and environment.';
   }
+}
+
+function agentDetectionStatus(draft: HostDraft, keys: SshKeysResponse | undefined): string {
+  if (draft.identityAgentMode === 'custom' && !draft.identityAgent.trim()) return '';
+  if (draft.identityAgentMode === 'none') return 'Agent disabled for this host.';
+  if (!keys) return '';
+  if (keys.agentAvailable) {
+    return `Agent detected — ${keys.agentKeys.length} key${keys.agentKeys.length === 1 ? '' : 's'} loaded.`;
+  }
+  if (draft.identityAgentMode === 'environment') return 'No agent detected in SSH_AUTH_SOCK.';
+  if (draft.identityAgentMode === 'custom') return 'No agent detected at the selected socket.';
+  return 'No agent detected for this host.';
 }
 
 function Labeled({ title, sub }: { title: string; sub: string }) {

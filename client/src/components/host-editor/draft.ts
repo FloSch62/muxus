@@ -225,6 +225,24 @@ export function draftToRequest(draft: HostDraft, previousAlias?: string): HostUp
   };
 }
 
+/** Agent source represented by the current editor state, for live key detection. */
+export function identityAgentForDetection(
+  draft: Pick<HostDraft, 'identityAgentMode' | 'identityAgent'>,
+  inheritedIdentityAgent?: string,
+): string | undefined {
+  switch (draft.identityAgentMode) {
+    case 'environment':
+      return 'SSH_AUTH_SOCK';
+    case 'custom':
+      // Do not accidentally scan the default agent while the custom field is empty.
+      return draft.identityAgent.trim() || 'none';
+    case 'none':
+      return 'none';
+    default:
+      return inheritedIdentityAgent;
+  }
+}
+
 function identityAgentDraft(value: string | undefined): {
   mode: IdentityAgentMode;
   value: string;

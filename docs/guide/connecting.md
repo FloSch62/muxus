@@ -45,7 +45,8 @@ read-only `/etc/ssh/ssh_known_hosts`, hashed entries included.
 Within one connection Muxus follows the OpenSSH order and stops at the first method that
 succeeds:
 
-1. **Agent**: every identity in `SSH_AUTH_SOCK`.
+1. **Agent**: every identity in the host's `IdentityAgent`, falling back to
+   `SSH_AUTH_SOCK` when no override is configured.
 2. **Certificates**: a `CertificateFile` together with its matching `IdentityFile`.
 3. **Keys**: the `IdentityFile`s in the block, or the default `~/.ssh/id_*` set.
    Passphrase-protected keys issue a prompt. `IdentitiesOnly yes` is honoured.

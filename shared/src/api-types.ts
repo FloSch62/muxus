@@ -330,6 +330,8 @@ export interface ResolvedHostSettings {
   /** User certificates paired with matching private IdentityFile keys. */
   certificateFiles: string[];
   identitiesOnly: boolean;
+  /** Effective authentication agent after applying all matching Host blocks. */
+  identityAgent?: string;
   forwardAgent: boolean;
   proxyJump: string[];
   /** Raw ProxyCommand after Host-pattern resolution; tokens expand at dial time. */

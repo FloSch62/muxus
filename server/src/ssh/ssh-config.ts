@@ -758,6 +758,7 @@ export function listHosts(doc: ConfigDocument): SshHostEntry[] {
         identityFiles: resolved.identityFiles,
         certificateFiles: resolved.certificateFiles,
         identitiesOnly: resolved.identitiesOnly,
+        identityAgent: resolved.identityAgent,
         forwardAgent: resolved.forwardAgent,
         proxyJump: resolved.proxyJump,
         proxyCommand: resolved.proxyCommand,

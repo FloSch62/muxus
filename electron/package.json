@@ -46,7 +46,7 @@
     "electron": "43.1.1",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.1",
-    "fix-path": "^5.0.0",
+    "shell-env": "^4.0.3",
     "sharp": "^0.35.3",
     "typescript": "^7.0.2"
   }

@@ -117,6 +117,7 @@ describe('listHosts', () => {
       remoteCommand: 'tmux new -A -s main',
       requestTty: 'yes',
     });
+    expect(hosts[0]!.resolved.identityAgent).toBe('${ONEPASSWORD_SSH_AUTH_SOCK}');
     expect(hosts[0]!.options.extras).toBeUndefined();
   });
 
