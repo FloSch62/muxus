@@ -32,7 +32,7 @@ import {
   type OpenSshCertificate,
 } from './certificates.js';
 import { KnownHostsStore, fingerprintSha256, hostKeyType } from './known-hosts.js';
-import { resolveAgentSocket } from './key-scan.js';
+import { listAgentKeys, resolveAgentSocket } from './key-scan.js';
 import {
   ConnectionLeaseRegistry,
   type ConnectionLeaseOwner,
@@ -639,6 +639,12 @@ export class SshConnectionManager {
         resolve(client);
       });
       client.on('error', (err) => {
+        if (!settled && err.level === 'agent') {
+          // ssh2 reports an unreachable agent mid-auth and then moves on to
+          // the next method itself; surface it without aborting the dial.
+          io.status(`ssh-agent unavailable (${err.message}) — trying other authentication methods`);
+          return;
+        }
         if (!settled) {
           rejectBeforeReady(
             auth.cancelled ? new Error('authentication cancelled') : err,
@@ -997,6 +1003,7 @@ class AuthLadder {
     Promise<ParsedKey | undefined>
   >();
   private index = 0;
+  private agentIdentityPrints: Promise<Set<string>> | undefined;
   private lastPasswordCandidate: RememberedPasswordCandidate | undefined;
   private partialPasswordCandidate: RememberedPasswordCandidate | undefined;
   private savedPasswordAttempted = false;
@@ -1036,7 +1043,9 @@ class AuthLadder {
       return;
     }
     // The server told us which methods can still succeed; skip the rest.
-    if (authsLeft && attempt.type !== 'none' && !authsLeft.includes(attempt.type)) {
+    // Agent auth is publickey on the wire — servers never advertise "agent".
+    const wireType = attempt.type === 'agent' ? 'publickey' : attempt.type;
+    if (authsLeft && attempt.type !== 'none' && !authsLeft.includes(wireType)) {
       this.advance(authsLeft, cb);
       return;
     }
@@ -1094,6 +1103,7 @@ class AuthLadder {
     this.partialPasswordCandidate = undefined;
     this.privateKeys.clear();
     this.certificateKeys.clear();
+    this.agentIdentityPrints = undefined;
   }
 
   private build(): AuthAttempt[] {
@@ -1121,7 +1131,7 @@ class AuthLadder {
                 certificate,
                 files,
                 explicit || resolved.certificateFiles.length > 0,
-                !!agent,
+                agent,
                 label,
               );
               if (!privateKey) return undefined;
@@ -1139,7 +1149,7 @@ class AuthLadder {
         attempts.push({
           type: 'publickey',
           get: async () => {
-            const key = await this.loadPrivateKey(file, explicit, !!agent, label);
+            const key = await this.loadPrivateKey(file, explicit, agent, label);
             return key ? { type: 'publickey', username: user, key } : undefined;
           },
         });
@@ -1382,7 +1392,7 @@ class AuthLadder {
     certificate: OpenSshCertificate,
     identityFiles: string[],
     explicit: boolean,
-    agentAvailable: boolean,
+    agent: string | undefined,
     label: string,
   ): Promise<ParsedKey | undefined> {
     const cached = this.certificateKeys.get(certificate);
@@ -1392,7 +1402,7 @@ class AuthLadder {
         const key = await this.loadPrivateKey(
           file,
           explicit,
-          agentAvailable,
+          agent,
           label,
         );
         if (key && certificateMatchesKey(certificate, key)) {
@@ -1412,12 +1422,12 @@ class AuthLadder {
   private loadPrivateKey(
     file: string,
     explicit: boolean,
-    agentAvailable: boolean,
+    agent: string | undefined,
     label: string,
   ): Promise<ParsedKey | undefined> {
     const cached = this.privateKeys.get(file);
     if (cached) return cached;
-    const pending = this.readPrivateKey(file, explicit, agentAvailable, label);
+    const pending = this.readPrivateKey(file, explicit, agent, label);
     this.privateKeys.set(file, pending);
     return pending;
   }
@@ -1425,7 +1435,7 @@ class AuthLadder {
   private async readPrivateKey(
     file: string,
     explicit: boolean,
-    agentAvailable: boolean,
+    agent: string | undefined,
     label: string,
   ): Promise<ParsedKey | undefined> {
     let content: Buffer;
@@ -1437,9 +1447,10 @@ class AuthLadder {
     }
     let parsed = parseSshKey(content);
     if (parsed instanceof Error && /passphrase|encrypted/i.test(parsed.message)) {
-      // Encrypted. Default (unconfigured) keys next to a running agent are
-      // skipped silently — the agent attempt already covered the loaded ones.
-      if (!explicit && agentAvailable) return undefined;
+      // Encrypted. A default (unconfigured) key the agent already holds was
+      // covered by the agent attempt — skip it silently. Anything else
+      // prompts for its passphrase, like ssh(1).
+      if (!explicit && agent && (await this.agentHoldsKey(file, agent))) return undefined;
       for (let i = 0; i < MAX_PASSPHRASE_ATTEMPTS && parsed instanceof Error; i++) {
         const response = await this.runInteraction(() =>
           this.io.prompt({
@@ -1458,6 +1469,22 @@ class AuthLadder {
       return undefined;
     }
     return parsed as ParsedKey;
+  }
+
+  /** True when the key's .pub sibling names an identity the agent holds. */
+  private async agentHoldsKey(file: string, agent: string): Promise<boolean> {
+    let fingerprint: string;
+    try {
+      const blob = fs.readFileSync(`${file}.pub`, 'utf8').trim().split(/\s+/)[1];
+      if (!blob) return false;
+      fingerprint = fingerprintSha256(Buffer.from(blob, 'base64'));
+    } catch {
+      return false; // no readable .pub — prompt rather than guess
+    }
+    this.agentIdentityPrints ??= listAgentKeys(agent).then(
+      (keys) => new Set(keys.map((k) => k.fingerprint)),
+    );
+    return (await this.agentIdentityPrints).has(fingerprint);
   }
 }
 

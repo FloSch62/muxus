@@ -53,8 +53,7 @@ export function resolveAgentSocket(identityAgent?: string): string | undefined {
   return identityAgent;
 }
 
-export async function listAgentKeys(): Promise<SshAgentKey[]> {
-  const sock = agentSocket();
+export async function listAgentKeys(sock = agentSocket()): Promise<SshAgentKey[]> {
   if (!sock) return [];
   return new Promise((resolve) => {
     try {
