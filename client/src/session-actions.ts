@@ -13,7 +13,7 @@ import type { PaneDirection, SessionSetLayout } from './state/tabs.js';
 import { confirmAction } from './state/dialogs.js';
 import { showToast } from './state/toast.js';
 import { confirmDiscardRemoteEditors } from './editor/remote-editor-registry.js';
-import { findPane, flattenPaneLayout } from './state/workspace-layout.js';
+import { findPane, visibleTabIds } from './state/workspace-layout.js';
 import { openAppWindow } from './window-management.js';
 
 /**
@@ -150,11 +150,9 @@ export async function launchManagedHostGroup(
  * the sessions on screen — the ones visibly receiving the keystrokes.
  */
 export function toggleMultiExec(): boolean {
-  const { tabs, root } = useTabsStore.getState();
+  const { tabs, root, zoomedPaneId } = useTabsStore.getState();
   const connected = tabs.filter((tab) => tab.status === 'connected').map((tab) => tab.id);
-  const onScreen = flattenPaneLayout(root)
-    .panes.map(({ pane }) => pane.activeTabId)
-    .filter((id): id is string => !!id);
+  const onScreen = visibleTabIds(root, zoomedPaneId);
   if (useMultiExecStore.getState().toggleMirroring(connected, onScreen)) return true;
   showToast(
     'info',

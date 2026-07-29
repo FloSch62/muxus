@@ -131,6 +131,19 @@ describe('multi-execution routing', () => {
     expect(useToastStore.getState().toast).toBeNull();
   });
 
+  it('leaves the panes hidden behind a zoomed one out of the shortcut', () => {
+    connectTab('edge-1');
+    useTabsStore.getState().split(useTabsStore.getState().activePaneId, 'right');
+    connectTab('edge-2');
+    // A zoomed pane covers the canvas, so the other session is off screen and
+    // must not receive a command typed into the one that is visible.
+    expect(useTabsStore.getState().toggleZoom()).toBe(true);
+
+    expect(toggleMultiExec()).toBe(true);
+    expect(useMultiExecStore.getState().selectedIds).toEqual([]);
+    expect(useToastStore.getState().toast).toMatchObject({ severity: 'info' });
+  });
+
   it('says why the shortcut did nothing when there is nothing to mirror', () => {
     connectTab('edge-1');
 

@@ -21,7 +21,7 @@ import { alpha } from '@mui/material/styles';
 import { useChordLabel } from '../keymap/hints.js';
 import { useMultiExecStore } from '../state/multi-exec.js';
 import { useTabsStore } from '../state/tabs.js';
-import { flattenPaneLayout } from '../state/workspace-layout.js';
+import { visibleTabIds } from '../state/workspace-layout.js';
 import { withChord } from './ChordHint.js';
 
 /** Target picker for automatic mirrored terminal input. */
@@ -29,6 +29,7 @@ export function MultiExecControl() {
   const tabs = useTabsStore((state) => state.tabs);
   const root = useTabsStore((state) => state.root);
   const activePaneId = useTabsStore((state) => state.activePaneId);
+  const zoomedPaneId = useTabsStore((state) => state.zoomedPaneId);
   const selectedIds = useMultiExecStore((state) => state.selectedIds);
   const groups = useMultiExecStore((state) => state.groups);
   const setSelection = useMultiExecStore((state) => state.setSelection);
@@ -60,9 +61,7 @@ export function MultiExecControl() {
   const connected = useMemo(() => new Set(connectedIds), [connectedIds]);
   const active = selectedIds.length >= 2;
   const visibleIds = new Set(
-    flattenPaneLayout(root).panes
-      .map(({ pane }) => pane.activeTabId)
-      .filter((id): id is string => !!id && connected.has(id)),
+    visibleTabIds(root, zoomedPaneId).filter((tabId) => connected.has(tabId)),
   );
   const currentPaneIds = connectedTabs
     .filter((tab) => tab.paneId === activePaneId)

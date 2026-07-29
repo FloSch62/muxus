@@ -11,6 +11,7 @@ import {
   serializeWorkspace,
   updatePane,
   updateSplitRatio,
+  visibleTabIds,
   type PaneNode,
 } from '../../../client/src/state/workspace-layout.js';
 
@@ -74,6 +75,14 @@ describe('pane tree operations', () => {
       id: 'split-root',
       children: [{ id: 'pane-left' }, { id: 'pane-bottom' }],
     });
+  });
+
+  it('counts the tab of every pane on screen, and only the zoomed one', () => {
+    expect(visibleTabIds(root)).toEqual(['tab-a', 'tab-b']);
+    // A zoomed pane covers the canvas: the rest are behind it, not on screen.
+    expect(visibleTabIds(root, 'pane-bottom')).toEqual(['tab-b']);
+    // A pane the zoom outlived leaves the whole canvas visible again.
+    expect(visibleTabIds(root, 'pane-gone')).toEqual(['tab-a', 'tab-b']);
   });
 });
 

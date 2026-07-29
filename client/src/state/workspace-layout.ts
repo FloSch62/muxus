@@ -129,6 +129,18 @@ export function countPanes(root: PaneNode): number {
   return root.type === 'pane' ? 1 : countPanes(root.children[0]) + countPanes(root.children[1]);
 }
 
+/**
+ * The tab on screen in each pane, in reading order. A zoomed pane covers the
+ * whole canvas, so while one is zoomed it is the only pane anyone can see —
+ * anything that acts on "what is visible" must not reach the panes behind it.
+ */
+export function visibleTabIds(root: PaneNode, zoomedPaneId?: string | null): string[] {
+  const zoomed = zoomedPaneId ? findPane(root, zoomedPaneId) : undefined;
+  return (zoomed ? [zoomed] : panesInOrder(root))
+    .map((pane) => pane.activeTabId)
+    .filter((tabId): tabId is string => !!tabId);
+}
+
 /** Splits from the root down to a pane, with the branch each one descends. */
 export function splitPath(root: PaneNode, paneId: string): Array<{ split: SplitNode; branch: 0 | 1 }> {
   if (root.type === 'pane') return [];
