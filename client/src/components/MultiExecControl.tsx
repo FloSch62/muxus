@@ -18,9 +18,11 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import PodcastsOutlinedIcon from '@mui/icons-material/PodcastsOutlined';
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import { alpha } from '@mui/material/styles';
+import { useChordLabel } from '../keymap/hints.js';
 import { useMultiExecStore } from '../state/multi-exec.js';
 import { useTabsStore } from '../state/tabs.js';
 import { flattenPaneLayout } from '../state/workspace-layout.js';
+import { withChord } from './ChordHint.js';
 
 /** Target picker for automatic mirrored terminal input. */
 export function MultiExecControl() {
@@ -37,6 +39,7 @@ export function MultiExecControl() {
   const activateGroup = useMultiExecStore((state) => state.activateGroup);
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [groupName, setGroupName] = useState('');
+  const toggleChord = useChordLabel('terminal.multi-exec');
 
   const connectedTabs = useMemo(
     () => tabs.filter((tab) => tab.profile && tab.status === 'connected'),
@@ -67,7 +70,16 @@ export function MultiExecControl() {
 
   return (
     <>
-      <Tooltip title={active ? `Mirroring input across ${selectedIds.length} terminals` : 'Select terminals for multi-execution'}>
+      <Tooltip
+        title={withChord(
+          active
+            ? `Mirroring input across ${selectedIds.length} terminals`
+            : 'Select terminals for multi-execution',
+          // The chord toggles mirroring rather than opening this picker, so it
+          // says so instead of standing alone as the button's own shortcut.
+          toggleChord && `${toggleChord} toggles mirroring`,
+        )}
+      >
         <IconButton
           size="small"
           aria-label="Configure multi-execution"

@@ -56,6 +56,7 @@ resetting them.
 | Find in terminal | ++ctrl+shift+f++ |
 | Select all output | ++ctrl+shift+a++ |
 | Clear scrollback | ++ctrl+shift+k++ |
+| Toggle [multi-execution](../guide/commands.md#multi-execution) | ++ctrl+shift+m++ |
 | Increase / decrease font size | ++ctrl+shift+equal++, ++ctrl+shift+minus++ (also ++ctrl+equal++ / ++ctrl+minus++) |
 | Reset font size | ++ctrl+shift+0++, ++ctrl+0++ |
 

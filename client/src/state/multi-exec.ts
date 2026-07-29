@@ -5,10 +5,16 @@ import { terminalHandle } from '../terminal/terminal-registry.js';
 interface MultiExecState {
   /** Two or more selected tabs automatically form a mirrored-input group. */
   selectedIds: string[];
+  /** The last set that actually mirrored, so the toggle can resume it. */
+  lastMirroredIds: string[];
   /** Named target sets persisted as part of the active workspace. */
   groups: WorkspaceMultiExecGroup[];
   setSelection: (tabIds: string[]) => void;
   toggleTarget: (tabId: string) => void;
+  toggleMirroring: (
+    availableTabIds: readonly string[],
+    fallbackTabIds: readonly string[],
+  ) => boolean;
   reconcile: (availableTabIds: string[]) => void;
   setGroups: (groups: readonly WorkspaceMultiExecGroup[]) => void;
   saveGroup: (name: string, tabIds?: readonly string[]) => string | undefined;
@@ -16,21 +22,57 @@ interface MultiExecState {
   activateGroup: (id: string, availableTabIds: readonly string[]) => void;
 }
 
-function unique(tabIds: string[]): string[] {
+function unique(tabIds: readonly string[]): string[] {
   return [...new Set(tabIds)];
+}
+
+/**
+ * A selection change that also remembers any set large enough to mirror, so
+ * switching multi-execution off and on again lands on the same terminals.
+ */
+function select(
+  state: MultiExecState,
+  selectedIds: string[],
+): Pick<MultiExecState, 'selectedIds' | 'lastMirroredIds'> {
+  return {
+    selectedIds,
+    lastMirroredIds: selectedIds.length >= 2 ? selectedIds : state.lastMirroredIds,
+  };
 }
 
 export const useMultiExecStore = create<MultiExecState>()((set) => ({
   selectedIds: [],
+  lastMirroredIds: [],
   groups: [],
-  setSelection: (tabIds) => set({ selectedIds: unique(tabIds) }),
+  setSelection: (tabIds) => set((state) => select(state, unique(tabIds))),
   toggleTarget: (tabId) =>
+    set((state) =>
+      select(
+        state,
+        state.selectedIds.includes(tabId)
+          ? state.selectedIds.filter((id) => id !== tabId)
+          : [...state.selectedIds, tabId],
+      ),
+    ),
+  toggleMirroring: (availableTabIds, fallbackTabIds) => {
+    let toggled = false;
     set((state) => {
-      const selectedIds = state.selectedIds.includes(tabId)
-        ? state.selectedIds.filter((id) => id !== tabId)
-        : [...state.selectedIds, tabId];
-      return { selectedIds };
-    }),
+      // Off is unconditional: whatever is mirroring right now stops, and the
+      // set is kept for the next press.
+      if (state.selectedIds.length >= 2) {
+        toggled = true;
+        return { selectedIds: [], lastMirroredIds: state.selectedIds };
+      }
+      const available = new Set(availableTabIds);
+      const resumed = state.lastMirroredIds.filter((id) => available.has(id));
+      const selectedIds =
+        resumed.length >= 2 ? resumed : unique(fallbackTabIds).filter((id) => available.has(id));
+      if (selectedIds.length < 2) return state;
+      toggled = true;
+      return select(state, selectedIds);
+    });
+    return toggled;
+  },
   reconcile: (availableTabIds) =>
     set((state) => {
       const available = new Set(availableTabIds);
@@ -46,6 +88,8 @@ export const useMultiExecStore = create<MultiExecState>()((set) => ({
   setGroups: (groups) =>
     set({
       selectedIds: [],
+      // Tab ids from the outgoing workspace can never be resumed.
+      lastMirroredIds: [],
       groups: groups.map((group) => ({
         id: group.id,
         name: group.name,
@@ -78,7 +122,10 @@ export const useMultiExecStore = create<MultiExecState>()((set) => ({
       const group = state.groups.find((candidate) => candidate.id === id);
       if (!group) return state;
       const available = new Set(availableTabIds);
-      return { selectedIds: group.tabIds.filter((tabId) => available.has(tabId)) };
+      return select(
+        state,
+        group.tabIds.filter((tabId) => available.has(tabId)),
+      );
     }),
 }));
 

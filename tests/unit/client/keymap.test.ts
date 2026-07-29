@@ -117,6 +117,12 @@ describe('default bindings', () => {
     expect(commandsForChord('Ctrl+Shift+KeyW').map((command) => command.id)).toEqual(['tab.close']);
   });
 
+  it('binds multi-execution to a chord of its own', () => {
+    expect(commandsForChord('Mod+Shift+M').map((command) => command.id)).toEqual([
+      'terminal.multi-exec',
+    ]);
+  });
+
   it('gives every direction its own split, focus, and move-tab chord', () => {
     for (const direction of ['left', 'right', 'up', 'down'] as const) {
       expect(commandChords(keyCommand(`pane.split.${direction}`)!).length).toBeGreaterThan(0);
@@ -136,10 +142,10 @@ describe('default bindings', () => {
 });
 
 describe('user overrides', () => {
-  const overrides = { 'pane.zoom': ['Ctrl+Shift+KeyM'], 'pane.equalize': [] };
+  const overrides = { 'pane.zoom': ['Ctrl+Shift+KeyJ'], 'pane.equalize': [] };
 
   it('replaces the defaults of the rebound command only', () => {
-    expect(commandsForChord('Ctrl+Shift+KeyM', overrides).map((command) => command.id)).toEqual([
+    expect(commandsForChord('Ctrl+Shift+KeyJ', overrides).map((command) => command.id)).toEqual([
       'pane.zoom',
     ]);
     expect(commandsForChord('Mod+Shift+Z', overrides)).toEqual([]);
