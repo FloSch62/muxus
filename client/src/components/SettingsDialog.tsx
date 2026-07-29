@@ -68,6 +68,7 @@ import { chordSx } from './chord-style.js';
 import { KeywordHighlightRulesEditor } from './KeywordHighlightRulesEditor.js';
 import { SessionLoggingPolicyFields } from './SessionLoggingPolicyFields.js';
 import { DataTransferSection } from './DataTransferSection.js';
+import { MobaXtermImportDialog } from './MobaXtermImportDialog.js';
 
 type Section =
   | 'appearance'
@@ -121,6 +122,7 @@ export function SettingsDialog() {
   const setOpen = useUiStore((s) => s.setSettingsOpen);
   const [section, setSection] = useState<Section>('appearance');
   const [loggingDirty, setLoggingDirty] = useState(false);
+  const [mobaXtermImportOpen, setMobaXtermImportOpen] = useState(false);
 
   /** Nothing leaves the logging section behind without the user's say-so. */
   const leaveSection = (run: () => void) => {
@@ -140,6 +142,10 @@ export function SettingsDialog() {
       run();
     });
   };
+
+  if (mobaXtermImportOpen) {
+    return <MobaXtermImportDialog onClose={() => setMobaXtermImportOpen(false)} />;
+  }
 
   return (
     <Dialog
@@ -182,7 +188,11 @@ export function SettingsDialog() {
             {section === 'highlighting' && <HighlightingSection />}
             {section === 'behavior' && <BehaviorSection />}
             {section === 'keyboard' && <KeyboardSection />}
-            {section === 'data' && <DataTransferSection />}
+            {section === 'data' && (
+              <DataTransferSection
+                onImportMobaXterm={() => setMobaXtermImportOpen(true)}
+              />
+            )}
             {section === 'about' && <AboutSection />}
           </Box>
           <DialogActions sx={{ borderTop: 1, borderColor: 'divider' }}>

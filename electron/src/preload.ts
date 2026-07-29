@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AppWindowLaunch } from '@muxus/shared';
+import type { AppWindowLaunch, MobaXtermSessionSource } from '@muxus/shared';
 
 // Client state is mirrored here and persisted with fire-and-forget messages.
 // sendSync is deliberately avoided for the steady-state path: it parks the
@@ -78,6 +78,10 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   /** Open a native single-file picker and return only the user-selected path. */
   selectPrivateKey(): Promise<string | undefined> {
     return ipcRenderer.invoke('muxus:select-private-key');
+  },
+  /** Read bookmark-only session data from the current Windows user's MobaXterm install. */
+  readMobaXtermSessions(): Promise<MobaXtermSessionSource | undefined> {
+    return ipcRenderer.invoke('muxus:read-mobaxterm-sessions');
   },
   openWindow(launch: AppWindowLaunch): void {
     ipcRenderer.send('muxus:open-window', launch);

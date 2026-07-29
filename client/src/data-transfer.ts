@@ -335,6 +335,16 @@ export async function restoreTransferDocument(
   return result;
 }
 
+/** Restore a reviewed third-party connection set through the same conflict-safe path as backups. */
+export async function restoreImportedConnections(
+  data: PortableConnections,
+  conflicts: TransferConflictStrategy,
+): Promise<RestoreResult> {
+  const result: RestoreResult = { added: 0, updated: 0, skipped: 0 };
+  await restoreConnections(data, conflicts, result);
+  return result;
+}
+
 function fetchBaseSnapshot(): Promise<BaseSnapshot> {
   return Promise.all([
     apiFetch<SshConfigResponse>('/api/ssh/config'),
@@ -448,9 +458,10 @@ async function restoreConnections(
     apiFetch<SshConfigResponse>('/api/ssh/config'),
     apiFetch<SavedHostProfilesResponse>('/api/profiles'),
   ]);
-  const sshByAlias = new Map(
-    sshConfig.hosts.map((host) => [host.alias, host]),
-  );
+  const sshByAlias = new Map<string, SshHostEntry>();
+  for (const host of sshConfig.hosts) {
+    for (const alias of host.aliases) sshByAlias.set(alias, host);
+  }
   const savedIds = new Set(savedResponse.profiles.map((profile) => profile.id));
 
   // OpenSSH config edits intentionally stay sequential: every request
