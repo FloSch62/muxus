@@ -21,6 +21,42 @@ export interface AppInfo {
   sshAlgorithms: Record<string, string[]>;
 }
 
+/** Public metadata for one SSH password encrypted in the local password vault. */
+export interface PasswordVaultCredential {
+  id: string;
+  label: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Controls when a master password is required to use a saved credential.
+ *
+ * - never: keep the vault key in the operating-system credential store;
+ * - startup: unlock once for the lifetime of the server process;
+ * - credential: unlock separately for every saved-credential operation.
+ */
+export type PasswordVaultUnlockPolicy =
+  | 'never'
+  | 'startup'
+  | 'credential';
+
+/** New vaults use the operating-system credential store unless explicitly overridden. */
+export const DEFAULT_PASSWORD_VAULT_UNLOCK_POLICY =
+  'never' as const satisfies PasswordVaultUnlockPolicy;
+
+/** Runtime state of the local password vault. */
+export interface PasswordVaultStatus {
+  configured: boolean;
+  unlockPolicy?: PasswordVaultUnlockPolicy;
+  /** True when using a saved credential currently requires the master password. */
+  locked: boolean;
+  /** Whether the native OS credential-store integration loaded successfully. */
+  osKeyStoreAvailable: boolean;
+  credentialCount: number;
+  credentials: PasswordVaultCredential[];
+}
+
 /** Raw bookmark data discovered from a local Windows MobaXterm installation. */
 export interface MobaXtermSessionSource {
   /** Human-readable origin shown before the user confirms the import. */

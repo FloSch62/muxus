@@ -35,7 +35,11 @@ import { confirmAction } from '../state/dialogs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
 import { layout, statusTextColor } from '../theme.js';
-import { AuthPromptDialog, type AuthPromptRequest } from './AuthPromptDialog.js';
+import {
+  AuthPromptDialog,
+  type AuthPromptRequest,
+  type AuthPromptResult,
+} from './AuthPromptDialog.js';
 import { HostKeyDialog, type HostKeyRequest } from './HostKeyDialog.js';
 import { FORWARD_FLAG, ForwardRuleForm, describeForward } from './ForwardRuleForm.js';
 import { TunnelEditorDialog, type TunnelEditorState } from './TunnelEditorDialog.js';
@@ -65,7 +69,10 @@ export function ForwardingPanel() {
   const [tunnelMenu, setTunnelMenu] = useState<{ anchor: HTMLElement; tunnel: TunnelRecord } | null>(null);
   /** tunnelId → progress message while a start (dial + forward) is in flight. */
   const [starting, setStarting] = useState<Record<string, string>>({});
-  const [dialAuth, setDialAuth] = useState<{ request: AuthPromptRequest; resolve: (answers: string[] | null) => void } | null>(null);
+  const [dialAuth, setDialAuth] = useState<{
+    request: AuthPromptRequest;
+    resolve: (result: AuthPromptResult | null) => void;
+  } | null>(null);
   const [dialHostKey, setDialHostKey] = useState<{ request: HostKeyRequest; resolve: (accept: boolean) => void } | null>(null);
 
   const anyStarting = Object.keys(starting).length > 0;
@@ -382,8 +389,8 @@ export function ForwardingPanel() {
 
       <AuthPromptDialog
         request={dialAuth?.request ?? null}
-        onSubmit={(answers) => {
-          dialAuth?.resolve(answers);
+        onSubmit={(result) => {
+          dialAuth?.resolve(result);
           setDialAuth(null);
         }}
       />

@@ -35,17 +35,70 @@ and history.
 ## What is stored, and what is refused
 
 The local SQLite database holds folders, colours, display names, sidebar order, workspaces,
-saved tunnels, saved Telnet/serial hosts, per-host highlighting and logging policy, and
-connection timestamps. It is created `0600` in a `0700` directory.
+saved tunnels, saved Telnet/serial hosts, per-host highlighting and logging policy,
+connection timestamps, and—only when the user opts in—encrypted SSH passwords. It is
+created `0600` in a `0700` directory.
 
-**Credential material is rejected at the persistence boundary.** Any object whose field
-names include `password`, `passphrase`, `secret`, `token` or `privateKey` is refused before
-it can be written. A field may hold a reference such as `identityFile` or `credentialId`,
-but not the secret itself. Passwords and passphrases exist in memory only for the duration
-of an authentication attempt.
+**Credential material is rejected from ordinary profile, tunnel and workspace data.**
+Objects whose field names include `password`, `passphrase`, `secret`, `token` or
+`privateKey` are refused at those persistence boundaries. The dedicated password-vault
+tables are the only place credential ciphertext can be written.
 
 Connection settings are not in the database. They remain in
 [`~/.ssh/config`](ssh-config.md).
+
+## Password vault
+
+Password saving is off until a vault is created. On a normal SSH password
+prompt, **Remember this password** saves the password only after the server accepts it.
+Private-key passphrases, keyboard-interactive answers and 2FA codes are never remembered.
+
+New vaults default to **Never**, using the platform credential store. The vault works as
+follows:
+
+- a random 256-bit vault key encrypts each password with AES-256-GCM and a fresh nonce;
+- the master password is processed with scrypt (`N=131072`, `r=8`, `p=1`, and a random
+  128-bit salt) to wrap the vault key in the database;
+- **Never** stores the raw vault key in Windows Credential Manager, macOS Keychain, or
+  Linux Secret Service/kernel keyring;
+- **When Muxus starts** keeps the unwrapped key only in process memory after one prompt;
+- **Whenever a saved credential is needed** unwraps the key for one operation and then
+  clears it;
+- revealing or editing a saved value and changing the master password always require the
+  master password;
+- changing the master password re-wraps the random vault key without decrypting and
+  rewriting every saved password;
+- the master password itself is never stored. It cannot be recovered; resetting the vault
+  deliberately requires no master password and deletes every saved password.
+
+There is no application-owned key file. A copied database does not contain a directly
+usable vault key and can be unlocked only with the master password. On Linux, **Never**
+requires an available OS keyring implementation; desktop environments commonly provide
+one through GNOME Keyring, KWallet or another Secret Service-compatible daemon. Muxus does
+not fall back to a plaintext or application-owned key file.
+
+!!! warning "Never-prompt use changes the threat model"
+
+    Software running as the same logged-in user may be able to ask the OS credential store
+    for the vault key. The master password protects the normal **view and edit** interface;
+    it is not a defence against malware controlling the user session or Muxus itself.
+    Choose a prompt policy that matches the local-account threat model.
+
+Vault keys are cleared from process memory at shutdown and after each operation under the
+per-credential policy. JavaScript strings cannot be reliably erased, so a password may
+remain in garbage-collected memory for an unspecified short period after use. Malware
+controlling the logged-in session or Muxus can capture credentials while they are used.
+
+Deleting a credential enables SQLite secure deletion, checkpoints and truncates the WAL.
+Deleting the whole vault additionally compacts the active database and attempts to remove
+its OS credential-store entry. Reset still completes if the credential store is
+unavailable, because the orphaned random key has no ciphertext or vault metadata to open.
+An existing backup paired with an entry that could not be removed may still be usable;
+backups, filesystem snapshots, storage-device remapping and forensic copies are outside
+the deletion guarantee.
+
+The portable Muxus backup format deliberately excludes the vault and all password
+ciphertext.
 
 ## Host keys
 
@@ -96,7 +149,9 @@ the window loads is served from the local server.
   installed version in its user agent and can only direct downloads to the Muxus GitHub
   releases page.
 - It does not proxy traffic through anything.
-- It does not store passwords.
+- It does not store a password unless the user explicitly selects **Remember this
+  password**. A master password protects viewing and editing, and the configured prompt
+  policy controls routine SSH use.
 - It does not run as a service or accept connections from other machines.
 
 ## Reporting a problem

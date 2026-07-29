@@ -58,9 +58,19 @@ succeeds:
   <figcaption>Each prompt names the hop that issued it, which identifies the hop in a jump chain.</figcaption>
 </figure>
 
-Passwords and passphrases are transient. They exist only for the duration of the
-authentication attempt, and the persistence layer refuses to store them. See the
-[security model](../reference/security.md).
+An SSH password prompt offers **Remember this password**. The password is saved only after
+authentication succeeds. The first save creates a vault and asks for a master password of
+at least twelve characters. By default, the vault key is kept in the OS credential store,
+so routine SSH use does not prompt for the master password. In **Settings → Passwords**,
+the policy can instead ask once when Muxus starts or whenever a saved credential is
+needed. The master password is always required to view or edit saved values.
+
+If a never-prompt vault is restored without its OS credential-store entry, the next saved
+password use asks for the master password and attempts to restore automatic access. The
+credential can still be used for that connection if the OS store remains unavailable;
+the prompt policy can also be changed or the vault reset. Private-key passphrases,
+keyboard-interactive answers and 2FA codes remain transient and are never remembered. See the
+[security model](../reference/security.md#password-vault).
 
 ## Jump chains and ProxyCommand
 

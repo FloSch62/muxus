@@ -81,6 +81,36 @@ export type LocalProfile = Extract<SessionProfile, { kind: 'local' }>;
 export type TelnetProfile = Extract<SessionProfile, { kind: 'telnet' }>;
 export type SerialProfile = Extract<SessionProfile, { kind: 'serial' }>;
 
+export type AuthPromptPurpose =
+  | 'authentication'
+  | 'ssh-password'
+  | 'vault-unlock'
+  | 'vault-repair'
+  | 'vault-create';
+
+export interface AuthPromptInfo {
+  name?: string;
+  instructions?: string;
+  /** Which host in the connection chain is asking ("bastion", "user@web1"). */
+  host?: string;
+  prompts: Array<{ prompt: string; echo: boolean }>;
+  purpose?: AuthPromptPurpose;
+  /** Offer to encrypt a successful SSH password in the local vault. */
+  rememberPassword?: {
+    label: string;
+    /** True when remembering will replace an older saved password. */
+    existing: boolean;
+  };
+  /** Secondary action that continues without answering this prompt. */
+  skipLabel?: string;
+}
+
+export interface AuthPromptResponse {
+  answers: string[];
+  rememberPassword?: boolean;
+  skipped?: boolean;
+}
+
 /** Text frames the client sends on /ws/terminal. */
 export const terminalClientMessageSchema = z.discriminatedUnion('op', [
   z.object({
@@ -101,7 +131,12 @@ export const terminalClientMessageSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('dial'), profile: sshProfileSchema }),
   z.object({ op: z.literal('resize'), cols: z.number().int().positive(), rows: z.number().int().positive() }),
   /** Answers to the last `auth-prompt`, in prompt order. */
-  z.object({ op: z.literal('auth-response'), answers: z.array(z.string()) }),
+  z.object({
+    op: z.literal('auth-response'),
+    answers: z.array(z.string().max(8192)).max(16),
+    rememberPassword: z.boolean().optional(),
+    skipped: z.boolean().optional(),
+  }),
   /** Verdict on the last `host-key` challenge. */
   z.object({ op: z.literal('host-key-response'), accept: z.boolean() }),
   /** Change only the current session; persisted policy is managed over REST. */
@@ -126,14 +161,7 @@ export type TerminalServerMessage =
   /** Passive SSH transport health derived from the existing keepalive lifecycle. */
   | { op: 'connection-health'; state: 'healthy' | 'suspect' }
   /** Interactive auth (password, 2FA, key passphrase). echo=false → mask input. */
-  | {
-      op: 'auth-prompt';
-      name?: string;
-      instructions?: string;
-      /** Which host in the connection chain is asking ("bastion", "user@web1"). */
-      host?: string;
-      prompts: Array<{ prompt: string; echo: boolean }>;
-    }
+  | ({ op: 'auth-prompt' } & AuthPromptInfo)
   /** Host key verification: `new` = first contact (TOFU), `mismatch` = KEY CHANGED. */
   | {
       op: 'host-key';

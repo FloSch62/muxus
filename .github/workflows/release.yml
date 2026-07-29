@@ -70,9 +70,9 @@ jobs:
             artifact_path: electron/release/*.exe
           - name: macOS universal
             os: macos-latest
-            # The override also backfills tags created before x64ArchFiles was added
-            # to electron-builder.yml, including v0.1.0.
-            build_args: --mac dmg --universal -c.mac.x64ArchFiles="**/prebuilds/darwin*/**"
+            # These overrides also backfill tags created before the universal
+            # native-module rules were added to electron-builder.yml.
+            build_args: --mac dmg --universal -c.mac.x64ArchFiles="{**/prebuilds/darwin*/**,**/node_modules/@napi-rs/keyring-darwin-*/**}" -c.mac.singleArchFiles="**/node_modules/@napi-rs/keyring-darwin-*{,/**}"
             artifact_name: macos-universal
             artifact_path: electron/release/*.dmg
     runs-on: ${{ matrix.os }}
@@ -100,6 +100,19 @@ jobs:
 
       - name: Build installers
         run: pnpm --filter @muxus/electron exec electron-builder ${{ matrix.build_args }} --publish never
+
+      - name: Verify universal keyring binaries
+        if: runner.os == 'macOS'
+        run: |
+          app="electron/release/mac-universal/Muxus.app"
+          if [ ! -d "$app" ]; then
+            echo "Universal app bundle not found; release contents:" >&2
+            ls electron/release >&2
+            exit 1
+          fi
+          for arch in x64 arm64; do
+            ls "$app/Contents/Resources/app.asar.unpacked/node_modules/@napi-rs/keyring-darwin-$arch/"*.node
+          done
 
       - name: Store installers
         uses: actions/upload-artifact@v7

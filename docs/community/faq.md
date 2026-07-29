@@ -44,9 +44,14 @@ The application database is in the platform data directory (`~/.local/share/muxu
 
 ### Are my passwords stored anywhere?
 
-No. They exist only for the duration of an authentication attempt. The persistence layer
-rejects fields that look like credentials, so a password cannot be written to the database
-by accident.
+Not by default. Passwords are transient unless **Remember this password** is selected on
+an SSH password prompt. Remembering creates the platform-independent password vault and
+writes authenticated ciphertext to the local database. The prompt policy can use the OS
+credential store (the default), ask once at startup, or ask whenever a credential is
+needed. The master password is always required to view or edit the saved value and is
+never stored. Private-key passphrases, 2FA codes
+and keyboard-interactive answers are never remembered. See the
+[security model](../reference/security.md#password-vault).
 
 ### Why is session logging off by default?
 

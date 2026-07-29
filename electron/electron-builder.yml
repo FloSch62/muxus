@@ -29,9 +29,14 @@ mac:
   category: public.app-category.developer-tools
   identity: null
   notarize: false
-  # Native modules ship both Darwin prebuilds in each architecture package.
-  # They are already architecture-specific (or universal), so do not lipo them again.
-  x64ArchFiles: "**/prebuilds/darwin*/**"
+  # Native modules ship both Darwin prebuilds in each architecture package,
+  # and the keyring binding ships one single-arch package per CPU with both
+  # bundled into each slice. All are already architecture-specific, so do not
+  # lipo them again.
+  x64ArchFiles: "{**/prebuilds/darwin*/**,**/node_modules/@napi-rs/keyring-darwin-*/**}"
+  # The keyring binding uses separate package names for Darwin x64 and arm64.
+  # Preserve both architecture-only package trees when merging their ASARs.
+  singleArchFiles: "**/node_modules/@napi-rs/keyring-darwin-*{,/**}"
   target:
     - target: dmg
       arch: [universal]

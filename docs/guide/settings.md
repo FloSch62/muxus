@@ -11,7 +11,7 @@ because storage policy should not change under a running recorder.
 <figure markdown="span">
   ![The settings dialog](../assets/screenshots/settings.png#only-light){ .shadow }
   ![The settings dialog](../assets/screenshots/settings-dark.png#only-dark){ .shadow }
-  <figcaption>Eight sections, listed on the left. The footer states when changes apply.</figcaption>
+  <figcaption>Nine sections, listed on the left. The footer states when changes apply.</figcaption>
 </figure>
 
 ## Appearance
@@ -91,6 +91,29 @@ second chord, and defaults are restored in one click. The sheet is also reachabl
 ++ctrl+shift+slash++.
 
 [Every default chord :octicons-arrow-right-24:](../reference/keyboard-shortcuts.md)
+
+## Passwords
+
+The password vault is optional. New vaults default to the never-prompt policy, which uses
+the operating-system credential store.
+
+- **Create password vault** sets a master password of at least 12 characters.
+- **Change prompt policy** chooses when routine SSH use needs the master password:
+  **Never for saved credentials** stores the vault key in the OS credential store,
+  **When Muxus starts** unlocks it into memory once, and **Whenever a saved credential is
+  needed** prompts for each use.
+- **View or edit password** asks for the master password before revealing the saved value.
+- **Change master password** changes that management password without rewriting every
+  credential.
+- **Restore OS access** appears if the never-prompt policy is selected but the credential
+  store entry is missing.
+- Saved-password rows can be forgotten individually. **Delete vault** forgets all of them
+  without removing hosts, keys or other settings. Reset intentionally needs no master
+  password, so a forgotten password cannot make the vault impossible to remove.
+
+The master password cannot be recovered. Saved-password ciphertext is local to the
+application database and is not included in Muxus backups. The raw vault key is never
+stored in the application-data directory.
 
 ## Backup & data
 

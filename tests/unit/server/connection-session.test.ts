@@ -9,6 +9,15 @@ import type { SshProfile } from '@muxus/shared/ws-protocol';
 import { SshConnectionManager, type ConnectIo } from '../../../server/src/ssh/connection-manager.js';
 import { KnownHostsStore } from '../../../server/src/ssh/known-hosts.js';
 import { loadConfigDocument } from '../../../server/src/ssh/ssh-config.js';
+import { MuxusDatabase } from '../../../server/src/persistence/database.js';
+import {
+  PasswordVault,
+  sshPasswordAccount,
+} from '../../../server/src/security/password-vault.js';
+import {
+  MemoryVaultKeyStore,
+  VaultKeyStoreUnavailableError,
+} from '../../../server/src/security/vault-key-store.js';
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'muxus-session-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -71,7 +80,10 @@ function startCapturingServer(): Promise<{ server: Server; port: number; capture
 }
 
 let counter = 0;
-function makeManager(configFile: string): SshConnectionManager {
+function makeManager(
+  configFile: string,
+  vault?: PasswordVault,
+): SshConnectionManager {
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   return new SshConnectionManager(log as never, {
     knownHosts: new KnownHostsStore(
@@ -79,6 +91,7 @@ function makeManager(configFile: string): SshConnectionManager {
       path.join(tmp, 'no-global-known-hosts'),
     ),
     loadConfig: () => loadConfigDocument(configFile),
+    vault,
   });
 }
 
@@ -88,7 +101,9 @@ function makeIo(overrides: Partial<ConnectIo> = {}): ConnectIo & { passwordPromp
     status: () => undefined,
     prompt: (info: { prompts: Array<{ prompt: string }> }) => {
       io.passwordPrompts += info.prompts.length;
-      return Promise.resolve(info.prompts.map(() => PASSWORD));
+      return Promise.resolve({
+        answers: info.prompts.map(() => PASSWORD),
+      });
     },
     hostKey: () => Promise.resolve(true),
     ...overrides,
@@ -114,10 +129,16 @@ async function firstData(stream: NodeJS.ReadableStream): Promise<string> {
 describe('session settings from ssh config', () => {
   let manager: SshConnectionManager | undefined;
   let server: Server | undefined;
+  let database: MuxusDatabase | undefined;
+  let vault: PasswordVault | undefined;
 
   afterEach(async () => {
     manager?.closeAll();
     manager = undefined;
+    vault?.lock();
+    database?.close();
+    vault = undefined;
+    database = undefined;
     if (server) {
       await new Promise<void>((resolve) => server!.close(() => resolve()));
       server = undefined;
@@ -179,5 +200,229 @@ describe('session settings from ssh config', () => {
     await expect(manager.connect(profile, io)).rejects.toThrow(/authentication/);
     expect(io.passwordPrompts).toBe(0);
     expect(started.capture.authMethods).not.toContain('password');
+  }, 15_000);
+
+  it('remembers a successful password in the OS keyring and reuses it after restart', async () => {
+    const started = await startCapturingServer();
+    server = started.server;
+    const config = writeConfig(started.port, []);
+    database = new MuxusDatabase(':memory:');
+    const keyStore = new MemoryVaultKeyStore();
+    vault = new PasswordVault(database, {
+      kdf: { cost: 1024, blockSize: 8, parallelism: 1 },
+      keyStore,
+    });
+    manager = makeManager(config, vault);
+    const master = 'correct horse battery staple';
+
+    const firstIo = makeIo({
+      prompt: (info) => {
+        if (info.purpose === 'ssh-password') {
+          return Promise.resolve({
+            answers: [PASSWORD],
+            rememberPassword: true,
+          });
+        }
+        if (info.purpose === 'vault-create') {
+          return Promise.resolve({ answers: [master, master] });
+        }
+        throw new Error(`unexpected prompt: ${info.purpose}`);
+      },
+    });
+    const first = await manager.connect(profile, firstIo);
+    await vi.waitFor(() => {
+      expect(vault!.status()).toMatchObject({
+        configured: true,
+        unlockPolicy: 'never',
+        locked: false,
+        credentialCount: 1,
+      });
+    });
+    first.release();
+    manager.closeAll();
+
+    vault.dispose();
+    vault = new PasswordVault(database, {
+      kdf: { cost: 1024, blockSize: 8, parallelism: 1 },
+      keyStore,
+    });
+    await vault.initialize();
+    manager = makeManager(config, vault);
+    const secondIo = makeIo({
+      prompt: (info) => {
+        throw new Error(
+          `authentication prompt was not expected: ${info.purpose}`,
+        );
+      },
+    });
+    const second = await manager.connect(profile, secondIo);
+    expect(vault.status().locked).toBe(false);
+    expect(secondIo.passwordPrompts).toBe(0);
+    second.release();
+  }, 15_000);
+
+  it('replaces a rejected saved password only after the new password succeeds', async () => {
+    const started = await startCapturingServer();
+    server = started.server;
+    const config = writeConfig(started.port, []);
+    database = new MuxusDatabase(':memory:');
+    vault = new PasswordVault(database, {
+      kdf: { cost: 1024, blockSize: 8, parallelism: 1 },
+    });
+    await vault.create('correct horse battery staple');
+    const account = sshPasswordAccount({
+      user: 'tester',
+      host: '127.0.0.1',
+      port: started.port,
+    });
+    await vault.rememberSshPassword(
+      account,
+      `tester@127.0.0.1:${started.port}`,
+      'stale-password',
+    );
+    manager = makeManager(config, vault);
+
+    const io = makeIo({
+      prompt: (info) => {
+        if (info.purpose !== 'ssh-password') {
+          throw new Error(`unexpected prompt: ${info.purpose}`);
+        }
+        return Promise.resolve({
+          answers: [PASSWORD],
+          rememberPassword: true,
+        });
+      },
+    });
+    const lease = await manager.connect(profile, io);
+    await vi.waitFor(async () => {
+      await expect(vault!.sshPassword(account)).resolves.toBe(PASSWORD);
+    });
+    lease.release();
+  }, 15_000);
+
+  it('falls back to a manual password when vault access reports an unavailable keyring', async () => {
+    const started = await startCapturingServer();
+    server = started.server;
+    const config = writeConfig(started.port, []);
+    database = new MuxusDatabase(':memory:');
+    vault = new PasswordVault(database, {
+      kdf: { cost: 1024, blockSize: 8, parallelism: 1 },
+    });
+    await vault.create('correct horse battery staple');
+    const account = sshPasswordAccount({
+      user: 'tester',
+      host: '127.0.0.1',
+      port: started.port,
+    });
+    await vault.rememberSshPassword(
+      account,
+      `tester@127.0.0.1:${started.port}`,
+      PASSWORD,
+    );
+    vi.spyOn(vault, 'sshPassword').mockRejectedValueOnce(
+      new VaultKeyStoreUnavailableError(),
+    );
+    manager = makeManager(config, vault);
+    const statuses: string[] = [];
+    const io = makeIo({
+      status: (message) => statuses.push(message),
+    });
+
+    const lease = await manager.connect(profile, io);
+    expect(io.passwordPrompts).toBe(1);
+    expect(statuses).toContain(
+      `The OS credential store is unavailable. Enter the current password for tester@127.0.0.1:${started.port}.`,
+    );
+    lease.release();
+  }, 15_000);
+
+  it('pauses ConnectTimeout while the user unlocks a saved password', async () => {
+    const started = await startCapturingServer();
+    server = started.server;
+    const config = writeConfig(started.port, ['  ConnectTimeout 1']);
+    database = new MuxusDatabase(':memory:');
+    vault = new PasswordVault(database, {
+      kdf: { cost: 1024, blockSize: 8, parallelism: 1 },
+    });
+    await vault.create('correct horse battery staple', 'startup');
+    await vault.rememberSshPassword(
+      sshPasswordAccount({
+        user: 'tester',
+        host: '127.0.0.1',
+        port: started.port,
+      }),
+      `tester@127.0.0.1:${started.port}`,
+      PASSWORD,
+    );
+    vault.lock();
+    manager = makeManager(config, vault);
+    const io = makeIo({
+      prompt: async (info) => {
+        if (info.purpose !== 'vault-unlock') {
+          throw new Error(`unexpected prompt: ${info.purpose}`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1_250));
+        return { answers: ['correct horse battery staple'] };
+      },
+    });
+
+    const lease = await manager.connect(profile, io);
+    expect(vault.status().locked).toBe(false);
+    lease.release();
+  }, 15_000);
+
+  it('does not hold connection readiness on the remember-password dialog', async () => {
+    const started = await startCapturingServer();
+    server = started.server;
+    const config = writeConfig(started.port, []);
+    database = new MuxusDatabase(':memory:');
+    vault = new PasswordVault(database, {
+      kdf: { cost: 1024, blockSize: 8, parallelism: 1 },
+    });
+    manager = makeManager(config, vault);
+    const master = 'correct horse battery staple';
+    let createPromptSeen = false;
+    let finishCreate:
+      | ((response: { answers: string[] }) => void)
+      | undefined;
+    const createResponse = new Promise<{ answers: string[] }>((resolve) => {
+      finishCreate = resolve;
+    });
+    const io = makeIo({
+      prompt: (info) => {
+        if (info.purpose === 'ssh-password') {
+          return Promise.resolve({
+            answers: [PASSWORD],
+            rememberPassword: true,
+          });
+        }
+        if (info.purpose === 'vault-create') {
+          createPromptSeen = true;
+          return createResponse;
+        }
+        throw new Error(`unexpected prompt: ${info.purpose}`);
+      },
+    });
+
+    const lease = await manager.connect(profile, io);
+    await vi.waitFor(() => expect(createPromptSeen).toBe(true));
+    expect(vault.status().configured).toBe(false);
+    let postAuthSettled = false;
+    void lease.connection.waitForPostAuth().then(() => {
+      postAuthSettled = true;
+    });
+    await Promise.resolve();
+    expect(postAuthSettled).toBe(false);
+
+    finishCreate!({ answers: [master, master] });
+    await lease.connection.waitForPostAuth();
+    expect(postAuthSettled).toBe(true);
+    await vi.waitFor(() => {
+      expect(vault!.status()).toMatchObject({
+        configured: true,
+        credentialCount: 1,
+      });
+    });
+    lease.release();
   }, 15_000);
 });

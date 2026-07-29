@@ -34,6 +34,7 @@ import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import KeyboardOutlinedIcon from '@mui/icons-material/KeyboardOutlined';
 import BackupOutlinedIcon from '@mui/icons-material/BackupOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
+import PasswordOutlinedIcon from '@mui/icons-material/PasswordOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
 import type { UpdateCheckResult } from '@muxus/shared';
@@ -69,6 +70,7 @@ import { KeywordHighlightRulesEditor } from './KeywordHighlightRulesEditor.js';
 import { SessionLoggingPolicyFields } from './SessionLoggingPolicyFields.js';
 import { DataTransferSection } from './DataTransferSection.js';
 import { MobaXtermImportDialog } from './MobaXtermImportDialog.js';
+import { PasswordVaultSection } from './PasswordVaultSection.js';
 
 type Section =
   | 'appearance'
@@ -77,6 +79,7 @@ type Section =
   | 'highlighting'
   | 'behavior'
   | 'keyboard'
+  | 'passwords'
   | 'data'
   | 'about';
 
@@ -87,6 +90,7 @@ const SECTIONS: Array<{ id: Section; label: string; icon: React.ReactNode }> = [
   { id: 'highlighting', label: 'Highlighting', icon: <HighlightOutlinedIcon fontSize="small" /> },
   { id: 'behavior', label: 'Behavior', icon: <TuneOutlinedIcon fontSize="small" /> },
   { id: 'keyboard', label: 'Keyboard', icon: <KeyboardOutlinedIcon fontSize="small" /> },
+  { id: 'passwords', label: 'Passwords', icon: <PasswordOutlinedIcon fontSize="small" /> },
   { id: 'data', label: 'Backup & data', icon: <BackupOutlinedIcon fontSize="small" /> },
   { id: 'about', label: 'About', icon: <InfoOutlinedIcon fontSize="small" /> },
 ];
@@ -188,6 +192,7 @@ export function SettingsDialog() {
             {section === 'highlighting' && <HighlightingSection />}
             {section === 'behavior' && <BehaviorSection />}
             {section === 'keyboard' && <KeyboardSection />}
+            {section === 'passwords' && <PasswordVaultSection />}
             {section === 'data' && (
               <DataTransferSection
                 onImportMobaXterm={() => setMobaXtermImportOpen(true)}

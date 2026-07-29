@@ -23,10 +23,12 @@ import { registerSerialRoutes } from './routes/serial.js';
 import { registerProfileRoutes } from './routes/profiles.js';
 import { registerHostOrderRoutes } from './routes/host-order.js';
 import { registerSessionHistoryRoutes } from './routes/session-history.js';
+import { registerPasswordVaultRoutes } from './routes/password-vault.js';
 import {
   defaultHistoryRoot,
   SessionHistoryStore,
 } from './session-logging/history-store.js';
+import { PasswordVault } from './security/password-vault.js';
 
 export interface AppContext {
   config: ServerConfig;
@@ -34,6 +36,7 @@ export interface AppContext {
   forwards: ForwardManager;
   database: MuxusDatabase;
   history: SessionHistoryStore;
+  vault: PasswordVault;
 }
 
 // Not named __dirname: the Electron esbuild bundle defines that identifier
@@ -61,9 +64,11 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
     },
   });
 
-  const connections = new SshConnectionManager(app.log);
-  const forwards = new ForwardManager(connections, app.log);
   const database = new MuxusDatabase(config.databasePath);
+  const vault = new PasswordVault(database);
+  await vault.initialize();
+  const connections = new SshConnectionManager(app.log, { vault });
+  const forwards = new ForwardManager(connections, app.log);
   const historySettings = database.sessionHistorySettings();
   const configuredHistoryRoot =
     config.historyPath ??
@@ -78,7 +83,14 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
     legacyDatabasePath: hadLegacyHistory ? config.databasePath : undefined,
   });
   database.finalizeSessionHistorySeparation(hadLegacyHistory);
-  const ctx: AppContext = { config, connections, forwards, database, history };
+  const ctx: AppContext = {
+    config,
+    connections,
+    forwards,
+    database,
+    history,
+    vault,
+  };
   database.pruneTerminalSnapshots();
 
   // SFTP uploads stream through as-is — no buffering, no size limit.
@@ -142,6 +154,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   registerProfileRoutes(app, ctx);
   registerHostOrderRoutes(app, ctx);
   registerSessionHistoryRoutes(app, ctx);
+  registerPasswordVaultRoutes(app, ctx);
   registerTerminalSocket(app, ctx);
   registerSftpLeaseSocket(app, ctx);
 
@@ -161,6 +174,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   app.addHook('onClose', async () => {
     forwards.stopAll();
     connections.closeAll();
+    vault.dispose();
     await history.close();
     database.close();
   });

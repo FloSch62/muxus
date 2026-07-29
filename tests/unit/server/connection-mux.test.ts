@@ -105,7 +105,9 @@ function makeIo(): { io: ConnectIo; prompts: string[]; hostKeyAsks: number[] } {
     status: () => undefined,
     prompt: (info) => {
       prompts.push(...info.prompts.map((p) => p.prompt));
-      return Promise.resolve(info.prompts.map(() => PASSWORD));
+      return Promise.resolve({
+        answers: info.prompts.map(() => PASSWORD),
+      });
     },
     hostKey: (challenge) => {
       hostKeyAsks.push(challenge.port);

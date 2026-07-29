@@ -52,10 +52,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
+        include:
+          - os: ubuntu-latest
+            pack_args: ""
+          - os: macos-latest
+            # Build universal like the release job so both per-arch
+            # @napi-rs/keyring packages are exercised on every change.
+            pack_args: "--universal"
+          - os: windows-latest
+            pack_args: ""
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -74,8 +79,38 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Runner login keychains are not reliably unlocked; give the keyring
+      # roundtrip test a dedicated unlocked default keychain instead.
+      - name: Prepare macOS CI keychain
+        if: runner.os == 'macOS'
+        run: |
+          security create-keychain -p muxus-ci muxus-ci.keychain
+          security list-keychains -d user -s muxus-ci.keychain
+          security default-keychain -s muxus-ci.keychain
+          security unlock-keychain -p muxus-ci muxus-ci.keychain
+          security set-keychain-settings muxus-ci.keychain
+
+      - name: Test OS credential-store roundtrip
+        if: runner.os != 'Linux'
+        env:
+          MUXUS_OS_KEYRING_SMOKE: "1"
+        run: pnpm --filter @muxus/tests exec vitest run unit/server/vault-key-store.os.test.ts
+
       - name: Build workspace
         run: pnpm build
 
       - name: Build unpacked desktop application
-        run: pnpm --filter @muxus/electron pack:dir
+        run: pnpm --filter @muxus/electron pack:dir ${{ matrix.pack_args }}
+
+      - name: Verify universal keyring binaries
+        if: runner.os == 'macOS'
+        run: |
+          app="electron/release/mac-universal/Muxus.app"
+          if [ ! -d "$app" ]; then
+            echo "Universal app bundle not found; release contents:" >&2
+            ls electron/release >&2
+            exit 1
+          fi
+          for arch in x64 arm64; do
+            ls "$app/Contents/Resources/app.asar.unpacked/node_modules/@napi-rs/keyring-darwin-$arch/"*.node
+          done
