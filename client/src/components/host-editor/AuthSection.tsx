@@ -201,10 +201,10 @@ export function AuthSection({
               </IconButton>
             </Stack>
           </Stack>
-          <FormControlLabel
-            control={<Switch size="small" checked={draft.identitiesOnly} onChange={(e) => set({ identitiesOnly: e.target.checked })} />}
-            label={<Labeled title="IdentitiesOnly" sub="Never offer other agent keys — avoids 'too many authentication failures'" />}
-          />
+          <Typography variant="caption" color="text.secondary">
+            Only these key files are offered for login (IdentitiesOnly yes). The
+            agent can still be forwarded after connecting.
+          </Typography>
         </Stack>
       )}
 
@@ -214,7 +214,9 @@ export function AuthSection({
         <Box>
           <Typography variant="subtitle2">SSH agent</Typography>
           <Typography variant="caption" color="text.secondary">
-            Choose which local agent supplies keys for this host.
+            {draft.authMode === 'key'
+              ? 'Specific-key login does not use the agent. This source is still available for forwarding.'
+              : 'Choose which local agent supplies keys for this host.'}
           </Typography>
         </Box>
         <TextField

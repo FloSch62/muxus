@@ -191,6 +191,17 @@ describe('session settings from ssh config', () => {
     shell.lease.release();
   }, 15_000);
 
+  it('fails promptly when the host-key interaction rejects', async () => {
+    const started = await startCapturingServer();
+    server = started.server;
+    manager = makeManager(writeConfig(started.port, ['  ConnectTimeout 5']));
+    const io = makeIo({
+      hostKey: () => Promise.reject(new Error('host-key dialog closed')),
+    });
+
+    await expect(manager.connect(profile, io)).rejects.toThrow(/host/i);
+  }, 2_000);
+
   it('PasswordAuthentication no never prompts for or offers a password', async () => {
     const started = await startCapturingServer();
     server = started.server;

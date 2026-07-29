@@ -68,7 +68,9 @@ export function blankDraft(prefillTarget = ''): HostDraft {
     authMode: 'default',
     identityFiles: [],
     certificateFiles: [],
-    identitiesOnly: false,
+    // "Specific key file" is an exact-key mode. This stays dormant while the
+    // default auth mode is selected, then serializes as IdentitiesOnly yes.
+    identitiesOnly: true,
     identityAgentMode: 'default',
     identityAgent: '',
     forwardAgent: false,
@@ -191,7 +193,10 @@ export function draftToRequest(draft: HostDraft, previousAlias?: string): HostUp
         draft.authMode === 'key'
           ? draft.certificateFiles.map((f) => f.trim()).filter(Boolean)
           : undefined,
-      identitiesOnly: draft.authMode === 'key' && draft.identitiesOnly ? true : undefined,
+      // This editor mode promises that only the selected files are offered.
+      // OpenSSH still tries the agent first for IdentityFile alone, so the
+      // promise requires IdentitiesOnly yes.
+      identitiesOnly: draft.authMode === 'key' ? true : undefined,
       identityAgent:
         draft.identityAgentMode === 'environment'
           ? 'SSH_AUTH_SOCK'

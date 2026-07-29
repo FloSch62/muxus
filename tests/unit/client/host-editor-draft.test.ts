@@ -53,6 +53,7 @@ describe('SSH host editor draft', () => {
     expect(draftToRequest(draft, 'cloud').options).toMatchObject({
       identityFiles: ['~/.ssh/cloud'],
       certificateFiles: ['~/.ssh/cloud-cert.pub'],
+      identitiesOnly: true,
       identityAgent: '${ONEPASSWORD_SSH_AUTH_SOCK}',
       proxyCommand: 'cloudflared access ssh --hostname %h',
       remoteCommand: 'tmux new -A -s main',
@@ -69,7 +70,22 @@ describe('SSH host editor draft', () => {
     expect(draft.remoteCommandMode).toBe('inherit');
     expect(draft.requestTty).toBe('inherit');
     expect(draft.strictHostKeyChecking).toBe('inherit');
+    expect(draft.identitiesOnly).toBe(true);
     expect(draftToRequest(draft).options.proxyCommand).toBeUndefined();
+  });
+
+  it('makes the specific-key promise independent of the SSH agent', () => {
+    const draft = blankDraft();
+    draft.authMode = 'key';
+    draft.identityFiles = ['~/.ssh/id_ed25519'];
+    // Old v0.3.0 drafts could carry false here. Saving the explicit editor
+    // mode must repair them instead of writing IdentityFile alone.
+    draft.identitiesOnly = false;
+
+    expect(draftToRequest(draft).options).toMatchObject({
+      identityFiles: ['~/.ssh/id_ed25519'],
+      identitiesOnly: true,
+    });
   });
 
   it('round-trips explicit agent and login-shell choices', () => {

@@ -53,6 +53,11 @@ succeeds:
 4. **Keyboard-interactive**: 2FA codes, challenge/response.
 5. **Password**, with retries.
 
+Agent approval time does not consume `ConnectTimeout`. If an agent accepts a request but
+never answers, Muxus shows what it is waiting for and moves to the next authentication
+method after a bounded wait. The host editor's **Specific key file** mode writes
+`IdentitiesOnly yes` and therefore skips the login agent entirely.
+
 <figure markdown="span">
   ![A keyboard-interactive prompt](../assets/screenshots/auth-prompt.png#only-light){ .shadow }
   ![A keyboard-interactive prompt](../assets/screenshots/auth-prompt-dark.png#only-dark){ .shadow }
