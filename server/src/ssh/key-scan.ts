@@ -53,29 +53,39 @@ export function resolveAgentSocket(identityAgent?: string): string | undefined {
   return identityAgent.replace(/^~(?=$|[\\/])/, os.homedir());
 }
 
-export async function listAgentKeys(sock = agentSocket()): Promise<SshAgentKey[]> {
-  if (!sock) return [];
+interface AgentKeyProbe {
+  available: boolean;
+  keys: SshAgentKey[];
+}
+
+async function probeAgentKeys(sock: string | undefined): Promise<AgentKeyProbe> {
+  if (!sock) return { available: false, keys: [] };
   return new Promise((resolve) => {
     try {
       (createAgent(sock) as BaseAgent<ParsedKey>).getIdentities((err, keys) => {
         if (err || !keys) {
-          resolve([]);
+          resolve({ available: false, keys: [] });
           return;
         }
         // Real agents hand back ParsedKey objects; skip anything else.
         const parsed = keys.filter((k): k is ParsedKey => !!k && typeof k === 'object' && 'getPublicSSH' in k);
-        resolve(
-          parsed.map((k) => ({
+        resolve({
+          available: true,
+          keys: parsed.map((k) => ({
             type: k.type,
             comment: k.comment || undefined,
             fingerprint: fingerprintSha256(k.getPublicSSH()),
           })),
-        );
+        });
       });
     } catch {
-      resolve([]);
+      resolve({ available: false, keys: [] });
     }
   });
+}
+
+export async function listAgentKeys(sock = agentSocket()): Promise<SshAgentKey[]> {
+  return (await probeAgentKeys(sock)).keys;
 }
 
 export async function listSshKeys(
@@ -88,7 +98,8 @@ export async function listSshKeys(
   } = {},
 ): Promise<SshKeysResponse> {
   const sock = resolveAgentSocket(identityAgent);
-  const agentKeys = sock ? await listAgentKeys(sock) : [];
+  const agent = await probeAgentKeys(sock);
+  const agentKeys = agent.keys;
   const agentPrints = new Set(agentKeys.map((k) => k.fingerprint));
   const keys: SshKeyInfo[] = [];
 
@@ -144,5 +155,5 @@ export async function listSshKeys(
     });
   }
 
-  return { agentAvailable: !!sock && (process.platform !== 'win32' || agentKeys.length > 0), agentKeys, keys };
+  return { agentAvailable: agent.available, agentKeys, keys };
 }

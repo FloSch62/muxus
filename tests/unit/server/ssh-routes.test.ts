@@ -125,4 +125,19 @@ describe('OpenSSH agent routes', () => {
       agentKeys: [],
     });
   });
+
+  it('reports an unreachable custom agent as unavailable', async () => {
+    const identityAgent = path.join(home, 'missing-agent.sock');
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/ssh/keys?identityAgent=${encodeURIComponent(identityAgent)}`,
+      headers: auth(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      agentAvailable: false,
+      agentKeys: [],
+    });
+  });
 });
