@@ -140,12 +140,12 @@ importers:
       esbuild:
         specifier: ^0.28.1
         version: 0.28.1
-      fix-path:
-        specifier: ^5.0.0
-        version: 5.0.0
       sharp:
         specifier: ^0.35.3
         version: 0.35.3(@types/node@24.13.3)
+      shell-env:
+        specifier: ^4.0.3
+        version: 4.0.3
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -2160,10 +2160,6 @@ packages:
   find-root@1.1.0:
     resolution: {integrity: sha512-NKfW6bec6GfKc0SGx1e07QZY9PE99u0Bft/0rzSD5k3sO/vwkVUpDUKVm5Gpp5Ue3YfShPFTX2070tDs5kB9Ng==}
 
-  fix-path@5.0.0:
-    resolution: {integrity: sha512-erEWGGCN7RIu1bXTCfNVpVBdm0f5mwcbeja+4QXiEZzIQukP401sbpu8gd3Ny1vS34YNeswyMO0TdT2tP5OlHA==}
-    engines: {node: '>=20'}
-
   form-data@4.0.6:
     resolution: {integrity: sha512-vKatAh4SlVfgbv+YtmhiRjhEMJsYpsG1Y2rMQtR+SVSbytsSD1YGzDIcrAJmdFec88u/+VoGmxnl+80gL1tRCQ==}
     engines: {node: '>= 6'}
@@ -3053,10 +3049,6 @@ packages:
 
   shell-env@4.0.3:
     resolution: {integrity: sha512-Ioe5h+hCDZ7pKL5+JGzbtPvZ5ESMHePZ8nLxohlDL+twmlcmutttMhRkrQOed8DeLT8mkYBgbwZfohe8pqaA3g==}
-    engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
-
-  shell-path@3.1.0:
-    resolution: {integrity: sha512-s/9q9PEtcRmDTz69+cJ3yYBAe9yGrL7e46gm2bU4pQ9N48ecPK9QrGFnLwYgb4smOHskx4PL7wCNMktW2AoD+g==}
     engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
 
   siginfo@2.0.0:
@@ -5184,11 +5176,6 @@ snapshots:
 
   find-root@1.1.0: {}
 
-  fix-path@5.0.0:
-    dependencies:
-      shell-path: 3.1.0
-      strip-ansi: 7.2.0
-
   form-data@4.0.6:
     dependencies:
       asynckit: 0.4.0
@@ -6108,10 +6095,6 @@ snapshots:
       default-shell: 2.2.0
       execa: 5.1.1
       strip-ansi: 7.2.0
-
-  shell-path@3.1.0:
-    dependencies:
-      shell-env: 4.0.3
 
   siginfo@2.0.0: {}
 

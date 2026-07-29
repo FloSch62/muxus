@@ -1,3 +1,5 @@
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resolveAgentSocket } from '../../../server/src/ssh/key-scan.js';
 
@@ -16,6 +18,9 @@ describe('resolveAgentSocket', () => {
 
   it('uses a configured socket path (1Password-style)', () => {
     expect(resolveAgentSocket('/home/user/.1password/agent.sock')).toBe('/home/user/.1password/agent.sock');
+    expect(resolveAgentSocket('~/.1password/agent.sock')).toBe(
+      path.join(os.homedir(), '.1password', 'agent.sock'),
+    );
   });
 
   it('dereferences $VAR, ${VAR}, and the literal SSH_AUTH_SOCK', () => {

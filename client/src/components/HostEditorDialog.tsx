@@ -25,7 +25,14 @@ import {
 import { useUiStore, type HostEditorState } from '../state/ui.js';
 import { AdvancedSection } from './host-editor/AdvancedSection.js';
 import { AuthSection } from './host-editor/AuthSection.js';
-import { blankDraft, draftFromEntry, draftProblem, draftToRequest, type HostDraft } from './host-editor/draft.js';
+import {
+  blankDraft,
+  draftFromEntry,
+  draftProblem,
+  draftToRequest,
+  identityAgentForDetection,
+  type HostDraft,
+} from './host-editor/draft.js';
 import { EditorShell, type EditorSectionDef } from './host-editor/EditorShell.js';
 import { ForwardsSection } from './host-editor/ForwardsSection.js';
 import { GeneralSection } from './host-editor/GeneralSection.js';
@@ -161,7 +168,12 @@ function SshHostEditorContent({
 }) {
   const setState = useUiStore((s) => s.setHostEditor);
   const { data: config } = useSshConfig();
-  const { data: keys } = useSshKeys(true);
+  const inheritedIdentityAgent =
+    state.mode === 'edit' && state.entry.options.identityAgent === undefined
+      ? state.entry.resolved.identityAgent
+      : undefined;
+  const detectedIdentityAgent = identityAgentForDetection(draft, inheritedIdentityAgent);
+  const { data: keys } = useSshKeys(true, detectedIdentityAgent);
   const loggingPolicyKey =
     state.mode === 'edit' ? `ssh:${state.entry.alias}` : '*';
   const { data: loggingPolicy } = useSessionLoggingPolicy(loggingPolicyKey);

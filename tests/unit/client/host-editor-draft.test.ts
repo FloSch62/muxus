@@ -4,6 +4,7 @@ import {
   blankDraft,
   draftFromEntry,
   draftToRequest,
+  identityAgentForDetection,
 } from '../../../client/src/components/host-editor/draft.js';
 
 const entry: SshHostEntry = {
@@ -26,6 +27,7 @@ const entry: SshHostEntry = {
     identityFiles: ['/home/test/.ssh/cloud'],
     certificateFiles: ['/home/test/.ssh/cloud-cert.pub'],
     identitiesOnly: false,
+    identityAgent: '${ONEPASSWORD_SSH_AUTH_SOCK}',
     forwardAgent: false,
     proxyJump: [],
     proxyCommand: 'cloudflared access ssh --hostname %h',
@@ -80,6 +82,24 @@ describe('SSH host editor draft', () => {
       remoteCommand: 'none',
       requestTty: 'auto',
     });
+  });
+
+  it('selects the current per-host agent for live key detection', () => {
+    const draft = blankDraft();
+    expect(identityAgentForDetection(draft, '${INHERITED_AGENT}')).toBe('${INHERITED_AGENT}');
+
+    draft.identityAgentMode = 'environment';
+    expect(identityAgentForDetection(draft, '${INHERITED_AGENT}')).toBe('SSH_AUTH_SOCK');
+
+    draft.identityAgentMode = 'custom';
+    draft.identityAgent = '  ~/.1password/agent.sock  ';
+    expect(identityAgentForDetection(draft, '${INHERITED_AGENT}')).toBe('~/.1password/agent.sock');
+
+    draft.identityAgent = ' ';
+    expect(identityAgentForDetection(draft, '${INHERITED_AGENT}')).toBe('none');
+
+    draft.identityAgentMode = 'none';
+    expect(identityAgentForDetection(draft, '${INHERITED_AGENT}')).toBe('none');
   });
 
   it('splits a prefilled quick-connect target, and leaves a bare name as the alias', () => {

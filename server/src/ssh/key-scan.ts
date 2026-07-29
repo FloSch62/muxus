@@ -50,7 +50,7 @@ export function resolveAgentSocket(identityAgent?: string): string | undefined {
     const name = braced?.[1] ?? identityAgent.slice(1);
     return process.env[name] || undefined;
   }
-  return identityAgent;
+  return identityAgent.replace(/^~(?=$|[\\/])/, os.homedir());
 }
 
 export async function listAgentKeys(sock = agentSocket()): Promise<SshAgentKey[]> {
@@ -78,8 +78,17 @@ export async function listAgentKeys(sock = agentSocket()): Promise<SshAgentKey[]
   });
 }
 
-export async function listSshKeys(dir = path.join(os.homedir(), '.ssh')): Promise<SshKeysResponse> {
-  const agentKeys = await listAgentKeys();
+export async function listSshKeys(
+  {
+    dir = path.join(os.homedir(), '.ssh'),
+    identityAgent,
+  }: {
+    dir?: string;
+    identityAgent?: string;
+  } = {},
+): Promise<SshKeysResponse> {
+  const sock = resolveAgentSocket(identityAgent);
+  const agentKeys = sock ? await listAgentKeys(sock) : [];
   const agentPrints = new Set(agentKeys.map((k) => k.fingerprint));
   const keys: SshKeyInfo[] = [];
 
@@ -135,5 +144,5 @@ export async function listSshKeys(dir = path.join(os.homedir(), '.ssh')): Promis
     });
   }
 
-  return { agentAvailable: !!agentSocket() && (process.platform !== 'win32' || agentKeys.length > 0), agentKeys, keys };
+  return { agentAvailable: !!sock && (process.platform !== 'win32' || agentKeys.length > 0), agentKeys, keys };
 }

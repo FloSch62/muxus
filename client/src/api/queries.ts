@@ -38,10 +38,13 @@ export function useSshConfig(enabled = true) {
   });
 }
 
-export function useSshKeys(enabled = true) {
+export function useSshKeys(enabled = true, identityAgent?: string) {
+  const query = identityAgent === undefined
+    ? ''
+    : `?identityAgent=${encodeURIComponent(identityAgent)}`;
   return useQuery({
-    queryKey: ['ssh-keys'],
-    queryFn: () => apiFetch<SshKeysResponse>('/api/ssh/keys'),
+    queryKey: ['ssh-keys', identityAgent ?? null],
+    queryFn: () => apiFetch<SshKeysResponse>(`/api/ssh/keys${query}`),
     enabled,
     staleTime: 30_000,
   });

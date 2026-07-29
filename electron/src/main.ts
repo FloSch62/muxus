@@ -13,7 +13,6 @@ import {
   shell,
   type MenuItemConstructorOptions,
 } from 'electron';
-import fixPath from 'fix-path';
 import { startServer, type RunningServer } from '@muxus/server';
 import { isNewerVersion } from '@muxus/shared';
 import type {
@@ -21,11 +20,10 @@ import type {
   MobaXtermSessionSource,
   UpdateCheckResult,
 } from '@muxus/shared';
+import { importLoginShellEnvironment } from './login-shell-environment.js';
 import { readLocalMobaXtermSessions } from './mobaxterm.js';
 
-// GUI apps on macOS/Linux don't inherit the shell PATH; ssh-agent sockets
-// and the user's login shell tooling need it.
-fixPath();
+importLoginShellEnvironment();
 
 app.setName('Muxus');
 // Keep the native Wayland app_id (and the X11 fallback's WM_CLASS) aligned

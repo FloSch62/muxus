@@ -38,7 +38,7 @@ Muxus uses the existing SSH credentials and configuration on the machine:
 | `~/.ssh/config` (and every `Include`) | Hosts, users, ports, keys, jump chains, forwards |
 | `~/.ssh/known_hosts`, `/etc/ssh/ssh_known_hosts` | Host-key verification |
 | `~/.ssh/*` key files | The key picker in the host editor |
-| `SSH_AUTH_SOCK` | Agent authentication and `ForwardAgent` |
+| `SSH_AUTH_SOCK` | Default agent authentication and `ForwardAgent` |
 
 !!! tip "No import step"
 
@@ -65,7 +65,9 @@ are stored in a local SQLite database alongside the other application data.
 === ":material-apple: macOS"
 
     Serial ports appear as `/dev/tty.*`, for example `/dev/tty.usbserial-A50285BI`. No
-    extra permissions are required for SSH, Telnet or serial.
+    extra permissions are required for SSH, Telnet or serial. The desktop app reads
+    `SSH_AUTH_SOCK` from the login shell, so agents selected there (including 1Password
+    and Secretive) work when Muxus is opened from Finder.
 
 === ":material-microsoft-windows: Windows"
 
