@@ -1,4 +1,14 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -153,6 +163,24 @@ describe('upsertHost', () => {
   it('keeps a .muxus.bak of the previous content', () => {
     const root = seed(['Host web', '  User old', ''].join('\n'));
     upsertHost(req({ previousAlias: 'web' }), root);
+    expect(readFileSync(`${root}.muxus.bak`, 'utf8')).toContain('User old');
+  });
+
+  it.skipIf(process.platform === 'win32')('preserves a config symlink and atomically replaces its target', () => {
+    const home = path.join(tmp, `home-${counter++}`);
+    const sshDir = path.join(home, '.ssh');
+    const targetDir = path.join(home, 'dotfiles');
+    const target = path.join(targetDir, 'ssh-config');
+    const root = path.join(sshDir, 'config');
+    mkdirSync(sshDir, { recursive: true });
+    mkdirSync(targetDir, { recursive: true });
+    writeFileSync(target, ['Host web', '  User old', ''].join('\n'));
+    symlinkSync(path.relative(sshDir, target), root);
+
+    upsertHost(req({ previousAlias: 'web' }), root);
+
+    expect(lstatSync(root).isSymbolicLink()).toBe(true);
+    expect(readFileSync(target, 'utf8')).toContain('HostName web.example.com');
     expect(readFileSync(`${root}.muxus.bak`, 'utf8')).toContain('User old');
   });
 });

@@ -92,6 +92,9 @@ When a host is saved:
 2. The file is written **atomically**, by writing and then renaming into place.
 3. The previous contents are kept next to it as `<file>.muxus.bak`.
 
+If a config file is a symbolic link, Muxus writes the link target atomically and
+leaves the symbolic link itself intact.
+
 Comments, blank lines, ordering, `Match` blocks and every other host are left as they were.
 Deleting a host removes only its block.
 
