@@ -64,9 +64,9 @@ editor badges them **applied** — but the dialler still applies them the way `s
 | `Compression` | `yes` prefers zlib like `ssh -C` |
 | `ConnectTimeout` | Dial timeout; defaults to 20 seconds |
 | `ServerAliveInterval`, `ServerAliveCountMax` | Keepalives; default 15 seconds / 3 missed replies |
-| `IdentityAgent` | Agent socket override — a path (1Password, Secretive, …), `$VAR`, `SSH_AUTH_SOCK`, or `none` |
+| `IdentityAgent` | Agent socket override — a path (1Password, Secretive, …), `$VAR`/`${VAR}`, `SSH_AUTH_SOCK`, or `none` |
 | `PasswordAuthentication no`, `KbdInteractiveAuthentication no` | Removes that rung from the auth ladder (the legacy `ChallengeResponseAuthentication` spelling works too) |
-| `UserKnownHostsFile`, `GlobalKnownHostsFile` | Host keys verify against these files instead; new keys are recorded into the first user file, `none` disables |
+| `UserKnownHostsFile`, `GlobalKnownHostsFile` | Host keys verify against these files instead; new keys are recorded into the first user file, `none` disables, and user-file path tokens such as `%h`, `%n`, and `%p` expand per connection |
 | `StrictHostKeyChecking` | `accept-new`/`no` accept first-contact keys silently; `yes` refuses unknown or changed keys. A **changed** key always asks, even under `no` — silently trusting a swapped key is a footgun Muxus does not reproduce |
 | `SetEnv`, `SendEnv` | Session environment, with `-pattern` removals and SetEnv overriding |
 | `RemoteCommand` | Runs instead of the login shell (`tmux new -A` workflows) |

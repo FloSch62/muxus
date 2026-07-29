@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -229,11 +230,24 @@ describe('resolveHost', () => {
 
   it('keeps IdentityAgent indirections verbatim and maps `none` known_hosts to []', () => {
     const doc = loadConfigDocument(
-      write(['Host a', '  IdentityAgent $CUSTOM_SOCK', '  UserKnownHostsFile none', '', 'Host b', '  IdentityAgent none'].join('\n')),
+      write(
+        [
+          'Host a',
+          '  IdentityAgent $CUSTOM_SOCK',
+          '  UserKnownHostsFile none',
+          '',
+          'Host b',
+          '  IdentityAgent ${CUSTOM_SOCK}',
+          '',
+          'Host c',
+          '  IdentityAgent none',
+        ].join('\n'),
+      ),
     );
     expect(resolveHost(doc, 'a').identityAgent).toBe('$CUSTOM_SOCK');
     expect(resolveHost(doc, 'a').userKnownHostsFiles).toEqual([]);
-    expect(resolveHost(doc, 'b').identityAgent).toBe('none');
+    expect(resolveHost(doc, 'b').identityAgent).toBe('${CUSTOM_SOCK}');
+    expect(resolveHost(doc, 'c').identityAgent).toBe('none');
   });
 
   it('leaves unset flags undefined and rejects invalid choice values', () => {
@@ -249,6 +263,26 @@ describe('resolveHost', () => {
   it('honors the legacy ChallengeResponseAuthentication spelling', () => {
     const doc = loadConfigDocument(write(['Host old', '  ChallengeResponseAuthentication no'].join('\n')));
     expect(resolveHost(doc, 'old').kbdInteractiveAuthentication).toBe(false);
+  });
+
+  it('preserves first-obtained wins across keyboard-interactive auth aliases', () => {
+    const doc = loadConfigDocument(
+      write(
+        [
+          'Host legacy-first',
+          '  ChallengeResponseAuthentication no',
+          '',
+          'Host modern-first',
+          '  KbdInteractiveAuthentication no',
+          '',
+          'Host *',
+          '  KbdInteractiveAuthentication yes',
+          '  ChallengeResponseAuthentication yes',
+        ].join('\n'),
+      ),
+    );
+    expect(resolveHost(doc, 'legacy-first').kbdInteractiveAuthentication).toBe(false);
+    expect(resolveHost(doc, 'modern-first').kbdInteractiveAuthentication).toBe(false);
   });
 
   it('accumulates SetEnv first-wins per variable and SendEnv patterns in order', () => {
@@ -268,6 +302,64 @@ describe('resolveHost', () => {
     const r = resolveHost(doc, 'env');
     expect(r.setEnv).toEqual({ FOO: 'bar', BAZ: 'qux', EXTRA: 'yes' });
     expect(r.sendEnv).toEqual(['LANG', 'LC_*', '-LC_ALL', 'EDITOR']);
+  });
+
+  it('preserves quoted spaces in SetEnv assignments', () => {
+    const doc = loadConfigDocument(
+      write(['Host env', '  SetEnv GREETING="hello world" EMPTY="" PLAIN=value'].join('\n')),
+    );
+    expect(resolveHost(doc, 'env').setEnv).toEqual({
+      GREETING: 'hello world',
+      EMPTY: '',
+      PLAIN: 'value',
+    });
+  });
+
+  it('treats RemoteCommand none as disabled', () => {
+    const doc = loadConfigDocument(write(['Host shell', '  RemoteCommand NoNe'].join('\n')));
+    expect(resolveHost(doc, 'shell').remoteCommand).toBeUndefined();
+  });
+
+  it('expands the full UserKnownHostsFile token context', () => {
+    const local = os.userInfo();
+    const localHostname = os.hostname();
+    const connectionHash = createHash('sha1')
+      .update(`${localHostname}server.example.com2200remotejump`)
+      .digest('hex');
+    const doc = loadConfigDocument(
+      write(
+        [
+          'Host alias',
+          '  HostName server.example.com',
+          '  Port 2200',
+          '  User remote',
+          '  ProxyJump jump',
+          '  UserKnownHostsFile ~/.ssh/known_hosts-%C-%d-%h-%i-%j-%k-%L-%l-%n-%p-%r-%u-%%',
+        ].join('\n'),
+      ),
+    );
+    expect(resolveHost(doc, 'alias').userKnownHostsFiles).toEqual([
+      path.join(
+        os.homedir(),
+        '.ssh',
+        [
+          'known_hosts',
+          connectionHash,
+          os.homedir(),
+          'server.example.com',
+          String(local.uid),
+          'jump',
+          'alias',
+          localHostname.split('.')[0],
+          localHostname,
+          'alias',
+          '2200',
+          'remote',
+          local.username,
+          '%',
+        ].join('-'),
+      ),
+    ]);
   });
 
   it('reads ServerAliveCountMax and the raw algorithm lists', () => {

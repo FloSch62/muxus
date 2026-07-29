@@ -18,11 +18,13 @@ describe('resolveAgentSocket', () => {
     expect(resolveAgentSocket('/home/user/.1password/agent.sock')).toBe('/home/user/.1password/agent.sock');
   });
 
-  it('dereferences $VAR and the literal SSH_AUTH_SOCK', () => {
+  it('dereferences $VAR, ${VAR}, and the literal SSH_AUTH_SOCK', () => {
     vi.stubEnv('CUSTOM_SOCK', '/tmp/custom.sock');
     vi.stubEnv('SSH_AUTH_SOCK', '/tmp/default.sock');
     expect(resolveAgentSocket('$CUSTOM_SOCK')).toBe('/tmp/custom.sock');
+    expect(resolveAgentSocket('${CUSTOM_SOCK}')).toBe('/tmp/custom.sock');
     expect(resolveAgentSocket('SSH_AUTH_SOCK')).toBe('/tmp/default.sock');
     expect(resolveAgentSocket('$MISSING_VAR')).toBeUndefined();
+    expect(resolveAgentSocket('${MISSING_VAR}')).toBeUndefined();
   });
 });

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -26,7 +27,6 @@ const MAX_INCLUDE_DEPTH = 8;
 
 const CONFIG_LINE_RE = /^([A-Za-z][A-Za-z0-9]*)\s*(?:=|\s)\s*(.*?)\s*$/;
 const WILDCARD_RE = /[*?]/;
-const ARG_TOKEN_RE = /"([^"]*)"|(\S+)/g;
 
 /** ~/.ssh/config — the OpenSSH per-user config location on macOS, Linux and Windows. */
 export function defaultSshConfigPath(): string {
@@ -209,11 +209,27 @@ function preludeText(lines: string[], commentStart: number, hostLine: number): s
   return text || undefined;
 }
 
-/** Split a config value into tokens, honoring double quotes. */
+/** Split a config value into tokens, honoring double quotes anywhere in a token. */
 export function splitArgs(value: string): string[] {
   const out: string[] = [];
-  ARG_TOKEN_RE.lastIndex = 0;
-  for (let m = ARG_TOKEN_RE.exec(value); m; m = ARG_TOKEN_RE.exec(value)) out.push(m[1] ?? m[2] ?? '');
+  let token = '';
+  let quoted = false;
+  let started = false;
+  for (const char of value) {
+    if (char === '"') {
+      quoted = !quoted;
+      started = true;
+    } else if (/\s/.test(char) && !quoted) {
+      if (!started) continue;
+      out.push(token);
+      token = '';
+      started = false;
+    } else {
+      token += char;
+      started = true;
+    }
+  }
+  if (started) out.push(token);
   return out;
 }
 
@@ -267,7 +283,7 @@ export interface ResolvedTarget extends ResolvedHostSettings {
   hostKeyAlgorithms?: string;
   macs?: string;
   compression?: boolean;
-  /** Agent socket override: a path, `$VAR`, `SSH_AUTH_SOCK`, or `none`. */
+  /** Agent socket override: a path, `$VAR`/`${VAR}`, `SSH_AUTH_SOCK`, or `none`. */
   identityAgent?: string;
   /** false ⇒ never try this method (`PasswordAuthentication no`). */
   passwordAuthentication?: boolean;
@@ -303,6 +319,10 @@ export function resolveHost(doc: ConfigDocument, host: string): ResolvedTarget {
   for (const entry of doc.sequence) {
     if (entry.patterns && !hostPatternsMatch(entry.patterns, host)) continue;
     for (const opt of entry.options) {
+      // OpenSSH treats ChallengeResponseAuthentication as an exact alias, so
+      // both spellings share one first-obtained slot.
+      const resolvedKey =
+        opt.key === 'challengeresponseauthentication' ? 'kbdinteractiveauthentication' : opt.key;
       switch (opt.key) {
         case 'identityfile': {
           const file = opt.args[0];
@@ -339,7 +359,9 @@ export function resolveHost(doc: ConfigDocument, host: string): ResolvedTarget {
           break;
         }
         default:
-          if (RESOLVED_KEYS.has(opt.key) && !first.has(opt.key) && opt.value) first.set(opt.key, opt.value);
+          if (RESOLVED_KEYS.has(resolvedKey) && !first.has(resolvedKey) && opt.value) {
+            first.set(resolvedKey, opt.value);
+          }
       }
     }
   }
@@ -348,14 +370,24 @@ export function resolveHost(doc: ConfigDocument, host: string): ResolvedTarget {
   const user = first.get('user');
   const port = parsePort(first.get('port')) ?? 22;
   const preferred = first.get('preferredauthentications');
-  const tokens = { h: hostname, r: user ?? os.userInfo().username };
+  const remoteUser = user ?? os.userInfo().username;
+  const identityTokens = { h: hostname, r: remoteUser };
+  const proxyJump = first.get('proxyjump');
+  const knownHostsTokens: KnownHostsPathTokens = {
+    h: hostname,
+    n: host,
+    p: port,
+    r: remoteUser,
+    j: proxyJump?.toLowerCase() === 'none' ? '' : (proxyJump ?? ''),
+    k: host,
+  };
 
   return {
     hostname,
     user,
     port,
-    identityFiles: identityFiles.map((f) => expandIdentityPath(f, tokens)),
-    certificateFiles: certificateFiles.map((f) => expandIdentityPath(f, tokens)),
+    identityFiles: identityFiles.map((f) => expandIdentityPath(f, identityTokens)),
+    certificateFiles: certificateFiles.map((f) => expandIdentityPath(f, identityTokens)),
     identitiesOnly: yes(first.get('identitiesonly')),
     forwardAgent: yes(first.get('forwardagent')),
     proxyJump: parseProxyJumpList(first.get('proxyjump')),
@@ -372,16 +404,14 @@ export function resolveHost(doc: ConfigDocument, host: string): ResolvedTarget {
     hostKeyAlgorithms: first.get('hostkeyalgorithms'),
     macs: first.get('macs'),
     compression: flag(first.get('compression')),
-    identityAgent: parseIdentityAgent(first.get('identityagent'), tokens),
+    identityAgent: parseIdentityAgent(first.get('identityagent'), identityTokens),
     passwordAuthentication: flag(first.get('passwordauthentication')),
-    kbdInteractiveAuthentication: flag(
-      first.get('kbdinteractiveauthentication') ?? first.get('challengeresponseauthentication'),
-    ),
-    userKnownHostsFiles: parseKnownHostsFiles(first.get('userknownhostsfile'), tokens),
-    globalKnownHostsFiles: parseKnownHostsFiles(first.get('globalknownhostsfile'), tokens),
+    kbdInteractiveAuthentication: flag(first.get('kbdinteractiveauthentication')),
+    userKnownHostsFiles: parseKnownHostsFiles(first.get('userknownhostsfile'), knownHostsTokens),
+    globalKnownHostsFiles: parseKnownHostsFiles(first.get('globalknownhostsfile'), knownHostsTokens),
     setEnv,
     sendEnv,
-    remoteCommand: first.get('remotecommand'),
+    remoteCommand: parseRemoteCommand(first.get('remotecommand')),
     requestTty: parseChoice(first.get('requesttty'), ['no', 'yes', 'force', 'auto']),
     strictHostKeyChecking: parseChoice(first.get('stricthostkeychecking'), ['yes', 'no', 'accept-new', 'ask']),
   };
@@ -398,7 +428,7 @@ function parseChoice<T extends string>(value: string | undefined, choices: reado
   return choices.includes(v as T) ? (v as T) : undefined;
 }
 
-/** `none` and `$VAR`/`SSH_AUTH_SOCK` indirections pass through; paths expand. */
+/** `none`, `$VAR`/`${VAR}`, and `SSH_AUTH_SOCK` indirections pass through; paths expand. */
 function parseIdentityAgent(value: string | undefined, tokens: { h: string; r: string }): string | undefined {
   const arg = value === undefined ? undefined : splitArgs(value)[0];
   if (!arg) return undefined;
@@ -407,11 +437,11 @@ function parseIdentityAgent(value: string | undefined, tokens: { h: string; r: s
 }
 
 /** Space-separated path list; `none` → []; unset → undefined (defaults). */
-function parseKnownHostsFiles(value: string | undefined, tokens: { h: string; r: string }): string[] | undefined {
+function parseKnownHostsFiles(value: string | undefined, tokens: KnownHostsPathTokens): string[] | undefined {
   if (value === undefined) return undefined;
   const args = splitArgs(value).filter(Boolean);
   if (args.length === 1 && args[0]!.toLowerCase() === 'none') return [];
-  return args.map((f) => expandIdentityPath(f, tokens));
+  return args.map((f) => expandKnownHostsPath(f, tokens));
 }
 
 /**
@@ -459,7 +489,6 @@ const RESOLVED_KEYS = new Set([
   'identityagent',
   'passwordauthentication',
   'kbdinteractiveauthentication',
-  'challengeresponseauthentication',
   'userknownhostsfile',
   'globalknownhostsfile',
   'remotecommand',
@@ -468,6 +497,10 @@ const RESOLVED_KEYS = new Set([
 ]);
 
 function parseProxyCommand(value: string | undefined): string | undefined {
+  return value && value.toLowerCase() !== 'none' ? value : undefined;
+}
+
+function parseRemoteCommand(value: string | undefined): string | undefined {
   return value && value.toLowerCase() !== 'none' ? value : undefined;
 }
 
@@ -528,6 +561,49 @@ export function expandIdentityPath(value: string, tokens: { h: string; r: string
     return os.userInfo().username; // %u
   });
   return p;
+}
+
+interface KnownHostsPathTokens {
+  /** Resolved remote hostname. */
+  h: string;
+  /** Original host argument. */
+  n: string;
+  /** Resolved remote port. */
+  p: number;
+  /** Resolved remote username. */
+  r: string;
+  /** ProxyJump contents, or empty when unset. */
+  j: string;
+  /** HostKeyAlias, or the original host when none is configured. */
+  k: string;
+}
+
+/** Expand the full token set OpenSSH accepts in UserKnownHostsFile paths. */
+function expandKnownHostsPath(value: string, tokens: KnownHostsPathTokens): string {
+  const home = os.homedir();
+  const local = os.userInfo();
+  const localHostname = os.hostname();
+  const connectionHash = createHash('sha1')
+    .update(`${localHostname}${tokens.h}${tokens.p}${tokens.r}${tokens.j}`)
+    .digest('hex');
+  const replacements: Record<string, string> = {
+    '%%': '%',
+    '%C': connectionHash,
+    '%d': home,
+    '%h': tokens.h,
+    '%i': String(local.uid),
+    '%j': tokens.j,
+    '%k': tokens.k,
+    '%L': localHostname.split('.')[0] ?? localHostname,
+    '%l': localHostname,
+    '%n': tokens.n,
+    '%p': String(tokens.p),
+    '%r': tokens.r,
+    '%u': local.username,
+  };
+  return value
+    .replace(/^~(?=$|[\\/])/, home)
+    .replace(/%%|%[CdhijkLlnpru]/g, (token) => replacements[token] ?? token);
 }
 
 /** Parse a LocalForward/RemoteForward/DynamicForward option's arguments. */

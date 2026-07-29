@@ -38,14 +38,18 @@ export function agentSocket(): string | undefined {
 
 /**
  * The agent socket for one host: the IdentityAgent override when set
- * (`none`, `$VAR`, the literal `SSH_AUTH_SOCK`, or a path — 1Password and
- * friends), otherwise the environment default.
+ * (`none`, `$VAR`/`${VAR}`, the literal `SSH_AUTH_SOCK`, or a path —
+ * 1Password and friends), otherwise the environment default.
  */
 export function resolveAgentSocket(identityAgent?: string): string | undefined {
   if (identityAgent === undefined) return agentSocket();
   if (identityAgent.toLowerCase() === 'none') return undefined;
   if (identityAgent === 'SSH_AUTH_SOCK') return process.env.SSH_AUTH_SOCK || undefined;
-  if (identityAgent.startsWith('$')) return process.env[identityAgent.slice(1)] || undefined;
+  if (identityAgent.startsWith('$')) {
+    const braced = /^\$\{([^{}]+)\}$/.exec(identityAgent);
+    const name = braced?.[1] ?? identityAgent.slice(1);
+    return process.env[name] || undefined;
+  }
   return identityAgent;
 }
 
