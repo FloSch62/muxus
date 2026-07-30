@@ -212,6 +212,7 @@ describe('previewHost', () => {
       req({
         options: {
           identityFiles: ['~/.ssh/app'],
+          identitiesOnly: true,
           certificateFiles: ['~/.ssh/app-cert.pub'],
           identityAgent: '${ONEPASSWORD_SSH_AUTH_SOCK}',
           proxyCommand: 'cloudflared access ssh --hostname %h',
@@ -223,6 +224,7 @@ describe('previewHost', () => {
       root,
     );
     expect(text).toContain('  IdentityFile ~/.ssh/app');
+    expect(text).toContain('  IdentitiesOnly yes');
     expect(text).toContain('  CertificateFile ~/.ssh/app-cert.pub');
     expect(text).toContain('  IdentityAgent ${ONEPASSWORD_SSH_AUTH_SOCK}');
     expect(text).toContain('  ProxyCommand cloudflared access ssh --hostname %h');

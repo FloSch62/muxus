@@ -8,6 +8,7 @@ import ssh2, { type BaseAgent, type ParsedKey } from 'ssh2';
 const { createAgent, utils } = ssh2;
 import type { SshAgentKey, SshKeyInfo, SshKeysResponse } from '@muxus/shared';
 import { fingerprintSha256 } from './known-hosts.js';
+import { ResponsiveAgent } from './responsive-agent.js';
 
 /**
  * Discover the user's SSH identities for the host editor's key picker: the
@@ -58,11 +59,22 @@ interface AgentKeyProbe {
   keys: SshAgentKey[];
 }
 
-async function probeAgentKeys(sock: string | undefined): Promise<AgentKeyProbe> {
+async function probeAgentKeys(
+  sock: string | undefined,
+  agent?: BaseAgent<ParsedKey>,
+): Promise<AgentKeyProbe> {
   if (!sock) return { available: false, keys: [] };
   return new Promise((resolve) => {
     try {
-      (createAgent(sock) as BaseAgent<ParsedKey>).getIdentities((err, keys) => {
+      const client =
+        agent ??
+        new ResponsiveAgent(createAgent(sock) as BaseAgent<ParsedKey>, {
+          // Discovery only supplies editor badges; it must never hold the form
+          // open waiting for an approval that may not be visible.
+          operationTimeoutMs: 2_000,
+          waitStatusMs: -1,
+        });
+      client.getIdentities((err, keys) => {
         if (err || !keys) {
           resolve({ available: false, keys: [] });
           return;
@@ -84,8 +96,11 @@ async function probeAgentKeys(sock: string | undefined): Promise<AgentKeyProbe> 
   });
 }
 
-export async function listAgentKeys(sock = agentSocket()): Promise<SshAgentKey[]> {
-  return (await probeAgentKeys(sock)).keys;
+export async function listAgentKeys(
+  sock = agentSocket(),
+  agent?: BaseAgent<ParsedKey>,
+): Promise<SshAgentKey[]> {
+  return (await probeAgentKeys(sock, agent)).keys;
 }
 
 export async function listSshKeys(

@@ -41,9 +41,10 @@ Three modes, matching OpenSSH behaviour:
 
 - **Agent & default keys** uses the OpenSSH order: agent first, then `~/.ssh/id_*`. Writes
   nothing, since this is the default.
-- **Specific key file** writes `IdentityFile`. The picker lists the keys found in `~/.ssh`
-  with their type and comment, badges the ones **loaded in the agent**, and marks the ones
-  that are **passphrase-protected**.
+- **Specific key file** writes `IdentityFile` and `IdentitiesOnly yes`, so login uses only
+  the selected files and never waits on the agent. The picker lists the keys found in
+  `~/.ssh` with their type and comment, badges the ones **loaded in the agent**, and marks
+  the ones that are **passphrase-protected**.
 - **Password / interactive** writes `PubkeyAuthentication no`, so public keys are skipped
   and a prompt is issued on connect.
 

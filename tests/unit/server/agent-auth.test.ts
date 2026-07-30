@@ -1,10 +1,10 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, copyFileSync } from 'node:fs';
-import type net from 'node:net';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { generateKeyPairSync } from 'node:crypto';
-import ssh2, { Server } from 'ssh2';
+import ssh2, { AgentProtocol, Server } from 'ssh2';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { SshProfile } from '@muxus/shared/ws-protocol';
 import { SshConnectionManager, type ConnectIo } from '../../../server/src/ssh/connection-manager.js';
@@ -79,11 +79,30 @@ function startServer(
 }
 
 let counter = 0;
-function makeManager(port: number): SshConnectionManager {
+function makeManager(
+  port: number,
+  {
+    configLines = [],
+    agentOperationTimeoutMs,
+    agentWaitStatusMs,
+  }: {
+    configLines?: string[];
+    agentOperationTimeoutMs?: number;
+    agentWaitStatusMs?: number;
+  } = {},
+): SshConnectionManager {
   const configFile = path.join(tmp, `ssh_config-${counter++}`);
   writeFileSync(
     configFile,
-    ['Host lab', '  HostName 127.0.0.1', '  User tester', `  Port ${port}`, '  StrictHostKeyChecking no', ''].join('\n'),
+    [
+      'Host lab',
+      '  HostName 127.0.0.1',
+      '  User tester',
+      `  Port ${port}`,
+      '  StrictHostKeyChecking no',
+      ...configLines.map((line) => `  ${line}`),
+      '',
+    ].join('\n'),
   );
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   return new SshConnectionManager(log as never, {
@@ -92,6 +111,8 @@ function makeManager(port: number): SshConnectionManager {
       path.join(tmp, 'no-global-known-hosts'),
     ),
     loadConfig: () => loadConfigDocument(configFile),
+    agentOperationTimeoutMs,
+    agentWaitStatusMs,
   });
 }
 
@@ -129,11 +150,73 @@ function makeIo(): ConnectIo & {
 
 const profile: SshProfile = { kind: 'ssh', target: 'lab' };
 
-async function connectOnce(port: number, io: ConnectIo): Promise<void> {
-  const manager = makeManager(port);
+async function connectOnce(
+  port: number,
+  io: ConnectIo,
+  options?: Parameters<typeof makeManager>[1],
+): Promise<void> {
+  const manager = makeManager(port, options);
   const lease = await manager.connect(profile, io);
   lease.release();
   manager.closeAll();
+}
+
+async function startTestAgent({
+  name,
+  identity,
+  hangIdentities = false,
+  hangSign = false,
+}: {
+  name: string;
+  identity?: ssh2.ParsedKey;
+  hangIdentities?: boolean;
+  hangSign?: boolean;
+}): Promise<{
+  socketPath: string;
+  identityRequests: () => number;
+  signRequests: () => number;
+  close: () => Promise<void>;
+}> {
+  const socketPath = path.join(tmp, `${name}-${counter++}.sock`);
+  const sockets = new Set<net.Socket>();
+  let identities = 0;
+  let signs = 0;
+  const server = net.createServer((socket) => {
+    sockets.add(socket);
+    socket.on('close', () => sockets.delete(socket));
+    const protocol = new AgentProtocol(false);
+    protocol.on('identities', (request) => {
+      identities += 1;
+      if (!hangIdentities) {
+        protocol.getIdentitiesReply(request, identity ? [identity] : []);
+      }
+    });
+    protocol.on('sign', (request, key, data, options) => {
+      signs += 1;
+      if (hangSign || !identity) return;
+      const signature = identity.sign(data, options.hash);
+      if (signature instanceof Error) protocol.failureReply(request);
+      else protocol.signReply(request, signature);
+    });
+    protocol.pipe(socket).pipe(protocol);
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(socketPath, () => {
+      server.off('error', reject);
+      resolve();
+    });
+  });
+  return {
+    socketPath,
+    identityRequests: () => identities,
+    signRequests: () => signs,
+    close: () =>
+      new Promise<void>((resolve) => {
+        for (const socket of sockets) socket.destroy();
+        server.close(() => resolve());
+      }),
+  };
 }
 
 // Drives a real ssh-agent; the Windows agent is a service and cannot be
@@ -199,6 +282,100 @@ describe.skipIf(process.platform === 'win32')('ssh-agent authentication', () => 
       expect(io.passwordPrompts).toBe(1);
     } finally {
       process.env.SSH_AUTH_SOCK = agentSock;
+    }
+  }, 15_000);
+
+  it('does not contact the agent for an editor-style specific key', async () => {
+    const testAgent = await startTestAgent({
+      name: 'must-not-be-used',
+      hangIdentities: true,
+    });
+    process.env.SSH_AUTH_SOCK = testAgent.socketPath;
+    try {
+      const { server, port, events } = await startServer(agentPub);
+      const io = makeIo();
+
+      await connectOnce(port, io, {
+        configLines: [
+          `IdentityFile ${path.join(tmp, 'agent-key')}`,
+          'IdentitiesOnly yes',
+        ],
+        agentOperationTimeoutMs: 50,
+        agentWaitStatusMs: 5,
+      });
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+
+      expect(testAgent.identityRequests()).toBe(0);
+      expect(testAgent.signRequests()).toBe(0);
+      expect(events.some((e) => e.method === 'publickey' && e.accepted)).toBe(true);
+    } finally {
+      process.env.SSH_AUTH_SOCK = agentSock;
+      await testAgent.close();
+    }
+  }, 15_000);
+
+  it('times out a silent identity listing and falls through to the key file', async () => {
+    const testAgent = await startTestAgent({
+      name: 'silent-identities',
+      hangIdentities: true,
+    });
+    process.env.SSH_AUTH_SOCK = testAgent.socketPath;
+    try {
+      const { server, port, events } = await startServer(agentPub);
+      const io = makeIo();
+      const startedAt = Date.now();
+
+      await connectOnce(port, io, {
+        configLines: [
+          `IdentityFile ${path.join(tmp, 'agent-key')}`,
+          'ConnectTimeout 1',
+        ],
+        // Deliberately longer than ConnectTimeout: agent approval time must
+        // pause the network deadline, then fall through cleanly.
+        agentOperationTimeoutMs: 1_200,
+        agentWaitStatusMs: 20,
+      });
+      const elapsedMs = Date.now() - startedAt;
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+
+      expect(elapsedMs).toBeGreaterThanOrEqual(1_100);
+      expect(elapsedMs).toBeLessThan(5_000);
+      expect(testAgent.identityRequests()).toBe(1);
+      expect(io.statuses.some((s) => s.includes('Waiting for the SSH agent'))).toBe(true);
+      expect(io.statuses.some((s) => s.includes('did not respond'))).toBe(true);
+      expect(events.some((e) => e.method === 'publickey' && e.accepted)).toBe(true);
+    } finally {
+      process.env.SSH_AUTH_SOCK = agentSock;
+      await testAgent.close();
+    }
+  }, 15_000);
+
+  it('times out a silent agent signature and falls through to the key file', async () => {
+    const testAgent = await startTestAgent({
+      name: 'silent-signature',
+      identity: agentPub,
+      hangSign: true,
+    });
+    process.env.SSH_AUTH_SOCK = testAgent.socketPath;
+    try {
+      const { server, port, events } = await startServer(agentPub);
+      const io = makeIo();
+
+      await connectOnce(port, io, {
+        configLines: [`IdentityFile ${path.join(tmp, 'agent-key')}`],
+        agentOperationTimeoutMs: 100,
+        agentWaitStatusMs: 10,
+      });
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+
+      expect(testAgent.identityRequests()).toBe(1);
+      expect(testAgent.signRequests()).toBe(1);
+      expect(io.statuses.some((s) => s.includes('approve signing'))).toBe(true);
+      expect(io.statuses.some((s) => s.includes('did not respond'))).toBe(true);
+      expect(events.some((e) => e.method === 'publickey' && e.accepted)).toBe(true);
+    } finally {
+      process.env.SSH_AUTH_SOCK = agentSock;
+      await testAgent.close();
     }
   }, 15_000);
 

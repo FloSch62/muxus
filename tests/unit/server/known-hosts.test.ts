@@ -58,6 +58,13 @@ describe('KnownHostsStore', () => {
     expect(store.verify('example.com', 22, key)).toEqual({ state: 'unknown' });
   });
 
+  it('UserKnownHostsFile set to the null device discards accepted keys', () => {
+    const store = new KnownHostsStore(os.devNull, missing);
+    const key = makeKey();
+    expect(() => store.record('example.com', 22, key)).not.toThrow();
+    expect(store.verify('example.com', 22, key)).toEqual({ state: 'unknown' });
+  });
+
   it('stores non-22 ports in [host]:port notation', () => {
     const file = freshFile();
     const store = new KnownHostsStore(file, missing);

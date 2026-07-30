@@ -3,10 +3,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Duplex } from 'node:stream';
-import {
+import ssh2, {
   Client,
   type AnyAuthMethod,
   type AuthenticationType,
+  type BaseAgent,
   type ClientChannel,
   type ConnectConfig,
   type ParsedKey,
@@ -33,6 +34,11 @@ import {
 } from './certificates.js';
 import { KnownHostsStore, fingerprintSha256, hostKeyType } from './known-hosts.js';
 import { listAgentKeys, resolveAgentSocket } from './key-scan.js';
+import {
+  DEFAULT_AGENT_OPERATION_TIMEOUT_MS,
+  DEFAULT_AGENT_WAIT_STATUS_MS,
+  ResponsiveAgent,
+} from './responsive-agent.js';
 import {
   ConnectionLeaseRegistry,
   type ConnectionLeaseOwner,
@@ -237,6 +243,8 @@ export class SshConnectionManager {
   private readonly pendingDials = new Map<string, Promise<ManagedConnection>>();
   private readonly loadConfig: () => ConfigDocument;
   private readonly vault: PasswordVault | undefined;
+  private readonly agentOperationTimeoutMs: number;
+  private readonly agentWaitStatusMs: number;
   readonly knownHosts: KnownHostsStore;
 
   constructor(
@@ -245,11 +253,19 @@ export class SshConnectionManager {
       knownHosts?: KnownHostsStore;
       loadConfig?: () => ConfigDocument;
       vault?: PasswordVault;
+      /** Test seam; production uses the exported responsive-agent defaults. */
+      agentOperationTimeoutMs?: number;
+      /** Test seam; production uses the exported responsive-agent defaults. */
+      agentWaitStatusMs?: number;
     } = {},
   ) {
     this.knownHosts = options.knownHosts ?? new KnownHostsStore();
     this.loadConfig = options.loadConfig ?? (() => loadConfigDocument());
     this.vault = options.vault;
+    this.agentOperationTimeoutMs =
+      options.agentOperationTimeoutMs ?? DEFAULT_AGENT_OPERATION_TIMEOUT_MS;
+    this.agentWaitStatusMs =
+      options.agentWaitStatusMs ?? DEFAULT_AGENT_WAIT_STATUS_MS;
   }
 
   /** Acquire an independent consumer lease on an existing SSH transport. */
@@ -562,7 +578,7 @@ export class SshConnectionManager {
   }
 
   private dial(hop: ChainHop, sock: Duplex | undefined, io: ConnectIo): Promise<Client> {
-    const agent = resolveAgentSocket(hop.resolved.identityAgent);
+    const agentSocket = resolveAgentSocket(hop.resolved.identityAgent);
     let readyDeadline: PausableDeadline | undefined;
     const runInteraction: InteractionRunner = async (interaction) => {
       readyDeadline?.pause();
@@ -572,7 +588,29 @@ export class SshConnectionManager {
         readyDeadline?.resume();
       }
     };
-    const auth = new AuthLadder(hop, io, this.vault, runInteraction);
+    const authAgent =
+      agentSocket && !hop.resolved.identitiesOnly
+        ? new ResponsiveAgent(ssh2.createAgent(agentSocket) as BaseAgent<ParsedKey>, {
+            pauseDeadline: () => readyDeadline?.pause(),
+            resumeDeadline: () => readyDeadline?.resume(),
+            onWaiting: (operation) =>
+              io.status(
+                operation === 'sign'
+                  ? 'Waiting for the SSH agent to approve signing…'
+                  : 'Waiting for the SSH agent to list identities…',
+                { transient: true },
+              ),
+            waitStatusMs: this.agentWaitStatusMs,
+            operationTimeoutMs: this.agentOperationTimeoutMs,
+          })
+        : undefined;
+    const auth = new AuthLadder(
+      hop,
+      io,
+      this.vault,
+      runInteraction,
+      authAgent,
+    );
     const { algorithms, notes } = connectionAlgorithms(hop.resolved);
     for (const note of notes) io.status(note);
     const proxySocket =
@@ -588,7 +626,13 @@ export class SshConnectionManager {
       keepaliveCountMax: hop.resolved.serverAliveCountMax ?? 3,
       ...(algorithms ? { algorithms } : {}),
       hostVerifier: (key: Buffer, verify: (valid: boolean) => void) => {
-        void this.verifyHostKey(hop, key, io, runInteraction).then(verify);
+        void this.verifyHostKey(hop, key, io, runInteraction).then(verify, (err) => {
+          this.log.warn(
+            { err, host: hop.resolved.hostname },
+            'host key verification failed',
+          );
+          verify(false);
+        });
       },
       authHandler: (authsLeft, partialSuccess, next) => {
         auth.next(
@@ -598,7 +642,9 @@ export class SshConnectionManager {
         );
       },
       ...(transport ? { sock: transport } : { host: hop.resolved.hostname, port: hop.port }),
-      ...(agent ? { agent, agentForward: hop.resolved.forwardAgent } : {}),
+      ...(agentSocket
+        ? { agent: agentSocket, agentForward: hop.resolved.forwardAgent }
+        : {}),
     };
 
     return new Promise((resolve, reject) => {
@@ -1015,6 +1061,7 @@ class AuthLadder {
     private readonly vault?: PasswordVault,
     private readonly runInteraction: InteractionRunner = (interaction) =>
       interaction(),
+    private readonly agent?: BaseAgent<ParsedKey>,
   ) {
     this.attempts = this.build();
   }
@@ -1110,11 +1157,19 @@ class AuthLadder {
     const { resolved, user, hopLabel } = this.hop;
     const label = hopLabel ?? this.hop.spec.host;
     const attempts: AuthAttempt[] = [{ type: 'none', get: () => Promise.resolve({ type: 'none', username: user }) }];
-    const agent = resolveAgentSocket(resolved.identityAgent);
+    const agentSocket = resolveAgentSocket(resolved.identityAgent);
 
     if (!resolved.passwordOnly) {
-      if (agent && !resolved.identitiesOnly) {
-        attempts.push({ type: 'agent', get: () => Promise.resolve({ type: 'agent', username: user, agent }) });
+      if (agentSocket && this.agent && !resolved.identitiesOnly) {
+        attempts.push({
+          type: 'agent',
+          get: () =>
+            Promise.resolve({
+              type: 'agent',
+              username: user,
+              agent: this.agent!,
+            }),
+        });
       }
       const explicit = resolved.identityFiles.length > 0;
       const files = explicit ? resolved.identityFiles : defaultIdentityFiles();
@@ -1131,7 +1186,7 @@ class AuthLadder {
                 certificate,
                 files,
                 explicit || resolved.certificateFiles.length > 0,
-                agent,
+                agentSocket,
                 label,
               );
               if (!privateKey) return undefined;
@@ -1149,7 +1204,12 @@ class AuthLadder {
         attempts.push({
           type: 'publickey',
           get: async () => {
-            const key = await this.loadPrivateKey(file, explicit, agent, label);
+            const key = await this.loadPrivateKey(
+              file,
+              explicit,
+              agentSocket,
+              label,
+            );
             return key ? { type: 'publickey', username: user, key } : undefined;
           },
         });
@@ -1450,7 +1510,14 @@ class AuthLadder {
       // Encrypted. A default (unconfigured) key the agent already holds was
       // covered by the agent attempt — skip it silently. Anything else
       // prompts for its passphrase, like ssh(1).
-      if (!explicit && agent && (await this.agentHoldsKey(file, agent))) return undefined;
+      if (
+        !explicit &&
+        agent &&
+        this.agent &&
+        (await this.agentHoldsKey(file, agent, this.agent))
+      ) {
+        return undefined;
+      }
       for (let i = 0; i < MAX_PASSPHRASE_ATTEMPTS && parsed instanceof Error; i++) {
         const response = await this.runInteraction(() =>
           this.io.prompt({
@@ -1472,7 +1539,11 @@ class AuthLadder {
   }
 
   /** True when the key's .pub sibling names an identity the agent holds. */
-  private async agentHoldsKey(file: string, agent: string): Promise<boolean> {
+  private async agentHoldsKey(
+    file: string,
+    agentSocket: string,
+    agent: BaseAgent<ParsedKey>,
+  ): Promise<boolean> {
     let fingerprint: string;
     try {
       const blob = fs.readFileSync(`${file}.pub`, 'utf8').trim().split(/\s+/)[1];
@@ -1481,7 +1552,7 @@ class AuthLadder {
     } catch {
       return false; // no readable .pub — prompt rather than guess
     }
-    this.agentIdentityPrints ??= listAgentKeys(agent).then(
+    this.agentIdentityPrints ??= listAgentKeys(agentSocket, agent).then(
       (keys) => new Set(keys.map((k) => k.fingerprint)),
     );
     return (await this.agentIdentityPrints).has(fingerprint);
