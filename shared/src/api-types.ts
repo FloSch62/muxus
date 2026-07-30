@@ -21,6 +21,32 @@ export interface AppInfo {
   sshAlgorithms: Record<string, string[]>;
 }
 
+export type AppLogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
+
+/** One diagnostic log record from the in-memory app log buffer. */
+export interface AppLogEntry {
+  /** Unix epoch milliseconds. */
+  ts: number;
+  level: AppLogLevel;
+  /** 'server' — the embedded backend; 'app' — the desktop shell's main process. */
+  source: 'server' | 'app';
+  msg: string;
+  /** Structured fields attached to the record (host, err, …). */
+  context?: Record<string, unknown>;
+}
+
+export interface AppLogsResponse {
+  entries: AppLogEntry[];
+  /** True while the server logs at debug level or below. */
+  debugEnabled: boolean;
+  /** Ring-buffer size; older entries beyond it are dropped. */
+  capacity: number;
+}
+
+export interface AppLogSettingsInput {
+  debugEnabled: boolean;
+}
+
 /** Public metadata for one SSH password encrypted in the local password vault. */
 export interface PasswordVaultCredential {
   id: string;

@@ -68,4 +68,18 @@ describe('login shell environment', () => {
     );
     expect(environment).toEqual({ PATH: '/usr/bin', SSH_AUTH_SOCK: '/tmp/current.sock' });
   });
+
+  it('reports a failed shell startup to the diagnostics hook', () => {
+    const failure = new Error('shell failed');
+    const onError = vi.fn();
+    importLoginShellEnvironment(
+      'darwin',
+      { PATH: '/usr/bin' },
+      () => {
+        throw failure;
+      },
+      onError,
+    );
+    expect(onError).toHaveBeenCalledWith(failure);
+  });
 });

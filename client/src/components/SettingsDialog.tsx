@@ -26,6 +26,8 @@ import Tooltip from '@mui/material/Tooltip';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
+import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
+import BugReportOutlinedIcon from '@mui/icons-material/BugReportOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import CachedOutlinedIcon from '@mui/icons-material/CachedOutlined';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
@@ -39,6 +41,7 @@ import TerminalIcon from '@mui/icons-material/Terminal';
 import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
 import type { UpdateCheckResult } from '@muxus/shared';
 import { checkForUpdate } from '../api/app.js';
+import { fetchAppLogs, formatLogEntry } from '../api/logs.js';
 import {
   useSaveSessionHistorySettings,
   useSaveSessionLoggingPolicy,
@@ -61,7 +64,8 @@ import {
 } from '../interface-zoom.js';
 import { useChordLabel } from '../keymap/hints.js';
 import { usePrefsStore, type RightClickAction, type ThemeMode } from '../state/prefs.js';
-import { showToast } from '../state/toast.js';
+import { exportFilename, saveTextFile } from '../save-file.js';
+import { showErrorToast, showToast } from '../state/toast.js';
 import { confirmAction } from '../state/dialogs.js';
 import { useUiStore } from '../state/ui.js';
 import { TERMINAL_SCHEMES, terminalScheme, type TerminalScheme } from '../terminal/palette.js';
@@ -81,6 +85,7 @@ type Section =
   | 'keyboard'
   | 'passwords'
   | 'data'
+  | 'debug'
   | 'about';
 
 const SECTIONS: Array<{ id: Section; label: string; icon: React.ReactNode }> = [
@@ -92,6 +97,7 @@ const SECTIONS: Array<{ id: Section; label: string; icon: React.ReactNode }> = [
   { id: 'keyboard', label: 'Keyboard', icon: <KeyboardOutlinedIcon fontSize="small" /> },
   { id: 'passwords', label: 'Passwords', icon: <PasswordOutlinedIcon fontSize="small" /> },
   { id: 'data', label: 'Backup & data', icon: <BackupOutlinedIcon fontSize="small" /> },
+  { id: 'debug', label: 'Debug', icon: <BugReportOutlinedIcon fontSize="small" /> },
   { id: 'about', label: 'About', icon: <InfoOutlinedIcon fontSize="small" /> },
 ];
 
@@ -198,6 +204,7 @@ export function SettingsDialog() {
                 onImportMobaXterm={() => setMobaXtermImportOpen(true)}
               />
             )}
+            {section === 'debug' && <DebugSection />}
             {section === 'about' && <AboutSection />}
           </Box>
           <DialogActions sx={{ borderTop: 1, borderColor: 'divider' }}>
@@ -933,6 +940,82 @@ function updateReasonLabel(reason?: string): string {
         ? `The update manifest returned ${reason.replace('manifest-', '')}.`
         : 'The update check could not be completed.';
   }
+}
+
+/** Diagnostic logging: the verbose-capture toggle plus log viewer and export. */
+function DebugSection() {
+  const debugMode = usePrefsStore((s) => s.debugMode);
+  const set = usePrefsStore((s) => s.set);
+  const setLogViewerOpen = useUiStore((s) => s.setLogViewerOpen);
+
+  const exportLogs = () => {
+    fetchAppLogs()
+      .then((logs) => {
+        saveTextFile(
+          exportFilename('debug log', 'log'),
+          [
+            `# Muxus diagnostic log — exported ${new Date().toISOString()}`,
+            `# ${logs.entries.length} entries, debug logging ${logs.debugEnabled ? 'on' : 'off'}`,
+            ...logs.entries.map(formatLogEntry),
+          ].join('\n'),
+        );
+      })
+      .catch(showErrorToast);
+  };
+
+  return (
+    <Stack spacing={3}>
+      <Box>
+        <SectionTitle>Debug mode</SectionTitle>
+        <FormControlLabel
+          control={
+            <Switch
+              size="small"
+              checked={debugMode}
+              onChange={(e) => set({ debugMode: e.target.checked })}
+            />
+          }
+          label={
+            <Box>
+              <Typography variant="body2">Capture verbose diagnostic logs</Typography>
+              <Typography variant="caption" color="text.secondary">
+                Records connection-level detail: every dial, authentication step,
+                SSH agent wait and the raw error behind a failure. Warnings and
+                errors are always captured, even while this is off.
+              </Typography>
+            </Box>
+          }
+        />
+      </Box>
+      <Box>
+        <SectionTitle>Logs</SectionTitle>
+        <Stack direction="row" spacing={1}>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<ArticleOutlinedIcon />}
+            onClick={() => setLogViewerOpen(true)}
+          >
+            View logs
+          </Button>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<DownloadOutlinedIcon />}
+            onClick={exportLogs}
+          >
+            Export logs
+          </Button>
+        </Stack>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+          Covers app startup and every connection attempt since launch. Logs are
+          held in memory on this machine only and never leave it unless you export
+          them. If the app fails to launch entirely, the desktop shell also writes
+          logs/main.log in its data directory.
+        </Typography>
+      </Box>
+    </Stack>
+  );
 }
 
 function AboutSection() {

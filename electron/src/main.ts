@@ -21,11 +21,21 @@ import type {
   UpdateCheckResult,
 } from '@muxus/shared';
 import { importLoginShellEnvironment } from './login-shell-environment.js';
+import { initMainLog, installCrashCapture, mainLog, mainLogPath } from './main-log.js';
 import { readLocalMobaXtermSessions } from './mobaxterm.js';
 
-importLoginShellEnvironment();
-
+// Name first: userData (and with it the log location) derives from it.
 app.setName('Muxus');
+initMainLog(app.getPath('userData'));
+installCrashCapture();
+mainLog(
+  'info',
+  `Muxus ${app.getVersion()} starting on ${process.platform}/${process.arch} (Electron ${process.versions.electron})`,
+);
+importLoginShellEnvironment(undefined, undefined, undefined, (err) =>
+  mainLog('warn', 'could not import the login shell environment', err),
+);
+
 // Keep the native Wayland app_id (and the X11 fallback's WM_CLASS) aligned
 // with the installed desktop file. Electron selects Wayland automatically
 // when the session supports it; no display-backend flag is needed.
@@ -295,6 +305,10 @@ function createWindow(url: string, launch?: AppWindowLaunch): BrowserWindow {
     managedWindows.delete(win);
     windowLaunches.delete(webContentsId);
     if (primaryWindow === win) primaryWindow = undefined;
+  });
+  // A dead renderer looks like "the app won't start" — leave its exit trace.
+  win.webContents.on('render-process-gone', (_event, details) => {
+    mainLog('error', `window renderer gone (${details.reason}, exit code ${details.exitCode})`);
   });
   win.webContents.setWindowOpenHandler(({ url: external }) => {
     openAllowedExternalUrl(external);
@@ -590,10 +604,18 @@ if (!app.requestSingleInstanceLock()) {
           : path.resolve(moduleDir, '../../client/dist'),
       });
     } catch (err) {
-      console.error('failed to start muxus server', err);
+      mainLog('error', 'the embedded server failed to start', err);
+      const logPath = mainLogPath();
+      dialog.showErrorBox(
+        'Muxus failed to start',
+        `${err instanceof Error ? err.message : String(err)}${
+          logPath ? `\n\nDetails were written to:\n${logPath}` : ''
+        }`,
+      );
       app.quit();
       return;
     }
+    mainLog('info', `server listening at ${server.url}`);
     buildMenu();
     const url = server.url;
     appUrl = url;

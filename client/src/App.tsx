@@ -10,6 +10,7 @@ import {
 import CssBaseline from '@mui/material/CssBaseline';
 import { ThemeProvider } from '@mui/material/styles';
 import type { AppWindowLaunch } from '@muxus/shared';
+import { setDebugLogging } from './api/logs.js';
 import { applyInterfaceZoom } from './interface-zoom.js';
 import { buildTheme } from './theme.js';
 import { setTitleBarMode } from './titlebar-overlay.js';
@@ -29,6 +30,7 @@ import {
   loadSettingsDialog,
   loadShortcutsDialog,
   loadSessionHistoryDialog,
+  loadLogViewerDialog,
   loadQuickLauncherDialog,
   loadWorkspaceDialog,
 } from './lazy-features.js';
@@ -69,6 +71,9 @@ const ShortcutsDialog = lazy(() =>
 const SessionHistoryDialog = lazy(() =>
   loadSessionHistoryDialog().then((module) => ({ default: module.SessionHistoryDialog })),
 );
+const LogViewerDialog = lazy(() =>
+  loadLogViewerDialog().then((module) => ({ default: module.LogViewerDialog })),
+);
 const QuickLauncherDialog = lazy(() =>
   loadQuickLauncherDialog().then((module) => ({ default: module.QuickLauncherDialog })),
 );
@@ -82,6 +87,7 @@ const SftpWindow = lazy(() =>
 export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const themeMode = usePrefsStore((s) => s.themeMode);
   const interfaceZoom = usePrefsStore((s) => s.interfaceZoom);
+  const debugMode = usePrefsStore((s) => s.debugMode);
   const hostEditorOpen = useUiStore((s) => !!s.hostEditor);
   const hostOrganizerOpen = useUiStore((s) => !!s.hostOrganizer);
   const folderDialogOpen = useUiStore((s) => !!s.folderDialog);
@@ -89,6 +95,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const commandButtonsOpen = useUiStore((s) => s.commandButtonsOpen);
   const shortcutsOpen = useUiStore((s) => s.shortcutsOpen);
   const historyOpen = useUiStore((s) => s.historyOpen);
+  const logViewerOpen = useUiStore((s) => s.logViewerOpen);
   const quickLauncherOpen = useUiStore((s) => s.quickLauncherOpen);
   const workspacesOpen = useUiStore((s) => s.workspacesOpen);
   const dialogOpen = useDialogStore((s) => s.queue.length > 0);
@@ -107,6 +114,11 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
   useLayoutEffect(() => {
     applyInterfaceZoom(interfaceZoom);
   }, [interfaceZoom]);
+  useEffect(() => {
+    // The debug pref lives client-side; tell the server its log level on boot
+    // and on every toggle. Failures are ignored — the pref re-syncs next time.
+    void setDebugLogging(debugMode).catch(() => undefined);
+  }, [debugMode]);
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const handler = (e: MediaQueryListEvent) => setOsTheme(e.matches ? 'dark' : 'light');
@@ -133,6 +145,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
         {commandButtonsOpen ? <CommandButtonsDialog /> : null}
         {shortcutsOpen ? <ShortcutsDialog /> : null}
         {historyOpen ? <SessionHistoryDialog /> : null}
+        {logViewerOpen ? <LogViewerDialog /> : null}
         {quickLauncherOpen ? <QuickLauncherDialog /> : null}
         {workspacesOpen ? <WorkspaceDialog /> : null}
         {!launch ? <PasswordVaultStartupUnlock onReady={finishStartup} /> : null}

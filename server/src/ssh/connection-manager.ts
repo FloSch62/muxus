@@ -311,6 +311,10 @@ export class SshConnectionManager {
     const target = chain[chain.length - 1]!;
     const configForwards = target.resolved.forwards;
     const label = `${target.user}@${target.resolved.hostname}:${target.port}`;
+    this.log.debug(
+      { target: profile.target, label, hops: chain.length, owner },
+      'ssh connect requested',
+    );
 
     if (!opts.freshTransport) {
       const shared = this.acquireShared(key, owner, target);
@@ -319,6 +323,7 @@ export class SshConnectionManager {
           shared.connection.configForwards,
           configForwards,
         );
+        this.log.debug({ label, connId: shared.connection.id }, 'reusing multiplexed ssh transport');
         io.status(`Reusing the SSH connection to ${label} (multiplexed).`, { transient: true });
         return shared;
       }
@@ -455,6 +460,11 @@ export class SshConnectionManager {
         if (next) sock = await openJumpChannel(client, next.resolved.hostname, next.port);
       }
     } catch (err) {
+      // dial() already logged the raw failure; this adds which hop died.
+      this.log.debug(
+        { err, hops: chain.length, dialed: clients.length },
+        'ssh dial chain aborted',
+      );
       stopHealth();
       for (const c of clients.reverse()) c.end();
       throw err;
@@ -593,13 +603,18 @@ export class SshConnectionManager {
         ? new ResponsiveAgent(ssh2.createAgent(agentSocket) as BaseAgent<ParsedKey>, {
             pauseDeadline: () => readyDeadline?.pause(),
             resumeDeadline: () => readyDeadline?.resume(),
-            onWaiting: (operation) =>
+            onWaiting: (operation) => {
+              this.log.info(
+                { host: hop.resolved.hostname, operation, agentSocket },
+                'waiting for the ssh agent to respond',
+              );
               io.status(
                 operation === 'sign'
                   ? 'Waiting for the SSH agent to approve signing…'
                   : 'Waiting for the SSH agent to list identities…',
                 { transient: true },
-              ),
+              );
+            },
             waitStatusMs: this.agentWaitStatusMs,
             operationTimeoutMs: this.agentOperationTimeoutMs,
           })
@@ -610,13 +625,30 @@ export class SshConnectionManager {
       this.vault,
       runInteraction,
       authAgent,
+      this.log,
     );
     const { algorithms, notes } = connectionAlgorithms(hop.resolved);
-    for (const note of notes) io.status(note);
+    for (const note of notes) {
+      this.log.debug({ host: hop.resolved.hostname }, note);
+      io.status(note);
+    }
     const proxySocket =
       !sock && hop.resolved.proxyCommand ? openProxyCommand(expandedProxyCommand(hop)!) : undefined;
     const transport = sock ?? proxySocket;
     const readyTimeoutMs = (hop.resolved.connectTimeout ?? 20) * 1000;
+    this.log.debug(
+      {
+        host: hop.resolved.hostname,
+        port: hop.port,
+        user: hop.user,
+        agent: !!agentSocket,
+        identitiesOnly: !!hop.resolved.identitiesOnly,
+        proxyCommand: !!hop.resolved.proxyCommand,
+        viaJump: !!sock,
+        readyTimeoutMs,
+      },
+      'dialing ssh host',
+    );
     const config: ConnectConfig = {
       username: hop.user,
       // ssh2's deadline includes time spent in UI prompts and cannot be
@@ -654,6 +686,12 @@ export class SshConnectionManager {
       const rejectBeforeReady = (err: Error) => {
         if (settled) return;
         settled = true;
+        // The raw error, before friendlyConnectError() rewrites it — an agent
+        // stall and a network timeout look identical to the user otherwise.
+        this.log.warn(
+          { err, host: hop.resolved.hostname, port: hop.port, user: hop.user },
+          'ssh dial failed',
+        );
         readyDeadline?.clear();
         auth.dispose();
         proxySocket?.destroy();
@@ -668,6 +706,10 @@ export class SshConnectionManager {
         if (settled) return;
         ready = true;
         settled = true;
+        this.log.debug(
+          { host: hop.resolved.hostname, port: hop.port, user: hop.user },
+          'ssh connection ready',
+        );
         readyDeadline?.clear();
         const postAuth = auth
           .commitRememberedPassword()
@@ -688,6 +730,10 @@ export class SshConnectionManager {
         if (!settled && err.level === 'agent') {
           // ssh2 reports an unreachable agent mid-auth and then moves on to
           // the next method itself; surface it without aborting the dial.
+          this.log.warn(
+            { err, host: hop.resolved.hostname },
+            'ssh-agent unavailable; trying other authentication methods',
+          );
           io.status(`ssh-agent unavailable (${err.message}) — trying other authentication methods`);
           return;
         }
@@ -730,13 +776,22 @@ export class SshConnectionManager {
     const port = hop.port;
     const store = this.knownHostsFor(hop);
     const verdict = store.verify(host, port, key);
+    this.log.debug(
+      { host, port, keyType: hostKeyType(key), verdict: verdict.state },
+      'host key verified against known_hosts',
+    );
     if (verdict.state === 'ok') return true;
     if (verdict.state === 'revoked') {
+      this.log.warn({ host, port }, 'host key is revoked in known_hosts');
       io.status(`HOST KEY REVOKED for ${host} — remove the @revoked entry from known_hosts if this is intentional.`);
       return false;
     }
     const strict = hop.resolved.strictHostKeyChecking ?? 'ask';
     if (strict === 'yes') {
+      this.log.warn(
+        { host, port, verdict: verdict.state },
+        'refusing host key under StrictHostKeyChecking=yes',
+      );
       io.status(
         verdict.state === 'changed'
           ? `HOST KEY CHANGED for ${host} and StrictHostKeyChecking is yes — refusing to connect.`
@@ -762,6 +817,7 @@ export class SshConnectionManager {
         hop: hop.hopLabel,
       }),
     ).catch(() => false);
+    this.log.debug({ host, port, accepted }, 'host key decision from the user');
     if (accepted) store.record(host, port, key);
     return accepted;
   }
@@ -1062,6 +1118,7 @@ class AuthLadder {
     private readonly runInteraction: InteractionRunner = (interaction) =>
       interaction(),
     private readonly agent?: BaseAgent<ParsedKey>,
+    private readonly log?: FastifyBaseLogger,
   ) {
     this.attempts = this.build();
   }
@@ -1084,8 +1141,13 @@ class AuthLadder {
     authsLeft: AuthenticationType[] | null,
     cb: (method: AnyAuthMethod | false) => void,
   ): void {
+    const host = this.hop.resolved.hostname;
     const attempt = this.attempts[this.index++];
     if (!attempt || this.cancelled) {
+      this.log?.debug(
+        { host, cancelled: this.cancelled },
+        'ssh auth ladder exhausted',
+      );
       cb(false);
       return;
     }
@@ -1093,14 +1155,26 @@ class AuthLadder {
     // Agent auth is publickey on the wire — servers never advertise "agent".
     const wireType = attempt.type === 'agent' ? 'publickey' : attempt.type;
     if (authsLeft && attempt.type !== 'none' && !authsLeft.includes(wireType)) {
+      this.log?.debug(
+        { host, method: attempt.type, authsLeft },
+        'ssh auth method not accepted by server; skipping',
+      );
       this.advance(authsLeft, cb);
       return;
     }
     attempt
       .get()
       .then((method) => {
-        if (method) cb(method);
-        else this.advance(authsLeft, cb);
+        if (method) {
+          this.log?.debug({ host, method: attempt.type }, 'trying ssh auth method');
+          cb(method);
+        } else {
+          this.log?.debug(
+            { host, method: attempt.type },
+            'ssh auth method unavailable; skipping',
+          );
+          this.advance(authsLeft, cb);
+        }
       })
       .catch(() => {
         this.cancelled = true;

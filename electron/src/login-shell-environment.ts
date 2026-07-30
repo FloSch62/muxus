@@ -13,13 +13,17 @@ export function importLoginShellEnvironment(
   platform = process.platform,
   environment: Environment = process.env,
   readLoginEnvironment: ReadLoginEnvironment = shellEnvSync,
+  onError?: (err: unknown) => void,
 ): void {
   if (platform === 'win32') return;
 
   let loginEnvironment: Readonly<Record<string, string>>;
   try {
     loginEnvironment = readLoginEnvironment();
-  } catch {
+  } catch (err) {
+    // A broken login shell means PATH and SSH_AUTH_SOCK stay at launch values
+    // — connections may fail later; leave a trace of why.
+    onError?.(err);
     return;
   }
 
