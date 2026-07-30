@@ -81,6 +81,70 @@ describe('hybrid session history store', () => {
     expect(segmentFiles.every((file) => file.endsWith('.muxlog.zst'))).toBe(true);
   });
 
+  it('centers snippets on the match, counts matches, and anchors previews', async () => {
+    root = mkdtempSync(path.join(os.tmpdir(), 'muxus-history-test-'));
+    store = await SessionHistoryStore.open({ root, settings });
+    const policy = { maxPartBytes: 1024 * 1024, maxParts: 10 };
+    const id = store.beginSession(
+      {
+        profileKey: 'ssh:lab',
+        title: 'Lab switch',
+        kind: 'ssh',
+        host: 'lab',
+        startedAt: '2026-07-25T10:00:00.000Z',
+        captureInput: false,
+      },
+      policy,
+    );
+    const events = [];
+    for (let sequence = 1; sequence <= 30; sequence++) {
+      const text =
+        sequence === 5
+          ? 'ssh admin@192.168.7.44\n'
+          : sequence === 12
+            ? `${'padding '.repeat(60)}ping 192.168.7.44 ok\n`
+            : `filler line ${sequence}\n`;
+      events.push({
+        sequence,
+        recordedAt: `2026-07-25T10:00:${String(sequence).padStart(2, '0')}.000Z`,
+        elapsedMs: sequence * 1_000,
+        direction: 'output' as const,
+        raw: Buffer.from(text),
+        text,
+      });
+    }
+    expect(store.append(id, events, policy)).toBe(true);
+    store.finishSession(id, 'completed', '2026-07-25T10:01:00.000Z');
+
+    // A partially typed IP matches as a prefix and reports every occurrence.
+    const byIp = await store.sessionHistory({ query: '192.168.7', limit: 20 });
+    expect(byIp.sessions).toEqual([
+      expect.objectContaining({ id, matchCount: 2 }),
+    ]);
+    expect(byIp.sessions[0]!.snippet).toContain('\u0001192.168.7\u0002');
+
+    // The excerpt centers on a match buried deep inside a long chunk instead
+    // of showing the chunk's first characters.
+    const byCommand = await store.sessionHistory({ query: 'ping', limit: 20 });
+    expect(byCommand.sessions[0]!.snippet).toContain('\u0001ping\u0002');
+    expect(byCommand.sessions[0]!.snippet).toContain('…');
+
+    // Separator-only extra tokens carry no signal and must not empty the result.
+    expect((await store.sessionHistory({ query: 'ping ->', limit: 20 })).sessions)
+      .toHaveLength(1);
+
+    // A limited preview opened from a search anchors on the first match with
+    // leading context; without a query it keeps returning the newest events.
+    const anchored = await store.sessionLog(id, 10, 'ping');
+    expect(anchored?.eventsTruncated).toBe(true);
+    expect(anchored?.events.some((event) => event.text.includes('ping'))).toBe(true);
+    expect(anchored?.events[0]?.sequence).toBeLessThan(12);
+    const newest = await store.sessionLog(id, 10);
+    expect(newest?.events.map((event) => event.sequence)).toEqual(
+      [21, 22, 23, 24, 25, 26, 27, 28, 29, 30],
+    );
+  });
+
   it('keeps pinned sessions out of age retention and uses cursor pages', async () => {
     root = mkdtempSync(path.join(os.tmpdir(), 'muxus-history-test-'));
     store = await SessionHistoryStore.open({ root, settings });

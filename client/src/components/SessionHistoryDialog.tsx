@@ -1,7 +1,9 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
+  type ReactNode,
 } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import Alert from '@mui/material/Alert';
@@ -26,14 +28,21 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
+import { alpha, type Theme } from '@mui/material/styles';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import PushPinIcon from '@mui/icons-material/PushPin';
 import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
 import SearchIcon from '@mui/icons-material/Search';
-import type { SessionLogSummary } from '@muxus/shared';
+import {
+  SNIPPET_MATCH_END,
+  SNIPPET_MATCH_START,
+  type SessionLogSummary,
+} from '@muxus/shared';
 import {
   useSessionHistory,
   useSessionLog,
@@ -43,10 +52,23 @@ import { apiFetch, apiFetchRaw } from '../api/http.js';
 import { copyToClipboard } from '../clipboard.js';
 import { confirmAction } from '../state/dialogs.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
+import { findTranscriptMatchesInChunks } from '../session-history-matches.js';
 import { showToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
 
 const MAX_PREVIEW_EVENTS = 5_000;
+/** Highlighting stops here so a one-letter query cannot flood the preview. */
+const MAX_PREVIEW_MATCHES = 1_000;
+
+const matchSx = {
+  borderRadius: '2px',
+  color: 'inherit',
+  bgcolor: (theme: Theme) => alpha(theme.palette.warning.main, 0.35),
+} as const;
+const activeMatchSx = {
+  ...matchSx,
+  bgcolor: (theme: Theme) => alpha(theme.palette.warning.main, 0.75),
+} as const;
 
 export function SessionHistoryDialog() {
   const setOpen = useUiStore((state) => state.setHistoryOpen);
@@ -80,27 +102,73 @@ export function SessionHistoryDialog() {
   const selected =
     data?.sessions.find((session) => session.id === selectedId) ??
     data?.sessions[0];
-  const { data: detail, isLoading: detailLoading } = useSessionLog(selected?.id);
+  const { data: detail, isLoading: detailLoading } = useSessionLog(
+    selected?.id,
+    debouncedQuery,
+  );
 
   useEffect(() => {
     if (selected && selected.id !== selectedId) setSelectedId(selected.id);
   }, [selected, selectedId]);
 
-  const preview = useMemo(() => {
-    if (!detail) return '';
+  const previewModel = useMemo(() => {
+    let text = '';
+    const chunks: { text: string; offset: number }[] = [];
+    if (!detail) return { text, chunks };
     const events = detail.events.slice(-MAX_PREVIEW_EVENTS);
-    return events
-      .map((event) => {
-        const marker =
-          event.direction === 'input'
-            ? '› '
-            : event.direction === 'system'
-              ? '• '
-              : '';
-        return `${marker}${event.text}`;
-      })
-      .join('');
+    for (const event of events) {
+      const marker =
+        event.direction === 'input'
+          ? '› '
+          : event.direction === 'system'
+            ? '• '
+            : '';
+      chunks.push({ text: event.text, offset: text.length + marker.length });
+      text += `${marker}${event.text}`;
+    }
+    return { text, chunks };
   }, [detail]);
+  const preview = previewModel.text;
+
+  const matches = useMemo(
+    () => findTranscriptMatchesInChunks(
+      previewModel.chunks,
+      debouncedQuery,
+      MAX_PREVIEW_MATCHES,
+    ),
+    [previewModel, debouncedQuery],
+  );
+  const [activeMatch, setActiveMatch] = useState(0);
+  useEffect(() => setActiveMatch(0), [matches]);
+  const previewRef = useRef<HTMLPreElement>(null);
+  useEffect(() => {
+    if (!matches.length) return;
+    previewRef.current
+      ?.querySelector(`[data-match="${activeMatch}"]`)
+      ?.scrollIntoView({ block: 'center' });
+  }, [matches, activeMatch]);
+
+  const previewContent = useMemo<ReactNode>(() => {
+    if (!matches.length) return preview;
+    const nodes: ReactNode[] = [];
+    let cursor = 0;
+    matches.forEach((match, index) => {
+      if (match.start > cursor) nodes.push(preview.slice(cursor, match.start));
+      nodes.push(
+        <Box
+          key={index}
+          component="mark"
+          data-match={index}
+          sx={index === activeMatch ? activeMatchSx : matchSx}
+        >
+          {preview.slice(match.start, match.end)}
+        </Box>,
+      );
+      cursor = match.end;
+    });
+    nodes.push(preview.slice(cursor));
+    return nodes;
+  }, [preview, matches, activeMatch]);
 
   return (
     <Dialog
@@ -298,7 +366,43 @@ export function SessionHistoryDialog() {
                 <PinSessionButton session={selected} />
                 <DeleteSessionButton session={selected} />
               </Stack>
+              {debouncedQuery && !detailLoading ? (
+                <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+                  <Typography variant="caption" color="text.secondary">
+                    {matches.length
+                      ? `Match ${activeMatch + 1} of ${
+                          matches.length >= MAX_PREVIEW_MATCHES
+                            ? `${MAX_PREVIEW_MATCHES.toLocaleString()}+`
+                            : matches.length
+                        } in this preview`
+                      : 'No exact match in the previewed output.'}
+                  </Typography>
+                  <IconButton
+                    size="small"
+                    disabled={matches.length < 2}
+                    aria-label="Previous match"
+                    onClick={() =>
+                      setActiveMatch(
+                        (current) => (current - 1 + matches.length) % matches.length,
+                      )
+                    }
+                  >
+                    <KeyboardArrowUpIcon fontSize="small" />
+                  </IconButton>
+                  <IconButton
+                    size="small"
+                    disabled={matches.length < 2}
+                    aria-label="Next match"
+                    onClick={() =>
+                      setActiveMatch((current) => (current + 1) % matches.length)
+                    }
+                  >
+                    <KeyboardArrowDownIcon fontSize="small" />
+                  </IconButton>
+                </Stack>
+              ) : null}
               <Paper
+                ref={previewRef}
                 variant="outlined"
                 component="pre"
                 aria-label="Normalized session transcript"
@@ -318,11 +422,13 @@ export function SessionHistoryDialog() {
               >
                 {detailLoading
                   ? 'Loading transcript…'
-                  : preview || 'No normalized terminal output was retained.'}
+                  : previewContent || 'No normalized terminal output was retained.'}
               </Paper>
               {detail?.eventsTruncated ? (
                 <Typography variant="caption" color="text.secondary">
-                  Previewing the newest {MAX_PREVIEW_EVENTS.toLocaleString()} events.
+                  Previewing {detail.events.length.toLocaleString()} of the
+                  retained events
+                  {debouncedQuery ? ' around the first match' : ' (newest first)'}.
                   Exports contain the complete retained log.
                 </Typography>
               ) : null}
@@ -363,6 +469,11 @@ function HistoryListItem({
         secondary={
           <>
             {formatDate(session.startedAt)} · {formatBytes(session.rawBytes)}
+            {session.matchCount
+              ? ` · ${session.matchCount.toLocaleString()} ${
+                  session.matchCount === 1 ? 'matching chunk' : 'matching chunks'
+                }`
+              : null}
             {session.snippet ? (
               <Box
                 component="span"
@@ -371,9 +482,10 @@ function HistoryListItem({
                   display: 'block',
                   color: 'text.secondary',
                   typography: 'caption',
+                  overflowWrap: 'anywhere',
                 }}
               >
-                {session.snippet}
+                {snippetNodes(session.snippet)}
               </Box>
             ) : null}
           </>
@@ -496,6 +608,26 @@ async function copyCleanLog(session: SessionLogSummary): Promise<void> {
   } catch (err) {
     showToast('error', err instanceof Error ? err.message : String(err));
   }
+}
+
+/** Snippet text with the server's sentinel-marked ranges rendered as marks. */
+function snippetNodes(snippet: string): ReactNode[] {
+  const [head = '', ...rest] = snippet.split(SNIPPET_MATCH_START);
+  const nodes: ReactNode[] = [head];
+  rest.forEach((part, index) => {
+    const end = part.indexOf(SNIPPET_MATCH_END);
+    if (end === -1) {
+      nodes.push(part);
+      return;
+    }
+    nodes.push(
+      <Box key={index} component="mark" sx={matchSx}>
+        {part.slice(0, end)}
+      </Box>,
+      part.slice(end + 1),
+    );
+  });
+  return nodes;
 }
 
 // One formatter for the whole list, and each timestamp rendered once: the

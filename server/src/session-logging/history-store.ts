@@ -181,8 +181,16 @@ export class SessionHistoryStore {
     return this.request('search', input);
   }
 
-  sessionLog(id: string, eventLimit?: number): Promise<SessionLogDetail | undefined> {
-    return this.request('detail', { id, eventLimit });
+  /**
+   * `matchQuery` anchors a limited event window on the first full-text match
+   * (instead of the newest events) when the match would otherwise be cut off.
+   */
+  sessionLog(
+    id: string,
+    eventLimit?: number,
+    matchQuery?: string,
+  ): Promise<SessionLogDetail | undefined> {
+    return this.request('detail', { id, eventLimit, matchQuery });
   }
 
   rawSessionLogEvents(id: string): Promise<HistoryEvent[] | undefined> {
