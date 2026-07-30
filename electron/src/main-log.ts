@@ -63,10 +63,15 @@ export function mainLog(level: 'info' | 'warn' | 'error', msg: string, err?: unk
 
 /** Last-resort capture: without this, a main-process crash leaves no trace. */
 export function installCrashCapture(): void {
-  process.on('uncaughtException', (err) => {
-    mainLog('error', 'uncaught exception in the main process', err);
-  });
-  process.on('unhandledRejection', (reason) => {
-    mainLog('error', 'unhandled promise rejection in the main process', reason);
+  // A monitor observes fatal errors without marking them as handled, so Node
+  // still terminates the main process after the synchronous log write.
+  process.on('uncaughtExceptionMonitor', (err, origin) => {
+    mainLog(
+      'error',
+      origin === 'unhandledRejection'
+        ? 'unhandled promise rejection in the main process'
+        : 'uncaught exception in the main process',
+      err,
+    );
   });
 }
