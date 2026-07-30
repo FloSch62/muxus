@@ -54,7 +54,7 @@ function seedSession(): string {
 
 describe('session history routes', () => {
   it('requires authentication and full-text searches retained transcripts', async () => {
-    seedSession();
+    const id = seedSession();
     const unauthorized = await built.app.inject({
       method: 'GET',
       url: '/api/session-history',
@@ -68,7 +68,24 @@ describe('session history routes', () => {
     });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
-      sessions: [expect.objectContaining({ title: 'Production' })],
+      sessions: [
+        expect.objectContaining({
+          title: 'Production',
+          matchCount: 1,
+          snippet: expect.stringContaining('\u0001deploy\u0002 complete'),
+        }),
+      ],
+    });
+
+    const detail = await built.app.inject({
+      method: 'GET',
+      url: `/api/session-history/${id}?query=deploy`,
+      headers: auth(),
+    });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json()).toMatchObject({
+      id,
+      events: [expect.objectContaining({ text: 'deploy complete\n' })],
     });
   });
 

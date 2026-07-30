@@ -63,6 +63,10 @@ const historySettingsSchema = z.object({
 
 const pinSchema = z.object({ pinned: z.boolean() });
 
+const detailQuerySchema = z.object({
+  query: z.string().trim().max(500).optional(),
+});
+
 export function registerSessionHistoryRoutes(
   app: FastifyInstance,
   ctx: AppContext,
@@ -122,7 +126,12 @@ export function registerSessionHistoryRoutes(
     '/api/session-history/:id',
     async (req, reply): Promise<SessionLogDetail | void> => {
       const { id } = req.params as { id: string };
-      const session = await ctx.history.sessionLog(id, TRANSCRIPT_PREVIEW_EVENTS);
+      const { query } = detailQuerySchema.parse(req.query);
+      const session = await ctx.history.sessionLog(
+        id,
+        TRANSCRIPT_PREVIEW_EVENTS,
+        query || undefined,
+      );
       if (!session) {
         await reply.code(404).send({ message: 'session log not found' });
         return;

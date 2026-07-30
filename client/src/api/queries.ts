@@ -153,10 +153,14 @@ export function useSessionHistory(
   };
 }
 
-export function useSessionLog(id: string | undefined) {
+export function useSessionLog(id: string | undefined, matchQuery = '') {
   return useQuery({
-    queryKey: ['session-history', 'detail', id],
-    queryFn: () => apiFetch<SessionLogDetail>(`/api/session-history/${id}`),
+    queryKey: ['session-history', 'detail', id, matchQuery],
+    queryFn: () =>
+      apiFetch<SessionLogDetail>(
+        `/api/session-history/${id}` +
+          (matchQuery ? `?query=${encodeURIComponent(matchQuery)}` : ''),
+      ),
     enabled: !!id,
   });
 }

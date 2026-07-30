@@ -181,9 +181,19 @@ export interface SessionLogSummary {
   partCount: number;
   /** Pinned sessions are excluded from age and quota eviction. */
   pinned: boolean;
-  /** Search-context excerpt, present only for matching full-text queries. */
+  /**
+   * Search-context excerpt centered on the first full-text match, present only
+   * for matching queries. Matched ranges are wrapped in
+   * {@link SNIPPET_MATCH_START}/{@link SNIPPET_MATCH_END} sentinels.
+   */
   snippet?: string;
+  /** Number of matching transcript chunks, present only for full-text matches. */
+  matchCount?: number;
 }
+
+/** Control characters delimiting highlighted ranges inside a search snippet. */
+export const SNIPPET_MATCH_START = '\u0001';
+export const SNIPPET_MATCH_END = '\u0002';
 
 /** One timestamped, normalized replay event. Raw bytes remain server-side. */
 export interface SessionLogEvent {

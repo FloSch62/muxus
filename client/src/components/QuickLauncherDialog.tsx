@@ -35,14 +35,16 @@ import StopOutlinedIcon from '@mui/icons-material/StopOutlined';
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 import WorkspacesOutlinedIcon from '@mui/icons-material/WorkspacesOutlined';
-import type {
-  ForwardInfo,
-  SavedHostProfile,
-  SessionLogSummary,
-  SessionProfile,
-  SshHostEntry,
-  TunnelRecord,
-  WorkspaceSummary,
+import {
+  SNIPPET_MATCH_END,
+  SNIPPET_MATCH_START,
+  type ForwardInfo,
+  type SavedHostProfile,
+  type SessionLogSummary,
+  type SessionProfile,
+  type SshHostEntry,
+  type TunnelRecord,
+  type WorkspaceSummary,
 } from '@muxus/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useForwards, useSavedHostProfiles, useSessionHistory, useSshConfig, useTunnels } from '../api/queries.js';
@@ -1147,7 +1149,12 @@ function basename(path: string): string {
 }
 
 function stripMarkup(value: string): string {
-  return value.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+  return value
+    .replaceAll(SNIPPET_MATCH_START, '')
+    .replaceAll(SNIPPET_MATCH_END, '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function useDebouncedValue<T>(value: T, delayMs: number): T {

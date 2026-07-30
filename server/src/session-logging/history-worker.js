@@ -358,7 +358,7 @@ function search(input) {
   if (expression) {
     withSql = `
       WITH event_matches AS (
-        SELECT chunks.session_id, MIN(chunks.id) AS match_id
+        SELECT chunks.session_id, MIN(chunks.id) AS match_id, COUNT(*) AS match_count
         FROM transcript_chunks_fts
         JOIN transcript_chunks AS chunks ON chunks.id = transcript_chunks_fts.rowid
         WHERE transcript_chunks_fts MATCH ?
@@ -368,8 +368,17 @@ function search(input) {
     args.push(expression);
     joinSql = `
       LEFT JOIN event_matches ON event_matches.session_id = logs.id
-      LEFT JOIN transcript_chunks AS matched ON matched.id = event_matches.match_id
     `;
+    // snippet() centers the excerpt on the matched tokens; char(1)/char(2)
+    // delimit the highlight so the client never parses transcript text as markup.
+    // Placeholders bind in textual order: CTE match, snippet match, then filters.
+    selectSnippet = `(
+      SELECT snippet(transcript_chunks_fts, 0, char(1), char(2), '…', 16)
+      FROM transcript_chunks_fts
+      WHERE transcript_chunks_fts.rowid = event_matches.match_id
+        AND transcript_chunks_fts MATCH ?
+    ) AS snippet, event_matches.match_count AS match_count`;
+    args.push(expression);
     const metadata = `%${escapeLike(input.query.trim())}%`;
     filters.push(`(
       event_matches.session_id IS NOT NULL
@@ -377,7 +386,6 @@ function search(input) {
       OR logs.host LIKE ? ESCAPE '\\' COLLATE NOCASE
     )`);
     args.push(metadata, metadata);
-    selectSnippet = 'substr(matched.normalized_text, 1, 300) AS snippet';
   }
   if (input.profileKey) {
     filters.push('logs.profile_key = ?');
@@ -428,7 +436,7 @@ function search(input) {
   };
 }
 
-function detail({ id, eventLimit }) {
+function detail({ id, eventLimit, matchQuery }) {
   const row = db.prepare(`
     SELECT logs.*, NULL AS snippet, (
       SELECT COUNT(*) FROM session_parts AS parts WHERE parts.session_id = logs.id
@@ -441,20 +449,35 @@ function detail({ id, eventLimit }) {
     .get(id);
   const totalChunks = Number(countRow?.total ?? 0);
   const limited = eventLimit !== undefined;
+  const windowStart = limited
+    ? matchWindowStart(id, matchQuery, eventLimit, totalChunks)
+    : undefined;
   const rows = db.prepare(
-    limited
+    windowStart !== undefined
       ? `
-        SELECT * FROM (
-          SELECT first_sequence, recorded_at, elapsed_ms, direction, normalized_text
-          FROM transcript_chunks WHERE session_id = ?
-          ORDER BY first_sequence DESC LIMIT ?
-        ) ORDER BY first_sequence
-      `
-      : `
         SELECT first_sequence, recorded_at, elapsed_ms, direction, normalized_text
-        FROM transcript_chunks WHERE session_id = ? ORDER BY first_sequence
-      `,
-  ).all(...(limited ? [id, eventLimit] : [id]));
+        FROM transcript_chunks WHERE session_id = ? AND first_sequence >= ?
+        ORDER BY first_sequence LIMIT ?
+      `
+      : limited
+        ? `
+          SELECT * FROM (
+            SELECT first_sequence, recorded_at, elapsed_ms, direction, normalized_text
+            FROM transcript_chunks WHERE session_id = ?
+            ORDER BY first_sequence DESC LIMIT ?
+          ) ORDER BY first_sequence
+        `
+        : `
+          SELECT first_sequence, recorded_at, elapsed_ms, direction, normalized_text
+          FROM transcript_chunks WHERE session_id = ? ORDER BY first_sequence
+        `,
+  ).all(
+    ...(windowStart !== undefined
+      ? [id, windowStart, eventLimit]
+      : limited
+        ? [id, eventLimit]
+        : [id]),
+  );
   return {
     ...summaryFromRow(row),
     events: rows.map((event) => ({
@@ -466,6 +489,48 @@ function detail({ id, eventLimit }) {
     })),
     eventsTruncated: rows.length < totalChunks,
   };
+}
+
+/** Leading context retained before the first match when anchoring a preview. */
+const MATCH_CONTEXT_CHUNKS = 50;
+
+/**
+ * When a preview is opened from a search hit, anchor the limited event window
+ * on the first matching chunk (with some leading context) instead of the
+ * newest events, so the match is actually visible in the preview.
+ * Returns the first_sequence to start from, or undefined to keep the
+ * default newest-events window.
+ */
+function matchWindowStart(sessionId, matchQuery, eventLimit, totalChunks) {
+  if (!eventLimit || totalChunks <= eventLimit) return undefined;
+  const expression = ftsExpression(matchQuery);
+  if (!expression) return undefined;
+  const match = db.prepare(`
+    SELECT MIN(chunks.first_sequence) AS seq
+    FROM transcript_chunks_fts
+    JOIN transcript_chunks AS chunks ON chunks.id = transcript_chunks_fts.rowid
+    WHERE transcript_chunks_fts MATCH ? AND chunks.session_id = ?
+  `).get(expression, sessionId);
+  if (match?.seq === null || match?.seq === undefined) return undefined;
+  const matchSeq = Number(match.seq);
+  const newestWindow = db.prepare(`
+    SELECT MIN(first_sequence) AS seq FROM (
+      SELECT first_sequence FROM transcript_chunks
+      WHERE session_id = ? ORDER BY first_sequence DESC LIMIT ?
+    )
+  `).get(sessionId, eventLimit);
+  if (newestWindow?.seq !== null && matchSeq >= Number(newestWindow?.seq)) {
+    return undefined;
+  }
+  // Context is capped at half the window so the match itself always fits.
+  const contextRows = Math.min(MATCH_CONTEXT_CHUNKS, Math.floor(eventLimit / 2));
+  if (contextRows < 1) return matchSeq;
+  const context = db.prepare(`
+    SELECT first_sequence FROM transcript_chunks
+    WHERE session_id = ? AND first_sequence < ?
+    ORDER BY first_sequence DESC LIMIT 1 OFFSET ?
+  `).get(sessionId, matchSeq, contextRows - 1);
+  return context ? Number(context.first_sequence) : 0;
 }
 
 function rawEvents(id) {
@@ -984,6 +1049,7 @@ function summaryFromRow(row) {
     normalizedBytes: Number(row.normalized_bytes),
     partCount: Number(row.retained_part_count ?? 0),
     snippet: row.snippet ? String(row.snippet) : undefined,
+    matchCount: row.match_count ? Number(row.match_count) : undefined,
   };
 }
 
@@ -1026,9 +1092,23 @@ function partName(part) {
 }
 
 function ftsExpression(value) {
-  const tokens = value?.trim().split(/\s+/).filter(Boolean);
+  // Tokens without letters or digits tokenize to nothing in unicode61 and
+  // would silently turn the whole AND-query into "match nothing".
+  const tokens = value
+    ?.trim()
+    .split(/\s+/)
+    .filter((token) => /[\p{L}\p{N}]/u.test(token));
   if (!tokens?.length) return undefined;
-  return tokens.map((token) => `"${token.replaceAll('"', '""')}"`).join(' AND ');
+  return tokens
+    .map((token, index) => {
+      const phrase = `"${token.replaceAll('"', '""')}"`;
+      // The final token is treated as a prefix so partially typed commands
+      // and IPs ("192.168.7") already surface their sessions. Single-character
+      // prefixes expand to a large slice of the token dictionary and cost
+      // whole-corpus scans on a full database, so they match exactly instead.
+      return index === tokens.length - 1 && token.length > 1 ? `${phrase}*` : phrase;
+    })
+    .join(' AND ');
 }
 
 function escapeLike(value) {
