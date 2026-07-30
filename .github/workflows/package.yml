@@ -1,0 +1,86 @@
+name: Package installers
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 24.18.0
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            os: ubuntu-latest
+            build_args: --linux deb --x64
+            artifact_name: linux-deb-x64
+            artifact_path: electron/release/*.deb
+
+          - name: Windows x64
+            os: windows-latest
+            build_args: --win nsis --x64
+            artifact_name: windows-exe-x64
+            artifact_path: electron/release/*.exe
+
+          - name: macOS universal
+            os: macos-latest
+            build_args: >-
+              --mac dmg --universal
+              -c.mac.x64ArchFiles="{**/prebuilds/darwin*/**,**/node_modules/@napi-rs/keyring-darwin-*/**}"
+              -c.mac.singleArchFiles="**/node_modules/@napi-rs/keyring-darwin-*{,/**}"
+            artifact_name: macos-dmg-universal
+            artifact_path: electron/release/*.dmg
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace
+        run: pnpm build
+
+      - name: Build installer
+        run: >-
+          pnpm --filter @muxus/electron exec electron-builder
+          ${{ matrix.build_args }} --publish never
+
+      - name: Verify universal keyring binaries
+        if: runner.os == 'macOS'
+        run: |
+          app="electron/release/mac-universal/Muxus.app"
+          if [ ! -d "$app" ]; then
+            echo "Universal app bundle not found; release contents:" >&2
+            ls electron/release >&2
+            exit 1
+          fi
+          for arch in x64 arm64; do
+            ls "$app/Contents/Resources/app.asar.unpacked/node_modules/@napi-rs/keyring-darwin-$arch/"*.node
+          done
+
+      - name: Store installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error
+          retention-days: 14
