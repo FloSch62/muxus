@@ -37,6 +37,7 @@ const PREFERENCE_KEYS = [
   'fontFamily',
   'lineHeight',
   'terminalScheme',
+  'fontColor',
   'scrollback',
   'cursorBlink',
   'cursorStyle',
@@ -572,6 +573,9 @@ export function sanitizePreferences(input: BackupPreferences): Partial<PrefsStat
     input.terminalScheme.length <= 100
   ) {
     output.terminalScheme = input.terminalScheme;
+  }
+  if (input.fontColor === '' || validHexColor(input.fontColor)) {
+    output.fontColor = input.fontColor;
   }
   if (
     Number.isInteger(input.scrollback) &&

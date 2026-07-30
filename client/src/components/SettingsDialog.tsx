@@ -241,6 +241,7 @@ function AppearanceSection() {
   const prefs = usePrefsStore();
   const zoomInChord = useChordLabel('terminal.zoom-in');
   const zoomOutChord = useChordLabel('terminal.zoom-out');
+  const schemeForeground = terminalScheme(prefs.terminalScheme).theme.foreground ?? '#cccccc';
 
   return (
     <Stack spacing={3}>
@@ -355,6 +356,45 @@ function AppearanceSection() {
               />
             </Box>
           </Stack>
+          <Box>
+            <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+              <Typography variant="body2" color="text.secondary">
+                Font color
+              </Typography>
+              <Box
+                component="input"
+                type="color"
+                aria-label="Font color"
+                value={prefs.fontColor || schemeForeground}
+                onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
+                  prefs.set({ fontColor: event.target.value })
+                }
+                sx={{
+                  width: 30,
+                  height: 26,
+                  p: 0.25,
+                  border: 1,
+                  borderColor: 'divider',
+                  borderRadius: 0.75,
+                  bgcolor: 'transparent',
+                  cursor: 'pointer',
+                }}
+              />
+              {prefs.fontColor ? (
+                <Button size="small" onClick={() => prefs.set({ fontColor: '' })}>
+                  Use scheme color
+                </Button>
+              ) : (
+                <Typography variant="caption" color="text.secondary">
+                  Following the color scheme
+                </Typography>
+              )}
+            </Stack>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+              Replaces the scheme's default text color. Output that picks its own
+              ANSI colors keeps the scheme palette.
+            </Typography>
+          </Box>
         </Stack>
       </Box>
     </Stack>

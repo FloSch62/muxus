@@ -417,3 +417,13 @@ const DEFAULT_SCHEME = SCHEMES_BY_ID.get('vscode-dark')!;
 export function terminalScheme(id: string | undefined): TerminalScheme {
   return (id === undefined ? undefined : SCHEMES_BY_ID.get(id)) ?? DEFAULT_SCHEME;
 }
+
+/**
+ * The scheme's theme with the user's font color replacing the default
+ * foreground. Only unstyled text changes; ANSI-colored output keeps the
+ * scheme palette. An empty or malformed override leaves the theme alone,
+ * so a stale stored value cannot blank the terminal.
+ */
+export function themeWithFontColor(theme: ITheme, fontColor: string): ITheme {
+  return /^#[0-9a-f]{6}$/i.test(fontColor) ? { ...theme, foreground: fontColor } : theme;
+}
