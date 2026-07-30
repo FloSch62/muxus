@@ -88,6 +88,10 @@ export class KnownHostsStore {
   record(host: string, port: number, key: Buffer): void {
     const target = this.userFiles[0];
     if (!target) return; // UserKnownHostsFile none — nowhere to remember it
+    // OpenSSH users commonly select the null device to accept host keys
+    // without persisting them. Our atomic sibling-file rewrite cannot apply
+    // there, and the device already provides the intended discard semantics.
+    if (target === os.devNull) return;
     const names = hostNames(host, port);
     const keyType = hostKeyType(key);
     fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
