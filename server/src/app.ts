@@ -1,7 +1,8 @@
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
+import pino from 'pino';
 import fastifyWebsocket from '@fastify/websocket';
 import fastifyStatic from '@fastify/static';
 import { TERMINAL_WS_PROTOCOL } from '@muxus/shared/ws-protocol';
@@ -24,6 +25,8 @@ import { registerProfileRoutes } from './routes/profiles.js';
 import { registerHostOrderRoutes } from './routes/host-order.js';
 import { registerSessionHistoryRoutes } from './routes/session-history.js';
 import { registerPasswordVaultRoutes } from './routes/password-vault.js';
+import { registerLogRoutes } from './routes/logs.js';
+import { appLogPinoSink } from './logging/log-buffer.js';
 import {
   defaultHistoryRoot,
   SessionHistoryStore,
@@ -56,13 +59,31 @@ const CONTENT_SECURITY_POLICY = [
   "frame-ancestors 'none'",
 ].join('; ');
 
+/** The level the server returns to when debug logging is switched off. */
+export function baseLogLevel(): string {
+  return process.env.LOG_LEVEL ?? 'info';
+}
+
+/**
+ * All records go both to the console and to the in-memory buffer behind
+ * /api/logs; the logger's own level is the only gate. Debug mode (settings)
+ * raises that level at runtime.
+ */
+function buildLogger(config: ServerConfig): FastifyBaseLogger {
+  const console = config.prettyLogs
+    ? pino.transport({ target: 'pino-pretty', options: { translateTime: 'HH:MM:ss' } }) as pino.DestinationStream
+    : process.stdout;
+  return pino(
+    { level: baseLogLevel() },
+    pino.multistream([
+      { level: 'trace', stream: console },
+      { level: 'trace', stream: appLogPinoSink() },
+    ]),
+  ) as FastifyBaseLogger;
+}
+
 export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInstance; ctx: AppContext }> {
-  const app = Fastify({
-    logger: {
-      level: process.env.LOG_LEVEL ?? 'info',
-      transport: config.prettyLogs ? { target: 'pino-pretty', options: { translateTime: 'HH:MM:ss' } } : undefined,
-    },
-  });
+  const app = Fastify({ loggerInstance: buildLogger(config) });
 
   const database = new MuxusDatabase(config.databasePath);
   const vault = new PasswordVault(database);
@@ -155,6 +176,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   registerHostOrderRoutes(app, ctx);
   registerSessionHistoryRoutes(app, ctx);
   registerPasswordVaultRoutes(app, ctx);
+  registerLogRoutes(app);
   registerTerminalSocket(app, ctx);
   registerSftpLeaseSocket(app, ctx);
 

@@ -128,6 +128,26 @@ client. Muxus-only settings remain in the backup.
 
     Private key files, passwords and recorded session history are never part of a backup.
 
+## Debug
+
+**Debug mode** raises the app's logging to connection-level detail: every dial, each
+authentication method as it is tried, waits on the SSH agent, host key verification, and
+the raw error behind a failed connection. Warnings and errors are always captured, even
+while debug mode is off — a failure can be inspected after the fact, and turning on debug
+mode is only needed for the verbose detail around the next attempt.
+
+**View logs** opens a live viewer with level and text filters; **Export logs** saves
+everything as a text file. Logs live in a small, bounded in-memory buffer on this machine
+only — they reset when the app quits and are never written to disk or sent anywhere
+unless exported.
+
+!!! tip "When the app will not start"
+
+    The desktop shell also writes startup milestones and crashes to `logs/main.log` in
+    its application-data directory (for example `~/.config/Muxus` on Linux,
+    `~/Library/Application Support/Muxus` on macOS, `%APPDATA%\Muxus` on Windows).
+    A failed launch shows a dialog pointing at this file.
+
 ## About
 
 Version and platform information, a link to the source repository, and a manual update

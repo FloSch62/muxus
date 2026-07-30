@@ -39,6 +39,8 @@ interface UiState {
   folderDialog: FolderDialogState;
   /** Global forwarding side panel (saved tunnels + live forwards). */
   forwardingOpen: boolean;
+  /** Diagnostic log viewer (settings → debug). */
+  logViewerOpen: boolean;
   setSettingsOpen: (open: boolean) => void;
   setCommandButtonsOpen: (open: boolean) => void;
   setShortcutsOpen: (open: boolean) => void;
@@ -50,6 +52,7 @@ interface UiState {
   setHostOrganizer: (value: SshHostEntry | SavedHostProfile | false) => void;
   setFolderDialog: (value: FolderDialogState) => void;
   setForwardingOpen: (open: boolean) => void;
+  setLogViewerOpen: (open: boolean) => void;
 }
 
 export const useUiStore = create<UiState>()((set) => ({
@@ -64,6 +67,7 @@ export const useUiStore = create<UiState>()((set) => ({
   hostOrganizer: false,
   folderDialog: false,
   forwardingOpen: false,
+  logViewerOpen: false,
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setCommandButtonsOpen: (commandButtonsOpen) => set({ commandButtonsOpen }),
   setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
@@ -80,4 +84,5 @@ export const useUiStore = create<UiState>()((set) => ({
   setHostOrganizer: (hostOrganizer) => set({ hostOrganizer }),
   setFolderDialog: (folderDialog) => set({ folderDialog }),
   setForwardingOpen: (forwardingOpen) => set({ forwardingOpen }),
+  setLogViewerOpen: (logViewerOpen) => set({ logViewerOpen }),
 }));
