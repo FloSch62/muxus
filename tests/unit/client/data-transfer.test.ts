@@ -202,6 +202,23 @@ describe('restoring sidebar folder preferences', () => {
   });
 });
 
+describe('restoring the font color preference', () => {
+  const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
+
+  it('restores a hex override and the explicit scheme-default empty string', () => {
+    expect(sanitizePreferences(prefs({ fontColor: '#AABB00' }))).toMatchObject({
+      fontColor: '#AABB00',
+    });
+    expect(sanitizePreferences(prefs({ fontColor: '' }))).toMatchObject({ fontColor: '' });
+  });
+
+  it('drops a malformed font color rather than importing it', () => {
+    expect(sanitizePreferences(prefs({ fontColor: 'red' })).fontColor).toBeUndefined();
+    expect(sanitizePreferences(prefs({ fontColor: '#fff' })).fontColor).toBeUndefined();
+    expect(sanitizePreferences(prefs({ fontColor: 42 })).fontColor).toBeUndefined();
+  });
+});
+
 describe('restoring manual folder order', () => {
   const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
 

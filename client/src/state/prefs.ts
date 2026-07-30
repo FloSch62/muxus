@@ -47,6 +47,8 @@ export interface PrefsState {
   lineHeight: number;
   /** Terminal color scheme id (see terminal/palette.ts). */
   terminalScheme: string;
+  /** Terminal text color; empty follows the color scheme's foreground. */
+  fontColor: string;
   /** Scrollback lines kept per terminal. */
   scrollback: number;
   cursorBlink: boolean;
@@ -161,6 +163,7 @@ export const usePrefsStore = create<PrefsState>()(
       fontFamily: 'JetBrains Mono',
       lineHeight: 1.0,
       terminalScheme: 'vscode-dark',
+      fontColor: '',
       scrollback: 10_000,
       cursorBlink: true,
       cursorStyle: 'block',

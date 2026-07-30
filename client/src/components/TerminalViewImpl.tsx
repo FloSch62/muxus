@@ -43,6 +43,7 @@ import { useTabsStore, type SessionTab } from '../state/tabs.js';
 import {
   TERMINAL_MINIMUM_CONTRAST_RATIO,
   terminalScheme,
+  themeWithFontColor,
 } from '../terminal/palette.js';
 import { attachCommandTracker } from '../terminal/shell-integration.js';
 import {
@@ -156,6 +157,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const cursorStyle = usePrefsStore((s) => s.cursorStyle);
   const scrollback = usePrefsStore((s) => s.scrollback);
   const schemeId = usePrefsStore((s) => s.terminalScheme);
+  const fontColor = usePrefsStore((s) => s.fontColor);
   const globalKeywordHighlights = usePrefsStore((s) => s.keywordHighlights);
   const scheme = terminalScheme(schemeId);
   const { data: sshConfig } = useSshConfig(tab.profile.kind === 'ssh' && tab.profile.useConfig !== false);
@@ -282,7 +284,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       allowProposedApi: true,
       // ImageAddon uses a bottom layer for negative-z Kitty placements.
       allowTransparency: true,
-      theme: terminalScheme(prefs.terminalScheme).theme,
+      theme: themeWithFontColor(terminalScheme(prefs.terminalScheme).theme, prefs.fontColor),
       // ANSI uses the same palette entries for foregrounds and backgrounds,
       // so combinations chosen by remote tools are not always legible in
       // every theme. Let xterm adjust only the rendered foreground as needed.
@@ -882,9 +884,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     term.options.cursorBlink = cursorBlink;
     term.options.cursorStyle = cursorStyle;
     term.options.scrollback = scrollback;
-    term.options.theme = scheme.theme;
+    term.options.theme = themeWithFontColor(scheme.theme, fontColor);
     fitTerminal();
-  }, [monoFontSize, fontFamily, lineHeight, cursorBlink, cursorStyle, scrollback, scheme, generation]);
+  }, [monoFontSize, fontFamily, lineHeight, cursorBlink, cursorStyle, scrollback, scheme, fontColor, generation]);
 
   useEffect(() => {
     keywordHighlighterRef.current?.setRules(keywordHighlights);

@@ -3,6 +3,7 @@ import {
   TERMINAL_MINIMUM_CONTRAST_RATIO,
   TERMINAL_SCHEMES,
   terminalScheme,
+  themeWithFontColor,
 } from '../../../client/src/terminal/palette.js';
 
 const NEW_LIGHT_SCHEME_IDS = [
@@ -89,5 +90,24 @@ describe('terminal palettes', () => {
   it('keeps VS Code dark as the fallback even though light schemes are listed first', () => {
     expect(terminalScheme(undefined).id).toBe('vscode-dark');
     expect(terminalScheme('unknown').id).toBe('vscode-dark');
+  });
+});
+
+describe('themeWithFontColor', () => {
+  const theme = terminalScheme('vscode-dark').theme;
+
+  it('replaces only the foreground when a font color is set', () => {
+    const overridden = themeWithFontColor(theme, '#FF8800');
+
+    expect(overridden.foreground).toBe('#FF8800');
+    expect({ ...overridden, foreground: theme.foreground }).toEqual(theme);
+    // The shared scheme object is never mutated.
+    expect(theme.foreground).toBe('#cccccc');
+  });
+
+  it('leaves the scheme alone for the empty default and malformed values', () => {
+    expect(themeWithFontColor(theme, '')).toBe(theme);
+    expect(themeWithFontColor(theme, 'orange')).toBe(theme);
+    expect(themeWithFontColor(theme, '#ff0')).toBe(theme);
   });
 });
