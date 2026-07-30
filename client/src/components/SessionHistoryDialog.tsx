@@ -52,6 +52,7 @@ import { apiFetch, apiFetchRaw } from '../api/http.js';
 import { copyToClipboard } from '../clipboard.js';
 import { confirmAction } from '../state/dialogs.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
+import { findTranscriptMatchesInChunks } from '../session-history-matches.js';
 import { showToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
 
@@ -110,25 +111,32 @@ export function SessionHistoryDialog() {
     if (selected && selected.id !== selectedId) setSelectedId(selected.id);
   }, [selected, selectedId]);
 
-  const preview = useMemo(() => {
-    if (!detail) return '';
+  const previewModel = useMemo(() => {
+    let text = '';
+    const chunks: { text: string; offset: number }[] = [];
+    if (!detail) return { text, chunks };
     const events = detail.events.slice(-MAX_PREVIEW_EVENTS);
-    return events
-      .map((event) => {
-        const marker =
-          event.direction === 'input'
-            ? '› '
-            : event.direction === 'system'
-              ? '• '
-              : '';
-        return `${marker}${event.text}`;
-      })
-      .join('');
+    for (const event of events) {
+      const marker =
+        event.direction === 'input'
+          ? '› '
+          : event.direction === 'system'
+            ? '• '
+            : '';
+      chunks.push({ text: event.text, offset: text.length + marker.length });
+      text += `${marker}${event.text}`;
+    }
+    return { text, chunks };
   }, [detail]);
+  const preview = previewModel.text;
 
   const matches = useMemo(
-    () => findMatches(preview, debouncedQuery),
-    [preview, debouncedQuery],
+    () => findTranscriptMatchesInChunks(
+      previewModel.chunks,
+      debouncedQuery,
+      MAX_PREVIEW_MATCHES,
+    ),
+    [previewModel, debouncedQuery],
   );
   const [activeMatch, setActiveMatch] = useState(0);
   useEffect(() => setActiveMatch(0), [matches]);
@@ -144,8 +152,8 @@ export function SessionHistoryDialog() {
     if (!matches.length) return preview;
     const nodes: ReactNode[] = [];
     let cursor = 0;
-    matches.forEach((start, index) => {
-      if (start > cursor) nodes.push(preview.slice(cursor, start));
+    matches.forEach((match, index) => {
+      if (match.start > cursor) nodes.push(preview.slice(cursor, match.start));
       nodes.push(
         <Box
           key={index}
@@ -153,14 +161,14 @@ export function SessionHistoryDialog() {
           data-match={index}
           sx={index === activeMatch ? activeMatchSx : matchSx}
         >
-          {preview.slice(start, start + debouncedQuery.length)}
+          {preview.slice(match.start, match.end)}
         </Box>,
       );
-      cursor = start + debouncedQuery.length;
+      cursor = match.end;
     });
     nodes.push(preview.slice(cursor));
     return nodes;
-  }, [preview, matches, activeMatch, debouncedQuery]);
+  }, [preview, matches, activeMatch]);
 
   return (
     <Dialog
@@ -463,7 +471,7 @@ function HistoryListItem({
             {formatDate(session.startedAt)} · {formatBytes(session.rawBytes)}
             {session.matchCount
               ? ` · ${session.matchCount.toLocaleString()} ${
-                  session.matchCount === 1 ? 'match' : 'matches'
+                  session.matchCount === 1 ? 'matching chunk' : 'matching chunks'
                 }`
               : null}
             {session.snippet ? (
@@ -600,20 +608,6 @@ async function copyCleanLog(session: SessionLogSummary): Promise<void> {
   } catch (err) {
     showToast('error', err instanceof Error ? err.message : String(err));
   }
-}
-
-/** Case-insensitive literal occurrences of the query, capped for rendering. */
-function findMatches(text: string, query: string): number[] {
-  const needle = query.toLowerCase();
-  if (!needle) return [];
-  const haystack = text.toLowerCase();
-  const positions: number[] = [];
-  let index = haystack.indexOf(needle);
-  while (index !== -1 && positions.length < MAX_PREVIEW_MATCHES) {
-    positions.push(index);
-    index = haystack.indexOf(needle, index + needle.length);
-  }
-  return positions;
 }
 
 /** Snippet text with the server's sentinel-marked ranges rendered as marks. */
