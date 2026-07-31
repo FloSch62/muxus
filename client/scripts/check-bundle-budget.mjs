@@ -79,9 +79,13 @@ const initialKeys = collectStaticGraph(entry[0]);
 // mirror — adds ~1 KiB raw / ~0.4 KiB gzip to the keymap and the multi-exec
 // store, both of which the first paint already carries, and the gzip budget
 // moves to cover it.
+//
+// Background-output notifications also live in the tab store and tab strip,
+// both of which are required for first paint. The gzip budget moves by 1 KiB
+// to cover their state and visual treatment.
 check('Initial JavaScript', measureGraph(initialKeys), {
   raw: 782_000,
-  gzip: 251_000,
+  gzip: 252_000,
 });
 
 for (const feature of [
