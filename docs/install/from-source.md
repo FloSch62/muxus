@@ -52,6 +52,10 @@ pnpm lint       # oxlint
 pnpm typecheck
 ```
 
+`pnpm electron` uses a separate `Muxus-development` user-data directory. At every launch,
+its application database is refreshed from the installed Muxus database when one exists;
+the installed application's database is never opened for writes by the development build.
+
 !!! note "Native modules and Electron"
 
     `pnpm electron` runs against Electron's ABI, so the native bindings must be rebuilt for

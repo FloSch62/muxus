@@ -20,12 +20,23 @@ import type {
   MobaXtermSessionSource,
   UpdateCheckResult,
 } from '@muxus/shared';
+import {
+  developmentUserDataPath,
+  seedDevelopmentDatabase,
+} from './development-database.js';
 import { importLoginShellEnvironment } from './login-shell-environment.js';
 import { initMainLog, installCrashCapture, mainLog, mainLogPath } from './main-log.js';
 import { readLocalMobaXtermSessions } from './mobaxterm.js';
 
 // Name first: userData (and with it the log location) derives from it.
 app.setName('Muxus');
+const installedUserDataPath = app.getPath('userData');
+const isDevelopment = !app.isPackaged;
+if (isDevelopment) {
+  const userDataPath = developmentUserDataPath(installedUserDataPath);
+  mkdirSync(userDataPath, { recursive: true, mode: 0o700 });
+  app.setPath('userData', userDataPath);
+}
 initMainLog(app.getPath('userData'));
 installCrashCapture();
 mainLog(
@@ -594,6 +605,18 @@ if (!app.requestSingleInstanceLock()) {
   void app.whenReady().then(async () => {
     process.env.MUXUS_VERSION = app.getVersion();
     try {
+      if (isDevelopment) {
+        const seeded = await seedDevelopmentDatabase(
+          installedUserDataPath,
+          app.getPath('userData'),
+        );
+        mainLog(
+          'info',
+          seeded
+            ? 'refreshed the development database from the installed app'
+            : 'installed app database not found; using the development database',
+        );
+      }
       server = await startServer({
         port: 0,
         openBrowser: false,
