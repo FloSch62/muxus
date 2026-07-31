@@ -34,7 +34,9 @@ because storage policy should not change under a running recorder.
 - **Cursor**: block, underline or bar, blinking or not.
 - **Right-click**: copy-selection-otherwise-paste (the terminal convention), always paste,
   or a context menu.
-- **Copy on select** and the **multiline paste confirmation**.
+- **Copy on select**, **OSC 52 clipboard writes** from terminal programs such as tmux and
+  Zellij, and the **multiline paste confirmation**. OSC 52 reads remain blocked so a
+  terminal program cannot retrieve the local clipboard.
 - **Scrollback lines** kept per terminal.
 - **Local shell**: the shell a local terminal starts; `auto` uses the login shell.
 

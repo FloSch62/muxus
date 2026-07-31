@@ -46,6 +46,7 @@ import {
   themeWithFontColor,
 } from '../terminal/palette.js';
 import { attachCommandTracker } from '../terminal/shell-integration.js';
+import { attachOsc52Clipboard } from '../terminal/osc52-clipboard.js';
 import {
   attachKeywordHighlighter,
   resolveKeywordHighlights,
@@ -307,6 +308,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     term.loadAddon(new Unicode11Addon());
     term.unicode.activeVersion = '11';
     term.loadAddon(new WebLinksAddon());
+    attachOsc52Clipboard(
+      term,
+      (text) => {
+        void copyToClipboard(text);
+      },
+      () => usePrefsStore.getState().allowOsc52ClipboardWrite,
+    );
     // xterm 6.1 streams Kitty APC payloads straight into ImageAddon's WASM
     // base64 decoder. This also handles Sixel and iTerm2 inline images.
     const image = new ImageAddon({

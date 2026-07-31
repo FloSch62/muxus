@@ -57,6 +57,9 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.101.2
         version: 5.101.4(react@19.2.8)
+      '@xterm/addon-clipboard':
+        specifier: ^0.3.0-beta.292
+        version: 0.3.0-beta.292(@xterm/xterm@6.1.0-beta.292)
       '@xterm/addon-fit':
         specifier: ^0.12.0-beta.292
         version: 0.12.0-beta.292(@xterm/xterm@6.1.0-beta.292)
@@ -1622,6 +1625,11 @@ packages:
   '@xmldom/xmldom@0.8.13':
     resolution: {integrity: sha512-KRYzxepc14G/CEpEGc3Yn+JKaAeT63smlDr+vjB8jRfgTBBI9wRj/nkQEO+ucV8p8I9bfKLWp37uHgFrbntPvw==}
     engines: {node: '>=10.0.0'}
+
+  '@xterm/addon-clipboard@0.3.0-beta.292':
+    resolution: {integrity: sha512-UNjPtLHO9do8lDoYcfuipBtQzjjex2iOudN7G+2ExqcvecVnex6v0UGxUttgg0xN+a6TTEZkdIaWIi/kZnjtoA==}
+    peerDependencies:
+      '@xterm/xterm': ^6.1.0-beta.292
 
   '@xterm/addon-fit@0.12.0-beta.292':
     resolution: {integrity: sha512-SIuWR0KM2IpmumVqL4L43aOUeTEUeN82ItyrUFHGFtfj3veoAIbPapxJPj7O0tYngfiiHZqqm1+XsZp/Fc8LLA==}
@@ -4548,6 +4556,10 @@ snapshots:
       tinyrainbow: 3.1.0
 
   '@xmldom/xmldom@0.8.13': {}
+
+  '@xterm/addon-clipboard@0.3.0-beta.292(@xterm/xterm@6.1.0-beta.292)':
+    dependencies:
+      '@xterm/xterm': 6.1.0-beta.292
 
   '@xterm/addon-fit@0.12.0-beta.292(@xterm/xterm@6.1.0-beta.292)':
     dependencies:

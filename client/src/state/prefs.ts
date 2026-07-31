@@ -57,6 +57,8 @@ export interface PrefsState {
   localShell: string;
   /** Copy the selection to the clipboard as soon as it is made. */
   copyOnSelect: boolean;
+  /** Let terminal applications replace the system clipboard via OSC 52. */
+  allowOsc52ClipboardWrite: boolean;
   /** Right-click: copy selection / paste (terminal convention), always paste, or context menu. */
   rightClickAction: RightClickAction;
   /** Preview multiline pastes before they can run several shell commands. */
@@ -169,6 +171,7 @@ export const usePrefsStore = create<PrefsState>()(
       cursorStyle: 'block',
       localShell: 'auto',
       copyOnSelect: false,
+      allowOsc52ClipboardWrite: true,
       rightClickAction: 'copy-paste',
       pasteWarnMultiline: true,
       confirmCloseConnected: true,
