@@ -67,6 +67,8 @@ export interface PrefsState {
   confirmCloseConnected: boolean;
   /** Dial remote sessions on workspace restore and retry dropped connections. */
   autoReconnectRemote: boolean;
+  /** Show a notification at startup when a newer release is available. */
+  notifyOnNewVersion: boolean;
   /** Persist recent terminal output and replay it on restore and reconnect. */
   restoreScrollback: boolean;
   /** Scale of the whole interface, 1 = 100%. */
@@ -176,6 +178,7 @@ export const usePrefsStore = create<PrefsState>()(
       pasteWarnMultiline: true,
       confirmCloseConnected: true,
       autoReconnectRemote: true,
+      notifyOnNewVersion: true,
       restoreScrollback: true,
       interfaceZoom: 1,
       splitInheritsSession: true,

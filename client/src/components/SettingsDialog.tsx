@@ -1077,6 +1077,7 @@ function DebugSection() {
 
 function AboutSection() {
   const { data: info } = useAppInfo();
+  const prefs = usePrefsStore();
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<UpdateCheckResult | null>(null);
 
@@ -1111,6 +1112,23 @@ function AboutSection() {
       <Box>
         <SectionTitle>Updates</SectionTitle>
         <Stack spacing={1.5} sx={{ alignItems: 'flex-start' }}>
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={prefs.notifyOnNewVersion}
+                onChange={(e) => prefs.set({ notifyOnNewVersion: e.target.checked })}
+              />
+            }
+            label={
+              <Box>
+                <Typography variant="body2">Notify me when a new version is available</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Off: no notification at startup — checking here still works.
+                </Typography>
+              </Box>
+            }
+          />
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
             <Button
               variant="contained"
