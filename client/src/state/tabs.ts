@@ -101,6 +101,8 @@ export const PANE_RESIZE_STEP = 0.04;
 
 interface TabsState {
   tabs: TerminalTab[];
+  /** Terminal tabs with output that arrived while they were not visible. */
+  unreadOutputIds: Set<string>;
   root: PaneNode;
   activePaneId: string;
   activeId: string | null;
@@ -143,6 +145,8 @@ interface TabsState {
   reconnect: (tabIds: readonly string[], options?: ReconnectOptions) => void;
   /** Reconnect every ended/restored session in the current workspace. */
   reconnectAll: (options?: ReconnectOptions) => void;
+  /** Record terminal output, notifying only while the tab is hidden. */
+  notifyOutput: (id: string) => void;
   update: (id: string, patch: TabUpdate) => void;
 }
 
@@ -187,8 +191,45 @@ function insertSplit(
   };
 }
 
+/** Whether a terminal, rather than one of its editors, is visible on the canvas. */
+function terminalIsVisible(
+  tab: TerminalTab,
+  root: PaneNode,
+  zoomedPaneId: string | null,
+): boolean {
+  return (
+    !tab.activeEditorPath &&
+    (!zoomedPaneId || zoomedPaneId === tab.paneId) &&
+    findPane(root, tab.paneId)?.activeTabId === tab.id
+  );
+}
+
+/** Drop notifications for every terminal currently visible on the canvas. */
+function clearVisibleOutput(
+  unreadOutputIds: Set<string>,
+  tabs: readonly TerminalTab[],
+  root: PaneNode,
+  zoomedPaneId: string | null,
+): Set<string> {
+  if (unreadOutputIds.size === 0) return unreadOutputIds;
+  const next = new Set(unreadOutputIds);
+  for (const tab of tabs) {
+    if (terminalIsVisible(tab, root, zoomedPaneId)) next.delete(tab.id);
+  }
+  return next.size === unreadOutputIds.size ? unreadOutputIds : next;
+}
+
+/** Remove one tab from the unread set without allocating when it is already read. */
+function clearOutput(unreadOutputIds: Set<string>, id: string): Set<string> {
+  if (!unreadOutputIds.has(id)) return unreadOutputIds;
+  const next = new Set(unreadOutputIds);
+  next.delete(id);
+  return next;
+}
+
 export const useTabsStore = create<TabsState>()((set, get) => ({
   tabs: [],
+  unreadOutputIds: new Set(),
   root: initial,
   activePaneId: initial.id,
   activeId: null,
@@ -292,19 +333,33 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
       const collapsed = replacement === null ? collapsePane(state.root, closing.paneId) : undefined;
       if (collapsed) {
         const focused = state.activePaneId === closing.paneId;
+        const zoomedPaneId = state.zoomedPaneId === closing.paneId ? null : state.zoomedPaneId;
         return {
           tabs,
           root: collapsed.root,
-          zoomedPaneId: state.zoomedPaneId === closing.paneId ? null : state.zoomedPaneId,
+          unreadOutputIds: clearVisibleOutput(
+            clearOutput(state.unreadOutputIds, id),
+            tabs,
+            collapsed.root,
+            zoomedPaneId,
+          ),
+          zoomedPaneId,
           activePaneId: focused ? collapsed.focus.id : state.activePaneId,
           activeId: focused ? collapsed.focus.activeTabId : state.activeId,
         };
       }
       const pane = findPane(state.root, closing.paneId);
       const paneActiveId = pane?.activeTabId === id ? replacement : (pane?.activeTabId ?? null);
+      const root = updatePane(state.root, closing.paneId, (leaf) => ({ ...leaf, activeTabId: paneActiveId }));
       return {
         tabs,
-        root: updatePane(state.root, closing.paneId, (leaf) => ({ ...leaf, activeTabId: paneActiveId })),
+        root,
+        unreadOutputIds: clearVisibleOutput(
+          clearOutput(state.unreadOutputIds, id),
+          tabs,
+          root,
+          state.zoomedPaneId,
+        ),
         activeId: state.activeId === id ? paneActiveId : state.activeId,
       };
     }),
@@ -312,21 +367,26 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
     set((state) => {
       const tab = state.tabs.find((candidate) => candidate.id === id);
       if (!tab) return state;
+      const root = updatePane(state.root, tab.paneId, (pane) => ({ ...pane, activeTabId: id }));
+      const zoomedPaneId = state.zoomedPaneId === tab.paneId ? state.zoomedPaneId : null;
       return {
-        root: updatePane(state.root, tab.paneId, (pane) => ({ ...pane, activeTabId: id })),
+        unreadOutputIds: clearVisibleOutput(state.unreadOutputIds, state.tabs, root, zoomedPaneId),
+        root,
         activePaneId: tab.paneId,
         activeId: id,
-        zoomedPaneId: state.zoomedPaneId === tab.paneId ? state.zoomedPaneId : null,
+        zoomedPaneId,
       };
     }),
   focusPane: (paneId) =>
     set((state) => {
       const pane = findPane(state.root, paneId);
       if (!pane) return state;
+      const zoomedPaneId = state.zoomedPaneId === paneId ? state.zoomedPaneId : null;
       return {
+        unreadOutputIds: clearVisibleOutput(state.unreadOutputIds, state.tabs, state.root, zoomedPaneId),
         activePaneId: paneId,
         activeId: pane.activeTabId,
-        zoomedPaneId: state.zoomedPaneId === paneId ? state.zoomedPaneId : null,
+        zoomedPaneId,
       };
     }),
   cycle: (backwards) =>
@@ -337,6 +397,7 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
       const next = (index + (backwards ? -1 : 1) + paneTabs.length) % paneTabs.length;
       const activeId = paneTabs[next]!.id;
       return {
+        unreadOutputIds: clearOutput(state.unreadOutputIds, activeId),
         activeId,
         root: updatePane(state.root, state.activePaneId, (pane) => ({ ...pane, activeTabId: activeId })),
       };
@@ -368,7 +429,13 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
       if (!findPane(state.root, paneId)) return state;
       const { root, pane } = insertSplit(state.root, paneId, direction);
       created = pane.id;
-      return { root, activePaneId: pane.id, activeId: null, zoomedPaneId: null };
+      return {
+        root,
+        unreadOutputIds: clearVisibleOutput(state.unreadOutputIds, state.tabs, root, null),
+        activePaneId: pane.id,
+        activeId: null,
+        zoomedPaneId: null,
+      };
     });
     return created;
   },
@@ -377,10 +444,19 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
       const collapsed = collapsePane(state.root, paneId);
       if (!collapsed) return state;
       const focused = state.activePaneId === paneId;
+      const zoomedPaneId = state.zoomedPaneId === paneId ? null : state.zoomedPaneId;
+      const closedIds = new Set(
+        state.tabs.filter((tab) => tab.paneId === paneId).map((tab) => tab.id),
+      );
+      const remainingOutputIds = new Set(
+        [...state.unreadOutputIds].filter((id) => !closedIds.has(id)),
+      );
+      const tabs = state.tabs.filter((tab) => tab.paneId !== paneId);
       return {
-        tabs: state.tabs.filter((tab) => tab.paneId !== paneId),
+        tabs,
         root: collapsed.root,
-        zoomedPaneId: state.zoomedPaneId === paneId ? null : state.zoomedPaneId,
+        unreadOutputIds: clearVisibleOutput(remainingOutputIds, tabs, collapsed.root, zoomedPaneId),
+        zoomedPaneId,
         activePaneId: focused ? collapsed.focus.id : state.activePaneId,
         activeId: focused ? collapsed.focus.activeTabId : state.activeId,
       };
@@ -441,12 +517,14 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
         if (zoomedPaneId === sourceId) zoomedPaneId = null;
       }
     }
+    const nextZoomedPaneId = zoomedPaneId === targetId ? zoomedPaneId : null;
     set({
       tabs,
       root,
+      unreadOutputIds: clearVisibleOutput(state.unreadOutputIds, tabs, root, nextZoomedPaneId),
       activePaneId: targetId,
       activeId: tab.id,
-      zoomedPaneId: zoomedPaneId === targetId ? zoomedPaneId : null,
+      zoomedPaneId: nextZoomedPaneId,
     });
     return true;
   },
@@ -456,8 +534,10 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
     if (state.root.type === 'pane' && !state.zoomedPaneId) return false;
     const pane = findPane(state.root, target);
     if (!pane) return false;
+    const zoomedPaneId = state.zoomedPaneId === target ? null : target;
     set({
-      zoomedPaneId: state.zoomedPaneId === target ? null : target,
+      unreadOutputIds: clearVisibleOutput(state.unreadOutputIds, state.tabs, state.root, zoomedPaneId),
+      zoomedPaneId,
       activePaneId: target,
       activeId: pane.activeTabId,
     });
@@ -505,8 +585,8 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
       ),
     })),
   closeEditor: (tabId, path) =>
-    set((state) => ({
-      tabs: state.tabs.map((tab) => {
+    set((state) => {
+      const tabs = state.tabs.map((tab) => {
         if (tab.id !== tabId || !tab.editorPaths.includes(path)) return tab;
         const index = tab.editorPaths.indexOf(path);
         const editorPaths = tab.editorPaths.filter((candidate) => candidate !== path);
@@ -515,14 +595,24 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
             ? editorPaths[Math.min(index, editorPaths.length - 1)]
             : tab.activeEditorPath;
         return { ...tab, editorPaths, activeEditorPath };
-      }),
-    })),
+      });
+      return {
+        tabs,
+        unreadOutputIds: clearVisibleOutput(
+          state.unreadOutputIds,
+          tabs,
+          state.root,
+          state.zoomedPaneId,
+        ),
+      };
+    }),
   restore: (layout, options) =>
     set((state) => {
       if (!layout.root) {
         const pane = initialPane();
         return {
           tabs: [],
+          unreadOutputIds: new Set(),
           root: pane,
           activePaneId: pane.id,
           activeId: null,
@@ -534,6 +624,7 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
       return {
         ...restored,
         zoomedPaneId: null,
+        unreadOutputIds: new Set(),
         tabs: restored.tabs.map((tab) => ({
           ...tab,
           restored: true,
@@ -592,6 +683,7 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
     set({
       tabs,
       root,
+      unreadOutputIds: new Set(),
       activePaneId: activePane.id,
       activeId: activePane.activeTabId,
       zoomedPaneId: null,
@@ -634,6 +726,18 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
           : tab,
       ),
     })),
+  notifyOutput: (id) =>
+    set((state) => {
+      const tab = state.tabs.find((candidate) => candidate.id === id);
+      if (!tab?.profile) return state;
+      const visible = terminalIsVisible(tab, state.root, state.zoomedPaneId);
+      const unread = state.unreadOutputIds.has(id);
+      if (unread === !visible) return state;
+      const unreadOutputIds = new Set(state.unreadOutputIds);
+      if (visible) unreadOutputIds.delete(id);
+      else unreadOutputIds.add(id);
+      return { unreadOutputIds };
+    }),
   update: (id, patch) =>
     set((state) => ({
       tabs: state.tabs.map((tab) => {

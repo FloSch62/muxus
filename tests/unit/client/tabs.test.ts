@@ -19,6 +19,7 @@ const answerDialog = async (confirmed: boolean) => {
 beforeEach(() => {
   useTabsStore.setState({
     tabs: [],
+    unreadOutputIds: new Set(),
     root: { id: 'pane-test', type: 'pane', activeTabId: null },
     activePaneId: 'pane-test',
     activeId: null,
@@ -26,6 +27,99 @@ beforeEach(() => {
   });
   usePrefsStore.setState({ confirmCloseConnected: true, splitInheritsSession: true });
   useDialogStore.setState({ queue: [] });
+});
+
+describe('terminal output notifications', () => {
+  it('marks output on a hidden tab and clears it when the tab is activated', () => {
+    const store = useTabsStore.getState();
+    const backgroundId = store.open({ kind: 'local' }, 'Background');
+    const activeId = store.open({ kind: 'local' }, 'Active');
+
+    useTabsStore.getState().notifyOutput(backgroundId);
+    useTabsStore.getState().notifyOutput(activeId);
+
+    expect(useTabsStore.getState().unreadOutputIds).toEqual(new Set([backgroundId]));
+
+    useTabsStore.getState().activate(backgroundId);
+    expect(useTabsStore.getState().unreadOutputIds).toEqual(new Set());
+  });
+
+  it('does not update state again for subsequent output while a notification is unread', () => {
+    const store = useTabsStore.getState();
+    const backgroundId = store.open({ kind: 'local' }, 'Background');
+    store.open({ kind: 'local' }, 'Active');
+    useTabsStore.getState().notifyOutput(backgroundId);
+    const unreadOutputIds = useTabsStore.getState().unreadOutputIds;
+
+    useTabsStore.getState().notifyOutput(backgroundId);
+
+    expect(useTabsStore.getState().unreadOutputIds).toBe(unreadOutputIds);
+  });
+
+  it('clears notifications when cycling to or closing a background tab', () => {
+    const store = useTabsStore.getState();
+    const firstId = store.open({ kind: 'local' }, 'First');
+    const secondId = store.open({ kind: 'local' }, 'Second');
+    useTabsStore.getState().notifyOutput(firstId);
+
+    useTabsStore.getState().cycle(true);
+    expect(useTabsStore.getState().unreadOutputIds).toEqual(new Set());
+
+    useTabsStore.getState().notifyOutput(secondId);
+    useTabsStore.getState().close(secondId);
+    expect(useTabsStore.getState().unreadOutputIds).toEqual(new Set());
+  });
+
+  it('treats the selected tab in every split pane as visible', () => {
+    const store = useTabsStore.getState();
+    const leftId = store.open({ kind: 'local' }, 'Left');
+    store.split('pane-test', 'right');
+    useTabsStore.getState().open({ kind: 'local' }, 'Right');
+
+    useTabsStore.getState().notifyOutput(leftId);
+
+    expect(useTabsStore.getState().unreadOutputIds).toEqual(new Set());
+  });
+
+  it('notifies for panes hidden by zoom and clears when they become visible again', () => {
+    const store = useTabsStore.getState();
+    const leftId = store.open({ kind: 'local' }, 'Left');
+    store.split('pane-test', 'right');
+    useTabsStore.getState().open({ kind: 'local' }, 'Right');
+    useTabsStore.getState().toggleZoom();
+
+    useTabsStore.getState().notifyOutput(leftId);
+    expect(useTabsStore.getState().unreadOutputIds).toEqual(new Set([leftId]));
+
+    useTabsStore.getState().toggleZoom();
+    expect(useTabsStore.getState().unreadOutputIds).toEqual(new Set());
+  });
+
+  it('treats a terminal covered by its remote editor as hidden', () => {
+    const store = useTabsStore.getState();
+    const id = store.open({ kind: 'ssh', target: 'router' }, 'Router');
+    store.openEditor(id, '/etc/hosts');
+
+    useTabsStore.getState().notifyOutput(id);
+    expect(useTabsStore.getState().unreadOutputIds).toEqual(new Set([id]));
+
+    useTabsStore.getState().closeEditor(id, '/etc/hosts');
+    expect(useTabsStore.getState().unreadOutputIds).toEqual(new Set());
+  });
+
+  it('preserves unread output for the selected tab in a zoom-hidden pane', () => {
+    const store = useTabsStore.getState();
+    const closingId = store.open({ kind: 'local' }, 'Closing');
+    const unreadId = store.open({ kind: 'local' }, 'Unread');
+    store.split('pane-test', 'right');
+    useTabsStore.getState().open({ kind: 'local' }, 'Zoomed');
+    useTabsStore.getState().toggleZoom();
+    useTabsStore.getState().notifyOutput(unreadId);
+
+    useTabsStore.getState().close(closingId);
+
+    expect(useTabsStore.getState().unreadOutputIds).toEqual(new Set([unreadId]));
+  });
 });
 
 describe('blank session tabs', () => {
