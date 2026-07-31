@@ -13,7 +13,11 @@ import {
   shell,
   type MenuItemConstructorOptions,
 } from 'electron';
-import { startServer, type RunningServer } from '@muxus/server';
+import {
+  startServer,
+  SystemVaultKeyStore,
+  type RunningServer,
+} from '@muxus/server';
 import { isNewerVersion } from '@muxus/shared';
 import type {
   AppWindowLaunch,
@@ -606,22 +610,31 @@ if (!app.requestSingleInstanceLock()) {
     process.env.MUXUS_VERSION = app.getVersion();
     try {
       if (isDevelopment) {
-        const seeded = await seedDevelopmentDatabase(
+        const seed = await seedDevelopmentDatabase(
           installedUserDataPath,
           app.getPath('userData'),
+          new SystemVaultKeyStore(),
         );
         mainLog(
           'info',
-          seeded
+          seed.databaseCopied
             ? 'refreshed the development database from the installed app'
             : 'installed app database not found; using the development database',
         );
+        if (seed.automaticVaultKey === 'missing' || seed.automaticVaultKey === 'unavailable') {
+          mainLog(
+            'warn',
+            'automatic password-vault access could not be copied; the development vault may require repair with its master password',
+          );
+        }
       }
+      const userDataPath = app.getPath('userData');
       server = await startServer({
         port: 0,
         openBrowser: false,
         prettyLogs: false,
-        databasePath: path.join(app.getPath('userData'), 'muxus.sqlite3'),
+        databasePath: path.join(userDataPath, 'muxus.sqlite3'),
+        historyPath: isDevelopment ? path.join(userDataPath, 'history') : undefined,
         staticRoot: app.isPackaged
           ? path.join(process.resourcesPath, 'client')
           : path.resolve(moduleDir, '../../client/dist'),

@@ -4,8 +4,10 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  developmentVaultId,
   developmentUserDataPath,
   seedDevelopmentDatabase,
+  type DevelopmentVaultKeyStore,
 } from '../../../electron/src/development-database.js';
 
 let temporaryDirectory: string | undefined;
@@ -30,6 +32,19 @@ function openDatabase(directory: string): DatabaseSync {
   return new DatabaseSync(path.join(directory, 'muxus.sqlite3'));
 }
 
+class TestVaultKeyStore implements DevelopmentVaultKeyStore {
+  readonly values = new Map<string, Buffer>();
+
+  async get(vaultId: string): Promise<Buffer | undefined> {
+    const value = this.values.get(vaultId);
+    return value ? Buffer.from(value) : undefined;
+  }
+
+  async set(vaultId: string, key: Buffer): Promise<void> {
+    this.values.set(vaultId, Buffer.from(key));
+  }
+}
+
 describe('Electron development database', () => {
   it('uses a sibling user-data directory', () => {
     expect(developmentUserDataPath('/profiles/Muxus')).toBe('/profiles/Muxus-development');
@@ -45,7 +60,9 @@ describe('Electron development database', () => {
     `);
 
     try {
-      await expect(seedDevelopmentDatabase(installed, development)).resolves.toBe(true);
+      await expect(seedDevelopmentDatabase(installed, development)).resolves.toMatchObject({
+        databaseCopied: true,
+      });
     } finally {
       source.close();
     }
@@ -91,7 +108,9 @@ describe('Electron development database', () => {
     existing.exec("CREATE TABLE example(value TEXT NOT NULL); INSERT INTO example VALUES ('kept');");
     existing.close();
 
-    await expect(seedDevelopmentDatabase(installed, development)).resolves.toBe(false);
+    await expect(seedDevelopmentDatabase(installed, development)).resolves.toMatchObject({
+      databaseCopied: false,
+    });
 
     const unchanged = openDatabase(development);
     try {
@@ -99,5 +118,69 @@ describe('Electron development database', () => {
     } finally {
       unchanged.close();
     }
+  });
+
+  it('forces copied session history into development storage', async () => {
+    const { installed, development } = directories();
+    const source = openDatabase(installed);
+    source.exec(`
+      CREATE TABLE session_history_settings(
+        singleton INTEGER PRIMARY KEY,
+        storage_location TEXT
+      );
+      INSERT INTO session_history_settings VALUES (1, '/production/history');
+    `);
+    source.close();
+
+    await seedDevelopmentDatabase(installed, development);
+
+    const copy = openDatabase(development);
+    try {
+      expect(
+        copy.prepare('SELECT storage_location FROM session_history_settings').get(),
+      ).toEqual({ storage_location: null });
+    } finally {
+      copy.close();
+    }
+  });
+
+  it('namespaces automatic vault keys and drops copied cleanup work', async () => {
+    const { installed, development } = directories();
+    const sourceVaultId = 'production-vault-id';
+    const sourceKey = Buffer.alloc(32, 0x5a);
+    const keyStore = new TestVaultKeyStore();
+    keyStore.values.set(sourceVaultId, Buffer.from(sourceKey));
+
+    const source = openDatabase(installed);
+    source.exec(`
+      CREATE TABLE password_vault(
+        singleton INTEGER PRIMARY KEY,
+        vault_id TEXT NOT NULL,
+        unlock_policy TEXT NOT NULL
+      );
+      CREATE TABLE password_vault_key_cleanup(vault_id TEXT PRIMARY KEY);
+      INSERT INTO password_vault VALUES (1, '${sourceVaultId}', 'never');
+      INSERT INTO password_vault_key_cleanup VALUES ('production-old-vault');
+    `);
+    source.close();
+
+    await expect(
+      seedDevelopmentDatabase(installed, development, keyStore),
+    ).resolves.toEqual({ databaseCopied: true, automaticVaultKey: 'copied' });
+
+    const namespacedVaultId = developmentVaultId(sourceVaultId);
+    const copy = openDatabase(development);
+    try {
+      expect(copy.prepare('SELECT vault_id FROM password_vault').get()).toEqual({
+        vault_id: namespacedVaultId,
+      });
+      expect(copy.prepare('SELECT vault_id FROM password_vault_key_cleanup').all()).toEqual(
+        [],
+      );
+    } finally {
+      copy.close();
+    }
+    expect(keyStore.values.get(sourceVaultId)).toEqual(sourceKey);
+    expect(keyStore.values.get(namespacedVaultId)).toEqual(sourceKey);
   });
 });
