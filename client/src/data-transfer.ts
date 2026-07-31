@@ -43,6 +43,7 @@ const PREFERENCE_KEYS = [
   'cursorStyle',
   'localShell',
   'copyOnSelect',
+  'allowOsc52ClipboardWrite',
   'rightClickAction',
   'pasteWarnMultiline',
   'confirmCloseConnected',
@@ -591,6 +592,9 @@ export function sanitizePreferences(input: BackupPreferences): Partial<PrefsStat
     output.localShell = input.localShell;
   }
   if (typeof input.copyOnSelect === 'boolean') output.copyOnSelect = input.copyOnSelect;
+  if (typeof input.allowOsc52ClipboardWrite === 'boolean') {
+    output.allowOsc52ClipboardWrite = input.allowOsc52ClipboardWrite;
+  }
   if (['copy-paste', 'paste', 'menu'].includes(input.rightClickAction)) {
     output.rightClickAction = input.rightClickAction;
   }

@@ -46,6 +46,7 @@ import {
   themeWithFontColor,
 } from '../terminal/palette.js';
 import { attachCommandTracker } from '../terminal/shell-integration.js';
+import { attachOsc52Clipboard } from '../terminal/osc52-clipboard.js';
 import {
   attachKeywordHighlighter,
   resolveKeywordHighlights,
@@ -370,6 +371,17 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       }
       return true;
     };
+
+    attachOsc52Clipboard(
+      term,
+      (text) => {
+        void copyToClipboard(text);
+      },
+      () => usePrefsStore.getState().allowOsc52ClipboardWrite,
+      (data) => {
+        sendInput(data);
+      },
+    );
 
     const unregister = registerTerminal(tab.id, {
       focus: () => term.focus(),

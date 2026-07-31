@@ -129,6 +129,14 @@ Retention is bounded by a quota with a free-space reserve, and exhausted storage
 logging rather than filling the disk. See
 [session history](../guide/session-history.md).
 
+## Terminal clipboard access
+
+Terminal programs may replace the system clipboard through OSC 52 when **Allow terminal
+clipboard writes** is enabled in Terminal settings. It is enabled by default for tmux,
+Zellij and editor compatibility, and can be disabled at any time. OSC 52 clipboard reads
+are always blocked: a local or remote terminal program receives an empty value instead of
+the clipboard contents.
+
 ## Telnet and serial
 
 Telnet provides **no encryption and no server authentication**. All traffic, including what

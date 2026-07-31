@@ -492,6 +492,23 @@ function TerminalSection() {
             label={<Typography variant="body2">Copy on select</Typography>}
           />
           <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={prefs.allowOsc52ClipboardWrite}
+                onChange={(e) => prefs.set({ allowOsc52ClipboardWrite: e.target.checked })}
+              />
+            }
+            label={
+              <Box>
+                <Typography variant="body2">Allow terminal clipboard writes (OSC 52)</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Lets terminal programs such as tmux and Zellij replace the system clipboard. Clipboard reads remain blocked.
+                </Typography>
+              </Box>
+            }
+          />
+          <FormControlLabel
             control={<Switch size="small" checked={prefs.pasteWarnMultiline} onChange={(e) => prefs.set({ pasteWarnMultiline: e.target.checked })} />}
             label={
               <Box>

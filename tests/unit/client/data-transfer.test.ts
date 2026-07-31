@@ -219,6 +219,19 @@ describe('restoring the font color preference', () => {
   });
 });
 
+describe('restoring the OSC 52 clipboard preference', () => {
+  const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
+
+  it('restores only boolean clipboard-write choices', () => {
+    expect(sanitizePreferences(prefs({ allowOsc52ClipboardWrite: false })))
+      .toMatchObject({ allowOsc52ClipboardWrite: false });
+    expect(
+      sanitizePreferences(prefs({ allowOsc52ClipboardWrite: 'yes' }))
+        .allowOsc52ClipboardWrite,
+    ).toBeUndefined();
+  });
+});
+
 describe('restoring manual folder order', () => {
   const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
 
