@@ -47,6 +47,7 @@ const PREFERENCE_KEYS = [
   'rightClickAction',
   'pasteWarnMultiline',
   'confirmCloseConnected',
+  'notifyOnNewVersion',
   'commandButtons',
   'keywordHighlights',
   'sidebarCollapsed',
@@ -603,6 +604,9 @@ export function sanitizePreferences(input: BackupPreferences): Partial<PrefsStat
   }
   if (typeof input.confirmCloseConnected === 'boolean') {
     output.confirmCloseConnected = input.confirmCloseConnected;
+  }
+  if (typeof input.notifyOnNewVersion === 'boolean') {
+    output.notifyOnNewVersion = input.notifyOnNewVersion;
   }
   if (
     Array.isArray(input.commandButtons) &&

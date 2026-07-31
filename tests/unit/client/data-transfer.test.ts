@@ -3,11 +3,13 @@ import { apiFetch } from '../../../client/src/api/http.js';
 import {
   BACKUP_FORMAT,
   TRANSFER_VERSION,
+  createBackupDocument,
   parseTransferDocument,
   restoreImportedConnections,
   sanitizePreferences,
   type BackupPreferences,
 } from '../../../client/src/data-transfer.js';
+import { usePrefsStore } from '../../../client/src/state/prefs.js';
 
 vi.mock('../../../client/src/api/http.js', () => ({
   apiFetch: vi.fn(),
@@ -17,6 +19,7 @@ const apiFetchMock = vi.mocked(apiFetch);
 
 beforeEach(() => {
   apiFetchMock.mockReset();
+  usePrefsStore.setState({ notifyOnNewVersion: true });
 });
 
 const connections = {
@@ -113,6 +116,30 @@ describe('Muxus transfer file parsing', () => {
         }),
       ),
     ).toThrow('The connection data in this file is incomplete or too large.');
+  });
+});
+
+describe('backing up preferences', () => {
+  it('includes the update notification choice', async () => {
+    usePrefsStore.setState({ notifyOnNewVersion: false });
+    apiFetchMock
+      .mockResolvedValueOnce({ hosts: [] })
+      .mockResolvedValueOnce({ profiles: [] })
+      .mockResolvedValueOnce({ tunnels: [] })
+      .mockResolvedValueOnce({ overridden: false })
+      .mockResolvedValueOnce({ overridden: false })
+      .mockResolvedValueOnce({
+        settings: {
+          storageLocation: '/tmp/muxus-history',
+          maxTotalBytes: 5 * 1024 ** 3,
+          minFreeBytes: 2 * 1024 ** 3,
+          minFreePercent: 5,
+        },
+      });
+
+    const document = await createBackupDocument();
+
+    expect(document.data.preferences.notifyOnNewVersion).toBe(false);
   });
 });
 
@@ -228,6 +255,19 @@ describe('restoring the OSC 52 clipboard preference', () => {
     expect(
       sanitizePreferences(prefs({ allowOsc52ClipboardWrite: 'yes' }))
         .allowOsc52ClipboardWrite,
+    ).toBeUndefined();
+  });
+});
+
+describe('restoring the update notification preference', () => {
+  const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
+
+  it('restores only boolean notification choices', () => {
+    expect(sanitizePreferences(prefs({ notifyOnNewVersion: false })))
+      .toMatchObject({ notifyOnNewVersion: false });
+    expect(
+      sanitizePreferences(prefs({ notifyOnNewVersion: 'disabled' }))
+        .notifyOnNewVersion,
     ).toBeUndefined();
   });
 });
