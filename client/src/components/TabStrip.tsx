@@ -72,6 +72,7 @@ export function TabStrip({
   zoomed: boolean;
 }) {
   const allTabs = useTabsStore((s) => s.tabs);
+  const unreadOutputIds = useTabsStore((s) => s.unreadOutputIds);
   const tabs = allTabs.filter((tab) => tab.paneId === paneId);
   const activeId = useTabsStore((s) => findPane(s.root, paneId)?.activeTabId ?? null);
   const canClosePane = useTabsStore((s) => s.root.type === 'split');
@@ -148,6 +149,7 @@ export function TabStrip({
     >
       {tabs.map((tab) => {
         const active = tab.id === activeId;
+        const hasUnreadOutput = unreadOutputIds.has(tab.id);
         const TabIcon =
           tab.profile === null
             ? AddIcon
@@ -160,6 +162,7 @@ export function TabStrip({
             direction="row"
             role="tab"
             aria-selected={active}
+            aria-label={hasUnreadOutput ? `${tab.title}, new terminal output` : tab.title}
             tabIndex={0}
             onClick={() => activate(tab.id)}
             onKeyDown={(e) => {
@@ -190,11 +193,17 @@ export function TabStrip({
               borderColor: 'divider',
               borderTop: 2,
               borderTopColor: tab.color ?? 'transparent',
-              bgcolor: active ? 'background.default' : 'transparent',
+              bgcolor: active
+                ? 'background.default'
+                : hasUnreadOutput
+                  ? alpha(theme.palette.info.main, 0.12)
+                  : 'transparent',
               borderBottom: active ? 'none' : undefined,
               backgroundImage: active && focused
                 ? `linear-gradient(180deg, ${alpha(theme.palette.primary.main, 0.1)}, transparent 72%)`
-                : 'none',
+                : hasUnreadOutput
+                  ? `linear-gradient(180deg, ${alpha(theme.palette.info.main, 0.12)}, transparent 80%)`
+                  : 'none',
               transition: theme.transitions.create(['background-color', 'color'], {
                 duration: theme.transitions.duration.shortest,
               }),
@@ -206,10 +215,13 @@ export function TabStrip({
                 bottom: 0,
                 height: 2,
                 borderRadius: '2px 2px 0 0',
-                bgcolor: 'primary.main',
-                boxShadow: `0 -1px 8px ${alpha(theme.palette.primary.main, 0.32)}`,
-                opacity: active && focused ? 1 : 0,
-                transform: active && focused ? 'scaleX(1)' : 'scaleX(0.55)',
+                bgcolor: hasUnreadOutput ? 'info.main' : 'primary.main',
+                boxShadow: `0 -1px 8px ${alpha(
+                  hasUnreadOutput ? theme.palette.info.main : theme.palette.primary.main,
+                  0.32,
+                )}`,
+                opacity: (active && focused) || hasUnreadOutput ? 1 : 0,
+                transform: (active && focused) || hasUnreadOutput ? 'scaleX(1)' : 'scaleX(0.55)',
                 transition: theme.transitions.create(['opacity', 'transform'], {
                   duration: theme.transitions.duration.shortest,
                 }),
@@ -221,7 +233,34 @@ export function TabStrip({
               '&:hover .muxus-tab-close': { visibility: 'visible' },
             })}
           >
-            <TabIcon sx={{ fontSize: 15, color: active && focused ? 'primary.main' : 'text.secondary' }} />
+            <Box component="span" sx={{ position: 'relative', display: 'flex', flexShrink: 0 }}>
+              <TabIcon
+                sx={{
+                  fontSize: 15,
+                  color: hasUnreadOutput
+                    ? 'info.main'
+                    : active && focused
+                      ? 'primary.main'
+                      : 'text.secondary',
+                }}
+              />
+              {hasUnreadOutput ? (
+                <Box
+                  component="span"
+                  aria-label="New terminal output"
+                  sx={{
+                    position: 'absolute',
+                    top: -2,
+                    right: -3,
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    bgcolor: 'info.main',
+                    boxShadow: (theme) => `0 0 0 2px ${theme.palette.sidebar}`,
+                  }}
+                />
+              ) : null}
+            </Box>
             <Typography
               variant="body2"
               noWrap
@@ -232,7 +271,7 @@ export function TabStrip({
                 // tracking follow the sidebar labels (treeLabelSx).
                 fontWeight: 450,
                 letterSpacing: -0.1,
-                color: active ? 'text.primary' : 'text.secondary',
+                color: active ? 'text.primary' : hasUnreadOutput ? 'info.main' : 'text.secondary',
                 flex: 1,
                 minWidth: 0,
               }}

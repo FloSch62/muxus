@@ -147,6 +147,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   );
   const lastReconnectRequestRef = useRef(reconnectRequest);
   const updateTab = useTabsStore((s) => s.update);
+  const notifyOutput = useTabsStore((s) => s.notifyOutput);
   const searchRequest = useTabsStore(
     (s) => s.tabs.find((candidate) => candidate.id === tab.id)?.searchRequest ?? 0,
   );
@@ -536,6 +537,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       ws.onmessage = (ev) => {
         if (ev.data instanceof ArrayBuffer) {
           clearTransientStatus();
+          notifyOutput(tab.id);
           receivedTerminalOutput = true;
           snapshotDirty = true;
           snapshotRevision += 1;
