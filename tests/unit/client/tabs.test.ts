@@ -94,6 +94,32 @@ describe('terminal output notifications', () => {
     useTabsStore.getState().toggleZoom();
     expect(useTabsStore.getState().unreadOutputIds).toEqual(new Set());
   });
+
+  it('treats a terminal covered by its remote editor as hidden', () => {
+    const store = useTabsStore.getState();
+    const id = store.open({ kind: 'ssh', target: 'router' }, 'Router');
+    store.openEditor(id, '/etc/hosts');
+
+    useTabsStore.getState().notifyOutput(id);
+    expect(useTabsStore.getState().unreadOutputIds).toEqual(new Set([id]));
+
+    useTabsStore.getState().closeEditor(id, '/etc/hosts');
+    expect(useTabsStore.getState().unreadOutputIds).toEqual(new Set());
+  });
+
+  it('preserves unread output for the selected tab in a zoom-hidden pane', () => {
+    const store = useTabsStore.getState();
+    const closingId = store.open({ kind: 'local' }, 'Closing');
+    const unreadId = store.open({ kind: 'local' }, 'Unread');
+    store.split('pane-test', 'right');
+    useTabsStore.getState().open({ kind: 'local' }, 'Zoomed');
+    useTabsStore.getState().toggleZoom();
+    useTabsStore.getState().notifyOutput(unreadId);
+
+    useTabsStore.getState().close(closingId);
+
+    expect(useTabsStore.getState().unreadOutputIds).toEqual(new Set([unreadId]));
+  });
 });
 
 describe('blank session tabs', () => {
