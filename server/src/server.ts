@@ -7,6 +7,7 @@ import { serverUrls } from './auth.js';
 // The Electron shell logs its own milestones (boot, crashes) into the same
 // in-process buffer the /api/logs viewer reads.
 export { appendAppLog } from './logging/log-buffer.js';
+export { SystemVaultKeyStore } from './security/vault-key-store.js';
 
 export interface RunningServer {
   app: FastifyInstance;

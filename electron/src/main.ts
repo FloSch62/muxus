@@ -13,19 +13,34 @@ import {
   shell,
   type MenuItemConstructorOptions,
 } from 'electron';
-import { startServer, type RunningServer } from '@muxus/server';
+import {
+  startServer,
+  SystemVaultKeyStore,
+  type RunningServer,
+} from '@muxus/server';
 import { isNewerVersion } from '@muxus/shared';
 import type {
   AppWindowLaunch,
   MobaXtermSessionSource,
   UpdateCheckResult,
 } from '@muxus/shared';
+import {
+  developmentUserDataPath,
+  seedDevelopmentDatabase,
+} from './development-database.js';
 import { importLoginShellEnvironment } from './login-shell-environment.js';
 import { initMainLog, installCrashCapture, mainLog, mainLogPath } from './main-log.js';
 import { readLocalMobaXtermSessions } from './mobaxterm.js';
 
 // Name first: userData (and with it the log location) derives from it.
 app.setName('Muxus');
+const installedUserDataPath = app.getPath('userData');
+const isDevelopment = !app.isPackaged;
+if (isDevelopment) {
+  const userDataPath = developmentUserDataPath(installedUserDataPath);
+  mkdirSync(userDataPath, { recursive: true, mode: 0o700 });
+  app.setPath('userData', userDataPath);
+}
 initMainLog(app.getPath('userData'));
 installCrashCapture();
 mainLog(
@@ -594,11 +609,32 @@ if (!app.requestSingleInstanceLock()) {
   void app.whenReady().then(async () => {
     process.env.MUXUS_VERSION = app.getVersion();
     try {
+      if (isDevelopment) {
+        const seed = await seedDevelopmentDatabase(
+          installedUserDataPath,
+          app.getPath('userData'),
+          new SystemVaultKeyStore(),
+        );
+        mainLog(
+          'info',
+          seed.databaseCopied
+            ? 'refreshed the development database from the installed app'
+            : 'installed app database not found; using the development database',
+        );
+        if (seed.automaticVaultKey === 'missing' || seed.automaticVaultKey === 'unavailable') {
+          mainLog(
+            'warn',
+            'automatic password-vault access could not be copied; the development vault may require repair with its master password',
+          );
+        }
+      }
+      const userDataPath = app.getPath('userData');
       server = await startServer({
         port: 0,
         openBrowser: false,
         prettyLogs: false,
-        databasePath: path.join(app.getPath('userData'), 'muxus.sqlite3'),
+        databasePath: path.join(userDataPath, 'muxus.sqlite3'),
+        historyPath: isDevelopment ? path.join(userDataPath, 'history') : undefined,
         staticRoot: app.isPackaged
           ? path.join(process.resourcesPath, 'client')
           : path.resolve(moduleDir, '../../client/dist'),
