@@ -33,13 +33,13 @@ describe('WriteOnlyClipboardProvider', () => {
 });
 
 describe('OSC 52 clipboard addon wiring', () => {
-  it('decodes a real UTF-8 OSC 52 write and blocks readback', async () => {
+  it('decodes writes and keeps read replies out of xterm user input', async () => {
     vi.stubGlobal('self', globalThis);
     try {
       const { attachOsc52Clipboard } = await import(
         '../../../client/src/terminal/osc52-clipboard.js'
       );
-      let handler: ((data: string) => boolean | Promise<boolean>) | undefined;
+      const handlers: Array<(data: string) => boolean | Promise<boolean>> = [];
       const input = vi.fn();
       const term = {
         parser: {
@@ -48,7 +48,7 @@ describe('OSC 52 clipboard addon wiring', () => {
             callback: (data: string) => boolean | Promise<boolean>,
           ) {
             expect(id).toBe(52);
-            handler = callback;
+            handlers.push(callback);
             return { dispose: vi.fn() };
           },
         },
@@ -58,21 +58,32 @@ describe('OSC 52 clipboard addon wiring', () => {
         },
       };
       const writer = vi.fn();
+      const reply = vi.fn();
 
       attachOsc52Clipboard(
         term as unknown as Parameters<typeof attachOsc52Clipboard>[0],
         writer,
         () => true,
+        reply,
       );
-      expect(handler).toBeDefined();
+      expect(handlers).toHaveLength(2);
+
+      const dispatch = async (data: string) => {
+        for (let i = handlers.length - 1; i >= 0; i--) {
+          if (await handlers[i]!(data)) return true;
+        }
+        return false;
+      };
 
       const text = 'copied through zellij ✓';
       const payload = Buffer.from(text, 'utf8').toString('base64');
-      await handler!(`c;${payload}`);
+      await dispatch(`c;${payload}`);
       expect(writer).toHaveBeenCalledWith(text);
+      expect(reply).not.toHaveBeenCalled();
 
-      await handler!('c;?');
-      expect(input).toHaveBeenCalledWith('\x1b]52;c;\x07', false);
+      await dispatch('c;?');
+      expect(reply).toHaveBeenCalledWith('\x1b]52;c;\x07');
+      expect(input).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }

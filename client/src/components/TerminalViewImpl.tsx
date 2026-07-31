@@ -308,13 +308,6 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     term.loadAddon(new Unicode11Addon());
     term.unicode.activeVersion = '11';
     term.loadAddon(new WebLinksAddon());
-    attachOsc52Clipboard(
-      term,
-      (text) => {
-        void copyToClipboard(text);
-      },
-      () => usePrefsStore.getState().allowOsc52ClipboardWrite,
-    );
     // xterm 6.1 streams Kitty APC payloads straight into ImageAddon's WASM
     // base64 decoder. This also handles Sixel and iTerm2 inline images.
     const image = new ImageAddon({
@@ -378,6 +371,17 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       }
       return true;
     };
+
+    attachOsc52Clipboard(
+      term,
+      (text) => {
+        void copyToClipboard(text);
+      },
+      () => usePrefsStore.getState().allowOsc52ClipboardWrite,
+      (data) => {
+        sendInput(data);
+      },
+    );
 
     const unregister = registerTerminal(tab.id, {
       focus: () => term.focus(),
