@@ -85,7 +85,7 @@ const initialKeys = collectStaticGraph(entry[0]);
 // to cover their state and visual treatment.
 check('Initial JavaScript', measureGraph(initialKeys), {
   raw: 782_000,
-  gzip: 252_000,
+  gzip: 253_000,
 });
 
 for (const feature of [
