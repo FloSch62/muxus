@@ -33,6 +33,7 @@ import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import LaptopWindowsOutlinedIcon from '@mui/icons-material/LaptopWindowsOutlined';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import type { SvgIconComponent } from '@mui/icons-material';
 import { useAppInfo } from '../api/queries.js';
@@ -64,8 +65,10 @@ interface PendingFile {
 
 export function DataTransferSection({
   onImportMobaXterm,
+  onImportSecureCrt,
 }: {
   onImportMobaXterm: () => void;
+  onImportSecureCrt: () => void;
 }) {
   const queryClient = useQueryClient();
   const { data: appInfo } = useAppInfo();
@@ -413,6 +416,32 @@ export function DataTransferSection({
             variant="outlined"
             startIcon={<LaptopWindowsOutlinedIcon />}
             onClick={onImportMobaXterm}
+          >
+            Import sessions
+          </Button>
+        </Stack>
+      </Paper>
+
+      <Paper variant="outlined">
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={2}
+          sx={{ alignItems: { sm: 'center' }, p: 2.25 }}
+        >
+          <IconTile icon={TerminalOutlinedIcon} tone="secondary" />
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+              SecureCRT import
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+              Review and import SSH and serial sessions from a SecureCRT XML
+              settings export.
+            </Typography>
+          </Box>
+          <Button
+            variant="outlined"
+            startIcon={<TerminalOutlinedIcon />}
+            onClick={onImportSecureCrt}
           >
             Import sessions
           </Button>

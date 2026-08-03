@@ -1071,11 +1071,13 @@ export class MuxusDatabase {
     const { kind: _kind, profileId: _profileId, ...config } = input.profile;
     assertSecretFree(config, 'profile.config');
     const id = input.id ?? nanoid();
-    if (input.id) {
-      const current = this.db
-        .prepare(`SELECT kind FROM connection_profiles WHERE id = ? AND kind IN ('serial', 'telnet')`)
-        .get(id);
-      if (!current) throw new Error('saved host not found');
+    const current = this.db
+      .prepare(`SELECT kind FROM connection_profiles WHERE id = ?`)
+      .get(id) as { kind?: unknown } | undefined;
+    if (current) {
+      if (current.kind !== 'serial' && current.kind !== 'telnet') {
+        throw new Error('profile ID belongs to a different connection type');
+      }
       this.db
         .prepare(`
           UPDATE connection_profiles

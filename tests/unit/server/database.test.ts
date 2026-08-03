@@ -410,6 +410,37 @@ describe('hybrid OpenSSH metadata', () => {
 });
 
 describe('saved Telnet and serial hosts', () => {
+  it('upserts supplied import IDs without crossing connection-kind ownership', () => {
+    database = new MuxusDatabase(':memory:');
+    const created = database.saveSavedHostProfile({
+      id: 'securecrt-serial-console',
+      name: 'Imported console',
+      profile: {
+        kind: 'serial',
+        path: '/dev/ttyUSB0',
+        baudRate: 115200,
+        dataBits: 8,
+        stopBits: 1,
+        parity: 'none',
+        flowControl: 'none',
+      },
+    });
+    expect(created.id).toBe('securecrt-serial-console');
+
+    const localId = database.createNativeConnection({
+      kind: 'local',
+      name: 'Local shell',
+      config: {},
+    });
+    expect(() =>
+      database!.saveSavedHostProfile({
+        id: localId,
+        name: 'Wrong owner',
+        profile: { kind: 'telnet', host: 'example.test', port: 23 },
+      }),
+    ).toThrow(/different connection type/);
+  });
+
   it('round-trips connection settings, organization, recent use, updates, and deletion', () => {
     database = new MuxusDatabase(':memory:');
 

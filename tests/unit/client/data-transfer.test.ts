@@ -211,6 +211,78 @@ describe('restoring SSH hosts', () => {
   });
 });
 
+describe('restoring imported serial hosts', () => {
+  const importedSerial = {
+    sshHosts: [],
+    savedHosts: [
+      {
+        id: 'securecrt-serial-console',
+        name: 'Rack console',
+        profile: {
+          kind: 'serial' as const,
+          path: '/dev/ttyUSB0',
+          baudRate: 115200,
+          dataBits: 8 as const,
+          stopBits: 1 as const,
+          parity: 'none' as const,
+          flowControl: 'none' as const,
+        },
+        metadata: { group: 'Lab' },
+      },
+    ],
+    hostOrder: [],
+  };
+
+  it('keeps a native profile with the same deterministic import ID', async () => {
+    apiFetchMock
+      .mockResolvedValueOnce({ hosts: [] })
+      .mockResolvedValueOnce({ profiles: [{ id: 'securecrt-serial-console' }] });
+
+    await expect(
+      restoreImportedConnections(importedSerial, 'keep'),
+    ).resolves.toEqual({ added: 0, updated: 0, skipped: 1 });
+    expect(apiFetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('upserts and organizes a selected serial profile', async () => {
+    apiFetchMock
+      .mockResolvedValueOnce({ hosts: [] })
+      .mockResolvedValueOnce({ profiles: [] })
+      .mockResolvedValueOnce({ id: 'securecrt-serial-console' })
+      .mockResolvedValueOnce({ id: 'securecrt-serial-console' });
+
+    await expect(
+      restoreImportedConnections(importedSerial, 'replace'),
+    ).resolves.toEqual({ added: 1, updated: 0, skipped: 0 });
+    expect(apiFetchMock).toHaveBeenNthCalledWith(
+      3,
+      '/api/profiles',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({
+          id: 'securecrt-serial-console',
+          name: 'Rack console',
+          profile: importedSerial.savedHosts[0]?.profile,
+        }),
+      }),
+    );
+    expect(apiFetchMock).toHaveBeenNthCalledWith(
+      4,
+      '/api/profiles/securecrt-serial-console/metadata',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({
+          displayName: null,
+          group: 'Lab',
+          color: null,
+          icon: null,
+          keywordHighlights: null,
+        }),
+      }),
+    );
+  });
+});
+
 describe('restoring sidebar folder preferences', () => {
   /** Only the folder keys matter here; the rest of the shape is unvalidated. */
   const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;

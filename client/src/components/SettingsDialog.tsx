@@ -75,6 +75,7 @@ import { SessionLoggingPolicyFields } from './SessionLoggingPolicyFields.js';
 import { DataTransferSection } from './DataTransferSection.js';
 import { MobaXtermImportDialog } from './MobaXtermImportDialog.js';
 import { PasswordVaultSection } from './PasswordVaultSection.js';
+import { SecureCrtImportDialog } from './SecureCrtImportDialog.js';
 
 type Section =
   | 'appearance'
@@ -132,7 +133,7 @@ export function SettingsDialog() {
   const setOpen = useUiStore((s) => s.setSettingsOpen);
   const [section, setSection] = useState<Section>('appearance');
   const [loggingDirty, setLoggingDirty] = useState(false);
-  const [mobaXtermImportOpen, setMobaXtermImportOpen] = useState(false);
+  const [sessionImportOpen, setSessionImportOpen] = useState<'mobaxterm' | 'securecrt' | null>(null);
 
   /** Nothing leaves the logging section behind without the user's say-so. */
   const leaveSection = (run: () => void) => {
@@ -153,8 +154,11 @@ export function SettingsDialog() {
     });
   };
 
-  if (mobaXtermImportOpen) {
-    return <MobaXtermImportDialog onClose={() => setMobaXtermImportOpen(false)} />;
+  if (sessionImportOpen === 'mobaxterm') {
+    return <MobaXtermImportDialog onClose={() => setSessionImportOpen(null)} />;
+  }
+  if (sessionImportOpen === 'securecrt') {
+    return <SecureCrtImportDialog onClose={() => setSessionImportOpen(null)} />;
   }
 
   return (
@@ -201,7 +205,8 @@ export function SettingsDialog() {
             {section === 'passwords' && <PasswordVaultSection />}
             {section === 'data' && (
               <DataTransferSection
-                onImportMobaXterm={() => setMobaXtermImportOpen(true)}
+                onImportMobaXterm={() => setSessionImportOpen('mobaxterm')}
+                onImportSecureCrt={() => setSessionImportOpen('securecrt')}
               />
             )}
             {section === 'debug' && <DebugSection />}

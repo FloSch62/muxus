@@ -279,6 +279,7 @@ export interface SavedHostProfile {
 }
 
 export interface SavedHostProfileInput {
+  /** Omit for a generated ID; supply for idempotent import/restore upserts. */
   id?: string;
   name: string;
   profile: SavedHostSessionProfile;

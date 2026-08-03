@@ -1,34 +1,21 @@
-import type { HostBlockOptions } from '@muxus/shared';
-import type {
-  PortableConnections,
-  PortableHostMetadata,
-  PortableSshHost,
-} from './data-transfer.js';
+import type { PortableConnections } from './data-transfer.js';
+import {
+  importedConnections,
+  normalizeImportFolder,
+  type ImportedSessionParseResult,
+  type ImportedSshSession,
+  uniqueImportAlias,
+} from './session-import.js';
 
 const MOBAXTERM_SSH_SESSION_TYPE = 109;
 const BOOKMARK_SECTION_RE = /^Bookmarks(?:_\d+)?$/i;
 const SESSION_TYPE_RE = /^#(\d+)#/;
-const INVALID_ALIAS_CHARS_RE = /[\s#*?!]+/g;
-
 export const MAX_MOBAXTERM_IMPORT_BYTES = 10 * 1024 * 1024;
 
-export interface MobaXtermSession {
-  /** Stable inside one parsed file and used by review selection controls. */
-  id: string;
-  name: string;
-  alias: string;
-  host: string;
-  port: number;
-  username?: string;
-  folder?: string;
-  authMode: 'key' | 'password';
-}
+export interface MobaXtermSession extends ImportedSshSession {}
 
-export interface MobaXtermParseResult {
-  sessions: MobaXtermSession[];
-  /** Recognizable bookmark entries that were unsupported or incomplete. */
-  ignoredCount: number;
-}
+export interface MobaXtermParseResult
+  extends ImportedSessionParseResult<MobaXtermSession> {}
 
 /**
  * Parse SSH bookmarks from MobaXterm.ini or an .mxtsessions export.
@@ -65,7 +52,7 @@ export function parseMobaXtermSessions(text: string): MobaXtermParseResult {
     const value = line.slice(separator + 1).trim();
 
     if (name.toLowerCase() === 'subrep') {
-      currentFolder = normalizeFolder(value);
+      currentFolder = normalizeImportFolder(value);
       continue;
     }
 
@@ -87,10 +74,11 @@ export function parseMobaXtermSessions(text: string): MobaXtermParseResult {
     const port = parsedPort >= 1 && parsedPort <= 65_535 ? parsedPort : 22;
     const username = fields[3]?.trim() || undefined;
     const authMode = fields[4]?.trim() === '3' ? 'key' : 'password';
-    const alias = uniqueAlias(name, host, aliases);
+    const alias = uniqueImportAlias(name, host, aliases, 'mobaxterm-host');
     aliases.add(alias);
     sessions.push({
       id: `${lineIndex}:${alias}`,
+      kind: 'ssh',
       name,
       alias,
       host,
@@ -111,59 +99,5 @@ export function parseMobaXtermSessions(text: string): MobaXtermParseResult {
 export function mobaXtermConnections(
   sessions: readonly MobaXtermSession[],
 ): PortableConnections {
-  const sshHosts = sessions.map((session): PortableSshHost => {
-    const options: HostBlockOptions = {
-      hostname: session.host,
-      ...(session.username ? { user: session.username } : {}),
-      ...(session.port === 22 ? {} : { port: session.port }),
-      ...(session.authMode === 'password' ? { passwordOnly: true } : {}),
-    };
-    const metadata: PortableHostMetadata = {
-      displayName: session.name,
-      ...(session.folder ? { group: session.folder } : {}),
-    };
-    return {
-      alias: session.alias,
-      aliases: [session.alias],
-      description: 'Imported from MobaXterm.',
-      options,
-      metadata,
-    };
-  });
-  return { sshHosts, savedHosts: [], hostOrder: [] };
-}
-
-function normalizeFolder(value: string): string | undefined {
-  const parts = value
-    .replace(/\\/g, '/')
-    .split('/')
-    .map((part) => stripControlCharacters(part).trim())
-    .filter(Boolean);
-  return parts.length > 0 ? parts.join('/') : undefined;
-}
-
-function stripControlCharacters(value: string): string {
-  let cleaned = '';
-  for (const character of value) {
-    const codePoint = character.codePointAt(0) ?? 0;
-    if (codePoint >= 0x20 && codePoint !== 0x7f) cleaned += character;
-  }
-  return cleaned;
-}
-
-function uniqueAlias(name: string, host: string, used: ReadonlySet<string>): string {
-  const cleanedName = cleanAlias(name);
-  const base = cleanedName || cleanAlias(host) || 'mobaxterm-host';
-  if (!used.has(base)) return base;
-  let suffix = 2;
-  while (used.has(`${base}-${suffix}`)) suffix++;
-  return `${base}-${suffix}`;
-}
-
-function cleanAlias(value: string): string {
-  return value
-    .trim()
-    .replace(INVALID_ALIAS_CHARS_RE, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 240);
+  return importedConnections(sessions, 'MobaXterm');
 }

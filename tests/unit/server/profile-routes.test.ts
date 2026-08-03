@@ -24,6 +24,64 @@ afterEach(async () => {
 const auth = () => ({ authorization: `Bearer ${TOKEN}` });
 
 describe('saved host profile routes', () => {
+  it('creates and updates an imported profile with a caller-supplied ID', async () => {
+    const id = 'securecrt-serial-2p5f9abc';
+    const create = await app.inject({
+      method: 'PUT',
+      url: '/api/profiles',
+      headers: auth(),
+      payload: {
+        id,
+        name: 'Imported console',
+        profile: {
+          kind: 'serial',
+          path: '/dev/ttyUSB0',
+          baudRate: 115200,
+          dataBits: 8,
+          stopBits: 1,
+          parity: 'none',
+          flowControl: 'none',
+        },
+      },
+    });
+    expect(create.statusCode).toBe(200);
+    expect(create.json()).toMatchObject({ id, name: 'Imported console' });
+
+    const organize = await app.inject({
+      method: 'PATCH',
+      url: `/api/profiles/${id}/metadata`,
+      headers: auth(),
+      payload: { group: 'Lab/Consoles' },
+    });
+    expect(organize.statusCode).toBe(200);
+
+    const update = await app.inject({
+      method: 'PUT',
+      url: '/api/profiles',
+      headers: auth(),
+      payload: {
+        id,
+        name: 'Updated console',
+        profile: {
+          kind: 'serial',
+          path: '/dev/ttyUSB1',
+          baudRate: 9600,
+          dataBits: 8,
+          stopBits: 1,
+          parity: 'none',
+          flowControl: 'software',
+        },
+      },
+    });
+    expect(update.statusCode).toBe(200);
+    expect(update.json()).toMatchObject({
+      id,
+      name: 'Updated console',
+      profile: { path: '/dev/ttyUSB1', baudRate: 9600 },
+      metadata: { group: 'Lab/Consoles' },
+    });
+  });
+
   it('manages Telnet and serial hosts through the authenticated host API', async () => {
     const create = await app.inject({
       method: 'PUT',
