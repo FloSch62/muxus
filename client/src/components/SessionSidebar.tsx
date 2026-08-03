@@ -235,13 +235,13 @@ export function SessionSidebar() {
         if (moves.length > 0) applyFolderMoves.mutate({ moves, label: toPath });
         else folders.addEmptyFolder(toPath);
         folders.removeEmptyFolder(fromPath);
-        if (hasFolderSettingsUnder(folderSettingsData?.folders, fromPath)) {
-          moveFolderSettings.mutate({ from: fromPath, to: toPath });
-        }
+        // The endpoint is idempotent. Always call it so credentials cannot be
+        // stranded when the folder-settings query is loading or has failed.
+        moveFolderSettings.mutate({ from: fromPath, to: toPath });
       }
       if (placement) folders.setFolderOrder(placement.parentKey, placement.keys);
     },
-    [allHosts, folders, applyFolderMoves, folderSettingsData, moveFolderSettings],
+    [allHosts, folders, applyFolderMoves, moveFolderSettings],
   );
 
   /** Alt+Arrow on a folder: swap it with the sibling folder next to it. */
@@ -382,18 +382,22 @@ export function SessionSidebar() {
     (node: FolderNode) => {
       const moves = deleteFolderPlan(allHosts, node.path);
       const parent = folderParentPath(node.path);
-      const hasCredentials = hasFolderSettingsUnder(folderSettingsData?.folders, node.path);
+      const hasCredentials = folderSettingsData
+        ? hasFolderSettingsUnder(folderSettingsData.folders, node.path)
+        : undefined;
       const hostsText =
         moves.length === 0
           ? 'The folder is empty.'
           : `${moves.length} host${moves.length === 1 ? '' : 's'} move${moves.length === 1 ? 's' : ''} ${parent ? `up into “${parent}”` : 'out of every folder'}.`;
       void confirmAction({
         title: `Delete “${node.label}”?`,
-        description: hasCredentials
+        description: hasCredentials === true
           ? `${hostsText} Its shared SSH credentials are removed.`
-          : moves.length === 0
-            ? 'The folder is empty, so nothing else changes.'
-            : `${hostsText} No connection settings change.`,
+          : hasCredentials === undefined
+            ? `${hostsText} Any shared SSH credentials on it are removed.`
+            : moves.length === 0
+              ? 'The folder is empty, so nothing else changes.'
+              : `${hostsText} No connection settings change.`,
         confirmLabel: 'Delete folder',
         destructive: true,
       }).then((confirmed) => {
@@ -401,7 +405,9 @@ export function SessionSidebar() {
         folders.removeEmptyFolder(node.path);
         folders.setFolderStyle(node.key, undefined);
         if (moves.length > 0) applyFolderMoves.mutate({ moves, label: node.label });
-        if (hasCredentials) deleteFolderSettings.mutate(node.path);
+        // Like move, delete is idempotent and must not depend on cached query
+        // data that may not have arrived yet.
+        deleteFolderSettings.mutate(node.path);
       });
     },
     [allHosts, folders, applyFolderMoves, folderSettingsData, deleteFolderSettings],
@@ -688,4 +694,3 @@ function collectHosts(node: ContainerNode): ManagedHost[] {
   walk(node);
   return out;
 }
-

@@ -83,17 +83,26 @@ export function registerFolderRoutes(app: FastifyInstance, ctx: AppContext): voi
   });
 
   /** Rename or re-parent: settings and vault labels follow the path rewrite. */
-  app.post('/api/folders/settings/move', async (req, reply): Promise<{ moved: number } | void> => {
+  app.post('/api/folders/settings/move', async (req, reply): Promise<{
+    moved: number;
+    destinationPreserved: boolean;
+  } | void> => {
     const parsed = moveSchema.safeParse(req.body);
     if (!parsed.success || !normalizeFolderPath(parsed.data.from) || !normalizeFolderPath(parsed.data.to)) {
       return reply.code(400).send({ message: 'both folder paths are required' });
     }
     try {
+      // Tell rename callers whether the destination already owned the root
+      // settings row. They must not save the source dialog fields over that
+      // retained row after the destination-wins merge.
+      const sourceKey = folderPathKey(parsed.data.from);
+      const targetKey = folderPathKey(parsed.data.to);
+      const destinationPreserved =
+        sourceKey !== targetKey && !!ctx.database.folderSettingsForPath(parsed.data.to);
       const { moved, dropped } = ctx.database.moveFolderSettings(parsed.data.from, parsed.data.to);
       for (const row of dropped) {
         ctx.vault.deleteSshPassword(folderPasswordAccount(row.id));
       }
-      const targetKey = folderPathKey(parsed.data.to);
       for (const row of ctx.database.listFolderSettings()) {
         if (row.pathKey !== targetKey && !isDescendantFolderPath(row.path, parsed.data.to)) continue;
         ctx.vault.relabelSshPassword(
@@ -101,7 +110,7 @@ export function registerFolderRoutes(app: FastifyInstance, ctx: AppContext): voi
           folderPasswordLabel(row.path),
         );
       }
-      return { moved };
+      return { moved, destinationPreserved };
     } catch (err) {
       return sendError(reply, err);
     }

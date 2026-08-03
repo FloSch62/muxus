@@ -20,7 +20,6 @@ import UndoOutlinedIcon from '@mui/icons-material/UndoOutlined';
 import type { FolderAuthSettings } from '@muxus/shared';
 import {
   folderSettingsForPath,
-  hasFolderSettingsUnder,
   useFolderSettings,
   useMoveFolderSettings,
   useSaveFolderSettings,
@@ -191,10 +190,12 @@ export function FolderDialog() {
         ...(masterPassword.trim() ? { masterPassword: masterPassword.trim() } : {}),
       });
     };
-    if (previousPath && hasFolderSettingsUnder(settingsData?.folders, previousPath)) {
+    if (previousPath) {
       void moveSettings
         .mutateAsync({ from: previousPath, to: path })
-        .then(save)
+        .then(({ destinationPreserved }) => {
+          if (!destinationPreserved) save();
+        })
         .catch(() => undefined);
       return;
     }

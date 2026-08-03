@@ -90,7 +90,7 @@ export function useMoveFolderSettings() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ from, to }: { from: string; to: string }) =>
-      apiFetch<{ moved: number }>('/api/folders/settings/move', {
+      apiFetch<{ moved: number; destinationPreserved: boolean }>('/api/folders/settings/move', {
         method: 'POST',
         headers: JSON_HEADERS,
         body: JSON.stringify({ from, to }),

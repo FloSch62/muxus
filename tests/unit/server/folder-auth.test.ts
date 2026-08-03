@@ -109,13 +109,10 @@ describe('resolveHost with folder fallback', () => {
     expect(resolved.port).toBe(2200);
   });
 
-  it('appends the folder key after the host block keys, ssh-style', () => {
+  it('omits folder keys when ssh_config already supplies one', () => {
     const doc = docOf('Host web\n  IdentityFile ~/.ssh/host_key');
     const resolved = resolveHost(doc, 'web', fallback({ identityFiles: ['~/.ssh/folder_key'] }));
-    expect(resolved.identityFiles.map((file) => path.basename(file))).toEqual([
-      'host_key',
-      'folder_key',
-    ]);
+    expect(resolved.identityFiles.map((file) => path.basename(file))).toEqual(['host_key']);
   });
 
   it('supplies a key and IdentitiesOnly to hosts with none of their own', () => {

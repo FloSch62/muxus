@@ -325,11 +325,16 @@ export function resolveHost(
   const setEnv: Record<string, string> = {};
   const sendEnv: string[] = [];
 
-  const sequence = fallback?.length
-    ? [...doc.sequence, { patterns: null, options: [...fallback] }]
-    : doc.sequence;
+  const fallbackEntry = fallback?.length
+    ? { patterns: null, options: [...fallback] }
+    : undefined;
+  const sequence = fallbackEntry ? [...doc.sequence, fallbackEntry] : doc.sequence;
   for (const entry of sequence) {
     if (entry.patterns && !hostPatternsMatch(entry.patterns, host)) continue;
+    // IdentityFile is normally cumulative, but folder options are a fallback
+    // layer rather than another ssh_config block. Once the config supplied a
+    // key, omit all folder keys instead of offering them after it.
+    const configProvidedIdentityFile = entry === fallbackEntry && identityFiles.length > 0;
     for (const opt of entry.options) {
       // OpenSSH treats ChallengeResponseAuthentication as an exact alias, so
       // both spellings share one first-obtained slot.
@@ -337,6 +342,7 @@ export function resolveHost(
         opt.key === 'challengeresponseauthentication' ? 'kbdinteractiveauthentication' : opt.key;
       switch (opt.key) {
         case 'identityfile': {
+          if (configProvidedIdentityFile) break;
           const file = opt.args[0];
           if (file && !identityFiles.includes(file)) identityFiles.push(file);
           break;

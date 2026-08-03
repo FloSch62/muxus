@@ -214,13 +214,43 @@ describe('folder settings routes', () => {
       payload: { from: 'Prod', to: 'Production' },
     });
     expect(move.statusCode).toBe(200);
-    expect(move.json()).toEqual({ moved: 1 });
+    expect(move.json()).toEqual({ moved: 1, destinationPreserved: false });
 
     const [folder] = await listFolders();
     expect(folder).toMatchObject({ path: 'Production', auth: { user: 'root' }, hasPassword: true });
 
     const vault = await app.inject({ method: 'GET', url: '/api/password-vault', headers: auth() });
     expect(vault.json()).toMatchObject({ credentials: [{ label: 'Folder Production' }] });
+  });
+
+  it('reports when a merge preserves the destination settings', async () => {
+    await app.inject({
+      method: 'PUT',
+      url: '/api/folders/settings',
+      headers: auth(),
+      payload: { path: 'Source', auth: { user: 'source' } },
+    });
+    await app.inject({
+      method: 'PUT',
+      url: '/api/folders/settings',
+      headers: auth(),
+      payload: { path: 'Destination', auth: { user: 'destination', port: 2222 } },
+    });
+
+    const move = await app.inject({
+      method: 'POST',
+      url: '/api/folders/settings/move',
+      headers: auth(),
+      payload: { from: 'Source', to: 'Destination' },
+    });
+    expect(move.statusCode).toBe(200);
+    expect(move.json()).toEqual({ moved: 0, destinationPreserved: true });
+    expect(await listFolders()).toEqual([
+      expect.objectContaining({
+        path: 'Destination',
+        auth: { user: 'destination', port: 2222 },
+      }),
+    ]);
   });
 
   it('deletes settings and their vault password with the folder', async () => {
