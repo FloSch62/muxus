@@ -25,6 +25,12 @@ import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import type { SavedHostProfile, SshHostEntry } from '@muxus/shared';
+import {
+  hasFolderSettingsUnder,
+  useDeleteFolderSettings,
+  useFolderSettings,
+  useMoveFolderSettings,
+} from '../api/folder-settings.js';
 import { useApplyFolderMoves } from '../api/host-groups.js';
 import { useReorderManagedHosts } from '../api/host-order.js';
 import { useDeleteHostProfile, useUpdateHostProfileMetadata } from '../api/profiles.js';
@@ -115,6 +121,9 @@ export function SessionSidebar() {
   const updateProfileMetadata = useUpdateHostProfileMetadata();
   const reorder = useReorderManagedHosts();
   const applyFolderMoves = useApplyFolderMoves();
+  const { data: folderSettingsData } = useFolderSettings();
+  const moveFolderSettings = useMoveFolderSettings();
+  const deleteFolderSettings = useDeleteFolderSettings();
   const liveByKey = useLiveHostCounts();
   const folders = useFolderPrefs();
   const allHosts = useAllManagedHosts();
@@ -226,10 +235,13 @@ export function SessionSidebar() {
         if (moves.length > 0) applyFolderMoves.mutate({ moves, label: toPath });
         else folders.addEmptyFolder(toPath);
         folders.removeEmptyFolder(fromPath);
+        // The endpoint is idempotent. Always call it so credentials cannot be
+        // stranded when the folder-settings query is loading or has failed.
+        moveFolderSettings.mutate({ from: fromPath, to: toPath });
       }
       if (placement) folders.setFolderOrder(placement.parentKey, placement.keys);
     },
-    [allHosts, folders, applyFolderMoves],
+    [allHosts, folders, applyFolderMoves, moveFolderSettings],
   );
 
   /** Alt+Arrow on a folder: swap it with the sibling folder next to it. */
@@ -370,12 +382,22 @@ export function SessionSidebar() {
     (node: FolderNode) => {
       const moves = deleteFolderPlan(allHosts, node.path);
       const parent = folderParentPath(node.path);
+      const hasCredentials = folderSettingsData
+        ? hasFolderSettingsUnder(folderSettingsData.folders, node.path)
+        : undefined;
+      const hostsText =
+        moves.length === 0
+          ? 'The folder is empty.'
+          : `${moves.length} host${moves.length === 1 ? '' : 's'} move${moves.length === 1 ? 's' : ''} ${parent ? `up into “${parent}”` : 'out of every folder'}.`;
       void confirmAction({
         title: `Delete “${node.label}”?`,
-        description:
-          moves.length === 0
-            ? 'The folder is empty, so nothing else changes.'
-            : `${moves.length} host${moves.length === 1 ? '' : 's'} move${moves.length === 1 ? 's' : ''} ${parent ? `up into “${parent}”` : 'out of every folder'}. No connection settings change.`,
+        description: hasCredentials === true
+          ? `${hostsText} Its shared SSH credentials are removed.`
+          : hasCredentials === undefined
+            ? `${hostsText} Any shared SSH credentials on it are removed.`
+            : moves.length === 0
+              ? 'The folder is empty, so nothing else changes.'
+              : `${hostsText} No connection settings change.`,
         confirmLabel: 'Delete folder',
         destructive: true,
       }).then((confirmed) => {
@@ -383,9 +405,12 @@ export function SessionSidebar() {
         folders.removeEmptyFolder(node.path);
         folders.setFolderStyle(node.key, undefined);
         if (moves.length > 0) applyFolderMoves.mutate({ moves, label: node.label });
+        // Like move, delete is idempotent and must not depend on cached query
+        // data that may not have arrived yet.
+        deleteFolderSettings.mutate(node.path);
       });
     },
-    [allHosts, folders, applyFolderMoves],
+    [allHosts, folders, applyFolderMoves, folderSettingsData, deleteFolderSettings],
   );
 
   // Where the menu's host sits among its siblings, for Move up / Move down.
@@ -669,4 +694,3 @@ function collectHosts(node: ContainerNode): ManagedHost[] {
   walk(node);
   return out;
 }
-

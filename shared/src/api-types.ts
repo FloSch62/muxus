@@ -436,6 +436,40 @@ export interface OpenSshMetadataPatch {
   keywordHighlights?: HostKeywordHighlightConfig | null;
 }
 
+/**
+ * Shared SSH defaults a sidebar folder hands to the hosts inside it. Every
+ * field is optional: a folder only overrides what it sets. At connect time
+ * these apply *below* everything in ssh_config — a host's own options and
+ * `Host *` blocks always win — with the nearest folder beating its ancestors.
+ * The folder password is not here; it lives in the encrypted vault.
+ */
+export interface FolderAuthSettings {
+  user?: string;
+  port?: number;
+  identityFiles?: string[];
+  identitiesOnly?: boolean;
+  /** Agent socket override: a path, `$VAR`/`${VAR}`, `SSH_AUTH_SOCK`, or `none`. */
+  identityAgent?: string;
+  forwardAgent?: boolean;
+}
+
+/** One folder's stored credential defaults. */
+export interface FolderSettingsRecord {
+  /** Stable ID — the vault password stays attached across folder renames. */
+  id: string;
+  /** Normalized folder path ("Production/EU"); matched case-insensitively. */
+  path: string;
+  auth: FolderAuthSettings;
+  /** A shared password for this folder exists in the password vault. */
+  hasPassword: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FolderSettingsResponse {
+  folders: FolderSettingsRecord[];
+}
+
 export interface WorkspaceConnectionRef {
   source: 'openssh' | 'profile';
   /** OpenSSH alias when source=openssh, stable database profile ID otherwise. */

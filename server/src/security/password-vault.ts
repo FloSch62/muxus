@@ -517,6 +517,30 @@ export class PasswordVault {
     );
   }
 
+  /** Remove a saved SSH password by its vault account; needs no vault key. */
+  deleteSshPassword(account: string): boolean {
+    const record = this.database.encryptedCredential(
+      PASSWORD_VAULT_PROVIDER,
+      SSH_PASSWORD_SERVICE,
+      account,
+    );
+    if (!record) return false;
+    return this.database.deleteEncryptedCredential(
+      record.id,
+      PASSWORD_VAULT_PROVIDER,
+    );
+  }
+
+  /** Keep a saved password's display label in step with a folder rename. */
+  relabelSshPassword(account: string, label: string): void {
+    this.database.updateCredentialRefLabel(
+      PASSWORD_VAULT_PROVIDER,
+      SSH_PASSWORD_SERVICE,
+      account,
+      label,
+    );
+  }
+
   async deleteAll(): Promise<void> {
     const config = this.database.passwordVaultConfig();
     if (config?.unlockPolicy === 'never') {
@@ -720,6 +744,22 @@ export function sshPasswordLabel(input: {
   port: number;
 }): string {
   return `${input.user}@${input.host}:${input.port}`;
+}
+
+/**
+ * A folder's shared password, keyed by the folder-settings row ID rather than
+ * its path so renaming the folder keeps the credential. The JSON-array shape
+ * can never collide with sshPasswordAccount's [user, host, port] triples.
+ */
+export function folderPasswordAccount(folderSettingsId: string): string {
+  return Buffer.from(
+    JSON.stringify(['folder', folderSettingsId]),
+    'utf8',
+  ).toString('base64url');
+}
+
+export function folderPasswordLabel(path: string): string {
+  return `Folder ${path}`;
 }
 
 export function validateMasterPassword(password: string): void {

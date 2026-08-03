@@ -13,6 +13,7 @@ import {
   VaultAutomaticAccessError,
   VaultNotConfiguredError,
   VaultPolicyMismatchError,
+  VaultUnlockRequiredError,
 } from '../security/password-vault.js';
 import { VaultKeyStoreUnavailableError } from '../security/vault-key-store.js';
 import { HttpProblem, sendError } from '../util/errors.js';
@@ -189,7 +190,8 @@ function validCredentialId(id: string): boolean {
   return id.length > 0 && id.length <= 200;
 }
 
-function sendVaultError(reply: FastifyReply, err: unknown): Promise<void> {
+/** Shared vault → HTTP problem mapping (also used by the folder routes). */
+export function sendVaultError(reply: FastifyReply, err: unknown): Promise<void> {
   if (err instanceof InvalidMasterPasswordError) {
     return sendError(reply, new HttpProblem(401, err.message, 'invalid-master-password'));
   }
@@ -210,6 +212,9 @@ function sendVaultError(reply: FastifyReply, err: unknown): Promise<void> {
   }
   if (err instanceof VaultAutomaticAccessError) {
     return sendError(reply, new HttpProblem(423, err.message, 'vault-automatic-access-unavailable'));
+  }
+  if (err instanceof VaultUnlockRequiredError) {
+    return sendError(reply, new HttpProblem(423, err.message, 'vault-locked'));
   }
   if (err instanceof InvalidSavedPasswordFormatError) {
     return sendError(reply, new HttpProblem(400, err.message, 'invalid-saved-password-format'));

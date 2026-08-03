@@ -8,6 +8,7 @@ import fastifyStatic from '@fastify/static';
 import { TERMINAL_WS_PROTOCOL } from '@muxus/shared/ws-protocol';
 import type { ServerConfig } from './config.js';
 import { SshConnectionManager } from './ssh/connection-manager.js';
+import { folderAuthResolver } from './ssh/folder-auth.js';
 import { ForwardManager } from './forwards/forward-manager.js';
 import { registerAppRoutes } from './routes/app.js';
 import { registerSshRoutes } from './routes/ssh.js';
@@ -25,6 +26,7 @@ import { registerProfileRoutes } from './routes/profiles.js';
 import { registerHostOrderRoutes } from './routes/host-order.js';
 import { registerSessionHistoryRoutes } from './routes/session-history.js';
 import { registerPasswordVaultRoutes } from './routes/password-vault.js';
+import { registerFolderRoutes } from './routes/folders.js';
 import { registerLogRoutes } from './routes/logs.js';
 import { appLogPinoSink } from './logging/log-buffer.js';
 import {
@@ -88,7 +90,10 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   const database = new MuxusDatabase(config.databasePath);
   const vault = new PasswordVault(database);
   await vault.initialize();
-  const connections = new SshConnectionManager(app.log, { vault });
+  const connections = new SshConnectionManager(app.log, {
+    vault,
+    folderAuth: folderAuthResolver(database),
+  });
   const forwards = new ForwardManager(connections, app.log);
   const historySettings = database.sessionHistorySettings();
   const configuredHistoryRoot =
@@ -176,6 +181,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   registerHostOrderRoutes(app, ctx);
   registerSessionHistoryRoutes(app, ctx);
   registerPasswordVaultRoutes(app, ctx);
+  registerFolderRoutes(app, ctx);
   registerLogRoutes(app);
   registerTerminalSocket(app, ctx);
   registerSftpLeaseSocket(app, ctx);

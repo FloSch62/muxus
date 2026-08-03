@@ -83,9 +83,14 @@ const initialKeys = collectStaticGraph(entry[0]);
 // Background-output notifications also live in the tab store and tab strip,
 // both of which are required for first paint. The gzip budget moves by 1 KiB
 // to cover their state and visual treatment.
+//
+// Folder credential defaults ride the sidebar: folder rename, drag and delete
+// must carry the shared settings along, so the sidebar carries the small
+// folder-settings API module (~2 KiB raw / ~0.7 KiB gzip). The credentials
+// editor itself stays in the lazy folder dialog.
 check('Initial JavaScript', measureGraph(initialKeys), {
-  raw: 782_000,
-  gzip: 253_000,
+  raw: 785_000,
+  gzip: 254_000,
 });
 
 for (const feature of [
