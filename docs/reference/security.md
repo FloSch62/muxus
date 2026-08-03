@@ -49,9 +49,10 @@ Connection settings are not in the database. They remain in
 
 ## Password vault
 
-Password saving is off until a vault is created. On a normal SSH password
-prompt, **Remember this password** saves the password only after the server accepts it.
-Private-key passphrases, keyboard-interactive answers and 2FA codes are never remembered.
+Password saving is off until a vault is created. On a normal SSH password prompt, or a
+single hidden keyboard-interactive field explicitly labelled as a password, **Remember
+this password** saves the password only after the server accepts it. Private-key
+passphrases, 2FA codes and all other keyboard-interactive answers are never remembered.
 
 New vaults default to **Never**, using the platform credential store. The vault works as
 follows:
