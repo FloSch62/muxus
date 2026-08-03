@@ -541,6 +541,8 @@ export interface WorkspaceRecord {
   name: string;
   layout: WorkspaceLayoutV1;
   multiExecGroups: WorkspaceMultiExecGroup[];
+  /** Locked workspaces only change through an explicit save. */
+  isLocked: boolean;
   /** At most one workspace is selected for startup. */
   isStartup: boolean;
   createdAt: string;

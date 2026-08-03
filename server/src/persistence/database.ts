@@ -364,6 +364,15 @@ const MIGRATIONS = [
       ) STRICT;
     `,
   },
+  {
+    version: 18,
+    name: 'lock-workspaces',
+    sql: `
+      ALTER TABLE workspaces
+        ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0
+        CHECK(is_locked IN (0, 1));
+    `,
+  },
 ] as const;
 
 function migrateDraftPasswordVault(db: DatabaseSync): void {
@@ -522,6 +531,7 @@ export interface WorkspaceRecord {
   name: string;
   layout: unknown;
   multiExecGroups: WorkspaceMultiExecGroup[];
+  isLocked: boolean;
   isStartup: boolean;
   createdAt: string;
   updatedAt: string;
@@ -529,6 +539,13 @@ export interface WorkspaceRecord {
 }
 
 export type WorkspaceSummary = Omit<WorkspaceRecord, 'layout' | 'multiExecGroups'>;
+
+export class WorkspaceLockedError extends Error {
+  constructor(id: string) {
+    super(`workspace "${id}" is locked; use an explicit save to overwrite it`);
+    this.name = 'WorkspaceLockedError';
+  }
+}
 
 export interface TerminalSnapshotRecord {
   tabId: string;
@@ -1173,15 +1190,26 @@ export class MuxusDatabase {
     return deleted;
   }
 
-  saveWorkspace(input: {
-    id?: string;
-    name: string;
-    layout: unknown;
-    multiExecGroups?: WorkspaceMultiExecGroup[];
-  }): WorkspaceRecord {
+  saveWorkspace(
+    input: {
+      id?: string;
+      name: string;
+      layout: unknown;
+      multiExecGroups?: WorkspaceMultiExecGroup[];
+    },
+    overwriteLocked = false,
+  ): WorkspaceRecord {
     requireNonEmpty(input.name, 'name');
     assertSecretFree(input.layout, 'workspace.layout');
     assertSecretFree(input.multiExecGroups, 'workspace.multiExecGroups');
+    if (input.id && !overwriteLocked) {
+      const existing = this.db
+        .prepare('SELECT is_locked FROM workspaces WHERE id = ?')
+        .get(input.id);
+      if (existing && Number(existing.is_locked) === 1) {
+        throw new WorkspaceLockedError(input.id);
+      }
+    }
     const id = input.id ?? nanoid();
     const layout = JSON.stringify(input.layout);
     const groups = JSON.stringify(input.multiExecGroups ?? []);
@@ -1203,7 +1231,7 @@ export class MuxusDatabase {
   workspace(id: string): WorkspaceRecord | undefined {
     const row = this.db
       .prepare(`
-        SELECT id, name, layout_json, multi_exec_groups_json, is_startup,
+        SELECT id, name, layout_json, multi_exec_groups_json, is_locked, is_startup,
                created_at, updated_at, last_opened_at
         FROM workspaces WHERE id = ?
       `)
@@ -1214,7 +1242,7 @@ export class MuxusDatabase {
   latestWorkspace(): WorkspaceRecord | undefined {
     const row = this.db
       .prepare(`
-        SELECT id, name, layout_json, multi_exec_groups_json, is_startup,
+        SELECT id, name, layout_json, multi_exec_groups_json, is_locked, is_startup,
                created_at, updated_at, last_opened_at
         FROM workspaces
         ORDER BY COALESCE(last_opened_at, updated_at) DESC, name COLLATE NOCASE
@@ -1227,7 +1255,7 @@ export class MuxusDatabase {
   startupWorkspace(): WorkspaceRecord | undefined {
     const row = this.db
       .prepare(`
-        SELECT id, name, layout_json, multi_exec_groups_json, is_startup,
+        SELECT id, name, layout_json, multi_exec_groups_json, is_locked, is_startup,
                created_at, updated_at, last_opened_at
         FROM workspaces
         WHERE is_startup = 1
@@ -1240,7 +1268,7 @@ export class MuxusDatabase {
   listWorkspaceSummaries(): WorkspaceSummary[] {
     return this.db
       .prepare(`
-        SELECT id, name, is_startup, created_at, updated_at, last_opened_at
+        SELECT id, name, is_locked, is_startup, created_at, updated_at, last_opened_at
         FROM workspaces
         ORDER BY COALESCE(last_opened_at, updated_at) DESC, name COLLATE NOCASE
       `)
@@ -1248,6 +1276,7 @@ export class MuxusDatabase {
       .map((row) => ({
         id: String(row.id),
         name: String(row.name),
+        isLocked: Number(row.is_locked) === 1,
         isStartup: Number(row.is_startup) === 1,
         createdAt: String(row.created_at),
         updatedAt: String(row.updated_at),
@@ -1258,7 +1287,7 @@ export class MuxusDatabase {
   listWorkspaces(): WorkspaceRecord[] {
     return this.db
       .prepare(`
-        SELECT id, name, layout_json, multi_exec_groups_json, is_startup,
+        SELECT id, name, layout_json, multi_exec_groups_json, is_locked, is_startup,
                created_at, updated_at, last_opened_at
         FROM workspaces
         ORDER BY COALESCE(last_opened_at, updated_at) DESC, name COLLATE NOCASE
@@ -1276,6 +1305,17 @@ export class MuxusDatabase {
         WHERE id = ?
       `)
       .run(name.trim(), id).changes > 0;
+    return updated ? this.workspace(id) : undefined;
+  }
+
+  setWorkspaceLocked(id: string, isLocked: boolean): WorkspaceRecord | undefined {
+    const updated = this.db
+      .prepare(`
+        UPDATE workspaces
+        SET is_locked = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `)
+      .run(isLocked ? 1 : 0, id).changes > 0;
     return updated ? this.workspace(id) : undefined;
   }
 
@@ -1862,6 +1902,7 @@ function workspaceFromRow(row: SqlRow): WorkspaceRecord {
     name: String(row.name),
     layout: JSON.parse(String(row.layout_json)),
     multiExecGroups: JSON.parse(String(row.multi_exec_groups_json)) as WorkspaceMultiExecGroup[],
+    isLocked: Number(row.is_locked) === 1,
     isStartup: Number(row.is_startup) === 1,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),

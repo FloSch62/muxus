@@ -5,7 +5,7 @@ import type {
   WorkspaceRecord,
   WorkspaceSummary,
 } from '@muxus/shared';
-import { apiFetch, authToken } from './api/http.js';
+import { ApiError, apiFetch, authToken } from './api/http.js';
 import { useMultiExecStore } from './state/multi-exec.js';
 import { usePrefsStore } from './state/prefs.js';
 import { useTabsStore, type SessionTab } from './state/tabs.js';
@@ -62,9 +62,10 @@ function mergeSummary(
   return [summary, ...summaries.filter((candidate) => candidate.id !== workspace.id)];
 }
 
-class WorkspaceRuntime {
+export class WorkspaceRuntime {
   private stopped = false;
   private restoring = false;
+  private autoSavePaused = false;
   private timer?: ReturnType<typeof setTimeout>;
   private pending?: WorkspaceSnapshot;
   private saving?: Promise<void>;
@@ -126,10 +127,11 @@ class WorkspaceRuntime {
       }
 
       const loaded = currentSnapshot();
-      this.lastSerialized = loaded.serialized;
+      this.lastSerialized = restored && workspace?.isLocked ? restoredSource : loaded.serialized;
       if (
-        (restored && restoredSource !== loaded.serialized) ||
-        (!restored && loaded.serialized !== beforeLoad)
+        !workspace?.isLocked &&
+        ((restored && restoredSource !== loaded.serialized) ||
+          (!restored && loaded.serialized !== beforeLoad))
       ) {
         this.pending = loaded;
         this.schedule();
@@ -156,24 +158,62 @@ class WorkspaceRuntime {
 
   async saveAs(name: string): Promise<WorkspaceRecord> {
     return this.withBusy(async () => {
-      await this.flushNow();
-      const snapshot = currentSnapshot();
-      const saved = await apiFetch<WorkspaceRecord>('/api/workspaces', {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          layout: snapshot.layout,
-          multiExecGroups: snapshot.multiExecGroups,
-        }),
-      });
-      const opened = await apiFetch<WorkspaceRecord>(
-        `/api/workspaces/${encodeURIComponent(saved.id)}/open`,
-        { method: 'POST' },
-      );
-      this.lastSerialized = snapshot.serialized;
-      this.recordActive(opened);
-      return opened;
+      const wasPaused = this.autoSavePaused;
+      this.autoSavePaused = true;
+      try {
+        await this.flushNow();
+        const snapshot = currentSnapshot();
+        const saved = await apiFetch<WorkspaceRecord>('/api/workspaces', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            name: name.trim(),
+            layout: snapshot.layout,
+            multiExecGroups: snapshot.multiExecGroups,
+          }),
+        });
+        const opened = await apiFetch<WorkspaceRecord>(
+          `/api/workspaces/${encodeURIComponent(saved.id)}/open`,
+          { method: 'POST' },
+        );
+        this.lastSerialized = snapshot.serialized;
+        this.recordActive(opened);
+        return opened;
+      } finally {
+        this.autoSavePaused = wasPaused;
+        if (!wasPaused && !this.activeWorkspaceIsLocked()) this.handleChange();
+      }
+    });
+  }
+
+  async save(): Promise<WorkspaceRecord> {
+    return this.withBusy(async () => {
+      const { activeId, activeName } = useWorkspacesStore.getState();
+      if (!activeId) throw new Error('Save the workspace with a name first.');
+
+      const wasPaused = this.autoSavePaused;
+      this.autoSavePaused = true;
+      try {
+        await this.flushNow(true);
+        const snapshot = currentSnapshot();
+        const saved = await apiFetch<WorkspaceRecord>('/api/workspaces', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            id: activeId,
+            name: activeName,
+            layout: snapshot.layout,
+            multiExecGroups: snapshot.multiExecGroups,
+            overwriteLocked: true,
+          }),
+        });
+        this.lastSerialized = snapshot.serialized;
+        this.recordActive(saved);
+        return saved;
+      } finally {
+        this.autoSavePaused = wasPaused;
+        if (!wasPaused && !this.activeWorkspaceIsLocked()) this.handleChange();
+      }
     });
   }
 
@@ -192,11 +232,7 @@ class WorkspaceRuntime {
       if (renamed.id === activeId) {
         this.recordActive(renamed);
       } else {
-        useWorkspacesStore.setState((state) => ({
-          workspaces: mergeSummary(state.workspaces, renamed),
-          startupId: renamed.isStartup ? renamed.id : state.startupId,
-          error: undefined,
-        }));
+        this.recordWorkspace(renamed);
       }
       return renamed;
     });
@@ -240,6 +276,35 @@ class WorkspaceRuntime {
     });
   }
 
+  async setLocked(id: string, isLocked: boolean): Promise<WorkspaceRecord> {
+    return this.withBusy(async () => {
+      const isActive = useWorkspacesStore.getState().activeId === id;
+      const wasPaused = this.autoSavePaused;
+      if (isActive) this.autoSavePaused = true;
+      try {
+        // Persist edits made before the user locks the active workspace.
+        if (isActive && isLocked) await this.flushNow();
+        const updated = await apiFetch<WorkspaceRecord>(
+          `/api/workspaces/${encodeURIComponent(id)}`,
+          {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ isLocked }),
+          },
+        );
+        if (isActive) {
+          this.recordActive(updated);
+        } else {
+          this.recordWorkspace(updated);
+        }
+        return updated;
+      } finally {
+        this.autoSavePaused = wasPaused;
+        if (isActive && !wasPaused && !this.activeWorkspaceIsLocked()) this.handleChange();
+      }
+    });
+  }
+
   async delete(id: string): Promise<void> {
     return this.withBusy(async () => {
       await this.flushNow();
@@ -266,7 +331,12 @@ class WorkspaceRuntime {
   }
 
   private handleChange(): void {
-    if (this.restoring || this.stopped) return;
+    if (
+      this.restoring ||
+      this.stopped ||
+      this.autoSavePaused ||
+      this.activeWorkspaceIsLocked()
+    ) return;
     const snapshot = currentSnapshot();
     if (snapshot.serialized === this.lastSerialized) return;
     this.lastSerialized = snapshot.serialized;
@@ -284,6 +354,10 @@ class WorkspaceRuntime {
 
   private flushPending(): Promise<void> {
     if (this.saving) return this.saving;
+    if (this.activeWorkspaceIsLocked()) {
+      this.pending = undefined;
+      return Promise.resolve();
+    }
     if (!this.pending || this.stopped) return Promise.resolve();
     const snapshot = this.pending;
     this.pending = undefined;
@@ -300,6 +374,15 @@ class WorkspaceRuntime {
     })
       .then((saved) => this.recordActive(saved))
       .catch((error: unknown) => {
+        if (error instanceof ApiError && error.body?.code === 'workspace-locked') {
+          useWorkspacesStore.setState((state) => ({
+            workspaces: state.workspaces.map((workspace) =>
+              workspace.id === activeId ? { ...workspace, isLocked: true } : workspace,
+            ),
+            error: undefined,
+          }));
+          return;
+        }
         this.pending ??= snapshot;
         if (!this.stopped) this.schedule(RETRY_DELAY_MS);
         throw error;
@@ -312,11 +395,12 @@ class WorkspaceRuntime {
     return save;
   }
 
-  private async flushNow(): Promise<void> {
+  private async flushNow(discardPending = false): Promise<void> {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = undefined;
     }
+    if (discardPending) this.pending = undefined;
     while (this.saving || this.pending) {
       await (this.saving ?? this.flushPending());
     }
@@ -330,6 +414,19 @@ class WorkspaceRuntime {
       startupId: workspace.isStartup ? workspace.id : state.startupId,
       error: undefined,
     }));
+  }
+
+  private recordWorkspace(workspace: WorkspaceRecord): void {
+    useWorkspacesStore.setState((state) => ({
+      workspaces: mergeSummary(state.workspaces, workspace),
+      startupId: workspace.isStartup ? workspace.id : state.startupId,
+      error: undefined,
+    }));
+  }
+
+  private activeWorkspaceIsLocked(): boolean {
+    const { activeId, workspaces } = useWorkspacesStore.getState();
+    return workspaces.some((workspace) => workspace.id === activeId && workspace.isLocked);
   }
 
   private async withBusy<T>(action: () => Promise<T>): Promise<T> {
@@ -347,7 +444,7 @@ class WorkspaceRuntime {
   }
 
   flushOnUnload(maxBodyBytes = PAGE_KEEPALIVE_BODY_LIMIT_BYTES): number {
-    if (!this.pending) return 0;
+    if (!this.pending || this.activeWorkspaceIsLocked()) return 0;
     const { activeId, activeName } = useWorkspacesStore.getState();
     const body = JSON.stringify({
       id: activeId,
@@ -379,9 +476,12 @@ function runtime(): WorkspaceRuntime {
 }
 
 export const saveWorkspaceAs = (name: string) => runtime().saveAs(name);
+export const saveWorkspace = () => runtime().save();
 export const renameWorkspace = (id: string, name: string) => runtime().rename(id, name);
 export const openWorkspace = (id: string) => runtime().open(id);
 export const setStartupWorkspace = (id: string | null) => runtime().setStartup(id);
+export const setWorkspaceLocked = (id: string, isLocked: boolean) =>
+  runtime().setLocked(id, isLocked);
 export const deleteWorkspace = (id: string) => runtime().delete(id);
 
 /** Restore startup/latest once, then debounce the active named workspace to SQLite. */

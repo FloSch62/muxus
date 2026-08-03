@@ -94,9 +94,14 @@ const initialKeys = collectStaticGraph(entry[0]);
 // cross-window coordinator, snapshot flush, and adoption path remain lazy.
 // Browser-style drag feedback (live same-strip resorting, insertion lines,
 // FLIP slides) lives in the tab strip itself (~2.5 KiB raw / ~0.7 KiB gzip).
+//
+// Workspace locking is enforced by the startup persistence runtime, including
+// distinguishing explicit saves from stale automatic saves and stopping retry
+// loops after a lock conflict. That first-paint guarantee adds ~2 KiB raw /
+// ~0.3 KiB gzip; the management dialog and its icons remain lazy.
 check('Initial JavaScript', measureGraph(initialKeys), {
-  raw: 790_000,
-  gzip: 256_500,
+  raw: 793_000,
+  gzip: 257_000,
 });
 
 for (const feature of [

@@ -25,9 +25,12 @@ import Typography from '@mui/material/Typography';
 import ClearIcon from '@mui/icons-material/Clear';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
+import LockOpenOutlinedIcon from '@mui/icons-material/LockOpenOutlined';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
 import SaveAsOutlinedIcon from '@mui/icons-material/SaveAsOutlined';
+import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import StarIcon from '@mui/icons-material/Star';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
@@ -36,8 +39,10 @@ import {
   deleteWorkspace,
   openWorkspace,
   renameWorkspace,
+  saveWorkspace,
   saveWorkspaceAs,
   setStartupWorkspace,
+  setWorkspaceLocked,
 } from '../workspace-persistence.js';
 import {
   selectWorkspaces,
@@ -103,6 +108,15 @@ export function WorkspaceDialog() {
   const beginSaveAs = () => {
     setNameAction({ kind: 'save-as' });
     setName(`${activeName} copy`);
+  };
+
+  const performSave = async () => {
+    try {
+      const workspace = await saveWorkspace();
+      showToast('success', `Saved workspace “${workspace.name}”.`);
+    } catch (error) {
+      showErrorToast(error);
+    }
   };
 
   const beginRename = (workspace: WorkspaceSummary) => {
@@ -195,6 +209,21 @@ export function WorkspaceDialog() {
     }
   };
 
+  const toggleLocked = async (workspace: WorkspaceSummary) => {
+    setWorkspaceMenu(null);
+    try {
+      const updated = await setWorkspaceLocked(workspace.id, !workspace.isLocked);
+      showToast(
+        'success',
+        updated.isLocked
+          ? `Locked workspace “${updated.name}”. Changes now require an explicit save.`
+          : `Unlocked workspace “${updated.name}”. Changes will save automatically.`,
+      );
+    } catch (error) {
+      showErrorToast(error);
+    }
+  };
+
   const activeWorkspace = workspaces.find((workspace) => workspace.id === activeId);
   const resultLabel = query.trim()
     ? `${visibleWorkspaces.length} of ${workspaces.length}`
@@ -239,7 +268,15 @@ export function WorkspaceDialog() {
               {activeName}
             </Typography>
           </Box>
-          <Stack direction="row" spacing={1}>
+          <Stack direction="row" useFlexGap spacing={1} sx={{ flexWrap: 'wrap' }}>
+            <Button
+              size="small"
+              startIcon={<SaveOutlinedIcon />}
+              disabled={!activeWorkspace || busy}
+              onClick={() => void performSave()}
+            >
+              Save
+            </Button>
             <Button
               size="small"
               startIcon={<SaveAsOutlinedIcon />}
@@ -248,6 +285,28 @@ export function WorkspaceDialog() {
             >
               Save as
             </Button>
+            <Tooltip
+              title={
+                activeWorkspace?.isLocked
+                  ? 'Resume automatic saves for this workspace'
+                  : 'Require an explicit save before this workspace changes'
+              }
+            >
+              <span>
+                <Button
+                  size="small"
+                  startIcon={
+                    activeWorkspace?.isLocked ? <LockOpenOutlinedIcon /> : <LockOutlinedIcon />
+                  }
+                  disabled={!activeWorkspace || busy}
+                  onClick={() => {
+                    if (activeWorkspace) void toggleLocked(activeWorkspace);
+                  }}
+                >
+                  {activeWorkspace?.isLocked ? 'Unlock' : 'Lock'}
+                </Button>
+              </span>
+            </Tooltip>
             <Button
               size="small"
               startIcon={<DriveFileRenameOutlineIcon />}
@@ -442,6 +501,14 @@ export function WorkspaceDialog() {
                           variant="outlined"
                         />
                       ) : null}
+                      {workspace.isLocked ? (
+                        <Chip
+                          size="small"
+                          label="Locked"
+                          icon={<LockOutlinedIcon />}
+                          variant="outlined"
+                        />
+                      ) : null}
                     </Stack>
                   }
                   secondary={activityLabel(workspace)}
@@ -562,65 +629,76 @@ export function WorkspaceDialog() {
         ) : null}
       </DialogContent>
 
-      <Menu
-        anchorEl={workspaceMenu?.anchor}
-        anchorReference={workspaceMenu?.position ? 'anchorPosition' : 'anchorEl'}
-        anchorPosition={workspaceMenu?.position}
-        open={Boolean(workspaceMenu)}
-        onClose={() => setWorkspaceMenu(null)}
-      >
-        {workspaceMenu?.workspace.id !== activeId ? (
-          <MenuItem onClick={() => requestOpen(workspaceMenu!.workspace.id)}>
+      {workspaceMenu ? (
+        <Menu
+          anchorEl={workspaceMenu.anchor}
+          anchorReference={workspaceMenu.position ? 'anchorPosition' : 'anchorEl'}
+          anchorPosition={workspaceMenu.position}
+          open
+          onClose={() => setWorkspaceMenu(null)}
+        >
+          {workspaceMenu.workspace.id !== activeId ? (
+            <MenuItem onClick={() => requestOpen(workspaceMenu.workspace.id)}>
+              <ListItemIcon>
+                <PlayArrowOutlinedIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Open</ListItemText>
+            </MenuItem>
+          ) : null}
+          <MenuItem
+            disabled={busy}
+            onClick={() => beginRename(workspaceMenu.workspace)}
+          >
             <ListItemIcon>
-              <PlayArrowOutlinedIcon fontSize="small" />
+              <DriveFileRenameOutlineIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>Open</ListItemText>
+            <ListItemText>Rename</ListItemText>
           </MenuItem>
-        ) : null}
-        <MenuItem
-          disabled={busy}
-          onClick={() => {
-            if (workspaceMenu) beginRename(workspaceMenu.workspace);
-          }}
-        >
-          <ListItemIcon>
-            <DriveFileRenameOutlineIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>Rename</ListItemText>
-        </MenuItem>
-        <MenuItem
-          disabled={busy}
-          onClick={() => {
-            if (workspaceMenu) void toggleStartup(workspaceMenu.workspace.id);
-          }}
-        >
-          <ListItemIcon>
-            {workspaceMenu?.workspace.id === startupId ? (
-              <StarBorderIcon fontSize="small" />
-            ) : (
-              <StarIcon fontSize="small" />
-            )}
-          </ListItemIcon>
-          <ListItemText>
-            {workspaceMenu?.workspace.id === startupId
-              ? 'Clear startup workspace'
-              : 'Open at startup'}
-          </ListItemText>
-        </MenuItem>
-        <Divider />
-        <MenuItem
-          disabled={busy}
-          onClick={() => {
-            if (workspaceMenu) void performDelete(workspaceMenu.workspace);
-          }}
-          sx={{ color: 'error.main' }}
-        >
-          <ListItemIcon sx={{ color: 'inherit' }}>
-            <DeleteOutlineIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>Delete</ListItemText>
-        </MenuItem>
-      </Menu>
+          <MenuItem
+            disabled={busy}
+            onClick={() => void toggleStartup(workspaceMenu.workspace.id)}
+          >
+            <ListItemIcon>
+              {workspaceMenu.workspace.id === startupId ? (
+                <StarBorderIcon fontSize="small" />
+              ) : (
+                <StarIcon fontSize="small" />
+              )}
+            </ListItemIcon>
+            <ListItemText>
+              {workspaceMenu.workspace.id === startupId
+                ? 'Clear startup workspace'
+                : 'Open at startup'}
+            </ListItemText>
+          </MenuItem>
+          <MenuItem
+            disabled={busy}
+            onClick={() => void toggleLocked(workspaceMenu.workspace)}
+          >
+            <ListItemIcon>
+              {workspaceMenu.workspace.isLocked ? (
+                <LockOpenOutlinedIcon fontSize="small" />
+              ) : (
+                <LockOutlinedIcon fontSize="small" />
+              )}
+            </ListItemIcon>
+            <ListItemText>
+              {workspaceMenu.workspace.isLocked ? 'Unlock' : 'Lock'}
+            </ListItemText>
+          </MenuItem>
+          <Divider />
+          <MenuItem
+            disabled={busy}
+            onClick={() => void performDelete(workspaceMenu.workspace)}
+            sx={{ color: 'error.main' }}
+          >
+            <ListItemIcon sx={{ color: 'inherit' }}>
+              <DeleteOutlineIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Delete</ListItemText>
+          </MenuItem>
+        </Menu>
+      ) : null}
 
       <DialogActions>
         {reconnectable.length > 0 ? (

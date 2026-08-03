@@ -21,7 +21,7 @@ window controls sit inside it. From left to right:
 | Control | What it does |
 | --- | --- |
 | :material-menu: | Show/hide the hosts sidebar (++ctrl+b++) |
-| **Workspace name** | Opens the [workspace dialog](workspaces.md): save, open, rename, set a startup workspace |
+| **Workspace name** | Opens the [workspace dialog](workspaces.md): save, lock, open, rename, set a startup workspace |
 | :material-checkbox-multiple-marked-outline: **Multi-exec** | Type once into several sessions at once. See [multi-exec](commands.md#multi-execution) |
 | :material-flash: | [Saved command buttons](commands.md) |
 | :material-folder-outline: | The [file browser](files.md) for the active SSH tab |
