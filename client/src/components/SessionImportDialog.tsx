@@ -39,6 +39,7 @@ import {
 import type {
   ImportedSession,
   ImportedSessionParseResult,
+  SkippedImportedSession,
 } from '../session-import.js';
 import { errorDetails, showToast } from '../state/toast.js';
 
@@ -58,6 +59,8 @@ interface AutoImportSource {
   description: string;
   load: () => Promise<SessionImportSource | undefined>;
 }
+
+const SKIPPED_SESSIONS_PER_PAGE = 50;
 
 export function SessionImportDialog<T extends ImportedSession>({
   onClose,
@@ -248,8 +251,11 @@ export function SessionImportDialog<T extends ImportedSession>({
             <Alert severity="info">{reviewNotice}</Alert>
             {pending.parsed.ignoredCount > 0 ? (
               <Alert severity="warning">
-                {pending.parsed.ignoredCount} unsupported or incomplete{' '}
-                {pending.parsed.ignoredCount === 1 ? 'session was' : 'sessions were'} skipped.
+                <Typography variant="body2">
+                  {pending.parsed.ignoredCount} unsupported or incomplete{' '}
+                  {pending.parsed.ignoredCount === 1 ? 'session was' : 'sessions were'} skipped.
+                </Typography>
+                <SkippedSessionList sessions={pending.parsed.skippedSessions} />
               </Alert>
             ) : null}
 
@@ -471,6 +477,74 @@ function searchableSessionValues(session: ImportedSession): Array<string | undef
   return session.kind === 'ssh'
     ? [session.name, session.alias, session.host, session.username, session.folder]
     : [session.name, session.path, String(session.baudRate), session.folder];
+}
+
+function skippedSessionName(session: SkippedImportedSession): string {
+  return session.folder ? `${session.folder}/${session.name}` : session.name;
+}
+
+function SkippedSessionList({ sessions }: { sessions: readonly SkippedImportedSession[] }) {
+  const [page, setPage] = useState(0);
+  const pageCount = Math.ceil(sessions.length / SKIPPED_SESSIONS_PER_PAGE);
+  const currentPage = Math.min(page, Math.max(0, pageCount - 1));
+  const start = currentPage * SKIPPED_SESSIONS_PER_PAGE;
+  const end = Math.min(start + SKIPPED_SESSIONS_PER_PAGE, sessions.length);
+  const visibleSessions = sessions.slice(start, end);
+
+  return (
+    <>
+      <Box
+        component="ul"
+        aria-label="Skipped sessions"
+        sx={{ m: 0, mt: 1, p: 0, maxHeight: 180, overflowY: 'auto', listStyle: 'none' }}
+      >
+        {visibleSessions.map((session) => (
+          <Box
+            component="li"
+            key={session.id}
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', sm: 'minmax(180px, 0.7fr) 1fr' },
+              columnGap: 2,
+              py: 0.75,
+              borderTop: 1,
+              borderColor: 'warning.dark',
+            }}
+          >
+            <Typography variant="body2" sx={{ fontWeight: 650 }} noWrap>
+              {skippedSessionName(session)}
+            </Typography>
+            <Typography variant="body2">{session.reason}</Typography>
+          </Box>
+        ))}
+      </Box>
+      {pageCount > 1 ? (
+        <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between', mt: 0.5 }}>
+          <Typography variant="caption" aria-live="polite">
+            Showing {start + 1}–{end} of {sessions.length}
+          </Typography>
+          <Stack direction="row" spacing={0.5}>
+            <Button
+              color="inherit"
+              size="small"
+              disabled={currentPage === 0}
+              onClick={() => setPage(Math.max(0, currentPage - 1))}
+            >
+              Previous
+            </Button>
+            <Button
+              color="inherit"
+              size="small"
+              disabled={currentPage === pageCount - 1}
+              onClick={() => setPage(Math.min(pageCount - 1, currentPage + 1))}
+            >
+              Next
+            </Button>
+          </Stack>
+        </Stack>
+      ) : null}
+    </>
+  );
 }
 
 function sessionDetails(session: ImportedSession): string {

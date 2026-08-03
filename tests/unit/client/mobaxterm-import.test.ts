@@ -21,6 +21,7 @@ Key box=#109#0%key.example.com%22%root%3%rest
 
     expect(parsed).toEqual({
       ignoredCount: 0,
+      skippedSessions: [],
       sessions: [
         {
           id: expect.any(String),
@@ -66,12 +67,30 @@ My host!=#109#0%two.example.com%22%%%rest
     const parsed = parseMobaXtermSessions(`
 [Bookmarks]
 RDP=#91#0%desktop.example.com
+VNC=#5#0%desktop.example.com
 Broken SSH=#109#0%%22%root%%
 Valid=#109#0%valid.example.com%22%root%%
 `);
 
     expect(parsed.sessions).toHaveLength(1);
-    expect(parsed.ignoredCount).toBe(2);
+    expect(parsed.ignoredCount).toBe(3);
+    expect(parsed.skippedSessions).toEqual([
+      {
+        id: expect.any(String),
+        name: 'RDP',
+        reason: 'Session type is not SSH (only SSH sessions can be imported)',
+      },
+      {
+        id: expect.any(String),
+        name: 'VNC',
+        reason: 'Session type is not SSH (only SSH sessions can be imported)',
+      },
+      {
+        id: expect.any(String),
+        name: 'Broken SSH',
+        reason: 'SSH session has no hostname',
+      },
+    ]);
   });
 
   it('rejects files with no SSH bookmarks', () => {
