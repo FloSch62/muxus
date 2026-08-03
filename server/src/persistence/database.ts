@@ -7,6 +7,7 @@ import {
 } from 'node:sqlite';
 import { nanoid } from 'nanoid';
 import type {
+  FolderAuthSettings,
   ForwardType,
   HostKeywordHighlightConfig,
   ManagedHostRef,
@@ -22,6 +23,13 @@ import type {
   TunnelRecord,
   WorkspaceMultiExecGroup,
 } from '@muxus/shared';
+import {
+  folderPathKey,
+  folderPathSegments,
+  isDescendantFolderPath,
+  normalizeFolderPath,
+  renameFolderPathUnder,
+} from '../util/folder-paths.js';
 
 const MIGRATIONS = [
   {
@@ -342,6 +350,20 @@ const MIGRATIONS = [
       ) STRICT;
     `,
   },
+  {
+    version: 17,
+    name: 'folder-settings',
+    sql: `
+      CREATE TABLE folder_settings (
+        id TEXT PRIMARY KEY,
+        path_key TEXT NOT NULL UNIQUE,
+        path TEXT NOT NULL,
+        auth_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(auth_json)),
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) STRICT;
+    `,
+  },
 ] as const;
 
 function migrateDraftPasswordVault(db: DatabaseSync): void {
@@ -423,6 +445,16 @@ export interface OpenSshMetadata {
   keywordHighlights?: HostKeywordHighlightConfig;
   lastConnectedAt?: string;
   connectCount: number;
+}
+
+/** One folder's shared SSH defaults, keyed by its case-folded path. */
+export interface FolderSettingsRow {
+  id: string;
+  path: string;
+  pathKey: string;
+  auth: FolderAuthSettings;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface NativeConnectionInput {
@@ -610,6 +642,12 @@ export class MuxusDatabase {
       result.set(alias, metadataFromRow(row));
     }
     return result;
+  }
+
+  /** The sidebar folder an OpenSSH alias lives in, for dial-time folder defaults. */
+  groupForAlias(alias: string): string | undefined {
+    const row = this.metadataByAlias.get(alias);
+    return row ? optionalString(row.group_name) : undefined;
   }
 
   updateOpenSshMetadata(
@@ -945,6 +983,26 @@ export class MuxusDatabase {
     }
     this.flushSensitivePages();
     return this.encryptedCredential(input.provider, input.service, input.account)!;
+  }
+
+  /** Refresh a credential's display label (a folder password after a rename). */
+  updateCredentialRefLabel(
+    provider: string,
+    service: string,
+    account: string,
+    label: string,
+  ): boolean {
+    return (
+      Number(
+        this.db
+          .prepare(`
+            UPDATE credential_refs
+            SET label = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE provider = ? AND service = ? AND account = ?
+          `)
+          .run(label, provider, service, account).changes,
+      ) === 1
+    );
   }
 
   deleteEncryptedCredential(id: string, provider: string): boolean {
@@ -1537,6 +1595,138 @@ export class MuxusDatabase {
     return this.metadataByAlias.get(alias)!;
   }
 
+  listFolderSettings(): FolderSettingsRow[] {
+    return this.db
+      .prepare('SELECT * FROM folder_settings ORDER BY path_key')
+      .all()
+      .map(folderSettingsFromRow);
+  }
+
+  /** Exact-path lookup; `path` may be any capitalization of the folder. */
+  folderSettingsForPath(path: string): FolderSettingsRow | undefined {
+    const key = folderPathKey(path);
+    if (!key) return undefined;
+    const row = this.db
+      .prepare('SELECT * FROM folder_settings WHERE path_key = ?')
+      .get(key);
+    return row ? folderSettingsFromRow(row) : undefined;
+  }
+
+  upsertFolderSettings(path: string, auth: FolderAuthSettings): FolderSettingsRow {
+    const normalized = normalizeFolderPath(path);
+    requireNonEmpty(normalized, 'path');
+    assertSecretFree(auth, 'folder.auth');
+    const key = folderPathKey(normalized);
+    this.db
+      .prepare(`
+        INSERT INTO folder_settings(id, path_key, path, auth_json)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(path_key) DO UPDATE SET
+          path = excluded.path,
+          auth_json = excluded.auth_json,
+          updated_at = CURRENT_TIMESTAMP
+      `)
+      .run(nanoid(), key, normalized, JSON.stringify(auth));
+    return this.folderSettingsForPath(normalized)!;
+  }
+
+  /** Remove one settings row only — descendants keep their own settings. */
+  removeFolderSettingsRow(id: string): void {
+    this.db.prepare('DELETE FROM folder_settings WHERE id = ?').run(id);
+  }
+
+  /**
+   * Carry settings across a folder rename or move: the folder itself and every
+   * descendant follow the path rewrite. When a destination path already has a
+   * row (a merge), the destination keeps its settings and the source row is
+   * dropped — the dropped rows are returned so callers can clean up their
+   * vault passwords.
+   */
+  moveFolderSettings(from: string, to: string): { moved: number; dropped: FolderSettingsRow[] } {
+    const source = normalizeFolderPath(from);
+    const target = normalizeFolderPath(to);
+    requireNonEmpty(source, 'from');
+    requireNonEmpty(target, 'to');
+    if (source === target) return { moved: 0, dropped: [] };
+    const dropped: FolderSettingsRow[] = [];
+    let moved = 0;
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const update = this.db.prepare(`
+        UPDATE folder_settings
+        SET path_key = ?, path = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `);
+      const remove = this.db.prepare('DELETE FROM folder_settings WHERE id = ?');
+      const occupied = this.db.prepare('SELECT id FROM folder_settings WHERE path_key = ?');
+      for (const row of this.listFolderSettings()) {
+        const next = renameFolderPathUnder(row.path, source, target);
+        if (next === undefined) continue;
+        const nextKey = folderPathKey(next);
+        const existing = occupied.get(nextKey);
+        if (existing && String(existing.id) !== row.id) {
+          remove.run(row.id);
+          dropped.push(row);
+          continue;
+        }
+        update.run(nextKey, next, row.id);
+        moved++;
+      }
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+    return { moved, dropped };
+  }
+
+  /**
+   * Delete a folder's settings the way deleting the folder treats its hosts:
+   * the folder's own row is removed and descendant rows are promoted one level
+   * up (colliding promotions are dropped in favor of the existing row).
+   * Returns every removed row so callers can delete the vault passwords.
+   */
+  deleteFolderSettings(path: string): { removed: FolderSettingsRow[] } {
+    const target = normalizeFolderPath(path);
+    requireNonEmpty(target, 'path');
+    const removed: FolderSettingsRow[] = [];
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const remove = this.db.prepare('DELETE FROM folder_settings WHERE id = ?');
+      const own = this.folderSettingsForPath(target);
+      if (own) {
+        remove.run(own.id);
+        removed.push(own);
+      }
+      const parentSegments = folderPathSegments(target).slice(0, -1);
+      const depth = folderPathSegments(target).length;
+      const update = this.db.prepare(`
+        UPDATE folder_settings
+        SET path_key = ?, path = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `);
+      const occupied = this.db.prepare('SELECT id FROM folder_settings WHERE path_key = ?');
+      for (const row of this.listFolderSettings()) {
+        if (!isDescendantFolderPath(row.path, target)) continue;
+        const tail = folderPathSegments(row.path).slice(depth);
+        const next = [...parentSegments, ...tail].join('/');
+        const nextKey = folderPathKey(next);
+        const existing = occupied.get(nextKey);
+        if (existing && String(existing.id) !== row.id) {
+          remove.run(row.id);
+          removed.push(row);
+          continue;
+        }
+        update.run(nextKey, next, row.id);
+      }
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+    return { removed };
+  }
+
   /** Reuse group names case-insensitively so typing "work" and "Work" cannot
    *  silently create two visually indistinguishable sidebar groups. A spelling
    *  that differs only by case updates the row instead of being discarded, so
@@ -1692,6 +1882,17 @@ function tunnelFromRow(row: SqlRow): TunnelRecord {
     bindPort: Number(row.bind_port),
     targetHost: type === 'dynamic' ? undefined : String(row.target_host),
     targetPort: type === 'dynamic' ? undefined : Number(row.target_port),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
+
+function folderSettingsFromRow(row: SqlRow): FolderSettingsRow {
+  return {
+    id: String(row.id),
+    path: String(row.path),
+    pathKey: String(row.path_key),
+    auth: JSON.parse(String(row.auth_json)) as FolderAuthSettings,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };

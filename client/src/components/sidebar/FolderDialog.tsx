@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import Autocomplete from '@mui/material/Autocomplete';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import ButtonBase from '@mui/material/ButtonBase';
@@ -6,12 +7,27 @@ import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
+import Divider from '@mui/material/Divider';
+import IconButton from '@mui/material/IconButton';
+import InputAdornment from '@mui/material/InputAdornment';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
+import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
+import UndoOutlinedIcon from '@mui/icons-material/UndoOutlined';
+import type { FolderAuthSettings } from '@muxus/shared';
+import {
+  folderSettingsForPath,
+  hasFolderSettingsUnder,
+  useFolderSettings,
+  useMoveFolderSettings,
+  useSaveFolderSettings,
+} from '../../api/folder-settings.js';
 import { useApplyFolderMoves } from '../../api/host-groups.js';
-import { useSavedHostProfiles, useSshConfig } from '../../api/queries.js';
+import { usePasswordVaultStatus } from '../../api/password-vault-queries.js';
+import { useSavedHostProfiles, useSshConfig, useSshKeys } from '../../api/queries.js';
 import {
   folderKey,
   folderLabel,
@@ -59,6 +75,12 @@ export function FolderDialog() {
   const [parent, setParent] = useState('');
   const [color, setColor] = useState<string | undefined>();
   const [icon, setIcon] = useState<string | undefined>();
+  const [authUser, setAuthUser] = useState('');
+  const [authPort, setAuthPort] = useState('');
+  const [authKey, setAuthKey] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [removePassword, setRemovePassword] = useState(false);
+  const [masterPassword, setMasterPassword] = useState('');
 
   // Load the folder's current shape once, when the dialog opens on it.
   useEffect(() => {
@@ -86,6 +108,31 @@ export function FolderDialog() {
   const mode = state === false ? undefined : state.mode;
   const sourcePath = state !== false && state.mode === 'edit' ? state.path : '';
 
+  const saveSettings = useSaveFolderSettings();
+  const moveSettings = useMoveFolderSettings();
+  const { data: settingsData } = useFolderSettings(state !== false && !movingHost);
+  const { data: vaultStatus } = usePasswordVaultStatus();
+  const { data: sshKeys } = useSshKeys(state !== false && !movingHost);
+  const settingsRecord = sourcePath
+    ? folderSettingsForPath(settingsData?.folders, sourcePath)
+    : undefined;
+
+  // Seed the credential fields separately: the settings arrive from their own
+  // query and may land a beat after the dialog opens.
+  const seedUser = settingsRecord?.auth.user ?? '';
+  const seedPort = settingsRecord?.auth.port !== undefined ? String(settingsRecord.auth.port) : '';
+  const seedKey = settingsRecord?.auth.identityFiles?.[0] ?? '';
+  useEffect(() => {
+    if (state === false || state.mode === 'move-host') return;
+    const editing = state.mode === 'edit';
+    setAuthUser(editing ? seedUser : '');
+    setAuthPort(editing ? seedPort : '');
+    setAuthKey(editing ? seedKey : '');
+    setAuthPassword('');
+    setRemovePassword(false);
+    setMasterPassword('');
+  }, [state, seedUser, seedPort, seedKey]);
+
   const target = movingHost
     ? normalizeGroupPath(parent)
     : normalizeGroupPath(folderPath([...folderSegments(parent), sanitizeFolderName(name)]));
@@ -108,9 +155,51 @@ export function FolderDialog() {
     [renaming, config?.hosts, savedData?.profiles, emptyFolders, target, sourcePath],
   );
 
+  const portNumber = authPort.trim() === '' ? undefined : Number(authPort.trim());
+  const portInvalid =
+    portNumber !== undefined &&
+    !(Number.isInteger(portNumber) && portNumber >= 1 && portNumber <= 65535);
+  const vaultConfigured = vaultStatus?.configured ?? false;
+  const passwordNeedsMaster =
+    vaultConfigured && (vaultStatus?.locked ?? false) && authPassword.length > 0;
+
   if (state === false) return null;
 
   const close = () => setState(false);
+
+  /** Write the credential fields for `path`, after moving them off `previousPath`. */
+  const persistCredentials = (path: string, previousPath?: string) => {
+    const auth: FolderAuthSettings = {
+      ...(authUser.trim() ? { user: authUser.trim() } : {}),
+      ...(portNumber !== undefined && !portInvalid ? { port: portNumber } : {}),
+      // A folder key means "log in with exactly this key", like the host
+      // editor's specific-key mode.
+      ...(authKey.trim() ? { identityFiles: [authKey.trim()], identitiesOnly: true } : {}),
+    };
+    const password = authPassword
+      ? authPassword
+      : removePassword && settingsRecord?.hasPassword
+        ? null
+        : undefined;
+    const dirty = !!settingsRecord || Object.keys(auth).length > 0 || password !== undefined;
+    const save = () => {
+      if (!dirty) return;
+      saveSettings.mutate({
+        path,
+        auth,
+        password,
+        ...(masterPassword.trim() ? { masterPassword: masterPassword.trim() } : {}),
+      });
+    };
+    if (previousPath && hasFolderSettingsUnder(settingsData?.folders, previousPath)) {
+      void moveSettings
+        .mutateAsync({ from: previousPath, to: path })
+        .then(save)
+        .catch(() => undefined);
+      return;
+    }
+    save();
+  };
 
   const submit = () => {
     if (movingHost) {
@@ -121,11 +210,12 @@ export function FolderDialog() {
       close();
       return;
     }
-    if (problem) return;
+    if (problem || portInvalid || (passwordNeedsMaster && !masterPassword.trim())) return;
 
     if (mode === 'new') {
       folders.addEmptyFolder(target);
       folders.setFolderStyle(folderKey(target), { color, icon });
+      persistCredentials(target);
       close();
       return;
     }
@@ -142,7 +232,10 @@ export function FolderDialog() {
       if (!isSamePath(sourcePath, target)) folders.removeEmptyFolder(sourcePath);
       if (affected.length > 0) applyMoves.mutate({ moves: affected, label: target });
       else folders.addEmptyFolder(target);
+      persistCredentials(target, sourcePath);
       showToast('success', `Folder renamed to “${target}”.`);
+    } else {
+      persistCredentials(normalizeGroupPath(sourcePath));
     }
     close();
   };
@@ -265,6 +358,150 @@ export function FolderDialog() {
                     )}
                   </Box>
                 </Box>
+
+                <Divider sx={{ mt: 0.5 }} />
+                <Box>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    Shared SSH credentials
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Hosts in this folder use these unless they set their own.
+                    Anything in your ssh config still wins, and the nearest
+                    folder beats its parents.
+                  </Typography>
+                </Box>
+                <Stack direction="row" spacing={1.5}>
+                  <TextField
+                    label="Username"
+                    value={authUser}
+                    onChange={(event) => setAuthUser(event.target.value)}
+                    placeholder="from ssh config"
+                    fullWidth
+                  />
+                  <TextField
+                    label="Port"
+                    value={authPort}
+                    onChange={(event) => setAuthPort(event.target.value)}
+                    placeholder="22"
+                    error={portInvalid}
+                    sx={{ width: 130 }}
+                  />
+                </Stack>
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+                  <Autocomplete
+                    freeSolo
+                    fullWidth
+                    options={sshKeys?.keys ?? []}
+                    getOptionLabel={(option) =>
+                      typeof option === 'string' ? option : option.path
+                    }
+                    inputValue={authKey}
+                    onInputChange={(_event, value) => setAuthKey(value)}
+                    renderOption={(props, option) => (
+                      <Box component="li" {...props} key={option.path}>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography variant="body2">{option.name}</Typography>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            noWrap
+                            sx={{ display: 'block' }}
+                          >
+                            {option.path}
+                          </Typography>
+                        </Box>
+                      </Box>
+                    )}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Private key"
+                        placeholder="pick from ~/.ssh or type a path"
+                        helperText={
+                          authKey.trim()
+                            ? 'Hosts without their own key log in with exactly this key.'
+                            : undefined
+                        }
+                      />
+                    )}
+                  />
+                  {window.muxusDesktop && (
+                    <Tooltip title="Browse for a key file">
+                      <IconButton
+                        aria-label="Browse for a key file"
+                        onClick={() => {
+                          void window.muxusDesktop?.selectPrivateKey().then((path) => {
+                            if (path) setAuthKey(path);
+                          });
+                        }}
+                        sx={{ mt: 0.75 }}
+                      >
+                        <FolderOpenOutlinedIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  )}
+                </Stack>
+                <TextField
+                  label="Shared password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={authPassword}
+                  onChange={(event) => {
+                    setAuthPassword(event.target.value);
+                    if (event.target.value) setRemovePassword(false);
+                  }}
+                  disabled={!vaultConfigured}
+                  placeholder={
+                    settingsRecord?.hasPassword && !removePassword ? '•••••••• (saved)' : undefined
+                  }
+                  helperText={
+                    !vaultConfigured
+                      ? 'Set up the password vault in Settings → Passwords to store a shared password.'
+                      : removePassword
+                        ? 'The saved password is removed when you save.'
+                        : settingsRecord?.hasPassword
+                          ? 'Leave empty to keep the saved password.'
+                          : 'Offered when a host falls back to password login; kept in the encrypted vault.'
+                  }
+                  slotProps={{
+                    input: {
+                      endAdornment:
+                        settingsRecord?.hasPassword && !authPassword ? (
+                          <InputAdornment position="end">
+                            <Tooltip
+                              title={removePassword ? 'Keep the saved password' : 'Remove the saved password'}
+                            >
+                              <IconButton
+                                size="small"
+                                aria-label={
+                                  removePassword ? 'Keep the saved password' : 'Remove the saved password'
+                                }
+                                onClick={() => setRemovePassword((value) => !value)}
+                              >
+                                {removePassword ? (
+                                  <UndoOutlinedIcon fontSize="small" />
+                                ) : (
+                                  <DeleteOutlineIcon fontSize="small" />
+                                )}
+                              </IconButton>
+                            </Tooltip>
+                          </InputAdornment>
+                        ) : undefined,
+                    },
+                  }}
+                  fullWidth
+                />
+                {passwordNeedsMaster && (
+                  <TextField
+                    label="Vault master password"
+                    type="password"
+                    autoComplete="current-password"
+                    value={masterPassword}
+                    onChange={(event) => setMasterPassword(event.target.value)}
+                    helperText="The password vault is locked — its master password is needed to store this."
+                    fullWidth
+                  />
+                )}
               </>
             )}
 
@@ -282,7 +519,13 @@ export function FolderDialog() {
           <Button
             type="submit"
             variant="contained"
-            disabled={(!movingHost && !!problem) || applyMoves.isPending}
+            disabled={
+              (!movingHost &&
+                (!!problem ||
+                  portInvalid ||
+                  (passwordNeedsMaster && !masterPassword.trim()))) ||
+              applyMoves.isPending
+            }
           >
             {movingHost ? 'Move' : mode === 'new' ? 'Create' : 'Save'}
           </Button>

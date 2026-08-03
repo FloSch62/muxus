@@ -25,6 +25,12 @@ import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import type { SavedHostProfile, SshHostEntry } from '@muxus/shared';
+import {
+  hasFolderSettingsUnder,
+  useDeleteFolderSettings,
+  useFolderSettings,
+  useMoveFolderSettings,
+} from '../api/folder-settings.js';
 import { useApplyFolderMoves } from '../api/host-groups.js';
 import { useReorderManagedHosts } from '../api/host-order.js';
 import { useDeleteHostProfile, useUpdateHostProfileMetadata } from '../api/profiles.js';
@@ -115,6 +121,9 @@ export function SessionSidebar() {
   const updateProfileMetadata = useUpdateHostProfileMetadata();
   const reorder = useReorderManagedHosts();
   const applyFolderMoves = useApplyFolderMoves();
+  const { data: folderSettingsData } = useFolderSettings();
+  const moveFolderSettings = useMoveFolderSettings();
+  const deleteFolderSettings = useDeleteFolderSettings();
   const liveByKey = useLiveHostCounts();
   const folders = useFolderPrefs();
   const allHosts = useAllManagedHosts();
@@ -226,10 +235,13 @@ export function SessionSidebar() {
         if (moves.length > 0) applyFolderMoves.mutate({ moves, label: toPath });
         else folders.addEmptyFolder(toPath);
         folders.removeEmptyFolder(fromPath);
+        if (hasFolderSettingsUnder(folderSettingsData?.folders, fromPath)) {
+          moveFolderSettings.mutate({ from: fromPath, to: toPath });
+        }
       }
       if (placement) folders.setFolderOrder(placement.parentKey, placement.keys);
     },
-    [allHosts, folders, applyFolderMoves],
+    [allHosts, folders, applyFolderMoves, folderSettingsData, moveFolderSettings],
   );
 
   /** Alt+Arrow on a folder: swap it with the sibling folder next to it. */
@@ -370,12 +382,18 @@ export function SessionSidebar() {
     (node: FolderNode) => {
       const moves = deleteFolderPlan(allHosts, node.path);
       const parent = folderParentPath(node.path);
+      const hasCredentials = hasFolderSettingsUnder(folderSettingsData?.folders, node.path);
+      const hostsText =
+        moves.length === 0
+          ? 'The folder is empty.'
+          : `${moves.length} host${moves.length === 1 ? '' : 's'} move${moves.length === 1 ? 's' : ''} ${parent ? `up into “${parent}”` : 'out of every folder'}.`;
       void confirmAction({
         title: `Delete “${node.label}”?`,
-        description:
-          moves.length === 0
+        description: hasCredentials
+          ? `${hostsText} Its shared SSH credentials are removed.`
+          : moves.length === 0
             ? 'The folder is empty, so nothing else changes.'
-            : `${moves.length} host${moves.length === 1 ? '' : 's'} move${moves.length === 1 ? 's' : ''} ${parent ? `up into “${parent}”` : 'out of every folder'}. No connection settings change.`,
+            : `${hostsText} No connection settings change.`,
         confirmLabel: 'Delete folder',
         destructive: true,
       }).then((confirmed) => {
@@ -383,9 +401,10 @@ export function SessionSidebar() {
         folders.removeEmptyFolder(node.path);
         folders.setFolderStyle(node.key, undefined);
         if (moves.length > 0) applyFolderMoves.mutate({ moves, label: node.label });
+        if (hasCredentials) deleteFolderSettings.mutate(node.path);
       });
     },
-    [allHosts, folders, applyFolderMoves],
+    [allHosts, folders, applyFolderMoves, folderSettingsData, deleteFolderSettings],
   );
 
   // Where the menu's host sits among its siblings, for Move up / Move down.

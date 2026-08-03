@@ -66,6 +66,23 @@ Hosts without a folder are grouped by the file they were defined in.
 Deleting a folder does not delete hosts. They move up into the parent folder, and no
 connection setting changes.
 
+### Shared credentials
+
+A folder can hold shared SSH defaults — username, port, a private key and a password —
+that every host inside it inherits. Open **Rename, move & style…** and fill in the
+**Shared SSH credentials** section.
+
+Precedence is always: the host's own settings first, then anything in `ssh_config`
+(including `Host *` blocks), then the nearest folder, then its parents. A folder never
+overrides something you configured on the host or in `ssh_config` — it only fills the
+gaps, so one folder entry can carry the login for a whole lab while individual hosts
+still override it by setting their own user or key.
+
+The shared password is kept in the encrypted [password vault](settings.md) and is tried
+automatically when a host falls back to password login; a password remembered for the
+host itself still wins. Folder credentials move with the folder when it is renamed or
+dragged, and deleting the folder deletes them.
+
 ### Launching a folder
 
 A folder's menu offers **Launch *n* hosts…**, which opens every host it contains, including

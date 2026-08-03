@@ -307,8 +307,17 @@ const yes = (v: string | undefined): boolean => (v ?? '').toLowerCase() === 'yes
  * order. IdentityFile, CertificateFile and the *Forward directives accumulate
  * instead. ProxyJump and ProxyCommand are mutually exclusive: whichever is
  * obtained first wins, matching OpenSSH.
+ *
+ * `fallback` options (Muxus folder defaults) are evaluated after the entire
+ * config, as if appended at the end of ~/.ssh/config in a block matching only
+ * this host — first-obtained-wins makes them fill gaps without ever beating
+ * an option the user wrote in ssh_config.
  */
-export function resolveHost(doc: ConfigDocument, host: string): ResolvedTarget {
+export function resolveHost(
+  doc: ConfigDocument,
+  host: string,
+  fallback?: readonly OptionLine[],
+): ResolvedTarget {
   const first = new Map<string, string>();
   const identityFiles: string[] = [];
   const certificateFiles: string[] = [];
@@ -316,7 +325,10 @@ export function resolveHost(doc: ConfigDocument, host: string): ResolvedTarget {
   const setEnv: Record<string, string> = {};
   const sendEnv: string[] = [];
 
-  for (const entry of doc.sequence) {
+  const sequence = fallback?.length
+    ? [...doc.sequence, { patterns: null, options: [...fallback] }]
+    : doc.sequence;
+  for (const entry of sequence) {
     if (entry.patterns && !hostPatternsMatch(entry.patterns, host)) continue;
     for (const opt of entry.options) {
       // OpenSSH treats ChallengeResponseAuthentication as an exact alias, so
@@ -735,7 +747,11 @@ export function blockToOptions(block: HostBlock): HostBlockOptions {
   return out;
 }
 
-export function listHosts(doc: ConfigDocument): SshHostEntry[] {
+export function listHosts(
+  doc: ConfigDocument,
+  /** Folder defaults per alias — resolved values then match what connect uses. */
+  fallbackFor?: (alias: string) => readonly OptionLine[] | undefined,
+): SshHostEntry[] {
   const seen = new Set<string>();
   const entries: SshHostEntry[] = [];
   for (const block of doc.blocks) {
@@ -744,7 +760,7 @@ export function listHosts(doc: ConfigDocument): SshHostEntry[] {
     if (!fresh.length) continue;
     for (const a of concrete) seen.add(a);
     const alias = fresh[0]!;
-    const resolved = resolveHost(doc, alias);
+    const resolved = resolveHost(doc, alias, fallbackFor?.(alias));
     entries.push({
       alias,
       aliases: concrete,

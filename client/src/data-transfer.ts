@@ -1,4 +1,6 @@
 import type {
+  FolderAuthSettings,
+  FolderSettingsResponse,
   HostBlockOptions,
   HostUpsertRequest,
   ManagedHostRef,
@@ -94,6 +96,12 @@ export interface BackupLoggingPolicy {
   policy: SessionLoggingPolicyInput;
 }
 
+/** A folder's shared SSH defaults. The vault password never leaves the vault. */
+export interface PortableFolderSettings {
+  path: string;
+  auth: FolderAuthSettings;
+}
+
 export type PortableHistorySettings = Omit<
   SessionHistorySettings,
   'storageLocation'
@@ -109,6 +117,8 @@ export interface MuxusBackupV1 {
     tunnels: TunnelRecord[];
     loggingPolicies: BackupLoggingPolicy[];
     historySettings: PortableHistorySettings;
+    /** Absent in backups from before folder credentials existed. */
+    folderSettings?: PortableFolderSettings[];
   };
 }
 
@@ -165,7 +175,7 @@ export async function createBackupDocument(
     ...snapshot.sshConfig.hosts.map((host) => `ssh:${host.alias}`),
     ...snapshot.savedHosts.map((profile) => `profile:${profile.id}`),
   ];
-  const [policies, storage] = await Promise.all([
+  const [policies, storage, folderSettings] = await Promise.all([
     Promise.all(
       profileKeys.map((profileKey) =>
         apiFetch<SessionLoggingPolicy>(
@@ -174,6 +184,7 @@ export async function createBackupDocument(
       ),
     ),
     apiFetch<SessionHistoryStorageStatus>('/api/session-history/storage'),
+    apiFetch<FolderSettingsResponse>('/api/folders/settings'),
   ]);
   const { storageLocation: _storageLocation, ...historySettings } =
     storage.settings;
@@ -193,6 +204,9 @@ export async function createBackupDocument(
           policy: { enabled, captureInput, maxPartBytes, maxParts },
         })),
       historySettings,
+      folderSettings: folderSettings.folders
+        .filter((folder) => Object.keys(folder.auth).length > 0)
+        .map(({ path, auth }) => ({ path, auth })),
     },
   };
 }
@@ -278,6 +292,7 @@ export async function restoreTransferDocument(
   const result: RestoreResult = { added: 0, updated: 0, skipped: 0 };
   if (selection.connections) {
     await restoreConnections(document.data, conflicts, result);
+    await restoreFolderSettings(document.data.folderSettings ?? [], conflicts, result);
   }
 
   if (selection.tunnels) {
@@ -538,6 +553,30 @@ async function restoreConnections(
   }
 }
 
+async function restoreFolderSettings(
+  entries: readonly PortableFolderSettings[],
+  conflicts: TransferConflictStrategy,
+  result: RestoreResult,
+): Promise<void> {
+  if (entries.length === 0) return;
+  const current = await apiFetch<FolderSettingsResponse>('/api/folders/settings');
+  const existingPaths = new Set(current.folders.map((folder) => folder.path.toLowerCase()));
+  for (const entry of entries) {
+    const exists = existingPaths.has(entry.path.toLowerCase());
+    if (exists && conflicts === 'keep') {
+      result.skipped++;
+      continue;
+    }
+    await apiFetch<{ folder: unknown }>('/api/folders/settings', {
+      method: 'PUT',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ path: entry.path, auth: entry.auth }),
+    });
+    if (exists) result.updated++;
+    else result.added++;
+  }
+}
+
 function metadataPatch(metadata: PortableHostMetadata): OpenSshMetadataPatch {
   return {
     displayName: metadata.displayName ?? null,
@@ -771,7 +810,16 @@ function validateBackupData(data: Record<string, unknown>): void {
     ) ||
     !finiteNumber(data.historySettings.maxTotalBytes) ||
     !finiteNumber(data.historySettings.minFreeBytes) ||
-    !finiteNumber(data.historySettings.minFreePercent)
+    !finiteNumber(data.historySettings.minFreePercent) ||
+    (data.folderSettings !== undefined &&
+      (!boundedArray(data.folderSettings, 500) ||
+        !data.folderSettings.every(
+          (entry) =>
+            isRecord(entry) &&
+            nonEmptyString(entry.path) &&
+            entry.path.length <= 300 &&
+            isRecord(entry.auth),
+        )))
   ) {
     throw new Error('The backup data is incomplete or too large.');
   }

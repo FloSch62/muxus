@@ -119,27 +119,49 @@ describe('Muxus transfer file parsing', () => {
   });
 });
 
+function mockBackupSnapshot(folders: unknown[] = []): void {
+  apiFetchMock
+    .mockResolvedValueOnce({ hosts: [] })
+    .mockResolvedValueOnce({ profiles: [] })
+    .mockResolvedValueOnce({ tunnels: [] })
+    .mockResolvedValueOnce({ overridden: false })
+    .mockResolvedValueOnce({ overridden: false })
+    .mockResolvedValueOnce({
+      settings: {
+        storageLocation: '/tmp/muxus-history',
+        maxTotalBytes: 5 * 1024 ** 3,
+        minFreeBytes: 2 * 1024 ** 3,
+        minFreePercent: 5,
+      },
+    })
+    .mockResolvedValueOnce({ folders });
+}
+
 describe('backing up preferences', () => {
   it('includes the update notification choice', async () => {
     usePrefsStore.setState({ notifyOnNewVersion: false });
-    apiFetchMock
-      .mockResolvedValueOnce({ hosts: [] })
-      .mockResolvedValueOnce({ profiles: [] })
-      .mockResolvedValueOnce({ tunnels: [] })
-      .mockResolvedValueOnce({ overridden: false })
-      .mockResolvedValueOnce({ overridden: false })
-      .mockResolvedValueOnce({
-        settings: {
-          storageLocation: '/tmp/muxus-history',
-          maxTotalBytes: 5 * 1024 ** 3,
-          minFreeBytes: 2 * 1024 ** 3,
-          minFreePercent: 5,
-        },
-      });
+    mockBackupSnapshot();
 
     const document = await createBackupDocument();
 
     expect(document.data.preferences.notifyOnNewVersion).toBe(false);
+  });
+});
+
+describe('backing up folder credentials', () => {
+  it('exports folder auth defaults but never password-only rows', async () => {
+    mockBackupSnapshot([
+      { id: 'a', path: 'Prod', auth: { user: 'root', port: 2222 }, hasPassword: true },
+      // A folder whose only setting is its vault password: the password
+      // cannot leave the vault, so there is nothing to export.
+      { id: 'b', path: 'Lab', auth: {}, hasPassword: true },
+    ]);
+
+    const document = await createBackupDocument();
+
+    expect(document.data.folderSettings).toEqual([
+      { path: 'Prod', auth: { user: 'root', port: 2222 } },
+    ]);
   });
 });
 

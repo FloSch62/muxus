@@ -37,6 +37,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 14, name: 'password-vault-os-keystore' },
       { version: 15, name: 'password-vault-key-check' },
       { version: 16, name: 'password-vault-key-cleanup' },
+      { version: 17, name: 'folder-settings' },
     ]);
   });
 
@@ -113,8 +114,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 16,
-      name: 'password-vault-key-cleanup',
+      version: 17,
+      name: 'folder-settings',
     });
     expect(database.passwordVaultConfig()).toMatchObject({
       formatVersion: 2,

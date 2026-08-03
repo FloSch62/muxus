@@ -66,6 +66,7 @@ import {
   type ConfigDocument,
   type ResolvedTarget,
 } from './ssh-config.js';
+import type { FolderAuthLookup, FolderPasswordRef } from './folder-auth.js';
 
 export interface HostKeyChallenge {
   host: string;
@@ -225,6 +226,8 @@ export interface ChainHop {
   port: number;
   /** Display label for prompts when this is an intermediate hop. */
   hopLabel?: string;
+  /** Folder passwords in the vault this hop may fall back to, nearest first. */
+  folderPasswords?: readonly FolderPasswordRef[];
 }
 
 /**
@@ -243,6 +246,7 @@ export class SshConnectionManager {
   private readonly pendingDials = new Map<string, Promise<ManagedConnection>>();
   private readonly loadConfig: () => ConfigDocument;
   private readonly vault: PasswordVault | undefined;
+  private readonly folderAuth: FolderAuthLookup | undefined;
   private readonly agentOperationTimeoutMs: number;
   private readonly agentWaitStatusMs: number;
   readonly knownHosts: KnownHostsStore;
@@ -253,6 +257,8 @@ export class SshConnectionManager {
       knownHosts?: KnownHostsStore;
       loadConfig?: () => ConfigDocument;
       vault?: PasswordVault;
+      /** Folder-inherited connection defaults per alias (Muxus sidebar folders). */
+      folderAuth?: FolderAuthLookup;
       /** Test seam; production uses the exported responsive-agent defaults. */
       agentOperationTimeoutMs?: number;
       /** Test seam; production uses the exported responsive-agent defaults. */
@@ -262,6 +268,7 @@ export class SshConnectionManager {
     this.knownHosts = options.knownHosts ?? new KnownHostsStore();
     this.loadConfig = options.loadConfig ?? (() => loadConfigDocument());
     this.vault = options.vault;
+    this.folderAuth = options.folderAuth;
     this.agentOperationTimeoutMs =
       options.agentOperationTimeoutMs ?? DEFAULT_AGENT_OPERATION_TIMEOUT_MS;
     this.agentWaitStatusMs =
@@ -306,7 +313,7 @@ export class SshConnectionManager {
     opts: { freshTransport?: boolean } = {},
   ): Promise<MuxedConnectionLease> {
     const doc = this.loadConfig();
-    const chain = buildChain(doc, profile);
+    const chain = buildChain(doc, profile, this.folderAuth);
     const key = muxKey(chain);
     const target = chain[chain.length - 1]!;
     const configForwards = target.resolved.forwards;
@@ -868,11 +875,14 @@ function mergeConfigForwards(
 /**
  * Expand a profile into the ordered list of hosts to dial: every ProxyJump
  * hop (each recursively resolved through the config, like the `ssh -W`
- * processes OpenSSH would spawn) and the final target last.
+ * processes OpenSSH would spawn) and the final target last. Each hop that is
+ * a saved alias picks up its own folder's defaults as the lowest-priority
+ * config layer.
  */
 export function buildChain(
   doc: ConfigDocument,
   profile: Omit<SshProfile, 'kind'>,
+  folderAuthFor?: FolderAuthLookup,
 ): ChainHop[] {
   const chain: ChainHop[] = [];
   const visited = new Set<string>();
@@ -882,7 +892,8 @@ export function buildChain(
     if (visited.has(spec.host)) throw new Error(`ProxyJump cycle detected at "${spec.host}"`);
     visited.add(spec.host);
     const fromConfig = !final || profile.useConfig !== false;
-    const base = fromConfig ? resolveHost(doc, spec.host) : directSettings(spec.host);
+    const folder = fromConfig ? folderAuthFor?.(spec.host) : undefined;
+    const base = fromConfig ? resolveHost(doc, spec.host, folder?.optionLines) : directSettings(spec.host);
     const user = (final ? profile.user : undefined) ?? spec.user ?? base.user ?? os.userInfo().username;
     const resolved: ResolvedTarget = final
       ? {
@@ -908,6 +919,7 @@ export function buildChain(
       user,
       port: (final ? profile.port : undefined) ?? spec.port ?? resolved.port,
       hopLabel: final ? undefined : spec.host,
+      folderPasswords: folder?.passwords,
     });
   };
 
@@ -1345,14 +1357,23 @@ class AuthLadder {
     });
     const existing = this.vault?.hasSshPassword(account) ?? false;
 
-    if (existing && !this.savedPasswordAttempted && this.vault) {
-      this.savedPasswordAttempted = true;
-      const saved = await this.savedPassword(account, credentialLabel);
-      if (saved !== undefined) {
-        this.io.status(`Using the saved password for ${credentialLabel}.`, {
-          transient: true,
-        });
-        return { type: 'password', username: user, password: saved };
+    if (!this.savedPasswordAttempted && this.vault) {
+      // The host's own saved password wins; folder passwords are the shared
+      // default the host falls back to, nearest folder first.
+      const source = existing
+        ? { account, label: credentialLabel }
+        : (this.hop.folderPasswords ?? []).find((folder) =>
+            this.vault!.hasSshPassword(folder.account),
+          );
+      if (source) {
+        this.savedPasswordAttempted = true;
+        const saved = await this.savedPassword(source.account, source.label);
+        if (saved !== undefined) {
+          this.io.status(`Using the saved password for ${source.label}.`, {
+            transient: true,
+          });
+          return { type: 'password', username: user, password: saved };
+        }
       }
     }
 
@@ -1361,7 +1382,7 @@ class AuthLadder {
         host: promptLabel,
         purpose: 'ssh-password',
         instructions:
-          existing && this.savedPasswordAttempted
+          this.savedPasswordAttempted
             ? 'The saved password was unavailable or was not accepted. Enter the current password.'
             : undefined,
         prompts: [
