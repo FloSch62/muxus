@@ -88,9 +88,15 @@ const initialKeys = collectStaticGraph(entry[0]);
 // must carry the shared settings along, so the sidebar carries the small
 // folder-settings API module (~2 KiB raw / ~0.7 KiB gzip). The credentials
 // editor itself stays in the lazy folder dialog.
+//
+// Cross-pane tab dragging has a synchronous HTML drag-token path and an exact
+// pane-move state transition on first paint (~1.1 KiB raw / ~1 KiB gzip). The
+// cross-window coordinator, snapshot flush, and adoption path remain lazy.
+// Browser-style drag feedback (live same-strip resorting, insertion lines,
+// FLIP slides) lives in the tab strip itself (~2.5 KiB raw / ~0.7 KiB gzip).
 check('Initial JavaScript', measureGraph(initialKeys), {
-  raw: 785_000,
-  gzip: 254_000,
+  raw: 790_000,
+  gzip: 256_500,
 });
 
 for (const feature of [

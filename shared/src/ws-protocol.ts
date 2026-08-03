@@ -129,6 +129,17 @@ export const terminalClientMessageSchema = z.discriminatedUnion('op', [
    * lease, forwards started on the connId) is gone.
    */
   z.object({ op: z.literal('dial'), profile: sshProfileSchema }),
+  /** Take ownership of a live terminal session from another app window. */
+  z.object({
+    op: z.literal('attach'),
+    terminalId: z.string().min(1).max(200),
+    cols: z.number().int().positive(),
+    rows: z.number().int().positive(),
+  }),
+  /** Freeze outbound bytes before the source renderer snapshots its buffer. */
+  z.object({ op: z.literal('prepare-transfer') }),
+  /** Resume the source renderer when a prepared handoff is abandoned. */
+  z.object({ op: z.literal('cancel-transfer') }),
   z.object({ op: z.literal('resize'), cols: z.number().int().positive(), rows: z.number().int().positive() }),
   /** Answers to the last `auth-prompt`, in prompt order. */
   z.object({
@@ -156,6 +167,10 @@ export type TerminalClientMessage = z.infer<typeof terminalClientMessageSchema>;
 
 /** Text frames the server sends on /ws/terminal. */
 export type TerminalServerMessage =
+  /** Stable server-side terminal identity used for cross-window handoff. */
+  | { op: 'session'; terminalId: string }
+  /** Outbound terminal bytes are frozen and can now be snapshotted without a gap. */
+  | { op: 'transfer-ready' }
   /** Connection progress worth echoing into the terminal ("Connecting …"). */
   | { op: 'status'; message: string; transient?: boolean }
   /** Passive SSH transport health derived from the existing keepalive lifecycle. */

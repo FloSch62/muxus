@@ -51,7 +51,7 @@ serial, or a remote editor.
 <figure markdown="span">
   ![The tab context menu](../assets/screenshots/tab-menu.png#only-light){ .shadow }
   ![The tab context menu](../assets/screenshots/tab-menu-dark.png#only-dark){ .shadow }
-  <figcaption>The tab menu: rename, duplicate, colour flag, open in a window, add to multi-exec, and reconnect.</figcaption>
+  <figcaption>The tab menu: pin, rename, duplicate, colour flag, open in a window, add to multi-exec, and reconnect.</figcaption>
 </figure>
 
 - **New tab**: ++ctrl+shift+t++, or the **+** in the strip.
@@ -59,11 +59,15 @@ serial, or a remote editor.
   the shell.
 - **Switch**: ++alt+1++ … ++alt+9++ by position (++alt+9++ is always the last tab), or
   ++ctrl+pgup++ / ++ctrl+pgdn++.
-- **Reorder**: ++ctrl+shift+pgup++ / ++ctrl+shift+pgdn++, or drag.
+- **Reorder or move**: ++ctrl+shift+pgup++ / ++ctrl+shift+pgdn++ reorders in the current
+  strip. Drag a tab to an exact position in this strip, another split, or another Muxus
+  window. A cross-window drop hands off the live terminal and restores its scrollback.
+- **Pin**: choose **Pin tab** from the right-click menu. Pinned tabs stay at the left of the
+  strip, keep their own drag order, and are preserved by **Close other tabs**.
 - **Rename**: double-click the title.
 - **Duplicate**: ++ctrl+shift+d++ opens a second session on the same host.
 - **Colour flags**: assigned from the right-click menu.
-- **Open in new window**: moves the tab into its own window, on the same transport.
+- **Open in new window**: opens the same profile as a fresh session in its own window.
 
 Each tab shows a status dot: amber while connecting, green when connected, red when the
 transport is gone.
@@ -74,6 +78,8 @@ transport is gone.
 - Moving a tab toward a direction where **no pane exists** splits one off.
 - Layout changes never remount a terminal, so the shell, scrollback and SSH channel survive
   every split, close and move.
+- Dragging a connected tab between **Muxus windows** transfers ownership of its running
+  backend session; it does not start a second login.
 - Keystrokes typed into a pane that is **still connecting** are delivered once it is ready.
 
 ## Default chord selection

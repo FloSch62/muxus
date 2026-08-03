@@ -1,10 +1,14 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
-import { registerTerminalSocket } from '../../../server/src/ws/terminal-socket.js';
+import {
+  registerTerminalSocket,
+  TransferableTerminalSocket,
+} from '../../../server/src/ws/terminal-socket.js';
 
 class TestSocket extends EventEmitter {
   readonly OPEN = 1;
   readyState = this.OPEN;
+  bufferedAmount = 0;
   readonly send = vi.fn();
   readonly ping = vi.fn();
 
@@ -14,6 +18,63 @@ class TestSocket extends EventEmitter {
     this.emit('close');
   }
 }
+
+describe('transferable terminal sockets', () => {
+  it('buffers handoff output until attach and resumes it when cancelled', () => {
+    const source = new TestSocket();
+    const destination = new TestSocket();
+    const terminal = new TransferableTerminalSocket('terminal-1', source as never);
+    const onClose = vi.fn();
+    const onMessage = vi.fn();
+    terminal.on('close', onClose);
+    terminal.on('message', onMessage);
+    terminal.send(JSON.stringify({ op: 'session', terminalId: 'terminal-1' }));
+    terminal.send(JSON.stringify({ op: 'ready', connId: 'connection-1' }));
+    source.send.mockClear();
+
+    source.emit('message', Buffer.from(JSON.stringify({ op: 'prepare-transfer' })), false);
+    expect(source.send).toHaveBeenCalledWith(JSON.stringify({ op: 'transfer-ready' }));
+    source.send.mockClear();
+    terminal.send(Buffer.from('cancelled output'), { binary: true });
+    expect(source.send).not.toHaveBeenCalled();
+
+    source.emit('message', Buffer.from(JSON.stringify({ op: 'cancel-transfer' })), false);
+    expect(source.send).toHaveBeenCalledWith(Buffer.from('cancelled output'), { binary: true });
+    source.send.mockClear();
+
+    source.emit('message', Buffer.from(JSON.stringify({ op: 'prepare-transfer' })), false);
+    source.send.mockClear();
+    terminal.send(Buffer.from('handoff output'), { binary: true });
+    expect(source.send).not.toHaveBeenCalled();
+
+    expect(terminal.attach(destination as never, 132, 43)).toBe(true);
+
+    expect(source.readyState).toBe(3);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(destination.send).toHaveBeenNthCalledWith(
+      1,
+      JSON.stringify({ op: 'session', terminalId: 'terminal-1' }),
+    );
+    expect(destination.send).toHaveBeenNthCalledWith(
+      2,
+      JSON.stringify({ op: 'ready', connId: 'connection-1' }),
+    );
+    expect(destination.send).toHaveBeenNthCalledWith(
+      3,
+      Buffer.from('handoff output'),
+      { binary: true },
+    );
+    expect(onMessage).toHaveBeenCalledWith(
+      Buffer.from(JSON.stringify({ op: 'resize', cols: 132, rows: 43 })),
+      false,
+    );
+
+    destination.emit('message', Buffer.from('hello'), true);
+    expect(onMessage).toHaveBeenLastCalledWith(Buffer.from('hello'), true);
+    destination.close();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+});
 
 describe('terminal socket dial mode', () => {
   it('does not announce readiness until post-auth password saving finishes', async () => {
@@ -87,7 +148,35 @@ describe('terminal socket dial mode', () => {
         }),
       ),
     );
-    socket.close();
+    const sessionFrame = socket.send.mock.calls
+      .map(([frame]) => JSON.parse(String(frame)) as { op: string; terminalId?: string })
+      .find((frame) => frame.op === 'session');
+    expect(sessionFrame?.terminalId).toBeTruthy();
+
+    const destination = new TestSocket();
+    route(destination);
+    destination.emit(
+      'message',
+      Buffer.from(JSON.stringify({
+        op: 'attach',
+        terminalId: sessionFrame!.terminalId,
+        cols: 100,
+        rows: 30,
+      })),
+      false,
+    );
+
+    expect(socket.readyState).toBe(3);
+    expect(release).not.toHaveBeenCalled();
+    expect(destination.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        op: 'ready',
+        connId: 'connection-1',
+        host: 'router.example',
+        user: 'alice',
+      }),
+    );
+    destination.close();
     expect(release).toHaveBeenCalledOnce();
   });
 });

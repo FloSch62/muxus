@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type DragEvent } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import ButtonBase from '@mui/material/ButtonBase';
@@ -13,6 +13,7 @@ import ListItemText from '@mui/material/ListItemText';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
+import SvgIcon, { type SvgIconProps } from '@mui/material/SvgIcon';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
@@ -44,12 +45,27 @@ import {
   requestCloseTabs,
   splitActivePane,
 } from '../session-actions.js';
-import { useTabsStore, type PaneDirection, type TabStatus, type TerminalTab } from '../state/tabs.js';
+import {
+  useTabsStore,
+  type PaneDirection,
+  type TabStatus,
+  type TerminalTab,
+} from '../state/tabs.js';
 import { findPane } from '../state/workspace-layout.js';
 import { layout, statusTextColor } from '../theme.js';
 import { useMultiExecStore } from '../state/multi-exec.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
 import { hostKindIcon } from './host-kind-icon.js';
+import {
+  activeTabTransfer,
+  beginTabDrag,
+  endTabDrag,
+  hasTabTransfer,
+  readTabTransfer,
+  writeTabTransfer,
+} from '../tab-drag.js';
+
+const loadTabTransfer = () => import('../tab-transfer.js');
 
 const statusDot: Record<TabStatus, 'warning' | 'success' | 'error'> = {
   connecting: 'warning',
@@ -60,6 +76,20 @@ const statusDot: Record<TabStatus, 'warning' | 'success' | 'error'> = {
 
 /** Color flags a tab can be marked with (context menu). */
 const TAB_FLAG_COLORS = ['#ef5350', '#ffa726', '#ffee58', '#66bb6a', '#26c6da', '#42a5f5', '#ab47bc', '#ec407a'];
+
+/** Which side of the hovered tab a drop at this pointer position lands on. */
+function dropEdge(event: DragEvent<HTMLElement>): 'before' | 'after' {
+  const bounds = event.currentTarget.getBoundingClientRect();
+  return event.clientX < bounds.left + bounds.width / 2 ? 'before' : 'after';
+}
+
+function PinIcon(props: SvgIconProps) {
+  return (
+    <SvgIcon {...props}>
+      <path d="M9 2h6v8l4 3v2h-6v7h-2v-7H5v-2l4-3z" />
+    </SvgIcon>
+  );
+}
 
 /** Browser-style terminal tab strip scoped to one split pane. */
 export function TabStrip({
@@ -81,10 +111,22 @@ export function TabStrip({
   const toggleZoom = useTabsStore((s) => s.toggleZoom);
   const equalizePanes = useTabsStore((s) => s.equalizePanes);
   const update = useTabsStore((s) => s.update);
+  const setPinned = useTabsStore((s) => s.setPinned);
   const reconnect = useTabsStore((s) => s.reconnect);
   const multiExecTargets = useMultiExecStore((s) => s.selectedIds);
   const multiExecSelected = new Set(multiExecTargets);
   const toggleMultiExecTarget = useMultiExecStore((s) => s.toggleTarget);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  /** Insertion line for drops arriving from another pane or window; null targetId = end of strip. */
+  const [dropIndicator, setDropIndicator] = useState<
+    { targetId: string | null; edge: 'before' | 'after' } | null
+  >(null);
+  const tabElements = useRef(new Map<string, HTMLElement>());
+  const flipLefts = useRef(new Map<string, number>());
+  /** Hovered midpoints are unreliable while tabs are sliding; pause live resorting until then. */
+  const settleUntil = useRef(0);
+  const orderKey = tabs.map((tab) => tab.id).join('\n');
+  const previousOrderKey = useRef(orderKey);
   const [menu, setMenu] = useState<{ position: { top: number; left: number }; tab: TerminalTab } | null>(null);
   const [paneMenu, setPaneMenu] = useState<{ top: number; left: number } | null>(null);
   const [renaming, setRenaming] = useState<TerminalTab | null>(null);
@@ -108,12 +150,54 @@ export function TabStrip({
     requestAnimationFrame(() => renameInputRef.current?.select());
   }, [renaming]);
 
+  // FLIP: when this pane's tab order changes (live drag resorting, reorder
+  // chords, drops), slide each tab from its previous slot instead of teleporting.
+  useLayoutEffect(() => {
+    const moved = previousOrderKey.current !== orderKey;
+    previousOrderKey.current = orderKey;
+    const lefts = flipLefts.current;
+    for (const id of lefts.keys()) {
+      if (!tabElements.current.has(id)) lefts.delete(id);
+    }
+    for (const [id, element] of tabElements.current) {
+      // offsetLeft is the layout slot: unaffected by strip scroll and by a
+      // still-running slide, so back-to-back reorders start from the truth.
+      const left = element.offsetLeft;
+      const from = lefts.get(id);
+      if (moved && from !== undefined && from !== left && typeof element.animate === 'function') {
+        element.animate(
+          [{ transform: `translateX(${from - left}px)` }, { transform: 'none' }],
+          { duration: 160, easing: 'cubic-bezier(0.2, 0, 0, 1)' },
+        );
+        settleUntil.current = performance.now() + 170;
+      }
+      lefts.set(id, left);
+    }
+  });
+
   const openMenu = (tab: TerminalTab, position: { top: number; left: number }) => setMenu({ position, tab });
   const menuTab = menu ? allTabs.find((t) => t.id === menu.tab.id) : undefined;
 
   const commitRename = () => {
     if (renaming && renameValue.trim()) update(renaming.id, { title: renameValue.trim() });
     setRenaming(null);
+  };
+
+  const dropTab = (
+    transferId: string,
+    targetId?: string,
+    edge: 'before' | 'after' = 'after',
+  ) => {
+    const local = activeTabTransfer();
+    if (local?.transferId === transferId) {
+      useTabsStore.getState().moveTabToPane(local.tabId, paneId, targetId, edge);
+      endTabDrag(transferId);
+      void loadTabTransfer().then((module) => module.finishLocalTabTransfer(transferId));
+      return;
+    }
+    void loadTabTransfer().then((module) =>
+      module.receiveTabTransfer(transferId, paneId, targetId, edge),
+    );
   };
 
   return (
@@ -138,6 +222,41 @@ export function TabStrip({
           borderBottomColor: (theme) => alpha(theme.palette.text.primary, 0.18),
         }),
       }}
+      onDragOver={(event) => {
+        if (!hasTabTransfer(event.dataTransfer)) return;
+        if ((event.target as HTMLElement).closest('[data-muxus-tab]')) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
+        const local = activeTabTransfer();
+        const dragged = local
+          ? allTabs.find((candidate) => candidate.id === local.tabId)
+          : undefined;
+        if (dragged?.paneId === paneId) {
+          // Hovering past the last tab sends a same-strip drag to the end of
+          // its group live; the moving tab is its own indicator.
+          setDropIndicator(null);
+          if (performance.now() >= settleUntil.current) {
+            useTabsStore.getState().moveTabToPane(dragged.id, paneId);
+          }
+          return;
+        }
+        setDropIndicator((current) =>
+          current?.targetId === null ? current : { targetId: null, edge: 'after' },
+        );
+      }}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setDropIndicator(null);
+        }
+      }}
+      onDrop={(event) => {
+        setDropIndicator(null);
+        if ((event.target as HTMLElement).closest('[data-muxus-tab]')) return;
+        const transferId = readTabTransfer(event.dataTransfer);
+        if (!transferId) return;
+        event.preventDefault();
+        dropTab(transferId);
+      }}
       onPointerDown={() => focusPane(paneId)}
       onContextMenu={(e) => {
         // Tabs handle their own menu first; this one belongs to the pane.
@@ -159,11 +278,76 @@ export function TabStrip({
         return (
           <Stack
             key={tab.id}
+            data-muxus-tab={tab.id}
             direction="row"
             role="tab"
             aria-selected={active}
-            aria-label={hasUnreadOutput ? `${tab.title}, new terminal output` : tab.title}
+            aria-label={[
+              tab.title,
+              tab.pinned ? 'pinned' : '',
+              hasUnreadOutput ? 'new terminal output' : '',
+            ].filter(Boolean).join(', ')}
             tabIndex={0}
+            draggable
+            ref={(element: HTMLElement | null) => {
+              if (element) tabElements.current.set(tab.id, element);
+              else tabElements.current.delete(tab.id);
+            }}
+            onDragStart={(event) => {
+              const transferId = beginTabDrag(tab.id);
+              void loadTabTransfer().then((module) =>
+                module.registerTabTransferSource(transferId, tab.id),
+              );
+              event.dataTransfer.effectAllowed = 'move';
+              writeTabTransfer(event.dataTransfer, transferId);
+              // After the browser snapshots the drag image, dim the strip copy.
+              requestAnimationFrame(() => setDraggingId(tab.id));
+            }}
+            onDragOver={(event) => {
+              if (!hasTabTransfer(event.dataTransfer)) return;
+              const local = activeTabTransfer();
+              const dragged = local
+                ? allTabs.find((candidate) => candidate.id === local.tabId)
+                : undefined;
+              if (
+                dragged?.paneId === paneId &&
+                !!dragged.pinned !== !!tab.pinned
+              ) {
+                return;
+              }
+              event.preventDefault();
+              event.stopPropagation();
+              event.dataTransfer.dropEffect = 'move';
+              if (dragged?.paneId === paneId) {
+                // Same-strip drags resort live, browser style; the moving tab
+                // is its own indicator.
+                setDropIndicator(null);
+                if (dragged.id !== tab.id && performance.now() >= settleUntil.current) {
+                  useTabsStore.getState().reorderTab(dragged.id, tab.id, dropEdge(event));
+                }
+                return;
+              }
+              const edge = dropEdge(event);
+              setDropIndicator((current) =>
+                current?.targetId === tab.id && current.edge === edge
+                  ? current
+                  : { targetId: tab.id, edge },
+              );
+            }}
+            onDrop={(event) => {
+              const transferId = readTabTransfer(event.dataTransfer);
+              if (!transferId) return;
+              event.preventDefault();
+              event.stopPropagation();
+              setDropIndicator(null);
+              dropTab(transferId, tab.id, dropEdge(event));
+            }}
+            onDragEnd={() => {
+              setDraggingId(null);
+              setDropIndicator(null);
+              const current = activeTabTransfer();
+              if (current?.tabId === tab.id) endTabDrag(current.transferId);
+            }}
             onClick={() => activate(tab.id)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') activate(tab.id);
@@ -187,7 +371,7 @@ export function TabStrip({
               minWidth: 0,
               maxWidth: 220,
               position: 'relative',
-              cursor: 'pointer',
+              cursor: 'grab',
               userSelect: 'none',
               borderRight: 1,
               borderColor: 'divider',
@@ -204,8 +388,26 @@ export function TabStrip({
                 : hasUnreadOutput
                   ? `linear-gradient(180deg, ${alpha(theme.palette.info.main, 0.12)}, transparent 80%)`
                   : 'none',
-              transition: theme.transitions.create(['background-color', 'color'], {
+              // The strip copy stays in place at low opacity while its drag
+              // image follows the pointer, the way browser tabs behave.
+              opacity: draggingId === tab.id ? 0.4 : 1,
+              transition: theme.transitions.create(['background-color', 'color', 'opacity'], {
                 duration: theme.transitions.duration.shortest,
+              }),
+              ...(dropIndicator?.targetId === tab.id && {
+                '&::before': {
+                  content: '""',
+                  position: 'absolute',
+                  [dropIndicator.edge === 'before' ? 'left' : 'right']: -1,
+                  top: 7,
+                  bottom: 7,
+                  width: 2,
+                  borderRadius: '1px',
+                  bgcolor: 'primary.main',
+                  boxShadow: `0 0 8px ${alpha(theme.palette.primary.main, 0.55)}`,
+                  zIndex: 2,
+                  pointerEvents: 'none',
+                },
               }),
               '&::after': {
                 content: '""',
@@ -278,6 +480,12 @@ export function TabStrip({
             >
               {tab.title}
             </Typography>
+            {tab.pinned ? (
+              <PinIcon
+                aria-label="Pinned"
+                sx={{ fontSize: 13, flexShrink: 0, color: 'text.secondary' }}
+              />
+            ) : null}
             {multiExecSelected.has(tab.id) && (
               <Tooltip
                 title={
@@ -347,6 +555,22 @@ export function TabStrip({
           </Stack>
         );
       })}
+      {dropIndicator?.targetId === null ? (
+        <Box
+          data-muxus-drop-indicator="end"
+          sx={(theme) => ({
+            width: 2,
+            flexShrink: 0,
+            alignSelf: 'stretch',
+            my: '7px',
+            ml: '-1px',
+            borderRadius: '1px',
+            bgcolor: 'primary.main',
+            boxShadow: `0 0 8px ${alpha(theme.palette.primary.main, 0.55)}`,
+            pointerEvents: 'none',
+          })}
+        />
+      ) : null}
       <Tooltip title={withChord('New tab', newTabChord)}>
         <IconButton
           size="small"
@@ -531,6 +755,20 @@ export function TabStrip({
           <ListItemText>Rename tab</ListItemText>
         </MenuItem>
         <MenuItem
+          onClick={() => {
+            if (menuTab) setPinned(menuTab.id, !menuTab.pinned);
+            setMenu(null);
+          }}
+        >
+          <ListItemIcon>
+            <PinIcon
+              fontSize="small"
+              sx={{ transform: menuTab?.pinned ? 'rotate(45deg)' : undefined }}
+            />
+          </ListItemIcon>
+          <ListItemText>{menuTab?.pinned ? 'Unpin tab' : 'Pin tab'}</ListItemText>
+        </MenuItem>
+        <MenuItem
           disabled={!menuTab?.profile}
           onClick={() => {
             if (menuTab) duplicateTab(menuTab.id);
@@ -697,9 +935,13 @@ export function TabStrip({
           <ListItemText>Close tab</ListItemText>
         </MenuItem>
         <MenuItem
-          disabled={tabs.length < 2}
+          disabled={!tabs.some((tab) => tab.id !== menuTab?.id && !tab.pinned)}
           onClick={() => {
-            if (menuTab) void requestCloseTabs(tabs.filter((t) => t.id !== menuTab.id).map((t) => t.id));
+            if (menuTab) {
+              void requestCloseTabs(
+                tabs.filter((tab) => tab.id !== menuTab.id && !tab.pinned).map((tab) => tab.id),
+              );
+            }
             setMenu(null);
           }}
         >

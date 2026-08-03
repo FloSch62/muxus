@@ -41,6 +41,7 @@ export interface PersistableTerminalTab {
   title: string;
   profile: SessionProfile;
   color?: string;
+  pinned?: boolean;
 }
 
 export interface RestoredTerminalTab extends PersistableTerminalTab {
@@ -279,6 +280,7 @@ export function serializeWorkspace(
         profile: tab.profile,
         cwdHint: tab.profile.kind === 'local' ? tab.profile.cwd : undefined,
         color: tab.color,
+        pinned: tab.pinned,
         offerReconnect: true,
       })),
       activeTabId,
@@ -320,6 +322,7 @@ export function restoreWorkspace(
         title: tab.title,
         profile,
         color: tab.color,
+        pinned: tab.pinned,
         connectOnMount:
           profile.kind === 'local' || (options?.connectRemote === true && tab.offerReconnect),
       });

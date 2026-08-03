@@ -485,6 +485,8 @@ export type WorkspaceTabLayout =
       cwdHint?: string;
       /** User-set color flag marking the tab. */
       color?: string;
+      /** Pinned tabs stay at the start of their pane's tab strip. */
+      pinned?: boolean;
       /** Restoring a layout may offer a fresh connection; it never resumes a process. */
       offerReconnect: boolean;
     }
