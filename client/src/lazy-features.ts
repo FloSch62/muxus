@@ -5,6 +5,7 @@ export const loadFolderDialog = () => import('./components/sidebar/FolderDialog.
 /** Sidebar surfaces that only exist once the user right-clicks or launches. */
 export const loadSidebarMenus = () => import('./components/sidebar/SidebarMenus.js');
 export const loadSettingsDialog = () => import('./components/SettingsDialog.js');
+export const loadCommandButtonMenu = () => import('./components/CommandButtonMenu.js');
 export const loadCommandButtonsDialog = () => import('./components/CommandButtonsDialog.js');
 export const loadShortcutsDialog = () => import('./components/ShortcutsDialog.js');
 export const loadSessionHistoryDialog = () => import('./components/SessionHistoryDialog.js');

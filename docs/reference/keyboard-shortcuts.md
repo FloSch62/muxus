@@ -53,6 +53,7 @@ resetting them.
 | --- | --- |
 | Copy selection | ++ctrl+shift+c++ |
 | Paste | ++ctrl+shift+v++ |
+| Show [saved command menu](../guide/commands.md#keyboard-menu) | ++ctrl+space++ |
 | Find in terminal | ++ctrl+shift+f++ |
 | Select all output | ++ctrl+shift+a++ |
 | Clear scrollback | ++ctrl+shift+k++ |

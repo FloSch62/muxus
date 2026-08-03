@@ -14,6 +14,7 @@ import {
 function handle(sendInput: TerminalHandle['sendInput']): TerminalHandle {
   return {
     focus: vi.fn(),
+    cursorAnchorPosition: () => undefined,
     sendInput,
     clear: vi.fn(),
     selectAll: vi.fn(),

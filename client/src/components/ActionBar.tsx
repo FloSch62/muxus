@@ -13,9 +13,10 @@ import { terminalHandle } from '../terminal/terminal-registry.js';
 
 export const ActionBar = memo(function ActionBar() {
   const buttons = usePrefsStore((state) => state.commandButtons);
+  const showCommandBar = usePrefsStore((state) => state.showCommandBar);
   const activeTab = useTabsStore((state) => state.tabs.find((tab) => tab.id === state.activeId));
   const setOpen = useUiStore((state) => state.setCommandButtonsOpen);
-  if (buttons.length === 0) return null;
+  if (!showCommandBar || buttons.length === 0) return null;
   const connected = activeTab?.status === 'connected';
 
   return (

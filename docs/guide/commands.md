@@ -9,8 +9,8 @@ into several sessions at once.
 
 ## Command buttons
 
-Saved commands appear in a bar above the terminal. One click sends the command to the
-focused session.
+By default, saved commands appear in a bar above the terminal. One click sends the command
+to the focused session.
 
 <figure markdown="span">
   ![The command button bar above a session](../assets/screenshots/command-buttons.png#only-light){ .shadow }
@@ -28,6 +28,19 @@ Insert-only is the appropriate mode for destructive commands.
 
 Buttons are disabled while the focused tab is not connected, and their order is
 configurable.
+
+Turn off **Show command bar** in the command-button manager to reclaim the vertical space
+and use only the keyboard menu. This hides the bar without deleting any saved commands.
+
+### Keyboard menu
+
+Press ++ctrl+space++ to open a compact menu beside the active terminal cursor. Start
+typing to search command labels and command text, use ++up++ and ++down++ to choose a
+result, then press ++enter++ to send it. The menu also links to **Manage command
+buttons** so commands can be added or reordered without reaching for the mouse.
+
+The shortcut is rebindable under **Terminal → Show saved command menu** in the
+[keyboard sheet](../reference/keyboard-shortcuts.md).
 
 ## Multi-execution
 
