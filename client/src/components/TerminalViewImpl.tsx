@@ -84,6 +84,7 @@ import {
   TERMINAL_SNAPSHOT_QUIET_MS,
 } from '../terminal/scrollback-snapshots.js';
 import { registerUnloadKeepalive } from '../unload-keepalive.js';
+import { completeTabTransfer } from '../tab-transfer.js';
 
 const SEARCH_DECORATIONS: ISearchOptions['decorations'] = {
   matchBackground: '#594b24',
@@ -392,6 +393,11 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       getSelection: () => term.getSelection(),
       bufferText: () => bufferText(term),
       bufferHtml: () => serialize.serializeAsHTML({ includeGlobalBackground: true }),
+      persistSnapshot: async () => {
+        if (!usePrefsStore.getState().restoreScrollback) return;
+        const data = serializeScrollback(serialize);
+        if (data !== undefined) await putTerminalSnapshot(tab.id, data);
+      },
       zoomIn: () => applyZoom('in'),
       zoomOut: () => applyZoom('out'),
       zoomReset: () => applyZoom('reset'),
@@ -538,13 +544,22 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         // it was not when the terminal mounted. Measure now so the remote PTY
         // starts at the size on screen instead of being resized a beat later.
         if (!fitted) fitted = fitTerminal();
-        ws?.send(JSON.stringify({
-          op: 'connect',
-          profile: tab.profile,
-          title: tab.title,
-          cols: term.cols,
-          rows: term.rows,
-        }));
+        ws?.send(JSON.stringify(
+          tab.transferId && tab.terminalId
+            ? {
+                op: 'attach',
+                terminalId: tab.terminalId,
+                cols: term.cols,
+                rows: term.rows,
+              }
+            : {
+                op: 'connect',
+                profile: tab.profile,
+                title: tab.title,
+                cols: term.cols,
+                rows: term.rows,
+              },
+        ));
       };
       ws.onmessage = (ev) => {
         if (ev.data instanceof ArrayBuffer) {
@@ -576,6 +591,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           return;
         }
         switch (ctl.op) {
+          case 'session':
+            updateTab(tab.id, { terminalId: ctl.terminalId });
+            break;
           case 'status': {
             if (!ready && !transportSuspect) {
               updateTab(tab.id, {
@@ -633,10 +651,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             ready = true;
             readyAt = Date.now();
             clearTransientStatus();
-            waitingForTerminalOutput = shouldWaitForTerminalOutput(
-              tab.profile.kind,
-              receivedTerminalOutput,
-            );
+            waitingForTerminalOutput = tab.transferId
+              ? false
+              : shouldWaitForTerminalOutput(tab.profile.kind, receivedTerminalOutput);
             updateTab(tab.id, {
               status: transportSuspect
                 ? 'interrupted'
@@ -647,7 +664,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
               disconnectReason: undefined,
               // Only SSH transport IDs are valid SFTP/forwarding lease keys.
               connId: tab.profile.kind === 'ssh' ? ctl.connId : undefined,
+              transferId: undefined,
             });
+            if (tab.transferId) completeTabTransfer(tab.transferId);
             const current = useTabsStore
               .getState()
               .tabs.find((candidate) => candidate.id === tab.id);
@@ -731,6 +750,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           updateTab(tab.id, {
             status: 'closed',
             connId: undefined,
+            terminalId: undefined,
             failureReason: reason,
             disconnectReason: reasonKind,
           });
@@ -744,6 +764,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         updateTab(tab.id, {
           status: 'interrupted',
           connId: undefined,
+          terminalId: undefined,
           failureReason: reason,
           disconnectReason: reasonKind,
         });

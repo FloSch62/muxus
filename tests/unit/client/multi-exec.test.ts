@@ -27,6 +27,7 @@ function handle(sendInput: TerminalHandle['sendInput']): TerminalHandle {
     zoomPercent: () => 100,
     paste: vi.fn(),
     setLogging: vi.fn(() => true),
+    persistSnapshot: vi.fn(async () => undefined),
   };
 }
 

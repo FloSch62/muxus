@@ -44,6 +44,7 @@ const layout = {
             title: 'Production',
             profile: { kind: 'ssh', target: 'production' },
             cwdHint: '/srv/app',
+            pinned: true,
             offerReconnect: true,
           },
         ],

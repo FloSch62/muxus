@@ -6,6 +6,7 @@ import {
 import { useDialogStore } from '../../../client/src/state/dialogs.js';
 import { usePrefsStore } from '../../../client/src/state/prefs.js';
 import { useTabsStore } from '../../../client/src/state/tabs.js';
+import { findPane } from '../../../client/src/state/workspace-layout.js';
 
 /** Let the close flow run up to the point where it raises its dialog. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -619,6 +620,44 @@ describe('keyboard pane focus', () => {
 });
 
 describe('moving tabs between panes', () => {
+  it('drops a background tab at an exact position in another pane', () => {
+    const store = useTabsStore.getState();
+    const movingId = store.open({ kind: 'local' }, 'Moving');
+    const stayingId = store.open({ kind: 'local' }, 'Staying');
+    const rightPane = store.split('pane-test', 'right')!;
+    const firstRightId = useTabsStore.getState().open({ kind: 'local' }, 'Right one');
+    const secondRightId = useTabsStore.getState().open({ kind: 'local' }, 'Right two');
+
+    expect(
+      useTabsStore.getState().moveTabToPane(movingId, rightPane, secondRightId, 'before'),
+    ).toBe(true);
+
+    const state = useTabsStore.getState();
+    expect(
+      state.tabs.filter((tab) => tab.paneId === rightPane).map((tab) => tab.id),
+    ).toEqual([firstRightId, movingId, secondRightId]);
+    expect(findPane(state.root, 'pane-test')?.activeTabId).toBe(stayingId);
+    expect(state).toMatchObject({ activePaneId: rightPane, activeId: movingId });
+  });
+
+  it('collapses a split after its last tab is dropped into its sibling', () => {
+    const store = useTabsStore.getState();
+    const leftId = store.open({ kind: 'local' }, 'Left');
+    const rightPane = store.split('pane-test', 'right')!;
+    const movingId = useTabsStore.getState().open({ kind: 'local' }, 'Right');
+
+    expect(useTabsStore.getState().moveTabToPane(movingId, 'pane-test', leftId)).toBe(true);
+
+    const state = useTabsStore.getState();
+    expect(state.root).toMatchObject({ id: 'pane-test', type: 'pane', activeTabId: movingId });
+    expect(state.tabs.map((tab) => [tab.id, tab.paneId])).toEqual([
+      [leftId, 'pane-test'],
+      [movingId, 'pane-test'],
+    ]);
+    expect(state.activePaneId).toBe('pane-test');
+    expect(rightPane).not.toBe('pane-test');
+  });
+
   it('sends the active tab to the neighbouring pane', () => {
     const store = useTabsStore.getState();
     const stayId = store.open({ kind: 'local' }, 'Local');
@@ -671,6 +710,66 @@ describe('moving tabs between panes', () => {
     expect(useTabsStore.getState().moveTabWithinPane(-1)).toBe(true);
     expect(useTabsStore.getState().tabs.map((tab) => tab.id)).toEqual([secondId, firstId]);
     expect(useTabsStore.getState().moveTabWithinPane(-1)).toBe(false);
+  });
+
+  it('reorders a dragged tab relative to its drop target', () => {
+    const store = useTabsStore.getState();
+    const firstId = store.open({ kind: 'local' }, 'One');
+    const secondId = store.open({ kind: 'local' }, 'Two');
+    const thirdId = store.open({ kind: 'local' }, 'Three');
+
+    expect(useTabsStore.getState().reorderTab(firstId, thirdId, 'after')).toBe(true);
+    expect(useTabsStore.getState().tabs.map((tab) => tab.id)).toEqual([
+      secondId,
+      thirdId,
+      firstId,
+    ]);
+    expect(useTabsStore.getState().reorderTab(firstId, thirdId, 'after')).toBe(false);
+  });
+
+  it('groups pinned tabs first and reorders only within the same pin group', () => {
+    const store = useTabsStore.getState();
+    const firstId = store.open({ kind: 'local' }, 'One');
+    const secondId = store.open({ kind: 'local' }, 'Two');
+    const thirdId = store.open({ kind: 'local' }, 'Three');
+
+    expect(useTabsStore.getState().setPinned(secondId, true)).toBe(true);
+    expect(useTabsStore.getState().setPinned(thirdId, true)).toBe(true);
+    expect(useTabsStore.getState().tabs.map((tab) => tab.id)).toEqual([
+      secondId,
+      thirdId,
+      firstId,
+    ]);
+    expect(useTabsStore.getState().reorderTab(firstId, secondId, 'before')).toBe(false);
+    expect(useTabsStore.getState().reorderTab(thirdId, secondId, 'before')).toBe(true);
+    expect(useTabsStore.getState().setPinned(thirdId, false)).toBe(true);
+    expect(useTabsStore.getState().tabs.map((tab) => [tab.id, !!tab.pinned])).toEqual([
+      [secondId, true],
+      [thirdId, false],
+      [firstId, false],
+    ]);
+  });
+
+  it('keeps a pinned tab ahead of unpinned tabs when moving it to another pane', () => {
+    const store = useTabsStore.getState();
+    store.open({ kind: 'local' }, 'Stay');
+    const pinnedId = store.open({ kind: 'local' }, 'Pinned');
+    useTabsStore.getState().setPinned(pinnedId, true);
+    const rightPane = useTabsStore.getState().split('pane-test', 'right')!;
+    const firstRightId = useTabsStore.getState().open({ kind: 'ssh', target: 'one' }, 'One');
+    const secondRightId = useTabsStore.getState().open({ kind: 'ssh', target: 'two' }, 'Two');
+    useTabsStore.getState().activate(pinnedId);
+
+    expect(useTabsStore.getState().moveTabToDirection('right')).toBe(true);
+    expect(
+      useTabsStore.getState().tabs
+        .filter((tab) => tab.paneId === rightPane)
+        .map((tab) => [tab.id, !!tab.pinned]),
+    ).toEqual([
+      [pinnedId, true],
+      [firstRightId, false],
+      [secondRightId, false],
+    ]);
   });
 
   it('activates tabs by position within the focused pane', () => {

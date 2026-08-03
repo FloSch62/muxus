@@ -28,12 +28,18 @@ interface TabBase {
   title: string;
   /** Live SSH connection id from `ready`; absent for local, Telnet, and serial tabs. */
   connId?: string;
+  /** Stable server-side terminal identity, including while a connection is still opening. */
+  terminalId?: string;
+  /** Cross-window transfer awaiting acknowledgement from the source window. */
+  transferId?: string;
   /** SFTP file panel visible for this tab. */
   sftpOpen: boolean;
   /** Monotonic UI signal consumed by the mounted terminal search bar. */
   searchRequest: number;
   /** User-set color flag marking the tab. */
   color?: string;
+  /** Pinned tabs stay grouped at the start of their pane. */
+  pinned?: boolean;
   /** Remote files open in the Monaco workspace attached to this session. */
   editorPaths: string[];
   activeEditorPath?: string;
@@ -68,11 +74,14 @@ export interface EmptyTab extends TabBase {
 }
 
 export type TerminalTab = SessionTab | EmptyTab;
+export type TransferableTab = Omit<SessionTab, 'paneId'> | Omit<EmptyTab, 'paneId'>;
 
 type TabUpdate = Partial<{
   title: string;
   status: TabStatus;
   connId: string | undefined;
+  terminalId: string | undefined;
+  transferId: string | undefined;
   sftpOpen: boolean;
   color: string | undefined;
   loggingEnabled: boolean | undefined;
@@ -119,6 +128,17 @@ interface TabsState {
   activateTabIndex: (index: number | 'last') => boolean;
   /** Reorder the active tab inside its own pane. */
   moveTabWithinPane: (offset: -1 | 1) => boolean;
+  /** Place one tab before or after another tab in the same pane and pin group. */
+  reorderTab: (id: string, targetId: string, edge: 'before' | 'after') => boolean;
+  /** Move a tab to an exact position in another split pane. */
+  moveTabToPane: (
+    id: string,
+    paneId: string,
+    targetId?: string,
+    edge?: 'before' | 'after',
+  ) => boolean;
+  /** Pin or unpin a tab and move it to the corresponding strip boundary. */
+  setPinned: (id: string, pinned: boolean) => boolean;
   split: (paneId: string, direction: PaneDirection) => string | undefined;
   closePane: (paneId: string) => void;
   /** Focus the pane that borders the active one in a direction. */
@@ -224,6 +244,46 @@ function clearOutput(unreadOutputIds: Set<string>, id: string): Set<string> {
   if (!unreadOutputIds.has(id)) return unreadOutputIds;
   const next = new Set(unreadOutputIds);
   next.delete(id);
+  return next;
+}
+
+/** Replace one pane's ordered tabs without disturbing the other panes' slots. */
+function replacePaneTabs(
+  tabs: readonly TerminalTab[],
+  paneId: string,
+  paneTabs: readonly TerminalTab[],
+): TerminalTab[] {
+  let index = 0;
+  return tabs.map((tab) => tab.paneId === paneId ? paneTabs[index++]! : tab);
+}
+
+/** Insert a tab at an exact target, while keeping each pane's pinned group first. */
+export function insertIntoPane(
+  tabs: readonly TerminalTab[],
+  tab: TerminalTab,
+  paneId: string,
+  targetId?: string,
+  edge: 'before' | 'after' = 'after',
+): TerminalTab[] {
+  const next = [...tabs];
+  const paneTabs = next.filter((candidate) => candidate.paneId === paneId);
+  const targetIndex = paneTabs.findIndex(
+    (candidate) => candidate.id === targetId && !!candidate.pinned === !!tab.pinned,
+  );
+  const firstUnpinned = paneTabs.findIndex((candidate) => !candidate.pinned);
+  const paneIndex = targetIndex >= 0
+    ? targetIndex + (edge === 'after' ? 1 : 0)
+    : tab.pinned
+      ? firstUnpinned < 0 ? paneTabs.length : firstUnpinned
+      : paneTabs.length;
+  const anchor = paneTabs[paneIndex];
+  const previous = paneTabs[paneIndex - 1];
+  const index = anchor
+    ? next.findIndex((candidate) => candidate.id === anchor.id)
+    : previous
+      ? next.findIndex((candidate) => candidate.id === previous.id) + 1
+      : next.length;
+  next.splice(index, 0, { ...tab, paneId });
   return next;
 }
 
@@ -415,12 +475,91 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
     const paneTabs = state.tabs.filter((tab) => tab.paneId === state.activePaneId);
     const position = paneTabs.findIndex((tab) => tab.id === state.activeId);
     const swapWith = paneTabs[position + offset];
-    if (position < 0 || !swapWith) return false;
-    const tabs = [...state.tabs];
-    const from = tabs.findIndex((tab) => tab.id === paneTabs[position]!.id);
-    const to = tabs.findIndex((tab) => tab.id === swapWith.id);
-    [tabs[from], tabs[to]] = [tabs[to]!, tabs[from]!];
-    set({ tabs });
+    if (position < 0 || !swapWith || !!swapWith.pinned !== !!paneTabs[position]!.pinned) {
+      return false;
+    }
+    return state.reorderTab(
+      paneTabs[position]!.id,
+      swapWith.id,
+      offset < 0 ? 'before' : 'after',
+    );
+  },
+  reorderTab: (id, targetId, edge) => {
+    const state = get();
+    const tab = state.tabs.find((candidate) => candidate.id === id);
+    const target = state.tabs.find((candidate) => candidate.id === targetId);
+    if (
+      !tab ||
+      !target ||
+      tab.id === target.id ||
+      tab.paneId !== target.paneId ||
+      !!tab.pinned !== !!target.pinned
+    ) {
+      return false;
+    }
+    return state.moveTabToPane(id, target.paneId, targetId, edge);
+  },
+  moveTabToPane: (id, paneId, targetId, edge = 'after') => {
+    const state = get();
+    const tab = state.tabs.find((candidate) => candidate.id === id);
+    if (!tab || !findPane(state.root, paneId) || targetId === id) return false;
+    if (targetId && !state.tabs.some((candidate) => candidate.id === targetId && candidate.paneId === paneId)) {
+      return false;
+    }
+    const sourceId = tab.paneId;
+    const sourceTabs = state.tabs.filter((candidate) => candidate.paneId === sourceId);
+    const others = state.tabs.filter((candidate) => candidate.id !== id);
+    const tabs = insertIntoPane(others, tab, paneId, targetId, edge);
+    if (
+      state.tabs.every(
+        (candidate, index) =>
+          candidate.id === tabs[index]?.id && candidate.paneId === tabs[index]?.paneId,
+      )
+    ) {
+      return false;
+    }
+    if (sourceId === paneId) {
+      set({ tabs });
+      return true;
+    }
+
+    const sourceIndex = sourceTabs.findIndex((candidate) => candidate.id === id);
+    const remaining = tabs.filter((candidate) => candidate.paneId === sourceId);
+    const previousSourceActiveId = findPane(state.root, sourceId)?.activeTabId;
+    const sourceActiveId = previousSourceActiveId === id
+      ? remaining[Math.min(sourceIndex, remaining.length - 1)]?.id ?? null
+      : previousSourceActiveId ?? null;
+    let root = updatePane(state.root, sourceId, (pane) => ({ ...pane, activeTabId: sourceActiveId }));
+    root = updatePane(root, paneId, (pane) => ({ ...pane, activeTabId: id }));
+    let zoomedPaneId = state.zoomedPaneId;
+    if (remaining.length === 0) {
+      const collapsed = collapsePane(root, sourceId);
+      if (collapsed) {
+        root = collapsed.root;
+        if (zoomedPaneId === sourceId) zoomedPaneId = null;
+      }
+    }
+    const nextZoomedPaneId = zoomedPaneId === paneId ? zoomedPaneId : null;
+    set({
+      tabs,
+      root,
+      unreadOutputIds: clearVisibleOutput(state.unreadOutputIds, tabs, root, nextZoomedPaneId),
+      activePaneId: paneId,
+      activeId: id,
+      zoomedPaneId: nextZoomedPaneId,
+    });
+    return true;
+  },
+  setPinned: (id, pinned) => {
+    const state = get();
+    const tab = state.tabs.find((candidate) => candidate.id === id);
+    if (!tab || !!tab.pinned === pinned) return false;
+    const paneTabs = state.tabs.filter((candidate) => candidate.paneId === tab.paneId);
+    const reordered = paneTabs.filter((candidate) => candidate.id !== id);
+    const boundary = reordered.findIndex((candidate) => !candidate.pinned);
+    const index = boundary < 0 ? reordered.length : boundary;
+    reordered.splice(index, 0, { ...tab, pinned: pinned || undefined });
+    set({ tabs: replacePaneTabs(state.tabs, tab.paneId, reordered) });
     return true;
   },
   split: (paneId, direction) => {
@@ -486,47 +625,8 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
     const neighbor = neighborPaneId(state.root, sourceId, direction);
     // Splitting off the only tab of a pane would just move the pane around.
     if (!neighbor && sourceTabs.length < 2) return false;
-
-    let root = state.root;
-    let targetId = neighbor;
-    if (!targetId) {
-      const inserted = insertSplit(root, sourceId, direction);
-      root = inserted.root;
-      targetId = inserted.pane.id;
-    }
-
-    const others = state.tabs.filter((candidate) => candidate.id !== tab.id);
-    const lastOfTarget = others.reduce(
-      (found, candidate, index) => (candidate.paneId === targetId ? index : found),
-      -1,
-    );
-    const tabs = [...others];
-    tabs.splice(lastOfTarget >= 0 ? lastOfTarget + 1 : tabs.length, 0, { ...tab, paneId: targetId });
-
-    const remaining = tabs.filter((candidate) => candidate.paneId === sourceId);
-    const sourceIndex = sourceTabs.findIndex((candidate) => candidate.id === tab.id);
-    const sourceActiveId = remaining[Math.min(sourceIndex, remaining.length - 1)]?.id ?? null;
-    root = updatePane(root, targetId, (pane) => ({ ...pane, activeTabId: tab.id }));
-    root = updatePane(root, sourceId, (pane) => ({ ...pane, activeTabId: sourceActiveId }));
-
-    let zoomedPaneId = state.zoomedPaneId;
-    if (remaining.length === 0) {
-      const collapsed = collapsePane(root, sourceId);
-      if (collapsed) {
-        root = collapsed.root;
-        if (zoomedPaneId === sourceId) zoomedPaneId = null;
-      }
-    }
-    const nextZoomedPaneId = zoomedPaneId === targetId ? zoomedPaneId : null;
-    set({
-      tabs,
-      root,
-      unreadOutputIds: clearVisibleOutput(state.unreadOutputIds, tabs, root, nextZoomedPaneId),
-      activePaneId: targetId,
-      activeId: tab.id,
-      zoomedPaneId: nextZoomedPaneId,
-    });
-    return true;
+    const targetId = neighbor ?? state.split(sourceId, direction);
+    return targetId ? get().moveTabToPane(tab.id, targetId) : false;
   },
   toggleZoom: (paneId) => {
     const state = get();
@@ -699,6 +799,8 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
               ...tab,
               status: 'connecting' as const,
               connectOnMount: true,
+              terminalId: undefined,
+              transferId: undefined,
               reconnectRequest: tab.reconnectRequest + 1,
               reconnectMode:
                 tab.profile.kind === 'ssh' ? options?.reattach : undefined,
@@ -717,6 +819,8 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
               ...tab,
               status: 'connecting' as const,
               connectOnMount: true,
+              terminalId: undefined,
+              transferId: undefined,
               reconnectRequest: tab.reconnectRequest + 1,
               reconnectMode:
                 tab.profile.kind === 'ssh' ? options?.reattach : undefined,

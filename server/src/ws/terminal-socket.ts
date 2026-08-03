@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
 import { nanoid } from 'nanoid';
@@ -20,6 +21,132 @@ const KEEPALIVE_MS = 30_000;
 const BACKPRESSURE_HIGH = 4 * 1024 * 1024;
 const BACKPRESSURE_POLL_MS = 50;
 
+const REPLAYED_CONTROL_OPS = [
+  'session',
+  'status',
+  'auth-prompt',
+  'host-key',
+  'ready',
+  'logging-state',
+  'connection-health',
+] as const;
+const replayedControlOps = new Set<string>(REPLAYED_CONTROL_OPS);
+
+/**
+ * Stable socket facade whose underlying browser socket can be replaced. The
+ * terminal lifecycle listens to this facade's `close`, so swapping renderers
+ * does not tear down the PTY, serial port, Telnet stream, or SSH channel.
+ */
+export class TransferableTerminalSocket extends EventEmitter {
+  readonly OPEN = 1;
+  private current: WebSocket;
+  private closed = false;
+  private readonly controls = new Map<string, string>();
+
+  constructor(readonly terminalId: string, socket: WebSocket) {
+    super();
+    this.current = socket;
+    this.bind(socket);
+  }
+
+  get readyState(): number {
+    return this.closed ? 3 : this.current.readyState;
+  }
+
+  get bufferedAmount(): number {
+    return this.current.bufferedAmount;
+  }
+
+  /** Feed the already-consumed first frame into the normal session handler. */
+  push(data: Buffer, isBinary: boolean): void {
+    this.handleMessage(data, isBinary);
+  }
+
+  /** Move this terminal to a new renderer without emitting lifecycle close. */
+  attach(socket: WebSocket, cols: number, rows: number): boolean {
+    if (this.closed) return false;
+    const previous = this.current;
+    this.unbind(previous);
+    this.current = socket;
+    this.bind(socket);
+    if (previous.readyState === previous.OPEN) previous.close(1000, 'terminal transferred');
+    for (const op of REPLAYED_CONTROL_OPS) {
+      const frame = this.controls.get(op);
+      if (frame && socket.readyState === socket.OPEN) socket.send(frame);
+    }
+    this.handleMessage(
+      Buffer.from(JSON.stringify({ op: 'resize', cols, rows })),
+      false,
+    );
+    return true;
+  }
+
+  send(data: string | Buffer, options?: { binary?: boolean }): void {
+    if (typeof data === 'string') {
+      try {
+        const message = JSON.parse(data) as { op?: string };
+        if (message.op && replayedControlOps.has(message.op)) {
+          this.controls.set(message.op, data);
+          if (message.op === 'ready') {
+            this.controls.delete('status');
+            this.controls.delete('auth-prompt');
+            this.controls.delete('host-key');
+          }
+        }
+      } catch {
+        /* ordinary text frame */
+      }
+    }
+    if (this.current.readyState === this.current.OPEN) {
+      if (options) this.current.send(data, options);
+      else this.current.send(data);
+    }
+  }
+
+  ping(): void {
+    if (this.current.readyState === this.current.OPEN) this.current.ping();
+  }
+
+  close(code?: number, reason?: string): void {
+    if (this.closed) return;
+    const socket = this.current;
+    this.finish();
+    if (socket.readyState === socket.OPEN) socket.close(code, reason);
+  }
+
+  private readonly handleMessage = (data: Buffer, isBinary: boolean): void => {
+    if (!isBinary) {
+      try {
+        const message = JSON.parse(data.toString('utf8')) as { op?: string };
+        if (message.op === 'auth-response') this.controls.delete('auth-prompt');
+        if (message.op === 'host-key-response') this.controls.delete('host-key');
+      } catch {
+        /* terminal text input */
+      }
+    }
+    this.emit('message', data, isBinary);
+  };
+
+  private readonly handleClose = (): void => this.finish();
+
+  private bind(socket: WebSocket): void {
+    socket.on('message', this.handleMessage);
+    socket.once('close', this.handleClose);
+  }
+
+  private unbind(socket: WebSocket): void {
+    socket.removeListener('message', this.handleMessage);
+    socket.removeListener('close', this.handleClose);
+  }
+
+  private finish(): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.unbind(this.current);
+    this.emit('close');
+  }
+}
+
 /**
  * /ws/terminal — one socket per terminal tab. Binary frames are terminal
  * bytes both ways; text frames are JSON control (see shared/ws-protocol).
@@ -28,17 +155,61 @@ const BACKPRESSURE_POLL_MS = 50;
  * `auth-prompt`/`host-key` round-trips before `ready`.
  */
 export function registerTerminalSocket(app: FastifyInstance, ctx: AppContext): void {
+  const sessions = new Map<string, TransferableTerminalSocket>();
   app.get('/ws/terminal', { websocket: true }, (socket) => {
-    void handleSession(socket, ctx, app).catch((err) => {
-      app.log.warn({ err }, 'terminal session failed');
-      sendControl(socket, {
-        op: 'exit',
-        code: 1,
-        message: err instanceof Error ? err.message : String(err),
-        reason: 'failed',
+    const timer = setTimeout(() => socket.close(1008, 'timed out waiting for connect'), CONNECT_TIMEOUT_MS);
+    const firstMessage = (data: Buffer, isBinary: boolean): void => {
+      clearTimeout(timer);
+      socket.removeListener('message', firstMessage);
+      if (isBinary) {
+        socket.close(1008, 'expected connect or attach');
+        return;
+      }
+      let first: TerminalClientMessage | undefined;
+      try {
+        const parsed = terminalClientMessageSchema.safeParse(JSON.parse(data.toString('utf8')));
+        if (parsed.success) first = parsed.data;
+      } catch {
+        /* rejected below */
+      }
+      if (!first || !['connect', 'dial', 'attach'].includes(first.op)) {
+        socket.close(1008, 'expected connect or attach');
+        return;
+      }
+      if (first.op === 'attach') {
+        const session = sessions.get(first.terminalId);
+        if (!session?.attach(socket, first.cols, first.rows)) {
+          sendControl(socket, {
+            op: 'exit',
+            code: 1,
+            message: 'The terminal session is no longer available.',
+            reason: 'disconnected',
+          });
+          socket.close();
+        }
+        return;
+      }
+
+      const terminalId = `terminal-${nanoid(16)}`;
+      const transferable = new TransferableTerminalSocket(terminalId, socket);
+      sessions.set(terminalId, transferable);
+      transferable.once('close', () => sessions.delete(terminalId));
+      const stableSocket = transferable as unknown as WebSocket;
+      void handleSession(stableSocket, ctx, app).catch((err) => {
+        app.log.warn({ err }, 'terminal session failed');
+        sendControl(stableSocket, {
+          op: 'exit',
+          code: 1,
+          message: err instanceof Error ? err.message : String(err),
+          reason: 'failed',
+        });
+        stableSocket.close();
       });
-      socket.close();
-    });
+      transferable.push(data, false);
+      sendControl(stableSocket, { op: 'session', terminalId });
+    };
+    socket.once('close', () => clearTimeout(timer));
+    socket.on('message', firstMessage);
   });
 }
 

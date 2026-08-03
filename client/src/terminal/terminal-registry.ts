@@ -17,6 +17,8 @@ export interface TerminalHandle {
   bufferText(): string;
   /** Standalone HTML document of the buffer with colors preserved. */
   bufferHtml(): string;
+  /** Persist the latest screen + scrollback before handing this tab to another window. */
+  persistSnapshot(): Promise<void>;
   zoomIn(): void;
   zoomOut(): void;
   zoomReset(): void;

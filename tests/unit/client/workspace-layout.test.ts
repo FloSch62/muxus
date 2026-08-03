@@ -158,6 +158,40 @@ describe('directional pane navigation', () => {
 });
 
 describe('workspace serialization', () => {
+  it('round-trips pinned tabs in their strip order', () => {
+    const layout = serializeWorkspace(
+      { id: 'pane', type: 'pane', activeTabId: 'regular-tab' },
+      [
+        {
+          id: 'pinned-tab',
+          paneId: 'pane',
+          title: 'Pinned',
+          profile: { kind: 'ssh', target: 'pinned' },
+          pinned: true,
+        },
+        {
+          id: 'regular-tab',
+          paneId: 'pane',
+          title: 'Regular',
+          profile: { kind: 'ssh', target: 'regular' },
+        },
+      ],
+      'pane',
+    );
+
+    expect(layout.root).toMatchObject({
+      type: 'pane',
+      tabs: [
+        { id: 'pinned-tab', pinned: true },
+        { id: 'regular-tab' },
+      ],
+    });
+    expect(restoreWorkspace(layout)?.tabs.map((tab) => [tab.id, !!tab.pinned])).toEqual([
+      ['pinned-tab', true],
+      ['regular-tab', false],
+    ]);
+  });
+
   it('does not persist a blank chooser as the active terminal', () => {
     const layout = serializeWorkspace(
       { id: 'pane', type: 'pane', activeTabId: 'blank-tab' },

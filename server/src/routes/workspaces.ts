@@ -21,6 +21,7 @@ const workspaceTabSchema = z.discriminatedUnion('kind', [
     profile: sessionProfileSchema,
     cwdHint: z.string().optional(),
     color: z.string().max(32).optional(),
+    pinned: z.boolean().optional(),
     offerReconnect: z.boolean(),
   }),
   z.object({
