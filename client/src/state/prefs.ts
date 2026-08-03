@@ -82,6 +82,8 @@ export interface PrefsState {
   keybindings: Record<string, string[]>;
   /** One-click commands shown in the action bar. */
   commandButtons: CommandButton[];
+  /** Show saved commands as buttons above the terminal in addition to the keyboard menu. */
+  showCommandBar: boolean;
   /** Rules applied to every terminal; hosts may add to or replace these. */
   keywordHighlights: KeywordHighlightRule[];
   /** Whether the whole hosts sidebar is hidden — not to be confused with
@@ -184,6 +186,7 @@ export const usePrefsStore = create<PrefsState>()(
       splitInheritsSession: true,
       keybindings: {},
       commandButtons: [],
+      showCommandBar: true,
       keywordHighlights: [],
       sidebarCollapsed: false,
       sidebarWidth: DEFAULT_SIDEBAR_WIDTH,

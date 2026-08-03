@@ -25,6 +25,7 @@ export function CommandButtonsDialog() {
   const open = useUiStore((state) => state.commandButtonsOpen);
   const setOpen = useUiStore((state) => state.setCommandButtonsOpen);
   const buttons = usePrefsStore((state) => state.commandButtons);
+  const showCommandBar = usePrefsStore((state) => state.showCommandBar);
   const setPrefs = usePrefsStore((state) => state.set);
   const setButtons = (commandButtons: CommandButton[]) => setPrefs({ commandButtons });
 
@@ -44,10 +45,31 @@ export function CommandButtonsDialog() {
       <DialogTitle>Command buttons</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Save commands you use often. They appear in a one-click action bar above the active
-          terminal and stay in the order shown here.
+          Save commands you use often. Open them with Ctrl+Space or keep the optional
+          one-click bar above the active terminal. Commands stay in the order shown here.
         </Typography>
         <Stack spacing={1.25}>
+          <Paper variant="outlined" sx={{ p: 1.25 }}>
+            <FormControlLabel
+              sx={{ m: 0 }}
+              control={
+                <Switch
+                  size="small"
+                  checked={showCommandBar}
+                  onChange={(event) => setPrefs({ showCommandBar: event.target.checked })}
+                />
+              }
+              label={
+                <Box>
+                  <Typography variant="body2">Show command bar</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Display saved commands above the terminal. The Ctrl+Space menu always
+                    remains available.
+                  </Typography>
+                </Box>
+              }
+            />
+          </Paper>
           {buttons.length === 0 ? (
             <Paper variant="outlined" sx={{ p: 3, textAlign: 'center' }}>
               <Typography variant="body2" color="text.secondary">

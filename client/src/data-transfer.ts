@@ -51,6 +51,7 @@ const PREFERENCE_KEYS = [
   'confirmCloseConnected',
   'notifyOnNewVersion',
   'commandButtons',
+  'showCommandBar',
   'keywordHighlights',
   'sidebarCollapsed',
   'sidebarWidth',
@@ -653,6 +654,9 @@ export function sanitizePreferences(input: BackupPreferences): Partial<PrefsStat
     input.commandButtons.every(validCommandButton)
   ) {
     output.commandButtons = input.commandButtons;
+  }
+  if (typeof input.showCommandBar === 'boolean') {
+    output.showCommandBar = input.showCommandBar;
   }
   if (
     Array.isArray(input.keywordHighlights) &&
