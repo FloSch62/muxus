@@ -268,7 +268,7 @@ describe.skipIf(process.platform === 'win32')('ssh-agent authentication', () => 
     expect(io.passphrasePrompts).toBe(0);
   }, 15_000);
 
-  it('falls back to the next method when the agent socket is unreachable', async () => {
+  it('silently falls back when the agent socket is unreachable', async () => {
     process.env.SSH_AUTH_SOCK = path.join(tmp, 'no-such-agent.sock');
     try {
       const { server, port, events } = await startServer(agentPub);
@@ -277,7 +277,7 @@ describe.skipIf(process.platform === 'win32')('ssh-agent authentication', () => 
       await connectOnce(port, io);
       await new Promise<void>((resolve) => server.close(() => resolve()));
 
-      expect(io.statuses.some((s) => s.includes('ssh-agent unavailable'))).toBe(true);
+      expect(io.statuses.some((s) => s.includes('ssh-agent unavailable'))).toBe(false);
       expect(events.some((e) => e.method === 'password' && e.accepted)).toBe(true);
       expect(io.passwordPrompts).toBe(1);
     } finally {

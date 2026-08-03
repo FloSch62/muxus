@@ -738,7 +738,15 @@ export class SshConnectionManager {
       client.on('error', (err) => {
         if (!settled && err.level === 'agent') {
           // ssh2 reports an unreachable agent mid-auth and then moves on to
-          // the next method itself; surface it without aborting the dial.
+          // the next method itself. This is an expected fallback when a stale
+          // agent socket is inherited, so keep it out of user-facing status.
+          if (err.message === 'Failed to connect to agent') {
+            this.log.debug(
+              { err, host: hop.resolved.hostname },
+              'ssh-agent unavailable; trying other authentication methods',
+            );
+            return;
+          }
           this.log.warn(
             { err, host: hop.resolved.hostname },
             'ssh-agent unavailable; trying other authentication methods',
