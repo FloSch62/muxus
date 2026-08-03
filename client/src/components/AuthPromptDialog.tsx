@@ -46,8 +46,8 @@ export function AuthPromptDialog({
 
   const submit = () => {
     if (request.purpose === 'vault-create') {
-      if (Array.from(answers[0] ?? '').length < 12) {
-        setError('Use at least 12 characters for the master password.');
+      if (Array.from(answers[0] ?? '').length < 8) {
+        setError('Use at least 8 characters for the master password.');
         return;
       }
       if (new TextEncoder().encode(answers[0] ?? '').byteLength > 1024) {
