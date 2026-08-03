@@ -40,6 +40,7 @@ const PREFERENCE_KEYS = [
   'lineHeight',
   'terminalScheme',
   'fontColor',
+  'backgroundColor',
   'scrollback',
   'cursorBlink',
   'cursorStyle',
@@ -617,6 +618,9 @@ export function sanitizePreferences(input: BackupPreferences): Partial<PrefsStat
   }
   if (input.fontColor === '' || validHexColor(input.fontColor)) {
     output.fontColor = input.fontColor;
+  }
+  if (input.backgroundColor === '' || validHexColor(input.backgroundColor)) {
+    output.backgroundColor = input.backgroundColor;
   }
   if (
     Number.isInteger(input.scrollback) &&

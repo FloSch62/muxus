@@ -19,7 +19,7 @@ const apiFetchMock = vi.mocked(apiFetch);
 
 beforeEach(() => {
   apiFetchMock.mockReset();
-  usePrefsStore.setState({ notifyOnNewVersion: true });
+  usePrefsStore.setState({ notifyOnNewVersion: true, backgroundColor: '' });
 });
 
 const connections = {
@@ -138,13 +138,14 @@ function mockBackupSnapshot(folders: unknown[] = []): void {
 }
 
 describe('backing up preferences', () => {
-  it('includes the update notification choice', async () => {
-    usePrefsStore.setState({ notifyOnNewVersion: false });
+  it('includes display and update-notification choices', async () => {
+    usePrefsStore.setState({ notifyOnNewVersion: false, backgroundColor: '#102030' });
     mockBackupSnapshot();
 
     const document = await createBackupDocument();
 
     expect(document.data.preferences.notifyOnNewVersion).toBe(false);
+    expect(document.data.preferences.backgroundColor).toBe('#102030');
   });
 });
 
@@ -337,6 +338,25 @@ describe('restoring the font color preference', () => {
     expect(sanitizePreferences(prefs({ fontColor: 'red' })).fontColor).toBeUndefined();
     expect(sanitizePreferences(prefs({ fontColor: '#fff' })).fontColor).toBeUndefined();
     expect(sanitizePreferences(prefs({ fontColor: 42 })).fontColor).toBeUndefined();
+  });
+});
+
+describe('restoring the background color preference', () => {
+  const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
+
+  it('restores a hex override and the explicit scheme-default empty string', () => {
+    expect(sanitizePreferences(prefs({ backgroundColor: '#102030' }))).toMatchObject({
+      backgroundColor: '#102030',
+    });
+    expect(sanitizePreferences(prefs({ backgroundColor: '' }))).toMatchObject({
+      backgroundColor: '',
+    });
+  });
+
+  it('drops a malformed background color rather than importing it', () => {
+    expect(sanitizePreferences(prefs({ backgroundColor: 'black' })).backgroundColor).toBeUndefined();
+    expect(sanitizePreferences(prefs({ backgroundColor: '#000' })).backgroundColor).toBeUndefined();
+    expect(sanitizePreferences(prefs({ backgroundColor: 42 })).backgroundColor).toBeUndefined();
   });
 });
 
