@@ -95,6 +95,7 @@ describe('workspace routes', () => {
       name: 'Daily work',
       layout,
       multiExecGroups: [],
+      isLocked: false,
       isStartup: false,
     });
 
@@ -185,6 +186,92 @@ describe('workspace routes', () => {
       headers: auth(),
     });
     expect(readStartup.json().workspace).toMatchObject({ id, name: 'Operations' });
+
+    const clearStartup = await app.inject({
+      method: 'PUT',
+      url: '/api/workspaces/startup',
+      headers: auth(),
+      payload: { id: null },
+    });
+    expect(clearStartup.statusCode).toBe(200);
+    expect(clearStartup.json()).toEqual({ workspace: null });
+    const clearedStartup = await app.inject({
+      method: 'GET',
+      url: '/api/workspaces/startup',
+      headers: auth(),
+    });
+    expect(clearedStartup.json()).toEqual({ workspace: null });
+  });
+
+  it('locks and unlocks a workspace', async () => {
+    const save = await app.inject({
+      method: 'PUT',
+      url: '/api/workspaces',
+      headers: auth(),
+      payload: { name: 'Stable startup', layout },
+    });
+    const id = save.json().id as string;
+
+    const lock = await app.inject({
+      method: 'PATCH',
+      url: `/api/workspaces/${id}`,
+      headers: auth(),
+      payload: { isLocked: true },
+    });
+    expect(lock.statusCode).toBe(200);
+    expect(lock.json()).toMatchObject({ id, isLocked: true, layout });
+
+    const list = await app.inject({
+      method: 'GET',
+      url: '/api/workspaces',
+      headers: auth(),
+    });
+    expect(list.json().workspaces).toEqual([
+      expect.objectContaining({ id, isLocked: true }),
+    ]);
+
+    const blockedAutoSave = await app.inject({
+      method: 'PUT',
+      url: '/api/workspaces',
+      headers: auth(),
+      payload: {
+        id,
+        name: 'Stable startup',
+        layout: { version: 1, root: null },
+      },
+    });
+    expect(blockedAutoSave.statusCode).toBe(409);
+    expect(blockedAutoSave.json()).toEqual({
+      code: 'workspace-locked',
+      message: expect.stringContaining('is locked'),
+    });
+
+    const explicitSave = await app.inject({
+      method: 'PUT',
+      url: '/api/workspaces',
+      headers: auth(),
+      payload: {
+        id,
+        name: 'Stable startup',
+        layout: { version: 1, root: null },
+        overwriteLocked: true,
+      },
+    });
+    expect(explicitSave.statusCode).toBe(200);
+    expect(explicitSave.json()).toMatchObject({
+      id,
+      isLocked: true,
+      layout: { version: 1, root: null },
+    });
+
+    const unlock = await app.inject({
+      method: 'PATCH',
+      url: `/api/workspaces/${id}`,
+      headers: auth(),
+      payload: { isLocked: false },
+    });
+    expect(unlock.statusCode).toBe(200);
+    expect(unlock.json()).toMatchObject({ id, isLocked: false });
   });
 
   it('deletes a workspace and clears its startup selection', async () => {

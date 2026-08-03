@@ -10,7 +10,7 @@ titles and colour flags, and the multi-exec groups defined in it.
 <figure markdown="span">
   ![The workspace dialog](../assets/screenshots/workspaces.png#only-light){ .shadow }
   ![The workspace dialog](../assets/screenshots/workspaces-dark.png#only-dark){ .shadow }
-  <figcaption>The workspace dialog: save, open, rename, delete, and select a startup workspace.</figcaption>
+  <figcaption>The workspace dialog: save, lock, open, rename, delete, and select a startup workspace.</figcaption>
 </figure>
 
 ## Saving and switching
@@ -18,14 +18,18 @@ titles and colour flags, and the multi-exec groups defined in it.
 The workspace control in the top bar shows the active workspace's name and opens the
 dialog, which provides:
 
-- **Save** the current layout under a new name;
-- **Open** another workspace, with the current one flushed first;
+- **Save** the current layout over the active workspace, or **Save as** under a new name;
+- **Lock** a workspace when its saved tabs should stay fixed;
+- **Open** another workspace, flushing pending automatic changes first unless it is locked;
 - **Rename** and **delete**;
 - selection of the **startup workspace**, restored by a fresh window;
 - search and sorting by recent activity, name or creation date.
 
 The active workspace is saved continuously in the background, debounced. A window that
-closes with live tabs flushes its layout on exit.
+closes with live tabs flushes its layout on exit. A locked workspace skips both automatic
+saves: tab and pane changes remain in the current window until you choose **Save**. Unlock
+it to resume automatic saving. This is useful for a startup workspace that should always
+open with the same tabs.
 
 !!! note "Unsaved layouts are still restored"
 

@@ -15,6 +15,7 @@ function workspace(
     createdAt,
     updatedAt,
     lastOpenedAt,
+    isLocked: false,
     isStartup: false,
   };
 }

@@ -6,6 +6,7 @@ import type {
 } from '@muxus/shared';
 import { sessionProfileSchema } from '@muxus/shared/ws-protocol';
 import type { AppContext } from '../app.js';
+import { WorkspaceLockedError } from '../persistence/database.js';
 import { HttpProblem, sendError } from '../util/errors.js';
 
 const connectionRefSchema = z.object({
@@ -121,6 +122,7 @@ const workspaceSaveSchema = z.object({
   id: z.string().min(1).optional(),
   name: z.string().trim().min(1).max(200),
   layout: workspaceLayoutSchema,
+  overwriteLocked: z.boolean().optional().default(false),
   multiExecGroups: z.array(
     z.object({
       id: z.string().min(1),
@@ -208,10 +210,14 @@ export function registerWorkspaceRoutes(app: FastifyInstance, ctx: AppContext): 
       if (!parsed.success) {
         throw new HttpProblem(400, parsed.error.issues[0]?.message ?? 'invalid workspace');
       }
-      const saved = ctx.database.saveWorkspace(parsed.data) as WorkspaceRecord;
+      const { overwriteLocked, ...workspace } = parsed.data;
+      const saved = ctx.database.saveWorkspace(workspace, overwriteLocked) as WorkspaceRecord;
       ctx.database.pruneTerminalSnapshots();
       return saved;
     } catch (err) {
+      if (err instanceof WorkspaceLockedError) {
+        return sendError(reply, new HttpProblem(409, err.message, 'workspace-locked'));
+      }
       return sendError(reply, err);
     }
   });
@@ -219,11 +225,16 @@ export function registerWorkspaceRoutes(app: FastifyInstance, ctx: AppContext): 
   app.patch('/api/workspaces/:id', async (req, reply): Promise<WorkspaceRecord | void> => {
     try {
       const { id } = req.params as { id: string };
-      const parsed = z.object({ name: z.string().trim().min(1).max(200) }).safeParse(req.body);
+      const parsed = z.union([
+        z.object({ name: z.string().trim().min(1).max(200) }).strict(),
+        z.object({ isLocked: z.boolean() }).strict(),
+      ]).safeParse(req.body);
       if (!parsed.success) {
-        throw new HttpProblem(400, parsed.error.issues[0]?.message ?? 'invalid workspace name');
+        throw new HttpProblem(400, parsed.error.issues[0]?.message ?? 'invalid workspace update');
       }
-      const workspace = ctx.database.renameWorkspace(id, parsed.data.name);
+      const workspace = 'name' in parsed.data
+        ? ctx.database.renameWorkspace(id, parsed.data.name)
+        : ctx.database.setWorkspaceLocked(id, parsed.data.isLocked);
       if (!workspace) {
         await reply.code(404).send({ message: 'workspace not found' });
         return;

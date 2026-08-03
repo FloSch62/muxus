@@ -3,7 +3,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
-import { MuxusDatabase, assertSecretFree } from '../../../server/src/persistence/database.js';
+import {
+  MuxusDatabase,
+  WorkspaceLockedError,
+  assertSecretFree,
+} from '../../../server/src/persistence/database.js';
 
 let database: MuxusDatabase | undefined;
 let temporaryDirectory: string | undefined;
@@ -38,6 +42,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 15, name: 'password-vault-key-check' },
       { version: 16, name: 'password-vault-key-cleanup' },
       { version: 17, name: 'folder-settings' },
+      { version: 18, name: 'lock-workspaces' },
     ]);
   });
 
@@ -114,8 +119,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 17,
-      name: 'folder-settings',
+      version: 18,
+      name: 'lock-workspaces',
     });
     expect(database.passwordVaultConfig()).toMatchObject({
       formatVersion: 2,
@@ -629,6 +634,7 @@ describe('credential and workspace safety', () => {
 
     expect(database.workspace(saved.id)).toEqual(saved);
     expect(saved).toMatchObject({
+      isLocked: false,
       isStartup: false,
       multiExecGroups: [
         { id: 'prod', name: 'Production', tabIds: ['tab-a', 'tab-b'] },
@@ -650,5 +656,48 @@ describe('credential and workspace safety', () => {
     expect(database.listWorkspaceSummaries().filter((workspace) => workspace.isStartup)).toHaveLength(1);
     expect(database.setStartupWorkspace(null)).toBeUndefined();
     expect(database.startupWorkspace()).toBeUndefined();
+  });
+
+  it('locks and unlocks a workspace without changing its layout', () => {
+    database = new MuxusDatabase(':memory:');
+    const saved = database.saveWorkspace({
+      name: 'Stable startup',
+      layout: { version: 1, root: null },
+    });
+
+    expect(database.setWorkspaceLocked(saved.id, true)).toMatchObject({
+      id: saved.id,
+      isLocked: true,
+      layout: saved.layout,
+    });
+    expect(database.listWorkspaceSummaries()).toEqual([
+      expect.objectContaining({ id: saved.id, isLocked: true }),
+    ]);
+    expect(() =>
+      database!.saveWorkspace({
+        id: saved.id,
+        name: saved.name,
+        layout: { version: 1, root: { id: 'unexpected' } },
+      }),
+    ).toThrow(WorkspaceLockedError);
+    expect(database.workspace(saved.id)?.layout).toEqual(saved.layout);
+
+    const explicitlySaved = database.saveWorkspace(
+      {
+        id: saved.id,
+        name: saved.name,
+        layout: { version: 1, root: { id: 'explicit' } },
+      },
+      true,
+    );
+    expect(explicitlySaved).toMatchObject({
+      id: saved.id,
+      isLocked: true,
+      layout: { version: 1, root: { id: 'explicit' } },
+    });
+    expect(database.setWorkspaceLocked(saved.id, false)).toMatchObject({
+      id: saved.id,
+      isLocked: false,
+    });
   });
 });
