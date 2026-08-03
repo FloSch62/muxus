@@ -144,7 +144,23 @@ function parseFile(file: string, state: ParseState, depth: number): void {
     const keyword = m[1] ?? '';
     const key = keyword.toLowerCase();
     const value = m[2] ?? '';
-    const option: OptionLine = { keyword, key, value, args: splitArgs(value) };
+    let args: string[];
+    try {
+      args = splitArgs(value);
+    } catch {
+      recordError(state, `${resolved} line ${i + 1}: invalid quotes`);
+      // Keep malformed option lines inside their block's editable range, but
+      // don't let an invalid Host/Match header leak its options into globals.
+      if (key === 'host' || key === 'match') {
+        block = null;
+        inMatch = true;
+        globals = null;
+      } else if (block && !inMatch) {
+        block.end = i + 1;
+      }
+      continue;
+    }
+    const option: OptionLine = { keyword, key, value, args };
 
     if (key === 'host') {
       const commentStart = scanPreludeComments(lines, i);
@@ -209,17 +225,33 @@ function preludeText(lines: string[], commentStart: number, hostLine: number): s
   return text || undefined;
 }
 
-/** Split a config value into tokens, honoring double quotes anywhere in a token. */
+/**
+ * Split a config value like OpenSSH's argv_split: single and double quotes may
+ * appear anywhere in a token, and basic escapes remove their leading backslash.
+ * Other backslashes (notably those in Windows paths) remain untouched.
+ */
 export function splitArgs(value: string): string[] {
   const out: string[] = [];
   let token = '';
-  let quoted = false;
+  let quote: "'" | '"' | undefined;
   let started = false;
-  for (const char of value) {
-    if (char === '"') {
-      quoted = !quoted;
+
+  for (let i = 0; i < value.length; i++) {
+    const char = value[i]!;
+    const next = value[i + 1];
+    if (
+      char === '\\' &&
+      (next === "'" || next === '"' || next === '\\' || (!quote && next === ' '))
+    ) {
+      token += next;
+      i++;
       started = true;
-    } else if (/\s/.test(char) && !quoted) {
+    } else if (!quote && (char === "'" || char === '"')) {
+      quote = char;
+      started = true;
+    } else if (quote && char === quote) {
+      quote = undefined;
+    } else if ((char === ' ' || char === '\t') && !quote) {
       if (!started) continue;
       out.push(token);
       token = '';
@@ -229,6 +261,7 @@ export function splitArgs(value: string): string[] {
       started = true;
     }
   }
+  if (quote) throw new Error('invalid quotes');
   if (started) out.push(token);
   return out;
 }

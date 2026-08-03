@@ -146,9 +146,11 @@ function validateForward(f: ConfigForward): void {
 // Serialization
 // ---------------------------------------------------------------------------
 
-/** Quote one token when it contains whitespace. Never applied to multi-arg values. */
+/** Quote one token when OpenSSH would otherwise split or quote it. */
 function quoteToken(v: string): string {
-  return /\s/.test(v) ? `"${v}"` : v;
+  // An unquoted apostrophe starts a single-quoted string in OpenSSH. Keep
+  // double quotes as our canonical output for both whitespace and apostrophes.
+  return /[\s']/.test(v) ? `"${v}"` : v;
 }
 
 function forwardTarget(host: string, port: number): string {

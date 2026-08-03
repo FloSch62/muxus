@@ -67,20 +67,22 @@ describe('mergeFolderAuth', () => {
 });
 
 describe('folderAuthOptionLines', () => {
-  it('renders one line per set field and quotes paths with spaces', () => {
+  it('renders one line per set field and quotes paths with spaces or apostrophes', () => {
     const lines = folderAuthOptionLines({
       user: 'admin',
       port: 2222,
-      identityFiles: ['/keys/my key'],
+      identityFiles: ['/keys/my key', "/keys/O'Neil"],
       identitiesOnly: true,
     });
     expect(lines.map((line) => [line.key, line.value])).toEqual([
       ['user', 'admin'],
       ['port', '2222'],
       ['identityfile', '"/keys/my key"'],
+      ['identityfile', '"/keys/O\'Neil"'],
       ['identitiesonly', 'yes'],
     ]);
     expect(lines[2]!.args).toEqual(['/keys/my key']);
+    expect(lines[3]!.args).toEqual(["/keys/O'Neil"]);
   });
 });
 

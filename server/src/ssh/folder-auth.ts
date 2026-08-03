@@ -79,8 +79,8 @@ export function folderAuthOptionLines(auth: FolderAuthSettings): OptionLine[] {
     lines.push({
       keyword,
       key: keyword.toLowerCase(),
-      // Paths may contain spaces; quote the value the way ssh_config would.
-      value: /\s/.test(raw) ? `"${raw}"` : raw,
+      // Whitespace and apostrophes need quoting to remain one OpenSSH token.
+      value: /[\s']/.test(raw) ? `"${raw}"` : raw,
       args: [raw],
     });
   if (auth.user) push('User', auth.user);
