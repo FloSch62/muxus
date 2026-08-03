@@ -425,5 +425,21 @@ export function terminalScheme(id: string | undefined): TerminalScheme {
  * so a stale stored value cannot blank the terminal.
  */
 export function themeWithFontColor(theme: ITheme, fontColor: string): ITheme {
-  return /^#[0-9a-f]{6}$/i.test(fontColor) ? { ...theme, foreground: fontColor } : theme;
+  return themeWithColorOverrides(theme, fontColor, '');
+}
+
+/** Apply valid user-selected foreground and background colors to a scheme. */
+export function themeWithColorOverrides(
+  theme: ITheme,
+  fontColor: string,
+  backgroundColor: string,
+): ITheme {
+  const foreground = /^#[0-9a-f]{6}$/i.test(fontColor) ? fontColor : undefined;
+  const background = /^#[0-9a-f]{6}$/i.test(backgroundColor) ? backgroundColor : undefined;
+  if (!foreground && !background) return theme;
+  return {
+    ...theme,
+    ...(foreground ? { foreground } : {}),
+    ...(background ? { background } : {}),
+  };
 }

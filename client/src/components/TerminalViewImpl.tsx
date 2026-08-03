@@ -43,7 +43,7 @@ import { useTabsStore, type SessionTab } from '../state/tabs.js';
 import {
   TERMINAL_MINIMUM_CONTRAST_RATIO,
   terminalScheme,
-  themeWithFontColor,
+  themeWithColorOverrides,
 } from '../terminal/palette.js';
 import { attachCommandTracker } from '../terminal/shell-integration.js';
 import { attachOsc52Clipboard } from '../terminal/osc52-clipboard.js';
@@ -162,8 +162,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const scrollback = usePrefsStore((s) => s.scrollback);
   const schemeId = usePrefsStore((s) => s.terminalScheme);
   const fontColor = usePrefsStore((s) => s.fontColor);
+  const backgroundColor = usePrefsStore((s) => s.backgroundColor);
   const globalKeywordHighlights = usePrefsStore((s) => s.keywordHighlights);
   const scheme = terminalScheme(schemeId);
+  const terminalTheme = useMemo(
+    () => themeWithColorOverrides(scheme.theme, fontColor, backgroundColor),
+    [scheme, fontColor, backgroundColor],
+  );
   const { data: sshConfig } = useSshConfig(tab.profile.kind === 'ssh' && tab.profile.useConfig !== false);
   const savedProfileId =
     tab.profile.kind === 'telnet' || tab.profile.kind === 'serial'
@@ -288,7 +293,11 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       allowProposedApi: true,
       // ImageAddon uses a bottom layer for negative-z Kitty placements.
       allowTransparency: true,
-      theme: themeWithFontColor(terminalScheme(prefs.terminalScheme).theme, prefs.fontColor),
+      theme: themeWithColorOverrides(
+        terminalScheme(prefs.terminalScheme).theme,
+        prefs.fontColor,
+        prefs.backgroundColor,
+      ),
       // ANSI uses the same palette entries for foregrounds and backgrounds,
       // so combinations chosen by remote tools are not always legible in
       // every theme. Let xterm adjust only the rendered foreground as needed.
@@ -985,9 +994,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     term.options.cursorBlink = cursorBlink;
     term.options.cursorStyle = cursorStyle;
     term.options.scrollback = scrollback;
-    term.options.theme = themeWithFontColor(scheme.theme, fontColor);
+    term.options.theme = terminalTheme;
     fitTerminal();
-  }, [monoFontSize, fontFamily, lineHeight, cursorBlink, cursorStyle, scrollback, scheme, fontColor, generation]);
+  }, [monoFontSize, fontFamily, lineHeight, cursorBlink, cursorStyle, scrollback, terminalTheme, generation]);
 
   useEffect(() => {
     keywordHighlighterRef.current?.setRules(keywordHighlights);
@@ -1056,7 +1065,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         onContextMenu={onContextMenu}
         sx={{
           height: '100%',
-          bgcolor: scheme.theme.background,
+          bgcolor: terminalTheme.background,
           border: 1,
           borderColor: theme.palette.mode === 'dark' && !scheme.light ? 'transparent' : theme.palette.divider,
           borderRadius: 1,

@@ -19,7 +19,8 @@ because storage policy should not change under a running recorder.
 - **Application theme**: light, dark, or follow the system.
 - **Interface scale**: the size of the whole window. Terminal text has a separate zoom
   (++ctrl+shift+equal++ / ++ctrl+shift+minus++ / ++ctrl+wheel++).
-- **Terminal colour scheme**: fifteen schemes, grouped into light and dark sets.
+- **Terminal colour scheme**: fifteen schemes, grouped into light and dark sets, with
+  optional text and background colour overrides.
 - **Font**: family, size and line height. JetBrains Mono and the Nerd Font symbols are
   bundled; any other family must be installed on the machine.
 

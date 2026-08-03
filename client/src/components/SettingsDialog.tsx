@@ -246,7 +246,9 @@ function AppearanceSection() {
   const prefs = usePrefsStore();
   const zoomInChord = useChordLabel('terminal.zoom-in');
   const zoomOutChord = useChordLabel('terminal.zoom-out');
-  const schemeForeground = terminalScheme(prefs.terminalScheme).theme.foreground ?? '#cccccc';
+  const schemeTheme = terminalScheme(prefs.terminalScheme).theme;
+  const schemeForeground = schemeTheme.foreground ?? '#cccccc';
+  const schemeBackground = schemeTheme.background ?? '#1e1e1e';
 
   return (
     <Stack spacing={3}>
@@ -317,6 +319,39 @@ function AppearanceSection() {
             ])}
           </Select>
         </FormControl>
+        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', mt: 2 }}>
+          <Typography variant="body2" color="text.secondary">
+            Background color
+          </Typography>
+          <Box
+            component="input"
+            type="color"
+            aria-label="Background color"
+            value={prefs.backgroundColor || schemeBackground}
+            onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
+              prefs.set({ backgroundColor: event.target.value })
+            }
+            sx={{
+              width: 30,
+              height: 26,
+              p: 0.25,
+              border: 1,
+              borderColor: 'divider',
+              borderRadius: 0.75,
+              bgcolor: 'transparent',
+              cursor: 'pointer',
+            }}
+          />
+          {prefs.backgroundColor ? (
+            <Button size="small" onClick={() => prefs.set({ backgroundColor: '' })}>
+              Use scheme color
+            </Button>
+          ) : (
+            <Typography variant="caption" color="text.secondary">
+              Following the color scheme
+            </Typography>
+          )}
+        </Stack>
       </Box>
       <Box>
         <SectionTitle>Font</SectionTitle>

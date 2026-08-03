@@ -3,6 +3,7 @@ import {
   TERMINAL_MINIMUM_CONTRAST_RATIO,
   TERMINAL_SCHEMES,
   terminalScheme,
+  themeWithColorOverrides,
   themeWithFontColor,
 } from '../../../client/src/terminal/palette.js';
 
@@ -109,5 +110,34 @@ describe('themeWithFontColor', () => {
     expect(themeWithFontColor(theme, '')).toBe(theme);
     expect(themeWithFontColor(theme, 'orange')).toBe(theme);
     expect(themeWithFontColor(theme, '#ff0')).toBe(theme);
+  });
+});
+
+describe('themeWithColorOverrides', () => {
+  const theme = terminalScheme('vscode-dark').theme;
+
+  it('replaces the foreground and background without mutating the scheme', () => {
+    const overridden = themeWithColorOverrides(theme, '#FF8800', '#102030');
+
+    expect(overridden.foreground).toBe('#FF8800');
+    expect(overridden.background).toBe('#102030');
+    expect(theme.foreground).toBe('#cccccc');
+    expect(theme.background).toBe('#181818');
+  });
+
+  it('applies either valid override independently', () => {
+    expect(themeWithColorOverrides(theme, '', '#102030')).toMatchObject({
+      foreground: theme.foreground,
+      background: '#102030',
+    });
+    expect(themeWithColorOverrides(theme, '#FF8800', '')).toMatchObject({
+      foreground: '#FF8800',
+      background: theme.background,
+    });
+  });
+
+  it('leaves the scheme alone when neither override is valid', () => {
+    expect(themeWithColorOverrides(theme, '', '')).toBe(theme);
+    expect(themeWithColorOverrides(theme, 'orange', '#123')).toBe(theme);
   });
 });
