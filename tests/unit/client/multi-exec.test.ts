@@ -28,6 +28,8 @@ function handle(sendInput: TerminalHandle['sendInput']): TerminalHandle {
     paste: vi.fn(),
     setLogging: vi.fn(() => true),
     persistSnapshot: vi.fn(async () => undefined),
+    prepareTransfer: vi.fn(async () => true),
+    cancelTransfer: vi.fn(),
   };
 }
 

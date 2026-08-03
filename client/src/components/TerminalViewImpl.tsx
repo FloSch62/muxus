@@ -101,6 +101,7 @@ const ACTIVE_IMAGE_STORAGE_MB = 64;
 const BACKGROUND_IMAGE_STORAGE_MB = 16;
 /** Quiet period a container size has to hold before the terminal refits. */
 const RESIZE_SETTLE_MS = 90;
+const TRANSFER_PREPARE_TIMEOUT_MS = 5_000;
 
 /** Plain-text contents of scrollback + screen, trailing blank rows trimmed. */
 function bufferText(term: Terminal): string {
@@ -384,6 +385,18 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       },
     );
 
+    let transferPreparation: {
+      resolve: (prepared: boolean) => void;
+      timer: ReturnType<typeof setTimeout>;
+    } | undefined;
+    const settleTransferPreparation = (prepared: boolean) => {
+      const pending = transferPreparation;
+      if (!pending) return;
+      transferPreparation = undefined;
+      clearTimeout(pending.timer);
+      pending.resolve(prepared);
+    };
+
     const unregister = registerTerminal(tab.id, {
       focus: () => term.focus(),
       sendInput,
@@ -397,6 +410,35 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         if (!usePrefsStore.getState().restoreScrollback) return;
         const data = serializeScrollback(serialize);
         if (data !== undefined) await putTerminalSnapshot(tab.id, data);
+      },
+      prepareTransfer: () => {
+        const socket = wsRef.current;
+        if (
+          transferPreparation ||
+          !socket ||
+          socket.readyState !== WebSocket.OPEN
+        ) {
+          return Promise.resolve(false);
+        }
+        return new Promise((resolve) => {
+          const timer = setTimeout(() => {
+            if (transferPreparation?.resolve !== resolve) return;
+            transferPreparation = undefined;
+            if (socket.readyState === WebSocket.OPEN) {
+              socket.send(JSON.stringify({ op: 'cancel-transfer' }));
+            }
+            resolve(false);
+          }, TRANSFER_PREPARE_TIMEOUT_MS);
+          transferPreparation = { resolve, timer };
+          socket.send(JSON.stringify({ op: 'prepare-transfer' }));
+        });
+      },
+      cancelTransfer: () => {
+        settleTransferPreparation(false);
+        const socket = wsRef.current;
+        if (socket?.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ op: 'cancel-transfer' }));
+        }
       },
       zoomIn: () => applyZoom('in'),
       zoomOut: () => applyZoom('out'),
@@ -594,6 +636,17 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           case 'session':
             updateTab(tab.id, { terminalId: ctl.terminalId });
             break;
+          case 'transfer-ready': {
+            const pending = transferPreparation;
+            if (pending) {
+              // WebSocket frames are ordered, but xterm applies writes
+              // asynchronously. Drain all pre-freeze output before snapshotting.
+              term.write('', () => {
+                if (transferPreparation === pending) settleTransferPreparation(true);
+              });
+            }
+            break;
+          }
           case 'status': {
             if (!ready && !transportSuspect) {
               updateTab(tab.id, {
@@ -862,6 +915,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
 
     return () => {
       disposed = true;
+      settleTransferPreparation(false);
       clearInterval(snapshotTimer);
       if (quietSnapshotTimer !== undefined) clearTimeout(quietSnapshotTimer);
       unregisterUnloadFlush();

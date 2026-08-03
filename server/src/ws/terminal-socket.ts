@@ -42,6 +42,9 @@ export class TransferableTerminalSocket extends EventEmitter {
   private current: WebSocket;
   private closed = false;
   private readonly controls = new Map<string, string>();
+  private bufferingTransfer = false;
+  private bufferedTransferBytes = 0;
+  private readonly transferBuffer: Buffer[] = [];
 
   constructor(readonly terminalId: string, socket: WebSocket) {
     super();
@@ -54,7 +57,7 @@ export class TransferableTerminalSocket extends EventEmitter {
   }
 
   get bufferedAmount(): number {
-    return this.current.bufferedAmount;
+    return this.current.bufferedAmount + this.bufferedTransferBytes;
   }
 
   /** Feed the already-consumed first frame into the normal session handler. */
@@ -74,6 +77,8 @@ export class TransferableTerminalSocket extends EventEmitter {
       const frame = this.controls.get(op);
       if (frame && socket.readyState === socket.OPEN) socket.send(frame);
     }
+    this.bufferingTransfer = false;
+    this.flushTransferBuffer(socket);
     this.handleMessage(
       Buffer.from(JSON.stringify({ op: 'resize', cols, rows })),
       false,
@@ -97,6 +102,12 @@ export class TransferableTerminalSocket extends EventEmitter {
         /* ordinary text frame */
       }
     }
+    if (this.bufferingTransfer && Buffer.isBuffer(data) && options?.binary) {
+      const buffered = Buffer.from(data);
+      this.transferBuffer.push(buffered);
+      this.bufferedTransferBytes += buffered.byteLength;
+      return;
+    }
     if (this.current.readyState === this.current.OPEN) {
       if (options) this.current.send(data, options);
       else this.current.send(data);
@@ -118,6 +129,18 @@ export class TransferableTerminalSocket extends EventEmitter {
     if (!isBinary) {
       try {
         const message = JSON.parse(data.toString('utf8')) as { op?: string };
+        if (message.op === 'prepare-transfer') {
+          this.bufferingTransfer = true;
+          if (this.current.readyState === this.current.OPEN) {
+            this.current.send(JSON.stringify({ op: 'transfer-ready' }));
+          }
+          return;
+        }
+        if (message.op === 'cancel-transfer') {
+          this.bufferingTransfer = false;
+          this.flushTransferBuffer(this.current);
+          return;
+        }
         if (message.op === 'auth-response') this.controls.delete('auth-prompt');
         if (message.op === 'host-key-response') this.controls.delete('host-key');
       } catch {
@@ -139,9 +162,18 @@ export class TransferableTerminalSocket extends EventEmitter {
     socket.removeListener('close', this.handleClose);
   }
 
+  private flushTransferBuffer(socket: WebSocket): void {
+    const buffered = this.transferBuffer.splice(0);
+    this.bufferedTransferBytes = 0;
+    if (socket.readyState !== socket.OPEN) return;
+    for (const data of buffered) socket.send(data, { binary: true });
+  }
+
   private finish(): void {
     if (this.closed) return;
     this.closed = true;
+    this.transferBuffer.length = 0;
+    this.bufferedTransferBytes = 0;
     this.unbind(this.current);
     this.emit('close');
   }

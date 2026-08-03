@@ -16,12 +16,14 @@ const SOURCE_TTL_MS = 2 * 60_000;
 type TransferMessage =
   | { kind: 'claim'; requestId: string; transferId: string }
   | { kind: 'offer'; requestId: string; transferId: string; tab?: TransferableTab }
+  | { kind: 'cancel'; transferId: string }
   | { kind: 'complete'; transferId: string };
 
 interface TransferSource {
   tabId: string;
   prepare: () => Promise<boolean>;
   snapshot: () => TransferableTab | undefined;
+  cancel: () => void;
   complete: () => void;
   prepared?: Promise<TransferableTab | undefined>;
   expires: ReturnType<typeof setTimeout>;
@@ -69,6 +71,14 @@ function transferChannel(): BroadcastChannel | undefined {
       claim.resolve(message.tab);
       return;
     }
+    if (message.kind === 'cancel') {
+      const source = sources.get(message.transferId);
+      if (source) {
+        source.cancel();
+        source.prepared = undefined;
+      }
+      return;
+    }
     if (message.kind === 'complete') {
       const source = sources.get(message.transferId);
       if (!source) return;
@@ -86,28 +96,43 @@ function randomId(): string {
 
 async function prepareTabTransfer(tabId: string): Promise<boolean> {
   if (!(await confirmDiscardRemoteEditors([tabId]))) return false;
-  await terminalHandle(tabId)?.persistSnapshot();
+  const handle = terminalHandle(tabId);
+  const initial = useTabsStore.getState().tabs.find((candidate) => candidate.id === tabId);
+  const live = !!initial?.profile && initial.status !== 'closed' && !!initial.terminalId;
+  let prepared = false;
+  if (live) {
+    if (!handle || !(await handle.prepareTransfer())) return false;
+    prepared = true;
+  }
+  await handle?.persistSnapshot();
   const transferable = () => {
     const tab = useTabsStore.getState().tabs.find((candidate) => candidate.id === tabId);
     return (
       !tab ||
       !tab.profile ||
       tab.status === 'closed' ||
-      (tab.status === 'connected' && !!tab.terminalId)
+      !!tab.terminalId
     );
   };
-  if (transferable()) return useTabsStore.getState().tabs.some((tab) => tab.id === tabId);
+  if (transferable()) {
+    const exists = useTabsStore.getState().tabs.some((tab) => tab.id === tabId);
+    if (!exists && prepared) handle?.cancelTransfer();
+    return exists;
+  }
   return new Promise((resolve) => {
     const finish = () => {
       clearTimeout(timer);
       unsubscribe();
-      resolve(useTabsStore.getState().tabs.some((tab) => tab.id === tabId));
+      const exists = useTabsStore.getState().tabs.some((tab) => tab.id === tabId);
+      if (!exists && prepared) handle?.cancelTransfer();
+      resolve(exists);
     };
     const unsubscribe = useTabsStore.subscribe(() => {
       if (transferable()) finish();
     });
     const timer = setTimeout(() => {
       unsubscribe();
+      if (prepared) handle?.cancelTransfer();
       resolve(false);
     }, 5_000);
   });
@@ -124,6 +149,7 @@ export function registerTabTransferSource(transferId: string, tabId: string): vo
       const { paneId: _paneId, ...snapshot } = tab;
       return snapshot;
     },
+    cancel: () => terminalHandle(tabId)?.cancelTransfer(),
     complete: () => useTabsStore.getState().close(tabId),
   });
 }
@@ -133,9 +159,13 @@ export function registerTabTransferSourceOptions(transferId: string, options: {
   tabId: string;
   prepare: () => Promise<boolean>;
   snapshot: () => TransferableTab | undefined;
+  cancel: () => void;
   complete: () => void;
 }): void {
-  const expires = setTimeout(() => sources.delete(transferId), SOURCE_TTL_MS);
+  const expires = setTimeout(() => {
+    sources.get(transferId)?.cancel();
+    sources.delete(transferId);
+  }, SOURCE_TTL_MS);
   sources.set(transferId, { ...options, expires });
   transferChannel();
 }
@@ -146,6 +176,7 @@ export function finishLocalTabTransfer(transferId: string): void {
   if (!source) return;
   clearTimeout(source.expires);
   sources.delete(transferId);
+  source.cancel();
 }
 
 /** Resolve a cross-window token over a same-origin channel. */
@@ -165,6 +196,7 @@ export function claimTabTransfer(transferId: string): Promise<TransferableTab | 
     const timer = setTimeout(() => {
       clearInterval(retry);
       claims.delete(requestId);
+      transferChannelInstance.postMessage({ kind: 'cancel', transferId } satisfies TransferMessage);
       resolve(undefined);
     }, CLAIM_TIMEOUT_MS);
     claims.set(requestId, { resolve, retry, timer });
@@ -206,13 +238,11 @@ export async function receiveTabTransfer(
 ): Promise<void> {
   const offered = await claimTabTransfer(transferId);
   if (!offered) {
+    transferChannel()?.postMessage({ kind: 'cancel', transferId } satisfies TransferMessage);
     showToast('warning', 'The tab could not be moved from the other window.');
     return;
   }
-  const live =
-    offered.profile !== null &&
-    offered.status === 'connected' &&
-    !!offered.terminalId;
+  const live = offered.profile !== null && !!offered.terminalId;
   const incoming: TransferableTab = offered.profile
     ? {
         ...offered,
@@ -222,6 +252,7 @@ export async function receiveTabTransfer(
       }
     : { ...offered, transferId: undefined };
   if (!adoptTransferredTab(incoming, paneId, targetId, edge)) {
+    transferChannel()?.postMessage({ kind: 'cancel', transferId } satisfies TransferMessage);
     showToast('warning', 'A tab with the same identity already exists in this window.');
     return;
   }

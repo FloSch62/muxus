@@ -20,7 +20,7 @@ class TestSocket extends EventEmitter {
 }
 
 describe('transferable terminal sockets', () => {
-  it('swaps renderer sockets without closing the terminal lifecycle', () => {
+  it('buffers handoff output until attach and resumes it when cancelled', () => {
     const source = new TestSocket();
     const destination = new TestSocket();
     const terminal = new TransferableTerminalSocket('terminal-1', source as never);
@@ -31,6 +31,21 @@ describe('transferable terminal sockets', () => {
     terminal.send(JSON.stringify({ op: 'session', terminalId: 'terminal-1' }));
     terminal.send(JSON.stringify({ op: 'ready', connId: 'connection-1' }));
     source.send.mockClear();
+
+    source.emit('message', Buffer.from(JSON.stringify({ op: 'prepare-transfer' })), false);
+    expect(source.send).toHaveBeenCalledWith(JSON.stringify({ op: 'transfer-ready' }));
+    source.send.mockClear();
+    terminal.send(Buffer.from('cancelled output'), { binary: true });
+    expect(source.send).not.toHaveBeenCalled();
+
+    source.emit('message', Buffer.from(JSON.stringify({ op: 'cancel-transfer' })), false);
+    expect(source.send).toHaveBeenCalledWith(Buffer.from('cancelled output'), { binary: true });
+    source.send.mockClear();
+
+    source.emit('message', Buffer.from(JSON.stringify({ op: 'prepare-transfer' })), false);
+    source.send.mockClear();
+    terminal.send(Buffer.from('handoff output'), { binary: true });
+    expect(source.send).not.toHaveBeenCalled();
 
     expect(terminal.attach(destination as never, 132, 43)).toBe(true);
 
@@ -43,6 +58,11 @@ describe('transferable terminal sockets', () => {
     expect(destination.send).toHaveBeenNthCalledWith(
       2,
       JSON.stringify({ op: 'ready', connId: 'connection-1' }),
+    );
+    expect(destination.send).toHaveBeenNthCalledWith(
+      3,
+      Buffer.from('handoff output'),
+      { binary: true },
     );
     expect(onMessage).toHaveBeenCalledWith(
       Buffer.from(JSON.stringify({ op: 'resize', cols: 132, rows: 43 })),

@@ -19,6 +19,10 @@ export interface TerminalHandle {
   bufferHtml(): string;
   /** Persist the latest screen + scrollback before handing this tab to another window. */
   persistSnapshot(): Promise<void>;
+  /** Freeze server output and drain xterm's write queue before taking that snapshot. */
+  prepareTransfer(): Promise<boolean>;
+  /** Resume server output when a prepared transfer is abandoned. */
+  cancelTransfer(): void;
   zoomIn(): void;
   zoomOut(): void;
   zoomReset(): void;

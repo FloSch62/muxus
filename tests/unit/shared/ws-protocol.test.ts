@@ -137,6 +137,11 @@ describe('terminalClientMessageSchema', () => {
     ).toBe(true);
   });
 
+  it('accepts preparing and cancelling a live terminal handoff', () => {
+    expect(terminalClientMessageSchema.safeParse({ op: 'prepare-transfer' }).success).toBe(true);
+    expect(terminalClientMessageSchema.safeParse({ op: 'cancel-transfer' }).success).toBe(true);
+  });
+
   it('rejects connect with non-positive dimensions', () => {
     expect(
       terminalClientMessageSchema.safeParse({ op: 'connect', profile: { kind: 'local' }, cols: 0, rows: 24 }).success,

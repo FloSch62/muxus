@@ -83,18 +83,27 @@ describe('cross-window tab transfer', () => {
     expect(transfer.adoptTransferredTab(incoming, 'pane-test')).toBe(false);
   });
 
-  it('offers a tab to another renderer and removes the source only after completion', async () => {
+  it('transfers an interrupted live tab and removes the source only after completion', async () => {
     vi.stubGlobal('BroadcastChannel', TestBroadcastChannel);
     vi.resetModules();
     const source = await import('../../../client/src/tab-transfer.js');
     vi.resetModules();
     const destination = await import('../../../client/src/tab-transfer.js');
+    const { useTabsStore } = await import('../../../client/src/state/tabs.js');
+    useTabsStore.setState({
+      tabs: [],
+      unreadOutputIds: new Set(),
+      root: { id: 'pane-test', type: 'pane', activeTabId: null },
+      activePaneId: 'pane-test',
+      activeId: null,
+      zoomedPaneId: null,
+    });
     const complete = vi.fn();
     const tab = {
       id: 'tab-live',
       title: 'Router',
       profile: { kind: 'ssh' as const, target: 'router' },
-      status: 'connected' as const,
+      status: 'interrupted' as const,
       connectOnMount: true as const,
       terminalId: 'terminal-live',
       sftpOpen: false,
@@ -109,10 +118,17 @@ describe('cross-window tab transfer', () => {
       tabId: tab.id,
       prepare: vi.fn(async () => true),
       snapshot: () => tab,
+      cancel: vi.fn(),
       complete,
     });
 
-    await expect(destination.claimTabTransfer(transferId)).resolves.toEqual(tab);
+    await destination.receiveTabTransfer(transferId, 'pane-test');
+    expect(useTabsStore.getState().tabs[0]).toMatchObject({
+      id: tab.id,
+      status: 'interrupted',
+      connectOnMount: true,
+      transferId,
+    });
     expect(complete).not.toHaveBeenCalled();
 
     destination.completeTabTransfer(transferId);
