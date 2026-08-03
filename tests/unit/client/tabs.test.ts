@@ -694,6 +694,50 @@ describe('moving tabs between panes', () => {
     expect(state.tabs.find((tab) => tab.id === secondId)?.paneId).toBe(state.activePaneId);
   });
 
+  it('splits a specific background tab into a new right pane', () => {
+    const store = useTabsStore.getState();
+    const movingId = store.open({ kind: 'local' }, 'Move me');
+    const stayingId = store.open({ kind: 'ssh', target: 'router' }, 'Stay here');
+
+    expect(useTabsStore.getState().moveTabToNewPane(movingId, 'right')).toBe(true);
+
+    const state = useTabsStore.getState();
+    expect(state.root).toMatchObject({
+      type: 'split',
+      direction: 'horizontal',
+      children: [
+        { id: 'pane-test', activeTabId: stayingId },
+        { activeTabId: movingId },
+      ],
+    });
+    expect(state.tabs.find((tab) => tab.id === movingId)?.paneId).toBe(state.activePaneId);
+    expect(state.activeId).toBe(movingId);
+  });
+
+  it('splits a specific tab into a new lower pane', () => {
+    const store = useTabsStore.getState();
+    const stayingId = store.open({ kind: 'local' }, 'Stay here');
+    const movingId = store.open({ kind: 'ssh', target: 'router' }, 'Move me');
+
+    expect(useTabsStore.getState().moveTabToNewPane(movingId, 'down')).toBe(true);
+
+    expect(useTabsStore.getState().root).toMatchObject({
+      type: 'split',
+      direction: 'vertical',
+      children: [
+        { id: 'pane-test', activeTabId: stayingId },
+        { activeTabId: movingId },
+      ],
+    });
+  });
+
+  it('does not move the only tab into a new pane', () => {
+    const id = useTabsStore.getState().open({ kind: 'local' }, 'Only tab');
+
+    expect(useTabsStore.getState().moveTabToNewPane(id, 'right')).toBe(false);
+    expect(useTabsStore.getState().root).toMatchObject({ id: 'pane-test', type: 'pane' });
+  });
+
   it('declines to move the only tab of a pane into a new pane', () => {
     const store = useTabsStore.getState();
     store.open({ kind: 'local' }, 'Local');
