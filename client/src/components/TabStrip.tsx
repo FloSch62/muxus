@@ -112,6 +112,7 @@ export function TabStrip({
   const equalizePanes = useTabsStore((s) => s.equalizePanes);
   const update = useTabsStore((s) => s.update);
   const setPinned = useTabsStore((s) => s.setPinned);
+  const moveTabToNewPane = useTabsStore((s) => s.moveTabToNewPane);
   const reconnect = useTabsStore((s) => s.reconnect);
   const multiExecTargets = useMultiExecStore((s) => s.selectedIds);
   const multiExecSelected = new Set(multiExecTargets);
@@ -177,6 +178,9 @@ export function TabStrip({
 
   const openMenu = (tab: TerminalTab, position: { top: number; left: number }) => setMenu({ position, tab });
   const menuTab = menu ? allTabs.find((t) => t.id === menu.tab.id) : undefined;
+  const canSplitMenuTab = !!menuTab && allTabs.some(
+    (tab) => tab.paneId === menuTab.paneId && tab.id !== menuTab.id,
+  );
 
   const commitRename = () => {
     if (renaming && renameValue.trim()) update(renaming.id, { title: renameValue.trim() });
@@ -791,6 +795,31 @@ export function TabStrip({
             <OpenInNewOutlinedIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>Open in new window</ListItemText>
+        </MenuItem>
+        <Divider />
+        <MenuItem
+          disabled={!canSplitMenuTab}
+          onClick={() => {
+            if (menuTab) moveTabToNewPane(menuTab.id, 'right');
+            setMenu(null);
+          }}
+        >
+          <ListItemIcon>
+            <VerticalSplitOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Move tab to split right</ListItemText>
+        </MenuItem>
+        <MenuItem
+          disabled={!canSplitMenuTab}
+          onClick={() => {
+            if (menuTab) moveTabToNewPane(menuTab.id, 'down');
+            setMenu(null);
+          }}
+        >
+          <ListItemIcon>
+            <HorizontalSplitOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Move tab to split down</ListItemText>
         </MenuItem>
         {menuTab?.profile && menuTab.status === 'closed' ? (
           <>

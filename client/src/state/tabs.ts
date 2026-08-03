@@ -147,6 +147,8 @@ interface TabsState {
   cyclePane: (backwards: boolean) => boolean;
   /** Move the active tab to the bordering pane, splitting off a new one when there is none. */
   moveTabToDirection: (direction: PaneDirection) => boolean;
+  /** Split a specific tab into a newly created neighbouring pane. */
+  moveTabToNewPane: (id: string, direction: PaneDirection) => boolean;
   /** Fill the canvas with one pane (tmux-style zoom), or restore the layout. */
   toggleZoom: (paneId?: string) => boolean;
   resizeSplit: (splitId: string, ratio: number) => void;
@@ -626,6 +628,17 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
     // Splitting off the only tab of a pane would just move the pane around.
     if (!neighbor && sourceTabs.length < 2) return false;
     const targetId = neighbor ?? state.split(sourceId, direction);
+    return targetId ? get().moveTabToPane(tab.id, targetId) : false;
+  },
+  moveTabToNewPane: (id, direction) => {
+    const state = get();
+    const tab = state.tabs.find((candidate) => candidate.id === id);
+    if (!tab) return false;
+    const sourceTabs = state.tabs.filter((candidate) => candidate.paneId === tab.paneId);
+    // Splitting away the only tab would leave an empty source pane and merely
+    // relocate the session, rather than turning a tabbed pair into two panes.
+    if (sourceTabs.length < 2) return false;
+    const targetId = state.split(tab.paneId, direction);
     return targetId ? get().moveTabToPane(tab.id, targetId) : false;
   },
   toggleZoom: (paneId) => {
