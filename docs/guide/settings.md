@@ -21,8 +21,9 @@ because storage policy should not change under a running recorder.
   (++ctrl+shift+equal++ / ++ctrl+shift+minus++ / ++ctrl+wheel++).
 - **Terminal colour scheme**: fifteen schemes, grouped into light and dark sets, with
   optional text and background colour overrides.
-- **Font**: family, size and line height. JetBrains Mono and the Nerd Font symbols are
-  bundled; any other family must be installed on the machine.
+- **Font**: family, size and line height. The desktop selector includes JetBrains Mono,
+  which is bundled, plus the font families installed for the current operating-system
+  user. Nerd Font symbols remain an automatic bundled fallback.
 
 ## Terminal
 

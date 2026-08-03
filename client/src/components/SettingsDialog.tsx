@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Autocomplete from '@mui/material/Autocomplete';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
@@ -69,6 +69,11 @@ import { showErrorToast, showToast } from '../state/toast.js';
 import { confirmAction } from '../state/dialogs.js';
 import { useUiStore } from '../state/ui.js';
 import { TERMINAL_SCHEMES, terminalScheme, type TerminalScheme } from '../terminal/palette.js';
+import {
+  readInstalledTerminalFontFamilies,
+  terminalFontFamilies,
+  terminalFontIsAvailable,
+} from '../terminal/font-catalog.js';
 import { chordSx } from './chord-style.js';
 import { KeywordHighlightRulesEditor } from './KeywordHighlightRulesEditor.js';
 import { SessionLoggingPolicyFields } from './SessionLoggingPolicyFields.js';
@@ -100,19 +105,6 @@ const SECTIONS: Array<{ id: Section; label: string; icon: React.ReactNode }> = [
   { id: 'data', label: 'Backup & data', icon: <BackupOutlinedIcon fontSize="small" /> },
   { id: 'debug', label: 'Debug', icon: <BugReportOutlinedIcon fontSize="small" /> },
   { id: 'about', label: 'About', icon: <InfoOutlinedIcon fontSize="small" /> },
-];
-
-const FONT_PRESETS = [
-  'JetBrains Mono',
-  'Fira Code',
-  'Cascadia Code',
-  'Consolas',
-  'Menlo',
-  'Monaco',
-  'Source Code Pro',
-  'Ubuntu Mono',
-  'DejaVu Sans Mono',
-  'monospace',
 ];
 
 const TERMINAL_SCHEME_GROUPS = [
@@ -244,6 +236,31 @@ function SectionTitle({ children }: { children: string }) {
 
 function AppearanceSection() {
   const prefs = usePrefsStore();
+  const [installedFontFamilies, setInstalledFontFamilies] = useState<readonly string[]>();
+  const [fontCatalogLoading, setFontCatalogLoading] = useState(
+    () => window.muxusDesktop?.listLocalFontFamilies !== undefined,
+  );
+  useEffect(() => {
+    let active = true;
+    void readInstalledTerminalFontFamilies()
+      .then((families) => {
+        if (active) setInstalledFontFamilies(families);
+      })
+      .finally(() => {
+        if (active) setFontCatalogLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+  const fontFamilies = useMemo(
+    () => terminalFontFamilies(installedFontFamilies),
+    [installedFontFamilies],
+  );
+  const selectedFontAvailable = terminalFontIsAvailable(
+    prefs.fontFamily,
+    installedFontFamilies,
+  );
   const zoomInChord = useChordLabel('terminal.zoom-in');
   const zoomOutChord = useChordLabel('terminal.zoom-out');
   const schemeTheme = terminalScheme(prefs.terminalScheme).theme;
@@ -358,14 +375,24 @@ function AppearanceSection() {
         <Stack spacing={2}>
           <Autocomplete
             freeSolo
-            options={FONT_PRESETS}
+            loading={fontCatalogLoading}
+            options={fontFamilies}
             inputValue={prefs.fontFamily}
             onInputChange={(_e, value) => prefs.set({ fontFamily: value })}
             renderInput={(params) => (
               <TextField
                 {...params}
                 label="Font family"
-                helperText="JetBrains Mono and Nerd Font symbols ship with Muxus; other text fonts must be installed on this machine."
+                error={!fontCatalogLoading && selectedFontAvailable === false}
+                helperText={
+                  fontCatalogLoading
+                    ? 'Reading installed fonts…'
+                    : selectedFontAvailable === false
+                      ? `${prefs.fontFamily.trim() || 'This font'} is not installed; JetBrains Mono is being used as the fallback.`
+                      : installedFontFamilies
+                        ? 'JetBrains Mono is bundled; the other choices are installed on this machine.'
+                        : 'JetBrains Mono is bundled; custom font names use the system installation when available.'
+                }
               />
             )}
           />

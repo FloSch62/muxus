@@ -280,9 +280,14 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     }
 
     const prefs = usePrefsStore.getState();
+    const initialFontSize = Math.min(
+      MAX_FONT_SIZE,
+      Math.max(MIN_FONT_SIZE, prefs.monoFontSize + zoomRef.current),
+    );
+    const initialFontStack = terminalFontStack(prefs.fontFamily);
     const term = new Terminal({
-      fontSize: Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, prefs.monoFontSize + zoomRef.current)),
-      fontFamily: terminalFontStack(prefs.fontFamily),
+      fontSize: initialFontSize,
+      fontFamily: initialFontStack,
       lineHeight: prefs.lineHeight,
       cursorBlink: prefs.cursorBlink,
       cursorStyle: prefs.cursorStyle,
@@ -340,12 +345,19 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     // first real size; until then the session keeps xterm's own default.
     let fitted = fitTerminal();
     keywordHighlighterRef.current = attachKeywordHighlighter(term, keywordHighlights);
-    // Webfonts load lazily. Force the bundled Nerd Font face to load, then
-    // repaint any prompt glyphs that arrived while the browser still had a
-    // placeholder face. The text font remains user-selectable; this face is
-    // only reached for Powerline/Nerd Font code points it does not contain.
-    void document.fonts
-      ?.load(`${prefs.monoFontSize}px ${TERMINAL_SYMBOL_FONT}`, '\ue0b0\uf015\uf31b\u276f')
+    // Webfonts load lazily. Wait for both the selected text face and bundled
+    // symbol face, then recalculate cells and repaint anything that arrived
+    // while Chromium was still showing a fallback.
+    void Promise.all([
+      document.fonts.load(
+        `${initialFontSize}px ${initialFontStack}`,
+        '[15:58:10] root@rocker1:~',
+      ),
+      document.fonts.load(
+        `${initialFontSize}px ${TERMINAL_SYMBOL_FONT}`,
+        '\ue0b0\uf015\uf31b\u276f',
+      ),
+    ])
       .then(() => {
         if (termRef.current !== term) return;
         term.refresh(0, term.rows - 1);
@@ -988,14 +1000,33 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
-    term.options.fontSize = Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, monoFontSize + zoomRef.current));
-    term.options.fontFamily = terminalFontStack(fontFamily);
+    const nextFontSize = Math.min(
+      MAX_FONT_SIZE,
+      Math.max(MIN_FONT_SIZE, monoFontSize + zoomRef.current),
+    );
+    const nextFontStack = terminalFontStack(fontFamily);
+    term.options.fontSize = nextFontSize;
+    term.options.fontFamily = nextFontStack;
     term.options.lineHeight = lineHeight;
     term.options.cursorBlink = cursorBlink;
     term.options.cursorStyle = cursorStyle;
     term.options.scrollback = scrollback;
     term.options.theme = terminalTheme;
     fitTerminal();
+    void document.fonts
+      .load(`${nextFontSize}px ${nextFontStack}`, '[15:58:10] root@rocker1:~')
+      .then(() => {
+        if (
+          termRef.current !== term ||
+          term.options.fontFamily !== nextFontStack ||
+          term.options.fontSize !== nextFontSize
+        ) {
+          return;
+        }
+        term.refresh(0, term.rows - 1);
+        fitTerminal();
+      })
+      .catch(() => undefined);
   }, [monoFontSize, fontFamily, lineHeight, cursorBlink, cursorStyle, scrollback, terminalTheme, generation]);
 
   useEffect(() => {

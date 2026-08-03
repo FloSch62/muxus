@@ -1,0 +1,48 @@
+import { describe, expect, it } from 'vitest';
+import {
+  terminalFontFamilies,
+  terminalFontIsAvailable,
+} from '../../../client/src/terminal/font-catalog.js';
+
+describe('terminal font catalog', () => {
+  it('combines bundled, installed and generic families without duplicates', () => {
+    expect(
+      terminalFontFamilies([
+        'Ubuntu Mono',
+        'DejaVu Sans Mono',
+        'jetbrains mono',
+        ' DejaVu Sans Mono ',
+        '',
+      ]),
+    ).toEqual(['JetBrains Mono', 'DejaVu Sans Mono', 'Ubuntu Mono', 'monospace']);
+  });
+
+  it('reports unavailable selections only when enumeration succeeded', () => {
+    expect(terminalFontIsAvailable('JetBrains Mono', [])).toBe(true);
+    expect(terminalFontIsAvailable('"DejaVu Sans Mono"', ['DejaVu Sans Mono'])).toBe(true);
+    expect(terminalFontIsAvailable('DejaVu Sans Mono', [])).toBe(false);
+    expect(terminalFontIsAvailable('DejaVu Sans Mono', undefined)).toBeUndefined();
+  });
+
+  it('recognizes CSS generic families without requiring local enumeration', () => {
+    for (const family of [
+      'serif',
+      'sans-serif',
+      'monospace',
+      'cursive',
+      'fantasy',
+      'system-ui',
+      'ui-serif',
+      'ui-sans-serif',
+      'ui-monospace',
+      'ui-rounded',
+      'emoji',
+      'math',
+      'fangsong',
+    ]) {
+      expect(terminalFontIsAvailable(family, []), family).toBe(true);
+    }
+    expect(terminalFontIsAvailable('UI-MONOSPACE', [])).toBe(true);
+    expect(terminalFontIsAvailable('"ui-monospace"', [])).toBe(false);
+  });
+});

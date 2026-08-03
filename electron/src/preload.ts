@@ -33,6 +33,42 @@ const windowLaunch: AppWindowLaunch | undefined = (() => {
   }
 })();
 
+interface LocalFontData {
+  family?: unknown;
+}
+
+type QueryLocalFonts = () => Promise<LocalFontData[]>;
+
+let localFontFamilies: Promise<string[] | undefined> | undefined;
+
+/**
+ * Chromium owns the cross-platform OS-font lookup. Keep the fingerprintable
+ * result inside the trusted desktop app and expose family names only.
+ */
+function listLocalFontFamilies(): Promise<string[] | undefined> {
+  localFontFamilies ??= (async () => {
+    const fontWindow = globalThis as typeof globalThis & {
+      queryLocalFonts?: QueryLocalFonts;
+    };
+    const query = fontWindow.queryLocalFonts;
+    if (!query) return undefined;
+    try {
+      const fonts = await query.call(fontWindow);
+      const families = new Map<string, string>();
+      for (const font of fonts) {
+        if (typeof font.family !== 'string') continue;
+        const family = font.family.trim();
+        if (!family || family.length > 200) continue;
+        families.set(family.toLowerCase(), family);
+      }
+      return [...families.values()].sort((left, right) => left.localeCompare(right));
+    } catch {
+      return undefined;
+    }
+  })();
+  return localFontFamilies;
+}
+
 // The disk-side write failed in the main process: mirror the snapshot into
 // origin-scoped localStorage so a relaunch on the same origin can migrate it
 // back (muxusStateStorage.getItem reads browser storage when the desktop
@@ -83,6 +119,8 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   readMobaXtermSessions(): Promise<MobaXtermSessionSource | undefined> {
     return ipcRenderer.invoke('muxus:read-mobaxterm-sessions');
   },
+  /** List font families exposed by the operating system to Chromium. */
+  listLocalFontFamilies,
   openWindow(launch: AppWindowLaunch): void {
     ipcRenderer.send('muxus:open-window', launch);
   },

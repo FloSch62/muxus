@@ -29,6 +29,8 @@ declare global {
       selectPrivateKey(): Promise<string | undefined>;
       /** Read bookmark-only sessions from the current Windows user's MobaXterm install. */
       readMobaXtermSessions(): Promise<MobaXtermSessionSource | undefined>;
+      /** List font families installed for the current operating-system user. */
+      listLocalFontFamilies(): Promise<string[] | undefined>;
       /** Open a secondary native application window. */
       openWindow(launch: AppWindowLaunch): void;
       /** Subscribe to the OS close-window chord (Cmd/Ctrl+W); returns unsubscribe. */
