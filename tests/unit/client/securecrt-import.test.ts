@@ -96,6 +96,18 @@ describe('SecureCRT session parsing', () => {
     const parsed = parseSecureCrtSessions(EXPORT);
 
     expect(parsed.ignoredCount).toBe(2);
+    expect(parsed.skippedSessions).toEqual([
+      {
+        id: expect.any(String),
+        name: 'Local terminal',
+        reason: 'Protocol “Local Shell” is not supported',
+      },
+      {
+        id: expect.any(String),
+        name: 'Broken SSH',
+        reason: 'SSH session has no hostname',
+      },
+    ]);
     expect(parsed.sessions).toHaveLength(3);
     expect(parsed.sessions[0]).toMatchObject({
       kind: 'ssh',

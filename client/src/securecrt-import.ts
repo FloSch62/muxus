@@ -55,7 +55,7 @@ export function parseSecureCrtSessions(text: string): SecureCrtParseResult {
   const aliases = new Set<string>();
   const profileIds = new Set<string>();
   const sessionIds = new Set<string>();
-  let ignoredCount = 0;
+  const skippedSessions: ImportedSessionParseResult['skippedSessions'] = [];
 
   const visit = (key: Element, folders: readonly string[], sourcePath: readonly string[]) => {
     const rawName = key.getAttribute('name') ?? '';
@@ -70,17 +70,29 @@ export function parseSecureCrtSessions(text: string): SecureCrtParseResult {
       return;
     }
 
-    const protocol = directValue(key, 'string', ['Protocol Name']).toLowerCase();
+    const protocol = directValue(key, 'string', ['Protocol Name']);
+    const normalizedProtocol = protocol.toLowerCase();
     const folder = normalizeImportFolder(folders.join('/'));
     const sourceKey = nextSourcePath.join('\0');
+    const skip = (reason: string, fallback?: string) => {
+      skippedSessions.push({
+        id: `securecrt-skipped-${skippedSessions.length}`,
+        name: name || fallback || 'Unnamed session',
+        folder,
+        reason,
+      });
+    };
     if (!name) {
-      ignoredCount++;
+      const fallback = cleanOptionValue(
+        directValue(key, 'string', ['Hostname', 'Mac Com Port', 'Com Port', 'Port']),
+      );
+      skip('Session has no name', fallback);
       return;
     }
-    if (protocol === 'ssh2') {
+    if (normalizedProtocol === 'ssh2') {
       const host = cleanOptionValue(directValue(key, 'string', ['Hostname']));
       if (!host) {
-        ignoredCount++;
+        skip('SSH session has no hostname');
         return;
       }
       const username = cleanOptionValue(directValue(key, 'string', ['Username'])) || undefined;
@@ -113,12 +125,12 @@ export function parseSecureCrtSessions(text: string): SecureCrtParseResult {
       });
       return;
     }
-    if (protocol === 'serial') {
+    if (normalizedProtocol === 'serial') {
       const path = cleanSerialPath(
         directValue(key, 'string', ['Mac Com Port', 'Com Port', 'Port']),
       );
       if (!path) {
-        ignoredCount++;
+        skip('Serial session has no port');
         return;
       }
       const rawBaudRate = Number.parseInt(
@@ -162,14 +174,22 @@ export function parseSecureCrtSessions(text: string): SecureCrtParseResult {
       });
       return;
     }
-    ignoredCount++;
+    skip(
+      protocol
+        ? `Protocol “${protocol}” is not supported`
+        : 'Session does not specify a supported protocol',
+    );
   };
 
   for (const key of directElements(sessionsRoot, 'key')) visit(key, [], []);
   if (sessions.length === 0) {
     throw new Error('No supported SSH or serial sessions were found in this SecureCRT file.');
   }
-  return { sessions, ignoredCount };
+  return {
+    sessions,
+    ignoredCount: skippedSessions.length,
+    skippedSessions,
+  };
 }
 
 export function secureCrtConnections(

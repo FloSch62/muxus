@@ -1,7 +1,9 @@
 import type { PortableConnections } from './data-transfer.js';
 import {
+  cleanImportName,
   importedConnections,
   normalizeImportFolder,
+  type SkippedImportedSession,
   type ImportedSessionParseResult,
   type ImportedSshSession,
   uniqueImportAlias,
@@ -10,6 +12,9 @@ import {
 const MOBAXTERM_SSH_SESSION_TYPE = 109;
 const BOOKMARK_SECTION_RE = /^Bookmarks(?:_\d+)?$/i;
 const SESSION_TYPE_RE = /^#(\d+)#/;
+const NON_SSH_REASON = 'Session type is not SSH (only SSH sessions can be imported)';
+const MISSING_NAME_REASON = 'SSH session has no name';
+const MISSING_HOST_REASON = 'SSH session has no hostname';
 export const MAX_MOBAXTERM_IMPORT_BYTES = 10 * 1024 * 1024;
 
 export interface MobaXtermSession extends ImportedSshSession {}
@@ -32,7 +37,16 @@ export function parseMobaXtermSessions(text: string): MobaXtermParseResult {
   const aliases = new Set<string>();
   let inBookmarks = false;
   let currentFolder: string | undefined;
-  let ignoredCount = 0;
+  const skippedSessions: SkippedImportedSession[] = [];
+
+  const skip = (lineIndex: number, name: string, fallback: string | undefined, reason: string) => {
+    skippedSessions.push({
+      id: `mobaxterm-skipped-${lineIndex}`,
+      name: cleanImportName(name) || cleanImportName(fallback ?? '') || 'Unnamed session',
+      folder: currentFolder,
+      reason,
+    });
+  };
 
   for (const [lineIndex, rawLine] of text.split(/\r?\n/).entries()) {
     const line = rawLine.trim();
@@ -60,14 +74,18 @@ export function parseMobaXtermSessions(text: string): MobaXtermParseResult {
     if (!typeMatch) continue;
     const type = Number.parseInt(typeMatch[1] ?? '', 10);
     if (type !== MOBAXTERM_SSH_SESSION_TYPE) {
-      ignoredCount++;
+      skip(lineIndex, name, undefined, NON_SSH_REASON);
       continue;
     }
 
     const fields = value.slice(typeMatch[0].length).split('%');
     const host = fields[1]?.trim();
-    if (!name || !host) {
-      ignoredCount++;
+    if (!name) {
+      skip(lineIndex, name, host, MISSING_NAME_REASON);
+      continue;
+    }
+    if (!host) {
+      skip(lineIndex, name, undefined, MISSING_HOST_REASON);
       continue;
     }
     const parsedPort = Number.parseInt(fields[2]?.trim() ?? '', 10);
@@ -92,7 +110,11 @@ export function parseMobaXtermSessions(text: string): MobaXtermParseResult {
   if (sessions.length === 0) {
     throw new Error('No SSH sessions were found in this MobaXterm file.');
   }
-  return { sessions, ignoredCount };
+  return {
+    sessions,
+    ignoredCount: skippedSessions.length,
+    skippedSessions,
+  };
 }
 
 /** Convert reviewed MobaXterm rows into the existing portable restore pipeline. */

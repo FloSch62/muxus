@@ -41,10 +41,21 @@ export interface ImportedSerialSession extends ImportedSessionBase {
 
 export type ImportedSession = ImportedSshSession | ImportedSerialSession;
 
+export interface SkippedImportedSession {
+  /** Stable inside one parsed file and used as the React list key. */
+  id: string;
+  /** Session name, or the hostname/path when the source omitted a name. */
+  name: string;
+  folder?: string;
+  reason: string;
+}
+
 export interface ImportedSessionParseResult<T extends ImportedSession = ImportedSession> {
   sessions: T[];
   /** Recognizable session entries that were unsupported or incomplete. */
   ignoredCount: number;
+  /** Every ignored session together with the reason it cannot be imported. */
+  skippedSessions: SkippedImportedSession[];
 }
 
 /** Convert reviewed third-party rows into the existing portable restore pipeline. */
