@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type UIEvent } from 'react';
+import { useLayoutEffect, useRef, useState, type UIEvent } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Dialog from '@mui/material/Dialog';
@@ -7,7 +7,28 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
+import { pasteLineNumberWindow } from '../terminal/paste-line-numbers.js';
 import { pasteLineCount } from '../terminal/paste-safety.js';
+
+function updateLineNumberGutter(
+  gutter: HTMLPreElement | null,
+  lineCount: number,
+  scrollTop: number,
+  lineHeightPx: number,
+) {
+  if (!gutter) return;
+  const window = pasteLineNumberWindow(lineCount, scrollTop, lineHeightPx);
+  if (gutter.textContent !== window.labels) gutter.textContent = window.labels;
+  gutter.style.transform = `translateY(${-window.offsetPx}px)`;
+}
+
+function measureEditorLineHeight(textArea: HTMLTextAreaElement, lineCount: number): number {
+  if (lineCount > 1 && textArea.scrollHeight > textArea.clientHeight) {
+    return textArea.scrollHeight / lineCount;
+  }
+  const measured = Number.parseFloat(getComputedStyle(textArea).lineHeight);
+  return Number.isFinite(measured) && measured > 0 ? measured : 18;
+}
 
 export function PasteConfirmDialog({
   initialText,
@@ -21,19 +42,25 @@ export function PasteConfirmDialog({
   const [text, setText] = useState(initialText);
   const pasteButtonRef = useRef<HTMLButtonElement>(null);
   const lineNumbersRef = useRef<HTMLPreElement>(null);
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const lineHeightRef = useRef(18);
   const lineCount = text.length === 0 ? 0 : pasteLineCount(text);
   const visibleLineCount = Math.max(1, lineCount);
-  const lineNumbers = useMemo(
-    () => Array.from({ length: visibleLineCount }, (_, index) => index + 1).join('\n'),
-    [visibleLineCount],
-  );
+  const initialLineNumbers = pasteLineNumberWindow(visibleLineCount, 0).labels;
   const gutterWidth = 30 + String(visibleLineCount).length * 8;
 
-  const syncLineNumberScroll = (scrollTop: number) => {
-    if (lineNumbersRef.current) {
-      lineNumbersRef.current.style.transform = `translateY(${-scrollTop}px)`;
+  useLayoutEffect(() => {
+    const textArea = textAreaRef.current;
+    if (textArea) {
+      lineHeightRef.current = measureEditorLineHeight(textArea, visibleLineCount);
     }
-  };
+    updateLineNumberGutter(
+      lineNumbersRef.current,
+      visibleLineCount,
+      textArea?.scrollTop ?? 0,
+      lineHeightRef.current,
+    );
+  }, [visibleLineCount]);
 
   return (
     <Dialog
@@ -88,15 +115,13 @@ export function PasteConfirmDialog({
                 willChange: 'transform',
               }}
             >
-              {lineNumbers}
+              {initialLineNumbers}
             </Box>
           </Box>
           <TextField
+            inputRef={textAreaRef}
             value={text}
-            onChange={(event) => {
-              setText(event.target.value);
-              syncLineNumberScroll(event.currentTarget.scrollTop);
-            }}
+            onChange={(event) => setText(event.target.value)}
             onKeyDown={(event) => {
               if (event.key !== 'Enter' || (!event.ctrlKey && !event.metaKey)) return;
               event.preventDefault();
@@ -111,8 +136,18 @@ export function PasteConfirmDialog({
                 'aria-label': 'Content to paste',
                 spellCheck: false,
                 wrap: 'off',
-                onScroll: (event: UIEvent<HTMLTextAreaElement>) =>
-                  syncLineNumberScroll(event.currentTarget.scrollTop),
+                onScroll: (event: UIEvent<HTMLTextAreaElement>) => {
+                  lineHeightRef.current = measureEditorLineHeight(
+                    event.currentTarget,
+                    visibleLineCount,
+                  );
+                  updateLineNumberGutter(
+                    lineNumbersRef.current,
+                    visibleLineCount,
+                    event.currentTarget.scrollTop,
+                    lineHeightRef.current,
+                  );
+                },
               },
             }}
             sx={{
