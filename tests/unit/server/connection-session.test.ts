@@ -129,6 +129,95 @@ function startKeyboardInteractiveServer(
   });
 }
 
+function startMultiRoundKeyboardInteractiveServer(): Promise<{
+  server: Server;
+  port: number;
+  capture: KeyboardInteractiveCapture;
+}> {
+  const capture: KeyboardInteractiveCapture = { authMethods: [], answers: [] };
+  const server = new Server({ hostKeys: [HOST_KEY] }, (conn) => {
+    conn.on('error', () => undefined);
+    conn.on('authentication', (authCtx) => {
+      if (authCtx.method !== 'none') capture.authMethods.push(authCtx.method);
+      if (authCtx.method !== 'keyboard-interactive') {
+        authCtx.reject(['keyboard-interactive']);
+        return;
+      }
+      authCtx.prompt(
+        [{ prompt: 'Password: ', echo: false }],
+        'PASSWORD_EXPIRED',
+        (passwordAnswers) => {
+          capture.answers.push(passwordAnswers);
+          authCtx.prompt(
+            [{ prompt: 'New password: ', echo: false }],
+            'PASSWORD_EXPIRED',
+            (replacementAnswers) => {
+              capture.answers.push(replacementAnswers);
+              if (
+                passwordAnswers[0] === PASSWORD &&
+                replacementAnswers[0] === 'replacement-password'
+              ) {
+                authCtx.accept();
+              } else {
+                authCtx.reject(['keyboard-interactive']);
+              }
+            },
+          );
+        },
+      );
+    });
+  });
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => {
+      resolve({
+        server,
+        port: (server.address() as net.AddressInfo).port,
+        capture,
+      });
+    });
+  });
+}
+
+function startKeyboardInteractiveFallbackServer(): Promise<{
+  server: Server;
+  port: number;
+  capture: KeyboardInteractiveCapture;
+}> {
+  const capture: KeyboardInteractiveCapture = { authMethods: [], answers: [] };
+  const server = new Server({ hostKeys: [HOST_KEY] }, (conn) => {
+    conn.on('error', () => undefined);
+    conn.on('authentication', (authCtx) => {
+      if (authCtx.method !== 'none') capture.authMethods.push(authCtx.method);
+      if (authCtx.method === 'keyboard-interactive') {
+        authCtx.prompt(
+          [{ prompt: 'Verification code: ', echo: false }],
+          'SECOND_FACTOR',
+          (answers) => {
+            capture.answers.push(answers);
+            authCtx.reject(['keyboard-interactive', 'password']);
+          },
+        );
+      } else if (
+        authCtx.method === 'password' &&
+        authCtx.password === PASSWORD
+      ) {
+        authCtx.accept();
+      } else {
+        authCtx.reject(['keyboard-interactive', 'password']);
+      }
+    });
+  });
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => {
+      resolve({
+        server,
+        port: (server.address() as net.AddressInfo).port,
+        capture,
+      });
+    });
+  });
+}
+
 let counter = 0;
 function makeManager(
   configFile: string,
@@ -370,6 +459,63 @@ describe('session settings from ssh config', () => {
     await lease.connection.waitForPostAuth();
     expect(started.capture.answers).toEqual([['stale-password'], [PASSWORD]]);
     await expect(vault.sshPassword(account)).resolves.toBe(PASSWORD);
+    lease.release();
+  }, 15_000);
+
+  it('does not remember a password from a multi-round keyboard-interactive exchange', async () => {
+    const started = await startMultiRoundKeyboardInteractiveServer();
+    server = started.server;
+    database = new MuxusDatabase(':memory:');
+    vault = new PasswordVault(database, {
+      kdf: { cost: 1024, blockSize: 8, parallelism: 1 },
+    });
+    await vault.create('correct horse battery staple');
+    manager = makeManager(writeConfig(started.port, []), vault);
+    const purposes: Array<string | undefined> = [];
+    const io = makeIo({
+      prompt: (info) => {
+        purposes.push(info.purpose);
+        if (info.purpose === 'ssh-password') {
+          return Promise.resolve({
+            answers: [PASSWORD],
+            rememberPassword: true,
+          });
+        }
+        expect(info.rememberPassword).toBeUndefined();
+        return Promise.resolve({ answers: ['replacement-password'] });
+      },
+    });
+
+    const lease = await manager.connect(profile, io);
+    await lease.connection.waitForPostAuth();
+    expect(purposes).toEqual(['ssh-password', 'authentication']);
+    expect(started.capture.answers).toEqual([
+      [PASSWORD],
+      ['replacement-password'],
+    ]);
+    expect(vault.status().credentialCount).toBe(0);
+    lease.release();
+  }, 15_000);
+
+  it('does not retry an unrecognized keyboard-interactive challenge before password auth', async () => {
+    const started = await startKeyboardInteractiveFallbackServer();
+    server = started.server;
+    manager = makeManager(writeConfig(started.port, []));
+    const io = makeIo({
+      prompt: (info) =>
+        Promise.resolve({
+          answers: [
+            info.purpose === 'authentication' ? '123456' : PASSWORD,
+          ],
+        }),
+    });
+
+    const lease = await manager.connect(profile, io);
+    expect(started.capture.authMethods).toEqual([
+      'keyboard-interactive',
+      'password',
+    ]);
+    expect(started.capture.answers).toEqual([['123456']]);
     lease.release();
   }, 15_000);
 

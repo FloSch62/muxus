@@ -1142,6 +1142,7 @@ class AuthLadder {
   private lastPasswordCandidate: RememberedPasswordCandidate | undefined;
   private partialPasswordCandidate: RememberedPasswordCandidate | undefined;
   private savedPasswordAttempted = false;
+  private retryKeyboardInteractive = false;
   cancelled = false;
 
   constructor(
@@ -1327,16 +1328,25 @@ class AuthLadder {
       for (let attempt = 0; attempt < MAX_KEYBOARD_INTERACTIVE_ATTEMPTS; attempt++) {
         attempts.push({
           type: 'keyboard-interactive',
-          get: () =>
-            Promise.resolve({
+          get: () => {
+            // Arbitrary challenges get one attempt; only a recognized password
+            // flow may retry for stale-password replacement.
+            if (attempt > 0 && !this.retryKeyboardInteractive) {
+              return Promise.resolve(undefined);
+            }
+            this.retryKeyboardInteractive = false;
+            let challengeRound = 0;
+            return Promise.resolve({
               type: 'keyboard-interactive',
               username: user,
               prompt: (name, instructions, _lang, prompts, finish) => {
+                challengeRound += 1;
                 void this.keyboardInteractiveAnswers(
                   name,
                   instructions,
                   label,
                   prompts,
+                  challengeRound === 1,
                 )
                   .then(finish)
                   .catch(() => {
@@ -1344,7 +1354,8 @@ class AuthLadder {
                     finish(prompts.map(() => ''));
                   });
               },
-            }),
+            });
+          },
         });
       }
     }
@@ -1412,12 +1423,20 @@ class AuthLadder {
     instructions: string,
     promptLabel: string,
     prompts: Prompt[],
+    firstChallengeRound: boolean,
   ): Promise<string[]> {
     const mappedPrompts = prompts.map((prompt) => ({
       prompt: prompt.prompt,
       echo: prompt.echo !== false,
     }));
-    if (!isKeyboardInteractivePasswordPrompt(prompts)) {
+    if (
+      !firstChallengeRound ||
+      !isKeyboardInteractivePasswordPrompt(prompts)
+    ) {
+      // A later round makes the exchange multi-field, so a password offered
+      // for saving in an earlier round is no longer a safe candidate.
+      this.lastPasswordCandidate = undefined;
+      this.retryKeyboardInteractive = false;
       const response = await this.runInteraction(() =>
         this.io.prompt({
           name: name || undefined,
@@ -1430,6 +1449,7 @@ class AuthLadder {
       return response.answers;
     }
 
+    this.retryKeyboardInteractive = true;
     const credential = this.passwordCredential();
     const saved = await this.availableSavedPassword(credential);
     if (saved !== undefined) return [saved];
