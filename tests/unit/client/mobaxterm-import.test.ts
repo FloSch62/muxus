@@ -24,6 +24,7 @@ Key box=#109#0%key.example.com%22%root%3%rest
       sessions: [
         {
           id: expect.any(String),
+          kind: 'ssh',
           name: 'Prod SSH',
           alias: 'Prod-SSH',
           host: 'prod.example.com',
@@ -34,6 +35,7 @@ Key box=#109#0%key.example.com%22%root%3%rest
         },
         {
           id: expect.any(String),
+          kind: 'ssh',
           name: 'Key box',
           alias: 'Key-box',
           host: 'key.example.com',

@@ -25,6 +25,22 @@ the `SubRep` folder hierarchy.
 Passwords and private key files are not copied. They remain outside `ssh_config`; Muxus
 uses your SSH agent or asks for credentials when you connect.
 
+## Import from SecureCRT
+
+In SecureCRT, choose **Tools → Export Settings**, include **Sessions**, and save the XML
+export. Then open **Settings → Backup & data → SecureCRT import** in Muxus and choose that
+file. The review preserves nested folders and lets you select individual sessions or keep
+and replace aliases that already exist.
+
+Muxus imports SSH names, hosts, ports, usernames and password-vs-key authentication intent.
+Serial sessions include their device path, baud rate, data bits, stop bits, parity and flow
+control. Local-shell sessions, incomplete entries and protocols Muxus cannot represent are
+listed as skipped.
+
+Only connection metadata under the XML export's `Sessions` section is read. Encrypted
+password fields, private-key paths, embedded files, scripts, terminal appearance and global
+SecureCRT settings are never imported.
+
 <figure markdown="span">
   ![The hosts sidebar with folders and colours](../assets/screenshots/sidebar.png#only-light){ .shadow }
   ![The hosts sidebar with folders and colours](../assets/screenshots/sidebar-dark.png#only-dark){ .shadow }

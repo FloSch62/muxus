@@ -16,6 +16,7 @@
     "@types/node": "^24.13.3",
     "@types/ssh2": "^1.15.5",
     "@vitest/coverage-v8": "^4.0.5",
+    "@xmldom/xmldom": "^0.8.13",
     "ssh2": "^1.17.0",
     "typescript": "^7.0.2",
     "vitest": "^4.0.5",

@@ -272,6 +272,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: ^4.0.5
         version: 4.1.10(vitest@4.1.10)
+      '@xmldom/xmldom':
+        specifier: ^0.8.13
+        version: 0.8.13
       ssh2:
         specifier: ^1.17.0
         version: 1.17.0
