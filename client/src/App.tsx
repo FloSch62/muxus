@@ -26,6 +26,7 @@ import {
   loadHostEditorDialog,
   loadFolderDialog,
   loadHostOrganizationDialog,
+  loadCommandButtonMenu,
   loadCommandButtonsDialog,
   loadSettingsDialog,
   loadShortcutsDialog,
@@ -62,6 +63,9 @@ const ToastHost = lazy(() =>
     default: module.ToastHost,
   })),
 );
+const CommandButtonMenu = lazy(() =>
+  loadCommandButtonMenu().then((module) => ({ default: module.CommandButtonMenu })),
+);
 const CommandButtonsDialog = lazy(() =>
   loadCommandButtonsDialog().then((module) => ({ default: module.CommandButtonsDialog })),
 );
@@ -92,6 +96,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const hostOrganizerOpen = useUiStore((s) => !!s.hostOrganizer);
   const folderDialogOpen = useUiStore((s) => !!s.folderDialog);
   const settingsOpen = useUiStore((s) => s.settingsOpen);
+  const commandButtonMenuOpen = useUiStore((s) => s.commandButtonMenuOpen);
   const commandButtonsOpen = useUiStore((s) => s.commandButtonsOpen);
   const shortcutsOpen = useUiStore((s) => s.shortcutsOpen);
   const historyOpen = useUiStore((s) => s.historyOpen);
@@ -142,6 +147,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
         {hostOrganizerOpen ? <HostOrganizationDialog /> : null}
         {folderDialogOpen ? <FolderDialog /> : null}
         {settingsOpen ? <SettingsDialog /> : null}
+        {commandButtonMenuOpen ? <CommandButtonMenu /> : null}
         {commandButtonsOpen ? <CommandButtonsDialog /> : null}
         {shortcutsOpen ? <ShortcutsDialog /> : null}
         {historyOpen ? <SessionHistoryDialog /> : null}

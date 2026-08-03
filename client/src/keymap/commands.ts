@@ -299,6 +299,19 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
     },
   },
   {
+    id: 'terminal.command-menu',
+    title: 'Show saved command menu',
+    category: 'terminal',
+    // Ctrl+Space deliberately takes NUL from the shell: it matches the
+    // MobaXterm macro picker and remains Control (not Command) on macOS.
+    defaultChords: ['Ctrl+Space'],
+    keywords: ['command buttons', 'commands', 'macros', 'MobaXterm'],
+    run: () => {
+      useUiStore.getState().setCommandButtonMenuOpen(true);
+      return true;
+    },
+  },
+  {
     id: 'terminal.find',
     title: 'Find in terminal',
     category: 'terminal',

@@ -408,6 +408,18 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
 
     const unregister = registerTerminal(tab.id, {
       focus: () => term.focus(),
+      cursorAnchorPosition: () => {
+        const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
+        if (!screen || term.cols <= 0 || term.rows <= 0) return undefined;
+        const bounds = screen.getBoundingClientRect();
+        const cursor = term.buffer.active;
+        const column = Math.min(Math.max(cursor.cursorX, 0), term.cols - 1);
+        const row = Math.min(Math.max(cursor.cursorY, 0), term.rows - 1);
+        return {
+          left: Math.round(bounds.left + ((column + 0.5) * bounds.width) / term.cols),
+          top: Math.round(bounds.top + ((row + 1) * bounds.height) / term.rows),
+        };
+      },
       sendInput,
       clear: () => term.clear(),
       selectAll: () => term.selectAll(),

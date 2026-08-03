@@ -19,7 +19,11 @@ const apiFetchMock = vi.mocked(apiFetch);
 
 beforeEach(() => {
   apiFetchMock.mockReset();
-  usePrefsStore.setState({ notifyOnNewVersion: true, backgroundColor: '' });
+  usePrefsStore.setState({
+    notifyOnNewVersion: true,
+    showCommandBar: true,
+    backgroundColor: '',
+  });
 });
 
 const connections = {
@@ -139,13 +143,18 @@ function mockBackupSnapshot(folders: unknown[] = []): void {
 
 describe('backing up preferences', () => {
   it('includes display and update-notification choices', async () => {
-    usePrefsStore.setState({ notifyOnNewVersion: false, backgroundColor: '#102030' });
+    usePrefsStore.setState({
+      notifyOnNewVersion: false,
+      showCommandBar: false,
+      backgroundColor: '#102030',
+    });
     mockBackupSnapshot();
 
     const document = await createBackupDocument();
 
     expect(document.data.preferences.notifyOnNewVersion).toBe(false);
     expect(document.data.preferences.backgroundColor).toBe('#102030');
+    expect(document.data.preferences.showCommandBar).toBe(false);
   });
 });
 
@@ -382,6 +391,18 @@ describe('restoring the update notification preference', () => {
     expect(
       sanitizePreferences(prefs({ notifyOnNewVersion: 'disabled' }))
         .notifyOnNewVersion,
+    ).toBeUndefined();
+  });
+});
+
+describe('restoring the command bar preference', () => {
+  const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
+
+  it('restores only boolean visibility choices', () => {
+    expect(sanitizePreferences(prefs({ showCommandBar: false })))
+      .toMatchObject({ showCommandBar: false });
+    expect(
+      sanitizePreferences(prefs({ showCommandBar: 'hidden' })).showCommandBar,
     ).toBeUndefined();
   });
 });
