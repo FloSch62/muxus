@@ -79,6 +79,56 @@ function startCapturingServer(): Promise<{ server: Server; port: number; capture
   });
 }
 
+interface KeyboardInteractiveCapture {
+  authMethods: string[];
+  answers: string[][];
+}
+
+function startKeyboardInteractiveServer(
+  prompts: Array<{ prompt: string; echo: boolean }>,
+  expectedAnswers: string[],
+): Promise<{
+  server: Server;
+  port: number;
+  capture: KeyboardInteractiveCapture;
+}> {
+  const capture: KeyboardInteractiveCapture = { authMethods: [], answers: [] };
+  const server = new Server({ hostKeys: [HOST_KEY] }, (conn) => {
+    conn.on('error', () => undefined);
+    conn.on('authentication', (authCtx) => {
+      if (authCtx.method !== 'none') capture.authMethods.push(authCtx.method);
+      if (authCtx.method !== 'keyboard-interactive') {
+        authCtx.reject(['keyboard-interactive']);
+        return;
+      }
+      authCtx.prompt(
+        prompts,
+        'TEST_NETWORK_DEVICE',
+        (answers) => {
+          capture.answers.push(answers);
+          if (
+            answers.length === expectedAnswers.length &&
+            answers.every((answer, index) => answer === expectedAnswers[index])
+          ) {
+            authCtx.accept();
+          } else {
+            authCtx.reject(['keyboard-interactive']);
+          }
+        },
+      );
+    });
+  });
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => {
+      resolve({
+        server,
+        port: (server.address() as net.AddressInfo).port,
+        capture,
+      });
+    });
+  });
+}
+
 let counter = 0;
 function makeManager(
   configFile: string,
@@ -230,6 +280,139 @@ describe('session settings from ssh config', () => {
     await expect(manager.connect(profile, io)).rejects.toThrow(/authentication/);
     expect(io.passwordPrompts).toBe(0);
     expect(started.capture.authMethods).not.toContain('password');
+  }, 15_000);
+
+  it('remembers and reuses a keyboard-interactive password prompt', async () => {
+    const started = await startKeyboardInteractiveServer(
+      [{ prompt: 'Password: ', echo: false }],
+      [PASSWORD],
+    );
+    server = started.server;
+    const config = writeConfig(started.port, []);
+    database = new MuxusDatabase(':memory:');
+    vault = new PasswordVault(database, {
+      kdf: { cost: 1024, blockSize: 8, parallelism: 1 },
+    });
+    await vault.create('correct horse battery staple');
+    manager = makeManager(config, vault);
+
+    const firstIo = makeIo({
+      prompt: (info) => {
+        expect(info).toMatchObject({
+          name: 'TEST_NETWORK_DEVICE',
+          purpose: 'ssh-password',
+          rememberPassword: {
+            label: `tester@127.0.0.1:${started.port}`,
+            existing: false,
+          },
+        });
+        return Promise.resolve({
+          answers: [PASSWORD],
+          rememberPassword: true,
+        });
+      },
+    });
+    const first = await manager.connect(profile, firstIo);
+    await first.connection.waitForPostAuth();
+    expect(vault.status()).toMatchObject({ credentialCount: 1 });
+    first.release();
+    manager.closeAll();
+
+    manager = makeManager(config, vault);
+    const secondIo = makeIo({
+      prompt: (info) => {
+        throw new Error(`authentication prompt was not expected: ${info.purpose}`);
+      },
+    });
+    const second = await manager.connect(profile, secondIo);
+    expect(secondIo.passwordPrompts).toBe(0);
+    expect(started.capture.answers).toEqual([[PASSWORD], [PASSWORD]]);
+    second.release();
+  }, 15_000);
+
+  it('replaces a rejected saved keyboard-interactive password', async () => {
+    const started = await startKeyboardInteractiveServer(
+      [{ prompt: 'Password: ', echo: false }],
+      [PASSWORD],
+    );
+    server = started.server;
+    database = new MuxusDatabase(':memory:');
+    vault = new PasswordVault(database, {
+      kdf: { cost: 1024, blockSize: 8, parallelism: 1 },
+    });
+    await vault.create('correct horse battery staple');
+    const account = sshPasswordAccount({
+      user: 'tester',
+      host: '127.0.0.1',
+      port: started.port,
+    });
+    await vault.rememberSshPassword(
+      account,
+      `tester@127.0.0.1:${started.port}`,
+      'stale-password',
+    );
+    manager = makeManager(writeConfig(started.port, []), vault);
+    const io = makeIo({
+      prompt: (info) => {
+        expect(info).toMatchObject({
+          purpose: 'ssh-password',
+          rememberPassword: { existing: true },
+        });
+        expect(info.instructions).toContain('not accepted');
+        return Promise.resolve({
+          answers: [PASSWORD],
+          rememberPassword: true,
+        });
+      },
+    });
+
+    const lease = await manager.connect(profile, io);
+    await lease.connection.waitForPostAuth();
+    expect(started.capture.answers).toEqual([['stale-password'], [PASSWORD]]);
+    await expect(vault.sshPassword(account)).resolves.toBe(PASSWORD);
+    lease.release();
+  }, 15_000);
+
+  it.each([
+    {
+      description: 'an OTP prompt',
+      prompts: [{ prompt: 'Verification code: ', echo: false }],
+      answers: ['123456'],
+    },
+    {
+      description: 'a combined password and OTP prompt',
+      prompts: [
+        { prompt: 'Password: ', echo: false },
+        { prompt: 'Verification code: ', echo: false },
+      ],
+      answers: [PASSWORD, '123456'],
+    },
+    {
+      description: 'a visible password prompt',
+      prompts: [{ prompt: 'Password: ', echo: true }],
+      answers: [PASSWORD],
+    },
+  ])('does not offer password saving for $description', async ({ prompts, answers }) => {
+    const started = await startKeyboardInteractiveServer(prompts, answers);
+    server = started.server;
+    database = new MuxusDatabase(':memory:');
+    vault = new PasswordVault(database, {
+      kdf: { cost: 1024, blockSize: 8, parallelism: 1 },
+    });
+    await vault.create('correct horse battery staple');
+    manager = makeManager(writeConfig(started.port, []), vault);
+    const io = makeIo({
+      prompt: (info) => {
+        expect(info.purpose).toBe('authentication');
+        expect(info.rememberPassword).toBeUndefined();
+        return Promise.resolve({ answers });
+      },
+    });
+
+    const lease = await manager.connect(profile, io);
+    await lease.connection.waitForPostAuth();
+    expect(vault.status().credentialCount).toBe(0);
+    lease.release();
   }, 15_000);
 
   it('remembers a successful password in the OS keyring and reuses it after restart', async () => {

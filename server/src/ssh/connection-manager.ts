@@ -11,6 +11,7 @@ import ssh2, {
   type ClientChannel,
   type ConnectConfig,
   type ParsedKey,
+  type Prompt,
   type PseudoTtyOptions,
   type SFTPWrapper,
 } from 'ssh2';
@@ -166,6 +167,7 @@ export interface TerminalShell {
 }
 
 const MAX_JUMP_DEPTH = 8;
+const MAX_KEYBOARD_INTERACTIVE_ATTEMPTS = 3;
 const MAX_PASSWORD_ATTEMPTS = 3;
 const MAX_PASSPHRASE_ATTEMPTS = 3;
 const DEFAULT_IDENTITY_NAMES = ['id_ed25519', 'id_ecdsa', 'id_rsa', 'id_ed25519_sk', 'id_ecdsa_sk'];
@@ -1044,6 +1046,25 @@ interface RememberedPasswordCandidate {
   password: string;
 }
 
+interface PasswordCredential {
+  account: string;
+  label: string;
+  existing: boolean;
+}
+
+/**
+ * Keyboard-interactive is also used for OTPs and arbitrary challenges. Only
+ * treat an unambiguous, single hidden password field as an SSH password.
+ */
+function isKeyboardInteractivePasswordPrompt(prompts: readonly Prompt[]): boolean {
+  if (prompts.length !== 1 || prompts[0]?.echo !== false) return false;
+  const label = prompts[0].prompt.trim().replace(/:\s*$/, '').trim();
+  return (
+    /^password(?:\s+for\s+.+)?$/i.test(label) ||
+    /^.+(?:'s|’s)\s+password$/i.test(label)
+  );
+}
+
 type InteractionRunner = <T>(interaction: () => Promise<T>) => Promise<T>;
 
 class PausableDeadline {
@@ -1303,30 +1324,29 @@ class AuthLadder {
     }
 
     if (resolved.kbdInteractiveAuthentication !== false) {
-      attempts.push({
-        type: 'keyboard-interactive',
-        get: () =>
-          Promise.resolve({
-            type: 'keyboard-interactive',
-            username: user,
-            prompt: (name, instructions, _lang, prompts, finish) => {
-              this.runInteraction(() =>
-                this.io.prompt({
-                  name: name || undefined,
-                  instructions: instructions || undefined,
-                  host: label,
-                  purpose: 'authentication',
-                  prompts: prompts.map((p) => ({ prompt: p.prompt, echo: p.echo !== false })),
-                }),
-              )
-                .then((response) => finish(response.answers))
-                .catch(() => {
-                  this.cancelled = true;
-                  finish(prompts.map(() => ''));
-                });
-            },
-          }),
-      });
+      for (let attempt = 0; attempt < MAX_KEYBOARD_INTERACTIVE_ATTEMPTS; attempt++) {
+        attempts.push({
+          type: 'keyboard-interactive',
+          get: () =>
+            Promise.resolve({
+              type: 'keyboard-interactive',
+              username: user,
+              prompt: (name, instructions, _lang, prompts, finish) => {
+                void this.keyboardInteractiveAnswers(
+                  name,
+                  instructions,
+                  label,
+                  prompts,
+                )
+                  .then(finish)
+                  .catch(() => {
+                    this.cancelled = true;
+                    finish(prompts.map(() => ''));
+                  });
+              },
+            }),
+        });
+      }
     }
 
     if (resolved.passwordAuthentication !== false) {
@@ -1344,37 +1364,11 @@ class AuthLadder {
     attempt: number,
     promptLabel: string,
   ): Promise<AnyAuthMethod> {
-    const { user, resolved, port } = this.hop;
-    const account = sshPasswordAccount({
-      user,
-      host: resolved.hostname,
-      port,
-    });
-    const credentialLabel = sshPasswordLabel({
-      user,
-      host: resolved.hostname,
-      port,
-    });
-    const existing = this.vault?.hasSshPassword(account) ?? false;
-
-    if (!this.savedPasswordAttempted && this.vault) {
-      // The host's own saved password wins; folder passwords are the shared
-      // default the host falls back to, nearest folder first.
-      const source = existing
-        ? { account, label: credentialLabel }
-        : (this.hop.folderPasswords ?? []).find((folder) =>
-            this.vault!.hasSshPassword(folder.account),
-          );
-      if (source) {
-        this.savedPasswordAttempted = true;
-        const saved = await this.savedPassword(source.account, source.label);
-        if (saved !== undefined) {
-          this.io.status(`Using the saved password for ${source.label}.`, {
-            transient: true,
-          });
-          return { type: 'password', username: user, password: saved };
-        }
-      }
+    const { user } = this.hop;
+    const credential = this.passwordCredential();
+    const saved = await this.availableSavedPassword(credential);
+    if (saved !== undefined) {
+      return { type: 'password', username: user, password: saved };
     }
 
     const response = await this.runInteraction(() =>
@@ -1397,19 +1391,121 @@ class AuthLadder {
         ...(this.vault
           ? {
               rememberPassword: {
-                label: credentialLabel,
-                existing,
+                label: credential.label,
+                existing: credential.existing,
               },
             }
           : {}),
       }),
     );
     if (response.skipped) throw new Error('authentication cancelled');
-    const password = response.answers[0] ?? '';
-    this.lastPasswordCandidate = response.rememberPassword
-      ? { account, label: credentialLabel, password }
+    this.capturePasswordCandidate(response, credential);
+    return {
+      type: 'password',
+      username: user,
+      password: response.answers[0] ?? '',
+    };
+  }
+
+  private async keyboardInteractiveAnswers(
+    name: string,
+    instructions: string,
+    promptLabel: string,
+    prompts: Prompt[],
+  ): Promise<string[]> {
+    const mappedPrompts = prompts.map((prompt) => ({
+      prompt: prompt.prompt,
+      echo: prompt.echo !== false,
+    }));
+    if (!isKeyboardInteractivePasswordPrompt(prompts)) {
+      const response = await this.runInteraction(() =>
+        this.io.prompt({
+          name: name || undefined,
+          instructions: instructions || undefined,
+          host: promptLabel,
+          purpose: 'authentication',
+          prompts: mappedPrompts,
+        }),
+      );
+      return response.answers;
+    }
+
+    const credential = this.passwordCredential();
+    const saved = await this.availableSavedPassword(credential);
+    if (saved !== undefined) return [saved];
+
+    const retryInstructions = this.savedPasswordAttempted
+      ? 'The saved password was unavailable or was not accepted. Enter the current password.'
       : undefined;
-    return { type: 'password', username: user, password };
+    const response = await this.runInteraction(() =>
+      this.io.prompt({
+        name: name || undefined,
+        instructions:
+          [retryInstructions, instructions || undefined]
+            .filter((item): item is string => !!item)
+            .join('\n\n') || undefined,
+        host: promptLabel,
+        purpose: 'ssh-password',
+        prompts: mappedPrompts,
+        ...(this.vault
+          ? {
+              rememberPassword: {
+                label: credential.label,
+                existing: credential.existing,
+              },
+            }
+          : {}),
+      }),
+    );
+    this.capturePasswordCandidate(response, credential);
+    return response.answers;
+  }
+
+  private passwordCredential(): PasswordCredential {
+    const { user, resolved, port } = this.hop;
+    const input = { user, host: resolved.hostname, port };
+    const account = sshPasswordAccount(input);
+    return {
+      account,
+      label: sshPasswordLabel(input),
+      existing: this.vault?.hasSshPassword(account) ?? false,
+    };
+  }
+
+  private async availableSavedPassword(
+    credential: PasswordCredential,
+  ): Promise<string | undefined> {
+    if (this.savedPasswordAttempted || !this.vault) return undefined;
+    // The host's own saved password wins; folder passwords are the shared
+    // default the host falls back to, nearest folder first.
+    const source = credential.existing
+      ? { account: credential.account, label: credential.label }
+      : (this.hop.folderPasswords ?? []).find((folder) =>
+          this.vault!.hasSshPassword(folder.account),
+        );
+    if (!source) return undefined;
+
+    this.savedPasswordAttempted = true;
+    const saved = await this.savedPassword(source.account, source.label);
+    if (saved !== undefined) {
+      this.io.status(`Using the saved password for ${source.label}.`, {
+        transient: true,
+      });
+    }
+    return saved;
+  }
+
+  private capturePasswordCandidate(
+    response: AuthPromptResponse,
+    credential: PasswordCredential,
+  ): void {
+    this.lastPasswordCandidate = response.rememberPassword
+      ? {
+          account: credential.account,
+          label: credential.label,
+          password: response.answers[0] ?? '',
+        }
+      : undefined;
   }
 
   private async savedPassword(
