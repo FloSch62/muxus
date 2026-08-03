@@ -25,6 +25,7 @@ export type FolderDialogState =
 
 interface UiState {
   settingsOpen: boolean;
+  commandButtonMenuOpen: boolean;
   commandButtonsOpen: boolean;
   shortcutsOpen: boolean;
   quickLauncherOpen: boolean;
@@ -42,6 +43,7 @@ interface UiState {
   /** Diagnostic log viewer (settings → debug). */
   logViewerOpen: boolean;
   setSettingsOpen: (open: boolean) => void;
+  setCommandButtonMenuOpen: (open: boolean) => void;
   setCommandButtonsOpen: (open: boolean) => void;
   setShortcutsOpen: (open: boolean) => void;
   setQuickLauncherOpen: (open: boolean) => void;
@@ -57,6 +59,7 @@ interface UiState {
 
 export const useUiStore = create<UiState>()((set) => ({
   settingsOpen: false,
+  commandButtonMenuOpen: false,
   commandButtonsOpen: false,
   shortcutsOpen: false,
   quickLauncherOpen: false,
@@ -69,6 +72,7 @@ export const useUiStore = create<UiState>()((set) => ({
   forwardingOpen: false,
   logViewerOpen: false,
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  setCommandButtonMenuOpen: (commandButtonMenuOpen) => set({ commandButtonMenuOpen }),
   setCommandButtonsOpen: (commandButtonsOpen) => set({ commandButtonsOpen }),
   setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
   setQuickLauncherOpen: (quickLauncherOpen) => set({ quickLauncherOpen }),

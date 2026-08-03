@@ -4,8 +4,15 @@
  * terminal through its handle; the component registers on mount and
  * unregisters on dispose.
  */
+export interface TerminalAnchorPosition {
+  top: number;
+  left: number;
+}
+
 export interface TerminalHandle {
   focus(): void;
+  /** Viewport position immediately below the terminal cursor. */
+  cursorAnchorPosition(): TerminalAnchorPosition | undefined;
   /** Write raw input directly to this terminal's PTY transport. */
   sendInput(data: string | Uint8Array<ArrayBuffer>): boolean;
   /** Clear screen + scrollback. */

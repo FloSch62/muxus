@@ -19,6 +19,7 @@ import {
   parseChord,
 } from '../../../client/src/keymap/chords.js';
 import { KEY_COMMANDS, keyCommand } from '../../../client/src/keymap/commands.js';
+import { useUiStore } from '../../../client/src/state/ui.js';
 
 const keyEvent = (
   key: string,
@@ -121,6 +122,17 @@ describe('default bindings', () => {
     expect(commandsForChord('Mod+Shift+M').map((command) => command.id)).toEqual([
       'terminal.multi-exec',
     ]);
+  });
+
+  it('opens the saved command menu with Control+Space', () => {
+    useUiStore.getState().setCommandButtonMenuOpen(false);
+    const commands = commandsForChord('Ctrl+Space');
+
+    expect(commands.map((command) => command.id)).toEqual(['terminal.command-menu']);
+    expect(commands[0]?.run()).toBe(true);
+    expect(useUiStore.getState().commandButtonMenuOpen).toBe(true);
+
+    useUiStore.getState().setCommandButtonMenuOpen(false);
   });
 
   it('gives every direction its own split, focus, and move-tab chord', () => {

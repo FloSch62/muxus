@@ -29,6 +29,16 @@ Insert-only is the appropriate mode for destructive commands.
 Buttons are disabled while the focused tab is not connected, and their order is
 configurable.
 
+### Keyboard menu
+
+Press ++ctrl+space++ to open a compact menu beside the active terminal cursor. Start
+typing to search command labels and command text, use ++up++ and ++down++ to choose a
+result, then press ++enter++ to send it. The menu also links to **Manage command
+buttons** so commands can be added or reordered without reaching for the mouse.
+
+The shortcut is rebindable under **Terminal → Show saved command menu** in the
+[keyboard sheet](../reference/keyboard-shortcuts.md).
+
 ## Multi-execution
 
 Multi-execution mirrors keystrokes into several live terminals at once.
