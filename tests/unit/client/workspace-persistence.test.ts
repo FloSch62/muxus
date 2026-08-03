@@ -181,7 +181,7 @@ describe('workspace persistence', () => {
     runtime.stop();
   });
 
-  it('stops retrying when another client locks the active workspace', async () => {
+  it('requeues a rejected update after another client unlocks the workspace', async () => {
     const persisted: WorkspaceRecord = {
       id: 'shared',
       name: 'Shared',
@@ -204,6 +204,9 @@ describe('workspace persistence', () => {
         return json({ workspace: persisted });
       }
       if (path === `/api/workspaces/${persisted.id}/open`) return json(persisted);
+      if (path === `/api/workspaces/${persisted.id}` && method === 'PATCH') {
+        return json(persisted);
+      }
       if (path === '/api/workspaces' && method === 'PUT') {
         return rejectSaves
           ? json({ message: 'workspace is locked', code: 'workspace-locked' }, 409)
@@ -222,11 +225,19 @@ describe('workspace persistence', () => {
     await vi.advanceTimersByTimeAsync(400);
     expect(useWorkspacesStore.getState().workspaces[0]?.isLocked).toBe(true);
     await vi.advanceTimersByTimeAsync(3_000);
-    expect(
-      fetchMock.mock.calls.filter(
-        ([path, init]) => path === '/api/workspaces' && init?.method === 'PUT',
-      ),
-    ).toHaveLength(1);
+    const rejectedSaves = fetchMock.mock.calls.filter(
+      ([path, init]) => path === '/api/workspaces' && init?.method === 'PUT',
+    );
+    expect(rejectedSaves).toHaveLength(1);
+
+    rejectSaves = false;
+    await runtime.setLocked(persisted.id, false);
+    await vi.advanceTimersByTimeAsync(400);
+    const savesAfterUnlock = fetchMock.mock.calls.filter(
+      ([path, init]) => path === '/api/workspaces' && init?.method === 'PUT',
+    );
+    expect(savesAfterUnlock).toHaveLength(2);
+    expect(savesAfterUnlock[1]?.[1]?.body).toBe(rejectedSaves[0]?.[1]?.body);
 
     runtime.stop();
   });

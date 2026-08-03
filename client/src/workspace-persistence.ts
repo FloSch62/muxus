@@ -375,6 +375,9 @@ export class WorkspaceRuntime {
       .then((saved) => this.recordActive(saved))
       .catch((error: unknown) => {
         if (error instanceof ApiError && error.body?.code === 'workspace-locked') {
+          // handleChange() already recorded this snapshot as observed. Mark it dirty
+          // again so unlocking requeues it even when no further edits are made.
+          this.lastSerialized = '';
           useWorkspacesStore.setState((state) => ({
             workspaces: state.workspaces.map((workspace) =>
               workspace.id === activeId ? { ...workspace, isLocked: true } : workspace,
