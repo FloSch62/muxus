@@ -504,12 +504,12 @@ describe('password vault', () => {
     });
   });
 
-  it('accepts twelve-character master passwords and rejects eleven', async () => {
+  it('accepts eight-character master passwords and rejects seven', async () => {
     const store = await setup();
-    await expect(store.create('12345678901')).rejects.toThrow(
+    await expect(store.create('1234567')).rejects.toThrow(
       InvalidMasterPasswordFormatError,
     );
-    await expect(store.create('123456789012')).resolves.toBeUndefined();
+    await expect(store.create('12345678')).resolves.toBeUndefined();
     expect(store.status().unlockPolicy).toBe('never');
   });
 });

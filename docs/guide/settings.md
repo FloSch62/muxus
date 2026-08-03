@@ -100,7 +100,7 @@ second chord, and defaults are restored in one click. The sheet is also reachabl
 The password vault is optional. New vaults default to the never-prompt policy, which uses
 the operating-system credential store.
 
-- **Create password vault** sets a master password of at least 12 characters.
+- **Create password vault** sets a master password of at least 8 characters.
 - **Change prompt policy** chooses when routine SSH use needs the master password:
   **Never for saved credentials** stores the vault key in the OS credential store,
   **When Muxus starts** unlocks it into memory once, and **Whenever a saved credential is

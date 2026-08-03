@@ -330,8 +330,8 @@ function MasterPasswordDialog({
   const proposed = creating ? currentPassword : nextPassword;
 
   const submit = async () => {
-    if ((creating || changing) && Array.from(proposed).length < 12) {
-      setError('Use at least 12 characters for the master password.');
+    if ((creating || changing) && Array.from(proposed).length < 8) {
+      setError('Use at least 8 characters for the master password.');
       return;
     }
     if (
@@ -393,7 +393,7 @@ function MasterPasswordDialog({
         <Stack spacing={2} sx={{ mt: 0.5 }}>
           {creating ? (
             <Typography variant="body2" color="text.secondary">
-              Use at least 12 characters. This password is always required to
+              Use at least 8 characters. This password is always required to
               view or edit saved values.
             </Typography>
           ) : null}

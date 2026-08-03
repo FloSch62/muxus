@@ -47,7 +47,7 @@ describe('password vault routes', () => {
       method: 'POST',
       url: '/api/password-vault/create',
       headers: auth(),
-      payload: { password: '12345678901' },
+      payload: { password: '1234567' },
     });
     expect(short.statusCode).toBe(400);
 

@@ -28,7 +28,7 @@ import {
 
 export const PASSWORD_VAULT_PROVIDER = 'muxus-master-vault';
 export const SSH_PASSWORD_SERVICE = 'muxus/ssh-password/v1';
-export const MASTER_PASSWORD_MIN_LENGTH = 12;
+export const MASTER_PASSWORD_MIN_LENGTH = 8;
 export const MASTER_PASSWORD_MAX_BYTES = 1024;
 export const SSH_PASSWORD_MAX_BYTES = 8192;
 
