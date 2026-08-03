@@ -68,7 +68,7 @@ An SSH password prompt offers **Remember this password**. A single hidden
 keyboard-interactive field explicitly labelled as a password offers it too, for network
 devices that use keyboard-interactive for password login. The password is saved only
 after authentication succeeds. The first save creates a vault and asks for a master
-password of at least twelve characters. By default, the vault key is kept in the OS
+password of at least eight characters. By default, the vault key is kept in the OS
 credential store, so routine SSH use does not prompt for the master password. In
 **Settings → Passwords**, the policy can instead ask once when Muxus starts or whenever a
 saved credential is needed. The master password is always required to view or edit saved
