@@ -232,4 +232,23 @@ describe('previewHost', () => {
     expect(text).toContain('  RemoteCommand tmux new -A -s main');
     expect(text).toContain('  RequestTTY yes');
   });
+
+  it('double-quotes paths containing whitespace or apostrophes', () => {
+    const root = seed('');
+    const windowsKey = String.raw`C:\Users\toweber\OneDrive - Nokia\SSH Key\toweber`;
+    const apostropheKey = String.raw`C:\Users\O'Neil\.ssh\id_ed25519`;
+    const request = req({
+      options: { user: "O'Neil", identityFiles: [windowsKey, apostropheKey] },
+    });
+    const text = previewHost(request, root);
+    expect(text).toContain('  User "O\'Neil"');
+    expect(text).toContain(`  IdentityFile "${windowsKey}"`);
+    expect(text).toContain(`  IdentityFile "${apostropheKey}"`);
+
+    upsertHost(request, root);
+    const host = listHosts(loadConfigDocument(root))[0]!;
+    expect(host.options.user).toBe("O'Neil");
+    expect(host.resolved.user).toBe("O'Neil");
+    expect(host.options.identityFiles).toEqual([windowsKey, apostropheKey]);
+  });
 });

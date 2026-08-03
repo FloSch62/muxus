@@ -11,6 +11,7 @@ import {
   parseProxyJumpList,
   resolveHost,
   sessionEnvironment,
+  splitArgs,
 } from '../../../server/src/ssh/ssh-config.js';
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'muxus-sshconf-'));
@@ -27,6 +28,29 @@ function write(content: string, name?: string): string {
 function hostsOf(content: string) {
   return listHosts(loadConfigDocument(write(content)));
 }
+
+describe('splitArgs', () => {
+  it('accepts single and double quotes while preserving Windows backslashes', () => {
+    const windowsKey = String.raw`C:\Users\toweber\OneDrive - Nokia\NPI\SSH Key\keypair\toweber`;
+    expect(splitArgs(`'${windowsKey}' "double quoted" plain`)).toEqual([
+      windowsKey,
+      'double quoted',
+      'plain',
+    ]);
+  });
+
+  it('supports the basic escapes OpenSSH accepts', () => {
+    expect(splitArgs(String.raw`escaped\ space escaped\'quote C:\Users\toweber`)).toEqual([
+      'escaped space',
+      "escaped'quote",
+      String.raw`C:\Users\toweber`,
+    ]);
+  });
+
+  it('rejects unterminated quotes', () => {
+    expect(() => splitArgs("'unterminated")).toThrow('invalid quotes');
+  });
+});
 
 describe('listHosts', () => {
   it('lists concrete hosts with block options and resolved settings', () => {
@@ -89,6 +113,20 @@ describe('listHosts', () => {
     expect(app.resolved.certificateFiles).toEqual([
       path.join(os.homedir(), '.ssh', 'app_key-cert.pub'),
     ]);
+  });
+
+  it('resolves a single-quoted Windows identity path with spaces', () => {
+    const windowsKey = String.raw`C:\Users\toweber\OneDrive - Nokia\NPI\SSH Key\keypair\securecrt_created\toweber`;
+    const app = hostsOf(['Host windows', `  IdentityFile '${windowsKey}'`].join('\n'))[0]!;
+    expect(app.options.identityFiles).toEqual([windowsKey]);
+    expect(app.resolved.identityFiles).toEqual([windowsKey]);
+  });
+
+  it('reports and skips a config line with unterminated quotes', () => {
+    const file = write(["Host broken", "  IdentityFile 'C:\\broken key"].join('\n'));
+    const doc = loadConfigDocument(file);
+    expect(doc.error).toBe(`${path.resolve(file)} line 2: invalid quotes`);
+    expect(resolveHost(doc, 'broken').identityFiles).toEqual([]);
   });
 
   it('models ProxyCommand as a first-class block option', () => {
