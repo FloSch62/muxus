@@ -397,11 +397,13 @@ export function resolveHost(
           break;
         }
         case 'proxyjump':
-        case 'proxycommand':
-          if (!first.has('proxyjump') && !first.has('proxycommand') && opt.value) {
-            first.set(opt.key, opt.value);
+        case 'proxycommand': {
+          const value = opt.key === 'proxyjump' ? opt.args[0] : opt.value;
+          if (!first.has('proxyjump') && !first.has('proxycommand') && value) {
+            first.set(opt.key, value);
           }
           break;
+        }
         case 'localforward':
         case 'remoteforward':
         case 'dynamicforward': {
@@ -409,10 +411,12 @@ export function resolveHost(
           if (fwd) forwards.push(fwd);
           break;
         }
-        default:
-          if (RESOLVED_KEYS.has(resolvedKey) && !first.has(resolvedKey) && opt.value) {
-            first.set(resolvedKey, opt.value);
+        default: {
+          const value = RAW_RESOLVED_VALUE_KEYS.has(resolvedKey) ? opt.value : opt.args[0];
+          if (RESOLVED_KEYS.has(resolvedKey) && !first.has(resolvedKey) && value) {
+            first.set(resolvedKey, value);
           }
+        }
       }
     }
   }
@@ -481,10 +485,9 @@ function parseChoice<T extends string>(value: string | undefined, choices: reado
 
 /** `none`, `$VAR`/`${VAR}`, and `SSH_AUTH_SOCK` indirections pass through; paths expand. */
 function parseIdentityAgent(value: string | undefined, tokens: { h: string; r: string }): string | undefined {
-  const arg = value === undefined ? undefined : splitArgs(value)[0];
-  if (!arg) return undefined;
-  if (arg.toLowerCase() === 'none' || arg.startsWith('$') || arg === 'SSH_AUTH_SOCK') return arg;
-  return expandIdentityPath(arg, tokens);
+  if (!value) return undefined;
+  if (value.toLowerCase() === 'none' || value.startsWith('$') || value === 'SSH_AUTH_SOCK') return value;
+  return expandIdentityPath(value, tokens);
 }
 
 /** Space-separated path list; `none` → []; unset → undefined (defaults). */
@@ -545,6 +548,13 @@ const RESOLVED_KEYS = new Set([
   'remotecommand',
   'requesttty',
   'stricthostkeychecking',
+]);
+
+/** Values whose consumers need the complete argument list or command text. */
+const RAW_RESOLVED_VALUE_KEYS = new Set([
+  'globalknownhostsfile',
+  'remotecommand',
+  'userknownhostsfile',
 ]);
 
 function parseProxyCommand(value: string | undefined): string | undefined {
