@@ -13,6 +13,7 @@ import Box from '@mui/material/Box';
 import { usePrefsStore } from '../state/prefs.js';
 import {
   useTabsStore,
+  tabsInOrder,
   type PaneLeaf,
   type PaneNode,
   type TerminalTab,
@@ -116,12 +117,17 @@ function PaneCanvas({
   const openEditor = useTabsStore((state) => state.openEditor);
   const activateEditor = useTabsStore((state) => state.activateEditor);
   const closeEditor = useTabsStore((state) => state.closeEditor);
+  const tabNumberVisibility = usePrefsStore((state) => state.tabNumberVisibility);
   const { panes, dividers } = useMemo(() => flattenPaneLayout(root), [root]);
   const paneById = useMemo(
     () => new Map(panes.map((entry) => [entry.pane.id, entry.pane])),
     [panes],
   );
   const occupiedPaneIds = useMemo(() => new Set(tabs.map((tab) => tab.paneId)), [tabs]);
+  const tabNumberById = useMemo(
+    () => new Map(tabsInOrder(root, tabs).map((tab, index) => [tab.id, index + 1])),
+    [root, tabs],
+  );
 
   /** Position every box from a pane tree — the live one, or a drag preview. */
   const applyLayout = useCallback(
@@ -150,11 +156,16 @@ function PaneCanvas({
   }, [applyLayout, root, tabs]);
 
   return (
-    <Box ref={containerRef} sx={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}>
+    <Box
+      ref={containerRef}
+      className={`muxus-tab-numbers-${tabNumberVisibility}`}
+      sx={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}
+    >
       {panes.map(({ pane }) => (
         <PaneChrome
           key={pane.id}
           pane={pane}
+          tabNumberById={tabNumberById}
           empty={!occupiedPaneIds.has(pane.id)}
           focused={pane.id === activePaneId}
           zoomed={pane.id === zoomedPaneId}
@@ -302,6 +313,7 @@ function positionDivider(
 
 function PaneChrome({
   pane,
+  tabNumberById,
   empty,
   focused,
   zoomed,
@@ -309,6 +321,7 @@ function PaneChrome({
   register,
 }: {
   pane: PaneLeaf;
+  tabNumberById: ReadonlyMap<string, number>;
   empty: boolean;
   focused: boolean;
   zoomed: boolean;
@@ -331,7 +344,12 @@ function PaneChrome({
         ...(zoomed ? { bgcolor: 'background.default' } : {}),
       }}
     >
-      <TabStrip paneId={pane.id} focused={focused} zoomed={zoomed} />
+      <TabStrip
+        paneId={pane.id}
+        tabNumberById={tabNumberById}
+        focused={focused}
+        zoomed={zoomed}
+      />
       {empty && (
         <Box sx={{ flex: 1, minHeight: 0 }}>
           <EmptyPane onAddHost={onAddHost} />

@@ -127,8 +127,8 @@ interface TabsState {
   activate: (id: string) => void;
   focusPane: (paneId: string) => void;
   cycle: (backwards: boolean) => void;
-  /** Activate the nth tab of the focused pane, or its last one. */
-  activateTabIndex: (index: number | 'last') => boolean;
+  /** Activate the nth tab across the whole window in pane/strip order. */
+  activateTabIndex: (index: number) => boolean;
   /** Reorder the active tab inside its own pane. */
   moveTabWithinPane: (offset: -1 | 1) => boolean;
   /** Place one tab before or after another tab in the same pane and pin group. */
@@ -260,6 +260,22 @@ function replacePaneTabs(
 ): TerminalTab[] {
   let index = 0;
   return tabs.map((tab) => tab.paneId === paneId ? paneTabs[index++]! : tab);
+}
+
+/** Tabs in deterministic window-wide order: panes first, then each strip left-to-right. */
+export function tabsInOrder(
+  root: PaneNode,
+  tabs: readonly TerminalTab[],
+): TerminalTab[] {
+  const byPane = new Map<string, TerminalTab[]>();
+  for (const tab of tabs) {
+    const paneTabs = byPane.get(tab.paneId);
+    if (paneTabs) paneTabs.push(tab);
+    else byPane.set(tab.paneId, [tab]);
+  }
+  const ordered: TerminalTab[] = [];
+  for (const pane of panesInOrder(root)) ordered.push(...(byPane.get(pane.id) ?? []));
+  return ordered;
 }
 
 /** Insert a tab at an exact target, while keeping each pane's pinned group first. */
@@ -470,9 +486,8 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
     }),
   activateTabIndex: (index) => {
     const state = get();
-    const paneTabs = state.tabs.filter((tab) => tab.paneId === state.activePaneId);
-    const target = index === 'last' ? paneTabs.at(-1) : paneTabs[index];
-    if (!target || target.id === state.activeId) return paneTabs.length > 0;
+    const target = tabsInOrder(state.root, state.tabs)[index];
+    if (!target || target.id === state.activeId) return !!target;
     state.activate(target.id);
     return true;
   },

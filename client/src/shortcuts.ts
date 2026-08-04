@@ -38,7 +38,15 @@ function isTypingTarget(target: EventTarget | null): boolean {
  * Electron bridge instead, and run the same commands.
  */
 export function installShortcuts(): () => void {
+  const updateTabNumberReveal = (event: KeyboardEvent) => {
+    if (!isModifierCode(event.code)) return;
+    document.documentElement.classList.toggle(
+      'muxus-tab-number-alt',
+      event.altKey,
+    );
+  };
   const onKeyDown = (event: KeyboardEvent) => {
+    updateTabNumberReveal(event);
     if (capturing || event.defaultPrevented || event.isComposing) return;
     if (isModifierCode(event.code) || isTypingTarget(event.target)) return;
     for (const command of commandsForEvent(event, usePrefsStore.getState().keybindings)) {
@@ -48,7 +56,10 @@ export function installShortcuts(): () => void {
       return;
     }
   };
+  const hideTabNumbers = () => document.documentElement.classList.remove('muxus-tab-number-alt');
   window.addEventListener('keydown', onKeyDown, true);
+  window.addEventListener('keyup', updateTabNumberReveal, true);
+  window.addEventListener('blur', hideTabNumbers);
 
   const unsubscribers = [
     window.muxusDesktop?.onCloseTab(() => {
@@ -64,6 +75,9 @@ export function installShortcuts(): () => void {
 
   return () => {
     window.removeEventListener('keydown', onKeyDown, true);
+    window.removeEventListener('keyup', updateTabNumberReveal, true);
+    window.removeEventListener('blur', hideTabNumbers);
+    hideTabNumbers();
     for (const unsub of unsubscribers) unsub?.();
   };
 }

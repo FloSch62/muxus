@@ -44,6 +44,20 @@ describe('appearance preference', () => {
   });
 });
 
+describe('tab number visibility preference', () => {
+  it('defaults to revealing numbers while Alt is held', () => {
+    expect(usePrefsStore.getInitialState().tabNumberVisibility).toBe('shortcut');
+  });
+
+  it('keeps valid persisted values and drops invalid ones', () => {
+    expect(migratePrefsState({ tabNumberVisibility: 'always' }, 9)).toEqual({
+      tabNumberVisibility: 'always',
+    });
+    expect(migratePrefsState({ tabNumberVisibility: 'sometimes' }, 9)).toEqual({});
+    expect(migratePrefsState({ tabNumberVisibility: 'never' }, 9)).toEqual({});
+  });
+});
+
 describe('terminal color scheme preferences', () => {
   it('defaults new installations to matching light and dark schemes', () => {
     const initial = usePrefsStore.getInitialState();

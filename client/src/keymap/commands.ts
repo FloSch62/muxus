@@ -95,14 +95,15 @@ function moveTabCommand(direction: PaneDirection): KeyCommand {
   };
 }
 
-function selectTabCommand(position: number): KeyCommand {
+function selectTabCommand(position: number, id = String(position)): KeyCommand {
   return {
-    id: `tab.select.${position}`,
+    id: `tab.select.${id}`,
     title: `Go to tab ${position}`,
     category: 'tabs',
     // Ctrl+2…Ctrl+8 are control characters (Ctrl+3 is Escape); leave them
     // to the terminal and take the Alt row that every terminal app uses.
     defaultChords: [`Alt+Digit${position}`, ...macOnly(`Mod+Digit${position}`)],
+    keywords: ['switch', 'jump', 'numbered tab', `tab ${position}`],
     palette: false,
     run: () => tabs().activateTabIndex(position - 1),
   };
@@ -260,14 +261,9 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
   selectTabCommand(6),
   selectTabCommand(7),
   selectTabCommand(8),
-  {
-    id: 'tab.select.last',
-    title: 'Go to last tab',
-    category: 'tabs',
-    defaultChords: ['Alt+Digit9', ...macOnly('Mod+Digit9')],
-    palette: false,
-    run: () => tabs().activateTabIndex('last'),
-  },
+  // Keep the legacy command id so existing custom bindings survive, while
+  // making 9 select the tab visibly labelled 9 instead of an unrelated last tab.
+  selectTabCommand(9, 'last'),
 
   // Terminal
   {

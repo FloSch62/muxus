@@ -57,8 +57,10 @@ serial, or a remote editor.
 - **New tab**: ++ctrl+shift+t++, or the **+** in the strip.
 - **Close**: ++ctrl+shift+w++ (++cmd+w++ on macOS). Not ++ctrl+w++, which deletes a word in
   the shell.
-- **Switch**: ++alt+1++ … ++alt+9++ by position (++alt+9++ is always the last tab), or
-  ++ctrl+pgup++ / ++ctrl+pgdn++.
+- **Switch**: hold ++alt++ to reveal each tab's window-wide number, then use ++alt+1++ …
+  ++alt+9++ to activate that exact tab wherever it lives. **Settings → Keyboard** can keep
+  the numbers visible all the time. ++ctrl+pgup++ / ++ctrl+pgdn++ still cycle within the
+  focused pane.
 - **Reorder or move**: ++ctrl+shift+pgup++ / ++ctrl+shift+pgdn++ reorders in the current
   strip. Drag a tab to an exact position in this strip, another split, or another Muxus
   window. A cross-window drop hands off the live terminal and restores its scrollback.
@@ -71,6 +73,11 @@ serial, or a remote editor.
 
 Each tab shows a status dot: amber while connecting, green when connected, red when the
 transport is gone.
+
+Tab numbers follow depth-first split-tree order: at every split the left or top branch comes
+before the right or bottom branch, then tabs are numbered left-to-right inside each strip.
+Splitting, moving, reordering or closing tabs and panes recalculates the sequence immediately.
+Every tab displays its sequential number; the first nine have default single-digit shortcuts.
 
 ## Interaction between panes and tabs
 
@@ -87,7 +94,8 @@ transport is gone.
 Muxus takes as few keys from the shell as possible:
 
 - ++ctrl+w++ deletes a word, and ++ctrl+2++ … ++ctrl+8++ send their control characters.
-  Closing is therefore ++ctrl+shift+w++, and tabs use ++alt+1++ … ++alt+9++.
+  Closing is therefore ++ctrl+shift+w++, and window-wide tab selection uses
+  ++alt+1++ … ++alt+9++.
 - Chords follow the **character printed on the key cap**, so ++ctrl+shift+z++ is the key
   labelled `Z` on QWERTZ and AZERTY. Arrows and keys whose character a modifier mangles use
   their physical position.

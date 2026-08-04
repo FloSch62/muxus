@@ -16,6 +16,29 @@
         height: 100%;
         margin: 0;
       }
+      .muxus-tab-icon,
+      .muxus-tab-number {
+        transition: opacity 120ms;
+      }
+      .muxus-tab-number {
+        position: absolute;
+        inset: 0;
+        font-size: 11px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        line-height: 15px;
+        text-align: center;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .muxus-tab-numbers-always .muxus-tab-number,
+      .muxus-tab-number-alt .muxus-tab-numbers-shortcut .muxus-tab-number {
+        opacity: 1;
+      }
+      .muxus-tab-numbers-always .muxus-tab-icon,
+      .muxus-tab-number-alt .muxus-tab-numbers-shortcut .muxus-tab-icon {
+        opacity: 0;
+      }
     </style>
   </head>
   <body>

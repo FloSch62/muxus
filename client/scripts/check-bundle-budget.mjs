@@ -103,9 +103,13 @@ const initialKeys = collectStaticGraph(entry[0]);
 // Saved local-shell profiles are launchable directly from the sidebar, so the
 // profile preference shape and launch path join the initial graph (~2 KiB raw /
 // ~0.5 KiB gzip). The profile editor remains in the lazy settings dialog.
+//
+// Window-wide tab numbering belongs to the initial tab store and strips. Its
+// ordered-tab derivation, Alt reveal, inline badges and preference add ~1 KiB
+// raw / ~0.2 KiB gzip; the settings control stays lazy.
 check('Initial JavaScript', measureGraph(initialKeys), {
-  raw: 795_000,
-  gzip: 258_000,
+  raw: 797_000,
+  gzip: 259_000,
 });
 
 for (const feature of [

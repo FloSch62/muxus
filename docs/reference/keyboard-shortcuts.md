@@ -44,8 +44,7 @@ resetting them.
 | Next / previous tab | ++ctrl+pgdn++, ++ctrl+pgup++ (also ++ctrl+shift+bracket-right++ / ++ctrl+shift+bracket-left++) |
 | Move tab left / right in the strip | ++ctrl+shift+pgup++, ++ctrl+shift+pgdn++ |
 | Move tab to pane left / right / up / down | ++alt+shift+left++, ++alt+shift+right++, ++alt+shift+up++, ++alt+shift+down++ |
-| Go to tab 1 … 8 | ++alt+1++ … ++alt+8++ |
-| Go to last tab | ++alt+9++ |
+| Go to window-wide tab 1 … 9 | ++alt+1++ … ++alt+9++ |
 
 ## Terminal
 
@@ -96,6 +95,8 @@ Monaco's own bindings apply inside the [remote editor](../guide/editor.md):
 
 - **The shell keeps its keys.** ++ctrl+w++ deletes a word and ++ctrl+2++ … ++ctrl+8++ send
   their control characters, so Muxus uses ++ctrl+shift+w++ and the ++alt++ number row.
+- **Numbered tabs are window-wide.** Hold ++alt++ to reveal the number on every tab;
+  ++alt+1++ … ++alt+9++ activate those exact tabs across all panes.
 - **Keys fall through when they do not apply.** ++alt+left++ moves focus only when a pane
   is to the left; otherwise the shell receives it.
 - **Chords follow the printed key cap.** ++ctrl+shift+z++ is the key labelled `Z` on QWERTZ
