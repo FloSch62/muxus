@@ -12,6 +12,7 @@ import {
   isLocalShellProfileArray,
   migratePrefsState,
   terminalFontStack,
+  usePrefsStore,
 } from '../../../client/src/state/prefs.js';
 
 const ubuntuProfile = {
@@ -22,6 +23,19 @@ const ubuntuProfile = {
   cwd: 'C:\\work',
   startupCommand: 'cd project',
 };
+
+describe('appearance preference', () => {
+  it('defaults new installations to the system appearance', () => {
+    expect(usePrefsStore.getInitialState().themeMode).toBe('os');
+  });
+
+  it.each(['light', 'dark'] as const)(
+    'retains an existing explicit %s preference during migration',
+    (themeMode) => {
+      expect(migratePrefsState({ themeMode }, 0)).toMatchObject({ themeMode });
+    },
+  );
+});
 
 describe('terminalFontStack', () => {
   it('always includes the bundled Nerd Font symbol fallback', () => {

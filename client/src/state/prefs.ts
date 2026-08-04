@@ -124,8 +124,7 @@ export interface PrefsState {
   sftpPanelWidth: number;
   /** Verbose diagnostic logging plus access to the log viewer and export. */
   debugMode: boolean;
-  toggleTheme: () => void;
-  set: (patch: Partial<Omit<PrefsState, 'set' | 'toggleTheme'>>) => void;
+  set: (patch: Partial<Omit<PrefsState, 'set'>>) => void;
 }
 
 /** Upgrade persisted preferences without mutating the storage snapshot. */
@@ -259,8 +258,6 @@ export const usePrefsStore = create<PrefsState>()(
       sidebarEmptyFolders: [],
       sftpPanelWidth: DEFAULT_SFTP_PANEL_WIDTH,
       debugMode: false,
-      toggleTheme: () =>
-        set((s) => ({ themeMode: s.themeMode === 'light' ? 'dark' : s.themeMode === 'dark' ? 'os' : 'light' })),
       set: (patch) => set(patch),
     }),
     {

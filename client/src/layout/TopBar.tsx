@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, type ReactNode, useState } from 'react';
 import AppBar from '@mui/material/AppBar';
 import Badge from '@mui/material/Badge';
 import Box from '@mui/material/Box';
@@ -44,7 +44,7 @@ import { layout } from '../theme.js';
 import { useChordLabel } from '../keymap/hints.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { showToast } from '../state/toast.js';
-import { usePrefsStore } from '../state/prefs.js';
+import { usePrefsStore, type ThemeMode } from '../state/prefs.js';
 import { useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
 import { useWorkspacesStore } from '../state/workspaces.js';
@@ -61,9 +61,18 @@ import {
   loadSftpPanel,
 } from '../lazy-features.js';
 
+const APPEARANCE_OPTIONS: readonly {
+  mode: ThemeMode;
+  label: string;
+  icon: ReactNode;
+}[] = [
+  { mode: 'light', label: 'Light', icon: <LightModeOutlinedIcon fontSize="small" /> },
+  { mode: 'os', label: 'System', icon: <BrightnessAutoOutlinedIcon fontSize="small" /> },
+  { mode: 'dark', label: 'Dark', icon: <DarkModeOutlinedIcon fontSize="small" /> },
+];
+
 export const TopBar = memo(function TopBar() {
   const mode = usePrefsStore((s) => s.themeMode);
-  const toggleTheme = usePrefsStore((s) => s.toggleTheme);
   const sidebarCollapsed = usePrefsStore((s) => s.sidebarCollapsed);
   const setPrefs = usePrefsStore((s) => s.set);
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
@@ -83,6 +92,7 @@ export const TopBar = memo(function TopBar() {
   const sshReady = !!activeTab?.connId && activeTab.sftpAvailable !== false;
   const terminalReady = !!activeTab?.profile;
   const [terminalMenu, setTerminalMenu] = useState<HTMLElement | null>(null);
+  const [appearanceMenu, setAppearanceMenu] = useState<HTMLElement | null>(null);
   const sidebarChord = useChordLabel('app.sidebar');
   const findChord = useChordLabel('terminal.find');
   const selectAllChord = useChordLabel('terminal.select-all');
@@ -95,6 +105,7 @@ export const TopBar = memo(function TopBar() {
 
   const handle = () => terminalHandle(activeTab?.id);
   const closeMenu = () => setTerminalMenu(null);
+  const currentAppearance = APPEARANCE_OPTIONS.find((option) => option.mode === mode)!;
 
   return (
     <AppBar position="static" color="transparent" sx={{ borderBottom: 1, borderColor: 'divider' }}>
@@ -203,9 +214,16 @@ export const TopBar = memo(function TopBar() {
             <HistoryOutlinedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
-        <Tooltip title={mode === 'light' ? 'Switch to dark mode' : mode === 'dark' ? 'Follow system theme' : 'Switch to light mode'}>
-          <IconButton size="small" aria-label="Toggle theme" onClick={toggleTheme}>
-            {mode === 'light' ? <DarkModeOutlinedIcon fontSize="small" /> : mode === 'dark' ? <BrightnessAutoOutlinedIcon fontSize="small" /> : <LightModeOutlinedIcon fontSize="small" />}
+        <Tooltip title={`Appearance: ${currentAppearance.label}`}>
+          <IconButton
+            size="small"
+            aria-label={`Appearance: ${currentAppearance.label}`}
+            aria-controls={appearanceMenu ? 'appearance-menu' : undefined}
+            aria-expanded={appearanceMenu ? 'true' : undefined}
+            aria-haspopup="menu"
+            onClick={(event) => setAppearanceMenu(event.currentTarget)}
+          >
+            {currentAppearance.icon}
           </IconButton>
         </Tooltip>
         <Tooltip title="Keyboard shortcuts">
@@ -231,6 +249,27 @@ export const TopBar = memo(function TopBar() {
           </IconButton>
         </Tooltip>
       </Toolbar>
+
+      <Menu
+        id="appearance-menu"
+        open={!!appearanceMenu}
+        anchorEl={appearanceMenu}
+        onClose={() => setAppearanceMenu(null)}
+      >
+        {APPEARANCE_OPTIONS.map((option) => (
+          <MenuItem
+            key={option.mode}
+            selected={option.mode === mode}
+            onClick={() => {
+              setPrefs({ themeMode: option.mode });
+              setAppearanceMenu(null);
+            }}
+          >
+            <ListItemIcon>{option.icon}</ListItemIcon>
+            <ListItemText>{option.label}</ListItemText>
+          </MenuItem>
+        ))}
+      </Menu>
 
       <Menu open={!!terminalMenu} anchorEl={terminalMenu} onClose={closeMenu}>
         <MenuItem
