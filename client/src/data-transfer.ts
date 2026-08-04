@@ -43,7 +43,8 @@ const PREFERENCE_KEYS = [
   'monoFontSize',
   'fontFamily',
   'lineHeight',
-  'terminalScheme',
+  'lightTerminalScheme',
+  'darkTerminalScheme',
   'fontColor',
   'backgroundColor',
   'scrollback',
@@ -608,7 +609,9 @@ function portableTunnelInput(tunnel: TunnelRecord): Omit<TunnelRecord, 'createdA
  * structure is validated there, individual values here. Anything that fails
  * is dropped rather than rejecting the whole backup.
  */
-export function sanitizePreferences(input: BackupPreferences): Partial<PrefsState> {
+export function sanitizePreferences(
+  input: BackupPreferences & { terminalScheme?: unknown },
+): Partial<PrefsState> {
   const output: Partial<PrefsState> = {};
   if (['light', 'dark', 'os'].includes(input.themeMode)) {
     output.themeMode = input.themeMode;
@@ -620,11 +623,18 @@ export function sanitizePreferences(input: BackupPreferences): Partial<PrefsStat
     output.fontFamily = input.fontFamily;
   }
   if (finiteRange(input.lineHeight, 1, 1.6)) output.lineHeight = input.lineHeight;
-  if (
-    typeof input.terminalScheme === 'string' &&
-    input.terminalScheme.length <= 100
-  ) {
-    output.terminalScheme = input.terminalScheme;
+  const legacyTerminalScheme = validTerminalSchemePreference(input.terminalScheme)
+    ? input.terminalScheme
+    : undefined;
+  if (validTerminalSchemePreference(input.lightTerminalScheme)) {
+    output.lightTerminalScheme = input.lightTerminalScheme;
+  } else if (legacyTerminalScheme !== undefined) {
+    output.lightTerminalScheme = legacyTerminalScheme;
+  }
+  if (validTerminalSchemePreference(input.darkTerminalScheme)) {
+    output.darkTerminalScheme = input.darkTerminalScheme;
+  } else if (legacyTerminalScheme !== undefined) {
+    output.darkTerminalScheme = legacyTerminalScheme;
   }
   if (input.fontColor === '' || validHexColor(input.fontColor)) {
     output.fontColor = input.fontColor;
@@ -719,6 +729,10 @@ export function sanitizePreferences(input: BackupPreferences): Partial<PrefsStat
     output.sidebarFolderOrder = input.sidebarFolderOrder;
   }
   return output;
+}
+
+function validTerminalSchemePreference(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= 100;
 }
 
 function validFolderOrder(value: unknown): value is Record<string, string[]> {

@@ -6,6 +6,7 @@ import { muxusStateStorage } from './persist-storage.js';
 import type { KeywordHighlightRule } from '@muxus/shared';
 
 export type ThemeMode = 'light' | 'dark' | 'os';
+export type EffectiveThemeMode = Exclude<ThemeMode, 'os'>;
 export type RightClickAction = 'copy-paste' | 'paste' | 'menu';
 
 /** Presentation of one sidebar folder. Folders are paths, not records, so
@@ -56,8 +57,10 @@ export interface PrefsState {
   fontFamily: string;
   /** Terminal line height multiplier (1.0 = font metrics). */
   lineHeight: number;
-  /** Terminal color scheme id (see terminal/palette.ts). */
-  terminalScheme: string;
+  /** Terminal color scheme id used while the effective application theme is light. */
+  lightTerminalScheme: string;
+  /** Terminal color scheme id used while the effective application theme is dark. */
+  darkTerminalScheme: string;
   /** Terminal text color; empty follows the color scheme's foreground. */
   fontColor: string;
   /** Terminal background color; empty follows the color scheme's background. */
@@ -131,15 +134,40 @@ function isThemeMode(value: unknown): value is ThemeMode {
   return value === 'light' || value === 'os' || value === 'dark';
 }
 
+export function terminalSchemeIdForMode(
+  prefs: Pick<PrefsState, 'lightTerminalScheme' | 'darkTerminalScheme'>,
+  mode: EffectiveThemeMode,
+): string {
+  return mode === 'light' ? prefs.lightTerminalScheme : prefs.darkTerminalScheme;
+}
+
 /** Upgrade persisted preferences without mutating the storage snapshot. */
 export function migratePrefsState(persisted: unknown, version: number): unknown {
   if (persisted === null || typeof persisted !== 'object') return persisted;
-  const state = { ...persisted } as Partial<PrefsState> & { termName?: unknown };
+  const state = { ...persisted } as Partial<PrefsState> & {
+    terminalScheme?: unknown;
+    termName?: unknown;
+  };
   // A missing or invalid value falls through to the store's System default.
   if (!isThemeMode(state.themeMode)) delete state.themeMode;
   // v0 shipped the Muxus scheme as the default; stored copies of that
   // default follow the new one.
-  if (version === 0 && state.terminalScheme === 'muxus') state.terminalScheme = 'vscode-dark';
+  let legacyTerminalScheme = state.terminalScheme;
+  if (version === 0 && legacyTerminalScheme === 'muxus') {
+    legacyTerminalScheme = 'vscode-dark';
+  }
+  // v9 split the single scheme preference by effective appearance. Copying
+  // the old value to both modes preserves the terminal users saw before the
+  // upgrade; they can then choose a different scheme for either mode.
+  if (version < 9 && typeof legacyTerminalScheme === 'string') {
+    if (typeof state.lightTerminalScheme !== 'string') {
+      state.lightTerminalScheme = legacyTerminalScheme;
+    }
+    if (typeof state.darkTerminalScheme !== 'string') {
+      state.darkTerminalScheme = legacyTerminalScheme;
+    }
+  }
+  delete state.terminalScheme;
   // TERM is fixed by the server now; remove the retired client override.
   delete state.termName;
   // Folder presentation arrived in v5. A restored or hand-edited snapshot can
@@ -233,7 +261,8 @@ export const usePrefsStore = create<PrefsState>()(
       monoFontSize: 14,
       fontFamily: 'JetBrains Mono',
       lineHeight: 1.0,
-      terminalScheme: 'vscode-dark',
+      lightTerminalScheme: 'vscode-light',
+      darkTerminalScheme: 'vscode-dark',
       fontColor: '',
       backgroundColor: '',
       scrollback: 10_000,
@@ -268,7 +297,7 @@ export const usePrefsStore = create<PrefsState>()(
     }),
     {
       name: 'muxus-prefs',
-      version: 8,
+      version: 9,
       migrate: migratePrefsState,
       storage: createJSONStorage(() => muxusStateStorage),
     },

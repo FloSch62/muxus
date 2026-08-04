@@ -12,6 +12,7 @@ import {
   isLocalShellProfileArray,
   migratePrefsState,
   terminalFontStack,
+  terminalSchemeIdForMode,
   usePrefsStore,
 } from '../../../client/src/state/prefs.js';
 
@@ -39,6 +40,43 @@ describe('appearance preference', () => {
   it('falls back to System when a persisted preference is invalid', () => {
     expect(migratePrefsState({ themeMode: 'sepia', monoFontSize: 16 }, 7)).toEqual({
       monoFontSize: 16,
+    });
+  });
+});
+
+describe('terminal color scheme preferences', () => {
+  it('defaults new installations to matching light and dark schemes', () => {
+    const initial = usePrefsStore.getInitialState();
+    expect(initial.lightTerminalScheme).toBe('vscode-light');
+    expect(initial.darkTerminalScheme).toBe('vscode-dark');
+  });
+
+  it('selects the scheme for the effective appearance', () => {
+    const prefs = { lightTerminalScheme: 'paper', darkTerminalScheme: 'dracula' };
+    expect(terminalSchemeIdForMode(prefs, 'light')).toBe('paper');
+    expect(terminalSchemeIdForMode(prefs, 'dark')).toBe('dracula');
+  });
+
+  it('migrates a single saved scheme into both appearances', () => {
+    expect(migratePrefsState({ terminalScheme: 'nord' }, 8)).toEqual({
+      lightTerminalScheme: 'nord',
+      darkTerminalScheme: 'nord',
+    });
+  });
+
+  it('keeps split selections when reprocessing an older snapshot', () => {
+    expect(
+      migratePrefsState(
+        {
+          terminalScheme: 'nord',
+          lightTerminalScheme: 'paper',
+          darkTerminalScheme: 'dracula',
+        },
+        8,
+      ),
+    ).toEqual({
+      lightTerminalScheme: 'paper',
+      darkTerminalScheme: 'dracula',
     });
   });
 });
@@ -121,7 +159,8 @@ describe('migratePrefsState', () => {
 
   it('still applies the original color-scheme migration', () => {
     expect(migratePrefsState({ terminalScheme: 'muxus', termName: 'xterm-kitty' }, 0)).toEqual({
-      terminalScheme: 'vscode-dark',
+      lightTerminalScheme: 'vscode-dark',
+      darkTerminalScheme: 'vscode-dark',
     });
   });
 });

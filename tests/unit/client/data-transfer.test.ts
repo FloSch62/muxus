@@ -23,6 +23,8 @@ beforeEach(() => {
     notifyOnNewVersion: true,
     showCommandBar: true,
     backgroundColor: '',
+    lightTerminalScheme: 'vscode-light',
+    darkTerminalScheme: 'vscode-dark',
     localShellProfiles: [],
     defaultLocalShellProfileId: '',
   });
@@ -149,6 +151,8 @@ describe('backing up preferences', () => {
       notifyOnNewVersion: false,
       showCommandBar: false,
       backgroundColor: '#102030',
+      lightTerminalScheme: 'paper',
+      darkTerminalScheme: 'dracula',
     });
     mockBackupSnapshot();
 
@@ -157,6 +161,8 @@ describe('backing up preferences', () => {
     expect(document.data.preferences.notifyOnNewVersion).toBe(false);
     expect(document.data.preferences.backgroundColor).toBe('#102030');
     expect(document.data.preferences.showCommandBar).toBe(false);
+    expect(document.data.preferences.lightTerminalScheme).toBe('paper');
+    expect(document.data.preferences.darkTerminalScheme).toBe('dracula');
   });
 
   it('includes saved local shell profiles and their default selection', async () => {
@@ -179,6 +185,36 @@ describe('backing up preferences', () => {
 
     expect(document.data.preferences.localShellProfiles).toHaveLength(1);
     expect(document.data.preferences.defaultLocalShellProfileId).toBe('ubuntu');
+  });
+});
+
+describe('restoring terminal color scheme preferences', () => {
+  const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
+
+  it('restores separate light and dark selections', () => {
+    expect(
+      sanitizePreferences(
+        prefs({ lightTerminalScheme: 'paper', darkTerminalScheme: 'dracula' }),
+      ),
+    ).toMatchObject({
+      lightTerminalScheme: 'paper',
+      darkTerminalScheme: 'dracula',
+    });
+  });
+
+  it('restores a legacy single selection into both appearances', () => {
+    expect(sanitizePreferences(prefs({ terminalScheme: 'nord' }))).toMatchObject({
+      lightTerminalScheme: 'nord',
+      darkTerminalScheme: 'nord',
+    });
+  });
+
+  it('drops malformed selections', () => {
+    const restored = sanitizePreferences(
+      prefs({ lightTerminalScheme: 42, darkTerminalScheme: 'x'.repeat(101) }),
+    );
+    expect(restored.lightTerminalScheme).toBeUndefined();
+    expect(restored.darkTerminalScheme).toBeUndefined();
   });
 });
 
