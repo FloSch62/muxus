@@ -19,6 +19,9 @@ because storage policy should not change under a running recorder.
 - **Application theme**: light, dark, or follow the system.
 - **Interface scale**: the size of the whole window. Terminal text has a separate zoom
   (++ctrl+shift+equal++ / ++ctrl+shift+minus++ / ++ctrl+wheel++).
+- **Split pane focus**: dim inactive panes or add a thin theme-aware outline. Both are off by
+  default; dimming starts at 15% and is adjustable. Multi-exec panes stay emphasized. These
+  effects are presentation-only and do not alter terminal colours or output.
 - **Light terminal theme** and **Dark terminal theme**: separate colour schemes that
   follow the effective application appearance, including system appearance changes.
   Fifteen schemes are grouped into light and dark sets, with optional shared text and

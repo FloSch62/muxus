@@ -26,6 +26,20 @@ function unique(tabIds: readonly string[]): string[] {
   return [...new Set(tabIds)];
 }
 
+/** Visible panes whose active terminals currently participate in mirrored input. */
+export function multiExecPaneIds(
+  panes: readonly { id: string; activeTabId: string | null }[],
+  selectedIds: readonly string[],
+): Set<string> {
+  if (selectedIds.length < 2) return new Set();
+  const selected = new Set(selectedIds);
+  return new Set(
+    panes
+      .filter((pane) => pane.activeTabId && selected.has(pane.activeTabId))
+      .map((pane) => pane.id),
+  );
+}
+
 /**
  * A selection change that also remembers any set large enough to mirror, so
  * switching multi-execution off and on again lands on the same terminals.

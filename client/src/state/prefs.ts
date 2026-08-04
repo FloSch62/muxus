@@ -10,6 +10,28 @@ export type EffectiveThemeMode = Exclude<ThemeMode, 'os'>;
 export type RightClickAction = 'copy-paste' | 'paste' | 'menu';
 export type TabNumberVisibility = 'shortcut' | 'always';
 
+export const DEFAULT_INACTIVE_PANE_DIM_STRENGTH = 0.15;
+export const MIN_INACTIVE_PANE_DIM_STRENGTH = 0.1;
+export const MAX_INACTIVE_PANE_DIM_STRENGTH = 0.6;
+
+/** Keep hand-edited or older persisted values from making a pane illegible. */
+export function clampInactivePaneDimStrength(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_INACTIVE_PANE_DIM_STRENGTH;
+  return Math.min(
+    MAX_INACTIVE_PANE_DIM_STRENGTH,
+    Math.max(MIN_INACTIVE_PANE_DIM_STRENGTH, value),
+  );
+}
+
+/** Presentation-only opacity for one pane; terminal buffers remain untouched. */
+export function paneFocusOpacity(
+  emphasized: boolean,
+  dimInactivePanes: boolean,
+  dimStrength: number,
+): number {
+  return emphasized || !dimInactivePanes ? 1 : 1 - clampInactivePaneDimStrength(dimStrength);
+}
+
 /** Presentation of one sidebar folder. Folders are paths, not records, so
  *  their looks cannot hang off a host and live here instead. */
 export interface FolderStyle {
@@ -98,6 +120,12 @@ export interface PrefsState {
   splitInheritsSession: boolean;
   /** When window-wide shortcut numbers are shown on terminal tabs. */
   tabNumberVisibility: TabNumberVisibility;
+  /** Draw a theme-accented border around focused and multi-exec panes in a split layout. */
+  activePaneBorder: boolean;
+  /** Reduce the presentation opacity of panes that do not receive keyboard input. */
+  dimInactivePanes: boolean;
+  /** Fraction removed from inactive-pane opacity while dimming is enabled. */
+  inactivePaneDimStrength: number;
   /**
    * Chords per command id, replacing that command's defaults. An empty array
    * unbinds the command; commands absent from the map keep their defaults.
@@ -158,6 +186,16 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   // A missing or invalid value falls through to the store's System default.
   if (!isThemeMode(state.themeMode)) delete state.themeMode;
   if (!isTabNumberVisibility(state.tabNumberVisibility)) delete state.tabNumberVisibility;
+  if (typeof state.activePaneBorder !== 'boolean') delete state.activePaneBorder;
+  if (typeof state.dimInactivePanes !== 'boolean') delete state.dimInactivePanes;
+  if (
+    typeof state.inactivePaneDimStrength !== 'number' ||
+    !Number.isFinite(state.inactivePaneDimStrength) ||
+    state.inactivePaneDimStrength < MIN_INACTIVE_PANE_DIM_STRENGTH ||
+    state.inactivePaneDimStrength > MAX_INACTIVE_PANE_DIM_STRENGTH
+  ) {
+    delete state.inactivePaneDimStrength;
+  }
   // v0 shipped the Muxus scheme as the default; stored copies of that
   // default follow the new one.
   let legacyTerminalScheme = state.terminalScheme;
@@ -290,6 +328,9 @@ export const usePrefsStore = create<PrefsState>()(
       interfaceZoom: 1,
       splitInheritsSession: true,
       tabNumberVisibility: 'shortcut',
+      activePaneBorder: false,
+      dimInactivePanes: false,
+      inactivePaneDimStrength: DEFAULT_INACTIVE_PANE_DIM_STRENGTH,
       keybindings: {},
       commandButtons: [],
       showCommandBar: true,
@@ -306,7 +347,7 @@ export const usePrefsStore = create<PrefsState>()(
     }),
     {
       name: 'muxus-prefs',
-      version: 10,
+      version: 11,
       migrate: migratePrefsState,
       storage: createJSONStorage(() => muxusStateStorage),
     },

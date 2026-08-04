@@ -10,7 +10,9 @@ import {
   type RefObject,
 } from 'react';
 import Box from '@mui/material/Box';
-import { usePrefsStore } from '../state/prefs.js';
+import { alpha } from '@mui/material/styles';
+import { paneFocusOpacity, usePrefsStore } from '../state/prefs.js';
+import { multiExecPaneIds, useMultiExecStore } from '../state/multi-exec.js';
 import {
   useTabsStore,
   tabsInOrder,
@@ -112,18 +114,31 @@ function PaneCanvas({
   const paneRefs = useRef(new Map<string, HTMLDivElement>());
   const tabRefs = useRef(new Map<string, HTMLDivElement>());
   const dividerRefs = useRef(new Map<string, HTMLHRElement>());
+  const activePaneBorderRefs = useRef(new Map<string, HTMLDivElement>());
   const focusPane = useTabsStore((state) => state.focusPane);
   const resizeSplit = useTabsStore((state) => state.resizeSplit);
   const openEditor = useTabsStore((state) => state.openEditor);
   const activateEditor = useTabsStore((state) => state.activateEditor);
   const closeEditor = useTabsStore((state) => state.closeEditor);
   const tabNumberVisibility = usePrefsStore((state) => state.tabNumberVisibility);
+  const activePaneBorder = usePrefsStore((state) => state.activePaneBorder);
+  const dimInactivePanes = usePrefsStore((state) => state.dimInactivePanes);
+  const inactivePaneDimStrength = usePrefsStore((state) => state.inactivePaneDimStrength);
+  const multiExecTargetIds = useMultiExecStore((state) => state.selectedIds);
   const { panes, dividers } = useMemo(() => flattenPaneLayout(root), [root]);
   const paneById = useMemo(
     () => new Map(panes.map((entry) => [entry.pane.id, entry.pane])),
     [panes],
   );
   const occupiedPaneIds = useMemo(() => new Set(tabs.map((tab) => tab.paneId)), [tabs]);
+  const highlightedPaneIds = useMemo(() => {
+    const paneIds = multiExecPaneIds(
+      panes.map(({ pane }) => pane),
+      multiExecTargetIds,
+    );
+    paneIds.add(activePaneId);
+    return paneIds;
+  }, [activePaneId, multiExecTargetIds, panes]);
   const tabNumberById = useMemo(
     () => new Map(tabsInOrder(root, tabs).map((tab, index) => [tab.id, index + 1])),
     [root, tabs],
@@ -147,13 +162,17 @@ function PaneCanvas({
         const element = dividerRefs.current.get(divider.splitId);
         if (element) positionDivider(element, divider.direction, divider.bounds, divider.ratio);
       }
+      for (const [paneId, element] of activePaneBorderRefs.current) {
+        const rect = rects.get(paneId);
+        if (rect) positionBox(element, rect, false, 0);
+      }
     },
     [zoomedPaneId],
   );
 
   useLayoutEffect(() => {
     applyLayout(root);
-  }, [applyLayout, root, tabs]);
+  }, [activePaneBorder, applyLayout, highlightedPaneIds, root, tabs]);
 
   return (
     <Box
@@ -168,6 +187,11 @@ function PaneCanvas({
           tabNumberById={tabNumberById}
           empty={!occupiedPaneIds.has(pane.id)}
           focused={pane.id === activePaneId}
+          opacity={paneFocusOpacity(
+            highlightedPaneIds.has(pane.id),
+            dimInactivePanes,
+            inactivePaneDimStrength,
+          )}
           zoomed={pane.id === zoomedPaneId}
           onAddHost={onAddHost}
           register={(element) => registerBox(paneRefs.current, pane.id, element)}
@@ -182,6 +206,8 @@ function PaneCanvas({
             key={tab.id}
             ref={(element: HTMLDivElement | null) => registerBox(tabRefs.current, tab.id, element)}
             data-pane-id={tab.paneId}
+            data-pane-focused={pane.id === activePaneId ? 'true' : 'false'}
+            data-pane-highlighted={highlightedPaneIds.has(pane.id) ? 'true' : 'false'}
             onPointerDown={() => focusPane(tab.paneId)}
             sx={{
               position: 'absolute',
@@ -189,6 +215,11 @@ function PaneCanvas({
               minHeight: 0,
               overflow: 'hidden',
               display: visible ? 'flex' : 'none',
+              opacity: paneFocusOpacity(
+                highlightedPaneIds.has(pane.id),
+                dimInactivePanes,
+                inactivePaneDimStrength,
+              ),
               ...(pane.id === zoomedPaneId ? { bgcolor: 'background.default' } : {}),
             }}
           >
@@ -242,6 +273,28 @@ function PaneCanvas({
           </Box>
         );
       })}
+      {activePaneBorder && panes.length > 1 && !zoomedPaneId
+        ? panes
+            .filter(({ pane }) => highlightedPaneIds.has(pane.id))
+            .map(({ pane }) => (
+              <Box
+                key={pane.id}
+                ref={(element: HTMLDivElement | null) =>
+                  registerBox(activePaneBorderRefs.current, pane.id, element)
+                }
+                aria-hidden
+                data-active-pane-border="true"
+                data-pane-id={pane.id}
+                sx={{
+                  position: 'absolute',
+                  pointerEvents: 'none',
+                  zIndex: 4,
+                  boxShadow: (theme) =>
+                    `inset 0 0 0 1px ${alpha(theme.palette.primary.main, 0.8)}`,
+                }}
+              />
+            ))
+        : null}
       {!zoomedPaneId &&
         dividers.map((divider) => (
           <SplitDivider
@@ -316,6 +369,7 @@ function PaneChrome({
   tabNumberById,
   empty,
   focused,
+  opacity,
   zoomed,
   onAddHost,
   register,
@@ -324,6 +378,7 @@ function PaneChrome({
   tabNumberById: ReadonlyMap<string, number>;
   empty: boolean;
   focused: boolean;
+  opacity: number;
   zoomed: boolean;
   onAddHost: () => void;
   register: (element: HTMLDivElement | null) => void;
@@ -334,6 +389,7 @@ function PaneChrome({
     <Box
       ref={register}
       onPointerDown={() => focusPane(pane.id)}
+      data-pane-focused={focused ? 'true' : 'false'}
       sx={{
         position: 'absolute',
         minWidth: 0,
@@ -341,6 +397,7 @@ function PaneChrome({
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
+        opacity,
         ...(zoomed ? { bgcolor: 'background.default' } : {}),
       }}
     >

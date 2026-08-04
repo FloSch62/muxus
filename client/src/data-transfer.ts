@@ -25,6 +25,8 @@ import {
 } from './sidebar-width.js';
 import { MIN_SFTP_PANEL_WIDTH } from './sftp-panel-width.js';
 import {
+  MAX_INACTIVE_PANE_DIM_STRENGTH,
+  MIN_INACTIVE_PANE_DIM_STRENGTH,
   isLocalShellProfileArray,
   usePrefsStore,
   type FolderStyle,
@@ -47,6 +49,9 @@ const PREFERENCE_KEYS = [
   'darkTerminalScheme',
   'fontColor',
   'backgroundColor',
+  'activePaneBorder',
+  'dimInactivePanes',
+  'inactivePaneDimStrength',
   'scrollback',
   'cursorBlink',
   'cursorStyle',
@@ -641,6 +646,21 @@ export function sanitizePreferences(
   }
   if (input.backgroundColor === '' || validHexColor(input.backgroundColor)) {
     output.backgroundColor = input.backgroundColor;
+  }
+  if (typeof input.activePaneBorder === 'boolean') {
+    output.activePaneBorder = input.activePaneBorder;
+  }
+  if (typeof input.dimInactivePanes === 'boolean') {
+    output.dimInactivePanes = input.dimInactivePanes;
+  }
+  if (
+    finiteRange(
+      input.inactivePaneDimStrength,
+      MIN_INACTIVE_PANE_DIM_STRENGTH,
+      MAX_INACTIVE_PANE_DIM_STRENGTH,
+    )
+  ) {
+    output.inactivePaneDimStrength = input.inactivePaneDimStrength;
   }
   if (
     Number.isInteger(input.scrollback) &&

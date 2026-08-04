@@ -25,6 +25,9 @@ beforeEach(() => {
     backgroundColor: '',
     lightTerminalScheme: 'vscode-light',
     darkTerminalScheme: 'vscode-dark',
+    activePaneBorder: false,
+    dimInactivePanes: false,
+    inactivePaneDimStrength: 0.15,
     localShellProfiles: [],
     defaultLocalShellProfileId: '',
   });
@@ -153,6 +156,9 @@ describe('backing up preferences', () => {
       backgroundColor: '#102030',
       lightTerminalScheme: 'paper',
       darkTerminalScheme: 'dracula',
+      activePaneBorder: false,
+      dimInactivePanes: true,
+      inactivePaneDimStrength: 0.35,
     });
     mockBackupSnapshot();
 
@@ -163,6 +169,9 @@ describe('backing up preferences', () => {
     expect(document.data.preferences.showCommandBar).toBe(false);
     expect(document.data.preferences.lightTerminalScheme).toBe('paper');
     expect(document.data.preferences.darkTerminalScheme).toBe('dracula');
+    expect(document.data.preferences.activePaneBorder).toBe(false);
+    expect(document.data.preferences.dimInactivePanes).toBe(true);
+    expect(document.data.preferences.inactivePaneDimStrength).toBe(0.35);
   });
 
   it('includes saved local shell profiles and their default selection', async () => {
@@ -215,6 +224,31 @@ describe('restoring terminal color scheme preferences', () => {
     );
     expect(restored.lightTerminalScheme).toBeUndefined();
     expect(restored.darkTerminalScheme).toBeUndefined();
+  });
+});
+
+describe('restoring split pane focus preferences', () => {
+  const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
+
+  it('restores the two indicators and dimming strength independently', () => {
+    expect(
+      sanitizePreferences(
+        prefs({ activePaneBorder: false, dimInactivePanes: true, inactivePaneDimStrength: 0.35 }),
+      ),
+    ).toMatchObject({
+      activePaneBorder: false,
+      dimInactivePanes: true,
+      inactivePaneDimStrength: 0.35,
+    });
+  });
+
+  it('drops malformed or unreadable dimming choices', () => {
+    const restored = sanitizePreferences(
+      prefs({ activePaneBorder: 'yes', dimInactivePanes: 'yes', inactivePaneDimStrength: 0.9 }),
+    );
+    expect(restored.activePaneBorder).toBeUndefined();
+    expect(restored.dimInactivePanes).toBeUndefined();
+    expect(restored.inactivePaneDimStrength).toBeUndefined();
   });
 });
 
