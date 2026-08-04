@@ -8,9 +8,12 @@ import {
 } from '../../../client/src/interface-zoom.js';
 import { DEFAULT_SIDEBAR_WIDTH } from '../../../client/src/sidebar-width.js';
 import {
+  DEFAULT_INACTIVE_PANE_DIM_STRENGTH,
   MONO_FONT_FALLBACK,
+  clampInactivePaneDimStrength,
   isLocalShellProfileArray,
   migratePrefsState,
+  paneFocusOpacity,
   terminalFontStack,
   terminalSchemeIdForMode,
   usePrefsStore,
@@ -41,6 +44,38 @@ describe('appearance preference', () => {
     expect(migratePrefsState({ themeMode: 'sepia', monoFontSize: 16 }, 7)).toEqual({
       monoFontSize: 16,
     });
+  });
+});
+
+describe('split pane focus preferences', () => {
+  it('leaves both indicators off by default with dimming set to 15%', () => {
+    const initial = usePrefsStore.getInitialState();
+    expect(initial.activePaneBorder).toBe(false);
+    expect(initial.dimInactivePanes).toBe(false);
+    expect(initial.inactivePaneDimStrength).toBe(DEFAULT_INACTIVE_PANE_DIM_STRENGTH);
+  });
+
+  it('keeps valid choices and drops malformed persisted values', () => {
+    expect(
+      migratePrefsState(
+        { activePaneBorder: false, dimInactivePanes: true, inactivePaneDimStrength: 0.4 },
+        10,
+      ),
+    ).toEqual({ activePaneBorder: false, dimInactivePanes: true, inactivePaneDimStrength: 0.4 });
+    expect(
+      migratePrefsState(
+        { activePaneBorder: 'yes', dimInactivePanes: 1, inactivePaneDimStrength: 0.95 },
+        10,
+      ),
+    ).toEqual({});
+  });
+
+  it('dims only inactive panes and bounds presentation opacity', () => {
+    expect(paneFocusOpacity(true, true, 0.4)).toBe(1);
+    expect(paneFocusOpacity(false, false, 0.4)).toBe(1);
+    expect(paneFocusOpacity(false, true, 0.4)).toBe(0.6);
+    expect(clampInactivePaneDimStrength(Number.NaN)).toBe(DEFAULT_INACTIVE_PANE_DIM_STRENGTH);
+    expect(paneFocusOpacity(false, true, 1)).toBe(0.4);
   });
 });
 

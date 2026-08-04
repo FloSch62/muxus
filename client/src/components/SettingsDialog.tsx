@@ -66,6 +66,9 @@ import {
 } from '../interface-zoom.js';
 import { useChordLabel } from '../keymap/hints.js';
 import {
+  MAX_INACTIVE_PANE_DIM_STRENGTH,
+  MIN_INACTIVE_PANE_DIM_STRENGTH,
+  clampInactivePaneDimStrength,
   terminalSchemeIdForMode,
   usePrefsStore,
   type RightClickAction,
@@ -377,6 +380,52 @@ function AppearanceSection() {
               Following the color scheme
             </Typography>
           )}
+        </Stack>
+      </Box>
+      <Box>
+        <SectionTitle>Split pane focus</SectionTitle>
+        <Stack spacing={1.25} sx={{ maxWidth: 440 }}>
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={prefs.dimInactivePanes}
+                onChange={(event) => prefs.set({ dimInactivePanes: event.target.checked })}
+              />
+            }
+            label={<Typography variant="body2">Dim inactive panes</Typography>}
+          />
+          <Box sx={{ pl: 4.5, maxWidth: 360 }}>
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              Dimming strength —{' '}
+              {Math.round(
+                clampInactivePaneDimStrength(prefs.inactivePaneDimStrength) * 100,
+              )}
+              %
+            </Typography>
+            <Slider
+              aria-label="Inactive pane dimming strength"
+              size="small"
+              min={MIN_INACTIVE_PANE_DIM_STRENGTH * 100}
+              max={MAX_INACTIVE_PANE_DIM_STRENGTH * 100}
+              step={5}
+              value={clampInactivePaneDimStrength(prefs.inactivePaneDimStrength) * 100}
+              disabled={!prefs.dimInactivePanes}
+              onChange={(_event, value) =>
+                prefs.set({ inactivePaneDimStrength: (value as number) / 100 })
+              }
+            />
+          </Box>
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={prefs.activePaneBorder}
+                onChange={(event) => prefs.set({ activePaneBorder: event.target.checked })}
+              />
+            }
+            label={<Typography variant="body2">Show a thin accent outline</Typography>}
+          />
         </Stack>
       </Box>
       <Box>

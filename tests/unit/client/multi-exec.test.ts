@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { toggleMultiExec } from '../../../client/src/session-actions.js';
 import {
   broadcastTerminalInput,
+  multiExecPaneIds,
   useMultiExecStore,
 } from '../../../client/src/state/multi-exec.js';
 import { useTabsStore } from '../../../client/src/state/tabs.js';
@@ -54,6 +55,20 @@ function connectTab(title: string): string {
 }
 
 describe('multi-execution routing', () => {
+  it('identifies every pane participating in active mirrored input', () => {
+    const tabs = [
+      { id: 'tab-a', paneId: 'pane-left' },
+      { id: 'tab-b', paneId: 'pane-right' },
+      { id: 'tab-c', paneId: 'pane-right' },
+    ];
+
+    expect([...multiExecPaneIds(tabs, ['tab-a'])]).toEqual([]);
+    expect([...multiExecPaneIds(tabs, ['tab-a', 'tab-c'])]).toEqual([
+      'pane-left',
+      'pane-right',
+    ]);
+  });
+
   it('mirrors source input only to the other selected terminals', () => {
     const sends = [vi.fn(() => true), vi.fn(() => true), vi.fn(() => true)];
     const unregister = [
