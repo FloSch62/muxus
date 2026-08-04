@@ -47,7 +47,7 @@ import {
 } from './connection-leases.js';
 import { connectionAlgorithms } from './algorithms.js';
 import {
-  openIntegratedRemoteShell,
+  openRemoteShell,
   RemoteShellTransportLostError,
 } from './remote-shell-integration.js';
 import {
@@ -613,8 +613,7 @@ export class SshConnectionManager {
           return openSessionExec(client, session.remoteCommand, pty, session.env);
         }
         if (pty && !disableSftp) {
-          const integrated = await openIntegratedRemoteShell(client, getSftp, pty, session.env);
-          if (integrated) return integrated;
+          return openRemoteShell(client, getSftp, pty, session.env);
         }
         return new Promise((resolve, reject) => {
           client.shell(pty ?? false, { env: session.env }, (err, stream) =>

@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
 import {
-  openIntegratedRemoteShell,
+  openRemoteShell,
   parseShellProbe,
   RemoteShellTransportLostError,
   remoteShellCommand,
@@ -81,7 +81,7 @@ describe('remote shell integration', () => {
       },
     };
 
-    const result = await openIntegratedRemoteShell(
+    const result = await openRemoteShell(
       stubClient(exec),
       async () => {
         setupOrder.push('sftp-start');
@@ -147,7 +147,7 @@ describe('remote shell integration', () => {
       writeFile: vi.fn(),
     };
 
-    const result = await openIntegratedRemoteShell(
+    const result = await openRemoteShell(
       stubClient(exec),
       async () => sftp as never,
       { term: 'xterm-256color', cols: 80, rows: 24 },
@@ -164,6 +164,7 @@ describe('remote shell integration', () => {
 
   it('does not request SFTP when the remote is not a supported Unix shell', async () => {
     const probeChannel = new StubChannel();
+    const plainChannel = new StubChannel();
     const getSftp = vi.fn();
     const exec = vi.fn(
       (
@@ -178,14 +179,22 @@ describe('remote shell integration', () => {
       },
     );
 
-    const result = await openIntegratedRemoteShell(
-      stubClient(exec),
+    const shell = vi.fn(
+      (
+        _pty: unknown,
+        _options: unknown,
+        callback: (error: Error | undefined, channel: StubChannel) => void,
+      ) => callback(undefined, plainChannel),
+    );
+    const result = await openRemoteShell(
+      Object.assign(stubClient(exec), { shell }),
       getSftp,
       { term: 'xterm-256color', cols: 80, rows: 24 },
     );
 
-    expect(result).toBeUndefined();
+    expect(result).toBe(plainChannel);
     expect(getSftp).not.toHaveBeenCalled();
+    expect(shell).toHaveBeenCalledOnce();
   });
 
   it('surfaces a transport lost during the optional shell probe', async () => {
@@ -205,7 +214,41 @@ describe('remote shell integration', () => {
     };
 
     await expect(
-      openIntegratedRemoteShell(
+      openRemoteShell(
+        client as never,
+        vi.fn(),
+        { term: 'xterm-256color', cols: 80, rows: 24 },
+      ),
+    ).rejects.toBeInstanceOf(RemoteShellTransportLostError);
+  });
+
+  it('keeps watching for transport loss while the plain fallback opens', async () => {
+    const client = new EventEmitter() as EventEmitter & {
+      exec: (
+        command: string,
+        callback: (error: Error | undefined, channel: StubChannel) => void,
+      ) => void;
+      shell: (
+        pty: unknown,
+        options: unknown,
+        callback: (error: Error | undefined, channel?: StubChannel) => void,
+      ) => void;
+    };
+    const probeChannel = new StubChannel();
+    client.exec = (_command, callback) => {
+      callback(undefined, probeChannel);
+      setImmediate(() => probeChannel.emit('close'));
+    };
+    client.shell = (_pty, _options, callback) => {
+      expect(client.listenerCount('end')).toBe(1);
+      setImmediate(() => {
+        client.emit('end');
+        callback(new Error('Not connected'));
+      });
+    };
+
+    await expect(
+      openRemoteShell(
         client as never,
         vi.fn(),
         { term: 'xterm-256color', cols: 80, rows: 24 },

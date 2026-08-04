@@ -59,9 +59,9 @@ type SupportedShell = {
 
 /**
  * The server dropped the whole SSH transport while Muxus was attempting the
- * optional Unix shell-integration setup. ConnectionManager uses this narrow
- * signal to redial once as a plain console session; ordinary channel
- * rejections still fall through to a plain shell on the existing transport.
+ * optional Unix shell-integration setup or transitioning to its plain-shell
+ * fallback. ConnectionManager uses this narrow signal to redial once as a
+ * plain console session; ordinary channel rejections remain ordinary errors.
  */
 export class RemoteShellTransportLostError extends Error {
   constructor(readonly transportError?: Error) {
@@ -71,16 +71,17 @@ export class RemoteShellTransportLostError extends Error {
 }
 
 /**
- * Open a zsh/bash SSH session with the same OSC 133 command lifecycle
- * reporting as local terminals. Returns undefined when the remote cannot
- * support the bootstrap so callers can open a normal shell instead.
+ * Open a remote shell, adding OSC 133 integration for supported zsh/bash
+ * hosts and falling back to a normal shell everywhere else. Transport-loss
+ * observation spans both phases: some console servers close the probe channel
+ * first and only disconnect the SSH transport while the plain shell opens.
  */
-export async function openIntegratedRemoteShell(
+export async function openRemoteShell(
   client: Client,
   getSftp: () => Promise<SFTPWrapper>,
   pty: PseudoTtyOptions,
   env?: Record<string, string>,
-): Promise<ClientChannel | undefined> {
+): Promise<ClientChannel> {
   let transportLost = false;
   let transportError: Error | undefined;
   const onTransportError = (error: Error) => {
@@ -94,25 +95,49 @@ export async function openIntegratedRemoteShell(
   client.once('close', onTransportClose);
   client.once('end', onTransportClose);
   try {
-    // Do not speculatively open SFTP against console appliances. Many expose
-    // only a plain shell channel and some disconnect the whole transport when
-    // an unsupported subsystem is requested.
-    const shell = await probeShell(client);
-    if (!shell) {
-      if (transportLost) throw new RemoteShellTransportLostError(transportError);
-      return undefined;
-    }
-    const sftp = await getSftp();
-    const root = await installIntegration(sftp, shell);
-    return await openExec(client, remoteShellCommand(shell, root), { pty, ...(env ? { env } : {}) });
-  } catch {
+    const integrated = await tryOpenIntegratedRemoteShell(client, getSftp, pty, env);
+    if (integrated) return integrated;
     if (transportLost) throw new RemoteShellTransportLostError(transportError);
-    return undefined;
+
+    try {
+      return await openShell(client, pty, env);
+    } catch (error) {
+      if (transportLost || isDisconnectedError(error)) {
+        throw new RemoteShellTransportLostError(
+          transportError ?? (error instanceof Error ? error : undefined),
+        );
+      }
+      throw error;
+    }
   } finally {
     client.off('error', onTransportError);
     client.off('close', onTransportClose);
     client.off('end', onTransportClose);
   }
+}
+
+async function tryOpenIntegratedRemoteShell(
+  client: Client,
+  getSftp: () => Promise<SFTPWrapper>,
+  pty: PseudoTtyOptions,
+  env?: Record<string, string>,
+): Promise<ClientChannel | undefined> {
+  try {
+    // Do not speculatively open SFTP against console appliances. Many expose
+    // only a plain shell channel and some disconnect the whole transport when
+    // an unsupported subsystem is requested.
+    const shell = await probeShell(client);
+    if (!shell) return undefined;
+    const sftp = await getSftp();
+    const root = await installIntegration(sftp, shell);
+    return await openExec(client, remoteShellCommand(shell, root), { pty, ...(env ? { env } : {}) });
+  } catch {
+    return undefined;
+  }
+}
+
+function isDisconnectedError(error: unknown): boolean {
+  return error instanceof Error && /^(?:Not connected|Connection lost)/.test(error.message);
 }
 
 export function parseShellProbe(output: string): SupportedShell | undefined {
@@ -230,6 +255,18 @@ function openExec(
       error ? reject(error) : resolve(channel);
     if (options) client.exec(command, options, callback);
     else client.exec(command, callback);
+  });
+}
+
+function openShell(
+  client: Client,
+  pty: PseudoTtyOptions,
+  env?: Record<string, string>,
+): Promise<ClientChannel> {
+  return new Promise((resolve, reject) => {
+    client.shell(pty, { env }, (error, channel) =>
+      error ? reject(error) : resolve(channel),
+    );
   });
 }
 
