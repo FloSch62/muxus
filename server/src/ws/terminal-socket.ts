@@ -378,7 +378,13 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
       dialLease.release();
       return;
     }
-    sendControl(socket, { op: 'ready', connId: conn.id, host: conn.host, user: conn.user });
+    sendControl(socket, {
+      op: 'ready',
+      connId: conn.id,
+      host: conn.host,
+      user: conn.user,
+      sftpAvailable: conn.sftpAvailable,
+    });
     return;
   }
 
@@ -606,7 +612,13 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
       app.log.warn({ err, target: conn.metadataAlias }, 'could not record recent connection');
     }
   }
-  sendControl(socket, { op: 'ready', connId: conn.id, host: conn.host, user: conn.user });
+  sendControl(socket, {
+    op: 'ready',
+    connId: conn.id,
+    host: conn.host,
+    user: conn.user,
+    sftpAvailable: conn.sftpAvailable,
+  });
 }
 
 /** Attach a byte transport to the terminal socket with shared flow control. */

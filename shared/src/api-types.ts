@@ -425,6 +425,8 @@ export interface OpenSshProfileMetadata {
   icon?: string;
   /** Muxus-only terminal highlighting for this OpenSSH alias. */
   keywordHighlights?: HostKeywordHighlightConfig;
+  /** Do not open SFTP channels or probe for remote Unix shell integration. */
+  disableSftp?: boolean;
   lastConnectedAt?: string;
   connectCount: number;
 }
@@ -435,6 +437,7 @@ export interface OpenSshMetadataPatch {
   color?: string | null;
   icon?: string | null;
   keywordHighlights?: HostKeywordHighlightConfig | null;
+  disableSftp?: boolean;
 }
 
 /**
@@ -766,6 +769,8 @@ export interface ConnectionInfo {
   user: string;
   /** Config alias when the target matches a Host block in ~/.ssh/config. */
   metadataAlias?: string;
+  /** False when this transport belongs to a host with SFTP disabled. */
+  sftpAvailable: boolean;
 }
 
 export interface ConnectionsResponse {

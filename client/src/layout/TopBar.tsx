@@ -80,7 +80,7 @@ export const TopBar = memo(function TopBar() {
   const requestSearch = useTabsStore((s) => s.requestSearch);
   const { data: forwardsData } = useForwards();
   const activeForwards = forwardsData?.forwards.length ?? 0;
-  const sshReady = !!activeTab?.connId;
+  const sshReady = !!activeTab?.connId && activeTab.sftpAvailable !== false;
   const terminalReady = !!activeTab?.profile;
   const [terminalMenu, setTerminalMenu] = useState<HTMLElement | null>(null);
   const sidebarChord = useChordLabel('app.sidebar');

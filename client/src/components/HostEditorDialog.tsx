@@ -211,6 +211,7 @@ function SshHostEditorContent({
         displayName: draft.displayName.trim() || null,
         group: draft.group.trim() || null,
         color: draft.color ?? null,
+        disableSftp: draft.disableSftp,
         keywordHighlights:
           highlights.inheritGlobal && highlights.rules.length === 0 ? null : highlights,
       },
@@ -274,7 +275,12 @@ function SshHostEditorContent({
     { value: 'forwards', label: 'Port forwarding', icon: <SwapHorizOutlinedIcon fontSize="small" />, count: draft.forwards.length },
     { value: 'logging', label: 'Session logging', icon: <HistoryOutlinedIcon fontSize="small" /> },
     { value: 'highlighting', label: 'Highlighting', icon: <HighlightOutlinedIcon fontSize="small" />, count: draft.keywordHighlights.rules.length },
-    { value: 'advanced', label: 'Advanced', icon: <CodeOutlinedIcon fontSize="small" />, count: draft.extras.length },
+    {
+      value: 'advanced',
+      label: 'Advanced',
+      icon: <CodeOutlinedIcon fontSize="small" />,
+      count: draft.extras.length + (draft.disableSftp ? 1 : 0),
+    },
   ];
 
   return (

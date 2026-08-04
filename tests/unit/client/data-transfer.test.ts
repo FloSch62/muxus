@@ -287,6 +287,7 @@ describe('restoring imported serial hosts', () => {
           color: null,
           icon: null,
           keywordHighlights: null,
+          disableSftp: false,
         }),
       }),
     );

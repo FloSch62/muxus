@@ -191,8 +191,8 @@ export type TerminalServerMessage =
       /** Set when this is an intermediate ProxyJump hop, not the final target. */
       hop?: string;
     }
-  /** Transport attached; SSH connIds also key follow-up SFTP/forward calls. */
-  | { op: 'ready'; connId: string; host?: string; user?: string }
+  /** Transport attached; SSH connIds also key follow-up SFTP/forward calls when available. */
+  | { op: 'ready'; connId: string; host?: string; user?: string; sftpAvailable?: boolean }
   /** Current durable-log state, emitted at start and after every live change. */
   | {
       op: 'logging-state';

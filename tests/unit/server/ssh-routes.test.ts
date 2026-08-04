@@ -32,6 +32,18 @@ afterEach(async () => {
 const auth = () => ({ authorization: `Bearer ${TOKEN}` });
 
 describe('OpenSSH host keyword metadata', () => {
+  it('persists the per-host SFTP compatibility setting', async () => {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/ssh/config/hosts/production/metadata',
+      headers: auth(),
+      payload: { disableSftp: true },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ disableSftp: true });
+  });
+
   it('persists validated per-host highlighting without rewriting ssh_config', async () => {
     const response = await app.inject({
       method: 'PATCH',

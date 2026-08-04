@@ -71,7 +71,25 @@ describe('SSH host editor draft', () => {
     expect(draft.requestTty).toBe('inherit');
     expect(draft.strictHostKeyChecking).toBe('inherit');
     expect(draft.identitiesOnly).toBe(true);
+    expect(draft.disableSftp).toBe(false);
     expect(draftToRequest(draft).options.proxyCommand).toBeUndefined();
+  });
+
+  it('loads the Muxus-only SFTP compatibility setting', () => {
+    const draft = draftFromEntry(
+      {
+        ...entry,
+        metadata: {
+          profileId: 'profile-cloud',
+          connectCount: 0,
+          disableSftp: true,
+        },
+      },
+      false,
+    );
+
+    expect(draft.disableSftp).toBe(true);
+    expect(draftToRequest(draft).options).not.toHaveProperty('disableSftp');
   });
 
   it('makes the specific-key promise independent of the SSH agent', () => {

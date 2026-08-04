@@ -43,6 +43,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 16, name: 'password-vault-key-cleanup' },
       { version: 17, name: 'folder-settings' },
       { version: 18, name: 'lock-workspaces' },
+      { version: 19, name: 'host-disable-sftp' },
     ]);
   });
 
@@ -119,8 +120,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 18,
-      name: 'lock-workspaces',
+      version: 19,
+      name: 'host-disable-sftp',
     });
     expect(database.passwordVaultConfig()).toMatchObject({
       formatVersion: 2,
@@ -300,6 +301,7 @@ describe('hybrid OpenSSH metadata', () => {
       displayName: 'Production',
       group: 'Work',
       color: '#3b82f6',
+      disableSftp: true,
       keywordHighlights: {
         inheritGlobal: true,
         rules: [
@@ -321,6 +323,7 @@ describe('hybrid OpenSSH metadata', () => {
       displayName: 'Production',
       group: 'Work',
       color: '#3b82f6',
+      disableSftp: true,
       keywordHighlights: {
         inheritGlobal: true,
         rules: [expect.objectContaining({ keyword: 'ERROR' })],
@@ -328,6 +331,11 @@ describe('hybrid OpenSSH metadata', () => {
       connectCount: 1,
     });
     expect(database.openSshMetadata(['production']).get('production')).toEqual(connected);
+    expect(database.sftpDisabledForAlias('production')).toBe(true);
+    expect(database.sftpDisabledForAlias('missing')).toBe(false);
+
+    database.updateOpenSshMetadata('production', { disableSftp: false });
+    expect(database.sftpDisabledForAlias('production')).toBe(false);
   });
 
   it('moves hosts between case-insensitive groups and can clear organization', () => {

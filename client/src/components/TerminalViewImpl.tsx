@@ -276,7 +276,12 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     if (!el) return;
     const shouldConnect = generation > 0;
     if (shouldConnect) {
-      updateTab(tab.id, { status: 'connecting', connId: undefined });
+      updateTab(tab.id, {
+        status: 'connecting',
+        connId: undefined,
+        sftpAvailable: undefined,
+        sftpOpen: false,
+      });
     }
 
     const prefs = usePrefsStore.getState();
@@ -740,6 +745,8 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             waitingForTerminalOutput = tab.transferId
               ? false
               : shouldWaitForTerminalOutput(tab.profile.kind, receivedTerminalOutput);
+            const sftpAvailable =
+              tab.profile.kind === 'ssh' ? ctl.sftpAvailable !== false : undefined;
             updateTab(tab.id, {
               status: transportSuspect
                 ? 'interrupted'
@@ -750,6 +757,8 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
               disconnectReason: undefined,
               // Only SSH transport IDs are valid SFTP/forwarding lease keys.
               connId: tab.profile.kind === 'ssh' ? ctl.connId : undefined,
+              sftpAvailable,
+              ...(sftpAvailable === false ? { sftpOpen: false } : {}),
               transferId: undefined,
             });
             if (tab.transferId) completeTabTransfer(tab.transferId);

@@ -172,7 +172,11 @@ export function QuickLauncherDialog() {
   const history = historyResult.data?.sessions ?? EMPTY_HISTORY;
   const activeTab = tabs.find((tab) => tab.id === activeId);
   const activeConnected = activeTab?.profile && activeTab.status === 'connected';
-  const activeSsh = activeConnected && activeTab.profile.kind === 'ssh' && !!activeTab.connId;
+  const activeSsh =
+    activeConnected &&
+    activeTab.profile.kind === 'ssh' &&
+    !!activeTab.connId &&
+    activeTab.sftpAvailable !== false;
   const liveCount = tabs.filter(
     (tab) =>
       tab.profile &&

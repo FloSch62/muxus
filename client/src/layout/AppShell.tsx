@@ -209,7 +209,7 @@ function PaneCanvas({
                 <EmptyPane onAddHost={onAddHost} replaceTabId={tab.id} />
               )}
             </Box>
-            {visible && tab.sftpOpen && tab.connId && (
+            {visible && tab.sftpOpen && tab.sftpAvailable !== false && tab.connId && (
               <ErrorBoundary label="The file browser">
                 <Suspense fallback={null}>
                   <SftpPanel

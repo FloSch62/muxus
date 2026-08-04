@@ -24,6 +24,8 @@ export interface HostDraft {
   displayName: string;
   group: string;
   color?: string;
+  /** Muxus-only console compatibility: never request SFTP or shell integration. */
+  disableSftp: boolean;
   /** Target config file; '' keeps the block's file (or the root for new hosts). */
   file: string;
   hostname: string;
@@ -61,6 +63,7 @@ export function blankDraft(prefillTarget = ''): HostDraft {
     displayName: '',
     group: '',
     color: undefined,
+    disableSftp: false,
     file: '',
     hostname: parsed?.host ?? '',
     user: parsed?.user ?? '',
@@ -99,6 +102,7 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
     displayName: duplicate ? '' : (entry.metadata?.displayName ?? ''),
     group: entry.metadata?.group ?? '',
     color: entry.metadata?.color,
+    disableSftp: entry.metadata?.disableSftp ?? false,
     file: entry.file,
     hostname: o.hostname ?? '',
     user: o.user ?? '',

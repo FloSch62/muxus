@@ -93,6 +93,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   const connections = new SshConnectionManager(app.log, {
     vault,
     folderAuth: folderAuthResolver(database),
+    disableSftpForHost: (alias) => database.sftpDisabledForAlias(alias),
   });
   const forwards = new ForwardManager(connections, app.log);
   const historySettings = database.sessionHistorySettings();

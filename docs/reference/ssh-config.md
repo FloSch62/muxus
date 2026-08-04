@@ -106,6 +106,8 @@ or to a new group file that Muxus creates and adds an `Include` for.
 Its own database holds only what OpenSSH has no field for:
 
 - display name, folder, colour and sidebar order;
+- the per-host SFTP/console-compatibility override (Muxus also falls back to plain-console mode
+  automatically when optional shell-integration setup disconnects a transport);
 - per-host keyword-highlighting rules and session-logging policy;
 - last-connected timestamps and connection counts;
 - workspaces, saved tunnels, and saved Telnet/serial hosts;

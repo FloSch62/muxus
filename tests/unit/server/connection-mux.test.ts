@@ -29,6 +29,8 @@ writeFileSync(emptyConfig, '');
 interface ServerStats {
   connections: number;
   auths: number;
+  execs: number;
+  sftpRequests: number;
   shells: number;
 }
 
@@ -37,12 +39,21 @@ interface ServerStats {
  * per-connection shell cap (the MaxSessions failure mode), and rejected
  * exec/sftp probes so the manager falls back to plain shells.
  */
-function startServer(opts: { maxShellsPerConnection?: number } = {}): Promise<{
+function startServer(opts: {
+  maxShellsPerConnection?: number;
+  disconnectOnExec?: boolean;
+} = {}): Promise<{
   server: Server;
   port: number;
   stats: ServerStats;
 }> {
-  const stats: ServerStats = { connections: 0, auths: 0, shells: 0 };
+  const stats: ServerStats = {
+    connections: 0,
+    auths: 0,
+    execs: 0,
+    sftpRequests: 0,
+    shells: 0,
+  };
   const server = new Server({ hostKeys: [HOST_KEY] }, (conn) => {
     stats.connections += 1;
     let shells = 0;
@@ -62,11 +73,19 @@ function startServer(opts: { maxShellsPerConnection?: number } = {}): Promise<{
         // Empty probe output means "no integrated shell" — the manager then
         // opens a plain shell, which is what these tests exercise.
         session.on('exec', (acceptExec) => {
+          stats.execs += 1;
+          if (opts.disconnectOnExec) {
+            conn.end();
+            return;
+          }
           const stream = acceptExec();
           stream.exit(0);
           stream.end();
         });
-        session.on('sftp', (_acceptSftp, rejectSftp) => rejectSftp?.());
+        session.on('sftp', (_acceptSftp, rejectSftp) => {
+          stats.sftpRequests += 1;
+          rejectSftp?.();
+        });
         session.on('shell', (acceptShell, rejectShell) => {
           if (shells >= (opts.maxShellsPerConnection ?? Number.POSITIVE_INFINITY)) {
             rejectShell?.();
@@ -87,7 +106,10 @@ function startServer(opts: { maxShellsPerConnection?: number } = {}): Promise<{
 }
 
 let knownHostsCounter = 0;
-function makeManager(configFile = emptyConfig): SshConnectionManager {
+function makeManager(
+  configFile = emptyConfig,
+  disableSftpForHost?: (alias: string) => boolean,
+): SshConnectionManager {
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   return new SshConnectionManager(log as never, {
     knownHosts: new KnownHostsStore(
@@ -95,6 +117,7 @@ function makeManager(configFile = emptyConfig): SshConnectionManager {
       path.join(tmp, 'no-global-known-hosts'),
     ),
     loadConfig: () => loadConfigDocument(configFile),
+    disableSftpForHost,
   });
 }
 
@@ -259,6 +282,115 @@ describe('SSH connection multiplexing', () => {
     expect(a.reused).toBe(false);
     expect(b.reused).toBe(false);
     expect(b.connection.id).not.toBe(a.connection.id);
+    expect(started.stats.connections).toBe(2);
+  }, 15_000);
+
+  it('opens a plain shell without probes when SFTP is disabled for the host', async () => {
+    const started = await startServer();
+    server = started.server;
+    const configFile = path.join(tmp, `ssh_config-console-${knownHostsCounter}`);
+    writeFileSync(
+      configFile,
+      [
+        'Host console',
+        '  HostName 127.0.0.1',
+        '  User tester',
+        `  Port ${started.port}`,
+      ].join('\n'),
+    );
+    manager = makeManager(configFile, (alias) => alias === 'console');
+
+    const shell = await manager.connectShell(
+      { kind: 'ssh', target: 'console', passwordOnly: true },
+      makeIo().io,
+      80,
+      24,
+      'xterm-256color',
+    );
+
+    expect(shell.lease.connection.sftpAvailable).toBe(false);
+    expect(started.stats).toMatchObject({ execs: 0, sftpRequests: 0, shells: 1 });
+    await expect(shell.lease.connection.sftp()).rejects.toThrow(
+      'SFTP is disabled for this host.',
+    );
+    expect(started.stats.sftpRequests).toBe(0);
+  }, 15_000);
+
+  it('automatically redials in plain-console mode when integration drops the transport', async () => {
+    const started = await startServer({ disconnectOnExec: true });
+    server = started.server;
+    const configFile = path.join(tmp, `ssh_config-auto-console-${knownHostsCounter}`);
+    writeFileSync(
+      configFile,
+      [
+        'Host console',
+        '  HostName 127.0.0.1',
+        '  User tester',
+        `  Port ${started.port}`,
+      ].join('\n'),
+    );
+    manager = makeManager(configFile);
+
+    const first = await manager.connectShell(
+      { kind: 'ssh', target: 'console', passwordOnly: true },
+      makeIo().io,
+      80,
+      24,
+      'xterm-256color',
+    );
+
+    expect(first.transport).toBe('new');
+    expect(first.lease.connection.sftpAvailable).toBe(false);
+    expect(started.stats).toMatchObject({ connections: 2, execs: 1, sftpRequests: 0, shells: 1 });
+
+    // The inference is remembered for this manager lifetime, so subsequent
+    // sessions reuse the compatible transport without probing again.
+    const second = await manager.connectShell(
+      { kind: 'ssh', target: 'console', passwordOnly: true },
+      makeIo().io,
+      80,
+      24,
+      'xterm-256color',
+    );
+    expect(second.transport).toBe('shared');
+    expect(second.lease.connection.id).toBe(first.lease.connection.id);
+    expect(started.stats).toMatchObject({ connections: 2, execs: 1, sftpRequests: 0, shells: 2 });
+    await expect(second.lease.connection.sftp()).rejects.toThrow(
+      'SFTP is disabled for this host.',
+    );
+  }, 15_000);
+
+  it('does not share transports across different SFTP compatibility settings', async () => {
+    const started = await startServer();
+    server = started.server;
+    const configFile = path.join(tmp, `ssh_config-sftp-isolation-${knownHostsCounter}`);
+    writeFileSync(
+      configFile,
+      [
+        'Host regular console',
+        '  HostName 127.0.0.1',
+        '  User tester',
+        `  Port ${started.port}`,
+      ].join('\n'),
+    );
+    manager = makeManager(configFile, (alias) => alias === 'console');
+
+    const regular = await manager.connectShell(
+      { kind: 'ssh', target: 'regular', passwordOnly: true },
+      makeIo().io,
+      80,
+      24,
+      'xterm-256color',
+    );
+    const consoleShell = await manager.connectShell(
+      { kind: 'ssh', target: 'console', passwordOnly: true },
+      makeIo().io,
+      80,
+      24,
+      'xterm-256color',
+    );
+
+    expect(consoleShell.lease.connection.id).not.toBe(regular.lease.connection.id);
     expect(started.stats.connections).toBe(2);
   }, 15_000);
 });
