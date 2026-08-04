@@ -68,6 +68,11 @@ jobs:
             build_args: --win nsis --x64
             artifact_name: windows-x64
             artifact_path: electron/release/*.exe
+          - name: Windows ARM64
+            os: windows-11-arm
+            build_args: --win nsis --arm64
+            artifact_name: windows-arm64
+            artifact_path: electron/release/*.exe
           - name: macOS universal
             os: macos-latest
             # These overrides also backfill tags created before the universal

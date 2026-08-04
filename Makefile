@@ -7,7 +7,7 @@ deb:
 	pnpm build && pnpm --filter @muxus/electron exec electron-builder --linux deb --x64
 
 win:
-	pnpm build && pnpm --filter @muxus/electron exec electron-builder --win --x64
+	pnpm build && pnpm --filter @muxus/electron exec electron-builder --win --x64 --arm64
 
 dmg:
 	pnpm build && pnpm --filter @muxus/electron exec electron-builder --mac dmg
