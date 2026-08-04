@@ -10,10 +10,10 @@ const script = fileURLToPath(import.meta.url);
 const svg = path.resolve(root, '../../client/public/muxus.svg');
 const main = path.resolve(root, '../build/icon.png');
 const sizes = [16, 24, 32, 48, 64, 128, 256, 512, 1024];
-// Keep the macOS/Windows source inside a platform-friendly safe area. Linux
-// launchers add their own spacing, so its hicolor icons should use the full
-// canvas (the SVG already contains a small amount of transparent padding).
-const mainContentScale = 0.82;
+// The SVG already includes transparent padding. Keep only a small additional
+// inset so the macOS/Windows icon has the same optical size as native app icons.
+// Linux launchers add their own spacing, so hicolor icons use the full canvas.
+const mainContentScale = 0.91;
 const linuxContentScale = 1;
 const transparent = { r: 0, g: 0, b: 0, alpha: 0 };
 
