@@ -699,6 +699,7 @@ describe('keyboard pane focus', () => {
     expect(useTabsStore.getState().cyclePane(false)).toBe(true);
     expect(useTabsStore.getState().activePaneId).toBe('pane-test');
   });
+
 });
 
 describe('moving tabs between panes', () => {
@@ -898,16 +899,19 @@ describe('moving tabs between panes', () => {
     ]);
   });
 
-  it('activates tabs by position within the focused pane', () => {
+  it('activates tabs by their window-wide pane and strip order', () => {
     const store = useTabsStore.getState();
-    const firstId = store.open({ kind: 'local' }, 'One');
-    store.open({ kind: 'local' }, 'Two');
-    const thirdId = store.open({ kind: 'local' }, 'Three');
+    const firstId = store.open({ kind: 'local' }, 'Left one');
+    store.open({ kind: 'local' }, 'Left two');
+    const rightPane = store.split('pane-test', 'right')!;
+    const thirdId = useTabsStore.getState().open({ kind: 'local' }, 'Right one');
+    useTabsStore.getState().open({ kind: 'local' }, 'Right two');
 
     expect(useTabsStore.getState().activateTabIndex(0)).toBe(true);
-    expect(useTabsStore.getState().activeId).toBe(firstId);
-    expect(useTabsStore.getState().activateTabIndex('last')).toBe(true);
-    expect(useTabsStore.getState().activeId).toBe(thirdId);
+    expect(useTabsStore.getState()).toMatchObject({ activePaneId: 'pane-test', activeId: firstId });
+    expect(useTabsStore.getState().activateTabIndex(2)).toBe(true);
+    expect(useTabsStore.getState()).toMatchObject({ activePaneId: rightPane, activeId: thirdId });
+    expect(useTabsStore.getState().activateTabIndex(4)).toBe(false);
   });
 });
 

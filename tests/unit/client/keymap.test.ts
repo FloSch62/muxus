@@ -151,6 +151,16 @@ describe('default bindings', () => {
       'tab.to-pane.right',
     ]);
   });
+
+  it('keeps numbered tab selection on the Alt row', () => {
+    expect(commandsForChord('Alt+Digit3').map((command) => command.id)).toEqual([
+      'tab.select.3',
+    ]);
+    expect(commandsForChord('Alt+Digit9').map((command) => command.id)).toEqual([
+      'tab.select.last',
+    ]);
+    expect(commandsForChord('Alt+Shift+Digit3')).toEqual([]);
+  });
 });
 
 describe('user overrides', () => {

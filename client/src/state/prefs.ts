@@ -8,6 +8,7 @@ import type { KeywordHighlightRule } from '@muxus/shared';
 export type ThemeMode = 'light' | 'dark' | 'os';
 export type EffectiveThemeMode = Exclude<ThemeMode, 'os'>;
 export type RightClickAction = 'copy-paste' | 'paste' | 'menu';
+export type TabNumberVisibility = 'shortcut' | 'always';
 
 /** Presentation of one sidebar folder. Folders are paths, not records, so
  *  their looks cannot hang off a host and live here instead. */
@@ -95,6 +96,8 @@ export interface PrefsState {
   interfaceZoom: number;
   /** Splitting a pane opens a second session on the same host. */
   splitInheritsSession: boolean;
+  /** When window-wide shortcut numbers are shown on terminal tabs. */
+  tabNumberVisibility: TabNumberVisibility;
   /**
    * Chords per command id, replacing that command's defaults. An empty array
    * unbinds the command; commands absent from the map keep their defaults.
@@ -134,6 +137,10 @@ function isThemeMode(value: unknown): value is ThemeMode {
   return value === 'light' || value === 'os' || value === 'dark';
 }
 
+function isTabNumberVisibility(value: unknown): value is TabNumberVisibility {
+  return value === 'shortcut' || value === 'always';
+}
+
 export function terminalSchemeIdForMode(
   prefs: Pick<PrefsState, 'lightTerminalScheme' | 'darkTerminalScheme'>,
   mode: EffectiveThemeMode,
@@ -150,6 +157,7 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   };
   // A missing or invalid value falls through to the store's System default.
   if (!isThemeMode(state.themeMode)) delete state.themeMode;
+  if (!isTabNumberVisibility(state.tabNumberVisibility)) delete state.tabNumberVisibility;
   // v0 shipped the Muxus scheme as the default; stored copies of that
   // default follow the new one.
   let legacyTerminalScheme = state.terminalScheme;
@@ -281,6 +289,7 @@ export const usePrefsStore = create<PrefsState>()(
       restoreScrollback: true,
       interfaceZoom: 1,
       splitInheritsSession: true,
+      tabNumberVisibility: 'shortcut',
       keybindings: {},
       commandButtons: [],
       showCommandBar: true,
@@ -297,7 +306,7 @@ export const usePrefsStore = create<PrefsState>()(
     }),
     {
       name: 'muxus-prefs',
-      version: 9,
+      version: 10,
       migrate: migratePrefsState,
       storage: createJSONStorage(() => muxusStateStorage),
     },

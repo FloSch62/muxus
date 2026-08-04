@@ -97,8 +97,9 @@ restore or reconnect.
 ## Keyboard
 
 Controls whether **new splits continue the current session** (on by default; SSH reuses the
-live connection, and serial always asks), a summary of the layout keys, and access to the
-full shortcut editor.
+live connection, and serial always asks), whether window-wide tab numbers appear **while
+Alt is held** or **always**, a summary of the layout keys, and
+access to the full shortcut editor.
 
 <figure markdown="span">
   ![The keyboard shortcut sheet](../assets/screenshots/shortcuts.png#only-light){ .shadow }

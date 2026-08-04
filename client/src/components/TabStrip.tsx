@@ -95,10 +95,12 @@ function PinIcon(props: SvgIconProps) {
 /** Browser-style terminal tab strip scoped to one split pane. */
 export function TabStrip({
   paneId,
+  tabNumberById,
   focused,
   zoomed,
 }: {
   paneId: string;
+  tabNumberById: ReadonlyMap<string, number>;
   focused: boolean;
   zoomed: boolean;
 }) {
@@ -277,6 +279,7 @@ export function TabStrip({
     >
       {tabs.map((tab) => {
         const active = tab.id === activeId;
+        const tabNumber = tabNumberById.get(tab.id);
         const hasUnreadOutput = unreadOutputIds.has(tab.id);
         const TabIcon =
           tab.profile === null
@@ -444,8 +447,12 @@ export function TabStrip({
               '&:hover .muxus-tab-close': { visibility: 'visible' },
             })}
           >
-            <Box component="span" sx={{ position: 'relative', display: 'flex', flexShrink: 0 }}>
+            <Box
+              component="span"
+              sx={{ position: 'relative', display: 'flex', width: 18, flexShrink: 0 }}
+            >
               <TabIcon
+                className="muxus-tab-icon"
                 sx={{
                   fontSize: 15,
                   color: hasUnreadOutput
@@ -455,6 +462,16 @@ export function TabStrip({
                       : 'text.secondary',
                 }}
               />
+              {tabNumber !== undefined ? (
+                <Box
+                  component="span"
+                  className="muxus-tab-number"
+                  aria-hidden
+                  title={`Tab ${tabNumber}`}
+                >
+                  {tabNumber}
+                </Box>
+              ) : null}
               {hasUnreadOutput ? (
                 <Box
                   component="span"

@@ -69,6 +69,7 @@ import {
   terminalSchemeIdForMode,
   usePrefsStore,
   type RightClickAction,
+  type TabNumberVisibility,
   type ThemeMode,
 } from '../state/prefs.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
@@ -723,12 +724,14 @@ function BehaviorSection() {
 /** Split behavior plus the entry point to the full shortcut editor. */
 function KeyboardSection() {
   const splitInheritsSession = usePrefsStore((s) => s.splitInheritsSession);
+  const tabNumberVisibility = usePrefsStore((s) => s.tabNumberVisibility);
   const set = usePrefsStore((s) => s.set);
   const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
   const keybindings = usePrefsStore((s) => s.keybindings);
   const customCount = Object.keys(keybindings).length;
   const splitChord = useChordLabel('pane.split.right');
   const focusChord = useChordLabel('pane.focus.right');
+  const numberedTabChord = useChordLabel('tab.select.1');
   const moveChord = useChordLabel('tab.to-pane.right');
   const zoomChord = useChordLabel('pane.zoom');
 
@@ -756,10 +759,30 @@ function KeyboardSection() {
         />
       </Box>
       <Box>
+        <SectionTitle>Tab numbers</SectionTitle>
+        <TextField
+          select
+          size="small"
+          label="Show tab numbers"
+          value={tabNumberVisibility}
+          onChange={(event) =>
+            set({ tabNumberVisibility: event.target.value as TabNumberVisibility })
+          }
+          sx={{ width: 320, maxWidth: '100%' }}
+        >
+          <MenuItem value="shortcut">While Alt is held</MenuItem>
+          <MenuItem value="always">Always</MenuItem>
+        </TextField>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+          Tabs are numbered across the whole window and update when tabs or panes move.
+        </Typography>
+      </Box>
+      <Box>
         <SectionTitle>Layout keys</SectionTitle>
         <Stack spacing={0.75} sx={{ mb: 2 }}>
           <KeyboardSummaryRow label="Split the focused pane in any direction" chord={splitChord} />
           <KeyboardSummaryRow label="Move focus between panes" chord={focusChord} />
+          <KeyboardSummaryRow label="Jump to a window-wide numbered tab" chord={numberedTabChord} />
           <KeyboardSummaryRow label="Send the current tab to another pane" chord={moveChord} />
           <KeyboardSummaryRow label="Zoom a pane / restore the layout" chord={zoomChord} />
         </Stack>
