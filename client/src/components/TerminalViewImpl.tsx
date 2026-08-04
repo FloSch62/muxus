@@ -1333,15 +1333,17 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       </Menu>
       <AuthPromptDialog request={authPrompt} onSubmit={answerAuth} />
       <HostKeyDialog request={hostKey} onAnswer={answerHostKey} />
-      <PasteConfirmDialog
-        text={pendingPaste}
-        onCancel={() => setPendingPaste(null)}
-        onConfirm={(text) => {
-          setPendingPaste(null);
-          termRef.current?.paste(text);
-          termRef.current?.focus();
-        }}
-      />
+      {pendingPaste !== null ? (
+        <PasteConfirmDialog
+          initialText={pendingPaste}
+          onCancel={() => setPendingPaste(null)}
+          onConfirm={(text) => {
+            setPendingPaste(null);
+            termRef.current?.paste(text);
+            termRef.current?.focus();
+          }}
+        />
+      ) : null}
     </Box>
   );
 }

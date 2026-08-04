@@ -16,4 +16,8 @@ describe('terminal paste safety', () => {
       expect(pasteLineCount(text)).toBe(2);
     }
   });
+
+  it('counts a very large paste without allocating a line array', () => {
+    expect(pasteLineCount('line\n'.repeat(100_000))).toBe(100_001);
+  });
 });

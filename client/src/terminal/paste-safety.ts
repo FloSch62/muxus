@@ -3,5 +3,15 @@ export function requiresPasteConfirmation(text: string): boolean {
 }
 
 export function pasteLineCount(text: string): number {
-  return text.split(/\r\n|\r|\n/).length;
+  let count = 1;
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    if (code === 10) {
+      count += 1;
+    } else if (code === 13) {
+      count += 1;
+      if (text.charCodeAt(index + 1) === 10) index += 1;
+    }
+  }
+  return count;
 }
