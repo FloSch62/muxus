@@ -34,6 +34,8 @@ interface TabBase {
   transferId?: string;
   /** SFTP file panel visible for this tab. */
   sftpOpen: boolean;
+  /** Server-advertised capability for the current SSH transport. */
+  sftpAvailable?: boolean;
   /** Monotonic UI signal consumed by the mounted terminal search bar. */
   searchRequest: number;
   /** User-set color flag marking the tab. */
@@ -83,6 +85,7 @@ type TabUpdate = Partial<{
   terminalId: string | undefined;
   transferId: string | undefined;
   sftpOpen: boolean;
+  sftpAvailable: boolean | undefined;
   color: string | undefined;
   loggingEnabled: boolean | undefined;
   sessionLogId: string | undefined;
@@ -368,6 +371,7 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
           connectOnMount: true as const,
           connId: undefined,
           sftpOpen: false,
+          sftpAvailable: undefined,
           searchRequest: 0,
           editorPaths: [],
           activeEditorPath: undefined,
@@ -743,6 +747,7 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
           restored: true,
           status: tab.connectOnMount ? 'connecting' as const : 'closed' as const,
           sftpOpen: false,
+          sftpAvailable: undefined,
           searchRequest: 0,
           editorPaths: [],
           activeEditorPath: undefined,
@@ -860,7 +865,13 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
       tabs: state.tabs.map((tab) => {
         if (tab.id !== id) return tab;
         if (tab.profile) return { ...tab, ...patch };
-        const { status: _status, connId: _connId, sftpOpen: _sftpOpen, ...emptyPatch } = patch;
+        const {
+          status: _status,
+          connId: _connId,
+          sftpOpen: _sftpOpen,
+          sftpAvailable: _sftpAvailable,
+          ...emptyPatch
+        } = patch;
         return { ...tab, ...emptyPatch };
       }),
     })),

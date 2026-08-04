@@ -16,6 +16,7 @@ export function hostDetailLines(host: ManagedHost): string[] {
     lines.push(`Key ${resolved.identityFiles.map((file) => file.split(/[\\/]/).pop()).join(', ')}`);
   }
   if (resolved.passwordOnly) lines.push('Password authentication');
+  if (host.entry.metadata?.disableSftp) lines.push('SFTP disabled');
   if (resolved.forwards.length > 0) {
     lines.push(
       `${resolved.forwards.length} port forward${resolved.forwards.length > 1 ? 's' : ''} on connect`,

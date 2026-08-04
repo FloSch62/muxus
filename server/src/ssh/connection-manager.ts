@@ -46,7 +46,10 @@ import {
   type TransportLease,
 } from './connection-leases.js';
 import { connectionAlgorithms } from './algorithms.js';
-import { openIntegratedRemoteShell } from './remote-shell-integration.js';
+import {
+  openIntegratedRemoteShell,
+  RemoteShellTransportLostError,
+} from './remote-shell-integration.js';
 import {
   CredentialVaultCorruptError,
   InvalidMasterPasswordError,
@@ -126,6 +129,8 @@ export interface ManagedConnection {
   muxKey: string;
   /** Concrete OpenSSH alias eligible for Muxus-owned recent-use metadata. */
   metadataAlias?: string;
+  /** Whether callers may open SFTP channels on this transport. */
+  sftpAvailable: boolean;
   /** *Forward lines resolved from ssh config — auto-started once the session is up. */
   configForwards: ConfigForward[];
   /** Current passive keepalive health of the transport. */
@@ -246,9 +251,12 @@ export class SshConnectionManager {
   private readonly postAuth = new WeakMap<Client, Promise<void>>();
   /** In-flight dials by mux key, so simultaneous sessions share one TCP connection and one auth round-trip. */
   private readonly pendingDials = new Map<string, Promise<ManagedConnection>>();
+  /** Dial plans whose optional integration setup killed the remote transport; reset on app restart. */
+  private readonly automaticPlainShellKeys = new Set<string>();
   private readonly loadConfig: () => ConfigDocument;
   private readonly vault: PasswordVault | undefined;
   private readonly folderAuth: FolderAuthLookup | undefined;
+  private readonly disableSftpForHost: ((alias: string) => boolean) | undefined;
   private readonly agentOperationTimeoutMs: number;
   private readonly agentWaitStatusMs: number;
   readonly knownHosts: KnownHostsStore;
@@ -261,6 +269,8 @@ export class SshConnectionManager {
       vault?: PasswordVault;
       /** Folder-inherited connection defaults per alias (Muxus sidebar folders). */
       folderAuth?: FolderAuthLookup;
+      /** Muxus-owned per-host compatibility setting; never written to ssh_config. */
+      disableSftpForHost?: (alias: string) => boolean;
       /** Test seam; production uses the exported responsive-agent defaults. */
       agentOperationTimeoutMs?: number;
       /** Test seam; production uses the exported responsive-agent defaults. */
@@ -271,6 +281,7 @@ export class SshConnectionManager {
     this.loadConfig = options.loadConfig ?? (() => loadConfigDocument());
     this.vault = options.vault;
     this.folderAuth = options.folderAuth;
+    this.disableSftpForHost = options.disableSftpForHost;
     this.agentOperationTimeoutMs =
       options.agentOperationTimeoutMs ?? DEFAULT_AGENT_OPERATION_TIMEOUT_MS;
     this.agentWaitStatusMs =
@@ -296,6 +307,7 @@ export class SshConnectionManager {
       port: conn.port,
       user: conn.user,
       metadataAlias: conn.metadataAlias,
+      sftpAvailable: conn.sftpAvailable,
     }));
   }
 
@@ -312,12 +324,19 @@ export class SshConnectionManager {
     profile: SshProfile,
     io: ConnectIo,
     owner: ConnectionLeaseOwner = 'terminal',
-    opts: { freshTransport?: boolean } = {},
+    opts: { freshTransport?: boolean; forcePlainShell?: boolean } = {},
   ): Promise<MuxedConnectionLease> {
     const doc = this.loadConfig();
     const chain = buildChain(doc, profile, this.folderAuth);
-    const key = muxKey(chain);
     const target = chain[chain.length - 1]!;
+    const metadataAlias =
+      profile.useConfig === false ? undefined : findMetadataAlias(doc, target.spec.host);
+    const regularKey = muxKey(chain, false);
+    const disableSftp =
+      (metadataAlias ? (this.disableSftpForHost?.(metadataAlias) ?? false) : false) ||
+      this.automaticPlainShellKeys.has(regularKey) ||
+      opts.forcePlainShell === true;
+    const key = muxKey(chain, disableSftp);
     const configForwards = target.resolved.forwards;
     const label = `${target.user}@${target.resolved.hostname}:${target.port}`;
     this.log.debug(
@@ -351,7 +370,15 @@ export class SshConnectionManager {
       }
     }
 
-    const dial = this.dialChain(doc, chain, profile, io, owner, key);
+    const dial = this.dialChain(
+      chain,
+      profile,
+      io,
+      owner,
+      key,
+      metadataAlias,
+      disableSftp,
+    );
     const tracked = dial.then((lease) => lease.connection);
     tracked.catch(() => undefined); // waiters observe the rejection through their own await
     this.pendingDials.set(key, tracked);
@@ -400,6 +427,9 @@ export class SshConnectionManager {
       return { lease, stream, transport: lease.reused ? 'shared' : 'new' };
     } catch (err) {
       lease.release();
+      if (err instanceof RemoteShellTransportLostError) {
+        return this.retryPlainShell(profile, io, cols, rows, term, lease, 'new', err);
+      }
       if (!lease.reused) throw err;
       this.log.info(
         { host: lease.connection.host, err: String(err) },
@@ -412,18 +442,71 @@ export class SshConnectionManager {
         return { lease: dedicated, stream, transport: 'overflow' };
       } catch (retryErr) {
         dedicated.release();
+        if (retryErr instanceof RemoteShellTransportLostError) {
+          return this.retryPlainShell(
+            profile,
+            io,
+            cols,
+            rows,
+            term,
+            dedicated,
+            'overflow',
+            retryErr,
+          );
+        }
         throw retryErr;
       }
     }
   }
 
+  private async retryPlainShell(
+    profile: SshProfile,
+    io: ConnectIo,
+    cols: number,
+    rows: number,
+    term: string,
+    failed: MuxedConnectionLease,
+    transport: TerminalShell['transport'],
+    error: RemoteShellTransportLostError,
+  ): Promise<TerminalShell> {
+    // A probe-triggered disconnect can happen for config aliases and direct
+    // profiles alike. The non-compatibility mux key is therefore the stable
+    // runtime identity to remember, without silently persisting host edits.
+    this.automaticPlainShellKeys.add(failed.connection.muxKey);
+    this.log.info(
+      { host: failed.connection.host, err: error.transportError ?? error },
+      'remote shell integration disconnected the transport; retrying as a plain console',
+    );
+    io.status(
+      'This server rejected SSH shell integration — reconnecting in plain-console mode …',
+      { transient: true },
+    );
+    const compatible = await this.connect(profile, io, 'terminal', {
+      freshTransport: true,
+      forcePlainShell: true,
+    });
+    try {
+      const stream = await compatible.connection.shell(
+        cols,
+        rows,
+        term,
+        sessionSettings(compatible.target.resolved),
+      );
+      return { lease: compatible, stream, transport };
+    } catch (retryError) {
+      compatible.release();
+      throw retryError;
+    }
+  }
+
   private async dialChain(
-    doc: ConfigDocument,
     chain: ChainHop[],
     profile: SshProfile,
     io: ConnectIo,
     owner: ConnectionLeaseOwner,
     key: string,
+    metadataAlias: string | undefined,
+    disableSftp: boolean,
   ): Promise<ConnectionLease> {
     const clients: Client[] = [];
     const postAuth: Promise<void>[] = [];
@@ -482,8 +565,6 @@ export class SshConnectionManager {
     const target = chain[chain.length - 1]!;
     const client = clients[clients.length - 1]!;
     const jumpClients = clients.slice(0, -1);
-    const metadataAlias =
-      profile.useConfig === false ? undefined : findMetadataAlias(doc, target.spec.host);
     const id = nanoid(10);
     const closeListeners = new Set<(reason?: string) => void>();
     const postAuthSettled = Promise.all(postAuth).then(() => undefined);
@@ -521,6 +602,7 @@ export class SshConnectionManager {
       user: target.user,
       muxKey: key,
       metadataAlias,
+      sftpAvailable: !disableSftp,
       health: () => transportHealth,
       configForwards: target.resolved.forwards,
       shell: async (cols, rows, term, session = sessionSettings(target.resolved)) => {
@@ -530,7 +612,7 @@ export class SshConnectionManager {
         if (session.remoteCommand) {
           return openSessionExec(client, session.remoteCommand, pty, session.env);
         }
-        if (pty) {
+        if (pty && !disableSftp) {
           const integrated = await openIntegratedRemoteShell(client, getSftp, pty, session.env);
           if (integrated) return integrated;
         }
@@ -541,7 +623,10 @@ export class SshConnectionManager {
         });
       },
       // One SFTP channel per connection, shared by every file operation.
-      sftp: getSftp,
+      sftp: () =>
+        disableSftp
+          ? Promise.reject(new Error('SFTP is disabled for this host.'))
+          : getSftp(),
       onHealth: (listener) => {
         healthListeners.add(listener);
         if (transportHealth === 'suspect') {
@@ -851,14 +936,15 @@ export class SshConnectionManager {
  * deliberately absent — they matter while establishing a transport, not for
  * attaching to an established one.
  */
-export function muxKey(chain: ChainHop[]): string {
+export function muxKey(chain: ChainHop[], disableSftp = false): string {
   const hops = chain.map(
     (hop) =>
       `${hop.user}@${hop.resolved.hostname}:${hop.port};agentForward=${hop.resolved.forwardAgent ? 'yes' : 'no'}`,
   );
   const first = chain[0];
   const proxy = first?.resolved.proxyCommand ? expandedProxyCommand(first) : undefined;
-  return (proxy ? [`proxy(${proxy})`, ...hops] : hops).join(' -> ');
+  const key = (proxy ? [`proxy(${proxy})`, ...hops] : hops).join(' -> ');
+  return disableSftp ? `${key};muxusSftp=disabled` : key;
 }
 
 function mergeConfigForwards(

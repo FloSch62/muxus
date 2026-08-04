@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   openIntegratedRemoteShell,
   parseShellProbe,
+  RemoteShellTransportLostError,
   remoteShellCommand,
 } from '../../../server/src/ssh/remote-shell-integration.js';
 
@@ -10,6 +11,10 @@ class StubChannel extends EventEmitter {
   destroy(): this {
     return this;
   }
+}
+
+function stubClient(exec: unknown) {
+  return Object.assign(new EventEmitter(), { exec }) as never;
 }
 
 describe('remote shell integration', () => {
@@ -77,7 +82,7 @@ describe('remote shell integration', () => {
     };
 
     const result = await openIntegratedRemoteShell(
-      { exec } as never,
+      stubClient(exec),
       async () => {
         setupOrder.push('sftp-start');
         return sftp as never;
@@ -86,7 +91,7 @@ describe('remote shell integration', () => {
     );
 
     expect(result).toBe(terminalChannel);
-    expect(setupOrder.slice(0, 3)).toEqual(['probe-start', 'sftp-start', 'probe-finish']);
+    expect(setupOrder.slice(0, 3)).toEqual(['probe-start', 'probe-finish', 'sftp-start']);
     expect(commands[0]).toContain('"${SHELL-}" "${ZDOTDIR-}" "${HOME-}"');
     expect(commands[0]).not.toContain('\\${SHELL-}');
     expect(commands[1]).toMatch(
@@ -143,7 +148,7 @@ describe('remote shell integration', () => {
     };
 
     const result = await openIntegratedRemoteShell(
-      { exec } as never,
+      stubClient(exec),
       async () => sftp as never,
       { term: 'xterm-256color', cols: 80, rows: 24 },
     );
@@ -155,6 +160,57 @@ describe('remote shell integration', () => {
     expect(commands[1]).toMatch(
       /--rcfile '\/home\/u\/\.cache\/muxus\/shell-integration\/[a-f0-9]{12}\/bash-init\.bash'/,
     );
+  });
+
+  it('does not request SFTP when the remote is not a supported Unix shell', async () => {
+    const probeChannel = new StubChannel();
+    const getSftp = vi.fn();
+    const exec = vi.fn(
+      (
+        _command: string,
+        callback: (error: Error | undefined, channel: StubChannel) => void,
+      ) => {
+        callback(undefined, probeChannel);
+        setImmediate(() => {
+          probeChannel.emit('data', Buffer.from('console appliance\n'));
+          probeChannel.emit('close');
+        });
+      },
+    );
+
+    const result = await openIntegratedRemoteShell(
+      stubClient(exec),
+      getSftp,
+      { term: 'xterm-256color', cols: 80, rows: 24 },
+    );
+
+    expect(result).toBeUndefined();
+    expect(getSftp).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a transport lost during the optional shell probe', async () => {
+    const client = new EventEmitter() as EventEmitter & {
+      exec: (
+        command: string,
+        callback: (error: Error | undefined, channel: StubChannel) => void,
+      ) => void;
+    };
+    const probeChannel = new StubChannel();
+    client.exec = (_command, callback) => {
+      callback(undefined, probeChannel);
+      setImmediate(() => {
+        client.emit('error', new Error('remote protocol disconnect'));
+        probeChannel.emit('close');
+      });
+    };
+
+    await expect(
+      openIntegratedRemoteShell(
+        client as never,
+        vi.fn(),
+        { term: 'xterm-256color', cols: 80, rows: 24 },
+      ),
+    ).rejects.toBeInstanceOf(RemoteShellTransportLostError);
   });
 
   it('detects supported shells among startup output', () => {

@@ -95,6 +95,15 @@ Two per-host overrides of the global [settings](settings.md):
 
 ## Advanced
 
+Muxus does not request SFTP unless its initial probe identifies a supported Unix shell. If a
+console server disconnects when it sees even that probe, Muxus reconnects once in plain-console
+mode and remembers the compatibility choice until the app restarts. No manual setting is required
+for the session to connect.
+
+For known-sensitive SSH console servers and network appliances, **Disable SFTP for this host**
+skips the initial probe as well. This persistent override avoids the first reconnect entirely.
+The file-browser controls are unavailable for plain-console sessions.
+
 Any other keyword OpenSSH understands is entered here as free-form option/value pairs. The
 panel shows the **exact block** that will be written.
 

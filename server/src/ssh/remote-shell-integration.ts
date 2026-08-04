@@ -58,6 +58,19 @@ type SupportedShell = {
 };
 
 /**
+ * The server dropped the whole SSH transport while Muxus was attempting the
+ * optional Unix shell-integration setup. ConnectionManager uses this narrow
+ * signal to redial once as a plain console session; ordinary channel
+ * rejections still fall through to a plain shell on the existing transport.
+ */
+export class RemoteShellTransportLostError extends Error {
+  constructor(readonly transportError?: Error) {
+    super('SSH transport was lost during remote shell integration setup.');
+    this.name = 'RemoteShellTransportLostError';
+  }
+}
+
+/**
  * Open a zsh/bash SSH session with the same OSC 133 command lifecycle
  * reporting as local terminals. Returns undefined when the remote cannot
  * support the bootstrap so callers can open a normal shell instead.
@@ -68,15 +81,37 @@ export async function openIntegratedRemoteShell(
   pty: PseudoTtyOptions,
   env?: Record<string, string>,
 ): Promise<ClientChannel | undefined> {
+  let transportLost = false;
+  let transportError: Error | undefined;
+  const onTransportError = (error: Error) => {
+    transportLost = true;
+    transportError = error;
+  };
+  const onTransportClose = () => {
+    transportLost = true;
+  };
+  client.once('error', onTransportError);
+  client.once('close', onTransportClose);
+  client.once('end', onTransportClose);
   try {
-    // Shell detection and SFTP channel setup are independent network
-    // round-trips, so overlap them on the same SSH transport.
-    const [shell, sftp] = await Promise.all([probeShell(client), getSftp()]);
-    if (!shell) return undefined;
+    // Do not speculatively open SFTP against console appliances. Many expose
+    // only a plain shell channel and some disconnect the whole transport when
+    // an unsupported subsystem is requested.
+    const shell = await probeShell(client);
+    if (!shell) {
+      if (transportLost) throw new RemoteShellTransportLostError(transportError);
+      return undefined;
+    }
+    const sftp = await getSftp();
     const root = await installIntegration(sftp, shell);
     return await openExec(client, remoteShellCommand(shell, root), { pty, ...(env ? { env } : {}) });
   } catch {
+    if (transportLost) throw new RemoteShellTransportLostError(transportError);
     return undefined;
+  } finally {
+    client.off('error', onTransportError);
+    client.off('close', onTransportClose);
+    client.off('end', onTransportClose);
   }
 }
 
