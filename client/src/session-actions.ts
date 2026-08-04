@@ -5,6 +5,7 @@ import type {
   SshHostEntry,
 } from '@muxus/shared';
 import type { ManagedHost } from './managed-hosts.js';
+import { localShellLaunchArguments } from './local-shell-profile.js';
 import { savedHostDisplayName } from './saved-hosts.js';
 import {
   usePrefsStore,
@@ -84,7 +85,7 @@ export function openLocalShellProfile(
   const profile: LocalProfile = {
     kind: 'local',
     shell: saved.shell.trim() || undefined,
-    args: saved.args.length ? saved.args : undefined,
+    args: localShellLaunchArguments(saved.args),
     cwd: saved.cwd.trim() || undefined,
     startupCommand: saved.startupCommand.trim() || undefined,
   };

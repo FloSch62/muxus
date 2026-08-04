@@ -14,6 +14,7 @@ import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import { useAppInfo } from '../api/queries.js';
+import { parseLocalShellArgumentText } from '../local-shell-profile.js';
 import { confirmAction } from '../state/dialogs.js';
 import {
   usePrefsStore,
@@ -194,11 +195,7 @@ export function LocalShellProfilesSection() {
                       value={profile.args.join('\n')}
                       onChange={(event) =>
                         updateProfile(profile.id, {
-                          args: event.target.value
-                            .split(/\r?\n/)
-                            .filter((argument) => argument.length > 0)
-                            .slice(0, 64)
-                            .map((argument) => argument.slice(0, 4096)),
+                          args: parseLocalShellArgumentText(event.target.value),
                         })
                       }
                       placeholder={info?.platform === 'win32' ? '-d\nUbuntu' : '--login'}

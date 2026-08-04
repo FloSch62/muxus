@@ -61,3 +61,22 @@ export function localStartupInput(command: string | undefined): string | undefin
   if (!trimmed) return undefined;
   return `${trimmed.replace(/\r?\n/g, '\r')}\r`;
 }
+
+// Terminal control bytes are the protocol delimiters these expressions parse.
+// oxlint-disable-next-line no-control-regex
+const SHELL_PROMPT_OSC = /\x1b\](?:133|633);A(?:;[^\x07\x1b]*)?(?:\x07|\x1b\\)/;
+// oxlint-disable-next-line no-control-regex
+const ANSI_OSC = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
+// oxlint-disable-next-line no-control-regex
+const ANSI_CSI = /\x1b\[[0-?]*[ -/]*[@-~]/g;
+const COMMON_PROMPT_END = /(?:[$#>]|❯|➜)\s*$/u;
+
+/** Detect the first interactive prompt without feeding startup text into shell
+ * initialization. OSC 133/633 is authoritative; the visible fallback covers
+ * default cmd, PowerShell, POSIX, fish, and common themed prompts. */
+export function localShellPromptReady(output: string): boolean {
+  if (SHELL_PROMPT_OSC.test(output)) return true;
+  const visible = output.replace(ANSI_OSC, '').replace(ANSI_CSI, '');
+  const line = visible.split(/[\r\n]/).at(-1) ?? '';
+  return COMMON_PROMPT_END.test(line);
+}
