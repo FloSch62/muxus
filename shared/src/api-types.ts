@@ -435,7 +435,7 @@ export interface OpenSshProfileMetadata {
   icon?: string;
   /** Muxus-only terminal highlighting for this OpenSSH alias. */
   keywordHighlights?: HostKeywordHighlightConfig;
-  /** Do not open SFTP channels or probe for remote Unix shell integration. */
+  /** Console compatibility: skip SFTP/integration probes and implicit TTY allocation. */
   disableSftp?: boolean;
   lastConnectedAt?: string;
   connectCount: number;

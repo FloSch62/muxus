@@ -30,6 +30,7 @@ interface ServerStats {
   connections: number;
   auths: number;
   execs: number;
+  ptyRequests: number;
   sftpRequests: number;
   shells: number;
 }
@@ -42,6 +43,7 @@ interface ServerStats {
 function startServer(opts: {
   maxShellsPerConnection?: number;
   disconnectOnExec?: boolean;
+  rejectPty?: boolean;
 } = {}): Promise<{
   server: Server;
   port: number;
@@ -51,6 +53,7 @@ function startServer(opts: {
     connections: 0,
     auths: 0,
     execs: 0,
+    ptyRequests: 0,
     sftpRequests: 0,
     shells: 0,
   };
@@ -69,7 +72,11 @@ function startServer(opts: {
     conn.on('ready', () => {
       conn.on('session', (acceptSession) => {
         const session = acceptSession();
-        session.on('pty', (acceptPty) => acceptPty?.());
+        session.on('pty', (acceptPty, rejectPty) => {
+          stats.ptyRequests += 1;
+          if (opts.rejectPty) rejectPty?.();
+          else acceptPty?.();
+        });
         // Empty probe output means "no integrated shell" — the manager then
         // opens a plain shell, which is what these tests exercise.
         session.on('exec', (acceptExec) => {
@@ -285,8 +292,10 @@ describe('SSH connection multiplexing', () => {
     expect(started.stats.connections).toBe(2);
   }, 15_000);
 
-  it('opens a plain shell without probes when SFTP is disabled for the host', async () => {
-    const started = await startServer();
+  it('opens a plain shell without probes or an implicit PTY in console mode', async () => {
+    // Network consoles commonly accept a shell but reject pty-req. Console
+    // compatibility must skip the implicit PTY as well as exec/SFTP probes.
+    const started = await startServer({ rejectPty: true });
     server = started.server;
     const configFile = path.join(tmp, `ssh_config-console-${knownHostsCounter}`);
     writeFileSync(
@@ -309,11 +318,48 @@ describe('SSH connection multiplexing', () => {
     );
 
     expect(shell.lease.connection.sftpAvailable).toBe(false);
-    expect(started.stats).toMatchObject({ execs: 0, sftpRequests: 0, shells: 1 });
+    expect(started.stats).toMatchObject({
+      execs: 0,
+      ptyRequests: 0,
+      sftpRequests: 0,
+      shells: 1,
+    });
     await expect(shell.lease.connection.sftp()).rejects.toThrow(
       'SFTP is disabled for this host.',
     );
     expect(started.stats.sftpRequests).toBe(0);
+  }, 15_000);
+
+  it('honors an explicit RequestTTY yes in console mode', async () => {
+    const started = await startServer();
+    server = started.server;
+    const configFile = path.join(tmp, `ssh_config-console-tty-${knownHostsCounter}`);
+    writeFileSync(
+      configFile,
+      [
+        'Host console',
+        '  HostName 127.0.0.1',
+        '  User tester',
+        `  Port ${started.port}`,
+        '  RequestTTY yes',
+      ].join('\n'),
+    );
+    manager = makeManager(configFile, (alias) => alias === 'console');
+
+    await manager.connectShell(
+      { kind: 'ssh', target: 'console', passwordOnly: true },
+      makeIo().io,
+      80,
+      24,
+      'xterm-256color',
+    );
+
+    expect(started.stats).toMatchObject({
+      execs: 0,
+      ptyRequests: 1,
+      sftpRequests: 0,
+      shells: 1,
+    });
   }, 15_000);
 
   it('automatically redials in plain-console mode when integration drops the transport', async () => {

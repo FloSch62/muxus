@@ -111,10 +111,19 @@ export function sessionSettings(resolved: ResolvedTarget): SessionSettings {
   };
 }
 
-/** RequestTTY the way ssh(1) treats it: auto ⇒ a tty only for plain shells. */
-function wantsPty(requestTty: ResolvedTarget['requestTty'], hasCommand: boolean): boolean {
+/**
+ * RequestTTY the way ssh(1) treats it: auto ⇒ a tty only for plain shells.
+ * Console compatibility suppresses that implicit allocation because some
+ * appliances reject pty-req outright; explicit yes/force still wins.
+ */
+function wantsPty(
+  requestTty: ResolvedTarget['requestTty'],
+  hasCommand: boolean,
+  consoleCompatibility = false,
+): boolean {
   if (requestTty === 'no') return false;
   if (requestTty === 'yes' || requestTty === 'force') return true;
+  if (consoleCompatibility) return false;
   return !hasCommand;
 }
 
@@ -606,7 +615,7 @@ export class SshConnectionManager {
       health: () => transportHealth,
       configForwards: target.resolved.forwards,
       shell: async (cols, rows, term, session = sessionSettings(target.resolved)) => {
-        const pty = wantsPty(session.requestTty, !!session.remoteCommand)
+        const pty = wantsPty(session.requestTty, !!session.remoteCommand, disableSftp)
           ? terminalPtyOptions(cols, rows, term)
           : undefined;
         if (session.remoteCommand) {

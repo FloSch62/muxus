@@ -24,7 +24,7 @@ export interface HostDraft {
   displayName: string;
   group: string;
   color?: string;
-  /** Muxus-only console compatibility: never request SFTP or shell integration. */
+  /** Muxus-only console compatibility: skip SFTP, integration, and implicit TTY allocation. */
   disableSftp: boolean;
   /** Target config file; '' keeps the block's file (or the root for new hosts). */
   file: string;

@@ -52,24 +52,18 @@ export function AdvancedSection({
               onChange={(event) => set({ disableSftp: event.target.checked })}
             />
           }
-          label="Disable SFTP for this host"
+          label="Enable console compatibility mode"
         />
-        <Typography variant="caption" color="text.secondary">
-          Opens a plain SSH shell without SFTP or Unix shell-integration probes. Muxus normally
-          detects incompatible console servers after one safe retry; enable this to skip the first
-          probe entirely.
+        <Typography variant="body2" color="text.secondary">
+          Skips SFTP, shell integration, and automatic TTY allocation. Explicit TTY settings still
+          apply.
         </Typography>
       </Stack>
 
       <Stack spacing={1}>
         <Typography variant="body2" color="text.secondary">
-          Raw ssh_config options for algorithm policies, environment variables, known-hosts files,
-          keepalives, and other expert settings. Rows marked <em>applied</em> are honoured by Muxus;
-          the rest are kept for OpenSSH.
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          Agent selection and host-key security have dedicated controls in Authentication;
-          startup commands and TTY behavior are in General.
+          Additional ssh_config options. Applied options are used by Muxus; others are preserved
+          for OpenSSH.
         </Typography>
         {draft.extras.map((e, i) => {
           const keyword = e.keyword.trim().toLowerCase();
