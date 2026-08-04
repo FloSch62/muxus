@@ -6,6 +6,7 @@ import {
   managedHostKey,
   managedHostRef,
 } from '../../../client/src/managed-hosts.js';
+import { managedHostSupportsSftp } from '../../../client/src/components/sidebar/host-sftp-action.js';
 
 const ROOT = '/home/test/.ssh/config';
 
@@ -142,5 +143,19 @@ describe('managed host identity and clipboard actions', () => {
       label: 'Copy device path',
       text: 'COM3',
     });
+  });
+
+  it('offers SFTP only for SSH hosts where it is not explicitly disabled', () => {
+    const disabled = sshHost('console');
+    disabled.metadata = {
+      profileId: 'ssh-console',
+      connectCount: 0,
+      disableSftp: true,
+    };
+
+    expect(managedHostSupportsSftp(ssh)).toBe(true);
+    expect(managedHostSupportsSftp({ kind: 'ssh', entry: disabled })).toBe(false);
+    expect(managedHostSupportsSftp(telnet)).toBe(false);
+    expect(managedHostSupportsSftp(serial)).toBe(false);
   });
 });

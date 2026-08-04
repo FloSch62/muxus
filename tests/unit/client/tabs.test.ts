@@ -3,6 +3,10 @@ import {
   requestClosePane,
   splitActivePane,
 } from '../../../client/src/session-actions.js';
+import {
+  managedHostSupportsSftp,
+  openManagedHostSftp,
+} from '../../../client/src/components/sidebar/host-sftp-action.js';
 import { useDialogStore } from '../../../client/src/state/dialogs.js';
 import { usePrefsStore } from '../../../client/src/state/prefs.js';
 import { useTabsStore } from '../../../client/src/state/tabs.js';
@@ -171,6 +175,84 @@ describe('blank session tabs', () => {
         status: 'connecting',
       }),
     ]);
+  });
+});
+
+describe('host SFTP action', () => {
+  const host = {
+    kind: 'ssh' as const,
+    entry: {
+      alias: 'router',
+      aliases: ['router'],
+      file: '/home/test/.ssh/config',
+      options: {},
+      resolved: {
+        hostname: 'router.example.test',
+        port: 22,
+        identityFiles: [],
+        certificateFiles: [],
+        identitiesOnly: false,
+        forwardAgent: false,
+        proxyJump: [],
+        forwards: [],
+        passwordOnly: false,
+      },
+    },
+  };
+
+  it('connects with the file browser ready to open', () => {
+    const id = openManagedHostSftp(host);
+
+    expect(useTabsStore.getState()).toMatchObject({
+      activeId: id,
+      tabs: [
+        {
+          id,
+          profile: { kind: 'ssh', target: 'router' },
+          status: 'connecting',
+          sftpOpen: true,
+        },
+      ],
+    });
+  });
+
+  it('reuses and activates an existing suitable connection', () => {
+    const existingId = useTabsStore
+      .getState()
+      .open({ kind: 'ssh', target: 'router' }, 'Router');
+    useTabsStore.getState().update(existingId, {
+      status: 'connected',
+      connId: 'connection-1',
+      sftpAvailable: true,
+    });
+    useTabsStore.getState().open({ kind: 'local' }, 'Local');
+
+    expect(openManagedHostSftp(host)).toBe(existingId);
+    expect(useTabsStore.getState()).toMatchObject({
+      activeId: existingId,
+      tabs: [
+        { id: existingId, sftpOpen: true },
+        { profile: { kind: 'local' } },
+      ],
+    });
+  });
+
+  it('does nothing when SFTP is explicitly disabled', () => {
+    const disabled = {
+      ...host,
+      entry: {
+        ...host.entry,
+        metadata: {
+          profileId: 'ssh-router',
+          connectCount: 0,
+          disableSftp: true,
+        },
+      },
+    };
+
+    expect(managedHostSupportsSftp(disabled)).toBe(false);
+    expect(openManagedHostSftp(disabled)).toBeUndefined();
+    expect(useTabsStore.getState().tabs).toEqual([]);
   });
 });
 
