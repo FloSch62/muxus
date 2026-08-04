@@ -171,6 +171,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const fontColor = usePrefsStore((s) => s.fontColor);
   const backgroundColor = usePrefsStore((s) => s.backgroundColor);
   const globalKeywordHighlights = usePrefsStore((s) => s.keywordHighlights);
+  const keywordHighlightProfiles = usePrefsStore((s) => s.keywordHighlightProfiles);
   const scheme = terminalScheme(schemeId);
   const terminalTheme = useMemo(
     () => themeWithColorOverrides(scheme.theme, fontColor, backgroundColor),
@@ -193,8 +194,17 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       ?.keywordHighlights;
   }, [sshConfig, savedHosts, savedProfileId, tab.profile]);
   const keywordHighlights = useMemo(
-    () => resolveKeywordHighlights(globalKeywordHighlights, hostKeywordHighlights),
-    [globalKeywordHighlights, hostKeywordHighlights],
+    () =>
+      resolveKeywordHighlights(
+        globalKeywordHighlights,
+        hostKeywordHighlights,
+        hostKeywordHighlights?.profileId
+          ? keywordHighlightProfiles.find(
+              (profile) => profile.id === hostKeywordHighlights.profileId,
+            )?.rules
+          : undefined,
+      ),
+    [globalKeywordHighlights, hostKeywordHighlights, keywordHighlightProfiles],
   );
 
   const searchOptions = useMemo<ISearchOptions>(

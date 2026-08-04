@@ -52,11 +52,12 @@ export function findKeywordMatches(
 export function resolveKeywordHighlights(
   globalRules: readonly KeywordHighlightRule[],
   hostConfig?: HostKeywordHighlightConfig,
+  profileRules: readonly KeywordHighlightRule[] = [],
 ): KeywordHighlightRule[] {
   if (!hostConfig) return [...globalRules];
   return hostConfig.inheritGlobal
-    ? [...globalRules, ...hostConfig.rules]
-    : [...hostConfig.rules];
+    ? [...globalRules, ...profileRules, ...hostConfig.rules]
+    : [...profileRules, ...hostConfig.rules];
 }
 
 interface CellSegment {

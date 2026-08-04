@@ -48,6 +48,7 @@ describe('findKeywordMatches', () => {
 
 describe('resolveKeywordHighlights', () => {
   const global = [rule('global', 'ERROR')];
+  const profile = [rule('profile', 'WARNING')];
   const host = [rule('host', 'FAILED')];
 
   it('uses globals for terminals without host configuration', () => {
@@ -64,5 +65,25 @@ describe('resolveKeywordHighlights', () => {
     expect(
       resolveKeywordHighlights(global, { inheritGlobal: false, rules: host }),
     ).toEqual(host);
+  });
+
+  it('applies an assigned profile between global and host-specific rules', () => {
+    expect(
+      resolveKeywordHighlights(
+        global,
+        { inheritGlobal: true, profileId: 'nokia-sros', rules: host },
+        profile,
+      ),
+    ).toEqual([...global, ...profile, ...host]);
+  });
+
+  it('keeps an assigned profile when global rules are disabled', () => {
+    expect(
+      resolveKeywordHighlights(
+        global,
+        { inheritGlobal: false, profileId: 'nokia-sros', rules: host },
+        profile,
+      ),
+    ).toEqual([...profile, ...host]);
   });
 });

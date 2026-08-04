@@ -78,9 +78,12 @@ keeps. Current usage against the quota is displayed here.
 
 ## Highlighting
 
-Global keyword rules applied to every terminal: keyword, foreground, optional background,
-case sensitivity and whole-word matching. Hosts can add their own rules or replace the
-global set.
+Global keyword rules apply to every terminal: keyword, foreground, optional background,
+case sensitivity and whole-word matching. **Reusable profiles** keep named,
+platform-specific rule sets that can be assigned to several SSH, Telnet or serial hosts.
+Profiles have stable IDs and can be imported or exported as JSON, so importing an updated
+copy refreshes existing assignments. Hosts can add their own rules and choose whether to
+include the global set.
 
 <figure markdown="span">
   ![Keyword highlighting rules](../assets/screenshots/settings-highlighting.png#only-light){ .shadow }

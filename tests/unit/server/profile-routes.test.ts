@@ -130,6 +130,7 @@ describe('saved host profile routes', () => {
 
     const highlights = {
       inheritGlobal: false,
+      profileId: 'nokia-sros',
       rules: [
         {
           id: 'rule-1',

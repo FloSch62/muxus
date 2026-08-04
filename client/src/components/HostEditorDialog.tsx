@@ -213,7 +213,11 @@ function SshHostEditorContent({
         color: draft.color ?? null,
         disableSftp: draft.disableSftp,
         keywordHighlights:
-          highlights.inheritGlobal && highlights.rules.length === 0 ? null : highlights,
+          highlights.inheritGlobal &&
+          !highlights.profileId &&
+          highlights.rules.length === 0
+            ? null
+            : highlights,
       },
     });
   });
@@ -274,7 +278,14 @@ function SshHostEditorContent({
     },
     { value: 'forwards', label: 'Port forwarding', icon: <SwapHorizOutlinedIcon fontSize="small" />, count: draft.forwards.length },
     { value: 'logging', label: 'Session logging', icon: <HistoryOutlinedIcon fontSize="small" /> },
-    { value: 'highlighting', label: 'Highlighting', icon: <HighlightOutlinedIcon fontSize="small" />, count: draft.keywordHighlights.rules.length },
+    {
+      value: 'highlighting',
+      label: 'Highlighting',
+      icon: <HighlightOutlinedIcon fontSize="small" />,
+      count:
+        draft.keywordHighlights.rules.length +
+        (draft.keywordHighlights.profileId ? 1 : 0),
+    },
     {
       value: 'advanced',
       label: 'Advanced',

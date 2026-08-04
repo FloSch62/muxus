@@ -13,6 +13,7 @@ const keywordHighlightRuleSchema = z.object({
 
 export const hostKeywordHighlightsSchema = z.object({
   inheritGlobal: z.boolean(),
+  profileId: z.string().min(1).max(200).optional(),
   rules: z.array(keywordHighlightRuleSchema).max(100),
 });
 

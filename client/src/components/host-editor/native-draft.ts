@@ -115,7 +115,9 @@ export function nativeDraftMetadataPatch(draft: NativeHostDraft): OpenSshMetadat
     group: draft.group.trim() || null,
     color: draft.color ?? null,
     keywordHighlights:
-      highlights.inheritGlobal && highlights.rules.length === 0 ? null : highlights,
+      highlights.inheritGlobal && !highlights.profileId && highlights.rules.length === 0
+        ? null
+        : highlights,
   };
 }
 

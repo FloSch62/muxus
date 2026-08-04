@@ -105,8 +105,14 @@ whole-word switches.
   <figcaption>Global rules, with per-host rules that add to them or replace them.</figcaption>
 </figure>
 
-A host can carry its own rules, either in addition to the global set or instead of it. See
-the **Highlighting** section of the
+A named highlighting profile can hold a platform-specific rule set—such as one for Nokia
+SR OS—and be assigned to any number of SSH, Telnet or serial hosts. Profiles can be
+imported and exported as JSON files from **Settings → Highlighting**, so a rule set can be
+shared without recreating it. Editing a profile updates every assigned open terminal.
+
+A host can also carry its own additional rules. It can combine global, profile and host
+rules, or disable the global set and use only its profile and host rules. See the
+**Highlighting** section of the
 [host editor](adding-hosts.md#session-logging-highlighting).
 
 ## Command buttons

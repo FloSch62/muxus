@@ -111,9 +111,14 @@ const initialKeys = collectStaticGraph(entry[0]);
 // Split-pane focus highlighting also runs in the initial pane canvas so focus
 // and active multi-exec targets update immediately. Its preference reads and
 // pane-target derivation add less than 1 KiB raw; the settings UI stays lazy.
+//
+// Reusable keyword-highlighting profiles are persisted preferences. Their
+// bounded shape validator therefore joins the startup preference migration
+// (~1.5 KiB raw / ~0.3 KiB gzip); profile editing and transfer UI stay in the
+// lazy settings chunk, and terminal resolution stays in the terminal chunk.
 check('Initial JavaScript', measureGraph(initialKeys), {
-  raw: 798_000,
-  gzip: 259_000,
+  raw: 800_000,
+  gzip: 259_500,
 });
 
 for (const feature of [

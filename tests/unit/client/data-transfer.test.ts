@@ -30,6 +30,7 @@ beforeEach(() => {
     inactivePaneDimStrength: 0.15,
     localShellProfiles: [],
     defaultLocalShellProfileId: '',
+    keywordHighlightProfiles: [],
   });
 });
 
@@ -195,6 +196,28 @@ describe('backing up preferences', () => {
     expect(document.data.preferences.localShellProfiles).toHaveLength(1);
     expect(document.data.preferences.defaultLocalShellProfileId).toBe('ubuntu');
   });
+
+  it('includes reusable keyword highlighting profiles', async () => {
+    const profile = {
+      id: 'nokia-sros',
+      name: 'Nokia SR OS',
+      rules: [
+        {
+          id: 'alarm',
+          keyword: 'MAJOR',
+          foreground: '#ffffff',
+          caseSensitive: true,
+          wholeWord: true,
+        },
+      ],
+    };
+    usePrefsStore.setState({ keywordHighlightProfiles: [profile] });
+    mockBackupSnapshot();
+
+    const document = await createBackupDocument();
+
+    expect(document.data.preferences.keywordHighlightProfiles).toEqual([profile]);
+  });
 });
 
 describe('restoring terminal color scheme preferences', () => {
@@ -278,6 +301,37 @@ describe('restoring local shell profiles', () => {
     expect(
       sanitizePreferences(prefs({ localShellProfiles: [{ ...ubuntu, args: '-d Ubuntu' }] }))
         .localShellProfiles,
+    ).toBeUndefined();
+  });
+});
+
+describe('restoring keyword highlighting profiles', () => {
+  const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
+  const profile = {
+    id: 'nokia-sros',
+    name: 'Nokia SR OS',
+    rules: [
+      {
+        id: 'alarm',
+        keyword: 'MAJOR',
+        foreground: '#ffffff',
+        caseSensitive: true,
+        wholeWord: true,
+      },
+    ],
+  };
+
+  it('restores bounded reusable profiles', () => {
+    expect(
+      sanitizePreferences(prefs({ keywordHighlightProfiles: [profile] })),
+    ).toMatchObject({ keywordHighlightProfiles: [profile] });
+  });
+
+  it('drops malformed reusable profiles', () => {
+    expect(
+      sanitizePreferences(
+        prefs({ keywordHighlightProfiles: [{ ...profile, name: '' }] }),
+      ).keywordHighlightProfiles,
     ).toBeUndefined();
   });
 });
