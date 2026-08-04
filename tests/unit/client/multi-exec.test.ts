@@ -55,18 +55,15 @@ function connectTab(title: string): string {
 }
 
 describe('multi-execution routing', () => {
-  it('identifies every pane participating in active mirrored input', () => {
-    const tabs = [
-      { id: 'tab-a', paneId: 'pane-left' },
-      { id: 'tab-b', paneId: 'pane-right' },
-      { id: 'tab-c', paneId: 'pane-right' },
+  it('identifies panes whose visible tabs participate in active mirrored input', () => {
+    const panes = [
+      { id: 'pane-left', activeTabId: 'tab-a' },
+      { id: 'pane-right', activeTabId: 'tab-b' },
     ];
 
-    expect([...multiExecPaneIds(tabs, ['tab-a'])]).toEqual([]);
-    expect([...multiExecPaneIds(tabs, ['tab-a', 'tab-c'])]).toEqual([
-      'pane-left',
-      'pane-right',
-    ]);
+    expect([...multiExecPaneIds(panes, ['tab-a'])]).toEqual([]);
+    expect([...multiExecPaneIds(panes, ['tab-a', 'tab-c'])]).toEqual(['pane-left']);
+    expect([...multiExecPaneIds(panes, ['tab-a', 'tab-b'])]).toEqual(['pane-left', 'pane-right']);
   });
 
   it('mirrors source input only to the other selected terminals', () => {

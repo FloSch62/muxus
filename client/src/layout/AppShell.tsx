@@ -132,10 +132,13 @@ function PaneCanvas({
   );
   const occupiedPaneIds = useMemo(() => new Set(tabs.map((tab) => tab.paneId)), [tabs]);
   const highlightedPaneIds = useMemo(() => {
-    const paneIds = multiExecPaneIds(tabs, multiExecTargetIds);
+    const paneIds = multiExecPaneIds(
+      panes.map(({ pane }) => pane),
+      multiExecTargetIds,
+    );
     paneIds.add(activePaneId);
     return paneIds;
-  }, [activePaneId, multiExecTargetIds, tabs]);
+  }, [activePaneId, multiExecTargetIds, panes]);
   const tabNumberById = useMemo(
     () => new Map(tabsInOrder(root, tabs).map((tab, index) => [tab.id, index + 1])),
     [root, tabs],

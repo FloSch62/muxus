@@ -26,14 +26,18 @@ function unique(tabIds: readonly string[]): string[] {
   return [...new Set(tabIds)];
 }
 
-/** Panes whose terminals currently participate in mirrored input. */
+/** Visible panes whose active terminals currently participate in mirrored input. */
 export function multiExecPaneIds(
-  tabs: readonly { id: string; paneId: string }[],
+  panes: readonly { id: string; activeTabId: string | null }[],
   selectedIds: readonly string[],
 ): Set<string> {
   if (selectedIds.length < 2) return new Set();
   const selected = new Set(selectedIds);
-  return new Set(tabs.filter((tab) => selected.has(tab.id)).map((tab) => tab.paneId));
+  return new Set(
+    panes
+      .filter((pane) => pane.activeTabId && selected.has(pane.activeTabId))
+      .map((pane) => pane.id),
+  );
 }
 
 /**
