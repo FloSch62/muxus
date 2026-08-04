@@ -54,6 +54,14 @@ blink, clipboard behaviour and scrollback length are in
 [Settings → Terminal](settings.md#terminal). Changes apply to every open terminal
 immediately.
 
+## Local shell profiles
+
+[Settings → Local shells](settings.md#local-shells) can save several local launch
+configurations side by side—for example PowerShell, Command Prompt and individual WSL
+distributions. A profile can supply executable arguments, a starting directory and commands
+to run when its interactive shell starts. Saved profiles are launchable from both the hosts
+sidebar and the quick launcher.
+
 ### Per-tab zoom
 
 ++ctrl+plus++, ++ctrl+minus++ and ++ctrl+0++, or ++ctrl+wheel++, change the font size of

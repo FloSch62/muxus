@@ -73,9 +73,10 @@ import {
   connectManagedHost,
   connectTarget,
   isQuickConnectTarget,
+  openLocalShellProfile,
   openLocalTerminal,
 } from '../session-actions.js';
-import type { CommandButton } from '../state/prefs.js';
+import type { CommandButton, LocalShellProfileConfig } from '../state/prefs.js';
 import { usePrefsStore } from '../state/prefs.js';
 import { useTabsStore, type TabStatus } from '../state/tabs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
@@ -106,6 +107,7 @@ type LauncherResult = ResultBase &
     | { kind: 'command'; command: CommandButton }
     | { kind: 'tunnel'; tunnel: TunnelRecord; running?: ForwardInfo }
     | { kind: 'history'; session: SessionLogSummary; historyQuery: string }
+    | { kind: 'local-shell'; profile: LocalShellProfileConfig }
     | { kind: 'action'; action: LauncherAction }
     | { kind: 'keymap'; command: KeyCommand; chord?: string }
   );
@@ -134,6 +136,7 @@ export function QuickLauncherDialog() {
   const tabs = useTabsStore((state) => state.tabs);
   const activeId = useTabsStore((state) => state.activeId);
   const commands = usePrefsStore((state) => state.commandButtons);
+  const localShellProfiles = usePrefsStore((state) => state.localShellProfiles);
   const keybindings = usePrefsStore((state) => state.keybindings);
   const workspaces = useWorkspacesStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspacesStore((state) => state.activeId);
@@ -196,6 +199,7 @@ export function QuickLauncherDialog() {
         workspaces,
         activeWorkspaceId,
         commands,
+        localShellProfiles,
         tunnels,
         forwards,
         activeConnected: !!activeConnected,
@@ -205,6 +209,7 @@ export function QuickLauncherDialog() {
       activeId,
       activeWorkspaceId,
       commands,
+      localShellProfiles,
       forwards,
       savedHosts,
       sshHosts,
@@ -427,6 +432,10 @@ export function QuickLauncherDialog() {
         useUiStore
           .getState()
           .openHistory(result.historyQuery, result.session.id);
+        break;
+      case 'local-shell':
+        close();
+        openLocalShellProfile(result.profile);
         break;
       case 'action':
         runAction(result.action);
@@ -728,6 +737,7 @@ function buildCatalogResults({
   workspaces,
   activeWorkspaceId,
   commands,
+  localShellProfiles,
   tunnels,
   forwards,
   activeConnected,
@@ -739,6 +749,7 @@ function buildCatalogResults({
   workspaces: readonly WorkspaceSummary[];
   activeWorkspaceId?: string;
   commands: readonly CommandButton[];
+  localShellProfiles: readonly LocalShellProfileConfig[];
   tunnels: readonly TunnelRecord[];
   forwards: readonly ForwardInfo[];
   activeConnected: boolean;
@@ -855,6 +866,30 @@ function buildCatalogResults({
       priority: 130,
       showWhenEmpty: activeConnected && index < 5,
       disabledReason: activeConnected ? undefined : 'Connect a terminal to use this command',
+    });
+  }
+
+  for (const [index, profile] of localShellProfiles.entries()) {
+    const commandLine = [profile.shell || 'automatic shell', ...profile.args]
+      .filter(Boolean)
+      .join(' ');
+    results.push({
+      id: `local-shell:${profile.id}`,
+      kind: 'local-shell',
+      profile,
+      label: profile.name.trim() || 'Unnamed shell',
+      detail: `Local shell · ${commandLine}`,
+      keywords: [
+        'local',
+        'terminal',
+        'shell',
+        profile.shell,
+        ...profile.args,
+        profile.cwd,
+        profile.startupCommand,
+      ],
+      priority: 190,
+      showWhenEmpty: index < 5,
     });
   }
 
@@ -1069,6 +1104,9 @@ function ResultIcon({ result }: { result: LauncherResult }) {
     );
   }
   if (result.kind === 'history') return <HistoryOutlinedIcon {...props} />;
+  if (result.kind === 'local-shell') {
+    return <TerminalOutlinedIcon {...props} color="primary" />;
+  }
   if (result.kind === 'keymap') return <KeyboardOutlinedIcon {...props} />;
   if (result.action === 'settings') return <SettingsOutlinedIcon {...props} />;
   if (result.action === 'workspaces') return <WorkspacesOutlinedIcon {...props} />;
@@ -1098,9 +1136,11 @@ function ResultKindLabel({
   const label =
     result.kind === 'quick-connect'
       ? 'CONNECT'
-      : result.kind === 'editor'
-        ? 'FILE'
-        : result.kind.toUpperCase();
+      : result.kind === 'local-shell'
+        ? 'LOCAL'
+        : result.kind === 'editor'
+          ? 'FILE'
+          : result.kind.toUpperCase();
   return (
     <Typography
       variant="caption"

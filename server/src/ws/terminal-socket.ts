@@ -6,7 +6,7 @@ import type { TerminalServerMessage } from '@muxus/shared';
 import { terminalClientMessageSchema, type TerminalClientMessage } from '@muxus/shared/ws-protocol';
 import type { AppContext } from '../app.js';
 import type { ConnectIo } from '../ssh/connection-manager.js';
-import { spawnLocalPty, DEFAULT_TERM } from '../local/pty-manager.js';
+import { localStartupInput, spawnLocalPty, DEFAULT_TERM } from '../local/pty-manager.js';
 import { SerialTransport } from '../serial/serial-transport.js';
 import { TelnetTransport } from '../telnet/telnet-transport.js';
 import type { TerminalTransport } from '../transports/terminal-transport.js';
@@ -432,6 +432,8 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
     });
     socket.on('close', () => pty.kill());
     sendControl(socket, { op: 'ready', connId: `local-${process.pid}` });
+    const startupInput = localStartupInput(profile.startupCommand);
+    if (startupInput) pty.write(startupInput);
     return;
   }
 

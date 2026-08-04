@@ -7,6 +7,7 @@ export type QuickLauncherKind =
   | 'command'
   | 'tunnel'
   | 'history'
+  | 'local-shell'
   | 'action'
   | 'keymap';
 

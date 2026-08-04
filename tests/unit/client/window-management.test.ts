@@ -57,6 +57,22 @@ describe('secondary window launch payloads', () => {
     expect(decodeAppWindowLaunch(encodeAppWindowLaunch(serial))).toEqual(serial);
   });
 
+  it('round-trips a configured local shell launch', () => {
+    const launch: AppWindowLaunch = {
+      kind: 'session',
+      title: 'Ubuntu',
+      profile: {
+        kind: 'local',
+        shell: 'wsl.exe',
+        args: ['-d', 'Ubuntu'],
+        cwd: 'C:\\work',
+        startupCommand: 'cd project',
+      },
+    };
+
+    expect(decodeAppWindowLaunch(encodeAppWindowLaunch(launch))).toEqual(launch);
+  });
+
   it('rejects malformed or unsupported payloads', () => {
     expect(isAppWindowLaunch({ kind: 'session', title: 'Missing profile' })).toBe(false);
     expect(
@@ -72,6 +88,13 @@ describe('secondary window launch payloads', () => {
       }),
     ).toBe(false);
     expect(isAppWindowLaunch({ kind: 'sftp', connId: '', title: 'Empty connection' })).toBe(false);
+    expect(
+      isAppWindowLaunch({
+        kind: 'session',
+        title: 'Invalid local shell',
+        profile: { kind: 'local', args: ['valid', 42] },
+      }),
+    ).toBe(false);
     expect(decodeAppWindowLaunch('not-base64-json')).toBeUndefined();
   });
 });

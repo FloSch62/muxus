@@ -23,6 +23,17 @@ export interface CommandButton {
   sendEnter: boolean;
 }
 
+/** A reusable local terminal launch configuration. Arguments stay structured
+ * so paths and values containing spaces are never reparsed as a command line. */
+export interface LocalShellProfileConfig {
+  id: string;
+  name: string;
+  shell: string;
+  args: string[];
+  cwd: string;
+  startupCommand: string;
+}
+
 /** Bundled icon-only fallback covering Nerd Font and Powerline glyphs. */
 export const TERMINAL_SYMBOL_FONT = '"Pure Nerd Font"';
 
@@ -57,6 +68,10 @@ export interface PrefsState {
   cursorStyle: 'block' | 'underline' | 'bar';
   /** Local terminal shell; 'auto' lets the server pick the login shell. */
   localShell: string;
+  /** Named alternatives offered wherever a local terminal can be launched. */
+  localShellProfiles: LocalShellProfileConfig[];
+  /** Empty selects the legacy automatic/custom localShell preference. */
+  defaultLocalShellProfileId: string;
   /** Copy the selection to the clipboard as soon as it is made. */
   copyOnSelect: boolean;
   /** Let terminal applications replace the system clipboard via OSC 52. */
@@ -128,6 +143,18 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   if (!isStringArray(state.sidebarEmptyFolders)) delete state.sidebarEmptyFolders;
   if (!isFolderStyleMap(state.sidebarFolderStyles)) delete state.sidebarFolderStyles;
   if (!isFolderOrderMap(state.sidebarFolderOrder)) delete state.sidebarFolderOrder;
+  const localShellProfiles = isLocalShellProfileArray(state.localShellProfiles)
+    ? state.localShellProfiles
+    : undefined;
+  if (!localShellProfiles) delete state.localShellProfiles;
+  if (typeof state.defaultLocalShellProfileId !== 'string') {
+    delete state.defaultLocalShellProfileId;
+  } else if (
+    state.defaultLocalShellProfileId &&
+    !localShellProfiles?.some((profile) => profile.id === state.defaultLocalShellProfileId)
+  ) {
+    state.defaultLocalShellProfileId = '';
+  }
   // The sidebar grew in v6 to fit its search box. A stored copy of the old
   // default was never a choice, so it follows; a dragged width is left alone.
   if (version < 6 && state.sidebarWidth === PREVIOUS_DEFAULT_SIDEBAR_WIDTH) {
@@ -163,6 +190,37 @@ function isFolderStyleMap(value: unknown): value is Record<string, FolderStyle> 
   );
 }
 
+export function isLocalShellProfileArray(value: unknown): value is LocalShellProfileConfig[] {
+  if (!Array.isArray(value) || value.length > 100) return false;
+  const ids = new Set<string>();
+  return value.every((entry) => {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return false;
+    const profile = entry as Record<string, unknown>;
+    if (
+      typeof profile.id !== 'string' ||
+      !profile.id ||
+      profile.id.length > 200 ||
+      ids.has(profile.id) ||
+      typeof profile.name !== 'string' ||
+      !profile.name.trim() ||
+      profile.name.length > 200 ||
+      typeof profile.shell !== 'string' ||
+      profile.shell.length > 4096 ||
+      typeof profile.cwd !== 'string' ||
+      profile.cwd.length > 4096 ||
+      typeof profile.startupCommand !== 'string' ||
+      profile.startupCommand.length > 32_768 ||
+      !Array.isArray(profile.args) ||
+      profile.args.length > 64 ||
+      !profile.args.every((arg) => typeof arg === 'string' && arg.length <= 4096)
+    ) {
+      return false;
+    }
+    ids.add(profile.id);
+    return true;
+  });
+}
+
 export const usePrefsStore = create<PrefsState>()(
   persist(
     (set) => ({
@@ -177,6 +235,8 @@ export const usePrefsStore = create<PrefsState>()(
       cursorBlink: true,
       cursorStyle: 'block',
       localShell: 'auto',
+      localShellProfiles: [],
+      defaultLocalShellProfileId: '',
       copyOnSelect: false,
       allowOsc52ClipboardWrite: true,
       rightClickAction: 'copy-paste',
@@ -205,7 +265,7 @@ export const usePrefsStore = create<PrefsState>()(
     }),
     {
       name: 'muxus-prefs',
-      version: 6,
+      version: 7,
       migrate: migratePrefsState,
       storage: createJSONStorage(() => muxusStateStorage),
     },

@@ -39,8 +39,13 @@ export function isAppWindowLaunch(value: unknown): value is AppWindowLaunch {
 function isSessionProfile(profile: Record<string, unknown>): boolean {
   if (profile.kind === 'local') {
     return (
-      (profile.shell === undefined || typeof profile.shell === 'string') &&
-      (profile.cwd === undefined || typeof profile.cwd === 'string')
+      optionalBoundedString(profile.shell, 4096) &&
+      optionalBoundedString(profile.cwd, 4096) &&
+      optionalBoundedString(profile.startupCommand, 32_768) &&
+      (profile.args === undefined ||
+        (Array.isArray(profile.args) &&
+          profile.args.length <= 64 &&
+          profile.args.every((arg) => typeof arg === 'string' && arg.length <= 4096)))
     );
   }
   if (profile.kind === 'ssh') {
@@ -71,6 +76,10 @@ function isSessionProfile(profile: Record<string, unknown>): boolean {
     (profile.flowControl === undefined ||
       ['none', 'hardware', 'software'].includes(profile.flowControl as string))
   );
+}
+
+function optionalBoundedString(value: unknown, maxLength: number): boolean {
+  return value === undefined || (typeof value === 'string' && value.length <= maxLength);
 }
 
 function validPort(value: unknown): boolean {

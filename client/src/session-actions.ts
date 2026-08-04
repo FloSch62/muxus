@@ -6,7 +6,10 @@ import type {
 } from '@muxus/shared';
 import type { ManagedHost } from './managed-hosts.js';
 import { savedHostDisplayName } from './saved-hosts.js';
-import { usePrefsStore } from './state/prefs.js';
+import {
+  usePrefsStore,
+  type LocalShellProfileConfig,
+} from './state/prefs.js';
 import { useMultiExecStore } from './state/multi-exec.js';
 import { useTabsStore } from './state/tabs.js';
 import type { PaneDirection, SessionSetLayout } from './state/tabs.js';
@@ -61,17 +64,50 @@ function replaceActiveEmpty(
   return id && state.replaceEmpty(id, profile, title) ? id : undefined;
 }
 
-/** Open a new local terminal tab using the user's shell preference. */
-export function openLocalTerminal(replaceTabId?: string): string {
-  const { localShell } = usePrefsStore.getState();
+function launchLocalTerminal(
+  profile: LocalProfile,
+  title: string,
+  replaceTabId?: string,
+): string {
+  const key = JSON.stringify(profile);
+  return launchOnce(`local:${key}:${replaceTabId ?? ''}`, () => {
+    const replacedId = replaceActiveEmpty(profile, title, replaceTabId);
+    return replacedId ?? useTabsStore.getState().open(profile, title);
+  });
+}
+
+/** Open one explicitly selected saved local-shell configuration. */
+export function openLocalShellProfile(
+  saved: LocalShellProfileConfig,
+  replaceTabId?: string,
+): string {
   const profile: LocalProfile = {
     kind: 'local',
-    shell: localShell !== 'auto' && localShell.trim() ? localShell.trim() : undefined,
+    shell: saved.shell.trim() || undefined,
+    args: saved.args.length ? saved.args : undefined,
+    cwd: saved.cwd.trim() || undefined,
+    startupCommand: saved.startupCommand.trim() || undefined,
   };
-  return launchOnce(`local:${profile.shell ?? ''}:${replaceTabId ?? ''}`, () => {
-    const replacedId = replaceActiveEmpty(profile, 'Local', replaceTabId);
-    return replacedId ?? useTabsStore.getState().open(profile, 'Local');
-  });
+  return launchLocalTerminal(profile, saved.name.trim() || 'Local', replaceTabId);
+}
+
+/** Open the user's default local terminal. A named profile can replace the
+ * automatic shell without changing callers such as Ctrl+Shift+T or splits. */
+export function openLocalTerminal(replaceTabId?: string): string {
+  const { localShell, localShellProfiles, defaultLocalShellProfileId } =
+    usePrefsStore.getState();
+  const saved = localShellProfiles.find(
+    (profile) => profile.id === defaultLocalShellProfileId,
+  );
+  if (saved) return openLocalShellProfile(saved, replaceTabId);
+  return launchLocalTerminal(
+    {
+      kind: 'local',
+      shell: localShell !== 'auto' && localShell.trim() ? localShell.trim() : undefined,
+    },
+    'Local',
+    replaceTabId,
+  );
 }
 
 /** Open a blank tab that lets the user choose what kind of session to start. */
