@@ -63,7 +63,7 @@ pnpm --filter @muxus/electron rebuild
 
 ```bash
 make deb    # Linux .deb
-make win    # Windows NSIS installer
+make win    # Windows NSIS installers (x64 and ARM64)
 make dmg    # macOS .dmg
 make all    # everything electron-builder is configured for
 ```

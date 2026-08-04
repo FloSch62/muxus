@@ -28,6 +28,12 @@ jobs:
             artifact_name: windows-exe-x64
             artifact_path: electron/release/*.exe
 
+          - name: Windows ARM64
+            os: windows-11-arm
+            build_args: --win nsis --arm64
+            artifact_name: windows-exe-arm64
+            artifact_path: electron/release/*.exe
+
           - name: macOS universal
             os: macos-latest
             build_args: >-

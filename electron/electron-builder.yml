@@ -21,7 +21,7 @@ npmRebuild: true
 win:
   target:
     - target: nsis
-      arch: [x64]
+      arch: [x64, arm64]
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
