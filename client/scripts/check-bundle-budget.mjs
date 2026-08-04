@@ -99,9 +99,13 @@ const initialKeys = collectStaticGraph(entry[0]);
 // distinguishing explicit saves from stale automatic saves and stopping retry
 // loops after a lock conflict. That first-paint guarantee adds ~2 KiB raw /
 // ~0.3 KiB gzip; the management dialog and its icons remain lazy.
+//
+// Saved local-shell profiles are launchable directly from the sidebar, so the
+// profile preference shape and launch path join the initial graph (~2 KiB raw /
+// ~0.5 KiB gzip). The profile editor remains in the lazy settings dialog.
 check('Initial JavaScript', measureGraph(initialKeys), {
-  raw: 793_000,
-  gzip: 257_000,
+  raw: 795_000,
+  gzip: 258_000,
 });
 
 for (const feature of [

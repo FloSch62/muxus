@@ -27,6 +27,7 @@ export interface LocalPty {
 export function spawnLocalPty(profile: LocalProfile, cols: number, rows: number): LocalPty {
   const shell = profile.shell?.trim() || defaultShell();
   const integration = shellIntegration(shell, process.env);
+  const args = localPtyArgs(profile, integration.args);
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (!HOST_TERMINAL_ENV.test(key)) env[key] = value;
@@ -36,7 +37,7 @@ export function spawnLocalPty(profile: LocalProfile, cols: number, rows: number)
   // Muxus renders 24-bit color; advertise it independently of terminfo.
   env.COLORTERM = 'truecolor';
   env.TERM_PROGRAM = 'muxus';
-  const spawned = pty.spawn(shell, integration.args, {
+  const spawned = pty.spawn(shell, args, {
     name: DEFAULT_TERM,
     cols,
     rows,
@@ -44,4 +45,38 @@ export function spawnLocalPty(profile: LocalProfile, cols: number, rows: number)
     env,
   });
   return { pty: spawned, shell };
+}
+
+export function localPtyArgs(
+  profile: LocalProfile,
+  integrationArgs: readonly string[],
+): string[] {
+  return [...integrationArgs, ...(profile.args ?? [])];
+}
+
+/** Normalize a saved startup action to terminal input. A PTY Enter is CR on
+ * every supported platform; embedded newlines become separate Enter presses. */
+export function localStartupInput(command: string | undefined): string | undefined {
+  const trimmed = command?.trim();
+  if (!trimmed) return undefined;
+  return `${trimmed.replace(/\r?\n/g, '\r')}\r`;
+}
+
+// Terminal control bytes are the protocol delimiters these expressions parse.
+// oxlint-disable-next-line no-control-regex
+const SHELL_PROMPT_OSC = /\x1b\](?:133|633);A(?:;[^\x07\x1b]*)?(?:\x07|\x1b\\)/;
+// oxlint-disable-next-line no-control-regex
+const ANSI_OSC = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
+// oxlint-disable-next-line no-control-regex
+const ANSI_CSI = /\x1b\[[0-?]*[ -/]*[@-~]/g;
+const COMMON_PROMPT_END = /(?:[$#>]|❯|➜)\s*$/u;
+
+/** Detect the first interactive prompt without feeding startup text into shell
+ * initialization. OSC 133/633 is authoritative; the visible fallback covers
+ * default cmd, PowerShell, POSIX, fish, and common themed prompts. */
+export function localShellPromptReady(output: string): boolean {
+  if (SHELL_PROMPT_OSC.test(output)) return true;
+  const visible = output.replace(ANSI_OSC, '').replace(ANSI_CSI, '');
+  const line = visible.split(/[\r\n]/).at(-1) ?? '';
+  return COMMON_PROMPT_END.test(line);
 }

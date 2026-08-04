@@ -17,6 +17,39 @@ describe('sessionProfileSchema', () => {
     expect(sessionProfileSchema.safeParse({ kind: 'local' }).success).toBe(true);
   });
 
+  it('accepts structured local shell arguments and startup commands', () => {
+    expect(
+      sessionProfileSchema.parse({
+        kind: 'local',
+        shell: 'wsl.exe',
+        args: ['-d', 'Ubuntu'],
+        cwd: 'C:\\work',
+        startupCommand: 'cd project\nnpm run dev',
+      }),
+    ).toEqual({
+      kind: 'local',
+      shell: 'wsl.exe',
+      args: ['-d', 'Ubuntu'],
+      cwd: 'C:\\work',
+      startupCommand: 'cd project\nnpm run dev',
+    });
+  });
+
+  it('bounds local shell launch data', () => {
+    expect(
+      sessionProfileSchema.safeParse({
+        kind: 'local',
+        args: Array.from({ length: 65 }, () => 'arg'),
+      }).success,
+    ).toBe(false);
+    expect(
+      sessionProfileSchema.safeParse({
+        kind: 'local',
+        startupCommand: 'x'.repeat(32_769),
+      }).success,
+    ).toBe(false);
+  });
+
   it('accepts a full ssh profile', () => {
     const parsed = sessionProfileSchema.safeParse({
       kind: 'ssh',

@@ -3,6 +3,7 @@ import type { SavedHostProfile } from '@muxus/shared';
 import {
   connectSavedHost,
   connectTarget,
+  openLocalShellProfile,
   openLocalTerminal,
 } from '../../../client/src/session-actions.js';
 import { usePrefsStore } from '../../../client/src/state/prefs.js';
@@ -44,7 +45,11 @@ beforeEach(() => {
     activeId: null,
     zoomedPaneId: null,
   });
-  usePrefsStore.setState({ localShell: 'auto' });
+  usePrefsStore.setState({
+    localShell: 'auto',
+    localShellProfiles: [],
+    defaultLocalShellProfileId: '',
+  });
   // Start each test outside the window left behind by the previous one.
   settleGuard();
 });
@@ -101,6 +106,59 @@ describe('repeat launch guard', () => {
 
     expect(second).toBe(first);
     expect(useTabsStore.getState().tabs).toHaveLength(1);
+  });
+
+  it('opens the selected saved local shell with arguments and startup actions', () => {
+    const saved = {
+      id: 'ubuntu',
+      name: 'Ubuntu',
+      shell: 'wsl.exe',
+      args: ['-d', 'Ubuntu'],
+      cwd: 'C:\\work',
+      startupCommand: 'cd project\nnpm run dev',
+    };
+
+    const id = openLocalShellProfile(saved);
+
+    expect(useTabsStore.getState().tabs).toContainEqual(
+      expect.objectContaining({
+        id,
+        title: 'Ubuntu',
+        profile: {
+          kind: 'local',
+          shell: 'wsl.exe',
+          args: ['-d', 'Ubuntu'],
+          cwd: 'C:\\work',
+          startupCommand: 'cd project\nnpm run dev',
+        },
+      }),
+    );
+  });
+
+  it('uses the configured default saved local shell', () => {
+    usePrefsStore.setState({
+      localShellProfiles: [
+        {
+          id: 'powershell',
+          name: 'PowerShell',
+          shell: 'pwsh.exe',
+          args: ['-NoLogo'],
+          cwd: '',
+          startupCommand: '',
+        },
+      ],
+      defaultLocalShellProfileId: 'powershell',
+    });
+
+    const id = openLocalTerminal();
+
+    expect(useTabsStore.getState().tabs).toContainEqual(
+      expect.objectContaining({
+        id,
+        title: 'PowerShell',
+        profile: { kind: 'local', shell: 'pwsh.exe', args: ['-NoLogo'] },
+      }),
+    );
   });
 
   it('reopens a host whose fresh tab was closed inside the window', () => {

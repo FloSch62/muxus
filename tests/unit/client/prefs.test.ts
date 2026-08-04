@@ -9,9 +9,19 @@ import {
 import { DEFAULT_SIDEBAR_WIDTH } from '../../../client/src/sidebar-width.js';
 import {
   MONO_FONT_FALLBACK,
+  isLocalShellProfileArray,
   migratePrefsState,
   terminalFontStack,
 } from '../../../client/src/state/prefs.js';
+
+const ubuntuProfile = {
+  id: 'ubuntu',
+  name: 'Ubuntu',
+  shell: 'wsl.exe',
+  args: ['-d', 'Ubuntu'],
+  cwd: 'C:\\work',
+  startupCommand: 'cd project',
+};
 
 describe('terminalFontStack', () => {
   it('always includes the bundled Nerd Font symbol fallback', () => {
@@ -93,6 +103,25 @@ describe('migratePrefsState', () => {
     expect(migratePrefsState({ terminalScheme: 'muxus', termName: 'xterm-kitty' }, 0)).toEqual({
       terminalScheme: 'vscode-dark',
     });
+  });
+});
+
+describe('local shell profile preferences', () => {
+  it('keeps complete profiles and rejects duplicate IDs', () => {
+    expect(isLocalShellProfileArray([ubuntuProfile])).toBe(true);
+    expect(isLocalShellProfileArray([ubuntuProfile, { ...ubuntuProfile }])).toBe(false);
+  });
+
+  it('drops malformed persisted profiles without changing other preferences', () => {
+    expect(
+      migratePrefsState(
+        {
+          monoFontSize: 16,
+          localShellProfiles: [{ ...ubuntuProfile, args: '-d Ubuntu' }],
+        },
+        6,
+      ),
+    ).toEqual({ monoFontSize: 16 });
   });
 });
 

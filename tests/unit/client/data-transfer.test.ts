@@ -23,6 +23,8 @@ beforeEach(() => {
     notifyOnNewVersion: true,
     showCommandBar: true,
     backgroundColor: '',
+    localShellProfiles: [],
+    defaultLocalShellProfileId: '',
   });
 });
 
@@ -155,6 +157,58 @@ describe('backing up preferences', () => {
     expect(document.data.preferences.notifyOnNewVersion).toBe(false);
     expect(document.data.preferences.backgroundColor).toBe('#102030');
     expect(document.data.preferences.showCommandBar).toBe(false);
+  });
+
+  it('includes saved local shell profiles and their default selection', async () => {
+    usePrefsStore.setState({
+      localShellProfiles: [
+        {
+          id: 'ubuntu',
+          name: 'Ubuntu',
+          shell: 'wsl.exe',
+          args: ['-d', 'Ubuntu'],
+          cwd: 'C:\\work',
+          startupCommand: 'cd project',
+        },
+      ],
+      defaultLocalShellProfileId: 'ubuntu',
+    });
+    mockBackupSnapshot();
+
+    const document = await createBackupDocument();
+
+    expect(document.data.preferences.localShellProfiles).toHaveLength(1);
+    expect(document.data.preferences.defaultLocalShellProfileId).toBe('ubuntu');
+  });
+});
+
+describe('restoring local shell profiles', () => {
+  const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
+  const ubuntu = {
+    id: 'ubuntu',
+    name: 'Ubuntu',
+    shell: 'wsl.exe',
+    args: ['-d', 'Ubuntu'],
+    cwd: 'C:\\work',
+    startupCommand: 'cd project',
+  };
+
+  it('restores bounded profiles and their default selection', () => {
+    expect(
+      sanitizePreferences(
+        prefs({ localShellProfiles: [ubuntu], defaultLocalShellProfileId: 'ubuntu' }),
+      ),
+    ).toMatchObject({
+      localShellProfiles: [ubuntu],
+      defaultLocalShellProfileId: 'ubuntu',
+    });
+  });
+
+  it('drops malformed profiles rather than importing them', () => {
+    expect(
+      sanitizePreferences(prefs({ localShellProfiles: [{ ...ubuntu, args: '-d Ubuntu' }] }))
+        .localShellProfiles,
+    ).toBeUndefined();
   });
 });
 

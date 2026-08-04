@@ -6,7 +6,12 @@ import type { TerminalServerMessage } from '@muxus/shared';
 import { terminalClientMessageSchema, type TerminalClientMessage } from '@muxus/shared/ws-protocol';
 import type { AppContext } from '../app.js';
 import type { ConnectIo } from '../ssh/connection-manager.js';
-import { spawnLocalPty, DEFAULT_TERM } from '../local/pty-manager.js';
+import {
+  localShellPromptReady,
+  localStartupInput,
+  spawnLocalPty,
+  DEFAULT_TERM,
+} from '../local/pty-manager.js';
 import { SerialTransport } from '../serial/serial-transport.js';
 import { TelnetTransport } from '../telnet/telnet-transport.js';
 import type { TerminalTransport } from '../transports/terminal-transport.js';
@@ -416,6 +421,8 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
 
   if (profile.kind === 'local') {
     const { pty } = spawnLocalPty(profile, cols, rows);
+    let startupInput = localStartupInput(profile.startupCommand);
+    let startupOutput = '';
     writeInput = (data) => pty.write(data.toString('utf8'));
     control.onMessage = (msg) => {
       if (handleLoggingControl(msg)) return;
@@ -424,6 +431,15 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
     pty.onData((data) => {
       recorder?.output(data);
       if (socket.readyState === socket.OPEN) socket.send(Buffer.from(data, 'utf8'), { binary: true });
+      if (startupInput) {
+        startupOutput = `${startupOutput}${data}`.slice(-8192);
+        if (localShellPromptReady(startupOutput)) {
+          const input = startupInput;
+          startupInput = undefined;
+          startupOutput = '';
+          pty.write(input);
+        }
+      }
     });
     pty.onExit(({ exitCode }) => {
       recorder?.end('completed');

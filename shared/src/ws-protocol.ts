@@ -23,8 +23,12 @@ export function terminalWebSocketProtocols(token: string): string[] {
 export const localProfileSchema = z.object({
   kind: z.literal('local'),
   /** Login shell override; empty/absent picks the server's default. */
-  shell: z.string().optional(),
-  cwd: z.string().optional(),
+  shell: z.string().max(4096).optional(),
+  /** Arguments passed to the shell executable without command-line re-parsing. */
+  args: z.array(z.string().max(4096)).max(64).optional(),
+  cwd: z.string().max(4096).optional(),
+  /** Text entered after the interactive shell starts, followed by Enter. */
+  startupCommand: z.string().max(32_768).optional(),
 });
 
 export const sshProfileSchema = z.object({

@@ -24,7 +24,12 @@ import {
   MIN_SIDEBAR_WIDTH,
 } from './sidebar-width.js';
 import { MIN_SFTP_PANEL_WIDTH } from './sftp-panel-width.js';
-import { usePrefsStore, type FolderStyle, type PrefsState } from './state/prefs.js';
+import {
+  isLocalShellProfileArray,
+  usePrefsStore,
+  type FolderStyle,
+  type PrefsState,
+} from './state/prefs.js';
 import { isFolderIconId } from './components/sidebar/folder-icons.js';
 
 export const BACKUP_FORMAT = 'muxus-backup';
@@ -45,6 +50,8 @@ const PREFERENCE_KEYS = [
   'cursorBlink',
   'cursorStyle',
   'localShell',
+  'localShellProfiles',
+  'defaultLocalShellProfileId',
   'copyOnSelect',
   'allowOsc52ClipboardWrite',
   'rightClickAction',
@@ -637,6 +644,19 @@ export function sanitizePreferences(input: BackupPreferences): Partial<PrefsStat
   }
   if (typeof input.localShell === 'string' && input.localShell.length <= 4096) {
     output.localShell = input.localShell;
+  }
+  if (isLocalShellProfileArray(input.localShellProfiles)) {
+    output.localShellProfiles = input.localShellProfiles;
+  }
+  if (
+    typeof input.defaultLocalShellProfileId === 'string' &&
+    input.defaultLocalShellProfileId.length <= 200 &&
+    (!input.defaultLocalShellProfileId ||
+      output.localShellProfiles?.some(
+        (profile) => profile.id === input.defaultLocalShellProfileId,
+      ))
+  ) {
+    output.defaultLocalShellProfileId = input.defaultLocalShellProfileId;
   }
   if (typeof input.copyOnSelect === 'boolean') output.copyOnSelect = input.copyOnSelect;
   if (typeof input.allowOsc52ClipboardWrite === 'boolean') {

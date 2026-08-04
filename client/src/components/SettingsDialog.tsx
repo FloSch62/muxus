@@ -30,6 +30,7 @@ import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import BugReportOutlinedIcon from '@mui/icons-material/BugReportOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import CachedOutlinedIcon from '@mui/icons-material/CachedOutlined';
+import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import HighlightOutlinedIcon from '@mui/icons-material/HighlightOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
@@ -76,6 +77,7 @@ import {
 } from '../terminal/font-catalog.js';
 import { chordSx } from './chord-style.js';
 import { KeywordHighlightRulesEditor } from './KeywordHighlightRulesEditor.js';
+import { LocalShellProfilesSection } from './LocalShellProfilesSection.js';
 import { SessionLoggingPolicyFields } from './SessionLoggingPolicyFields.js';
 import { DataTransferSection } from './DataTransferSection.js';
 import { MobaXtermImportDialog } from './MobaXtermImportDialog.js';
@@ -85,6 +87,7 @@ import { SecureCrtImportDialog } from './SecureCrtImportDialog.js';
 type Section =
   | 'appearance'
   | 'terminal'
+  | 'local-shells'
   | 'logging'
   | 'highlighting'
   | 'behavior'
@@ -97,6 +100,7 @@ type Section =
 const SECTIONS: Array<{ id: Section; label: string; icon: React.ReactNode }> = [
   { id: 'appearance', label: 'Appearance', icon: <PaletteOutlinedIcon fontSize="small" /> },
   { id: 'terminal', label: 'Terminal', icon: <TerminalIcon fontSize="small" /> },
+  { id: 'local-shells', label: 'Local shells', icon: <CodeOutlinedIcon fontSize="small" /> },
   { id: 'logging', label: 'Session logging', icon: <HistoryOutlinedIcon fontSize="small" /> },
   { id: 'highlighting', label: 'Highlighting', icon: <HighlightOutlinedIcon fontSize="small" /> },
   { id: 'behavior', label: 'Behavior', icon: <TuneOutlinedIcon fontSize="small" /> },
@@ -190,6 +194,7 @@ export function SettingsDialog() {
           <Box sx={{ flex: 1, overflowY: 'auto', p: 3, pt: 2.5 }}>
             {section === 'appearance' && <AppearanceSection />}
             {section === 'terminal' && <TerminalSection />}
+            {section === 'local-shells' && <LocalShellProfilesSection />}
             {section === 'logging' && <SessionLoggingSection onDirtyChange={setLoggingDirty} />}
             {section === 'highlighting' && <HighlightingSection />}
             {section === 'behavior' && <BehaviorSection />}
@@ -607,22 +612,9 @@ function TerminalSection() {
 
 function BehaviorSection() {
   const prefs = usePrefsStore();
-  const { data: info } = useAppInfo();
 
   return (
     <Stack spacing={3}>
-      <Box>
-        <SectionTitle>Local terminal</SectionTitle>
-        <TextField
-          label="Shell"
-          value={prefs.localShell}
-          onChange={(e) => prefs.set({ localShell: e.target.value })}
-          placeholder="auto"
-          helperText={info ? `auto = ${info.defaultShell}` : 'auto = your login shell'}
-          sx={{ maxWidth: 420 }}
-          fullWidth
-        />
-      </Box>
       <Box>
         <SectionTitle>Tabs</SectionTitle>
         <FormControlLabel

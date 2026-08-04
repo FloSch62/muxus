@@ -11,7 +11,7 @@ because storage policy should not change under a running recorder.
 <figure markdown="span">
   ![The settings dialog](../assets/screenshots/settings.png#only-light){ .shadow }
   ![The settings dialog](../assets/screenshots/settings-dark.png#only-dark){ .shadow }
-  <figcaption>Nine sections, listed on the left. The footer states when changes apply.</figcaption>
+  <figcaption>Eleven sections, listed on the left. The footer states when changes apply.</figcaption>
 </figure>
 
 ## Appearance
@@ -40,7 +40,21 @@ because storage policy should not change under a running recorder.
   Zellij, and the **multiline paste confirmation**. OSC 52 reads remain blocked so a
   terminal program cannot retrieve the local clipboard.
 - **Scrollback lines** kept per terminal.
-- **Local shell**: the shell a local terminal starts; `auto` uses the login shell.
+
+## Local shells
+
+The automatic local terminal keeps the previous behaviour: `auto` uses the login shell,
+or an executable can override it. Saved profiles make several local environments available
+at once. Each profile has a display name, executable, structured argument list, starting
+directory and optional startup commands.
+
+Arguments are entered one per line, so a value containing spaces stays one argument. For
+example, a Windows profile with executable `wsl.exe` and arguments `-d` and `Ubuntu`
+opens that distribution; another profile can select Debian, PowerShell or `cmd.exe`.
+Profiles appear below **Local terminal** in the sidebar and in the quick launcher. One can
+be selected as the default used by the sidebar, empty-pane shortcut and generic local
+terminal action. Startup commands are entered into the interactive shell whenever the
+profile starts, including when it is restored in a workspace.
 
 ## Session logging
 

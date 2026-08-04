@@ -59,6 +59,7 @@ import {
   connectManagedHost,
   connectTarget,
   isQuickConnectTarget,
+  openLocalShellProfile,
   openLocalTerminal,
 } from '../session-actions.js';
 import {
@@ -105,6 +106,7 @@ export function SessionSidebar() {
   const setHostEditor = useUiStore((s) => s.setHostEditor);
   const setFolderDialog = useUiStore((s) => s.setFolderDialog);
   const sidebarWidth = usePrefsStore((state) => state.sidebarWidth);
+  const localShellProfiles = usePrefsStore((state) => state.localShellProfiles);
   const setPrefs = usePrefsStore((state) => state.set);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -132,6 +134,17 @@ export function SessionSidebar() {
   const needle = useDeferredValue(normalizedFilter);
   const hosts = config?.hosts ?? EMPTY_HOSTS;
   const profiles = savedData?.profiles ?? EMPTY_PROFILES;
+  const visibleLocalShellProfiles = useMemo(
+    () =>
+      localShellProfiles.filter((profile) => {
+        if (!needle) return true;
+        return [profile.name, profile.shell, ...profile.args, profile.cwd]
+          .join(' ')
+          .toLocaleLowerCase()
+          .includes(needle);
+      }),
+    [localShellProfiles, needle],
+  );
 
   const groups = useMemo(
     () => groupManagedHosts(hosts, profiles, config?.files ?? [], config?.path, needle),
@@ -536,6 +549,26 @@ export function SessionSidebar() {
               Local terminal
             </Box>
           </ListItemButton>
+          {visibleLocalShellProfiles.map((profile) => (
+            <Tooltip
+              key={profile.id}
+              title={[profile.shell || 'Automatic shell', ...profile.args].join(' ')}
+              placement="right"
+            >
+              <ListItemButton
+                component="li"
+                sx={[...fixedRowSx, { pl: 3 }]}
+                onMouseEnter={() => void loadTerminalViewImpl()}
+                onFocus={() => void loadTerminalViewImpl()}
+                onClick={() => openLocalShellProfile(profile)}
+              >
+                <TerminalIcon sx={{ fontSize: 15, flexShrink: 0, color: 'text.secondary' }} />
+                <Box component="span" sx={{ ...treeLabelSx, minWidth: 0 }}>
+                  {profile.name.trim() || 'Unnamed shell'}
+                </Box>
+              </ListItemButton>
+            </Tooltip>
+          ))}
           {quickConnectable && (
             <ListItemButton
               component="li"
