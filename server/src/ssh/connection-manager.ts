@@ -111,19 +111,10 @@ export function sessionSettings(resolved: ResolvedTarget): SessionSettings {
   };
 }
 
-/**
- * RequestTTY the way ssh(1) treats it: auto ⇒ a tty only for plain shells.
- * Console compatibility suppresses that implicit allocation because some
- * appliances reject pty-req outright; explicit yes/force still wins.
- */
-function wantsPty(
-  requestTty: ResolvedTarget['requestTty'],
-  hasCommand: boolean,
-  consoleCompatibility = false,
-): boolean {
+/** RequestTTY the way ssh(1) treats it: auto ⇒ a tty only for plain shells. */
+function wantsPty(requestTty: ResolvedTarget['requestTty'], hasCommand: boolean): boolean {
   if (requestTty === 'no') return false;
   if (requestTty === 'yes' || requestTty === 'force') return true;
-  if (consoleCompatibility) return false;
   return !hasCommand;
 }
 
@@ -615,7 +606,7 @@ export class SshConnectionManager {
       health: () => transportHealth,
       configForwards: target.resolved.forwards,
       shell: async (cols, rows, term, session = sessionSettings(target.resolved)) => {
-        const pty = wantsPty(session.requestTty, !!session.remoteCommand, disableSftp)
+        const pty = wantsPty(session.requestTty, !!session.remoteCommand)
           ? terminalPtyOptions(cols, rows, term)
           : undefined;
         if (session.remoteCommand) {
@@ -624,11 +615,10 @@ export class SshConnectionManager {
         if (pty && !disableSftp) {
           return openRemoteShell(client, getSftp, pty, session.env);
         }
-        return new Promise((resolve, reject) => {
-          client.shell(pty ?? false, { env: session.env }, (err, stream) =>
-            err ? reject(err) : resolve(stream),
-          );
-        });
+        // Console compatibility drops SendEnv/SetEnv: ssh2 can only send env
+        // requests before pty-req, an order some appliances answer with a
+        // protocol-error disconnect, and a serial console has no environment.
+        return openPlainShell(client, pty, disableSftp ? undefined : session.env);
       },
       // One SFTP channel per connection, shared by every file operation.
       sftp: () =>
@@ -1889,6 +1879,39 @@ function openSessionExec(
       err ? reject(err) : resolve(stream),
     );
   });
+}
+
+/**
+ * Console appliances disagree about pty-req: some reject it, others refuse a
+ * shell without one. Ask for the tty ssh(1) would and, like ssh(1), carry on
+ * without it when the server says no. ssh2 closes the channel on a failed
+ * pty-req, so the retry needs a fresh session channel.
+ */
+async function openPlainShell(
+  client: Client,
+  pty: PseudoTtyOptions | undefined,
+  env?: Record<string, string>,
+): Promise<ClientChannel> {
+  try {
+    return await requestShell(client, pty ?? false, env);
+  } catch (err) {
+    if (!pty || !isPtyRejection(err)) throw err;
+    return requestShell(client, false, env);
+  }
+}
+
+function requestShell(
+  client: Client,
+  pty: PseudoTtyOptions | false,
+  env?: Record<string, string>,
+): Promise<ClientChannel> {
+  return new Promise((resolve, reject) => {
+    client.shell(pty, { env }, (err, stream) => (err ? reject(err) : resolve(stream)));
+  });
+}
+
+function isPtyRejection(err: unknown): boolean {
+  return err instanceof Error && /Unable to request a pseudo-terminal/.test(err.message);
 }
 
 /** Translate the common ssh2 failure modes into user-actionable messages. */

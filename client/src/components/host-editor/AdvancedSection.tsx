@@ -55,8 +55,7 @@ export function AdvancedSection({
           label="Enable console compatibility mode"
         />
         <Typography variant="body2" color="text.secondary">
-          Skips SFTP, shell integration, and automatic TTY allocation. Explicit TTY settings still
-          apply.
+          Skips SFTP, shell integration, and SendEnv/SetEnv requests. TTY settings still apply.
         </Typography>
       </Stack>
 

@@ -29,6 +29,7 @@ writeFileSync(emptyConfig, '');
 interface ServerStats {
   connections: number;
   auths: number;
+  envRequests: number;
   execs: number;
   ptyRequests: number;
   sftpRequests: number;
@@ -44,6 +45,8 @@ function startServer(opts: {
   maxShellsPerConnection?: number;
   disconnectOnExec?: boolean;
   rejectPty?: boolean;
+  /** Console servers that only serve interactive terminals reject shells with no pty. */
+  requirePty?: boolean;
 } = {}): Promise<{
   server: Server;
   port: number;
@@ -52,6 +55,7 @@ function startServer(opts: {
   const stats: ServerStats = {
     connections: 0,
     auths: 0,
+    envRequests: 0,
     execs: 0,
     ptyRequests: 0,
     sftpRequests: 0,
@@ -72,10 +76,19 @@ function startServer(opts: {
     conn.on('ready', () => {
       conn.on('session', (acceptSession) => {
         const session = acceptSession();
+        let hasPty = false;
         session.on('pty', (acceptPty, rejectPty) => {
           stats.ptyRequests += 1;
-          if (opts.rejectPty) rejectPty?.();
-          else acceptPty?.();
+          if (opts.rejectPty) {
+            rejectPty?.();
+            return;
+          }
+          hasPty = true;
+          acceptPty?.();
+        });
+        session.on('env', (acceptEnv) => {
+          stats.envRequests += 1;
+          acceptEnv?.();
         });
         // Empty probe output means "no integrated shell" — the manager then
         // opens a plain shell, which is what these tests exercise.
@@ -95,6 +108,10 @@ function startServer(opts: {
         });
         session.on('shell', (acceptShell, rejectShell) => {
           if (shells >= (opts.maxShellsPerConnection ?? Number.POSITIVE_INFINITY)) {
+            rejectShell?.();
+            return;
+          }
+          if (opts.requirePty && !hasPty) {
             rejectShell?.();
             return;
           }
@@ -292,9 +309,9 @@ describe('SSH connection multiplexing', () => {
     expect(started.stats.connections).toBe(2);
   }, 15_000);
 
-  it('opens a plain shell without probes or an implicit PTY in console mode', async () => {
-    // Network consoles commonly accept a shell but reject pty-req. Console
-    // compatibility must skip the implicit PTY as well as exec/SFTP probes.
+  it('opens a plain shell in console mode when the host rejects pty-req', async () => {
+    // Some network consoles reject pty-req; the shell must still open, without
+    // exec or SFTP probes.
     const started = await startServer({ rejectPty: true });
     server = started.server;
     const configFile = path.join(tmp, `ssh_config-console-${knownHostsCounter}`);
@@ -318,9 +335,10 @@ describe('SSH connection multiplexing', () => {
     );
 
     expect(shell.lease.connection.sftpAvailable).toBe(false);
+    // The rejected pty-req costs a channel, so the shell arrives on the retry.
     expect(started.stats).toMatchObject({
       execs: 0,
-      ptyRequests: 0,
+      ptyRequests: 1,
       sftpRequests: 0,
       shells: 1,
     });
@@ -328,6 +346,72 @@ describe('SSH connection multiplexing', () => {
       'SFTP is disabled for this host.',
     );
     expect(started.stats.sftpRequests).toBe(0);
+  }, 15_000);
+
+  it('allocates a PTY in console mode for hosts that require one', async () => {
+    // Serial console servers such as Lantronix answer a shell request with
+    // CHANNEL_FAILURE unless the channel already has a pty.
+    const started = await startServer({ requirePty: true });
+    server = started.server;
+    const configFile = path.join(tmp, `ssh_config-console-needs-pty-${knownHostsCounter}`);
+    writeFileSync(
+      configFile,
+      [
+        'Host console',
+        '  HostName 127.0.0.1',
+        '  User tester',
+        `  Port ${started.port}`,
+        '  SetEnv TERM=xterm-256color',
+      ].join('\n'),
+    );
+    manager = makeManager(configFile, (alias) => alias === 'console');
+
+    const shell = await manager.connectShell(
+      { kind: 'ssh', target: 'console', passwordOnly: true },
+      makeIo().io,
+      80,
+      24,
+      'xterm-256color',
+    );
+
+    expect(shell.lease.connection.sftpAvailable).toBe(false);
+    // ssh2 can only send env requests ahead of pty-req, so console mode sends
+    // none: appliances reject that order with a protocol-error disconnect.
+    expect(started.stats).toMatchObject({
+      envRequests: 0,
+      execs: 0,
+      ptyRequests: 1,
+      sftpRequests: 0,
+      shells: 1,
+    });
+  }, 15_000);
+
+  it('still applies SetEnv for hosts outside console mode', async () => {
+    const started = await startServer();
+    server = started.server;
+    const configFile = path.join(tmp, `ssh_config-setenv-${knownHostsCounter}`);
+    writeFileSync(
+      configFile,
+      [
+        'Host regular',
+        '  HostName 127.0.0.1',
+        '  User tester',
+        `  Port ${started.port}`,
+        '  SetEnv TERM=xterm-256color',
+      ].join('\n'),
+    );
+    manager = makeManager(configFile);
+
+    await manager.connectShell(
+      { kind: 'ssh', target: 'regular', passwordOnly: true },
+      makeIo().io,
+      80,
+      24,
+      'xterm-256color',
+    );
+
+    expect(started.stats.envRequests).toBeGreaterThan(0);
+    expect(started.stats.shells).toBe(1);
   }, 15_000);
 
   it('honors an explicit RequestTTY yes in console mode', async () => {

@@ -101,10 +101,11 @@ mode and remembers the compatibility choice until the app restarts. No manual se
 for the session to connect.
 
 For known-sensitive SSH console servers and network appliances, **Enable console compatibility
-mode** skips the initial probe and automatic terminal allocation. This persistent override avoids
-the first reconnect and supports devices that reject SSH `pty-req`. An explicit **Always allocate
-a terminal** or **Force terminal allocation** setting is still honored. The file-browser controls
-are unavailable for plain-console sessions.
+mode** skips the initial probe as well, and stops sending `SendEnv`/`SetEnv` values that these
+devices have no environment for. This persistent override avoids the first reconnect entirely.
+Terminal allocation follows the host's TTY setting either way: Muxus asks for a terminal and
+continues without one when the device rejects `pty-req`. The file-browser controls are unavailable
+for plain-console sessions.
 
 Any other keyword OpenSSH understands is entered here as free-form option/value pairs. The
 panel shows the **exact block** that will be written.
