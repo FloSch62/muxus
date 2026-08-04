@@ -14,6 +14,7 @@ import type { KeywordHighlightProfile } from '@muxus/shared';
 import { newPreferenceId } from '../command-buttons.js';
 import {
   MAX_HIGHLIGHT_PROFILE_FILE_BYTES,
+  MAX_KEYWORD_HIGHLIGHT_PROFILES,
   createHighlightProfileDocument,
   mergeHighlightProfiles,
   parseHighlightProfileDocument,
@@ -47,6 +48,13 @@ export function HighlightProfilesSection() {
 
   const addProfile = () => {
     const current = usePrefsStore.getState().keywordHighlightProfiles;
+    if (current.length >= MAX_KEYWORD_HIGHLIGHT_PROFILES) {
+      showToast(
+        'error',
+        `Muxus supports up to ${MAX_KEYWORD_HIGHLIGHT_PROFILES} highlighting profiles. Delete one before creating another.`,
+      );
+      return;
+    }
     const profile: KeywordHighlightProfile = {
       id: newPreferenceId('highlight-profile'),
       name: unusedProfileName(current),
@@ -165,7 +173,11 @@ export function HighlightProfilesSection() {
               </MenuItem>
             ))}
           </TextField>
-          <Button startIcon={<AddIcon />} onClick={addProfile}>
+          <Button
+            startIcon={<AddIcon />}
+            disabled={profiles.length >= MAX_KEYWORD_HIGHLIGHT_PROFILES}
+            onClick={addProfile}
+          >
             New
           </Button>
           <Button startIcon={<UploadFileOutlinedIcon />} onClick={() => importInput.current?.click()}>

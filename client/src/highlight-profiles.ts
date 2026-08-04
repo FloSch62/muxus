@@ -3,6 +3,7 @@ import type { KeywordHighlightProfile, KeywordHighlightRule } from '@muxus/share
 export const HIGHLIGHT_PROFILE_FORMAT = 'muxus-keyword-highlighting-profiles';
 export const HIGHLIGHT_PROFILE_VERSION = 1;
 export const MAX_HIGHLIGHT_PROFILE_FILE_BYTES = 2 * 1024 * 1024;
+export const MAX_KEYWORD_HIGHLIGHT_PROFILES = 100;
 
 export interface HighlightProfileDocument {
   format: typeof HIGHLIGHT_PROFILE_FORMAT;
@@ -67,13 +68,22 @@ export function mergeHighlightProfiles(
 ): KeywordHighlightProfile[] {
   const byId = new Map(current.map((profile) => [profile.id, profile]));
   for (const profile of imported) byId.set(profile.id, profile);
-  return [...byId.values()];
+  if (byId.size > MAX_KEYWORD_HIGHLIGHT_PROFILES) {
+    throw new Error(
+      `This import would exceed the limit of ${MAX_KEYWORD_HIGHLIGHT_PROFILES} highlighting profiles. Delete an existing profile and try again.`,
+    );
+  }
+  const merged = [...byId.values()];
+  if (!isKeywordHighlightProfileArray(merged)) {
+    throw new Error('The merged highlighting profiles are invalid.');
+  }
+  return merged;
 }
 
 export function isKeywordHighlightProfileArray(
   value: unknown,
 ): value is KeywordHighlightProfile[] {
-  if (!Array.isArray(value) || value.length > 100) return false;
+  if (!Array.isArray(value) || value.length > MAX_KEYWORD_HIGHLIGHT_PROFILES) return false;
   const profileIds = new Set<string>();
   return value.every((entry) => {
     if (!isRecord(entry)) return false;

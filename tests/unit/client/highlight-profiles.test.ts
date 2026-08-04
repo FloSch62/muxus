@@ -3,6 +3,7 @@ import type { KeywordHighlightProfile } from '@muxus/shared';
 import {
   HIGHLIGHT_PROFILE_FORMAT,
   HIGHLIGHT_PROFILE_VERSION,
+  MAX_KEYWORD_HIGHLIGHT_PROFILES,
   createHighlightProfileDocument,
   isKeywordHighlightProfileArray,
   mergeHighlightProfiles,
@@ -70,6 +71,27 @@ describe('highlighting profile files', () => {
       updated,
       cisco,
     ]);
+  });
+
+  it('allows replacements at the profile limit but rejects a distinct profile beyond it', () => {
+    const existing = Array.from(
+      { length: MAX_KEYWORD_HIGHLIGHT_PROFILES },
+      (_, index): KeywordHighlightProfile => ({
+        ...nokia,
+        id: `profile-${index}`,
+        name: `Profile ${index}`,
+      }),
+    );
+    const replacement = { ...existing[0]!, name: 'Updated profile' };
+
+    expect(mergeHighlightProfiles(existing, [replacement])).toHaveLength(
+      MAX_KEYWORD_HIGHLIGHT_PROFILES,
+    );
+    expect(() =>
+      mergeHighlightProfiles(existing, [
+        { ...nokia, id: 'one-too-many', name: 'One too many' },
+      ]),
+    ).toThrow(/limit of 100 highlighting profiles/);
   });
 
   it('rejects duplicate profile and rule IDs', () => {
