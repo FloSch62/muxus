@@ -61,15 +61,12 @@ import {
   loadSftpPanel,
 } from '../lazy-features.js';
 
-const APPEARANCE_OPTIONS: readonly {
-  mode: ThemeMode;
-  label: string;
-  icon: ReactNode;
-}[] = [
+const APPEARANCE_OPTIONS = [
   { mode: 'light', label: 'Light', icon: <LightModeOutlinedIcon fontSize="small" /> },
   { mode: 'os', label: 'System', icon: <BrightnessAutoOutlinedIcon fontSize="small" /> },
   { mode: 'dark', label: 'Dark', icon: <DarkModeOutlinedIcon fontSize="small" /> },
-];
+] as const satisfies readonly { mode: ThemeMode; label: string; icon: ReactNode }[];
+const SYSTEM_APPEARANCE = APPEARANCE_OPTIONS[1];
 
 export const TopBar = memo(function TopBar() {
   const mode = usePrefsStore((s) => s.themeMode);
@@ -105,7 +102,8 @@ export const TopBar = memo(function TopBar() {
 
   const handle = () => terminalHandle(activeTab?.id);
   const closeMenu = () => setTerminalMenu(null);
-  const currentAppearance = APPEARANCE_OPTIONS.find((option) => option.mode === mode)!;
+  const currentAppearance =
+    APPEARANCE_OPTIONS.find((option) => option.mode === mode) ?? SYSTEM_APPEARANCE;
 
   return (
     <AppBar position="static" color="transparent" sx={{ borderBottom: 1, borderColor: 'divider' }}>

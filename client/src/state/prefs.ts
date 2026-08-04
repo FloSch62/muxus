@@ -127,10 +127,16 @@ export interface PrefsState {
   set: (patch: Partial<Omit<PrefsState, 'set'>>) => void;
 }
 
+function isThemeMode(value: unknown): value is ThemeMode {
+  return value === 'light' || value === 'os' || value === 'dark';
+}
+
 /** Upgrade persisted preferences without mutating the storage snapshot. */
 export function migratePrefsState(persisted: unknown, version: number): unknown {
   if (persisted === null || typeof persisted !== 'object') return persisted;
   const state = { ...persisted } as Partial<PrefsState> & { termName?: unknown };
+  // A missing or invalid value falls through to the store's System default.
+  if (!isThemeMode(state.themeMode)) delete state.themeMode;
   // v0 shipped the Muxus scheme as the default; stored copies of that
   // default follow the new one.
   if (version === 0 && state.terminalScheme === 'muxus') state.terminalScheme = 'vscode-dark';
@@ -262,7 +268,7 @@ export const usePrefsStore = create<PrefsState>()(
     }),
     {
       name: 'muxus-prefs',
-      version: 7,
+      version: 8,
       migrate: migratePrefsState,
       storage: createJSONStorage(() => muxusStateStorage),
     },

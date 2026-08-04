@@ -35,6 +35,12 @@ describe('appearance preference', () => {
       expect(migratePrefsState({ themeMode }, 0)).toMatchObject({ themeMode });
     },
   );
+
+  it('falls back to System when a persisted preference is invalid', () => {
+    expect(migratePrefsState({ themeMode: 'sepia', monoFontSize: 16 }, 7)).toEqual({
+      monoFontSize: 16,
+    });
+  });
 });
 
 describe('terminalFontStack', () => {
