@@ -805,6 +805,7 @@ export function TabStrip({
           <MenuItem
             onClick={() => {
               update(menuTab.id, { sftpOpen: true });
+              activate(menuTab.id);
               setMenu(null);
             }}
           >
