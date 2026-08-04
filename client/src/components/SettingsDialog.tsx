@@ -287,11 +287,11 @@ function AppearanceSection() {
           <ToggleButton value="light" sx={{ px: 2 }}>
             Light
           </ToggleButton>
-          <ToggleButton value="dark" sx={{ px: 2 }}>
-            Dark
-          </ToggleButton>
           <ToggleButton value="os" sx={{ px: 2 }}>
             System
+          </ToggleButton>
+          <ToggleButton value="dark" sx={{ px: 2 }}>
+            Dark
           </ToggleButton>
         </ToggleButtonGroup>
       </Box>

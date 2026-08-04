@@ -127,6 +127,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const handler = (e: MediaQueryListEvent) => setOsTheme(e.matches ? 'dark' : 'light');
+    setOsTheme(mq.matches ? 'dark' : 'light');
     mq.addEventListener('change', handler);
     return () => mq.removeEventListener('change', handler);
   }, []);

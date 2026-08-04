@@ -124,14 +124,19 @@ export interface PrefsState {
   sftpPanelWidth: number;
   /** Verbose diagnostic logging plus access to the log viewer and export. */
   debugMode: boolean;
-  toggleTheme: () => void;
-  set: (patch: Partial<Omit<PrefsState, 'set' | 'toggleTheme'>>) => void;
+  set: (patch: Partial<Omit<PrefsState, 'set'>>) => void;
+}
+
+function isThemeMode(value: unknown): value is ThemeMode {
+  return value === 'light' || value === 'os' || value === 'dark';
 }
 
 /** Upgrade persisted preferences without mutating the storage snapshot. */
 export function migratePrefsState(persisted: unknown, version: number): unknown {
   if (persisted === null || typeof persisted !== 'object') return persisted;
   const state = { ...persisted } as Partial<PrefsState> & { termName?: unknown };
+  // A missing or invalid value falls through to the store's System default.
+  if (!isThemeMode(state.themeMode)) delete state.themeMode;
   // v0 shipped the Muxus scheme as the default; stored copies of that
   // default follow the new one.
   if (version === 0 && state.terminalScheme === 'muxus') state.terminalScheme = 'vscode-dark';
@@ -259,13 +264,11 @@ export const usePrefsStore = create<PrefsState>()(
       sidebarEmptyFolders: [],
       sftpPanelWidth: DEFAULT_SFTP_PANEL_WIDTH,
       debugMode: false,
-      toggleTheme: () =>
-        set((s) => ({ themeMode: s.themeMode === 'light' ? 'dark' : s.themeMode === 'dark' ? 'os' : 'light' })),
       set: (patch) => set(patch),
     }),
     {
       name: 'muxus-prefs',
-      version: 7,
+      version: 8,
       migrate: migratePrefsState,
       storage: createJSONStorage(() => muxusStateStorage),
     },
