@@ -26,6 +26,7 @@ import Tooltip from '@mui/material/Tooltip';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
+import { useTheme } from '@mui/material/styles';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import BugReportOutlinedIcon from '@mui/icons-material/BugReportOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -64,7 +65,12 @@ import {
   interfaceZoomLabel,
 } from '../interface-zoom.js';
 import { useChordLabel } from '../keymap/hints.js';
-import { usePrefsStore, type RightClickAction, type ThemeMode } from '../state/prefs.js';
+import {
+  terminalSchemeIdForMode,
+  usePrefsStore,
+  type RightClickAction,
+  type ThemeMode,
+} from '../state/prefs.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { confirmAction } from '../state/dialogs.js';
@@ -241,6 +247,7 @@ function SectionTitle({ children }: { children: string }) {
 
 function AppearanceSection() {
   const prefs = usePrefsStore();
+  const effectiveThemeMode = useTheme().palette.mode;
   const [installedFontFamilies, setInstalledFontFamilies] = useState<readonly string[]>();
   const [fontCatalogLoading, setFontCatalogLoading] = useState(
     () => window.muxusDesktop?.listLocalFontFamilies !== undefined,
@@ -268,7 +275,9 @@ function AppearanceSection() {
   );
   const zoomInChord = useChordLabel('terminal.zoom-in');
   const zoomOutChord = useChordLabel('terminal.zoom-out');
-  const schemeTheme = terminalScheme(prefs.terminalScheme).theme;
+  const schemeTheme = terminalScheme(
+    terminalSchemeIdForMode(prefs, effectiveThemeMode),
+  ).theme;
   const schemeForeground = schemeTheme.foreground ?? '#cccccc';
   const schemeBackground = schemeTheme.background ?? '#1e1e1e';
 
@@ -320,27 +329,21 @@ function AppearanceSection() {
         </Typography>
       </Box>
       <Box>
-        <SectionTitle>Terminal color scheme</SectionTitle>
-        <FormControl sx={{ width: '100%', maxWidth: 420 }}>
-          <InputLabel id="terminal-color-scheme-label">Color scheme</InputLabel>
-          <Select
-            labelId="terminal-color-scheme-label"
-            value={prefs.terminalScheme}
-            label="Color scheme"
-            onChange={(event) => prefs.set({ terminalScheme: event.target.value })}
-            renderValue={(schemeId) => <SchemeLabel scheme={terminalScheme(schemeId)} showMode />}
-            MenuProps={{ slotProps: { paper: { sx: { maxHeight: 390 } } } }}
-          >
-            {TERMINAL_SCHEME_GROUPS.flatMap((group) => [
-              <ListSubheader key={group.label}>{group.label}</ListSubheader>,
-              ...group.schemes.map((scheme) => (
-                <MenuItem key={scheme.id} value={scheme.id}>
-                  <SchemeLabel scheme={scheme} />
-                </MenuItem>
-              )),
-            ])}
-          </Select>
-        </FormControl>
+        <SectionTitle>Terminal color schemes</SectionTitle>
+        <Stack spacing={2} sx={{ width: '100%', maxWidth: 420 }}>
+          <TerminalSchemeSelect
+            id="light-terminal-theme"
+            label="Light terminal theme"
+            value={prefs.lightTerminalScheme}
+            onChange={(lightTerminalScheme) => prefs.set({ lightTerminalScheme })}
+          />
+          <TerminalSchemeSelect
+            id="dark-terminal-theme"
+            label="Dark terminal theme"
+            value={prefs.darkTerminalScheme}
+            onChange={(darkTerminalScheme) => prefs.set({ darkTerminalScheme })}
+          />
+        </Stack>
         <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', mt: 2 }}>
           <Typography variant="body2" color="text.secondary">
             Background color
@@ -470,6 +473,42 @@ function AppearanceSection() {
         </Stack>
       </Box>
     </Stack>
+  );
+}
+
+function TerminalSchemeSelect({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const labelId = `${id}-label`;
+  return (
+    <FormControl fullWidth>
+      <InputLabel id={labelId}>{label}</InputLabel>
+      <Select
+        labelId={labelId}
+        value={value}
+        label={label}
+        onChange={(event) => onChange(event.target.value)}
+        renderValue={(schemeId) => <SchemeLabel scheme={terminalScheme(schemeId)} showMode />}
+        MenuProps={{ slotProps: { paper: { sx: { maxHeight: 390 } } } }}
+      >
+        {TERMINAL_SCHEME_GROUPS.flatMap((group) => [
+          <ListSubheader key={group.label}>{group.label}</ListSubheader>,
+          ...group.schemes.map((scheme) => (
+            <MenuItem key={scheme.id} value={scheme.id}>
+              <SchemeLabel scheme={scheme} />
+            </MenuItem>
+          )),
+        ])}
+      </Select>
+    </FormControl>
   );
 }
 

@@ -30,7 +30,8 @@ const BASE_PREFS = {
   monoFontSize: 14,
   fontFamily: 'JetBrains Mono',
   lineHeight: 1.1,
-  terminalScheme: THEME === 'dark' ? 'vscode-dark' : 'github-light',
+  lightTerminalScheme: 'github-light',
+  darkTerminalScheme: 'vscode-dark',
   sidebarWidth: 250,
   commandButtons: [],
   keywordHighlights: [],
@@ -69,7 +70,7 @@ async function open(prefs = {}, seed) {
       ? route.fulfill({ json: { workspace: null } })
       : route.continue(),
   );
-  const state = JSON.stringify({ state: { ...BASE_PREFS, ...prefs }, version: 6 });
+  const state = JSON.stringify({ state: { ...BASE_PREFS, ...prefs }, version: 9 });
   await page.addInitScript((value) => localStorage.setItem('muxus-prefs', value), state);
   await page.goto(`${env.url}/?token=${env.token}`, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('[aria-label="Add host"]');

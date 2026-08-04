@@ -45,7 +45,8 @@ const PREFS = {
   monoFontSize: 14,
   fontFamily: 'JetBrains Mono',
   lineHeight: 1.1,
-  terminalScheme: THEME === 'dark' ? 'vscode-dark' : 'github-light',
+  lightTerminalScheme: 'github-light',
+  darkTerminalScheme: 'vscode-dark',
   sidebarWidth: 250,
   commandButtons: [],
   keywordHighlights: [],
@@ -184,7 +185,7 @@ await page.route('**/api/workspaces/startup', (route) =>
 );
 await page.addInitScript(
   (value) => localStorage.setItem('muxus-prefs', value),
-  JSON.stringify({ state: PREFS, version: 6 }),
+  JSON.stringify({ state: PREFS, version: 9 }),
 );
 await page.addInitScript(overlay);
 await purgeWorkspaces();

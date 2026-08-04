@@ -38,7 +38,12 @@ import { copyToClipboard, readFromClipboard } from '../clipboard.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { showToast } from '../state/toast.js';
 import { broadcastTerminalInput } from '../state/multi-exec.js';
-import { TERMINAL_SYMBOL_FONT, terminalFontStack, usePrefsStore } from '../state/prefs.js';
+import {
+  TERMINAL_SYMBOL_FONT,
+  terminalFontStack,
+  terminalSchemeIdForMode,
+  usePrefsStore,
+} from '../state/prefs.js';
 import { useTabsStore, type SessionTab } from '../state/tabs.js';
 import {
   TERMINAL_MINIMUM_CONTRAST_RATIO,
@@ -160,7 +165,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const cursorBlink = usePrefsStore((s) => s.cursorBlink);
   const cursorStyle = usePrefsStore((s) => s.cursorStyle);
   const scrollback = usePrefsStore((s) => s.scrollback);
-  const schemeId = usePrefsStore((s) => s.terminalScheme);
+  const schemeId = usePrefsStore((prefs) =>
+    terminalSchemeIdForMode(prefs, theme.palette.mode),
+  );
   const fontColor = usePrefsStore((s) => s.fontColor);
   const backgroundColor = usePrefsStore((s) => s.backgroundColor);
   const globalKeywordHighlights = usePrefsStore((s) => s.keywordHighlights);
@@ -304,7 +311,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       // ImageAddon uses a bottom layer for negative-z Kitty placements.
       allowTransparency: true,
       theme: themeWithColorOverrides(
-        terminalScheme(prefs.terminalScheme).theme,
+        terminalScheme(terminalSchemeIdForMode(prefs, theme.palette.mode)).theme,
         prefs.fontColor,
         prefs.backgroundColor,
       ),
