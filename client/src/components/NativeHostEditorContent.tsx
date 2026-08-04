@@ -148,7 +148,9 @@ export function NativeHostEditorContent({
       value: 'highlighting',
       label: 'Highlighting',
       icon: <HighlightOutlinedIcon fontSize="small" />,
-      count: draft.keywordHighlights.rules.length,
+      count:
+        draft.keywordHighlights.rules.length +
+        (draft.keywordHighlights.profileId ? 1 : 0),
     },
   ];
 

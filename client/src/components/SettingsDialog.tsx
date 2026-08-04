@@ -86,7 +86,7 @@ import {
   terminalFontIsAvailable,
 } from '../terminal/font-catalog.js';
 import { chordSx } from './chord-style.js';
-import { KeywordHighlightRulesEditor } from './KeywordHighlightRulesEditor.js';
+import { HighlightProfilesSection } from './HighlightProfilesSection.js';
 import { LocalShellProfilesSection } from './LocalShellProfilesSection.js';
 import { SessionLoggingPolicyFields } from './SessionLoggingPolicyFields.js';
 import { DataTransferSection } from './DataTransferSection.js';
@@ -206,7 +206,7 @@ export function SettingsDialog() {
             {section === 'terminal' && <TerminalSection />}
             {section === 'local-shells' && <LocalShellProfilesSection />}
             {section === 'logging' && <SessionLoggingSection onDirtyChange={setLoggingDirty} />}
-            {section === 'highlighting' && <HighlightingSection />}
+            {section === 'highlighting' && <HighlightProfilesSection />}
             {section === 'behavior' && <BehaviorSection />}
             {section === 'keyboard' && <KeyboardSection />}
             {section === 'passwords' && <PasswordVaultSection />}
@@ -1126,26 +1126,6 @@ function HistoryStorageSettings({ onDirtyChange }: { onDirtyChange: (dirty: bool
         >
           Save history storage
         </Button>
-      </Box>
-    </Stack>
-  );
-}
-
-function HighlightingSection() {
-  const rules = usePrefsStore((state) => state.keywordHighlights);
-  const setPrefs = usePrefsStore((state) => state.set);
-  return (
-    <Stack spacing={1.5}>
-      <Box>
-        <SectionTitle>Global keyword highlighting</SectionTitle>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          These literal keywords are highlighted in every terminal. A host can include these rules
-          and add its own, or replace them entirely.
-        </Typography>
-        <KeywordHighlightRulesEditor
-          rules={rules}
-          onChange={(keywordHighlights) => setPrefs({ keywordHighlights })}
-        />
       </Box>
     </Stack>
   );

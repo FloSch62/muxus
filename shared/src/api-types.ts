@@ -407,9 +407,19 @@ export interface KeywordHighlightRule {
   wholeWord: boolean;
 }
 
+/** A named, reusable rule set that can be assigned to any saved host. */
+export interface KeywordHighlightProfile {
+  /** Stable across export/import so assigned hosts keep following the profile. */
+  id: string;
+  name: string;
+  rules: KeywordHighlightRule[];
+}
+
 /** Host rules are additive by default, but can replace the global rule set. */
 export interface HostKeywordHighlightConfig {
   inheritGlobal: boolean;
+  /** Reusable profile applied before this host's own rules. */
+  profileId?: string;
   rules: KeywordHighlightRule[];
 }
 

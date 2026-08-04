@@ -18,6 +18,7 @@ import type {
 } from '@muxus/shared';
 import { apiFetch } from './api/http.js';
 import { fetchHostPreview } from './api/ssh-config.js';
+import { isKeywordHighlightProfileArray } from './highlight-profiles.js';
 import { saveTextFile } from './save-file.js';
 import {
   MAX_SIDEBAR_WIDTH,
@@ -67,6 +68,7 @@ const PREFERENCE_KEYS = [
   'commandButtons',
   'showCommandBar',
   'keywordHighlights',
+  'keywordHighlightProfiles',
   'sidebarCollapsed',
   'sidebarWidth',
   'sidebarCollapsedFolders',
@@ -720,6 +722,9 @@ export function sanitizePreferences(
     input.keywordHighlights.every(validKeywordHighlight)
   ) {
     output.keywordHighlights = input.keywordHighlights;
+  }
+  if (isKeywordHighlightProfileArray(input.keywordHighlightProfiles)) {
+    output.keywordHighlightProfiles = input.keywordHighlightProfiles;
   }
   if (typeof input.sidebarCollapsed === 'boolean') {
     output.sidebarCollapsed = input.sidebarCollapsed;

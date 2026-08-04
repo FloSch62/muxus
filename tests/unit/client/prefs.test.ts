@@ -233,6 +233,41 @@ describe('local shell profile preferences', () => {
   });
 });
 
+describe('keyword highlighting profile preferences', () => {
+  const profile = {
+    id: 'nokia-sros',
+    name: 'Nokia SR OS',
+    rules: [
+      {
+        id: 'alarm',
+        keyword: 'MAJOR',
+        foreground: '#ffffff',
+        background: '#b91c1c',
+        caseSensitive: true,
+        wholeWord: true,
+      },
+    ],
+  };
+
+  it('keeps valid reusable profiles during preference migration', () => {
+    expect(migratePrefsState({ keywordHighlightProfiles: [profile] }, 11)).toEqual({
+      keywordHighlightProfiles: [profile],
+    });
+  });
+
+  it('drops malformed reusable profiles without changing other preferences', () => {
+    expect(
+      migratePrefsState(
+        {
+          monoFontSize: 16,
+          keywordHighlightProfiles: [{ ...profile, rules: [{ ...profile.rules[0], foreground: 'red' }] }],
+        },
+        11,
+      ),
+    ).toEqual({ monoFontSize: 16 });
+  });
+});
+
 describe('interface zoom', () => {
   it('keeps the window scale inside a usable range', () => {
     expect(clampInterfaceZoom(1)).toBe(1);

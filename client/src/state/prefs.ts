@@ -3,7 +3,8 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { DEFAULT_SIDEBAR_WIDTH } from '../sidebar-width.js';
 import { DEFAULT_SFTP_PANEL_WIDTH } from '../sftp-panel-width.js';
 import { muxusStateStorage } from './persist-storage.js';
-import type { KeywordHighlightRule } from '@muxus/shared';
+import { isKeywordHighlightProfileArray } from '../highlight-profiles.js';
+import type { KeywordHighlightProfile, KeywordHighlightRule } from '@muxus/shared';
 
 export type ThemeMode = 'light' | 'dark' | 'os';
 export type EffectiveThemeMode = Exclude<ThemeMode, 'os'>;
@@ -137,6 +138,8 @@ export interface PrefsState {
   showCommandBar: boolean;
   /** Rules applied to every terminal; hosts may add to or replace these. */
   keywordHighlights: KeywordHighlightRule[];
+  /** Named rule sets referenced by saved-host highlighting metadata. */
+  keywordHighlightProfiles: KeywordHighlightProfile[];
   /** Whether the whole hosts sidebar is hidden — not to be confused with
    *  sidebarCollapsedFolders, which collapses individual folders inside it. */
   sidebarCollapsed: boolean;
@@ -233,6 +236,9 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
     !localShellProfiles?.some((profile) => profile.id === state.defaultLocalShellProfileId)
   ) {
     state.defaultLocalShellProfileId = '';
+  }
+  if (!isKeywordHighlightProfileArray(state.keywordHighlightProfiles)) {
+    delete state.keywordHighlightProfiles;
   }
   // The sidebar grew in v6 to fit its search box. A stored copy of the old
   // default was never a choice, so it follows; a dragged width is left alone.
@@ -335,6 +341,7 @@ export const usePrefsStore = create<PrefsState>()(
       commandButtons: [],
       showCommandBar: true,
       keywordHighlights: [],
+      keywordHighlightProfiles: [],
       sidebarCollapsed: false,
       sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
       sidebarCollapsedFolders: [],
@@ -347,7 +354,7 @@ export const usePrefsStore = create<PrefsState>()(
     }),
     {
       name: 'muxus-prefs',
-      version: 11,
+      version: 12,
       migrate: migratePrefsState,
       storage: createJSONStorage(() => muxusStateStorage),
     },

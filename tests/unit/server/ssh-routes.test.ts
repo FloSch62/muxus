@@ -52,6 +52,7 @@ describe('OpenSSH host keyword metadata', () => {
       payload: {
         keywordHighlights: {
           inheritGlobal: false,
+          profileId: 'nokia-sros',
           rules: [
             {
               id: 'failed',
@@ -70,6 +71,7 @@ describe('OpenSSH host keyword metadata', () => {
     expect(response.json()).toMatchObject({
       keywordHighlights: {
         inheritGlobal: false,
+        profileId: 'nokia-sros',
         rules: [expect.objectContaining({ keyword: 'FAILED' })],
       },
     });
@@ -92,6 +94,23 @@ describe('OpenSSH host keyword metadata', () => {
               wholeWord: false,
             },
           ],
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('rejects an empty reusable highlighting profile ID', async () => {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/ssh/config/hosts/production/metadata',
+      headers: auth(),
+      payload: {
+        keywordHighlights: {
+          inheritGlobal: true,
+          profileId: '',
+          rules: [],
         },
       },
     });

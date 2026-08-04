@@ -27,6 +27,7 @@ const serialHost: SavedHostProfile = {
     group: 'Lab',
     keywordHighlights: {
       inheritGlobal: false,
+      profileId: 'nokia-sros',
       rules: [
         {
           id: 'r1',
@@ -77,7 +78,10 @@ describe('nativeDraftFromProfile', () => {
       parity: 'even',
       flowControl: 'hardware',
     });
-    expect(draft.keywordHighlights.rules).toHaveLength(1);
+    expect(draft.keywordHighlights).toMatchObject({
+      profileId: 'nokia-sros',
+      rules: [expect.objectContaining({ keyword: 'ERROR' })],
+    });
   });
 
   it('renames duplicates', () => {

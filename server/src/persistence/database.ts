@@ -2016,7 +2016,16 @@ function keywordHighlightsFromJson(value: unknown): HostKeywordHighlightConfig |
   if (typeof value !== 'string') return undefined;
   try {
     const parsed = JSON.parse(value) as Partial<HostKeywordHighlightConfig>;
-    if (typeof parsed.inheritGlobal !== 'boolean' || !Array.isArray(parsed.rules)) return undefined;
+    if (
+      typeof parsed.inheritGlobal !== 'boolean' ||
+      !Array.isArray(parsed.rules) ||
+      (parsed.profileId !== undefined &&
+        (typeof parsed.profileId !== 'string' ||
+          !parsed.profileId ||
+          parsed.profileId.length > 200))
+    ) {
+      return undefined;
+    }
     return parsed as HostKeywordHighlightConfig;
   } catch {
     return undefined;
