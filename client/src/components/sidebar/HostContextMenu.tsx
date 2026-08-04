@@ -6,6 +6,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DriveFileMoveOutlinedIcon from '@mui/icons-material/DriveFileMoveOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import LibraryAddOutlinedIcon from '@mui/icons-material/LibraryAddOutlined';
@@ -13,7 +14,10 @@ import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
 import { copyToClipboard } from '../../clipboard.js';
-import { managedHostCopyCommand, type ManagedHost } from '../../managed-hosts.js';
+import {
+  managedHostCopyCommand,
+  type ManagedHost,
+} from '../../managed-hosts.js';
 import {
   connectManagedHost,
   openManagedHostInNewWindow,
@@ -22,10 +26,15 @@ import {
   loadFolderDialog,
   loadHostEditorDialog,
   loadHostOrganizationDialog,
+  loadSftpPanel,
   loadTerminalViewImpl,
 } from '../../lazy-features.js';
 import { showToast } from '../../state/toast.js';
 import { useUiStore } from '../../state/ui.js';
+import {
+  managedHostSupportsSftp,
+  openManagedHostSftp,
+} from './host-sftp-action.js';
 
 export interface HostMenuState {
   anchor: HTMLElement;
@@ -88,6 +97,24 @@ export function HostContextMenu({
         </ListItemIcon>
         Open in new window
       </MenuItem>
+      {menu && managedHostSupportsSftp(menu.host) ? (
+        <MenuItem
+          onMouseEnter={() => {
+            void loadTerminalViewImpl();
+            void loadSftpPanel();
+          }}
+          onFocus={() => {
+            void loadTerminalViewImpl();
+            void loadSftpPanel();
+          }}
+          onClick={run(openManagedHostSftp)}
+        >
+          <ListItemIcon>
+            <FolderOpenOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          Open SFTP file browser
+        </MenuItem>
+      ) : null}
       <MenuItem disabled={!canMoveUp} onClick={run(() => onMove(-1))}>
         <ListItemIcon>
           <KeyboardArrowUpIcon fontSize="small" />

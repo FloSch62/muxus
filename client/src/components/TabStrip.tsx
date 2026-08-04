@@ -24,6 +24,7 @@ import CloseFullscreenOutlinedIcon from '@mui/icons-material/CloseFullscreenOutl
 import CloseIcon from '@mui/icons-material/Close';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
+import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import GridViewOutlinedIcon from '@mui/icons-material/GridViewOutlined';
 import HorizontalSplitOutlinedIcon from '@mui/icons-material/HorizontalSplitOutlined';
 import LinkOffOutlinedIcon from '@mui/icons-material/LinkOffOutlined';
@@ -178,6 +179,10 @@ export function TabStrip({
 
   const openMenu = (tab: TerminalTab, position: { top: number; left: number }) => setMenu({ position, tab });
   const menuTab = menu ? allTabs.find((t) => t.id === menu.tab.id) : undefined;
+  const menuTabSupportsSftp =
+    menuTab?.profile?.kind === 'ssh' &&
+    (menuTab.status === 'connecting' || menuTab.status === 'connected') &&
+    menuTab.sftpAvailable !== false;
   const canSplitMenuTab = !!menuTab && allTabs.some(
     (tab) => tab.paneId === menuTab.paneId && tab.id !== menuTab.id,
   );
@@ -796,6 +801,19 @@ export function TabStrip({
           </ListItemIcon>
           <ListItemText>Open in new window</ListItemText>
         </MenuItem>
+        {menuTabSupportsSftp ? (
+          <MenuItem
+            onClick={() => {
+              update(menuTab.id, { sftpOpen: true });
+              setMenu(null);
+            }}
+          >
+            <ListItemIcon>
+              <FolderOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            Open SFTP file browser
+          </MenuItem>
+        ) : null}
         <Divider />
         <MenuItem
           disabled={!canSplitMenuTab}
