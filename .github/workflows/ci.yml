@@ -44,7 +44,28 @@ jobs:
         run: pnpm test
 
       - name: Check bundle budgets
-        run: pnpm check:bundle
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          pnpm --filter @muxus/client build
+
+          if [ -z "$BASE_SHA" ]; then
+            node client/scripts/check-bundle-budget.mjs
+            exit
+          fi
+
+          base_dir="$RUNNER_TEMP/muxus-base"
+          base_report="$RUNNER_TEMP/base-bundle.json"
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          git worktree add --detach "$base_dir" "$BASE_SHA"
+          pnpm --dir "$base_dir" install --frozen-lockfile
+          pnpm --dir "$base_dir" --filter @muxus/shared build
+          pnpm --dir "$base_dir" --filter @muxus/client build
+          node client/scripts/check-bundle-budget.mjs \
+            --dist "$base_dir/client/dist" \
+            --write-report "$base_report" \
+            --report-only
+          node client/scripts/check-bundle-budget.mjs --baseline "$base_report"
 
   package-smoke:
     name: Package (${{ matrix.name }})

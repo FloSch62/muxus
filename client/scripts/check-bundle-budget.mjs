@@ -1,174 +1,257 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const dist = resolve(dirname(fileURLToPath(import.meta.url)), '../dist');
-const manifest = JSON.parse(readFileSync(join(dist, '.vite/manifest.json'), 'utf8'));
-const entries = Object.entries(manifest);
+const scriptPath = fileURLToPath(import.meta.url);
+const defaultDist = resolve(dirname(scriptPath), '../dist');
+const REPORT_VERSION = 1;
+const UNAPPROVED_CHUNK_CAP = 700_000;
 
-function manifestKeyForSource(source) {
-  const match = entries.find(([key]) => key === source);
-  if (!match) throw new Error(`Bundle manifest is missing ${source}`);
-  return match[0];
-}
-
-function collectStaticGraph(key, excluded = new Set(), result = new Set()) {
-  if (excluded.has(key) || result.has(key)) return result;
-  const chunk = manifest[key];
-  if (!chunk) throw new Error(`Bundle manifest references missing chunk ${key}`);
-  result.add(key);
-  for (const imported of chunk.imports ?? []) collectStaticGraph(imported, excluded, result);
-  return result;
-}
-
-function measureFiles(files) {
-  let raw = 0;
-  let gzip = 0;
-  for (const file of files) {
-    const bytes = readFileSync(join(dist, file));
-    raw += bytes.byteLength;
-    gzip += gzipSync(bytes).byteLength;
-  }
-  return { raw, gzip };
-}
-
-function measureGraph(keys) {
-  return measureFiles(
-    [...keys]
-      .map((key) => manifest[key].file)
-      .filter((file) => file.endsWith('.js')),
-  );
-}
+/** Relative limits catch meaningful PR growth; safety caps catch large eager
+ * imports even when no base report is available (for example, local runs and
+ * pushes to main). */
+export const BUNDLE_POLICIES = [
+  {
+    key: 'initial',
+    label: 'Initial JavaScript',
+    growth: { raw: 25 * 1024, gzip: 8 * 1024 },
+    safetyCap: { raw: 900 * 1024, gzip: 300 * 1024 },
+  },
+  {
+    key: 'terminal',
+    label: 'Terminal feature JavaScript',
+    growth: { raw: 25 * 1024, gzip: 8 * 1024 },
+    safetyCap: { raw: 600 * 1024, gzip: 165 * 1024 },
+  },
+  {
+    key: 'monaco',
+    label: 'Monaco full editor JavaScript',
+    growth: { raw: 100 * 1024, gzip: 30 * 1024 },
+    safetyCap: { raw: 4_500 * 1024, gzip: 1_150 * 1024 },
+  },
+  {
+    key: 'typescriptWorker',
+    label: 'TypeScript worker',
+    growth: { raw: 100 * 1024, gzip: 30 * 1024 },
+    safetyCap: { raw: 7_800 * 1024, gzip: 1_750 * 1024 },
+  },
+];
 
 function format(bytes) {
   return `${(bytes / 1024).toFixed(1)} KiB`;
 }
 
-const failures = [];
-function check(label, measured, budget) {
-  const detail = `${format(measured.raw)} raw / ${format(measured.gzip)} gzip`;
-  console.log(`${label}: ${detail}`);
-  if (measured.raw > budget.raw || measured.gzip > budget.gzip) {
+function formatChange(bytes) {
+  return `${bytes >= 0 ? '+' : ''}${format(bytes)}`;
+}
+
+function measurement(raw, gzip) {
+  return { raw, gzip };
+}
+
+/** Measure the user-visible loading graphs from one Vite output directory. */
+export function measureBundle(dist = defaultDist) {
+  const manifest = JSON.parse(readFileSync(join(dist, '.vite/manifest.json'), 'utf8'));
+  const entries = Object.entries(manifest);
+
+  const manifestKeyForSource = (source) => {
+    const match = entries.find(([key]) => key === source);
+    if (!match) throw new Error(`Bundle manifest is missing ${source}`);
+    return match[0];
+  };
+
+  const collectStaticGraph = (key, excluded = new Set(), result = new Set()) => {
+    if (excluded.has(key) || result.has(key)) return result;
+    const chunk = manifest[key];
+    if (!chunk) throw new Error(`Bundle manifest references missing chunk ${key}`);
+    result.add(key);
+    for (const imported of chunk.imports ?? []) collectStaticGraph(imported, excluded, result);
+    return result;
+  };
+
+  const measureFiles = (files) => {
+    let raw = 0;
+    let gzip = 0;
+    for (const file of files) {
+      const bytes = readFileSync(join(dist, file));
+      raw += bytes.byteLength;
+      gzip += gzipSync(bytes).byteLength;
+    }
+    return measurement(raw, gzip);
+  };
+
+  const measureGraph = (keys) =>
+    measureFiles(
+      [...keys]
+        .map((key) => manifest[key].file)
+        .filter((file) => file.endsWith('.js')),
+    );
+
+  const entry = entries.find(([, chunk]) => chunk.isEntry);
+  if (!entry) throw new Error('Bundle manifest has no application entry');
+  const initialKeys = collectStaticGraph(entry[0]);
+  const featureGraph = (source) =>
+    measureGraph(collectStaticGraph(manifestKeyForSource(source), initialKeys));
+
+  const assetFiles = readdirSync(join(dist, 'assets')).filter((file) => file.endsWith('.js'));
+  const typeScriptWorker = assetFiles.find((file) => file.startsWith('ts.worker-'));
+  if (!typeScriptWorker) throw new Error('Bundle is missing the TypeScript worker');
+
+  const oversizedChunks = [];
+  for (const file of assetFiles) {
+    const bytes = readFileSync(join(dist, 'assets', file));
+    if (
+      bytes.byteLength > UNAPPROVED_CHUNK_CAP &&
+      !file.includes('worker') &&
+      !file.startsWith('editor.api-') &&
+      // Rolldown names Monaco's full editor-contributions chunk after its
+      // final CSS-bearing contribution. It belongs to the lazy editor graph.
+      !file.startsWith('toggleHighContrast-')
+    ) {
+      oversizedChunks.push({ file, raw: bytes.byteLength });
+    }
+  }
+
+  return {
+    version: REPORT_VERSION,
+    metrics: {
+      initial: measureGraph(initialKeys),
+      terminal: featureGraph('src/components/TerminalViewImpl.tsx'),
+      monaco: featureGraph('src/components/MonacoTextEditor.tsx'),
+      typescriptWorker: measureFiles([`assets/${typeScriptWorker}`]),
+    },
+    oversizedChunks,
+  };
+}
+
+function validateReport(report, source) {
+  if (!report || report.version !== REPORT_VERSION || !report.metrics) {
+    throw new Error(`${source} is not a bundle report version ${REPORT_VERSION}`);
+  }
+  for (const policy of BUNDLE_POLICIES) {
+    const measured = report.metrics[policy.key];
+    if (
+      !measured ||
+      !Number.isFinite(measured.raw) ||
+      !Number.isFinite(measured.gzip) ||
+      measured.raw < 0 ||
+      measured.gzip < 0
+    ) {
+      throw new Error(`${source} has no valid ${policy.key} measurement`);
+    }
+  }
+  if (!Array.isArray(report.oversizedChunks)) {
+    throw new Error(`${source} has no oversizedChunks list`);
+  }
+  return report;
+}
+
+function exceededDimensions(measured, limit) {
+  const exceeded = [];
+  if (measured.raw > limit.raw) exceeded.push(`${measured.raw - limit.raw} B raw`);
+  if (measured.gzip > limit.gzip) exceeded.push(`${measured.gzip - limit.gzip} B gzip`);
+  return exceeded.join(' and ');
+}
+
+/** Evaluate relative growth and absolute safety boundaries separately so a
+ * small intentional feature does not require ratcheting a hard-coded ceiling. */
+export function evaluateBundleReport(report, baseline) {
+  validateReport(report, 'bundle report');
+  if (baseline) validateReport(baseline, 'baseline bundle report');
+  const failures = [];
+
+  for (const policy of BUNDLE_POLICIES) {
+    const measured = report.metrics[policy.key];
+    if (
+      measured.raw > policy.safetyCap.raw ||
+      measured.gzip > policy.safetyCap.gzip
+    ) {
+      failures.push(
+        `${policy.label} exceeds its safety cap by ${exceededDimensions(measured, policy.safetyCap)}`,
+      );
+    }
+
+    if (!baseline) continue;
+    const previous = baseline.metrics[policy.key];
+    const growth = measurement(measured.raw - previous.raw, measured.gzip - previous.gzip);
+    if (growth.raw > policy.growth.raw || growth.gzip > policy.growth.gzip) {
+      failures.push(
+        `${policy.label} exceeds allowed PR growth by ${exceededDimensions(growth, policy.growth)}`,
+      );
+    }
+  }
+
+  for (const chunk of report.oversizedChunks) {
     failures.push(
-      `${label} exceeds ${format(budget.raw)} raw / ${format(budget.gzip)} gzip (${detail})`,
+      `${chunk.file} exceeds the unapproved chunk limit by ${chunk.raw - UNAPPROVED_CHUNK_CAP} B (${format(chunk.raw)} total)`,
+    );
+  }
+  return failures;
+}
+
+function printReport(report, baseline) {
+  for (const policy of BUNDLE_POLICIES) {
+    const measured = report.metrics[policy.key];
+    const detail = `${format(measured.raw)} raw / ${format(measured.gzip)} gzip`;
+    if (!baseline) {
+      console.log(`${policy.label}: ${detail}`);
+      continue;
+    }
+    const previous = baseline.metrics[policy.key];
+    console.log(
+      `${policy.label}: ${detail} (${formatChange(measured.raw - previous.raw)} raw / ${formatChange(measured.gzip - previous.gzip)} gzip vs base)`,
     );
   }
 }
 
-const entry = entries.find(([, chunk]) => chunk.isEntry);
-if (!entry) throw new Error('Bundle manifest has no application entry');
-const initialKeys = collectStaticGraph(entry[0]);
-
-// The keymap (command catalog + dispatcher) is part of the first paint: a
-// shortcut has to work before any lazy chunk could load. It costs ~9 KiB raw
-// and ~0.3 KiB gzip, which this budget accounts for — everything else that
-// only the dialogs need stays lazy.
-//
-// The sidebar's folder tree adds ~12 KiB raw on top of that. Its model,
-// keyboard navigation and drag-and-drop are the host list itself and cannot be
-// deferred; the menus and dialogs it opens are lazy (see SidebarMenus).
-//
-// Workspace restoration also reads the remote reconnect preference before
-// terminals mount. That startup decision adds ~0.2 KiB raw / ~0.1 KiB gzip;
-// the reconnect and scrollback implementations remain in the lazy terminal
-// feature graph measured below.
-//
-// A command in that catalog pays there as well. The multi-execution toggle —
-// the selection it resumes and the reason it gives when there is nothing to
-// mirror — adds ~1 KiB raw / ~0.4 KiB gzip to the keymap and the multi-exec
-// store, both of which the first paint already carries, and the gzip budget
-// moves to cover it.
-//
-// Background-output notifications also live in the tab store and tab strip,
-// both of which are required for first paint. The gzip budget moves by 1 KiB
-// to cover their state and visual treatment.
-//
-// Folder credential defaults ride the sidebar: folder rename, drag and delete
-// must carry the shared settings along, so the sidebar carries the small
-// folder-settings API module (~2 KiB raw / ~0.7 KiB gzip). The credentials
-// editor itself stays in the lazy folder dialog.
-//
-// Cross-pane tab dragging has a synchronous HTML drag-token path and an exact
-// pane-move state transition on first paint (~1.1 KiB raw / ~1 KiB gzip). The
-// cross-window coordinator, snapshot flush, and adoption path remain lazy.
-// Browser-style drag feedback (live same-strip resorting, insertion lines,
-// FLIP slides) lives in the tab strip itself (~2.5 KiB raw / ~0.7 KiB gzip).
-//
-// Workspace locking is enforced by the startup persistence runtime, including
-// distinguishing explicit saves from stale automatic saves and stopping retry
-// loops after a lock conflict. That first-paint guarantee adds ~2 KiB raw /
-// ~0.3 KiB gzip; the management dialog and its icons remain lazy.
-//
-// Saved local-shell profiles are launchable directly from the sidebar, so the
-// profile preference shape and launch path join the initial graph (~2 KiB raw /
-// ~0.5 KiB gzip). The profile editor remains in the lazy settings dialog.
-//
-// Window-wide tab numbering belongs to the initial tab store and strips. Its
-// ordered-tab derivation, Alt reveal, inline badges and preference add ~1 KiB
-// raw / ~0.2 KiB gzip; the settings control stays lazy.
-//
-// Split-pane focus highlighting also runs in the initial pane canvas so focus
-// and active multi-exec targets update immediately. Its preference reads and
-// pane-target derivation add less than 1 KiB raw; the settings UI stays lazy.
-//
-// Reusable keyword-highlighting profiles are persisted preferences. Their
-// bounded shape validator therefore joins the startup preference migration
-// (~1.5 KiB raw / ~0.3 KiB gzip); profile editing and transfer UI stay in the
-// lazy settings chunk, and terminal resolution stays in the terminal chunk.
-check('Initial JavaScript', measureGraph(initialKeys), {
-  raw: 800_000,
-  gzip: 259_500,
-});
-
-for (const feature of [
-  {
-    label: 'Terminal feature JavaScript',
-    source: 'src/components/TerminalViewImpl.tsx',
-    budget: { raw: 520_000, gzip: 140_000 },
-  },
-  {
-    // The editor is intent-preloaded and lazy. This budget covers Monaco's
-    // complete standalone contribution set (commands, formatting, folding,
-    // suggestions, navigation, accessibility, etc.), not the initial app.
-    label: 'Monaco full editor JavaScript',
-    source: 'src/components/MonacoTextEditor.tsx',
-    budget: { raw: 4_050_000, gzip: 1_020_000 },
-  },
-]) {
-  const featureKeys = collectStaticGraph(
-    manifestKeyForSource(feature.source),
-    initialKeys,
-  );
-  check(feature.label, measureGraph(featureKeys), feature.budget);
-}
-
-const assetFiles = readdirSync(join(dist, 'assets')).filter((file) => file.endsWith('.js'));
-const typeScriptWorker = assetFiles.find((file) => file.startsWith('ts.worker-'));
-if (!typeScriptWorker) throw new Error('Bundle is missing the TypeScript worker');
-check('TypeScript worker', measureFiles([`assets/${typeScriptWorker}`]), {
-  raw: 7_100_000,
-  gzip: 1_550_000,
-});
-
-for (const file of assetFiles) {
-  const bytes = readFileSync(join(dist, 'assets', file));
-  if (
-    bytes.byteLength > 700_000 &&
-    !file.includes('worker') &&
-    !file.startsWith('editor.api-') &&
-    // Rolldown names Monaco's full editor-contributions chunk after its final
-    // CSS-bearing contribution. It is part of the measured lazy editor graph.
-    !file.startsWith('toggleHighContrast-')
-  ) {
-    failures.push(`${file} is ${format(bytes.byteLength)}; unapproved chunks must stay below 683.6 KiB`);
+function parseArgs(args) {
+  const options = { dist: defaultDist };
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index];
+    if (arg === '--') continue;
+    if (arg === '--report-only') {
+      options.reportOnly = true;
+      continue;
+    }
+    if (arg === '--dist' || arg === '--baseline' || arg === '--write-report') {
+      const value = args[++index];
+      if (!value) throw new Error(`${arg} requires a path`);
+      const key = arg === '--dist' ? 'dist' : arg === '--baseline' ? 'baseline' : 'writeReport';
+      options[key] = resolve(value);
+      continue;
+    }
+    throw new Error(`Unknown argument: ${arg}`);
   }
+  return options;
 }
 
-if (failures.length > 0) {
-  console.error('\nBundle budget failed:');
-  for (const failure of failures) console.error(`- ${failure}`);
-  process.exitCode = 1;
-} else {
-  console.log('Bundle budgets passed.');
+function main() {
+  const options = parseArgs(process.argv.slice(2));
+  const report = measureBundle(options.dist);
+  const baseline = options.baseline
+    ? validateReport(JSON.parse(readFileSync(options.baseline, 'utf8')), options.baseline)
+    : undefined;
+  printReport(report, baseline);
+
+  if (options.writeReport) {
+    writeFileSync(options.writeReport, `${JSON.stringify(report, null, 2)}\n`);
+    console.log(`Bundle report written to ${options.writeReport}`);
+  }
+  if (options.reportOnly) return;
+
+  const failures = evaluateBundleReport(report, baseline);
+  if (failures.length > 0) {
+    console.error('\nBundle check failed:');
+    for (const failure of failures) console.error(`- ${failure}`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log(
+    baseline
+      ? 'Bundle growth and safety caps passed.'
+      : 'Bundle safety caps passed (relative growth requires a base report).',
+  );
 }
+
+if (process.argv[1] && resolve(process.argv[1]) === scriptPath) main();

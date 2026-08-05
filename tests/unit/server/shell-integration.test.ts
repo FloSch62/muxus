@@ -16,6 +16,8 @@ describe('writeIntegrationFiles', () => {
     const zshrc = readFileSync(path.join(root, 'zsh/.zshrc'), 'utf8');
     expect(zshrc).toContain(String.raw`\e]133;D;%s\a`);
     expect(zshrc).toContain(String.raw`\e]133;C\a`);
+    expect(zshrc).toContain(String.raw`\e]133;P;Cwd=%s\a`);
+    expect(zshrc).toContain('__muxus_report_cwd');
     expect(zshrc).toContain('add-zsh-hook precmd');
     expect(zshrc).toContain('add-zsh-hook preexec');
   });
@@ -32,6 +34,7 @@ describe('writeIntegrationFiles', () => {
     expect(bash).toContain('"$HOME/.bashrc"');
     expect(bash).toContain('PS0="\\[\\e]133;C\\a\\]${PS0-}"');
     expect(bash).toContain('PROMPT_COMMAND="__muxus_prompt_mark${PROMPT_COMMAND:+;$PROMPT_COMMAND}"');
+    expect(bash).toContain(String.raw`\e]133;P;Cwd=%s\a`);
   });
 });
 

@@ -50,7 +50,7 @@ import {
   terminalScheme,
   themeWithColorOverrides,
 } from '../terminal/palette.js';
-import { attachCommandTracker } from '../terminal/shell-integration.js';
+import { attachCommandTracker, attachCwdTracker } from '../terminal/shell-integration.js';
 import { attachOsc52Clipboard } from '../terminal/osc52-clipboard.js';
 import {
   attachKeywordHighlighter,
@@ -298,6 +298,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         connId: undefined,
         sftpAvailable: undefined,
         sftpOpen: false,
+        terminalCwd: undefined,
       });
     }
 
@@ -531,6 +532,15 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     el.addEventListener('wheel', onWheel, { passive: false, capture: true });
 
     const commandTracker = attachCommandTracker(term);
+    const cwdTracker =
+      tab.profile.kind === 'ssh'
+        ? attachCwdTracker(term, (terminalCwd) => {
+            const current = useTabsStore
+              .getState()
+              .tabs.find((candidate) => candidate.id === tab.id);
+            if (current?.terminalCwd !== terminalCwd) updateTab(tab.id, { terminalCwd });
+          })
+        : undefined;
 
     // Application chords never reach xterm: the shortcut layer consumes them
     // in the capture phase, and anything it declines is encoded for the shell
@@ -1001,6 +1011,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       onSelection.dispose();
       onSearchResults.dispose();
       commandTracker.dispose();
+      cwdTracker?.dispose();
       keywordHighlighterRef.current?.dispose();
       if (interruptionTimer !== undefined) clearTimeout(interruptionTimer);
       if (autoReconnectTimer !== undefined) clearTimeout(autoReconnectTimer);

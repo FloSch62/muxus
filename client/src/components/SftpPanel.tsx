@@ -1,7 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Checkbox from '@mui/material/Checkbox';
 import CircularProgress from '@mui/material/CircularProgress';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
 import LinearProgress from '@mui/material/LinearProgress';
 import ListItemIcon from '@mui/material/ListItemIcon';
@@ -49,6 +51,7 @@ import {
   maxSftpPanelWidth,
   MIN_SFTP_PANEL_WIDTH,
 } from '../sftp-panel-width.js';
+import { initialSftpPath } from '../sftp-panel-state.js';
 import { FileTypeIcon } from './FileTypeIcon.js';
 import { PanelResizeHandle } from './PanelResizeHandle.js';
 
@@ -308,18 +311,27 @@ export function SftpPanel({
   connId,
   onOpenFile,
   initialPath = '.',
+  terminalPath,
+  followTerminalFolder = false,
+  onFollowTerminalFolderChange,
   fill = false,
   onOpenInNewWindow,
 }: {
   connId: string;
   onOpenFile: (path: string) => void;
   initialPath?: string;
+  /** Latest working directory reported by the terminal sharing this connection. */
+  terminalPath?: string;
+  /** Whether the attached browser follows terminal working-directory reports. */
+  followTerminalFolder?: boolean;
+  onFollowTerminalFolderChange?: (follow: boolean) => void;
   /** Fill a standalone window instead of using the saved side-panel width. */
   fill?: boolean;
   onOpenInNewWindow?: (path: string) => void;
 }) {
-  const [path, setPath] = useState(initialPath);
-  const [pathInput, setPathInput] = useState(initialPath);
+  const startingPath = initialSftpPath(initialPath, terminalPath, followTerminalFolder);
+  const [path, setPath] = useState(startingPath);
+  const [pathInput, setPathInput] = useState(startingPath);
   const [dragOver, setDragOver] = useState(false);
   const [selectedName, setSelectedName] = useState<string>();
   const [menu, setMenu] = useState<{ x: number; y: number; entry: SftpEntry } | null>(null);
@@ -338,9 +350,15 @@ export function SftpPanel({
   const { data, isFetching, error } = useSftpList(connId, path);
   useEffect(() => {
     if (!data?.path) return;
-    homePathRef.current ??= data.path;
+    if (path === '.') homePathRef.current = data.path;
     setPathInput(data.path);
-  }, [data?.path]);
+  }, [data?.path, path]);
+  useEffect(() => {
+    if (!followTerminalFolder || !terminalPath) return;
+    setPath(terminalPath);
+    setPathInput(terminalPath);
+    setSelectedName(undefined);
+  }, [followTerminalFolder, terminalPath]);
   useEffect(() => () => transferControllerRef.current?.abort(), []);
 
   const entries = useMemo(
@@ -929,6 +947,26 @@ export function SftpPanel({
           />
         )}
       </Box>
+      {onFollowTerminalFolderChange && (
+        <FormControlLabel
+          control={(
+            <Checkbox
+              size="small"
+              checked={followTerminalFolder}
+              onChange={(event) => onFollowTerminalFolderChange(event.target.checked)}
+            />
+          )}
+          label="Follow terminal folder"
+          sx={{
+            m: 0,
+            px: 0.75,
+            py: 0.25,
+            borderTop: 1,
+            borderColor: 'divider',
+            '& .MuiFormControlLabel-label': { fontSize: 12 },
+          }}
+        />
+      )}
       {dragOver && (
         <Box
           sx={(theme) => ({

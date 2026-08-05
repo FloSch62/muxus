@@ -120,6 +120,7 @@ function PaneCanvas({
   const openEditor = useTabsStore((state) => state.openEditor);
   const activateEditor = useTabsStore((state) => state.activateEditor);
   const closeEditor = useTabsStore((state) => state.closeEditor);
+  const updateTab = useTabsStore((state) => state.update);
   const tabNumberVisibility = usePrefsStore((state) => state.tabNumberVisibility);
   const activePaneBorder = usePrefsStore((state) => state.activePaneBorder);
   const dimInactivePanes = usePrefsStore((state) => state.dimInactivePanes);
@@ -257,6 +258,11 @@ function PaneCanvas({
                   <SftpPanel
                     key={tab.connId}
                     connId={tab.connId}
+                    terminalPath={tab.terminalCwd}
+                    followTerminalFolder={tab.sftpFollowTerminal !== false}
+                    onFollowTerminalFolderChange={(sftpFollowTerminal) =>
+                      updateTab(tab.id, { sftpFollowTerminal })
+                    }
                     onOpenFile={(path) => openEditor(tab.id, path)}
                     onOpenInNewWindow={(path) =>
                       openAppWindow({

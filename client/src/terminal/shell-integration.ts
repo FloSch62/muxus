@@ -19,6 +19,66 @@ export interface MarkerHost {
   }): unknown;
 }
 
+const MAX_TERMINAL_CWD_LENGTH = 4096;
+const CWD_PROPERTY_PREFIX = 'P;Cwd=';
+
+/** Decode the escaping used by OSC 133/633 property values. */
+function decodePropertyValue(value: string): string | undefined {
+  let decoded = '';
+  for (let index = 0; index < value.length; index++) {
+    const char = value[index]!;
+    if (char !== '\\') {
+      decoded += char;
+      continue;
+    }
+    const next = value[index + 1];
+    if (next === '\\') {
+      decoded += '\\';
+      index++;
+      continue;
+    }
+    const hex = value.slice(index + 2, index + 4);
+    if (next !== 'x' || !/^[0-9a-f]{2}$/i.test(hex)) return undefined;
+    decoded += String.fromCharCode(Number.parseInt(hex, 16));
+    index += 3;
+  }
+  return decoded;
+}
+
+function validRemoteCwd(value: string | undefined): value is string {
+  return !!value && value.startsWith('/') && value.length <= MAX_TERMINAL_CWD_LENGTH;
+}
+
+/** Reads current-directory reports from shell integration and standard OSC 7. */
+export class CwdTracker {
+  private current: string | undefined;
+
+  constructor(private readonly onChange: (cwd: string) => void) {}
+
+  handleProperty(data: string): boolean {
+    if (!data.startsWith(CWD_PROPERTY_PREFIX)) return false;
+    this.report(decodePropertyValue(data.slice(CWD_PROPERTY_PREFIX.length)));
+    return true;
+  }
+
+  handleFileUri(data: string): boolean {
+    try {
+      const uri = new URL(data);
+      if (uri.protocol !== 'file:') return false;
+      this.report(decodeURIComponent(uri.pathname));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private report(cwd: string | undefined): void {
+    if (!validRemoteCwd(cwd) || cwd === this.current) return;
+    this.current = cwd;
+    this.onChange(cwd);
+  }
+}
+
 /**
  * Turns shell-integration command reports into scrollbar marks. OSC 133
  * (FinalTerm) / OSC 633 (VS Code) sequences carry "command started"
@@ -90,6 +150,22 @@ export function attachCommandTracker(term: Terminal): IDisposable {
       osc133.dispose();
       osc633.dispose();
       tracker.dispose();
+    },
+  };
+}
+
+/** Track the working directory reported by integrated and OSC 7-aware shells. */
+export function attachCwdTracker(term: Terminal, onChange: (cwd: string) => void): IDisposable {
+  const tracker = new CwdTracker(onChange);
+  const osc7 = term.parser.registerOscHandler(7, (data) => tracker.handleFileUri(data));
+  const propertyHandler = (data: string) => tracker.handleProperty(data);
+  const osc133 = term.parser.registerOscHandler(133, propertyHandler);
+  const osc633 = term.parser.registerOscHandler(633, propertyHandler);
+  return {
+    dispose: () => {
+      osc7.dispose();
+      osc133.dispose();
+      osc633.dispose();
     },
   };
 }

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { Client, ClientChannel, PseudoTtyOptions, SFTPWrapper, Stats } from 'ssh2';
-import { ZSHENV, ZSHRC } from '../local/shell-integration.js';
+import { SHELL_CWD_REPORT, ZSHENV, ZSHRC } from '../local/shell-integration.js';
 
 const SHELL_PROBE = `command printf '\\n__MUXUS_SHELL__=%s\\n__MUXUS_ZDOTDIR__=%s\\n__MUXUS_HOME__=%s\\n' "\${SHELL-}" "\${ZDOTDIR-}" "\${HOME-}"`;
 const PROBE_TIMEOUT_MS = 5_000;
@@ -28,9 +28,11 @@ fi
 
 if [[ $- == *i* && -z "$__muxus_integrated" ]]; then
   __muxus_integrated=1
+${SHELL_CWD_REPORT}
   __muxus_prompt_mark() {
     local __muxus_status=$?
     printf '\\e]133;D;%s\\a' "$__muxus_status"
+    __muxus_report_cwd
     printf '\\e]133;A\\a'
   }
   PS0="\\[\\e]133;C\\a\\]\${PS0-}"
