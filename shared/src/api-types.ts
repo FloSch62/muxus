@@ -437,6 +437,8 @@ export interface OpenSshProfileMetadata {
   keywordHighlights?: HostKeywordHighlightConfig;
   /** Do not open SFTP channels or probe for remote Unix shell integration. */
   disableSftp?: boolean;
+  /** Console appliances: also suppress env requests and tolerate a rejected PTY. */
+  consoleCompatibility?: boolean;
   lastConnectedAt?: string;
   connectCount: number;
 }
@@ -448,6 +450,7 @@ export interface OpenSshMetadataPatch {
   icon?: string | null;
   keywordHighlights?: HostKeywordHighlightConfig | null;
   disableSftp?: boolean;
+  consoleCompatibility?: boolean;
 }
 
 /**

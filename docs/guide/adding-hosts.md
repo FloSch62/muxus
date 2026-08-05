@@ -100,9 +100,17 @@ console server disconnects when it sees even that probe, Muxus reconnects once i
 mode and remembers the compatibility choice until the app restarts. No manual setting is required
 for the session to connect.
 
-For known-sensitive SSH console servers and network appliances, **Disable SFTP for this host**
-skips the initial probe as well. This persistent override avoids the first reconnect entirely.
-The file-browser controls are unavailable for plain-console sessions.
+For known-sensitive SSH console servers and network appliances, **Enable console compatibility
+mode** skips the initial probe as well, and stops sending `SendEnv`/`SetEnv` values that these
+devices have no environment for. This persistent override avoids the first reconnect entirely.
+Terminal allocation follows the host's TTY setting either way: Muxus asks for a terminal and
+continues without one when the device rejects `pty-req`. The file-browser controls are unavailable
+for plain-console sessions.
+
+For an otherwise normal SSH server that only lacks SFTP or cannot use Muxus shell integration,
+**Disable SFTP and shell integration only** keeps environment requests and normal terminal
+allocation intact. This remains separate from console compatibility so existing disabled-SFTP
+hosts keep their previous session behavior.
 
 Any other keyword OpenSSH understands is entered here as free-form option/value pairs. The
 panel shows the **exact block** that will be written.

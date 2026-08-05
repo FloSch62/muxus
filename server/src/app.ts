@@ -94,6 +94,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
     vault,
     folderAuth: folderAuthResolver(database),
     disableSftpForHost: (alias) => database.sftpDisabledForAlias(alias),
+    consoleCompatibilityForHost: (alias) => database.consoleCompatibilityForAlias(alias),
   });
   const forwards = new ForwardManager(connections, app.log);
   const historySettings = database.sessionHistorySettings();

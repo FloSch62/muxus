@@ -382,6 +382,15 @@ const MIGRATIONS = [
         CHECK(disable_sftp IN (0, 1));
     `,
   },
+  {
+    version: 20,
+    name: 'host-console-compatibility',
+    sql: `
+      ALTER TABLE connection_profiles
+        ADD COLUMN console_compatibility INTEGER NOT NULL DEFAULT 0
+        CHECK(console_compatibility IN (0, 1));
+    `,
+  },
 ] as const;
 
 function migrateDraftPasswordVault(db: DatabaseSync): void {
@@ -462,6 +471,7 @@ export interface OpenSshMetadata {
   icon?: string;
   keywordHighlights?: HostKeywordHighlightConfig;
   disableSftp?: boolean;
+  consoleCompatibility?: boolean;
   lastConnectedAt?: string;
   connectCount: number;
 }
@@ -642,6 +652,7 @@ export class MuxusDatabase {
         profiles.icon,
         profiles.keyword_highlights_json,
         profiles.disable_sftp,
+        profiles.console_compatibility,
         profiles.last_connected_at,
         profiles.connect_count,
         groups.name AS group_name
@@ -684,6 +695,12 @@ export class MuxusDatabase {
     return Number(row?.disable_sftp) === 1;
   }
 
+  /** Whether this OpenSSH alias needs the stricter console session shape. */
+  consoleCompatibilityForAlias(alias: string): boolean {
+    const row = this.metadataByAlias.get(alias);
+    return Number(row?.console_compatibility) === 1;
+  }
+
   updateOpenSshMetadata(
     alias: string,
     patch: OpenSshMetadataPatch,
@@ -703,6 +720,7 @@ export class MuxusDatabase {
             icon = ?,
             keyword_highlights_json = ?,
             disable_sftp = ?,
+            console_compatibility = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `)
@@ -719,6 +737,11 @@ export class MuxusDatabase {
         patch.disableSftp === undefined
           ? Number(current.disable_sftp)
           : patch.disableSftp
+            ? 1
+            : 0,
+        patch.consoleCompatibility === undefined
+          ? Number(current.console_compatibility)
+          : patch.consoleCompatibility
             ? 1
             : 0,
         String(current.id),
@@ -1171,6 +1194,7 @@ export class MuxusDatabase {
             icon = ?,
             keyword_highlights_json = ?,
             disable_sftp = ?,
+            console_compatibility = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `)
@@ -1187,6 +1211,11 @@ export class MuxusDatabase {
         patch.disableSftp === undefined
           ? Number(current.disable_sftp)
           : patch.disableSftp
+            ? 1
+            : 0,
+        patch.consoleCompatibility === undefined
+          ? Number(current.console_compatibility)
+          : patch.consoleCompatibility
             ? 1
             : 0,
         id,
@@ -1982,6 +2011,7 @@ function metadataFromRow(row: SqlRow): OpenSshMetadata {
     icon: optionalString(row.icon),
     keywordHighlights: keywordHighlightsFromJson(row.keyword_highlights_json),
     ...(Number(row.disable_sftp) === 1 ? { disableSftp: true } : {}),
+    ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),
     lastConnectedAt: optionalString(row.last_connected_at),
     connectCount: Number(row.connect_count),
   };
@@ -2004,6 +2034,7 @@ function savedHostFromRow(row: SqlRow): SavedHostProfile {
       icon: optionalString(row.icon),
       keywordHighlights: keywordHighlightsFromJson(row.keyword_highlights_json),
       ...(Number(row.disable_sftp) === 1 ? { disableSftp: true } : {}),
+      ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),
       lastConnectedAt: optionalString(row.last_connected_at),
       connectCount: Number(row.connect_count),
     },

@@ -28,5 +28,6 @@ export const metadataPatchSchema = z
     icon: z.string().max(64).nullable().optional(),
     keywordHighlights: hostKeywordHighlightsSchema.nullable().optional(),
     disableSftp: z.boolean().optional(),
+    consoleCompatibility: z.boolean().optional(),
   })
   .refine((patch) => Object.keys(patch).length > 0, 'at least one metadata field is required');

@@ -257,6 +257,7 @@ export class SshConnectionManager {
   private readonly vault: PasswordVault | undefined;
   private readonly folderAuth: FolderAuthLookup | undefined;
   private readonly disableSftpForHost: ((alias: string) => boolean) | undefined;
+  private readonly consoleCompatibilityForHost: ((alias: string) => boolean) | undefined;
   private readonly agentOperationTimeoutMs: number;
   private readonly agentWaitStatusMs: number;
   readonly knownHosts: KnownHostsStore;
@@ -271,6 +272,8 @@ export class SshConnectionManager {
       folderAuth?: FolderAuthLookup;
       /** Muxus-owned per-host compatibility setting; never written to ssh_config. */
       disableSftpForHost?: (alias: string) => boolean;
+      /** Muxus-owned console compatibility setting; never written to ssh_config. */
+      consoleCompatibilityForHost?: (alias: string) => boolean;
       /** Test seam; production uses the exported responsive-agent defaults. */
       agentOperationTimeoutMs?: number;
       /** Test seam; production uses the exported responsive-agent defaults. */
@@ -282,6 +285,7 @@ export class SshConnectionManager {
     this.vault = options.vault;
     this.folderAuth = options.folderAuth;
     this.disableSftpForHost = options.disableSftpForHost;
+    this.consoleCompatibilityForHost = options.consoleCompatibilityForHost;
     this.agentOperationTimeoutMs =
       options.agentOperationTimeoutMs ?? DEFAULT_AGENT_OPERATION_TIMEOUT_MS;
     this.agentWaitStatusMs =
@@ -331,12 +335,15 @@ export class SshConnectionManager {
     const target = chain[chain.length - 1]!;
     const metadataAlias =
       profile.useConfig === false ? undefined : findMetadataAlias(doc, target.spec.host);
-    const regularKey = muxKey(chain, false);
-    const disableSftp =
-      (metadataAlias ? (this.disableSftpForHost?.(metadataAlias) ?? false) : false) ||
+    const regularKey = muxKey(chain);
+    const consoleCompatibility =
+      (metadataAlias ? (this.consoleCompatibilityForHost?.(metadataAlias) ?? false) : false) ||
       this.automaticPlainShellKeys.has(regularKey) ||
       opts.forcePlainShell === true;
-    const key = muxKey(chain, disableSftp);
+    const disableSftp =
+      consoleCompatibility ||
+      (metadataAlias ? (this.disableSftpForHost?.(metadataAlias) ?? false) : false);
+    const key = muxKey(chain, disableSftp, consoleCompatibility);
     const configForwards = target.resolved.forwards;
     const label = `${target.user}@${target.resolved.hostname}:${target.port}`;
     this.log.debug(
@@ -378,6 +385,7 @@ export class SshConnectionManager {
       key,
       metadataAlias,
       disableSftp,
+      consoleCompatibility,
     );
     const tracked = dial.then((lease) => lease.connection);
     tracked.catch(() => undefined); // waiters observe the rejection through their own await
@@ -507,6 +515,7 @@ export class SshConnectionManager {
     key: string,
     metadataAlias: string | undefined,
     disableSftp: boolean,
+    consoleCompatibility: boolean,
   ): Promise<ConnectionLease> {
     const clients: Client[] = [];
     const postAuth: Promise<void>[] = [];
@@ -609,17 +618,23 @@ export class SshConnectionManager {
         const pty = wantsPty(session.requestTty, !!session.remoteCommand)
           ? terminalPtyOptions(cols, rows, term)
           : undefined;
+        const env = consoleCompatibility ? undefined : session.env;
         if (session.remoteCommand) {
-          return openSessionExec(client, session.remoteCommand, pty, session.env);
+          return openSessionExec(
+            client,
+            session.remoteCommand,
+            pty,
+            env,
+            consoleCompatibility,
+          );
         }
         if (pty && !disableSftp) {
-          return openRemoteShell(client, getSftp, pty, session.env);
+          return openRemoteShell(client, getSftp, pty, env);
         }
-        return new Promise((resolve, reject) => {
-          client.shell(pty ?? false, { env: session.env }, (err, stream) =>
-            err ? reject(err) : resolve(stream),
-          );
-        });
+        // Console compatibility drops SendEnv/SetEnv: ssh2 can only send env
+        // requests before pty-req, an order some appliances answer with a
+        // protocol-error disconnect, and a serial console has no environment.
+        return openPlainShell(client, pty, env, consoleCompatibility);
       },
       // One SFTP channel per connection, shared by every file operation.
       sftp: () =>
@@ -935,15 +950,21 @@ export class SshConnectionManager {
  * deliberately absent — they matter while establishing a transport, not for
  * attaching to an established one.
  */
-export function muxKey(chain: ChainHop[], disableSftp = false): string {
+export function muxKey(
+  chain: ChainHop[],
+  disableSftp = false,
+  consoleCompatibility = false,
+): string {
   const hops = chain.map(
     (hop) =>
       `${hop.user}@${hop.resolved.hostname}:${hop.port};agentForward=${hop.resolved.forwardAgent ? 'yes' : 'no'}`,
   );
   const first = chain[0];
   const proxy = first?.resolved.proxyCommand ? expandedProxyCommand(first) : undefined;
-  const key = (proxy ? [`proxy(${proxy})`, ...hops] : hops).join(' -> ');
-  return disableSftp ? `${key};muxusSftp=disabled` : key;
+  let key = (proxy ? [`proxy(${proxy})`, ...hops] : hops).join(' -> ');
+  if (disableSftp) key += ';muxusSftp=disabled';
+  if (consoleCompatibility) key += ';muxusConsole=compatible';
+  return key;
 }
 
 function mergeConfigForwards(
@@ -1869,7 +1890,22 @@ function defaultIdentityFiles(): string[] {
 }
 
 /** RemoteCommand session: exec instead of a shell, tty per RequestTTY. */
-function openSessionExec(
+async function openSessionExec(
+  client: Client,
+  command: string,
+  pty: PseudoTtyOptions | undefined,
+  env?: Record<string, string>,
+  retryWithoutPty = false,
+): Promise<ClientChannel> {
+  try {
+    return await requestSessionExec(client, command, pty, env);
+  } catch (err) {
+    if (!retryWithoutPty || !pty || !isPtyRejection(err)) throw err;
+    return requestSessionExec(client, command, undefined, env);
+  }
+}
+
+function requestSessionExec(
   client: Client,
   command: string,
   pty: PseudoTtyOptions | undefined,
@@ -1880,6 +1916,40 @@ function openSessionExec(
       err ? reject(err) : resolve(stream),
     );
   });
+}
+
+/**
+ * Console appliances disagree about pty-req: some reject it, others refuse a
+ * shell without one. Ask for the tty ssh(1) would and, like ssh(1), carry on
+ * without it when the server says no. ssh2 closes the channel on a failed
+ * pty-req, so the retry needs a fresh session channel.
+ */
+async function openPlainShell(
+  client: Client,
+  pty: PseudoTtyOptions | undefined,
+  env?: Record<string, string>,
+  retryWithoutPty = false,
+): Promise<ClientChannel> {
+  try {
+    return await requestShell(client, pty ?? false, env);
+  } catch (err) {
+    if (!retryWithoutPty || !pty || !isPtyRejection(err)) throw err;
+    return requestShell(client, false, env);
+  }
+}
+
+function requestShell(
+  client: Client,
+  pty: PseudoTtyOptions | false,
+  env?: Record<string, string>,
+): Promise<ClientChannel> {
+  return new Promise((resolve, reject) => {
+    client.shell(pty, { env }, (err, stream) => (err ? reject(err) : resolve(stream)));
+  });
+}
+
+function isPtyRejection(err: unknown): boolean {
+  return err instanceof Error && /Unable to request a pseudo-terminal/.test(err.message);
 }
 
 /** Translate the common ssh2 failure modes into user-actionable messages. */

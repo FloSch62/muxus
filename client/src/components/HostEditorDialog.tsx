@@ -212,6 +212,7 @@ function SshHostEditorContent({
         group: draft.group.trim() || null,
         color: draft.color ?? null,
         disableSftp: draft.disableSftp,
+        consoleCompatibility: draft.consoleCompatibility,
         keywordHighlights:
           highlights.inheritGlobal &&
           !highlights.profileId &&
@@ -290,7 +291,10 @@ function SshHostEditorContent({
       value: 'advanced',
       label: 'Advanced',
       icon: <CodeOutlinedIcon fontSize="small" />,
-      count: draft.extras.length + (draft.disableSftp ? 1 : 0),
+      count:
+        draft.extras.length +
+        (draft.disableSftp ? 1 : 0) +
+        (draft.consoleCompatibility ? 1 : 0),
     },
   ];
 

@@ -466,6 +466,7 @@ describe('restoring imported serial hosts', () => {
           icon: null,
           keywordHighlights: null,
           disableSftp: false,
+          consoleCompatibility: false,
         }),
       }),
     );

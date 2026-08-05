@@ -29,7 +29,9 @@ writeFileSync(emptyConfig, '');
 interface ServerStats {
   connections: number;
   auths: number;
+  envRequests: number;
   execs: number;
+  ptyRequests: number;
   sftpRequests: number;
   shells: number;
 }
@@ -42,6 +44,9 @@ interface ServerStats {
 function startServer(opts: {
   maxShellsPerConnection?: number;
   disconnectOnExec?: boolean;
+  rejectPty?: boolean;
+  /** Console servers that only serve interactive terminals reject shells with no pty. */
+  requirePty?: boolean;
 } = {}): Promise<{
   server: Server;
   port: number;
@@ -50,7 +55,9 @@ function startServer(opts: {
   const stats: ServerStats = {
     connections: 0,
     auths: 0,
+    envRequests: 0,
     execs: 0,
+    ptyRequests: 0,
     sftpRequests: 0,
     shells: 0,
   };
@@ -69,7 +76,20 @@ function startServer(opts: {
     conn.on('ready', () => {
       conn.on('session', (acceptSession) => {
         const session = acceptSession();
-        session.on('pty', (acceptPty) => acceptPty?.());
+        let hasPty = false;
+        session.on('pty', (acceptPty, rejectPty) => {
+          stats.ptyRequests += 1;
+          if (opts.rejectPty) {
+            rejectPty?.();
+            return;
+          }
+          hasPty = true;
+          acceptPty?.();
+        });
+        session.on('env', (acceptEnv) => {
+          stats.envRequests += 1;
+          acceptEnv?.();
+        });
         // Empty probe output means "no integrated shell" — the manager then
         // opens a plain shell, which is what these tests exercise.
         session.on('exec', (acceptExec) => {
@@ -91,6 +111,10 @@ function startServer(opts: {
             rejectShell?.();
             return;
           }
+          if (opts.requirePty && !hasPty) {
+            rejectShell?.();
+            return;
+          }
           shells += 1;
           stats.shells += 1;
           acceptShell().write('ready\n');
@@ -108,7 +132,10 @@ function startServer(opts: {
 let knownHostsCounter = 0;
 function makeManager(
   configFile = emptyConfig,
-  disableSftpForHost?: (alias: string) => boolean,
+  options: {
+    disableSftpForHost?: (alias: string) => boolean;
+    consoleCompatibilityForHost?: (alias: string) => boolean;
+  } = {},
 ): SshConnectionManager {
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   return new SshConnectionManager(log as never, {
@@ -117,7 +144,7 @@ function makeManager(
       path.join(tmp, 'no-global-known-hosts'),
     ),
     loadConfig: () => loadConfigDocument(configFile),
-    disableSftpForHost,
+    ...options,
   });
 }
 
@@ -285,8 +312,10 @@ describe('SSH connection multiplexing', () => {
     expect(started.stats.connections).toBe(2);
   }, 15_000);
 
-  it('opens a plain shell without probes when SFTP is disabled for the host', async () => {
-    const started = await startServer();
+  it('opens a plain shell in console mode when the host rejects pty-req', async () => {
+    // Some network consoles reject pty-req; the shell must still open, without
+    // exec or SFTP probes.
+    const started = await startServer({ rejectPty: true });
     server = started.server;
     const configFile = path.join(tmp, `ssh_config-console-${knownHostsCounter}`);
     writeFileSync(
@@ -298,7 +327,9 @@ describe('SSH connection multiplexing', () => {
         `  Port ${started.port}`,
       ].join('\n'),
     );
-    manager = makeManager(configFile, (alias) => alias === 'console');
+    manager = makeManager(configFile, {
+      consoleCompatibilityForHost: (alias) => alias === 'console',
+    });
 
     const shell = await manager.connectShell(
       { kind: 'ssh', target: 'console', passwordOnly: true },
@@ -309,11 +340,193 @@ describe('SSH connection multiplexing', () => {
     );
 
     expect(shell.lease.connection.sftpAvailable).toBe(false);
-    expect(started.stats).toMatchObject({ execs: 0, sftpRequests: 0, shells: 1 });
+    // The rejected pty-req costs a channel, so the shell arrives on the retry.
+    expect(started.stats).toMatchObject({
+      execs: 0,
+      ptyRequests: 1,
+      sftpRequests: 0,
+      shells: 1,
+    });
     await expect(shell.lease.connection.sftp()).rejects.toThrow(
       'SFTP is disabled for this host.',
     );
     expect(started.stats.sftpRequests).toBe(0);
+  }, 15_000);
+
+  it('allocates a PTY in console mode for hosts that require one', async () => {
+    // Serial console servers such as Lantronix answer a shell request with
+    // CHANNEL_FAILURE unless the channel already has a pty.
+    const started = await startServer({ requirePty: true });
+    server = started.server;
+    const configFile = path.join(tmp, `ssh_config-console-needs-pty-${knownHostsCounter}`);
+    writeFileSync(
+      configFile,
+      [
+        'Host console',
+        '  HostName 127.0.0.1',
+        '  User tester',
+        `  Port ${started.port}`,
+        '  SetEnv TERM=xterm-256color',
+      ].join('\n'),
+    );
+    manager = makeManager(configFile, {
+      consoleCompatibilityForHost: (alias) => alias === 'console',
+    });
+
+    const shell = await manager.connectShell(
+      { kind: 'ssh', target: 'console', passwordOnly: true },
+      makeIo().io,
+      80,
+      24,
+      'xterm-256color',
+    );
+
+    expect(shell.lease.connection.sftpAvailable).toBe(false);
+    // ssh2 can only send env requests ahead of pty-req, so console mode sends
+    // none: appliances reject that order with a protocol-error disconnect.
+    expect(started.stats).toMatchObject({
+      envRequests: 0,
+      execs: 0,
+      ptyRequests: 1,
+      sftpRequests: 0,
+      shells: 1,
+    });
+  }, 15_000);
+
+  it('still applies SetEnv for hosts outside console mode', async () => {
+    const started = await startServer();
+    server = started.server;
+    const configFile = path.join(tmp, `ssh_config-setenv-${knownHostsCounter}`);
+    writeFileSync(
+      configFile,
+      [
+        'Host regular',
+        '  HostName 127.0.0.1',
+        '  User tester',
+        `  Port ${started.port}`,
+        '  SetEnv TERM=xterm-256color',
+      ].join('\n'),
+    );
+    manager = makeManager(configFile);
+
+    await manager.connectShell(
+      { kind: 'ssh', target: 'regular', passwordOnly: true },
+      makeIo().io,
+      80,
+      24,
+      'xterm-256color',
+    );
+
+    expect(started.stats.envRequests).toBeGreaterThan(0);
+    expect(started.stats.shells).toBe(1);
+  }, 15_000);
+
+  it('preserves env requests for existing disable-SFTP hosts', async () => {
+    const started = await startServer();
+    server = started.server;
+    const configFile = path.join(tmp, `ssh_config-disable-sftp-${knownHostsCounter}`);
+    writeFileSync(
+      configFile,
+      [
+        'Host legacy',
+        '  HostName 127.0.0.1',
+        '  User tester',
+        `  Port ${started.port}`,
+        '  SetEnv MUXUS_TEST=from-config',
+      ].join('\n'),
+    );
+    manager = makeManager(configFile, {
+      disableSftpForHost: (alias) => alias === 'legacy',
+    });
+
+    const shell = await manager.connectShell(
+      { kind: 'ssh', target: 'legacy', passwordOnly: true },
+      makeIo().io,
+      80,
+      24,
+      'xterm-256color',
+    );
+
+    expect(shell.lease.connection.sftpAvailable).toBe(false);
+    expect(started.stats).toMatchObject({
+      envRequests: 1,
+      execs: 0,
+      ptyRequests: 1,
+      sftpRequests: 0,
+      shells: 1,
+    });
+  }, 15_000);
+
+  it('applies console compatibility to RemoteCommand sessions', async () => {
+    const started = await startServer({ rejectPty: true });
+    server = started.server;
+    const configFile = path.join(tmp, `ssh_config-console-command-${knownHostsCounter}`);
+    writeFileSync(
+      configFile,
+      [
+        'Host console',
+        '  HostName 127.0.0.1',
+        '  User tester',
+        `  Port ${started.port}`,
+        '  SetEnv MUXUS_TEST=from-config',
+        '  RemoteCommand show version',
+        '  RequestTTY yes',
+      ].join('\n'),
+    );
+    manager = makeManager(configFile, {
+      consoleCompatibilityForHost: (alias) => alias === 'console',
+    });
+
+    const shell = await manager.connectShell(
+      { kind: 'ssh', target: 'console', passwordOnly: true },
+      makeIo().io,
+      80,
+      24,
+      'xterm-256color',
+    );
+
+    expect(shell.lease.connection.sftpAvailable).toBe(false);
+    expect(started.stats).toMatchObject({
+      envRequests: 0,
+      execs: 1,
+      ptyRequests: 1,
+      sftpRequests: 0,
+      shells: 0,
+    });
+  }, 15_000);
+
+  it('honors an explicit RequestTTY yes in console mode', async () => {
+    const started = await startServer();
+    server = started.server;
+    const configFile = path.join(tmp, `ssh_config-console-tty-${knownHostsCounter}`);
+    writeFileSync(
+      configFile,
+      [
+        'Host console',
+        '  HostName 127.0.0.1',
+        '  User tester',
+        `  Port ${started.port}`,
+        '  RequestTTY yes',
+      ].join('\n'),
+    );
+    manager = makeManager(configFile, {
+      consoleCompatibilityForHost: (alias) => alias === 'console',
+    });
+
+    await manager.connectShell(
+      { kind: 'ssh', target: 'console', passwordOnly: true },
+      makeIo().io,
+      80,
+      24,
+      'xterm-256color',
+    );
+
+    expect(started.stats).toMatchObject({
+      execs: 0,
+      ptyRequests: 1,
+      sftpRequests: 0,
+      shells: 1,
+    });
   }, 15_000);
 
   it('automatically redials in plain-console mode when integration drops the transport', async () => {
@@ -360,23 +573,27 @@ describe('SSH connection multiplexing', () => {
     );
   }, 15_000);
 
-  it('does not share transports across different SFTP compatibility settings', async () => {
+  it('does not share transports between disable-SFTP and console modes', async () => {
     const started = await startServer();
     server = started.server;
     const configFile = path.join(tmp, `ssh_config-sftp-isolation-${knownHostsCounter}`);
     writeFileSync(
       configFile,
       [
-        'Host regular console',
+        'Host legacy console',
         '  HostName 127.0.0.1',
         '  User tester',
         `  Port ${started.port}`,
+        '  SetEnv MUXUS_TEST=from-config',
       ].join('\n'),
     );
-    manager = makeManager(configFile, (alias) => alias === 'console');
+    manager = makeManager(configFile, {
+      disableSftpForHost: (alias) => alias === 'legacy',
+      consoleCompatibilityForHost: (alias) => alias === 'console',
+    });
 
-    const regular = await manager.connectShell(
-      { kind: 'ssh', target: 'regular', passwordOnly: true },
+    const legacy = await manager.connectShell(
+      { kind: 'ssh', target: 'legacy', passwordOnly: true },
       makeIo().io,
       80,
       24,
@@ -390,7 +607,8 @@ describe('SSH connection multiplexing', () => {
       'xterm-256color',
     );
 
-    expect(consoleShell.lease.connection.id).not.toBe(regular.lease.connection.id);
+    expect(consoleShell.lease.connection.id).not.toBe(legacy.lease.connection.id);
     expect(started.stats.connections).toBe(2);
+    expect(started.stats.envRequests).toBe(1);
   }, 15_000);
 });

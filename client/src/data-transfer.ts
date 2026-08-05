@@ -452,6 +452,7 @@ function portableMetadata(
     icon: metadata.icon,
     keywordHighlights: metadata.keywordHighlights,
     disableSftp: metadata.disableSftp,
+    consoleCompatibility: metadata.consoleCompatibility,
     sortOrder: metadata.sortOrder,
   };
 }
@@ -603,6 +604,7 @@ function metadataPatch(metadata: PortableHostMetadata): OpenSshMetadataPatch {
     icon: metadata.icon ?? null,
     keywordHighlights: metadata.keywordHighlights ?? null,
     disableSftp: metadata.disableSftp ?? false,
+    consoleCompatibility: metadata.consoleCompatibility ?? false,
   };
 }
 

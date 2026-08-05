@@ -44,7 +44,38 @@ describe('MuxusDatabase migrations', () => {
       { version: 17, name: 'folder-settings' },
       { version: 18, name: 'lock-workspaces' },
       { version: 19, name: 'host-disable-sftp' },
+      { version: 20, name: 'host-console-compatibility' },
     ]);
+  });
+
+  it('preserves version 19 disable-SFTP records when adding console compatibility', () => {
+    temporaryDirectory = mkdtempSync(path.join(os.tmpdir(), 'muxus-v19-migration-'));
+    const filename = path.join(temporaryDirectory, 'muxus.sqlite3');
+    database = new MuxusDatabase(filename);
+    database.updateOpenSshMetadata('legacy', { disableSftp: true });
+    database.close();
+    database = undefined;
+
+    const legacy = new DatabaseSync(filename);
+    try {
+      legacy.exec(`
+        DELETE FROM schema_migrations WHERE version = 20;
+        ALTER TABLE connection_profiles DROP COLUMN console_compatibility;
+        PRAGMA user_version = 19;
+      `);
+    } finally {
+      legacy.close();
+    }
+
+    database = new MuxusDatabase(filename);
+    expect(database.openSshMetadata(['legacy']).get('legacy')).toMatchObject({
+      disableSftp: true,
+    });
+    expect(database.openSshMetadata(['legacy']).get('legacy')).not.toHaveProperty(
+      'consoleCompatibility',
+    );
+    expect(database.sftpDisabledForAlias('legacy')).toBe(true);
+    expect(database.consoleCompatibilityForAlias('legacy')).toBe(false);
   });
 
   it('upgrades the draft version 13 vault without deleting credentials', () => {
@@ -120,8 +151,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 19,
-      name: 'host-disable-sftp',
+      version: 20,
+      name: 'host-console-compatibility',
     });
     expect(database.passwordVaultConfig()).toMatchObject({
       formatVersion: 2,
@@ -302,6 +333,7 @@ describe('hybrid OpenSSH metadata', () => {
       group: 'Work',
       color: '#3b82f6',
       disableSftp: true,
+      consoleCompatibility: true,
       keywordHighlights: {
         inheritGlobal: true,
         rules: [
@@ -324,6 +356,7 @@ describe('hybrid OpenSSH metadata', () => {
       group: 'Work',
       color: '#3b82f6',
       disableSftp: true,
+      consoleCompatibility: true,
       keywordHighlights: {
         inheritGlobal: true,
         rules: [expect.objectContaining({ keyword: 'ERROR' })],
@@ -333,6 +366,12 @@ describe('hybrid OpenSSH metadata', () => {
     expect(database.openSshMetadata(['production']).get('production')).toEqual(connected);
     expect(database.sftpDisabledForAlias('production')).toBe(true);
     expect(database.sftpDisabledForAlias('missing')).toBe(false);
+    expect(database.consoleCompatibilityForAlias('production')).toBe(true);
+    expect(database.consoleCompatibilityForAlias('missing')).toBe(false);
+
+    database.updateOpenSshMetadata('production', { consoleCompatibility: false });
+    expect(database.consoleCompatibilityForAlias('production')).toBe(false);
+    expect(database.sftpDisabledForAlias('production')).toBe(true);
 
     database.updateOpenSshMetadata('production', { disableSftp: false });
     expect(database.sftpDisabledForAlias('production')).toBe(false);
