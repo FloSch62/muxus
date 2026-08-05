@@ -59,6 +59,30 @@ Installers are published on the
         muxus
         ```
 
+    === "Verify the download"
+
+        Each release includes a signed `SHA256SUMS-linux.txt` manifest covering both
+        Linux packages. Download these additional files from the same release:
+
+        - `SHA256SUMS-linux.txt`
+        - `SHA256SUMS-linux.txt.asc`
+        - `muxus-linux-signing-key.asc`
+
+        Import the public key and verify the manifest signature before checking the
+        downloaded package:
+
+        ```bash
+        gpg --import muxus-linux-signing-key.asc
+        gpg --show-keys --fingerprint muxus-linux-signing-key.asc
+        gpg --verify SHA256SUMS-linux.txt.asc SHA256SUMS-linux.txt
+        sha256sum --ignore-missing --check SHA256SUMS-linux.txt
+        ```
+
+        A successful check reports `OK` for the package. Confirm that the key fingerprint
+        is `9961 EE0F 767C A411 D2F5 9489 E330 0BC6 4E4A DE67` and matches the public
+        key committed in the
+        [Muxus source repository](https://github.com/FloSch62/muxus/blob/main/.github/release-keys/linux-signing-key.asc).
+
 ## What the desktop build adds
 
 - **A frameless window.** The top bar is the titlebar: it is a drag region, and the native

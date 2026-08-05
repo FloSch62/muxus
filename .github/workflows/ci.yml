@@ -22,6 +22,9 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
 
+      - name: Test Linux release signing
+        run: hack/test-linux-release-signing.sh
+
       - name: Install pnpm
         uses: pnpm/action-setup@v6
 
