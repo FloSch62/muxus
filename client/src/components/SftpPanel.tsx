@@ -51,6 +51,7 @@ import {
   maxSftpPanelWidth,
   MIN_SFTP_PANEL_WIDTH,
 } from '../sftp-panel-width.js';
+import { initialSftpPath } from '../sftp-panel-state.js';
 import { FileTypeIcon } from './FileTypeIcon.js';
 import { PanelResizeHandle } from './PanelResizeHandle.js';
 
@@ -328,7 +329,7 @@ export function SftpPanel({
   fill?: boolean;
   onOpenInNewWindow?: (path: string) => void;
 }) {
-  const startingPath = terminalPath ?? initialPath;
+  const startingPath = initialSftpPath(initialPath, terminalPath, followTerminalFolder);
   const [path, setPath] = useState(startingPath);
   const [pathInput, setPathInput] = useState(startingPath);
   const [dragOver, setDragOver] = useState(false);
