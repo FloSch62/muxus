@@ -131,13 +131,13 @@ async function openLinkedTerminalFile(tabId: string, candidate: string): Promise
 
   let path: string | undefined;
   if (current.profile.kind === 'local') {
-    path = resolveTerminalFilePath(candidate, current.terminalCwd);
+    path = resolveTerminalFilePath(candidate, current.terminalCwd, undefined, 'local');
     if (!path && candidate.startsWith('~/')) {
       try {
         const info = await apiFetch<AppInfo>('/api/app/info');
         current = useTabsStore.getState().tabs.find((tab) => tab.id === tabId);
         if (current?.profile?.kind !== 'local') return;
-        path = resolveTerminalFilePath(candidate, current.terminalCwd, info.homeDir);
+        path = resolveTerminalFilePath(candidate, current.terminalCwd, info.homeDir, 'local');
       } catch (error) {
         showToast(
           'warning',

@@ -21,7 +21,7 @@ interface StubLinkProvider {
   ) => void;
 }
 
-function terminalWithLine(text: string): {
+function terminalWithLine(text: string, spareCells = 1): {
   terminal: Parameters<typeof attachTerminalFileLinks>[0];
   provider: () => StubLinkProvider;
 } {
@@ -36,7 +36,7 @@ function terminalWithLine(text: string): {
   };
   const line = {
     isWrapped: false,
-    length: text.length + 1,
+    length: text.length + spareCells,
     translateToString: () => text,
     getCell: (index: number) => {
       cell.chars = text[index] ?? '';
@@ -87,6 +87,18 @@ describe('terminal file links', () => {
         (candidate) => candidate.path,
       ),
     ).toEqual(['/srv/my app/main.ts', './docs/user guide.md', 'src/a file.ts']);
+  });
+
+  it('recognizes native Windows drive-letter and UNC paths without stripping separators', () => {
+    expect(
+      terminalFileLinkCandidates(
+        String.raw`C:\Users\me\foo.txt C:/Users/me/bar.txt \\server\share\baz.txt`,
+      ).map((candidate) => candidate.path),
+    ).toEqual([
+      String.raw`C:\Users\me\foo.txt`,
+      'C:/Users/me/bar.txt',
+      String.raw`\\server\share\baz.txt`,
+    ]);
   });
 
   it('strips compiler locations and surrounding punctuation from the linked range', () => {
@@ -182,6 +194,22 @@ describe('terminal file links', () => {
     expect(preventDefault).toHaveBeenCalledOnce();
     expect(stopPropagation).toHaveBeenCalledOnce();
   });
+
+  it('keeps a link ending in the terminal last column on the current row', () => {
+    const text = 'output: src/main.ts';
+    const { terminal, provider } = terminalWithLine(text, 0);
+    attachTerminalFileLinks(terminal, vi.fn());
+    let links: ProvidedLink[] | undefined;
+
+    provider().provideLinks(1, (provided) => {
+      links = provided;
+    });
+
+    expect(links![0]!.range).toEqual({
+      start: { x: 9, y: 1 },
+      end: { x: text.length, y: 1 },
+    });
+  });
 });
 
 describe('terminal web links', () => {
@@ -231,5 +259,20 @@ describe('terminal file path resolution', () => {
   it('requires an absolute shell working directory for relative paths', () => {
     expect(resolveTerminalFilePath('src/main.ts')).toBeUndefined();
     expect(resolveTerminalFilePath('src/main.ts', '.')).toBeUndefined();
+  });
+
+  it('normalizes Windows drive-letter and UNC paths for local terminals', () => {
+    expect(
+      resolveTerminalFilePath(String.raw`C:\Users\me\..\config.toml`, undefined, undefined, 'local'),
+    ).toBe(String.raw`C:\Users\config.toml`);
+    expect(
+      resolveTerminalFilePath('src/main.ts', String.raw`C:\Users\me`, undefined, 'local'),
+    ).toBe(String.raw`C:\Users\me\src\main.ts`);
+    expect(
+      resolveTerminalFilePath(String.raw`\\server\share\dir\..\file.txt`, undefined, undefined, 'local'),
+    ).toBe(String.raw`\\server\share\file.txt`);
+    expect(
+      resolveTerminalFilePath('C:/Users/me/file.txt', '/srv/app'),
+    ).toBeUndefined();
   });
 });

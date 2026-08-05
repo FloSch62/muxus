@@ -85,6 +85,12 @@ async function readLocalTextFile(file: string): Promise<EditorFileResponse> {
   try {
     const opened = await handle.stat();
     requireRegularFile(opened);
+    if (opened.size > MAX_EDITOR_BYTES) {
+      throw new HttpProblem(
+        413,
+        `files larger than ${formatBytes(MAX_EDITOR_BYTES)} cannot be opened in the editor`,
+      );
+    }
     const buffer = Buffer.allocUnsafe(opened.size);
     let total = 0;
     while (total < buffer.length) {

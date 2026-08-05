@@ -42,7 +42,23 @@ function escapedAt(value: string, index: number): boolean {
 }
 
 function decodeShellEscapes(value: string): string {
+  // Backslashes are separators rather than shell escapes in native Windows
+  // absolute paths. Preserve them so the local-file resolver receives the
+  // path that was displayed in the terminal.
+  if (windowsAbsolutePathRoot(value)) return value;
   return value.replace(/\\(.)/gs, '$1');
+}
+
+function windowsAbsolutePathRoot(
+  value: string,
+): { root: string; remainder: string } | undefined {
+  const normalized = value.replaceAll('/', '\\');
+  const drive = normalized.match(/^([a-z]:)\\(.*)$/i);
+  if (drive) return { root: `${drive[1]}\\`, remainder: drive[2] ?? '' };
+
+  const unc = normalized.match(/^\\\\([^\\]+)\\([^\\]+)(?:\\(.*))?$/);
+  if (!unc?.[1] || !unc[2]) return undefined;
+  return { root: `\\\\${unc[1]}\\${unc[2]}`, remainder: unc[3] ?? '' };
 }
 
 function containsUnsafePathCharacter(value: string): boolean {
@@ -99,7 +115,13 @@ function looksLikePath(value: string): boolean {
   ) {
     return false;
   }
-  if (/^(?:\/|\.\.?\/|~\/)/.test(value) || value.includes('/')) return true;
+  if (
+    windowsAbsolutePathRoot(value) ||
+    /^(?:\/|\.\.?\/|~\/)/.test(value) ||
+    value.includes('/')
+  ) {
+    return true;
+  }
   const lower = value.toLocaleLowerCase();
   if (CONVENTIONAL_FILENAMES.has(lower)) return true;
   if (value.startsWith('.') && value.length > 1) return true;
@@ -225,11 +247,25 @@ function normalizeAbsolutePath(value: string): string {
   return `/${segments.join('/')}`;
 }
 
-/** Resolve a path exactly as a POSIX shell would before handing it to SFTP. */
+function normalizeWindowsAbsolutePath(value: string): string | undefined {
+  const parsed = windowsAbsolutePathRoot(value);
+  if (!parsed) return undefined;
+  const segments: string[] = [];
+  for (const segment of parsed.remainder.split('\\')) {
+    if (!segment || segment === '.') continue;
+    if (segment === '..') segments.pop();
+    else segments.push(segment);
+  }
+  if (segments.length === 0) return parsed.root;
+  return `${parsed.root}${parsed.root.endsWith('\\') ? '' : '\\'}${segments.join('\\')}`;
+}
+
+/** Resolve a terminal path before handing it to the local editor or SFTP. */
 export function resolveTerminalFilePath(
   candidate: string,
   cwd?: string,
   home?: string,
+  source: 'posix' | 'local' = 'posix',
 ): string | undefined {
   if (
     !candidate ||
@@ -240,11 +276,20 @@ export function resolveTerminalFilePath(
     return undefined;
   }
   if (candidate === '~' || candidate.startsWith('~/')) {
+    if (source === 'local' && home && windowsAbsolutePathRoot(home)) {
+      return normalizeWindowsAbsolutePath(`${home}\\${candidate.slice(2)}`);
+    }
     if (!home?.startsWith('/')) return undefined;
     return normalizeAbsolutePath(`${home}/${candidate.slice(2)}`);
   }
   if (candidate.startsWith('~')) return undefined;
+  if (windowsAbsolutePathRoot(candidate)) {
+    return source === 'local' ? normalizeWindowsAbsolutePath(candidate) : undefined;
+  }
   if (candidate.startsWith('/')) return normalizeAbsolutePath(candidate);
+  if (source === 'local' && cwd && windowsAbsolutePathRoot(cwd)) {
+    return normalizeWindowsAbsolutePath(`${cwd}\\${candidate}`);
+  }
   if (!cwd?.startsWith('/')) return undefined;
   return normalizeAbsolutePath(`${cwd}/${candidate}`);
 }
@@ -327,13 +372,16 @@ function mappedFileLinks(term: Terminal, bufferLineNumber: number): MappedTermin
   const links: MappedTerminalFileLink[] = [];
   for (const candidate of terminalFileLinkCandidates(logicalLine.text)) {
     const start = bufferPosition(term, logicalLine.startLine, candidate.start);
-    const end = bufferPosition(term, logicalLine.startLine, candidate.end);
+    // xterm link ranges are inclusive and 1-based. Mapping the candidate's
+    // exclusive end offset can roll over to column zero on the next row when
+    // the path ends in the last cell, so map its final character instead.
+    const end = bufferPosition(term, logicalLine.startLine, candidate.end - 1);
     if (!start || !end) continue;
     links.push({
       candidate,
       range: {
         start: { x: start[1] + 1, y: start[0] + 1 },
-        end: { x: end[1], y: end[0] + 1 },
+        end: { x: end[1] + 1, y: end[0] + 1 },
       },
       text: logicalLine.text.slice(candidate.start, candidate.end),
     });
