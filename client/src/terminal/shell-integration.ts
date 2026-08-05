@@ -45,7 +45,7 @@ function decodePropertyValue(value: string): string | undefined {
   return decoded;
 }
 
-function validRemoteCwd(value: string | undefined): value is string {
+function validTerminalCwd(value: string | undefined): value is string {
   return !!value && value.startsWith('/') && value.length <= MAX_TERMINAL_CWD_LENGTH;
 }
 
@@ -73,7 +73,7 @@ export class CwdTracker {
   }
 
   private report(cwd: string | undefined): void {
-    if (!validRemoteCwd(cwd) || cwd === this.current) return;
+    if (!validTerminalCwd(cwd) || cwd === this.current) return;
     this.current = cwd;
     this.onChange(cwd);
   }

@@ -28,6 +28,7 @@ import { registerSessionHistoryRoutes } from './routes/session-history.js';
 import { registerPasswordVaultRoutes } from './routes/password-vault.js';
 import { registerFolderRoutes } from './routes/folders.js';
 import { registerLogRoutes } from './routes/logs.js';
+import { registerLocalFileRoutes } from './routes/local-files.js';
 import { appLogPinoSink } from './logging/log-buffer.js';
 import {
   defaultHistoryRoot,
@@ -185,6 +186,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   registerPasswordVaultRoutes(app, ctx);
   registerFolderRoutes(app, ctx);
   registerLogRoutes(app);
+  registerLocalFileRoutes(app);
   registerTerminalSocket(app, ctx);
   registerSftpLeaseSocket(app, ctx);
 

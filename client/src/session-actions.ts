@@ -314,7 +314,7 @@ async function confirmEndingLiveSessions(
 }
 
 /**
- * Close tabs, asking first when any of them still has unsaved remote files or
+ * Close tabs, asking first when any of them still has unsaved files or
  * a live session (the latter is pref-gated).
  */
 export async function requestCloseTabs(tabIds: string[]): Promise<void> {

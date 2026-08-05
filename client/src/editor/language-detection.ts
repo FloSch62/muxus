@@ -260,7 +260,7 @@ function languageFromFirstLine(content: string): string | undefined {
   return undefined;
 }
 
-/** Resolve a remote file to one of Monaco's built-in language ids. */
+/** Resolve a file to one of Monaco's built-in language ids. */
 export function languageForPath(path: string, content = ''): string {
   const lowerPath = path.toLowerCase().replaceAll('\\', '/');
   if (

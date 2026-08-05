@@ -226,7 +226,7 @@ function normalizeAbsolutePath(value: string): string {
 }
 
 /** Resolve a path exactly as a POSIX shell would before handing it to SFTP. */
-export function resolveRemoteFilePath(
+export function resolveTerminalFilePath(
   candidate: string,
   cwd?: string,
   home?: string,

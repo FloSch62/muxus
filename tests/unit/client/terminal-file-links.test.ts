@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   attachTerminalFileLinks,
-  resolveRemoteFilePath,
+  resolveTerminalFilePath,
   terminalFileLinkCandidates,
 } from '../../../client/src/terminal/file-links.js';
 import { openTerminalWebLink } from '../../../client/src/terminal/web-links.js';
@@ -213,23 +213,23 @@ describe('terminal web links', () => {
   });
 });
 
-describe('remote file path resolution', () => {
+describe('terminal file path resolution', () => {
   it('normalizes absolute and current-directory-relative paths', () => {
-    expect(resolveRemoteFilePath('/srv/app/../config.toml', '/ignored')).toBe('/srv/config.toml');
-    expect(resolveRemoteFilePath('./src/../README.md', '/srv/app')).toBe('/srv/app/README.md');
-    expect(resolveRemoteFilePath('../../etc/hosts', '/srv/app')).toBe('/etc/hosts');
+    expect(resolveTerminalFilePath('/srv/app/../config.toml', '/ignored')).toBe('/srv/config.toml');
+    expect(resolveTerminalFilePath('./src/../README.md', '/srv/app')).toBe('/srv/app/README.md');
+    expect(resolveTerminalFilePath('../../etc/hosts', '/srv/app')).toBe('/etc/hosts');
   });
 
   it('resolves the current user home only when SFTP supplied it', () => {
-    expect(resolveRemoteFilePath('~/.ssh/config', '/srv/app')).toBeUndefined();
-    expect(resolveRemoteFilePath('~/.ssh/config', '/srv/app', '/home/alice')).toBe(
+    expect(resolveTerminalFilePath('~/.ssh/config', '/srv/app')).toBeUndefined();
+    expect(resolveTerminalFilePath('~/.ssh/config', '/srv/app', '/home/alice')).toBe(
       '/home/alice/.ssh/config',
     );
-    expect(resolveRemoteFilePath('~bob/.ssh/config', '/srv/app', '/home/alice')).toBeUndefined();
+    expect(resolveTerminalFilePath('~bob/.ssh/config', '/srv/app', '/home/alice')).toBeUndefined();
   });
 
   it('requires an absolute shell working directory for relative paths', () => {
-    expect(resolveRemoteFilePath('src/main.ts')).toBeUndefined();
-    expect(resolveRemoteFilePath('src/main.ts', '.')).toBeUndefined();
+    expect(resolveTerminalFilePath('src/main.ts')).toBeUndefined();
+    expect(resolveTerminalFilePath('src/main.ts', '.')).toBeUndefined();
   });
 });

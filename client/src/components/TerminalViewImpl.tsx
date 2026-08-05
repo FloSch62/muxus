@@ -31,7 +31,7 @@ import { SerializeAddon } from '@xterm/addon-serialize';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
-import type { TerminalServerMessage } from '@muxus/shared';
+import type { AppInfo, TerminalServerMessage } from '@muxus/shared';
 import { apiFetch, wsProtocols, wsUrl } from '../api/http.js';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
 import { copyToClipboard, readFromClipboard } from '../clipboard.js';
@@ -61,7 +61,7 @@ import {
 import { registerTerminal } from '../terminal/terminal-registry.js';
 import {
   attachTerminalFileLinks,
-  resolveRemoteFilePath,
+  resolveTerminalFilePath,
 } from '../terminal/file-links.js';
 import { openTerminalWebLink } from '../terminal/web-links.js';
 import { requiresPasteConfirmation } from '../terminal/paste-safety.js';
@@ -125,41 +125,72 @@ function bufferText(term: Terminal): string {
   return lines.length ? `${lines.join('\n')}\n` : '';
 }
 
-async function openLinkedRemoteFile(tabId: string, candidate: string): Promise<void> {
+async function openLinkedTerminalFile(tabId: string, candidate: string): Promise<void> {
   let current = useTabsStore.getState().tabs.find((tab) => tab.id === tabId);
-  if (!current?.profile || current.profile.kind !== 'ssh') return;
-  if (current.sftpAvailable === false) {
-    showToast('warning', 'SFTP is disabled for this host, so remote files cannot be edited.');
-    return;
-  }
-  const connId = current.connId;
-  if (!connId) {
-    showToast('warning', 'Reconnect the SSH session before opening a remote file.');
-    return;
-  }
+  if (!current?.profile) return;
 
-  let path = resolveRemoteFilePath(candidate, current.terminalCwd);
-  if (!path && candidate.startsWith('~/')) {
-    try {
-      const home = await apiFetch<{ path: string }>(`/api/sftp/${connId}/home`);
-      current = useTabsStore.getState().tabs.find((tab) => tab.id === tabId);
-      if (current?.connId !== connId) return;
-      path = resolveRemoteFilePath(candidate, current.terminalCwd, home.path);
-    } catch (error) {
+  let path: string | undefined;
+  if (current.profile.kind === 'local') {
+    path = resolveTerminalFilePath(candidate, current.terminalCwd);
+    if (!path && candidate.startsWith('~/')) {
+      try {
+        const info = await apiFetch<AppInfo>('/api/app/info');
+        current = useTabsStore.getState().tabs.find((tab) => tab.id === tabId);
+        if (current?.profile?.kind !== 'local') return;
+        path = resolveTerminalFilePath(candidate, current.terminalCwd, info.homeDir);
+      } catch (error) {
+        showToast(
+          'warning',
+          `Could not resolve the local home directory: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return;
+      }
+    }
+    if (!path) {
       showToast(
         'warning',
-        `Could not resolve the remote home directory: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        'The local working directory is unavailable. Click an absolute path instead.',
       );
       return;
     }
-  }
-  if (!path) {
-    showToast(
-      'warning',
-      'The remote working directory is unavailable. Click an absolute path instead.',
-    );
+  } else if (current.profile.kind === 'ssh') {
+    if (current.sftpAvailable === false) {
+      showToast('warning', 'SFTP is disabled for this host, so remote files cannot be edited.');
+      return;
+    }
+    const connId = current.connId;
+    if (!connId) {
+      showToast('warning', 'Reconnect the SSH session before opening a remote file.');
+      return;
+    }
+
+    path = resolveTerminalFilePath(candidate, current.terminalCwd);
+    if (!path && candidate.startsWith('~/')) {
+      try {
+        const home = await apiFetch<{ path: string }>(`/api/sftp/${connId}/home`);
+        current = useTabsStore.getState().tabs.find((tab) => tab.id === tabId);
+        if (current?.connId !== connId) return;
+        path = resolveTerminalFilePath(candidate, current.terminalCwd, home.path);
+      } catch (error) {
+        showToast(
+          'warning',
+          `Could not resolve the remote home directory: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return;
+      }
+    }
+    if (!path) {
+      showToast(
+        'warning',
+        'The remote working directory is unavailable. Click an absolute path instead.',
+      );
+      return;
+    }
+  } else {
     return;
   }
 
@@ -583,7 +614,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
 
     const commandTracker = attachCommandTracker(term);
     const cwdTracker =
-      tab.profile.kind === 'ssh'
+      tab.profile.kind === 'ssh' || tab.profile.kind === 'local'
         ? attachCwdTracker(term, (terminalCwd) => {
             const current = useTabsStore
               .getState()
@@ -592,8 +623,8 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           })
         : undefined;
     const fileLinks =
-      tab.profile.kind === 'ssh'
-        ? attachTerminalFileLinks(term, (candidate) => openLinkedRemoteFile(tab.id, candidate))
+      tab.profile.kind === 'ssh' || tab.profile.kind === 'local'
+        ? attachTerminalFileLinks(term, (candidate) => openLinkedTerminalFile(tab.id, candidate))
         : undefined;
 
     // Application chords never reach xterm: the shortcut layer consumes them
