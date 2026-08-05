@@ -30,6 +30,9 @@ primary_fingerprint=$(
     awk -F: '$1 == "fpr" { print $10; exit }'
 )
 
+# Preserve a deliberately stale export from before the signing subkey exists.
+gpg --batch --armor --export "$primary_fingerprint" > "$test_root/stale-public.asc"
+
 printf '%s\n' "$test_passphrase" |
   gpg \
     --batch \
@@ -55,11 +58,19 @@ export GNUPGHOME="$test_root/signer-gnupg"
 install -d -m 0700 "$GNUPGHOME"
 gpg --batch --import "$test_root/signing-subkeys.asc"
 
-mkdir -p "$test_root/artifacts" "$test_root/signatures"
+mkdir -p "$test_root/artifacts" "$test_root/signatures" "$test_root/stale-signatures"
 printf 'appimage fixture\n' > "$test_root/artifacts/muxus-test-linux-x86_64.AppImage"
 printf 'deb fixture\n' > "$test_root/artifacts/muxus-test-linux-amd64.deb"
 
 export LINUX_SIGNING_KEY_PASSPHRASE="$test_passphrase"
+if "$repo_root/hack/sign-linux-release.sh" \
+  "$test_root/artifacts" \
+  "$test_root/stale-signatures" \
+  "$test_root/stale-public.asc"; then
+  echo "Signing unexpectedly accepted a public key without the signing subkey" >&2
+  exit 1
+fi
+
 "$repo_root/hack/sign-linux-release.sh" \
   "$test_root/artifacts" \
   "$test_root/signatures" \

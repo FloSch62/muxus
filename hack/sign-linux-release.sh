@@ -84,9 +84,11 @@ manifest_tmp="$output_dir/.SHA256SUMS-linux.txt.$$"
 signature_tmp="$output_dir/.SHA256SUMS-linux.txt.asc.$$"
 key_tmp="$output_dir/.muxus-linux-signing-key.asc.$$"
 fingerprint_tmp="$output_dir/.muxus-linux-signing-key-fingerprint.txt.$$"
+verification_home=$(mktemp -d "$output_dir/.verification-gnupg.XXXXXX")
 
 cleanup() {
   rm -f -- "$manifest_tmp" "$signature_tmp" "$key_tmp" "$fingerprint_tmp"
+  rm -rf -- "$verification_home"
 }
 trap cleanup EXIT
 
@@ -109,6 +111,9 @@ gpg \
   "$manifest_tmp" \
   3<<<"$LINUX_SIGNING_KEY_PASSPHRASE"
 
+gpg --batch --quiet --homedir "$verification_home" --import "$public_key_file"
+gpg --batch --homedir "$verification_home" --verify "$signature_tmp" "$manifest_tmp"
+
 install -m 0644 "$public_key_file" "$key_tmp"
 printf '%s\n' "$expected_fingerprint" > "$fingerprint_tmp"
 
@@ -117,7 +122,6 @@ mv "$signature_tmp" "$signature"
 mv "$key_tmp" "$published_key"
 mv "$fingerprint_tmp" "$published_fingerprint"
 
-gpg --batch --verify "$signature" "$manifest"
 (
   cd "$artifact_dir"
   sha256sum --check "$manifest"
