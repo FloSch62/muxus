@@ -48,7 +48,7 @@ hack/       Documentation sandbox and screenshot capture
 | `pnpm test`, `pnpm test:watch` | vitest |
 | `pnpm lint` | oxlint (`--deny-warnings`) |
 | `pnpm typecheck` | Types across the workspace |
-| `pnpm check:bundle` | Client bundle budgets |
+| `pnpm check:bundle` | Build the client and check bundle safety caps |
 
 ## Native modules and Electron
 
@@ -138,5 +138,6 @@ also a way to test a change without touching the real `~/.ssh`.
 
 ## CI
 
-Every push runs typecheck, lint, tests and the bundle budgets, then builds unpacked desktop
-packages on Linux, macOS and Windows.
+Every push runs typecheck, lint, tests and bundle safety checks, then builds unpacked desktop
+packages on Linux, macOS and Windows. Pull requests also compare their bundle with the base
+commit and fail only when a loading graph grows beyond its configured tolerance.

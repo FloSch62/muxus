@@ -29,7 +29,8 @@ Muxus is a community project, and contributions of any size are welcome.
     pnpm test
     ```
 
-4. If the client bundle changed, `pnpm check:bundle` enforces its budgets.
+4. If the client bundle changed, `pnpm check:bundle` enforces its safety caps. Pull-request
+   CI also reports the change from the base commit and rejects unexpectedly large growth.
 
 ## Project constraints
 
