@@ -780,7 +780,7 @@ function buildCatalogResults({
         path,
         label: basename(path),
         detail: `${tab.title} · ${path}`,
-        keywords: ['editor', 'remote file', path],
+        keywords: ['editor', tab.profile.kind === 'local' ? 'local file' : 'remote file', path],
         priority: tab.id === activeId ? 420 : 300,
         showWhenEmpty: path === tab.activeEditorPath,
       });

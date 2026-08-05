@@ -94,6 +94,7 @@ export function SftpWindow({ launch }: { launch: SftpLaunch }) {
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <RemoteEditorWorkspace
                 tabId={editorId.current}
+                sourceKind="sftp"
                 connId={launch.connId}
                 paths={editorPaths}
                 activePath={activePath}

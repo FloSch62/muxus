@@ -238,6 +238,7 @@ function PaneCanvas({
                       <Suspense fallback={null}>
                         <RemoteEditorWorkspace
                           tabId={tab.id}
+                          sourceKind={tab.profile.kind === 'local' ? 'local' : 'sftp'}
                           connId={tab.connId}
                           paths={tab.editorPaths}
                           activePath={tab.activeEditorPath}

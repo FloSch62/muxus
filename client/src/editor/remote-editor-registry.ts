@@ -19,9 +19,9 @@ export async function confirmDiscardRemoteEditors(tabIds: string[]): Promise<boo
   const dirty = tabIds.some((tabId) => handles.get(tabId)?.hasDirty());
   if (!dirty) return true;
   return confirmAction({
-    title: 'Discard unsaved remote files?',
+    title: 'Discard unsaved files?',
     description:
-      'One or more remote files have unsaved changes. Closing them now loses those edits.',
+      'One or more files have unsaved changes. Closing them now loses those edits.',
     confirmLabel: 'Discard changes',
     destructive: true,
   });

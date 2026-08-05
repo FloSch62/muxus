@@ -15,8 +15,8 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import SaveAsOutlinedIcon from '@mui/icons-material/SaveAsOutlined';
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import type {
-  SftpFileResponse,
-  SftpFileSaveResponse,
+  EditorFileResponse,
+  EditorFileSaveResponse,
 } from '@muxus/shared';
 import { ApiError, apiFetch, apiFetchRaw } from '../api/http.js';
 import {
@@ -54,9 +54,17 @@ function downloadBlob(name: string, blob: Blob): void {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-/** VS Code-like, multi-file Monaco workspace attached to one live SSH session. */
+type EditorSourceKind = 'local' | 'sftp';
+
+function editorFileUrl(sourceKind: EditorSourceKind, connId: string | undefined, path: string): string {
+  const root = sourceKind === 'local' ? '/api/local-files' : `/api/sftp/${connId}`;
+  return `${root}/file?path=${encodeURIComponent(path)}`;
+}
+
+/** VS Code-like, multi-file Monaco workspace attached to one terminal session. */
 export function RemoteEditorWorkspace({
   tabId,
+  sourceKind,
   connId,
   paths,
   activePath,
@@ -64,6 +72,7 @@ export function RemoteEditorWorkspace({
   onClose,
 }: {
   tabId: string;
+  sourceKind: EditorSourceKind;
   connId?: string;
   paths: string[];
   activePath?: string;
@@ -71,12 +80,14 @@ export function RemoteEditorWorkspace({
   onClose: (path: string) => void;
 }) {
   const theme = useTheme();
+  const available = sourceKind === 'local' || !!connId;
+  const local = sourceKind === 'local';
   const [documents, setDocuments] = useState<Record<string, EditorDocument>>({});
   const [languageOverrides, setLanguageOverrides] = useState<Record<string, string>>({});
 
   const load = useCallback(
     async (path: string) => {
-      if (!connId) {
+      if (!available) {
         setDocuments((current) => ({
           ...current,
           [path]: {
@@ -102,8 +113,8 @@ export function RemoteEditorWorkspace({
         },
       }));
       try {
-        const file = await apiFetch<SftpFileResponse>(
-          `/api/sftp/${connId}/file?path=${encodeURIComponent(path)}`,
+        const file = await apiFetch<EditorFileResponse>(
+          editorFileUrl(sourceKind, connId, path),
         );
         setDocuments((current) => ({
           ...current,
@@ -131,7 +142,7 @@ export function RemoteEditorWorkspace({
         }));
       }
     },
-    [connId],
+    [available, connId, sourceKind],
   );
 
   // Typing rewrites `documents`; only whether the active file has been opened
@@ -150,15 +161,15 @@ export function RemoteEditorWorkspace({
 
   const save = async (path: string, force = false, notify = true): Promise<boolean> => {
     const document = documents[path];
-    if (!connId || !document || document.loading || document.saving) return false;
+    if (!available || !document || document.loading || document.saving) return false;
     const contentToSave = document.content;
     setDocuments((current) => ({
       ...current,
       [path]: { ...current[path]!, saving: true, conflict: false },
     }));
     try {
-      const result = await apiFetch<SftpFileSaveResponse>(
-        `/api/sftp/${connId}/file?path=${encodeURIComponent(path)}`,
+      const result = await apiFetch<EditorFileSaveResponse>(
+        editorFileUrl(sourceKind, connId, path),
         {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },
@@ -186,7 +197,7 @@ export function RemoteEditorWorkspace({
       if (
         error instanceof ApiError &&
         error.status === 409 &&
-        error.body?.code === 'SFTP_FILE_CHANGED'
+        (error.body?.code === 'SFTP_FILE_CHANGED' || error.body?.code === 'LOCAL_FILE_CHANGED')
       ) {
         setDocuments((current) => ({
           ...current,
@@ -365,11 +376,11 @@ export function RemoteEditorWorkspace({
           <Typography variant="caption" color="text.disabled" sx={{ mr: 0.5 }}>
             {language === GENERAL_TEXT_LANGUAGE_ID ? 'General text' : language}
           </Typography>
-          <Tooltip title="Reload from remote">
+          <Tooltip title={local ? 'Reload from disk' : 'Reload from remote'}>
             <span>
               <IconButton
                 size="small"
-                aria-label="Reload from remote"
+                aria-label={local ? 'Reload from disk' : 'Reload from remote'}
                 disabled={document?.loading}
                 onClick={() => {
                   if (!dirtyPaths.has(activePath)) {
@@ -377,8 +388,8 @@ export function RemoteEditorWorkspace({
                     return;
                   }
                   void confirmAction({
-                    title: 'Reload from remote?',
-                    description: 'Your local changes to this file are discarded.',
+                    title: local ? 'Reload from disk?' : 'Reload from remote?',
+                    description: 'Your unsaved changes to this file are discarded.',
                     confirmLabel: 'Discard and reload',
                     destructive: true,
                   }).then((confirmed) => {
@@ -390,33 +401,35 @@ export function RemoteEditorWorkspace({
               </IconButton>
             </span>
           </Tooltip>
-          <Tooltip title="Download">
-            <span>
-              <IconButton
-                size="small"
-                aria-label="Download this file"
-                disabled={!connId}
-                onClick={() => {
-                  if (!connId) return;
-                  void apiFetchRaw(
-                    `/api/sftp/${connId}/download?path=${encodeURIComponent(activePath)}`,
-                  )
-                    .then((response) => response.blob())
-                    .then((blob) => downloadBlob(baseName(activePath), blob))
-                    .catch(showErrorToast);
-                }}
-              >
-                <DownloadOutlinedIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
+          {!local ? (
+            <Tooltip title="Download">
+              <span>
+                <IconButton
+                  size="small"
+                  aria-label="Download this file"
+                  disabled={!connId}
+                  onClick={() => {
+                    if (!connId) return;
+                    void apiFetchRaw(
+                      `/api/sftp/${connId}/download?path=${encodeURIComponent(activePath)}`,
+                    )
+                      .then((response) => response.blob())
+                      .then((blob) => downloadBlob(baseName(activePath), blob))
+                      .catch(showErrorToast);
+                  }}
+                >
+                  <DownloadOutlinedIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          ) : null}
           <Tooltip title="Save (Ctrl/Cmd+S)">
             <span>
               <IconButton
                 size="small"
                 aria-label="Save this file"
                 color={dirtyPaths.has(activePath) ? 'primary' : 'default'}
-                disabled={!document || document.loading || document.saving || !connId}
+                disabled={!document || document.loading || document.saving || !available}
                 onClick={() => void save(activePath)}
               >
                 {document?.saving ? <CircularProgress size={16} /> : <SaveOutlinedIcon fontSize="small" />}
@@ -429,7 +442,7 @@ export function RemoteEditorWorkspace({
                 size="small"
                 aria-label="Save all files"
                 color={dirtyPaths.size > 0 ? 'primary' : 'default'}
-                disabled={dirtyPaths.size === 0 || savingCount > 0 || !connId}
+                disabled={dirtyPaths.size === 0 || savingCount > 0 || !available}
                 onClick={() => void saveAll()}
               >
                 {savingCount > 0 ? <CircularProgress size={16} /> : <SaveAsOutlinedIcon fontSize="small" />}
@@ -451,8 +464,8 @@ export function RemoteEditorWorkspace({
                 color="inherit"
                 onClick={() => {
                   void confirmAction({
-                    title: 'Load the remote version?',
-                    description: 'Your local changes to this file are discarded.',
+                    title: local ? 'Load the version on disk?' : 'Load the remote version?',
+                    description: 'Your unsaved changes to this file are discarded.',
                     confirmLabel: 'Discard and reload',
                     destructive: true,
                   }).then((confirmed) => {
@@ -460,15 +473,17 @@ export function RemoteEditorWorkspace({
                   });
                 }}
               >
-                Reload remote
+                {local ? 'Reload disk' : 'Reload remote'}
               </Button>
               <Button color="warning" variant="contained" onClick={() => void save(activePath, true)}>
-                Overwrite remote
+                {local ? 'Overwrite disk' : 'Overwrite remote'}
               </Button>
             </Stack>
           }
         >
-          The remote file changed after you opened it.
+          {local
+            ? 'The file changed on disk after you opened it.'
+            : 'The remote file changed after you opened it.'}
         </Alert>
       )}
       {document?.loading && <LinearProgress />}
@@ -478,7 +493,7 @@ export function RemoteEditorWorkspace({
             <Typography variant="body2" color="error">
               {document.error}
             </Typography>
-            <Button startIcon={<RefreshIcon />} disabled={!connId} onClick={() => activePath && void load(activePath)}>
+            <Button startIcon={<RefreshIcon />} disabled={!available} onClick={() => activePath && void load(activePath)}>
               Try again
             </Button>
           </Stack>
@@ -491,7 +506,7 @@ export function RemoteEditorWorkspace({
               language={language}
               value={document.content}
               dark={theme.palette.mode === 'dark'}
-              readOnly={!connId}
+              readOnly={!available}
               onChange={(content) =>
                 setDocuments((current) => ({
                   ...current,

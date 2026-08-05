@@ -36,7 +36,7 @@ interface TabBase {
   sftpOpen: boolean;
   /** Server-advertised capability for the current SSH transport. */
   sftpAvailable?: boolean;
-  /** Most recent working directory reported by the live remote shell. */
+  /** Most recent working directory reported by a live local or remote shell. */
   terminalCwd?: string;
   /** Explicit opt-out from following the terminal in the attached SFTP panel. */
   sftpFollowTerminal?: boolean;
@@ -46,7 +46,7 @@ interface TabBase {
   color?: string;
   /** Pinned tabs stay grouped at the start of their pane. */
   pinned?: boolean;
-  /** Remote files open in the Monaco workspace attached to this session. */
+  /** Files open in the Monaco workspace attached to this session. */
   editorPaths: string[];
   activeEditorPath?: string;
   /** Durable server-side history state for this live tab. */

@@ -658,8 +658,8 @@ export interface SftpListResponse {
   entries: SftpEntry[];
 }
 
-/** Text file opened through the remote editor. */
-export interface SftpFileResponse {
+/** UTF-8 text file opened through Monaco, regardless of backing filesystem. */
+export interface EditorFileResponse {
   path: string;
   content: string;
   size: number;
@@ -667,8 +667,8 @@ export interface SftpFileResponse {
   mode?: number;
 }
 
-/** Optimistic, text-only remote save request. */
-export interface SftpFileSaveRequest {
+/** Optimistic, text-only save request shared by local and SFTP files. */
+export interface EditorFileSaveRequest {
   content: string;
   /** Modification time returned by the read/save that produced this buffer. */
   expectedMtimeMs?: number;
@@ -676,11 +676,15 @@ export interface SftpFileSaveRequest {
   force?: boolean;
 }
 
-export interface SftpFileSaveResponse {
+export interface EditorFileSaveResponse {
   ok: true;
   size: number;
   mtimeMs?: number;
 }
+
+export type SftpFileResponse = EditorFileResponse;
+export type SftpFileSaveRequest = EditorFileSaveRequest;
+export type SftpFileSaveResponse = EditorFileSaveResponse;
 
 export type ForwardType = 'local' | 'remote' | 'dynamic';
 

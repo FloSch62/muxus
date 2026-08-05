@@ -2,11 +2,13 @@
 icon: lucide/file-pen
 ---
 
-# Remote editor
+# File editor
 
-Double-clicking a file in the [file browser](files.md) opens it in
-[Monaco](https://microsoft.github.io/monaco-editor/), the editor used by VS Code. Reads and
-writes go over the live SSH transport of that session.
+Click an underlined file path in a local or SSH terminal to open it in
+[Monaco](https://microsoft.github.io/monaco-editor/), the editor used by VS Code. Files in
+SSH sessions use that session's live SFTP transport; files in local terminals are read and
+saved directly on the machine running Muxus. Double-clicking a file in the
+[file browser](files.md) opens the same editor.
 
 <figure markdown="span">
   ![Editing a remote file with Monaco](../assets/screenshots/remote-editor.png#only-light){ .shadow }
@@ -30,12 +32,12 @@ Several files stay open at once inside the tab, alongside the terminal.
 
 ## Conflict protection
 
-Saving carries the modification time the file had when it was read. If the file changed on
-the remote in the meantime, the save is refused and the editor offers **Reload from
-remote**.
+Saving carries the modification time the file had when it was read. If it changes on disk
+or on the remote host in the meantime, the save is refused and the editor offers to reload
+the newer version.
 
 ## Scope
 
 The editor targets single-file edits: a config change, a compose file, a systemd unit. For
 project-level work requiring a language server, a test runner or git history, use an
-editor's own remote support. Muxus provides a file editor, not a remote IDE.
+editor's own project support. Muxus provides a file editor, not a full IDE.
