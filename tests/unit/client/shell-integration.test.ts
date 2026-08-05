@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CommandTracker,
+  CwdTracker,
   ERROR_MARK_COLOR,
   type CommandMarker,
   type MarkerHost,
@@ -87,5 +88,32 @@ describe('CommandTracker', () => {
     expect(tracker.handle('D;0')).toBe(true);
     expect(tracker.handle('P;Cwd=/tmp')).toBe(false);
     expect(tracker.handle('E;ls')).toBe(false);
+  });
+});
+
+describe('CwdTracker', () => {
+  it('reports escaped OSC 133/633 current-directory properties once per path', () => {
+    const paths: string[] = [];
+    const tracker = new CwdTracker((path) => paths.push(path));
+
+    expect(tracker.handleProperty(String.raw`P;Cwd=/srv/with\x3bsemi\\backslash`)).toBe(true);
+    expect(tracker.handleProperty(String.raw`P;Cwd=/srv/with\x3bsemi\\backslash`)).toBe(true);
+    expect(paths).toEqual(['/srv/with;semi\\backslash']);
+  });
+
+  it('accepts standard file URIs and ignores invalid or relative paths', () => {
+    const paths: string[] = [];
+    const tracker = new CwdTracker((path) => paths.push(path));
+
+    expect(tracker.handleFileUri('file://remote.example/srv/my%20app')).toBe(true);
+    expect(tracker.handleProperty('P;Cwd=relative/path')).toBe(true);
+    expect(tracker.handleFileUri('https://example.test/srv/app')).toBe(false);
+    expect(paths).toEqual(['/srv/my app']);
+  });
+
+  it('leaves unrelated shell-integration properties for other handlers', () => {
+    const tracker = new CwdTracker(() => undefined);
+    expect(tracker.handleProperty('C')).toBe(false);
+    expect(tracker.handleProperty('P;IsWindows=True')).toBe(false);
   });
 });

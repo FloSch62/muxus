@@ -36,6 +36,10 @@ interface TabBase {
   sftpOpen: boolean;
   /** Server-advertised capability for the current SSH transport. */
   sftpAvailable?: boolean;
+  /** Most recent working directory reported by the live remote shell. */
+  terminalCwd?: string;
+  /** Explicit opt-out from following the terminal in the attached SFTP panel. */
+  sftpFollowTerminal?: boolean;
   /** Monotonic UI signal consumed by the mounted terminal search bar. */
   searchRequest: number;
   /** User-set color flag marking the tab. */
@@ -86,6 +90,8 @@ type TabUpdate = Partial<{
   transferId: string | undefined;
   sftpOpen: boolean;
   sftpAvailable: boolean | undefined;
+  terminalCwd: string | undefined;
+  sftpFollowTerminal: boolean | undefined;
   color: string | undefined;
   loggingEnabled: boolean | undefined;
   sessionLogId: string | undefined;
@@ -388,6 +394,7 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
           connId: undefined,
           sftpOpen: false,
           sftpAvailable: undefined,
+          terminalCwd: undefined,
           searchRequest: 0,
           editorPaths: [],
           activeEditorPath: undefined,
@@ -763,6 +770,7 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
           status: tab.connectOnMount ? 'connecting' as const : 'closed' as const,
           sftpOpen: false,
           sftpAvailable: undefined,
+          terminalCwd: undefined,
           searchRequest: 0,
           editorPaths: [],
           activeEditorPath: undefined,
@@ -885,6 +893,8 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
           connId: _connId,
           sftpOpen: _sftpOpen,
           sftpAvailable: _sftpAvailable,
+          terminalCwd: _terminalCwd,
+          sftpFollowTerminal: _sftpFollowTerminal,
           ...emptyPatch
         } = patch;
         return { ...tab, ...emptyPatch };

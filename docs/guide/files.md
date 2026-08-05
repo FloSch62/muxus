@@ -20,6 +20,8 @@ operation, so no second connection or authentication is required.
 - :material-arrow-up: goes to the parent directory, :material-home: to the remote home
   directory, and :material-refresh: re-reads the current directory.
 - Double-click a directory to enter it. Sorting is by name, size or modification time.
+- **Follow terminal folder** is enabled by default. The browser opens at the shell's current
+  directory and follows later `cd` commands; clear it to browse independently.
 - **Open in new window** moves the browser into its own window on the same connection.
 
 ## Transferring
