@@ -51,6 +51,7 @@ const CATEGORY_ORDER: CommandCategory[] = ['panes', 'tabs', 'terminal', 'app'];
 /** Interactions worth documenting that no keymap entry can express. */
 const EXTRAS: Array<[string, string]> = [
   ['Zoom the terminal with the mouse', `${IS_MAC ? '⌃ ' : 'Ctrl+'}Scroll wheel`],
+  ['Open a remote terminal path in the editor', 'Click the underlined path'],
   ['Resize a split / reset it to half', 'Drag the divider · double-click'],
   ['Pane actions (split, zoom, close)', 'Right-click the tab strip'],
   ['Rename a tab / close a tab', 'Double-click it · middle-click it'],

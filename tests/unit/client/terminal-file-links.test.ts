@@ -1,0 +1,235 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  attachTerminalFileLinks,
+  resolveRemoteFilePath,
+  terminalFileLinkCandidates,
+} from '../../../client/src/terminal/file-links.js';
+import { openTerminalWebLink } from '../../../client/src/terminal/web-links.js';
+
+afterEach(() => vi.unstubAllGlobals());
+
+interface ProvidedLink {
+  range: { start: { x: number; y: number }; end: { x: number; y: number } };
+  decorations?: { pointerCursor?: boolean; underline?: boolean };
+  activate: (event: MouseEvent, text: string) => void;
+}
+
+interface StubLinkProvider {
+  provideLinks: (
+    line: number,
+    callback: (links: ProvidedLink[] | undefined) => void,
+  ) => void;
+}
+
+function terminalWithLine(text: string): {
+  terminal: Parameters<typeof attachTerminalFileLinks>[0];
+  provider: () => StubLinkProvider;
+} {
+  const cell = {
+    chars: '',
+    getChars() {
+      return this.chars;
+    },
+    getWidth() {
+      return 1;
+    },
+  };
+  const line = {
+    isWrapped: false,
+    length: text.length + 1,
+    translateToString: () => text,
+    getCell: (index: number) => {
+      cell.chars = text[index] ?? '';
+      return cell;
+    },
+  };
+  let registered: StubLinkProvider | undefined;
+  const terminal = {
+    buffer: {
+      active: {
+        getLine: (index: number) => index === 0 ? line : undefined,
+        getNullCell: () => cell,
+      },
+    },
+    registerLinkProvider: (provider: StubLinkProvider) => {
+      registered = provider;
+      return { dispose: () => undefined };
+    },
+  } as unknown as Parameters<typeof attachTerminalFileLinks>[0];
+  return {
+    terminal,
+    provider: () => {
+      if (!registered) throw new Error('link provider was not registered');
+      return registered;
+    },
+  };
+}
+
+describe('terminal file links', () => {
+  it('finds absolute, relative, dotfile, and conventional file paths', () => {
+    expect(
+      terminalFileLinkCandidates(
+        'edit /etc/hosts ./src/App.tsx ../shared/api.ts .env Dockerfile README',
+      ).map((candidate) => candidate.path),
+    ).toEqual([
+      '/etc/hosts',
+      './src/App.tsx',
+      '../shared/api.ts',
+      '.env',
+      'Dockerfile',
+      'README',
+    ]);
+  });
+
+  it('supports quoted and shell-escaped paths with spaces', () => {
+    expect(
+      terminalFileLinkCandidates(String.raw`"/srv/my app/main.ts" './docs/user guide.md' src/a\ file.ts`).map(
+        (candidate) => candidate.path,
+      ),
+    ).toEqual(['/srv/my app/main.ts', './docs/user guide.md', 'src/a file.ts']);
+  });
+
+  it('strips compiler locations and surrounding punctuation from the linked range', () => {
+    const line = 'error: (src/main.ts:42:7), config.yaml(8,2) README.md:';
+    const candidates = terminalFileLinkCandidates(line);
+    expect(candidates.map((candidate) => candidate.path)).toEqual([
+      'src/main.ts',
+      'config.yaml',
+      'README.md',
+    ]);
+    expect(candidates.map((candidate) => line.slice(candidate.start, candidate.end))).toEqual([
+      'src/main.ts',
+      'config.yaml',
+      'README.md',
+    ]);
+  });
+
+  it('does not link URLs, flags, versions, or ordinary prose', () => {
+    expect(
+      terminalFileLinkCandidates('open https://example.test/file.txt --config v1.2.3 ordinary words')
+        .map((candidate) => candidate.path),
+    ).toEqual([]);
+  });
+
+  it('does not confuse tagged container image references with file paths', () => {
+    expect(
+      terminalFileLinkCandidates(
+        'image: ghcr.io/nokia/srlinux:latest ghcr.io/srl-labs/network-multitool:latest ghcr.io/nokia/srlinux',
+      ),
+    ).toEqual([]);
+    expect(terminalFileLinkCandidates('image: srl-labs/network-multitool:latest')).toEqual([]);
+    expect(terminalFileLinkCandidates('image: srl-labs/network-multitool:42')).toEqual([]);
+  });
+
+  it('recognizes only the regular filename in long ls output, including extensionless files', () => {
+    expect(
+      terminalFileLinkCandidates(
+        '-rw-rw-rw-.  1 root root 3.8K Jul 23 16:33 containerlab.svg',
+      ).map((candidate) => candidate.path),
+    ).toEqual(['containerlab.svg']);
+    expect(
+      terminalFileLinkCandidates(
+        '-rw-r--r--.  1 root root 406K Feb 27  2025 hist',
+      ).map((candidate) => candidate.path),
+    ).toEqual(['hist']);
+    expect(
+      terminalFileLinkCandidates(
+        'drwxr-xr-x.  5 root root  100 May  4  2024 demo',
+      ),
+    ).toEqual([]);
+    expect(
+      terminalFileLinkCandidates(
+        '-rw-r--r--. 1 root root system_u:object_r:admin_home_t:s0 928 Dec 1 2025 lic.txt',
+      ).map((candidate) => candidate.path),
+    ).toEqual(['lic.txt']);
+    expect(
+      terminalFileLinkCandidates(
+        '-rw-r--r-- 1 root root 928 2025-12-01 09:42 +0100 lic.txt',
+      ).map((candidate) => candidate.path),
+    ).toEqual(['lic.txt']);
+  });
+
+  it('underlines a detected path on hover and opens it with a plain left-click', () => {
+    const { terminal, provider } = terminalWithLine('output: src/main.ts');
+    const onOpen = vi.fn();
+    attachTerminalFileLinks(terminal, onOpen);
+    let links: ProvidedLink[] | undefined;
+    provider().provideLinks(1, (provided) => {
+      links = provided;
+    });
+    expect(links).toHaveLength(1);
+    expect(links![0]!.range).toEqual({
+      start: { x: 9, y: 1 },
+      end: { x: 19, y: 1 },
+    });
+
+    const preventDefault = vi.fn();
+    const stopPropagation = vi.fn();
+    links![0]!.activate(
+      { button: 2, altKey: true, preventDefault, stopPropagation } as unknown as MouseEvent,
+      'src/main.ts',
+    );
+    expect(onOpen).not.toHaveBeenCalled();
+
+    expect(links![0]!.decorations).toEqual({ pointerCursor: true, underline: true });
+
+    links![0]!.activate(
+      { button: 0, altKey: false, preventDefault, stopPropagation } as unknown as MouseEvent,
+      'src/main.ts',
+    );
+    expect(onOpen).toHaveBeenCalledOnce();
+    expect(onOpen).toHaveBeenCalledWith('src/main.ts');
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(stopPropagation).toHaveBeenCalledOnce();
+  });
+});
+
+describe('terminal web links', () => {
+  it('opens a valid web URL directly so Electron can hand it to the system browser', () => {
+    const open = vi.fn();
+    vi.stubGlobal('window', { open });
+    const preventDefault = vi.fn();
+    const stopPropagation = vi.fn();
+
+    openTerminalWebLink(
+      { preventDefault, stopPropagation } as unknown as MouseEvent,
+      'https://google.com',
+    );
+
+    expect(open).toHaveBeenCalledWith('https://google.com/', '_blank', 'noopener');
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(stopPropagation).toHaveBeenCalledOnce();
+  });
+
+  it('ignores malformed and non-web URLs', () => {
+    const open = vi.fn();
+    vi.stubGlobal('window', { open });
+    const event = { preventDefault: vi.fn(), stopPropagation: vi.fn() } as unknown as MouseEvent;
+
+    openTerminalWebLink(event, 'file:///etc/passwd');
+    openTerminalWebLink(event, 'not a URL');
+
+    expect(open).not.toHaveBeenCalled();
+  });
+});
+
+describe('remote file path resolution', () => {
+  it('normalizes absolute and current-directory-relative paths', () => {
+    expect(resolveRemoteFilePath('/srv/app/../config.toml', '/ignored')).toBe('/srv/config.toml');
+    expect(resolveRemoteFilePath('./src/../README.md', '/srv/app')).toBe('/srv/app/README.md');
+    expect(resolveRemoteFilePath('../../etc/hosts', '/srv/app')).toBe('/etc/hosts');
+  });
+
+  it('resolves the current user home only when SFTP supplied it', () => {
+    expect(resolveRemoteFilePath('~/.ssh/config', '/srv/app')).toBeUndefined();
+    expect(resolveRemoteFilePath('~/.ssh/config', '/srv/app', '/home/alice')).toBe(
+      '/home/alice/.ssh/config',
+    );
+    expect(resolveRemoteFilePath('~bob/.ssh/config', '/srv/app', '/home/alice')).toBeUndefined();
+  });
+
+  it('requires an absolute shell working directory for relative paths', () => {
+    expect(resolveRemoteFilePath('src/main.ts')).toBeUndefined();
+    expect(resolveRemoteFilePath('src/main.ts', '.')).toBeUndefined();
+  });
+});

@@ -32,9 +32,10 @@ import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import type { TerminalServerMessage } from '@muxus/shared';
-import { wsProtocols, wsUrl } from '../api/http.js';
+import { apiFetch, wsProtocols, wsUrl } from '../api/http.js';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
 import { copyToClipboard, readFromClipboard } from '../clipboard.js';
+import { loadMonacoTextEditor, loadRemoteEditorWorkspace } from '../lazy-features.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { showToast } from '../state/toast.js';
 import { broadcastTerminalInput } from '../state/multi-exec.js';
@@ -58,6 +59,11 @@ import {
   type KeywordHighlighter,
 } from '../terminal/keyword-highlighting.js';
 import { registerTerminal } from '../terminal/terminal-registry.js';
+import {
+  attachTerminalFileLinks,
+  resolveRemoteFilePath,
+} from '../terminal/file-links.js';
+import { openTerminalWebLink } from '../terminal/web-links.js';
 import { requiresPasteConfirmation } from '../terminal/paste-safety.js';
 import { shouldFitTerminal } from '../terminal/terminal-fit.js';
 import {
@@ -117,6 +123,50 @@ function bufferText(term: Terminal): string {
   }
   while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
   return lines.length ? `${lines.join('\n')}\n` : '';
+}
+
+async function openLinkedRemoteFile(tabId: string, candidate: string): Promise<void> {
+  let current = useTabsStore.getState().tabs.find((tab) => tab.id === tabId);
+  if (!current?.profile || current.profile.kind !== 'ssh') return;
+  if (current.sftpAvailable === false) {
+    showToast('warning', 'SFTP is disabled for this host, so remote files cannot be edited.');
+    return;
+  }
+  const connId = current.connId;
+  if (!connId) {
+    showToast('warning', 'Reconnect the SSH session before opening a remote file.');
+    return;
+  }
+
+  let path = resolveRemoteFilePath(candidate, current.terminalCwd);
+  if (!path && candidate.startsWith('~/')) {
+    try {
+      const home = await apiFetch<{ path: string }>(`/api/sftp/${connId}/home`);
+      current = useTabsStore.getState().tabs.find((tab) => tab.id === tabId);
+      if (current?.connId !== connId) return;
+      path = resolveRemoteFilePath(candidate, current.terminalCwd, home.path);
+    } catch (error) {
+      showToast(
+        'warning',
+        `Could not resolve the remote home directory: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return;
+    }
+  }
+  if (!path) {
+    showToast(
+      'warning',
+      'The remote working directory is unavailable. Click an absolute path instead.',
+    );
+    return;
+  }
+
+  // Start both lazy chunks together; the editor still stays out of the
+  // terminal bundle and is loaded only after an explicit file-open gesture.
+  void Promise.all([loadRemoteEditorWorkspace(), loadMonacoTextEditor()]).catch(() => undefined);
+  useTabsStore.getState().openEditor(tabId, path);
 }
 
 export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; active: boolean }) {
@@ -346,7 +396,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     term.loadAddon(fit);
     term.loadAddon(new Unicode11Addon());
     term.unicode.activeVersion = '11';
-    term.loadAddon(new WebLinksAddon());
+    term.loadAddon(new WebLinksAddon(openTerminalWebLink));
     // xterm 6.1 streams Kitty APC payloads straight into ImageAddon's WASM
     // base64 decoder. This also handles Sixel and iTerm2 inline images.
     const image = new ImageAddon({
@@ -540,6 +590,10 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
               .tabs.find((candidate) => candidate.id === tab.id);
             if (current?.terminalCwd !== terminalCwd) updateTab(tab.id, { terminalCwd });
           })
+        : undefined;
+    const fileLinks =
+      tab.profile.kind === 'ssh'
+        ? attachTerminalFileLinks(term, (candidate) => openLinkedRemoteFile(tab.id, candidate))
         : undefined;
 
     // Application chords never reach xterm: the shortcut layer consumes them
@@ -1012,6 +1066,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       onSearchResults.dispose();
       commandTracker.dispose();
       cwdTracker?.dispose();
+      fileLinks?.dispose();
       keywordHighlighterRef.current?.dispose();
       if (interruptionTimer !== undefined) clearTimeout(interruptionTimer);
       if (autoReconnectTimer !== undefined) clearTimeout(autoReconnectTimer);

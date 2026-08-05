@@ -74,6 +74,7 @@ resetting them.
 | Action | Gesture |
 | --- | --- |
 | Zoom the terminal | ++ctrl++ + scroll wheel |
+| Open a remote terminal path in the editor | Hover for an underline, then left-click |
 | Resize a split, reset it to half | Drag the divider, double-click it |
 | Pane actions (split, zoom, close) | Right-click the tab strip |
 | Rename a tab, close a tab | Double-click it, middle-click it |
