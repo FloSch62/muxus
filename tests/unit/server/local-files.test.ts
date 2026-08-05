@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, readdir, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -82,7 +82,8 @@ describe('local file editor routes', () => {
 
   it('reads UTF-8 text and saves it atomically without changing its bytes', async () => {
     const file = path.join(root, 'notes.txt');
-    await writeFile(file, 'before', { mode: 0o674 });
+    await writeFile(file, 'before');
+    if (process.platform !== 'win32') await chmod(file, 0o674);
     const { read, save } = captureHandlers();
 
     const opened = await invoke(read, { path: file });
