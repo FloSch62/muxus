@@ -132,7 +132,10 @@ function startServer(opts: {
 let knownHostsCounter = 0;
 function makeManager(
   configFile = emptyConfig,
-  disableSftpForHost?: (alias: string) => boolean,
+  options: {
+    disableSftpForHost?: (alias: string) => boolean;
+    consoleCompatibilityForHost?: (alias: string) => boolean;
+  } = {},
 ): SshConnectionManager {
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   return new SshConnectionManager(log as never, {
@@ -141,7 +144,7 @@ function makeManager(
       path.join(tmp, 'no-global-known-hosts'),
     ),
     loadConfig: () => loadConfigDocument(configFile),
-    disableSftpForHost,
+    ...options,
   });
 }
 
@@ -324,7 +327,9 @@ describe('SSH connection multiplexing', () => {
         `  Port ${started.port}`,
       ].join('\n'),
     );
-    manager = makeManager(configFile, (alias) => alias === 'console');
+    manager = makeManager(configFile, {
+      consoleCompatibilityForHost: (alias) => alias === 'console',
+    });
 
     const shell = await manager.connectShell(
       { kind: 'ssh', target: 'console', passwordOnly: true },
@@ -364,7 +369,9 @@ describe('SSH connection multiplexing', () => {
         '  SetEnv TERM=xterm-256color',
       ].join('\n'),
     );
-    manager = makeManager(configFile, (alias) => alias === 'console');
+    manager = makeManager(configFile, {
+      consoleCompatibilityForHost: (alias) => alias === 'console',
+    });
 
     const shell = await manager.connectShell(
       { kind: 'ssh', target: 'console', passwordOnly: true },
@@ -414,6 +421,80 @@ describe('SSH connection multiplexing', () => {
     expect(started.stats.shells).toBe(1);
   }, 15_000);
 
+  it('preserves env requests for existing disable-SFTP hosts', async () => {
+    const started = await startServer();
+    server = started.server;
+    const configFile = path.join(tmp, `ssh_config-disable-sftp-${knownHostsCounter}`);
+    writeFileSync(
+      configFile,
+      [
+        'Host legacy',
+        '  HostName 127.0.0.1',
+        '  User tester',
+        `  Port ${started.port}`,
+        '  SetEnv MUXUS_TEST=from-config',
+      ].join('\n'),
+    );
+    manager = makeManager(configFile, {
+      disableSftpForHost: (alias) => alias === 'legacy',
+    });
+
+    const shell = await manager.connectShell(
+      { kind: 'ssh', target: 'legacy', passwordOnly: true },
+      makeIo().io,
+      80,
+      24,
+      'xterm-256color',
+    );
+
+    expect(shell.lease.connection.sftpAvailable).toBe(false);
+    expect(started.stats).toMatchObject({
+      envRequests: 1,
+      execs: 0,
+      ptyRequests: 1,
+      sftpRequests: 0,
+      shells: 1,
+    });
+  }, 15_000);
+
+  it('applies console compatibility to RemoteCommand sessions', async () => {
+    const started = await startServer({ rejectPty: true });
+    server = started.server;
+    const configFile = path.join(tmp, `ssh_config-console-command-${knownHostsCounter}`);
+    writeFileSync(
+      configFile,
+      [
+        'Host console',
+        '  HostName 127.0.0.1',
+        '  User tester',
+        `  Port ${started.port}`,
+        '  SetEnv MUXUS_TEST=from-config',
+        '  RemoteCommand show version',
+        '  RequestTTY yes',
+      ].join('\n'),
+    );
+    manager = makeManager(configFile, {
+      consoleCompatibilityForHost: (alias) => alias === 'console',
+    });
+
+    const shell = await manager.connectShell(
+      { kind: 'ssh', target: 'console', passwordOnly: true },
+      makeIo().io,
+      80,
+      24,
+      'xterm-256color',
+    );
+
+    expect(shell.lease.connection.sftpAvailable).toBe(false);
+    expect(started.stats).toMatchObject({
+      envRequests: 0,
+      execs: 1,
+      ptyRequests: 1,
+      sftpRequests: 0,
+      shells: 0,
+    });
+  }, 15_000);
+
   it('honors an explicit RequestTTY yes in console mode', async () => {
     const started = await startServer();
     server = started.server;
@@ -428,7 +509,9 @@ describe('SSH connection multiplexing', () => {
         '  RequestTTY yes',
       ].join('\n'),
     );
-    manager = makeManager(configFile, (alias) => alias === 'console');
+    manager = makeManager(configFile, {
+      consoleCompatibilityForHost: (alias) => alias === 'console',
+    });
 
     await manager.connectShell(
       { kind: 'ssh', target: 'console', passwordOnly: true },
@@ -490,23 +573,27 @@ describe('SSH connection multiplexing', () => {
     );
   }, 15_000);
 
-  it('does not share transports across different SFTP compatibility settings', async () => {
+  it('does not share transports between disable-SFTP and console modes', async () => {
     const started = await startServer();
     server = started.server;
     const configFile = path.join(tmp, `ssh_config-sftp-isolation-${knownHostsCounter}`);
     writeFileSync(
       configFile,
       [
-        'Host regular console',
+        'Host legacy console',
         '  HostName 127.0.0.1',
         '  User tester',
         `  Port ${started.port}`,
+        '  SetEnv MUXUS_TEST=from-config',
       ].join('\n'),
     );
-    manager = makeManager(configFile, (alias) => alias === 'console');
+    manager = makeManager(configFile, {
+      disableSftpForHost: (alias) => alias === 'legacy',
+      consoleCompatibilityForHost: (alias) => alias === 'console',
+    });
 
-    const regular = await manager.connectShell(
-      { kind: 'ssh', target: 'regular', passwordOnly: true },
+    const legacy = await manager.connectShell(
+      { kind: 'ssh', target: 'legacy', passwordOnly: true },
       makeIo().io,
       80,
       24,
@@ -520,7 +607,8 @@ describe('SSH connection multiplexing', () => {
       'xterm-256color',
     );
 
-    expect(consoleShell.lease.connection.id).not.toBe(regular.lease.connection.id);
+    expect(consoleShell.lease.connection.id).not.toBe(legacy.lease.connection.id);
     expect(started.stats.connections).toBe(2);
+    expect(started.stats.envRequests).toBe(1);
   }, 15_000);
 });

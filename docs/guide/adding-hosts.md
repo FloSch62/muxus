@@ -107,6 +107,11 @@ Terminal allocation follows the host's TTY setting either way: Muxus asks for a 
 continues without one when the device rejects `pty-req`. The file-browser controls are unavailable
 for plain-console sessions.
 
+For an otherwise normal SSH server that only lacks SFTP or cannot use Muxus shell integration,
+**Disable SFTP and shell integration only** keeps environment requests and normal terminal
+allocation intact. This remains separate from console compatibility so existing disabled-SFTP
+hosts keep their previous session behavior.
+
 Any other keyword OpenSSH understands is entered here as free-form option/value pairs. The
 panel shows the **exact block** that will be written.
 

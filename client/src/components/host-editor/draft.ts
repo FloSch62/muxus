@@ -24,8 +24,10 @@ export interface HostDraft {
   displayName: string;
   group: string;
   color?: string;
-  /** Muxus-only console compatibility: no SFTP, shell integration, or env requests. */
+  /** Muxus-only plain-shell mode: no SFTP or shell integration. */
   disableSftp: boolean;
+  /** Muxus-only console mode: also no env requests, with PTY rejection fallback. */
+  consoleCompatibility: boolean;
   /** Target config file; '' keeps the block's file (or the root for new hosts). */
   file: string;
   hostname: string;
@@ -64,6 +66,7 @@ export function blankDraft(prefillTarget = ''): HostDraft {
     group: '',
     color: undefined,
     disableSftp: false,
+    consoleCompatibility: false,
     file: '',
     hostname: parsed?.host ?? '',
     user: parsed?.user ?? '',
@@ -103,6 +106,7 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
     group: entry.metadata?.group ?? '',
     color: entry.metadata?.color,
     disableSftp: entry.metadata?.disableSftp ?? false,
+    consoleCompatibility: entry.metadata?.consoleCompatibility ?? false,
     file: entry.file,
     hostname: o.hostname ?? '',
     user: o.user ?? '',

@@ -72,6 +72,7 @@ describe('SSH host editor draft', () => {
     expect(draft.strictHostKeyChecking).toBe('inherit');
     expect(draft.identitiesOnly).toBe(true);
     expect(draft.disableSftp).toBe(false);
+    expect(draft.consoleCompatibility).toBe(false);
     expect(draftToRequest(draft).options.proxyCommand).toBeUndefined();
   });
 
@@ -83,13 +84,16 @@ describe('SSH host editor draft', () => {
           profileId: 'profile-cloud',
           connectCount: 0,
           disableSftp: true,
+          consoleCompatibility: true,
         },
       },
       false,
     );
 
     expect(draft.disableSftp).toBe(true);
+    expect(draft.consoleCompatibility).toBe(true);
     expect(draftToRequest(draft).options).not.toHaveProperty('disableSftp');
+    expect(draftToRequest(draft).options).not.toHaveProperty('consoleCompatibility');
   });
 
   it('makes the specific-key promise independent of the SSH agent', () => {

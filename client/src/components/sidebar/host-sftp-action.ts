@@ -6,7 +6,11 @@ import { useTabsStore } from '../../state/tabs.js';
 export function managedHostSupportsSftp(
   host: ManagedHost,
 ): host is Extract<ManagedHost, { kind: 'ssh' }> {
-  return host.kind === 'ssh' && host.entry.metadata?.disableSftp !== true;
+  return (
+    host.kind === 'ssh' &&
+    host.entry.metadata?.disableSftp !== true &&
+    host.entry.metadata?.consoleCompatibility !== true
+  );
 }
 
 /**

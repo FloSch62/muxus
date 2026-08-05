@@ -48,14 +48,27 @@ export function AdvancedSection({
         <FormControlLabel
           control={
             <Switch
-              checked={draft.disableSftp}
-              onChange={(event) => set({ disableSftp: event.target.checked })}
+              checked={draft.consoleCompatibility}
+              onChange={(event) => set({ consoleCompatibility: event.target.checked })}
             />
           }
           label="Enable console compatibility mode"
         />
         <Typography variant="body2" color="text.secondary">
           Skips SFTP, shell integration, and SendEnv/SetEnv requests. TTY settings still apply.
+        </Typography>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={draft.disableSftp}
+              onChange={(event) => set({ disableSftp: event.target.checked })}
+            />
+          }
+          label="Disable SFTP and shell integration only"
+        />
+        <Typography variant="body2" color="text.secondary">
+          Keeps SendEnv/SetEnv and normal TTY behavior. Console mode already disables SFTP and
+          shell integration, regardless of this setting.
         </Typography>
       </Stack>
 

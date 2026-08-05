@@ -435,8 +435,10 @@ export interface OpenSshProfileMetadata {
   icon?: string;
   /** Muxus-only terminal highlighting for this OpenSSH alias. */
   keywordHighlights?: HostKeywordHighlightConfig;
-  /** No SFTP channels, remote shell-integration probes, or env requests. */
+  /** Do not open SFTP channels or probe for remote Unix shell integration. */
   disableSftp?: boolean;
+  /** Console appliances: also suppress env requests and tolerate a rejected PTY. */
+  consoleCompatibility?: boolean;
   lastConnectedAt?: string;
   connectCount: number;
 }
@@ -448,6 +450,7 @@ export interface OpenSshMetadataPatch {
   icon?: string | null;
   keywordHighlights?: HostKeywordHighlightConfig | null;
   disableSftp?: boolean;
+  consoleCompatibility?: boolean;
 }
 
 /**

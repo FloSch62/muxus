@@ -155,6 +155,14 @@ describe('managed host identity and clipboard actions', () => {
 
     expect(managedHostSupportsSftp(ssh)).toBe(true);
     expect(managedHostSupportsSftp({ kind: 'ssh', entry: disabled })).toBe(false);
+
+    const consoleCompatible = sshHost('console-compatible');
+    consoleCompatible.metadata = {
+      profileId: 'ssh-console-compatible',
+      connectCount: 0,
+      consoleCompatibility: true,
+    };
+    expect(managedHostSupportsSftp({ kind: 'ssh', entry: consoleCompatible })).toBe(false);
     expect(managedHostSupportsSftp(telnet)).toBe(false);
     expect(managedHostSupportsSftp(serial)).toBe(false);
   });
