@@ -80,7 +80,9 @@ expression options. Every match is marked in the scrollbar.
 
 ## Copy, paste and export
 
-- **Copy** ++ctrl+shift+c++, **paste** ++ctrl+shift+v++. *Copy on select* is optional.
+- **Copy** ++ctrl+shift+c++. **Paste** uses ++ctrl+v++ (or ++cmd+v++ on macOS), with
+  ++ctrl+shift+v++ available as the terminal-style alternative. *Copy on select* is
+  optional.
 - **Right-click** is configurable: copy-selection-otherwise-paste (the terminal
   convention), always paste, or a context menu.
 - **Select all** ++ctrl+shift+a++, **copy all output** and **clear scrollback**

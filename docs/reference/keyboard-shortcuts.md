@@ -16,9 +16,9 @@ resetting them.
 
 !!! info "`Mod` is Ctrl, or Command on macOS"
 
-    One default table serves every platform. Chords marked ++ctrl++ below are ++cmd++ on
-    macOS. A few extra Command-only chords exist on macOS where Ctrl belongs to the shell:
-    ++cmd+w++ closes a tab, and ++cmd+1++ … ++cmd+9++ select one.
+    Chords marked ++ctrl++ below are ++cmd++ on macOS. A few extra Command-only chords
+    exist on macOS where Ctrl belongs to the shell: ++cmd+w++ closes a tab, and
+    ++cmd+1++ … ++cmd+9++ select one.
 
 ## Panes
 
@@ -51,7 +51,7 @@ resetting them.
 | Command | Chord |
 | --- | --- |
 | Copy selection | ++ctrl+shift+c++ |
-| Paste | ++ctrl+shift+v++ |
+| Paste | ++ctrl+v++, ++ctrl+shift+v++ |
 | Show [saved command menu](../guide/commands.md#keyboard-menu) | ++ctrl+space++ |
 | Find in terminal | ++ctrl+shift+f++ |
 | Select all output | ++ctrl+shift+a++ |

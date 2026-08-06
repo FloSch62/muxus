@@ -40,6 +40,7 @@ import {
 } from '../api/http.js';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
 import { copyToClipboard, readFromClipboard } from '../clipboard.js';
+import { useChordLabel } from '../keymap/hints.js';
 import { loadMonacoTextEditor, loadRemoteEditorWorkspace } from '../lazy-features.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { showToast } from '../state/toast.js';
@@ -270,6 +271,8 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const backgroundColor = usePrefsStore((s) => s.backgroundColor);
   const globalKeywordHighlights = usePrefsStore((s) => s.keywordHighlights);
   const keywordHighlightProfiles = usePrefsStore((s) => s.keywordHighlightProfiles);
+  const copyChord = useChordLabel('terminal.copy');
+  const pasteChord = useChordLabel('terminal.paste');
   const scheme = terminalScheme(schemeId);
   const terminalTheme = useMemo(
     () => themeWithColorOverrides(scheme.theme, fontColor, backgroundColor),
@@ -1466,9 +1469,11 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             <ContentCopyIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>Copy</ListItemText>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 3 }}>
-            Ctrl+Shift+C
-          </Typography>
+          {copyChord ? (
+            <Typography variant="caption" color="text.secondary" sx={{ ml: 3 }}>
+              {copyChord}
+            </Typography>
+          ) : null}
         </MenuItem>
         <MenuItem
           onClick={() => {
@@ -1480,9 +1485,11 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             <ContentPasteIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>Paste</ListItemText>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 3 }}>
-            Ctrl+Shift+V
-          </Typography>
+          {pasteChord ? (
+            <Typography variant="caption" color="text.secondary" sx={{ ml: 3 }}>
+              {pasteChord}
+            </Typography>
+          ) : null}
         </MenuItem>
         <Divider />
         <MenuItem

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildBindingIndex,
   chordsAreDefault,
@@ -19,7 +19,14 @@ import {
   parseChord,
 } from '../../../client/src/keymap/chords.js';
 import { KEY_COMMANDS, keyCommand } from '../../../client/src/keymap/commands.js';
+import { useTabsStore } from '../../../client/src/state/tabs.js';
 import { useUiStore } from '../../../client/src/state/ui.js';
+import {
+  registerTerminal,
+  type TerminalHandle,
+} from '../../../client/src/terminal/terminal-registry.js';
+
+afterEach(() => vi.unstubAllGlobals());
 
 const keyEvent = (
   key: string,
@@ -116,6 +123,33 @@ describe('default bindings', () => {
     expect(commandsForChord('Ctrl+KeyW')).toEqual([]);
     expect(commandsForChord('Alt+Digit3').map((command) => command.id)).toEqual(['tab.select.3']);
     expect(commandsForChord('Ctrl+Shift+KeyW').map((command) => command.id)).toEqual(['tab.close']);
+  });
+
+  it('binds both desktop-native and terminal-style paste chords', () => {
+    expect(commandsForChord('Ctrl+KeyV').map((command) => command.id)).toEqual([
+      'terminal.paste',
+    ]);
+    expect(commandsForChord('Ctrl+Shift+KeyV').map((command) => command.id)).toEqual([
+      'terminal.paste',
+    ]);
+    expect(commandChords(keyCommand('terminal.paste')!, { 'terminal.paste': [] })).toEqual([]);
+  });
+
+  it('routes keyboard paste through the active terminal paste pipeline', async () => {
+    const readText = vi.fn(async () => 'first line\nsecond line');
+    const paste = vi.fn();
+    vi.stubGlobal('navigator', { clipboard: { readText } });
+    const unregister = registerTerminal('paste-target', { paste } as unknown as TerminalHandle);
+    const previousActiveId = useTabsStore.getState().activeId;
+    useTabsStore.setState({ activeId: 'paste-target' });
+
+    try {
+      expect(keyCommand('terminal.paste')?.run()).toBe(true);
+      await vi.waitFor(() => expect(paste).toHaveBeenCalledWith('first line\nsecond line'));
+    } finally {
+      unregister();
+      useTabsStore.setState({ activeId: previousActiveId });
+    }
   });
 
   it('binds multi-execution to a chord of its own', () => {

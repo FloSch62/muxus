@@ -283,7 +283,7 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
     id: 'terminal.paste',
     title: 'Paste into terminal',
     category: 'terminal',
-    defaultChords: ['Mod+Shift+V'],
+    defaultChords: ['Mod+V', 'Mod+Shift+V'],
     palette: false,
     run: () => {
       const handle = activeTerminal();
