@@ -34,7 +34,11 @@ declare global {
       /** Open a secondary native application window. */
       openWindow(launch: AppWindowLaunch): void;
       /** Register the saved workspace currently owned by this native window. */
-      setActiveWorkspace(workspaceId?: string): void;
+      setActiveWorkspace(
+        workspaceId?: string,
+        workspaceTitle?: string,
+        clearReloadLaunch?: boolean,
+      ): void;
       /** Bring this native window to the foreground. */
       focusWindow(): void;
       /** Subscribe to the OS close-window chord (Cmd/Ctrl+W); returns unsubscribe. */

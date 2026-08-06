@@ -380,7 +380,7 @@ export class WorkspaceRuntime {
         error: undefined,
       }));
       const nextActive = useWorkspacesStore.getState();
-      this.updateActiveWorkspace(nextActive.activeId, nextActive.activeName);
+      this.updateActiveWorkspace(nextActive.activeId, nextActive.activeName, id === activeId);
       this.sync.invalidateCatalog();
     });
   }
@@ -474,11 +474,15 @@ export class WorkspaceRuntime {
       startupId: workspaces.find((workspace) => workspace.isStartup)?.id,
       error: message,
     });
-    this.updateActiveWorkspace(undefined, 'Unsaved workspace');
+    this.updateActiveWorkspace(undefined, 'Unsaved workspace', true);
   }
 
-  private updateActiveWorkspace(id: string | undefined, name: string): void {
-    this.sync.setActiveWorkspace(id);
+  private updateActiveWorkspace(
+    id: string | undefined,
+    name: string,
+    clearReloadLaunch = false,
+  ): void {
+    this.sync.setActiveWorkspace(id, name, clearReloadLaunch);
     if (typeof document === 'undefined') return;
     if (id) document.title = `${name} — Muxus`;
     else if (document.title.endsWith(' — Muxus')) document.title = 'Muxus';

@@ -31,6 +31,7 @@ import {
 import { importLoginShellEnvironment } from './login-shell-environment.js';
 import { initMainLog, installCrashCapture, mainLog, mainLogPath } from './main-log.js';
 import { readLocalMobaXtermSessions } from './mobaxterm.js';
+import { workspaceOwnershipUpdate } from './workspace-window-state.js';
 
 // Name first: userData (and with it the log location) derives from it.
 app.setName('Muxus');
@@ -456,18 +457,27 @@ ipcMain.on('muxus:open-window', (event, value: unknown) => {
   createWindow(appUrl, launch);
 });
 
-ipcMain.on('muxus:active-workspace', (event, value: unknown) => {
-  if (!isManagedWindowSender(event)) return;
-  // Once the renderer reports live ownership, the boot launch is no longer a
-  // reliable description of this window (the user may switch workspaces).
-  windowLaunches.delete(event.sender.id);
-  if (value === undefined || value === null) {
-    activeWorkspaceByWebContents.delete(event.sender.id);
-    return;
-  }
-  if (typeof value !== 'string' || value.length === 0 || value.length > 200) return;
-  activeWorkspaceByWebContents.set(event.sender.id, value);
-});
+ipcMain.on(
+  'muxus:active-workspace',
+  (event, value: unknown, title: unknown, clearLaunch: unknown) => {
+    if (!isManagedWindowSender(event)) return;
+    const update = workspaceOwnershipUpdate(
+      windowLaunches.get(event.sender.id),
+      value,
+      title,
+      clearLaunch,
+    );
+    if (!update.accepted) return;
+
+    if (update.reloadLaunch) windowLaunches.set(event.sender.id, update.reloadLaunch);
+    else windowLaunches.delete(event.sender.id);
+    if (!update.activeWorkspaceId) {
+      activeWorkspaceByWebContents.delete(event.sender.id);
+      return;
+    }
+    activeWorkspaceByWebContents.set(event.sender.id, update.activeWorkspaceId);
+  },
+);
 
 ipcMain.on('muxus:focus-window', (event) => {
   const win = senderWindow(event);

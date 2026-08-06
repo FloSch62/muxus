@@ -124,8 +124,17 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   openWindow(launch: AppWindowLaunch): void {
     ipcRenderer.send('muxus:open-window', launch);
   },
-  setActiveWorkspace(workspaceId?: string): void {
-    ipcRenderer.send('muxus:active-workspace', workspaceId);
+  setActiveWorkspace(
+    workspaceId?: string,
+    workspaceTitle?: string,
+    clearReloadLaunch?: boolean,
+  ): void {
+    ipcRenderer.send(
+      'muxus:active-workspace',
+      workspaceId,
+      workspaceTitle,
+      clearReloadLaunch,
+    );
   },
   focusWindow(): void {
     ipcRenderer.send('muxus:focus-window');

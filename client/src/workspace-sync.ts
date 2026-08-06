@@ -109,17 +109,24 @@ export class WorkspaceWindowSync {
       window.removeEventListener('storage', this.handleStorage);
       window.removeEventListener('focus', this.handleFocus);
       window.removeEventListener('pagehide', this.handlePageHide);
-      window.muxusDesktop?.setActiveWorkspace(undefined);
     }
     this.remotes.clear();
     this.publishCounts();
   }
 
-  setActiveWorkspace(workspaceId?: string): void {
+  setActiveWorkspace(
+    workspaceId?: string,
+    workspaceTitle?: string,
+    clearReloadLaunch = false,
+  ): void {
     const changed = workspaceId !== this.activeWorkspaceId;
     this.activeWorkspaceId = workspaceId;
     if (typeof window !== 'undefined') {
-      window.muxusDesktop?.setActiveWorkspace(workspaceId);
+      window.muxusDesktop?.setActiveWorkspace(
+        workspaceId,
+        workspaceTitle,
+        clearReloadLaunch,
+      );
     }
     if (changed) this.announcePresence();
   }
