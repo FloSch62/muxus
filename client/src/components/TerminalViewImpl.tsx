@@ -67,6 +67,10 @@ import { openTerminalWebLink } from '../terminal/web-links.js';
 import { requiresPasteConfirmation } from '../terminal/paste-safety.js';
 import { shouldFitTerminal } from '../terminal/terminal-fit.js';
 import {
+  terminalRightClickIntent,
+  xtermRightClickSelectsWord,
+} from '../terminal/right-click.js';
+import {
   AuthPromptDialog,
   type AuthPromptRequest,
   type AuthPromptResult,
@@ -210,6 +214,8 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const imageRef = useRef<ImageAddon | null>(null);
   const keywordHighlighterRef = useRef<KeywordHighlighter | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  /** xterm's native default is enabled on macOS and disabled elsewhere. */
+  const rightClickSelectsWordDefaultRef = useRef(false);
   const lastSearchRequestRef = useRef(tab.searchRequest);
   /** Per-tab zoom offset added to the preference font size. */
   const zoomRef = useRef(0);
@@ -229,7 +235,11 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const [searchWord, setSearchWord] = useState(false);
   const [searchRegex, setSearchRegex] = useState(false);
   const [searchResult, setSearchResult] = useState({ resultIndex: -1, resultCount: 0 });
-  const [ctxMenu, setCtxMenu] = useState<{ top: number; left: number; hasSelection: boolean } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{
+    top: number;
+    left: number;
+    selection: string;
+  } | null>(null);
   const [generation, setGeneration] = useState(tab.connectOnMount ? 1 : 0);
   const reconnectRequest = useTabsStore(
     (s) => s.tabs.find((candidate) => candidate.id === tab.id)?.reconnectRequest ?? 0,
@@ -342,23 +352,33 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   // (copy the selection when there is one, otherwise paste), always paste,
   // or a context menu. Paste goes through term.paste() so bracketed-paste
   // mode reaches the remote shell intact.
+  const prepareRightClick = () => {
+    const term = termRef.current;
+    if (!term) return;
+    term.options.rightClickSelectsWord = xtermRightClickSelectsWord(
+      rightClickSelectsWordDefaultRef.current,
+      usePrefsStore.getState().rightClickAction,
+      term.hasSelection(),
+    );
+  };
+
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     const term = termRef.current;
     if (!term) return;
-    const action = usePrefsStore.getState().rightClickAction;
-    if (action === 'menu') {
-      setCtxMenu({ top: e.clientY, left: e.clientX, hasSelection: term.hasSelection() });
+    const intent = terminalRightClickIntent(
+      usePrefsStore.getState().rightClickAction,
+      term.getSelection(),
+    );
+    if (intent.kind === 'menu') {
+      setCtxMenu({ top: e.clientY, left: e.clientX, selection: intent.selection });
       return;
     }
-    if (action === 'copy-paste') {
-      const selection = term.getSelection();
-      if (selection) {
-        void copyToClipboard(selection).then((ok) => {
-          if (ok) term.clearSelection();
-        });
-        return;
-      }
+    if (intent.kind === 'copy') {
+      void copyToClipboard(intent.selection).then((ok) => {
+        if (ok) term.clearSelection();
+      });
+      return;
     }
     pasteFromClipboard();
   };
@@ -421,6 +441,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       // Installing a second encoder would emit printable keys twice.
       vtExtensions: { kittyKeyboard: true },
     });
+    rightClickSelectsWordDefaultRef.current = term.options.rightClickSelectsWord ?? false;
     const fit = new FitAddon();
     fitRef.current = fit;
     termRef.current = term;
@@ -1216,6 +1237,11 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     <Box sx={{ height: '100%', p: 1, pt: 0.75, minHeight: 0, position: 'relative' }}>
       <Box
         ref={containerRef}
+        onMouseDownCapture={(event) => {
+          // Firefox runs xterm's right-click handler on mousedown.
+          if (event.button === 2) prepareRightClick();
+        }}
+        onContextMenuCapture={prepareRightClick}
         onContextMenu={onContextMenu}
         sx={{
           height: '100%',
@@ -1357,11 +1383,12 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         anchorPosition={ctxMenu ?? undefined}
       >
         <MenuItem
-          disabled={!ctxMenu?.hasSelection}
+          disabled={!ctxMenu?.selection}
           onClick={() => {
             const term = termRef.current;
-            if (term?.hasSelection()) {
-              void copyToClipboard(term.getSelection()).then((ok) => {
+            const selection = ctxMenu?.selection;
+            if (term && selection) {
+              void copyToClipboard(selection).then((ok) => {
                 if (ok) term.clearSelection();
               });
             }
