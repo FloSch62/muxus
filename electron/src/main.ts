@@ -72,6 +72,7 @@ let primaryWindow: BrowserWindow | undefined;
 let appUrl: string | undefined;
 const managedWindows = new Set<BrowserWindow>();
 const windowLaunches = new Map<number, AppWindowLaunch>();
+const activeWorkspaceByWebContents = new Map<number, string>();
 let server: RunningServer | undefined;
 let closing: Promise<void> | undefined;
 let updateCheck: Promise<UpdateCheckResult> | undefined;
@@ -319,6 +320,7 @@ function createWindow(url: string, launch?: AppWindowLaunch): BrowserWindow {
   win.on('closed', () => {
     managedWindows.delete(win);
     windowLaunches.delete(webContentsId);
+    activeWorkspaceByWebContents.delete(webContentsId);
     if (primaryWindow === win) primaryWindow = undefined;
   });
   // A dead renderer looks like "the app won't start" — leave its exit trace.
@@ -437,7 +439,42 @@ ipcMain.on('muxus:open-window', (event, value: unknown) => {
   if (!isManagedWindowSender(event) || !appUrl) return;
   const launch = parseWindowLaunch(value);
   if (!launch) return;
+  if (launch.kind === 'workspace' && launch.workspaceId) {
+    const existing = [...managedWindows].find((candidate) => {
+      const webContentsId = candidate.webContents.id;
+      if (activeWorkspaceByWebContents.get(webContentsId) === launch.workspaceId) return true;
+      const pending = windowLaunches.get(webContentsId);
+      return pending?.kind === 'workspace' && pending.workspaceId === launch.workspaceId;
+    });
+    if (existing) {
+      if (existing.isMinimized()) existing.restore();
+      existing.show();
+      existing.focus();
+      return;
+    }
+  }
   createWindow(appUrl, launch);
+});
+
+ipcMain.on('muxus:active-workspace', (event, value: unknown) => {
+  if (!isManagedWindowSender(event)) return;
+  // Once the renderer reports live ownership, the boot launch is no longer a
+  // reliable description of this window (the user may switch workspaces).
+  windowLaunches.delete(event.sender.id);
+  if (value === undefined || value === null) {
+    activeWorkspaceByWebContents.delete(event.sender.id);
+    return;
+  }
+  if (typeof value !== 'string' || value.length === 0 || value.length > 200) return;
+  activeWorkspaceByWebContents.set(event.sender.id, value);
+});
+
+ipcMain.on('muxus:focus-window', (event) => {
+  const win = senderWindow(event);
+  if (!win || !managedWindows.has(win)) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
 });
 
 // Steady-state writes are fire-and-forget so the renderer never blocks on
@@ -527,6 +564,20 @@ ipcMain.handle(
 function parseWindowLaunch(value: unknown): AppWindowLaunch | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const launch = value as Record<string, unknown>;
+  if (launch.kind === 'workspace') {
+    if (
+      typeof launch.title !== 'string' ||
+      launch.title.length === 0 ||
+      launch.title.length > 200 ||
+      (launch.workspaceId !== undefined &&
+        (typeof launch.workspaceId !== 'string' ||
+          launch.workspaceId.length === 0 ||
+          launch.workspaceId.length > 200))
+    ) {
+      return undefined;
+    }
+    return value as AppWindowLaunch;
+  }
   if (launch.kind === 'session') {
     if (
       typeof launch.title !== 'string' ||

@@ -123,6 +123,7 @@ const workspaceSaveSchema = z.object({
   name: z.string().trim().min(1).max(200),
   layout: workspaceLayoutSchema,
   overwriteLocked: z.boolean().optional().default(false),
+  createIfMissing: z.boolean().optional().default(false),
   multiExecGroups: z.array(
     z.object({
       id: z.string().min(1),
@@ -135,6 +136,9 @@ const workspaceSaveSchema = z.object({
     }),
   ).default([]),
 }).superRefine((workspace, ctx) => {
+  if (workspace.createIfMissing && !workspace.id) {
+    ctx.addIssue({ code: 'custom', message: 'createIfMissing requires a workspace id' });
+  }
   const ids = new Set<string>();
   const names = new Set<string>();
   const terminalTabIds = new Set<string>();
@@ -210,8 +214,17 @@ export function registerWorkspaceRoutes(app: FastifyInstance, ctx: AppContext): 
       if (!parsed.success) {
         throw new HttpProblem(400, parsed.error.issues[0]?.message ?? 'invalid workspace');
       }
-      const { overwriteLocked, ...workspace } = parsed.data;
-      const saved = ctx.database.saveWorkspace(workspace, overwriteLocked) as WorkspaceRecord;
+      const { overwriteLocked, createIfMissing, ...workspace } = parsed.data;
+      const existing = workspace.id ? ctx.database.workspace(workspace.id) : undefined;
+      if (workspace.id && !existing && !createIfMissing) {
+        throw new HttpProblem(404, 'workspace not found', 'workspace-not-found');
+      }
+      const saved = existing && createIfMissing
+        ? (existing as WorkspaceRecord)
+        : ctx.database.saveWorkspace(
+            existing ? { ...workspace, name: existing.name } : workspace,
+            overwriteLocked,
+          ) as WorkspaceRecord;
       ctx.database.pruneTerminalSnapshots();
       return saved;
     } catch (err) {

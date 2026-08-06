@@ -300,11 +300,18 @@ export interface HostOrderRequest {
 }
 
 /**
- * One extra application window requested by the renderer. Session windows
+ * One extra application window requested by the renderer. Workspace windows
+ * either create a named workspace or open an existing one; session windows
  * start a fresh shell; SFTP windows stay attached to an existing SSH
  * transport and hold their own lease for as long as the window is open.
  */
 export type AppWindowLaunch =
+  | {
+      kind: 'workspace';
+      /** Omitted when the new window should create a workspace named `title`. */
+      workspaceId?: string;
+      title: string;
+    }
   | {
       kind: 'session';
       profile: import('./ws-protocol.js').SessionProfile;

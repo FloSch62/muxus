@@ -8,6 +8,8 @@ interface WorkspacesState {
   startupId?: string;
   ready: boolean;
   busy: boolean;
+  /** Number of other application windows currently showing each workspace. */
+  openWindowCounts: Record<string, number>;
   error?: string;
 }
 
@@ -17,4 +19,5 @@ export const useWorkspacesStore = create<WorkspacesState>()(() => ({
   activeName: 'Unsaved workspace',
   ready: false,
   busy: false,
+  openWindowCounts: {},
 }));

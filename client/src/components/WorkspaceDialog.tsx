@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { WorkspaceSummary } from '@muxus/shared';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
@@ -22,13 +22,16 @@ import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
+import AddIcon from '@mui/icons-material/Add';
 import ClearIcon from '@mui/icons-material/Clear';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
 import LockOpenOutlinedIcon from '@mui/icons-material/LockOpenOutlined';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
+import RestoreOutlinedIcon from '@mui/icons-material/RestoreOutlined';
 import SaveAsOutlinedIcon from '@mui/icons-material/SaveAsOutlined';
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import SearchIcon from '@mui/icons-material/Search';
@@ -37,8 +40,11 @@ import StarBorderIcon from '@mui/icons-material/StarBorder';
 import WorkspacesOutlinedIcon from '@mui/icons-material/WorkspacesOutlined';
 import {
   deleteWorkspace,
+  focusOpenWorkspace,
   openWorkspace,
+  refreshWorkspaceCatalog,
   renameWorkspace,
+  requestWorkspacePresence,
   saveWorkspace,
   saveWorkspaceAs,
   setStartupWorkspace,
@@ -55,9 +61,11 @@ import { showErrorToast, showToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
 import { useWorkspacesStore } from '../state/workspaces.js';
 import { formatTimestamp } from '../time-format.js';
+import { openAppWindow } from '../window-management.js';
 
 type NameAction =
   | { kind: 'save-as' }
+  | { kind: 'new-window' }
   | { kind: 'rename'; id: string; previousName: string };
 
 interface WorkspaceMenu {
@@ -71,6 +79,13 @@ function activityLabel(workspace: WorkspaceSummary): string {
   return `${opened ? 'Opened' : 'Updated'} ${formatTimestamp(opened ?? workspace.updatedAt)}`;
 }
 
+function nextWorkspaceName(workspaces: readonly WorkspaceSummary[]): string {
+  const names = new Set(workspaces.map((workspace) => workspace.name.trim().toLocaleLowerCase()));
+  let number = 1;
+  while (names.has(`workspace ${number}`)) number++;
+  return `Workspace ${number}`;
+}
+
 export function WorkspaceDialog() {
   const open = useUiStore((state) => state.workspacesOpen);
   const setOpen = useUiStore((state) => state.setWorkspacesOpen);
@@ -80,6 +95,8 @@ export function WorkspaceDialog() {
   const startupId = useWorkspacesStore((state) => state.startupId);
   const ready = useWorkspacesStore((state) => state.ready);
   const busy = useWorkspacesStore((state) => state.busy);
+  const error = useWorkspacesStore((state) => state.error);
+  const openWindowCounts = useWorkspacesStore((state) => state.openWindowCounts);
   const tabs = useTabsStore((state) => state.tabs);
   const reconnect = useTabsStore((state) => state.reconnect);
   const reconnectAll = useTabsStore((state) => state.reconnectAll);
@@ -104,10 +121,25 @@ export function WorkspaceDialog() {
   ).length;
   const selected = new Set(selectedIds);
   const pendingOpen = workspaces.find((workspace) => workspace.id === pendingOpenId);
+  const activeOtherWindowCount = activeId ? (openWindowCounts[activeId] ?? 0) : 0;
+  const menuWorkspaceOpenElsewhere = workspaceMenu
+    ? (openWindowCounts[workspaceMenu.workspace.id] ?? 0) > 0
+    : false;
+
+  useEffect(() => {
+    if (!open || !ready) return;
+    requestWorkspacePresence();
+    void refreshWorkspaceCatalog().catch(() => undefined);
+  }, [open, ready]);
 
   const beginSaveAs = () => {
     setNameAction({ kind: 'save-as' });
     setName(`${activeName} copy`);
+  };
+
+  const beginNewWorkspace = () => {
+    setNameAction({ kind: 'new-window' });
+    setName(nextWorkspaceName(workspaces));
   };
 
   const performSave = async () => {
@@ -133,7 +165,11 @@ export function WorkspaceDialog() {
     const trimmed = name.trim();
     if (!trimmed || !nameAction) return;
     try {
-      if (nameAction.kind === 'save-as') {
+      if (nameAction.kind === 'new-window') {
+        openAppWindow({ kind: 'workspace', title: trimmed });
+        setOpen(false);
+        showToast('info', `Creating workspace “${trimmed}” in a new window.`);
+      } else if (nameAction.kind === 'save-as') {
         await saveWorkspaceAs(trimmed);
         showToast('success', `Saved workspace “${trimmed}”.`);
       } else {
@@ -161,17 +197,61 @@ export function WorkspaceDialog() {
   const requestOpen = (id: string) => {
     setWorkspaceMenu(null);
     if (id === activeId) return;
+    const workspace = workspaces.find((candidate) => candidate.id === id);
+    if (workspace && focusOpenWorkspace(id)) {
+      setOpen(false);
+      showToast('info', `Switched to the window showing “${workspace.name}”.`);
+      return;
+    }
     if (liveCount > 0) setPendingOpenId(id);
     else void performOpen(id);
+  };
+
+  const openInNewWindow = (workspace: WorkspaceSummary) => {
+    setWorkspaceMenu(null);
+    if (focusOpenWorkspace(workspace.id)) {
+      setOpen(false);
+      showToast('info', `Switched to the window showing “${workspace.name}”.`);
+      return;
+    }
+    openAppWindow({
+      kind: 'workspace',
+      workspaceId: workspace.id,
+      title: workspace.name,
+    });
+    setOpen(false);
+  };
+
+  const performRestore = async (workspace: WorkspaceSummary) => {
+    setWorkspaceMenu(null);
+    const confirmed = await confirmAction({
+      title: `Restore “${workspace.name}” to its saved state?`,
+      description: liveCount
+        ? `This ends ${liveCount} live or connecting session${liveCount === 1 ? '' : 's'} and replaces the current layout with the locked saved layout.`
+        : 'This replaces the current layout with the locked saved layout.',
+      confirmLabel: 'Restore',
+    });
+    if (!confirmed || !(await confirmDiscardRemoteEditors(tabs.map((tab) => tab.id)))) return;
+    try {
+      const restored = await openWorkspace(workspace.id);
+      setPendingOpenId(undefined);
+      setSelectedIds([]);
+      showToast('success', `Restored workspace “${restored.name}”.`);
+    } catch (error) {
+      showErrorToast(error);
+    }
   };
 
   const performDelete = async (workspace: WorkspaceSummary) => {
     setWorkspaceMenu(null);
     setPendingOpenId(undefined);
+    const otherWindowCount = openWindowCounts[workspace.id] ?? 0;
     const confirmed = await confirmAction({
       title: `Delete workspace “${workspace.name}”?`,
       description:
-        workspace.id === activeId
+        otherWindowCount > 0
+          ? `This workspace is open in ${otherWindowCount === 1 ? 'another window' : `${otherWindowCount} other windows`}. Its saved layout will be removed; sessions in every window stay open as an unsaved workspace.`
+          : workspace.id === activeId
           ? 'The saved layout is removed and the current layout becomes unsaved. Open sessions keep running.'
           : 'The saved layout and its multi-execution groups are removed. This cannot be undone.',
       confirmLabel: 'Delete',
@@ -250,6 +330,18 @@ export function WorkspaceDialog() {
         />
       </DialogTitle>
       <DialogContent dividers sx={{ p: 0 }}>
+        {error ? (
+          <Alert severity="warning" sx={{ borderRadius: 0 }}>
+            {error}
+          </Alert>
+        ) : null}
+        {activeOtherWindowCount > 0 ? (
+          <Alert severity="warning" sx={{ borderRadius: 0 }}>
+            “{activeName}” is also open in {activeOtherWindowCount}{' '}
+            {activeOtherWindowCount === 1 ? 'other window' : 'other windows'}. Continue in one
+            window to avoid competing saves.
+          </Alert>
+        ) : null}
         <Stack
           direction={{ xs: 'column', sm: 'row' }}
           spacing={1}
@@ -271,6 +363,15 @@ export function WorkspaceDialog() {
           <Stack direction="row" useFlexGap spacing={1} sx={{ flexWrap: 'wrap' }}>
             <Button
               size="small"
+              variant="contained"
+              startIcon={<AddIcon />}
+              disabled={!ready || busy}
+              onClick={beginNewWorkspace}
+            >
+              New workspace
+            </Button>
+            <Button
+              size="small"
               startIcon={<SaveOutlinedIcon />}
               disabled={!activeWorkspace || busy}
               onClick={() => void performSave()}
@@ -285,6 +386,18 @@ export function WorkspaceDialog() {
             >
               Save as
             </Button>
+            {activeWorkspace?.isLocked ? (
+              <Tooltip title="Discard changes and reload the locked saved layout">
+                <Button
+                  size="small"
+                  startIcon={<RestoreOutlinedIcon />}
+                  disabled={busy}
+                  onClick={() => void performRestore(activeWorkspace)}
+                >
+                  Restore
+                </Button>
+              </Tooltip>
+            ) : null}
             <Tooltip
               title={
                 activeWorkspace?.isLocked
@@ -330,9 +443,9 @@ export function WorkspaceDialog() {
               fullWidth
               size="small"
               label={
-                nameAction.kind === 'save-as'
-                  ? 'New workspace name'
-                  : `Rename “${nameAction.previousName}”`
+                nameAction.kind === 'rename'
+                  ? `Rename “${nameAction.previousName}”`
+                  : 'New workspace name'
               }
               value={name}
               onChange={(event) => setName(event.target.value)}
@@ -347,7 +460,11 @@ export function WorkspaceDialog() {
                 disabled={!name.trim() || busy}
                 onClick={() => void commitNameAction()}
               >
-                {nameAction.kind === 'save-as' ? 'Save' : 'Rename'}
+                {nameAction.kind === 'new-window'
+                  ? 'Create'
+                  : nameAction.kind === 'save-as'
+                    ? 'Save'
+                    : 'Rename'}
               </Button>
               <Button onClick={() => setNameAction(null)}>Cancel</Button>
             </Stack>
@@ -442,6 +559,7 @@ export function WorkspaceDialog() {
           {visibleWorkspaces.map((workspace) => {
             const isActive = workspace.id === activeId;
             const isStartup = workspace.id === startupId;
+            const otherWindowCount = openWindowCounts[workspace.id] ?? 0;
             return (
               <ListItemButton
                 key={workspace.id}
@@ -451,6 +569,8 @@ export function WorkspaceDialog() {
                 aria-label={
                   isActive
                     ? `${workspace.name}, currently open`
+                    : otherWindowCount > 0
+                      ? `Switch to the window showing ${workspace.name}`
                     : `Open workspace ${workspace.name}`
                 }
                 sx={{
@@ -509,11 +629,48 @@ export function WorkspaceDialog() {
                           variant="outlined"
                         />
                       ) : null}
+                      {otherWindowCount > 0 ? (
+                        <Chip
+                          size="small"
+                          label={
+                            otherWindowCount === 1
+                              ? 'Open in another window'
+                              : `Open in ${otherWindowCount} other windows`
+                          }
+                          icon={<OpenInNewIcon />}
+                          color="info"
+                          variant="outlined"
+                        />
+                      ) : null}
                     </Stack>
                   }
                   secondary={activityLabel(workspace)}
                   slotProps={{ secondary: { noWrap: true } }}
                 />
+                {!isActive ? (
+                  <Tooltip
+                    title={
+                      otherWindowCount > 0
+                        ? `Switch to the window showing ${workspace.name}`
+                        : `Open ${workspace.name} in a new window`
+                    }
+                  >
+                    <IconButton
+                      size="small"
+                      aria-label={
+                        otherWindowCount > 0
+                          ? `Switch to the window showing ${workspace.name}`
+                          : `Open ${workspace.name} in a new window`
+                      }
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openInNewWindow(workspace);
+                      }}
+                    >
+                      <OpenInNewIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                ) : null}
                 <Tooltip title={`Actions for ${workspace.name}`}>
                   <IconButton
                     size="small"
@@ -637,12 +794,27 @@ export function WorkspaceDialog() {
           open
           onClose={() => setWorkspaceMenu(null)}
         >
-          {workspaceMenu.workspace.id !== activeId ? (
+          {workspaceMenu.workspace.id !== activeId && !menuWorkspaceOpenElsewhere ? (
             <MenuItem onClick={() => requestOpen(workspaceMenu.workspace.id)}>
               <ListItemIcon>
                 <PlayArrowOutlinedIcon fontSize="small" />
               </ListItemIcon>
               <ListItemText>Open</ListItemText>
+            </MenuItem>
+          ) : null}
+          {workspaceMenu.workspace.id !== activeId ? (
+            <MenuItem
+              disabled={busy}
+              onClick={() => openInNewWindow(workspaceMenu.workspace)}
+            >
+              <ListItemIcon>
+                <OpenInNewIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>
+                {menuWorkspaceOpenElsewhere
+                  ? 'Switch to open window'
+                  : 'Open in new window'}
+              </ListItemText>
             </MenuItem>
           ) : null}
           <MenuItem

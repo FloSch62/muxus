@@ -312,6 +312,86 @@ describe('workspace routes', () => {
     expect(startup.json()).toEqual({ workspace: null });
   });
 
+  it('prevents stale windows from renaming or recreating a deleted workspace', async () => {
+    const save = await app.inject({
+      method: 'PUT',
+      url: '/api/workspaces',
+      headers: auth(),
+      payload: { name: 'Authoritative name', layout },
+    });
+    const id = save.json().id as string;
+
+    const staleLayoutSave = await app.inject({
+      method: 'PUT',
+      url: '/api/workspaces',
+      headers: auth(),
+      payload: {
+        id,
+        name: 'Stale window name',
+        layout: { version: 1, root: null },
+      },
+    });
+    expect(staleLayoutSave.statusCode).toBe(200);
+    expect(staleLayoutSave.json()).toMatchObject({
+      id,
+      name: 'Authoritative name',
+      layout: { version: 1, root: null },
+    });
+
+    await app.inject({
+      method: 'DELETE',
+      url: `/api/workspaces/${id}`,
+      headers: auth(),
+    });
+    const staleSaveAfterDelete = await app.inject({
+      method: 'PUT',
+      url: '/api/workspaces',
+      headers: auth(),
+      payload: {
+        id,
+        name: 'Stale window name',
+        layout: { version: 1, root: null },
+      },
+    });
+    expect(staleSaveAfterDelete.statusCode).toBe(404);
+    expect(staleSaveAfterDelete.json()).toEqual({
+      code: 'workspace-not-found',
+      message: 'workspace not found',
+    });
+
+    const idempotentCreate = await app.inject({
+      method: 'PUT',
+      url: '/api/workspaces',
+      headers: auth(),
+      payload: {
+        id,
+        createIfMissing: true,
+        name: 'Recreated intentionally',
+        layout: { version: 1, root: null },
+      },
+    });
+    expect(idempotentCreate.statusCode).toBe(200);
+    expect(idempotentCreate.json()).toMatchObject({ id, name: 'Recreated intentionally' });
+
+    const repeatedCreate = await app.inject({
+      method: 'PUT',
+      url: '/api/workspaces',
+      headers: auth(),
+      payload: {
+        id,
+        createIfMissing: true,
+        name: 'Must not replace the existing workspace',
+        layout,
+      },
+    });
+    expect(repeatedCreate.statusCode).toBe(200);
+    expect(repeatedCreate.json()).toMatchObject({
+      id,
+      name: 'Recreated intentionally',
+      layout: { version: 1, root: null },
+    });
+  });
+
   it('returns null when there is no latest workspace', async () => {
     const response = await app.inject({
       method: 'GET',
