@@ -22,6 +22,8 @@ import {
 
 const CONNECT_TIMEOUT_MS = 30_000;
 const KEEPALIVE_MS = 30_000;
+/** Time for a renderer WebSocket to return after sleep or a network handoff. */
+export const TERMINAL_REATTACH_GRACE_MS = 15_000;
 /** Pause the upstream when the browser socket buffers more than this. */
 const BACKPRESSURE_HIGH = 4 * 1024 * 1024;
 const BACKPRESSURE_POLL_MS = 50;
@@ -46,19 +48,27 @@ export class TransferableTerminalSocket extends EventEmitter {
   readonly OPEN = 1;
   private current: WebSocket;
   private closed = false;
+  private detached = false;
+  private detachTimer: NodeJS.Timeout | undefined;
   private readonly controls = new Map<string, string>();
   private bufferingTransfer = false;
   private bufferedTransferBytes = 0;
   private readonly transferBuffer: Buffer[] = [];
 
-  constructor(readonly terminalId: string, socket: WebSocket) {
+  constructor(
+    readonly terminalId: string,
+    socket: WebSocket,
+    private readonly reattachGraceMs = TERMINAL_REATTACH_GRACE_MS,
+  ) {
     super();
     this.current = socket;
     this.bind(socket);
   }
 
   get readyState(): number {
-    return this.closed ? 3 : this.current.readyState;
+    // The facade remains writable while its renderer is detached. Binary
+    // output is buffered below and control frames are replayed on attach.
+    return this.closed ? 3 : this.OPEN;
   }
 
   get bufferedAmount(): number {
@@ -73,6 +83,9 @@ export class TransferableTerminalSocket extends EventEmitter {
   /** Move this terminal to a new renderer without emitting lifecycle close. */
   attach(socket: WebSocket, cols: number, rows: number): boolean {
     if (this.closed) return false;
+    if (this.detachTimer) clearTimeout(this.detachTimer);
+    this.detachTimer = undefined;
+    this.detached = false;
     const previous = this.current;
     this.unbind(previous);
     this.current = socket;
@@ -92,6 +105,7 @@ export class TransferableTerminalSocket extends EventEmitter {
   }
 
   send(data: string | Buffer, options?: { binary?: boolean }): void {
+    if (this.closed) return;
     if (typeof data === 'string') {
       try {
         const message = JSON.parse(data) as { op?: string };
@@ -107,10 +121,12 @@ export class TransferableTerminalSocket extends EventEmitter {
         /* ordinary text frame */
       }
     }
-    if (this.bufferingTransfer && Buffer.isBuffer(data) && options?.binary) {
-      const buffered = Buffer.from(data);
-      this.transferBuffer.push(buffered);
-      this.bufferedTransferBytes += buffered.byteLength;
+    if (
+      Buffer.isBuffer(data) &&
+      options?.binary &&
+      (this.bufferingTransfer || this.detached || this.current.readyState !== this.current.OPEN)
+    ) {
+      this.bufferTransferData(data);
       return;
     }
     if (this.current.readyState === this.current.OPEN) {
@@ -155,7 +171,19 @@ export class TransferableTerminalSocket extends EventEmitter {
     this.emit('message', data, isBinary);
   };
 
-  private readonly handleClose = (): void => this.finish();
+  private readonly handleClose = (): void => {
+    if (this.closed || this.detached) return;
+    this.detached = true;
+    if (this.reattachGraceMs <= 0) {
+      this.finish();
+      return;
+    }
+    this.detachTimer = setTimeout(() => {
+      this.detachTimer = undefined;
+      this.finish();
+    }, this.reattachGraceMs);
+    this.detachTimer.unref?.();
+  };
 
   private bind(socket: WebSocket): void {
     socket.on('message', this.handleMessage);
@@ -174,9 +202,31 @@ export class TransferableTerminalSocket extends EventEmitter {
     for (const data of buffered) socket.send(data, { binary: true });
   }
 
+  /** Keep the newest bounded tail while no renderer can apply backpressure. */
+  private bufferTransferData(data: Buffer): void {
+    let buffered = Buffer.from(data);
+    if (buffered.byteLength >= BACKPRESSURE_HIGH) {
+      this.transferBuffer.length = 0;
+      buffered = buffered.subarray(buffered.byteLength - BACKPRESSURE_HIGH);
+      this.bufferedTransferBytes = 0;
+    }
+    while (
+      this.transferBuffer.length > 0 &&
+      this.bufferedTransferBytes + buffered.byteLength > BACKPRESSURE_HIGH
+    ) {
+      const removed = this.transferBuffer.shift()!;
+      this.bufferedTransferBytes -= removed.byteLength;
+    }
+    this.transferBuffer.push(buffered);
+    this.bufferedTransferBytes += buffered.byteLength;
+  }
+
   private finish(): void {
     if (this.closed) return;
     this.closed = true;
+    this.detached = false;
+    if (this.detachTimer) clearTimeout(this.detachTimer);
+    this.detachTimer = undefined;
     this.transferBuffer.length = 0;
     this.bufferedTransferBytes = 0;
     this.unbind(this.current);
@@ -191,7 +241,11 @@ export class TransferableTerminalSocket extends EventEmitter {
  * (shell-less SSH transport for tunnels); SSH connections may interleave
  * `auth-prompt`/`host-key` round-trips before `ready`.
  */
-export function registerTerminalSocket(app: FastifyInstance, ctx: AppContext): void {
+export function registerTerminalSocket(
+  app: FastifyInstance,
+  ctx: AppContext,
+  options: { reattachGraceMs?: number } = {},
+): void {
   const sessions = new Map<string, TransferableTerminalSocket>();
   app.get('/ws/terminal', { websocket: true }, (socket) => {
     const timer = setTimeout(() => socket.close(1008, 'timed out waiting for connect'), CONNECT_TIMEOUT_MS);
@@ -228,7 +282,11 @@ export function registerTerminalSocket(app: FastifyInstance, ctx: AppContext): v
       }
 
       const terminalId = `terminal-${nanoid(16)}`;
-      const transferable = new TransferableTerminalSocket(terminalId, socket);
+      const transferable = new TransferableTerminalSocket(
+        terminalId,
+        socket,
+        options.reattachGraceMs,
+      );
       sessions.set(terminalId, transferable);
       transferable.once('close', () => sessions.delete(terminalId));
       const stableSocket = transferable as unknown as WebSocket;

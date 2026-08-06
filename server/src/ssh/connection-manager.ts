@@ -151,6 +151,20 @@ export interface ManagedConnection {
 export type ConnectionLease = TransportLease<ManagedConnection>;
 export type SshTransportHealth = 'healthy' | 'suspect';
 
+/**
+ * Translate OpenSSH keepalive settings to ssh2 without inventing a probe
+ * interval. OpenSSH's ServerAliveInterval default is zero (disabled), while
+ * ServerAliveCountMax defaults to three when an interval is explicitly set.
+ */
+export function sshKeepaliveOptions(
+  resolved: Pick<ResolvedTarget, 'serverAliveInterval' | 'serverAliveCountMax'>,
+): Required<Pick<ConnectConfig, 'keepaliveInterval' | 'keepaliveCountMax'>> {
+  return {
+    keepaliveInterval: (resolved.serverAliveInterval ?? 0) * 1000,
+    keepaliveCountMax: resolved.serverAliveCountMax ?? 3,
+  };
+}
+
 export interface MuxedConnectionLease extends TransportLease<ManagedConnection> {
   /** True when this lease multiplexes onto a pre-existing transport instead of a fresh dial. */
   reused: boolean;
@@ -549,10 +563,11 @@ export class SshConnectionManager {
         hopHealth.set(i, 'healthy');
         const transport = (client as Client & { _sock?: Duplex })._sock;
         if (transport) {
+          const keepalive = sshKeepaliveOptions(hop.resolved);
           stopHealthObservers.push(
             observeSshTransportHealth(
               transport,
-              (hop.resolved.serverAliveInterval ?? 15) * 1000,
+              keepalive.keepaliveInterval,
               (state) => updateHopHealth(i, state),
             ),
           );
@@ -762,8 +777,7 @@ export class SshConnectionManager {
       // ssh2's deadline includes time spent in UI prompts and cannot be
       // paused. An equivalent pausable deadline is installed below.
       readyTimeout: 0,
-      keepaliveInterval: (hop.resolved.serverAliveInterval ?? 15) * 1000,
-      keepaliveCountMax: hop.resolved.serverAliveCountMax ?? 3,
+      ...sshKeepaliveOptions(hop.resolved),
       ...(algorithms ? { algorithms } : {}),
       hostVerifier: (key: Buffer, verify: (valid: boolean) => void) => {
         void this.verifyHostKey(hop, key, io, runInteraction).then(verify, (err) => {

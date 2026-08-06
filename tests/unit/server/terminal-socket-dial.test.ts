@@ -1,9 +1,12 @@
 import { EventEmitter } from 'node:events';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   registerTerminalSocket,
+  TERMINAL_REATTACH_GRACE_MS,
   TransferableTerminalSocket,
 } from '../../../server/src/ws/terminal-socket.js';
+
+afterEach(() => vi.useRealTimers());
 
 class TestSocket extends EventEmitter {
   readonly OPEN = 1;
@@ -72,7 +75,51 @@ describe('transferable terminal sockets', () => {
     destination.emit('message', Buffer.from('hello'), true);
     expect(onMessage).toHaveBeenLastCalledWith(Buffer.from('hello'), true);
     destination.close();
+    expect(onClose).not.toHaveBeenCalled();
+    terminal.close();
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('retains and reattaches a session after an unexpected renderer close', () => {
+    vi.useFakeTimers();
+    const source = new TestSocket();
+    const destination = new TestSocket();
+    const terminal = new TransferableTerminalSocket('terminal-1', source as never);
+    const onClose = vi.fn();
+    terminal.on('close', onClose);
+    terminal.send(JSON.stringify({ op: 'session', terminalId: 'terminal-1' }));
+    terminal.send(JSON.stringify({ op: 'ready', connId: 'connection-1' }));
+    source.send.mockClear();
+
+    source.close();
+    terminal.send(Buffer.from('output while asleep'), { binary: true });
+    vi.advanceTimersByTime(TERMINAL_REATTACH_GRACE_MS - 1);
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(terminal.attach(destination as never, 120, 40)).toBe(true);
+    expect(destination.send).toHaveBeenCalledWith(
+      Buffer.from('output while asleep'),
+      { binary: true },
+    );
+
+    vi.advanceTimersByTime(TERMINAL_REATTACH_GRACE_MS);
+    expect(onClose).not.toHaveBeenCalled();
+    terminal.close();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('ends a detached session after its reattachment grace expires', () => {
+    vi.useFakeTimers();
+    const source = new TestSocket();
+    const terminal = new TransferableTerminalSocket('terminal-1', source as never);
+    const onClose = vi.fn();
+    terminal.on('close', onClose);
+
+    source.close();
+    vi.advanceTimersByTime(TERMINAL_REATTACH_GRACE_MS);
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(terminal.attach(new TestSocket() as never, 80, 24)).toBe(false);
   });
 });
 
@@ -112,7 +159,7 @@ describe('terminal socket dial mode', () => {
       connections: { connect },
       database: { recordOpenSshConnection: vi.fn() },
     };
-    registerTerminalSocket(app as never, ctx as never);
+    registerTerminalSocket(app as never, ctx as never, { reattachGraceMs: 0 });
 
     const socket = new TestSocket();
     route(socket);

@@ -84,6 +84,8 @@ import {
   CONNECTION_INTERRUPTION_GRACE_MS,
   connectionFailureReason,
   reattachCommand,
+  rendererReattachDelayMs,
+  restoreCwdCommand,
   shouldDelayConnectionLost,
   shouldWaitForTerminalOutput,
   terminalNotice,
@@ -393,6 +395,10 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     const el = containerRef.current;
     if (!el) return;
     const shouldConnect = generation > 0;
+    const reconnectCwd =
+      tab.profile.kind === 'ssh' && tab.reconnectRequest > 0
+        ? tab.terminalCwd
+        : undefined;
     if (shouldConnect) {
       updateTab(tab.id, {
         status: 'connecting',
@@ -657,10 +663,14 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
 
     let ws: WebSocket | undefined;
     let disposed = false;
-    let socketFailed = false;
     let exitMessage: TerminalExitMessage | undefined;
     let interruptionTimer: ReturnType<typeof setTimeout> | undefined;
+    let rendererReattachTimer: ReturnType<typeof setTimeout> | undefined;
+    let rendererStableTimer: ReturnType<typeof setTimeout> | undefined;
     let autoReconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let rendererReattachAttempts = 0;
+    let terminalId = tab.transferId ? tab.terminalId : undefined;
+    let pendingTransferId = tab.transferId;
     let sawAuthPrompt = false;
     let readyAt = 0;
     let snapshotDirty = false;
@@ -748,20 +758,23 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       }
     });
 
-    const openSocket = () => {
-      ws = new WebSocket(wsUrl('/ws/terminal'), wsProtocols());
-      wsRef.current = ws;
-      ws.binaryType = 'arraybuffer';
-      ws.onopen = () => {
+    const openSocket = (attachTerminalId?: string) => {
+      const socket = new WebSocket(wsUrl('/ws/terminal'), wsProtocols());
+      const attachingExistingSession = !!attachTerminalId;
+      let socketFailed = false;
+      ws = socket;
+      wsRef.current = socket;
+      socket.binaryType = 'arraybuffer';
+      socket.onopen = () => {
         // The pane is usually laid out by the time the socket opens, even when
         // it was not when the terminal mounted. Measure now so the remote PTY
         // starts at the size on screen instead of being resized a beat later.
         if (!fitted) fitted = fitTerminal();
-        ws?.send(JSON.stringify(
-          tab.transferId && tab.terminalId
+        socket.send(JSON.stringify(
+          attachTerminalId
             ? {
                 op: 'attach',
-                terminalId: tab.terminalId,
+                terminalId: attachTerminalId,
                 cols: term.cols,
                 rows: term.rows,
               }
@@ -774,7 +787,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
               },
         ));
       };
-      ws.onmessage = (ev) => {
+      socket.onmessage = (ev) => {
         if (ev.data instanceof ArrayBuffer) {
           clearTransientStatus();
           notifyOutput(tab.id);
@@ -805,6 +818,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         }
         switch (ctl.op) {
           case 'session':
+            terminalId = ctl.terminalId;
             updateTab(tab.id, { terminalId: ctl.terminalId });
             break;
           case 'transfer-ready': {
@@ -873,9 +887,23 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             break;
           case 'ready': {
             ready = true;
-            readyAt = Date.now();
+            if (!attachingExistingSession || readyAt === 0) readyAt = Date.now();
+            if (!attachingExistingSession) rendererReattachAttempts = 0;
+            if (rendererStableTimer !== undefined) clearTimeout(rendererStableTimer);
+            rendererStableTimer = setTimeout(() => {
+              rendererStableTimer = undefined;
+              rendererReattachAttempts = 0;
+            }, AUTO_RECONNECT_STABLE_MS);
+            if (rendererReattachTimer !== undefined) {
+              clearTimeout(rendererReattachTimer);
+              rendererReattachTimer = undefined;
+            }
+            if (interruptionTimer !== undefined) {
+              clearTimeout(interruptionTimer);
+              interruptionTimer = undefined;
+            }
             clearTransientStatus();
-            waitingForTerminalOutput = tab.transferId
+            waitingForTerminalOutput = pendingTransferId
               ? false
               : shouldWaitForTerminalOutput(tab.profile.kind, receivedTerminalOutput);
             const sftpAvailable =
@@ -894,12 +922,18 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
               ...(sftpAvailable === false ? { sftpOpen: false } : {}),
               transferId: undefined,
             });
-            if (tab.transferId) completeTabTransfer(tab.transferId);
+            if (pendingTransferId) {
+              completeTabTransfer(pendingTransferId);
+              pendingTransferId = undefined;
+            }
             const current = useTabsStore
               .getState()
               .tabs.find((candidate) => candidate.id === tab.id);
-            if (current?.profile?.kind === 'ssh' && current.reconnectMode) {
-              ws?.send(encoder.encode(reattachCommand(current.reconnectMode)));
+            if (!attachingExistingSession && current?.profile?.kind === 'ssh') {
+              const recoveryInput = current.reconnectMode
+                ? reattachCommand(current.reconnectMode)
+                : restoreCwdCommand(reconnectCwd);
+              if (recoveryInput) socket.send(encoder.encode(recoveryInput));
             }
             flushPendingInput();
             break;
@@ -919,10 +953,12 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             break;
         }
       };
-      ws.onerror = () => {
+      socket.onerror = () => {
         socketFailed = true;
       };
-      ws.onclose = (event) => {
+      socket.onclose = (event) => {
+        if (wsRef.current === socket) wsRef.current = null;
+        if (disposed) return;
         clearTransientStatus();
         const reason =
           socketFailed && !ready && !exitMessage
@@ -931,6 +967,30 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         const reasonKind = exitMessage?.reason ?? (ready ? 'disconnected' : 'failed');
         setAuthPrompt(null);
         setHostKey(null);
+
+        // Cross-window handoff intentionally replaces this renderer. The
+        // destination owns the terminal now and will retire this source tab.
+        if (event.code === 1000 && event.reason === 'terminal transferred') return;
+
+        // A renderer socket can be severed by laptop sleep while the backend
+        // PTY/channel is still healthy. Reuse its stable id before considering
+        // a replacement connection or shell.
+        if (!exitMessage && terminalId) {
+          const delay = rendererReattachDelayMs(rendererReattachAttempts);
+          if (delay !== undefined) {
+            rendererReattachAttempts += 1;
+            updateTab(tab.id, {
+              status: 'interrupted',
+              failureReason: reason,
+              disconnectReason: undefined,
+            });
+            rendererReattachTimer = setTimeout(() => {
+              rendererReattachTimer = undefined;
+              if (!disposed && terminalId) openSocket(terminalId);
+            }, delay);
+            return;
+          }
+        }
 
         const showFinalState = () => {
           // A drop after a stable stretch is a fresh incident, not one more
@@ -1030,7 +1090,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         term.write(TERMINAL_HISTORY_DIVIDER);
       }
       if (shouldConnect) {
-        openSocket();
+        openSocket(pendingTransferId ? terminalId : undefined);
       } else {
         term.write('\x1b[90m[restored session]\x1b[0m\r\n');
         term.write('\x1b[1;36mPress any key to reconnect\x1b[0m\r\n');
@@ -1121,6 +1181,8 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       fileLinks?.dispose();
       keywordHighlighterRef.current?.dispose();
       if (interruptionTimer !== undefined) clearTimeout(interruptionTimer);
+      if (rendererReattachTimer !== undefined) clearTimeout(rendererReattachTimer);
+      if (rendererStableTimer !== undefined) clearTimeout(rendererStableTimer);
       if (autoReconnectTimer !== undefined) clearTimeout(autoReconnectTimer);
       if (ws) {
         ws.onopen = null;
