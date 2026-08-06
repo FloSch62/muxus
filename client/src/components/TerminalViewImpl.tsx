@@ -67,6 +67,10 @@ import { openTerminalWebLink } from '../terminal/web-links.js';
 import { requiresPasteConfirmation } from '../terminal/paste-safety.js';
 import { shouldFitTerminal } from '../terminal/terminal-fit.js';
 import {
+  terminalRightClickIntent,
+  XTERM_RIGHT_CLICK_OPTIONS,
+} from '../terminal/right-click.js';
+import {
   AuthPromptDialog,
   type AuthPromptRequest,
   type AuthPromptResult,
@@ -229,7 +233,11 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const [searchWord, setSearchWord] = useState(false);
   const [searchRegex, setSearchRegex] = useState(false);
   const [searchResult, setSearchResult] = useState({ resultIndex: -1, resultCount: 0 });
-  const [ctxMenu, setCtxMenu] = useState<{ top: number; left: number; hasSelection: boolean } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{
+    top: number;
+    left: number;
+    selection: string;
+  } | null>(null);
   const [generation, setGeneration] = useState(tab.connectOnMount ? 1 : 0);
   const reconnectRequest = useTabsStore(
     (s) => s.tabs.find((candidate) => candidate.id === tab.id)?.reconnectRequest ?? 0,
@@ -346,19 +354,19 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     e.preventDefault();
     const term = termRef.current;
     if (!term) return;
-    const action = usePrefsStore.getState().rightClickAction;
-    if (action === 'menu') {
-      setCtxMenu({ top: e.clientY, left: e.clientX, hasSelection: term.hasSelection() });
+    const intent = terminalRightClickIntent(
+      usePrefsStore.getState().rightClickAction,
+      term.getSelection(),
+    );
+    if (intent.kind === 'menu') {
+      setCtxMenu({ top: e.clientY, left: e.clientX, selection: intent.selection });
       return;
     }
-    if (action === 'copy-paste') {
-      const selection = term.getSelection();
-      if (selection) {
-        void copyToClipboard(selection).then((ok) => {
-          if (ok) term.clearSelection();
-        });
-        return;
-      }
+    if (intent.kind === 'copy') {
+      void copyToClipboard(intent.selection).then((ok) => {
+        if (ok) term.clearSelection();
+      });
+      return;
     }
     pasteFromClipboard();
   };
@@ -390,6 +398,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     );
     const initialFontStack = terminalFontStack(prefs.fontFamily);
     const term = new Terminal({
+      ...XTERM_RIGHT_CLICK_OPTIONS,
       fontSize: initialFontSize,
       fontFamily: initialFontStack,
       lineHeight: prefs.lineHeight,
@@ -1357,11 +1366,12 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         anchorPosition={ctxMenu ?? undefined}
       >
         <MenuItem
-          disabled={!ctxMenu?.hasSelection}
+          disabled={!ctxMenu?.selection}
           onClick={() => {
             const term = termRef.current;
-            if (term?.hasSelection()) {
-              void copyToClipboard(term.getSelection()).then((ok) => {
+            const selection = ctxMenu?.selection;
+            if (term && selection) {
+              void copyToClipboard(selection).then((ok) => {
                 if (ok) term.clearSelection();
               });
             }
