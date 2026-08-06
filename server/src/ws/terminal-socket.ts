@@ -3,7 +3,11 @@ import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
 import { nanoid } from 'nanoid';
 import type { TerminalServerMessage } from '@muxus/shared';
-import { terminalClientMessageSchema, type TerminalClientMessage } from '@muxus/shared/ws-protocol';
+import {
+  TERMINAL_SESSION_CLOSE_REASON,
+  terminalClientMessageSchema,
+  type TerminalClientMessage,
+} from '@muxus/shared/ws-protocol';
 import type { AppContext } from '../app.js';
 import type { ConnectIo } from '../ssh/connection-manager.js';
 import {
@@ -171,8 +175,12 @@ export class TransferableTerminalSocket extends EventEmitter {
     this.emit('message', data, isBinary);
   };
 
-  private readonly handleClose = (): void => {
+  private readonly handleClose = (code: number, reason: Buffer): void => {
     if (this.closed || this.detached) return;
+    if (code === 1000 && reason.toString('utf8') === TERMINAL_SESSION_CLOSE_REASON) {
+      this.finish();
+      return;
+    }
     this.detached = true;
     if (this.reattachGraceMs <= 0) {
       this.finish();

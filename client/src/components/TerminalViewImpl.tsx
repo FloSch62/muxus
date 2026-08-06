@@ -32,7 +32,12 @@ import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import type { AppInfo, TerminalServerMessage } from '@muxus/shared';
-import { apiFetch, wsProtocols, wsUrl } from '../api/http.js';
+import {
+  apiFetch,
+  closeTerminalWebSocket,
+  wsProtocols,
+  wsUrl,
+} from '../api/http.js';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
 import { copyToClipboard, readFromClipboard } from '../clipboard.js';
 import { loadMonacoTextEditor, loadRemoteEditorWorkspace } from '../lazy-features.js';
@@ -1189,7 +1194,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         ws.onmessage = null;
         ws.onclose = null;
         ws.onerror = null;
-        ws.close();
+        closeTerminalWebSocket(ws);
       }
       term.dispose();
       searchRef.current = null;

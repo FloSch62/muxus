@@ -1,5 +1,8 @@
 import type { ApiErrorBody } from '@muxus/shared';
-import { terminalWebSocketProtocols } from '@muxus/shared/ws-protocol';
+import {
+  TERMINAL_SESSION_CLOSE_REASON,
+  terminalWebSocketProtocols,
+} from '@muxus/shared/ws-protocol';
 import { reportAuthInvalid, reportBackendDown, reportBackendUp } from '../state/backend.js';
 
 let token = '';
@@ -109,4 +112,9 @@ export function wsUrl(path: string, params: Record<string, string | number | boo
 /** Handshake protocols authenticate a WebSocket without leaking into its URL. */
 export function wsProtocols(): string[] {
   return terminalWebSocketProtocols(token);
+}
+
+/** End a terminal or dial lifecycle instead of leaving it available for reattachment. */
+export function closeTerminalWebSocket(socket: WebSocket): void {
+  socket.close(1000, TERMINAL_SESSION_CLOSE_REASON);
 }

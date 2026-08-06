@@ -4,6 +4,8 @@ import { z } from 'zod';
 export const TERMINAL_WS_PROTOCOL = 'muxus.terminal.v1';
 /** Authentication is offered as a non-selected subprotocol so it stays out of request URLs. */
 export const TERMINAL_WS_AUTH_PREFIX = 'muxus.auth.';
+/** Clean-close reason that explicitly ends the backend terminal lifecycle. */
+export const TERMINAL_SESSION_CLOSE_REASON = 'terminal session closed';
 
 /** Protocols offered by browser WebSocket clients during the HTTP upgrade. */
 export function terminalWebSocketProtocols(token: string): string[] {
