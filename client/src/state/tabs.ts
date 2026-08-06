@@ -28,7 +28,7 @@ interface TabBase {
   title: string;
   /** Live SSH connection id from `ready`; absent for local, Telnet, and serial tabs. */
   connId?: string;
-  /** Stable server-side terminal identity, including while a connection is still opening. */
+  /** Stable server-side identity for renderer reattachment, including during setup. */
   terminalId?: string;
   /** Cross-window transfer awaiting acknowledgement from the source window. */
   transferId?: string;

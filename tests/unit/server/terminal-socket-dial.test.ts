@@ -1,9 +1,13 @@
 import { EventEmitter } from 'node:events';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { TERMINAL_SESSION_CLOSE_REASON } from '@muxus/shared/ws-protocol';
 import {
   registerTerminalSocket,
+  TERMINAL_REATTACH_GRACE_MS,
   TransferableTerminalSocket,
 } from '../../../server/src/ws/terminal-socket.js';
+
+afterEach(() => vi.useRealTimers());
 
 class TestSocket extends EventEmitter {
   readonly OPEN = 1;
@@ -12,10 +16,10 @@ class TestSocket extends EventEmitter {
   readonly send = vi.fn();
   readonly ping = vi.fn();
 
-  close(): void {
+  close(code?: number, reason?: string): void {
     if (this.readyState !== this.OPEN) return;
     this.readyState = 3;
-    this.emit('close');
+    this.emit('close', code ?? 1005, Buffer.from(reason ?? ''));
   }
 }
 
@@ -72,6 +76,65 @@ describe('transferable terminal sockets', () => {
     destination.emit('message', Buffer.from('hello'), true);
     expect(onMessage).toHaveBeenLastCalledWith(Buffer.from('hello'), true);
     destination.close();
+    expect(onClose).not.toHaveBeenCalled();
+    terminal.close();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('retains and reattaches a session after an unexpected renderer close', () => {
+    vi.useFakeTimers();
+    const source = new TestSocket();
+    const destination = new TestSocket();
+    const terminal = new TransferableTerminalSocket('terminal-1', source as never);
+    const onClose = vi.fn();
+    terminal.on('close', onClose);
+    terminal.send(JSON.stringify({ op: 'session', terminalId: 'terminal-1' }));
+    terminal.send(JSON.stringify({ op: 'ready', connId: 'connection-1' }));
+    source.send.mockClear();
+
+    source.close();
+    terminal.send(Buffer.from('output while asleep'), { binary: true });
+    vi.advanceTimersByTime(TERMINAL_REATTACH_GRACE_MS - 1);
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(terminal.attach(destination as never, 120, 40)).toBe(true);
+    expect(destination.send).toHaveBeenCalledWith(
+      Buffer.from('output while asleep'),
+      { binary: true },
+    );
+
+    vi.advanceTimersByTime(TERMINAL_REATTACH_GRACE_MS);
+    expect(onClose).not.toHaveBeenCalled();
+    terminal.close();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('ends a detached session after its reattachment grace expires', () => {
+    vi.useFakeTimers();
+    const source = new TestSocket();
+    const terminal = new TransferableTerminalSocket('terminal-1', source as never);
+    const onClose = vi.fn();
+    terminal.on('close', onClose);
+
+    source.close();
+    vi.advanceTimersByTime(TERMINAL_REATTACH_GRACE_MS);
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(terminal.attach(new TestSocket() as never, 80, 24)).toBe(false);
+  });
+
+  it('ends immediately when the renderer explicitly closes the session', () => {
+    vi.useFakeTimers();
+    const source = new TestSocket();
+    const terminal = new TransferableTerminalSocket('terminal-1', source as never);
+    const onClose = vi.fn();
+    terminal.on('close', onClose);
+
+    source.close(1000, TERMINAL_SESSION_CLOSE_REASON);
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(terminal.attach(new TestSocket() as never, 80, 24)).toBe(false);
+    vi.advanceTimersByTime(TERMINAL_REATTACH_GRACE_MS);
     expect(onClose).toHaveBeenCalledOnce();
   });
 });
@@ -176,7 +239,7 @@ describe('terminal socket dial mode', () => {
         user: 'alice',
       }),
     );
-    destination.close();
+    destination.close(1000, TERMINAL_SESSION_CLOSE_REASON);
     expect(release).toHaveBeenCalledOnce();
   });
 });

@@ -9,6 +9,7 @@ import {
   findMetadataAlias,
   muxKey,
   observeSshTransportHealth,
+  sshKeepaliveOptions,
   terminalPtyOptions,
 } from '../../../server/src/ssh/connection-manager.js';
 import { loadConfigDocument } from '../../../server/src/ssh/ssh-config.js';
@@ -185,6 +186,22 @@ describe('terminalPtyOptions', () => {
 });
 
 describe('passive SSH transport health', () => {
+  it('uses OpenSSH-compatible defaults without implicit probes', () => {
+    expect(sshKeepaliveOptions({})).toEqual({
+      keepaliveInterval: 0,
+      keepaliveCountMax: 3,
+    });
+  });
+
+  it('honors explicit ServerAlive settings', () => {
+    expect(
+      sshKeepaliveOptions({ serverAliveInterval: 45, serverAliveCountMax: 7 }),
+    ).toEqual({
+      keepaliveInterval: 45_000,
+      keepaliveCountMax: 7,
+    });
+  });
+
   it('turns suspect after two silent keepalive intervals and recovers on input', () => {
     vi.useFakeTimers();
     const transport = new PassThrough();

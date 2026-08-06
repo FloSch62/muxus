@@ -5,6 +5,9 @@ import {
   CONNECTION_INTERRUPTION_GRACE_MS,
   connectionFailureReason,
   reattachCommand,
+  rendererReattachDelayMs,
+  RENDERER_REATTACH_DELAYS_MS,
+  restoreCwdCommand,
   shouldDelayConnectionLost,
   shouldWaitForTerminalOutput,
   terminalNotice,
@@ -99,6 +102,17 @@ describe('automatic reconnection', () => {
   });
 });
 
+describe('renderer reattachment', () => {
+  it('retries a stable backend terminal before opening a replacement shell', () => {
+    expect(
+      RENDERER_REATTACH_DELAYS_MS.map((_delay, attempts) =>
+        rendererReattachDelayMs(attempts),
+      ),
+    ).toEqual(RENDERER_REATTACH_DELAYS_MS);
+    expect(rendererReattachDelayMs(RENDERER_REATTACH_DELAYS_MS.length)).toBeUndefined();
+  });
+});
+
 describe('multiplexer reattachment', () => {
   it('attaches an existing tmux session or creates one', () => {
     const command = reattachCommand('tmux');
@@ -109,5 +123,20 @@ describe('multiplexer reattachment', () => {
 
   it('uses screen reattachment mode', () => {
     expect(reattachCommand('screen')).toContain('screen -xRR');
+  });
+});
+
+describe('working-directory restoration', () => {
+  it('quotes the last integrated cwd as shell data', () => {
+    expect(restoreCwdCommand("/srv/team's $(project)")).toBe(
+      "cd -- '/srv/team'\"'\"'s $(project)' 2>/dev/null || printf '\\r\\nMuxus: could not restore the previous working directory.\\r\\n'\r",
+    );
+  });
+
+  it('only restores bounded absolute Unix paths', () => {
+    expect(restoreCwdCommand('relative/path')).toBeUndefined();
+    expect(restoreCwdCommand('C:\\work')).toBeUndefined();
+    expect(restoreCwdCommand(`/srv/${'x'.repeat(4092)}`)).toBeUndefined();
+    expect(restoreCwdCommand('/srv/bad\0path')).toBeUndefined();
   });
 });

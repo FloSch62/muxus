@@ -4,6 +4,8 @@ import { z } from 'zod';
 export const TERMINAL_WS_PROTOCOL = 'muxus.terminal.v1';
 /** Authentication is offered as a non-selected subprotocol so it stays out of request URLs. */
 export const TERMINAL_WS_AUTH_PREFIX = 'muxus.auth.';
+/** Clean-close reason that explicitly ends the backend terminal lifecycle. */
+export const TERMINAL_SESSION_CLOSE_REASON = 'terminal session closed';
 
 /** Protocols offered by browser WebSocket clients during the HTTP upgrade. */
 export function terminalWebSocketProtocols(token: string): string[] {
@@ -133,7 +135,7 @@ export const terminalClientMessageSchema = z.discriminatedUnion('op', [
    * lease, forwards started on the connId) is gone.
    */
   z.object({ op: z.literal('dial'), profile: sshProfileSchema }),
-  /** Take ownership of a live terminal session from another app window. */
+  /** Attach to a live terminal after a renderer interruption or window handoff. */
   z.object({
     op: z.literal('attach'),
     terminalId: z.string().min(1).max(200),
@@ -171,7 +173,7 @@ export type TerminalClientMessage = z.infer<typeof terminalClientMessageSchema>;
 
 /** Text frames the server sends on /ws/terminal. */
 export type TerminalServerMessage =
-  /** Stable server-side terminal identity used for cross-window handoff. */
+  /** Stable server-side identity used for renderer reattachment and window handoff. */
   | { op: 'session'; terminalId: string }
   /** Outbound terminal bytes are frozen and can now be snapshotted without a gap. */
   | { op: 'transfer-ready' }

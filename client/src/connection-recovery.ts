@@ -4,11 +4,19 @@ export type ReattachMode = 'tmux' | 'screen';
 export type TerminalExitMessage = Extract<TerminalServerMessage, { op: 'exit' }>;
 export const CONNECTION_INTERRUPTION_GRACE_MS = 5_000;
 
+/** Fast local-backend retries used before opening an entirely new session. */
+export const RENDERER_REATTACH_DELAYS_MS: readonly number[] = [0, 250, 1_000, 2_000];
+
 /** Delays before each automatic reconnect attempt after a lost connection. */
 export const AUTO_RECONNECT_DELAYS_MS: readonly number[] = [2_000, 5_000, 15_000];
 
 /** Uptime after which a drop is a fresh incident with a fresh attempt budget. */
 export const AUTO_RECONNECT_STABLE_MS = 30_000;
+
+/** Delay before retrying a stable terminal id, or undefined when exhausted. */
+export function rendererReattachDelayMs(attempts: number): number | undefined {
+  return RENDERER_REATTACH_DELAYS_MS[attempts];
+}
 
 export interface AutoReconnectInput {
   /** The auto-reconnect preference. */
@@ -83,6 +91,17 @@ export function reattachCommand(mode: ReattachMode): string {
     return "if command -v tmux >/dev/null 2>&1; then tmux attach-session 2>/dev/null || tmux new-session; else printf '\\r\\nMuxus: tmux is not installed.\\r\\n'; fi\r";
   }
   return "if command -v screen >/dev/null 2>&1; then screen -xRR; else printf '\\r\\nMuxus: screen is not installed.\\r\\n'; fi\r";
+}
+
+/**
+ * Best-effort POSIX-shell cwd restoration for a replacement SSH shell. The
+ * shell integration only reports absolute Unix paths, and single-quote
+ * escaping keeps every path byte as data rather than terminal input syntax.
+ */
+export function restoreCwdCommand(cwd: string | undefined): string | undefined {
+  if (!cwd?.startsWith('/') || cwd.length > 4096 || cwd.includes('\0')) return undefined;
+  const quoted = `'${cwd.replaceAll("'", `'"'"'`)}'`;
+  return `cd -- ${quoted} 2>/dev/null || printf '\\r\\nMuxus: could not restore the previous working directory.\\r\\n'\r`;
 }
 
 /** Keep server-provided failure text from becoming terminal control input. */

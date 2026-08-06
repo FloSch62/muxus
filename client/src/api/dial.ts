@@ -4,7 +4,7 @@ import type {
   AuthPromptResult,
 } from '../components/AuthPromptDialog.js';
 import type { HostKeyRequest } from '../components/HostKeyDialog.js';
-import { wsProtocols, wsUrl } from './http.js';
+import { closeTerminalWebSocket, wsProtocols, wsUrl } from './http.js';
 
 /** Interactive hooks a shell-less dial needs from the UI. */
 export interface DialHandlers {
@@ -42,7 +42,7 @@ export function dialConnection(
       if (settled) return;
       settled = true;
       reject(new Error(message));
-      ws.close();
+      closeTerminalWebSocket(ws);
     };
 
     ws.onopen = () => {
@@ -85,7 +85,7 @@ export function dialConnection(
             })
             .then((response) => {
               if (ws.readyState !== WebSocket.OPEN) return;
-              if (response === null) ws.close();
+              if (response === null) closeTerminalWebSocket(ws);
               else ws.send(JSON.stringify({ op: 'auth-response', ...response }));
             });
           break;
@@ -96,7 +96,7 @@ export function dialConnection(
           break;
         case 'ready':
           settled = true;
-          resolve({ connId: msg.connId, close: () => ws.close() });
+          resolve({ connId: msg.connId, close: () => closeTerminalWebSocket(ws) });
           break;
         case 'exit':
           fail(msg.message || lastStatus || 'connection failed');
