@@ -41,6 +41,7 @@ import {
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
 import { copyToClipboard, readFromClipboard } from '../clipboard.js';
 import { loadMonacoTextEditor, loadRemoteEditorWorkspace } from '../lazy-features.js';
+import { IS_MAC } from '../platform.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { showToast } from '../state/toast.js';
 import { broadcastTerminalInput } from '../state/multi-exec.js';
@@ -71,6 +72,7 @@ import {
 import { openTerminalWebLink } from '../terminal/web-links.js';
 import { requiresPasteConfirmation } from '../terminal/paste-safety.js';
 import { shouldFitTerminal } from '../terminal/terminal-fit.js';
+import { normalizeTerminalKeyboardInput } from '../terminal/keyboard-input.js';
 import {
   terminalRightClickIntent,
   xtermRightClickSelectsWord,
@@ -1114,8 +1116,17 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       return true;
     };
 
+    // onKey fires synchronously before onData and carries the DOM event that
+    // produced the encoded bytes. Keep it only long enough to normalize that
+    // one emission; protocol replies and programmatic input have no key event.
+    let inputKeyEvent: KeyboardEvent | undefined;
+    const onKey = term.onKey(({ domEvent }) => {
+      inputKeyEvent = domEvent;
+    });
     const onData = term.onData((data) => {
-      if (sendInput(data)) broadcastTerminalInput(tab.id, data);
+      const normalized = normalizeTerminalKeyboardInput(data, inputKeyEvent, IS_MAC);
+      inputKeyEvent = undefined;
+      if (sendInput(normalized)) broadcastTerminalInput(tab.id, normalized);
       else reconnectFromTerminalInput();
     });
     const onBinary = term.onBinary((data) => {
@@ -1176,6 +1187,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       unregister();
       el.removeEventListener('paste', onNativePaste, true);
       el.removeEventListener('wheel', onWheel, true);
+      onKey.dispose();
       onData.dispose();
       onBinary.dispose();
       onResize.dispose();
