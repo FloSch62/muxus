@@ -11,6 +11,7 @@ import { usePrefsStore } from './state/prefs.js';
 import { useTabsStore, type SessionTab } from './state/tabs.js';
 import { serializeWorkspace } from './state/workspace-layout.js';
 import { useWorkspacesStore } from './state/workspaces.js';
+import { WorkspaceWindowSync } from './workspace-sync.js';
 import {
   PAGE_KEEPALIVE_BODY_LIMIT_BYTES,
   registerUnloadKeepalive,
@@ -27,6 +28,11 @@ interface WorkspaceSnapshot {
   multiExecGroups: WorkspaceMultiExecGroup[];
   serialized: string;
 }
+
+export type WorkspaceInitialSelection =
+  | { kind: 'blank' }
+  | { kind: 'new'; id: string; name: string }
+  | { kind: 'open'; id: string };
 
 function currentSnapshot(): WorkspaceSnapshot {
   const { root, tabs, activePaneId } = useTabsStore.getState();
@@ -72,40 +78,83 @@ export class WorkspaceRuntime {
   private unsubscribeTabs?: () => void;
   private unsubscribeMultiExec?: () => void;
   private lastSerialized = '';
+  private refreshing?: Promise<void>;
+  private refreshQueued = false;
+
+  constructor(
+    private readonly initialSelection?: WorkspaceInitialSelection,
+    private readonly sync = new WorkspaceWindowSync(),
+  ) {}
 
   async start(): Promise<void> {
     const beforeLoad = currentSnapshot().serialized;
+    let catalogChangedOnStart = false;
     try {
-      const [catalog, startup, latest] = await Promise.all([
-        apiFetch<{ workspaces: WorkspaceSummary[] }>('/api/workspaces'),
-        apiFetch<{ workspace: WorkspaceRecord | null }>('/api/workspaces/startup'),
-        apiFetch<{ workspace: WorkspaceRecord | null }>('/api/workspaces/latest'),
-      ]);
+      const catalogRequest = apiFetch<{ workspaces: WorkspaceSummary[] }>('/api/workspaces');
+      let catalog: { workspaces: WorkspaceSummary[] };
+      let workspace: WorkspaceRecord | null;
+      let persistedSource = '';
+      let restoreSavedLayout = true;
+
+      if (this.initialSelection?.kind === 'new') {
+        catalog = await catalogRequest;
+        if (this.stopped) return;
+        const snapshot = currentSnapshot();
+        workspace = await apiFetch<WorkspaceRecord>('/api/workspaces', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            id: this.initialSelection.id,
+            createIfMissing: true,
+            name: this.initialSelection.name.trim(),
+            layout: snapshot.layout,
+            multiExecGroups: snapshot.multiExecGroups,
+          }),
+        });
+        catalogChangedOnStart = true;
+        persistedSource = snapshot.serialized;
+        restoreSavedLayout = false;
+      } else if (this.initialSelection?.kind === 'open') {
+        [catalog, workspace] = await Promise.all([
+          catalogRequest,
+          apiFetch<WorkspaceRecord>(
+            `/api/workspaces/${encodeURIComponent(this.initialSelection.id)}`,
+          ),
+        ]);
+      } else if (this.initialSelection?.kind === 'blank') {
+        catalog = await catalogRequest;
+        workspace = null;
+      } else {
+        const [loadedCatalog, startup, latest] = await Promise.all([
+          catalogRequest,
+          apiFetch<{ workspace: WorkspaceRecord | null }>('/api/workspaces/startup'),
+          apiFetch<{ workspace: WorkspaceRecord | null }>('/api/workspaces/latest'),
+        ]);
+        catalog = loadedCatalog;
+        workspace = startup.workspace ?? latest.workspace;
+      }
       if (this.stopped) return;
-      const workspace = startup.workspace ?? latest.workspace;
       let summaries = catalog.workspaces;
-      let restoredSource = '';
-      let restored = false;
 
       if (workspace) {
+        persistedSource ||= JSON.stringify({
+          layout: workspace.layout,
+          multiExecGroups: workspace.multiExecGroups,
+        });
         const state = useTabsStore.getState();
         // Do not clobber a session the user opened while startup requests were in flight.
-        if (state.tabs.length === 0 && state.root.type === 'pane') {
+        if (restoreSavedLayout && state.tabs.length === 0 && state.root.type === 'pane') {
           this.restoring = true;
-          restoredSource = JSON.stringify({
-            layout: workspace.layout,
-            multiExecGroups: workspace.multiExecGroups,
-          });
           state.restore(workspace.layout, restoreOptions());
           useMultiExecStore.getState().setGroups(workspace.multiExecGroups);
           this.restoring = false;
-          restored = true;
         }
         const opened = await apiFetch<WorkspaceRecord>(
           `/api/workspaces/${encodeURIComponent(workspace.id)}/open`,
           { method: 'POST' },
         );
         if (this.stopped) return;
+        catalogChangedOnStart = true;
         summaries = mergeSummary(summaries, opened);
         useWorkspacesStore.setState({
           workspaces: summaries,
@@ -127,12 +176,11 @@ export class WorkspaceRuntime {
       }
 
       const loaded = currentSnapshot();
-      this.lastSerialized = restored && workspace?.isLocked ? restoredSource : loaded.serialized;
-      if (
-        !workspace?.isLocked &&
-        ((restored && restoredSource !== loaded.serialized) ||
-          (!restored && loaded.serialized !== beforeLoad))
-      ) {
+      this.lastSerialized = workspace?.isLocked ? persistedSource : loaded.serialized;
+      const changedSincePersist = workspace
+        ? persistedSource !== loaded.serialized
+        : loaded.serialized !== beforeLoad;
+      if (!workspace?.isLocked && changedSincePersist) {
         this.pending = loaded;
         this.schedule();
       }
@@ -146,6 +194,8 @@ export class WorkspaceRuntime {
     if (this.stopped) return;
     this.unsubscribeTabs = useTabsStore.subscribe(() => this.handleChange());
     this.unsubscribeMultiExec = useMultiExecStore.subscribe(() => this.handleChange());
+    this.startSync();
+    if (catalogChangedOnStart) this.sync.invalidateCatalog();
   }
 
   stop(): void {
@@ -154,6 +204,7 @@ export class WorkspaceRuntime {
     if (this.timer) clearTimeout(this.timer);
     this.unsubscribeTabs?.();
     this.unsubscribeMultiExec?.();
+    this.sync.stop();
   }
 
   async saveAs(name: string): Promise<WorkspaceRecord> {
@@ -273,6 +324,7 @@ export class WorkspaceRuntime {
           isStartup: candidate.id === workspace?.id,
         })),
       }));
+      this.sync.invalidateCatalog();
     });
   }
 
@@ -327,7 +379,113 @@ export class WorkspaceRuntime {
         ...(id === state.startupId ? { startupId: undefined } : {}),
         error: undefined,
       }));
+      const nextActive = useWorkspacesStore.getState();
+      this.updateActiveWorkspace(nextActive.activeId, nextActive.activeName, id === activeId);
+      this.sync.invalidateCatalog();
     });
+  }
+
+  async refreshCatalog(): Promise<void> {
+    if (this.stopped) return;
+    if (this.refreshing) {
+      this.refreshQueued = true;
+      return this.refreshing;
+    }
+    const refresh = (async () => {
+      do {
+        this.refreshQueued = false;
+        const catalog = await apiFetch<{ workspaces: WorkspaceSummary[] }>('/api/workspaces');
+        if (this.stopped) return;
+        this.reconcileCatalog(catalog.workspaces);
+      } while (this.refreshQueued && !this.stopped);
+    })();
+    this.refreshing = refresh;
+    try {
+      await refresh;
+    } finally {
+      if (this.refreshing === refresh) this.refreshing = undefined;
+    }
+  }
+
+  focusOpenWorkspace(id: string): boolean {
+    return this.sync.focusOpenWorkspace(id);
+  }
+
+  requestWorkspacePresence(): void {
+    this.sync.requestPresence();
+  }
+
+  private startSync(): void {
+    const { activeId, activeName } = useWorkspacesStore.getState();
+    this.updateActiveWorkspace(activeId, activeName);
+    this.sync.start({
+      onCatalogChanged: () => void this.refreshCatalog().catch(() => undefined),
+      onOpenWindowCountsChanged: (openWindowCounts) => {
+        useWorkspacesStore.setState({ openWindowCounts });
+      },
+      onWindowFocus: () => void this.refreshCatalog().catch(() => undefined),
+      onFocusRequested: () => {
+        if (typeof window === 'undefined') return;
+        if (window.muxusDesktop) window.muxusDesktop.focusWindow();
+        else window.focus();
+      },
+    });
+  }
+
+  private reconcileCatalog(workspaces: WorkspaceSummary[]): void {
+    const previous = useWorkspacesStore.getState();
+    const active = workspaces.find((workspace) => workspace.id === previous.activeId);
+    const previousActive = previous.workspaces.find(
+      (workspace) => workspace.id === previous.activeId,
+    );
+    if (previous.activeId && !active) {
+      this.detachActiveWorkspace(
+        workspaces,
+        `Workspace “${previous.activeName}” was deleted in another window. Current sessions remain open as an unsaved workspace.`,
+      );
+      return;
+    }
+
+    useWorkspacesStore.setState({
+      workspaces,
+      activeName: active?.name ?? previous.activeName,
+      startupId: workspaces.find((workspace) => workspace.isStartup)?.id,
+      error: undefined,
+    });
+    if (active) this.updateActiveWorkspace(active.id, active.name);
+    if (active?.isLocked && !previousActive?.isLocked) {
+      if (this.timer) clearTimeout(this.timer);
+      this.timer = undefined;
+      this.pending = undefined;
+    } else if (active && !active.isLocked && previousActive?.isLocked) {
+      this.handleChange();
+    }
+  }
+
+  private detachActiveWorkspace(workspaces: WorkspaceSummary[], message: string): void {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = undefined;
+    this.pending = undefined;
+    this.lastSerialized = currentSnapshot().serialized;
+    useWorkspacesStore.setState({
+      workspaces,
+      activeId: undefined,
+      activeName: 'Unsaved workspace',
+      startupId: workspaces.find((workspace) => workspace.isStartup)?.id,
+      error: message,
+    });
+    this.updateActiveWorkspace(undefined, 'Unsaved workspace', true);
+  }
+
+  private updateActiveWorkspace(
+    id: string | undefined,
+    name: string,
+    clearReloadLaunch = false,
+  ): void {
+    this.sync.setActiveWorkspace(id, name, clearReloadLaunch);
+    if (typeof document === 'undefined') return;
+    if (id) document.title = `${name} — Muxus`;
+    else if (document.title.endsWith(' — Muxus')) document.title = 'Muxus';
   }
 
   private handleChange(): void {
@@ -374,6 +532,16 @@ export class WorkspaceRuntime {
     })
       .then((saved) => this.recordActive(saved))
       .catch((error: unknown) => {
+        if (error instanceof ApiError && error.status === 404 && activeId) {
+          const state = useWorkspacesStore.getState();
+          if (state.activeId === activeId) {
+            this.detachActiveWorkspace(
+              state.workspaces.filter((workspace) => workspace.id !== activeId),
+              `Workspace “${activeName}” was deleted in another window. Current sessions remain open as an unsaved workspace.`,
+            );
+          }
+          return;
+        }
         if (error instanceof ApiError && error.body?.code === 'workspace-locked') {
           // handleChange() already recorded this snapshot as observed. Mark it dirty
           // again so unlocking requeues it even when no further edits are made.
@@ -417,6 +585,8 @@ export class WorkspaceRuntime {
       startupId: workspace.isStartup ? workspace.id : state.startupId,
       error: undefined,
     }));
+    this.updateActiveWorkspace(workspace.id, workspace.name);
+    this.sync.invalidateCatalog();
   }
 
   private recordWorkspace(workspace: WorkspaceRecord): void {
@@ -425,6 +595,7 @@ export class WorkspaceRuntime {
       startupId: workspace.isStartup ? workspace.id : state.startupId,
       error: undefined,
     }));
+    this.sync.invalidateCatalog();
   }
 
   private activeWorkspaceIsLocked(): boolean {
@@ -486,12 +657,28 @@ export const setStartupWorkspace = (id: string | null) => runtime().setStartup(i
 export const setWorkspaceLocked = (id: string, isLocked: boolean) =>
   runtime().setLocked(id, isLocked);
 export const deleteWorkspace = (id: string) => runtime().delete(id);
+export const refreshWorkspaceCatalog = () => runtime().refreshCatalog();
+export const focusOpenWorkspace = (id: string) => runtime().focusOpenWorkspace(id);
+export const requestWorkspacePresence = () => runtime().requestWorkspacePresence();
 
 /** Restore startup/latest once, then debounce the active named workspace to SQLite. */
-export function useWorkspacePersistence(enabled = true): void {
+export function useWorkspacePersistence(
+  enabled = true,
+  initialSelection?: WorkspaceInitialSelection,
+): void {
+  const initialKind = initialSelection?.kind;
+  const initialId = initialSelection?.kind === 'blank' ? undefined : initialSelection?.id;
+  const initialName = initialSelection?.kind === 'new' ? initialSelection.name : undefined;
   useEffect(() => {
     if (!enabled) return;
-    const runtime = new WorkspaceRuntime();
+    const selection: WorkspaceInitialSelection | undefined = initialKind
+      ? initialKind === 'open'
+        ? { kind: 'open', id: initialId! }
+        : initialKind === 'new'
+          ? { kind: 'new', id: initialId!, name: initialName! }
+          : { kind: 'blank' }
+      : undefined;
+    const runtime = new WorkspaceRuntime(selection);
     activeRuntime = runtime;
     const unregisterUnloadFlush = registerUnloadKeepalive(
       (maxBodyBytes) => runtime.flushOnUnload(maxBodyBytes),
@@ -503,5 +690,5 @@ export function useWorkspacePersistence(enabled = true): void {
       runtime.stop();
       if (activeRuntime === runtime) activeRuntime = undefined;
     };
-  }, [enabled]);
+  }, [enabled, initialId, initialKind, initialName]);
 }

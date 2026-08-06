@@ -33,6 +33,14 @@ declare global {
       listLocalFontFamilies(): Promise<string[] | undefined>;
       /** Open a secondary native application window. */
       openWindow(launch: AppWindowLaunch): void;
+      /** Register the saved workspace currently owned by this native window. */
+      setActiveWorkspace(
+        workspaceId?: string,
+        workspaceTitle?: string,
+        clearReloadLaunch?: boolean,
+      ): void;
+      /** Bring this native window to the foreground. */
+      focusWindow(): void;
       /** Subscribe to the OS close-window chord (Cmd/Ctrl+W); returns unsubscribe. */
       onCloseTab(callback: () => void): () => void;
       /** Subscribe to the tab-cycling chords (Ctrl+Tab & friends); backwards=true cycles left. */

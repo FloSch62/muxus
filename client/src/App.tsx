@@ -22,6 +22,7 @@ import { BackendStatusBanner } from './components/BackendStatusBanner.js';
 import { UpdateNotification } from './components/UpdateNotification.js';
 import { useDialogStore } from './state/dialogs.js';
 import { useToastStore } from './state/toast.js';
+import type { WorkspaceInitialSelection } from './workspace-persistence.js';
 import {
   loadHostEditorDialog,
   loadFolderDialog,
@@ -105,13 +106,27 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const workspacesOpen = useUiStore((s) => s.workspacesOpen);
   const dialogOpen = useDialogStore((s) => s.queue.length > 0);
   const toastOpen = useToastStore((s) => !!s.toast);
-  const [startupReady, setStartupReady] = useState(false);
+  const [startupReady, setStartupReady] = useState(launch?.kind === 'session');
+  const [newWorkspaceId] = useState(() =>
+    launch?.kind === 'workspace' && !launch.workspaceId
+      ? (globalThis.crypto?.randomUUID?.() ??
+        `workspace-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`)
+      : undefined,
+  );
   const [osTheme, setOsTheme] = useState<'light' | 'dark'>(() =>
     window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
   );
   const finishStartup = useCallback(() => setStartupReady(true), []);
   const effectiveMode = themeMode === 'os' ? osTheme : themeMode;
   const theme = useMemo(() => buildTheme(effectiveMode), [effectiveMode]);
+  const initialWorkspace: WorkspaceInitialSelection | undefined =
+    launch?.kind === 'session'
+      ? { kind: 'blank' }
+      : launch?.kind === 'workspace'
+        ? launch.workspaceId
+          ? { kind: 'open', id: launch.workspaceId }
+          : { kind: 'new', id: newWorkspaceId!, name: launch.title }
+        : undefined;
   useLayoutEffect(() => {
     // Keep the desktop app's native window controls in sync with the theme.
     setTitleBarMode(effectiveMode);
@@ -140,7 +155,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
             <SftpWindow launch={launch} />
           </Suspense>
         ) : (
-          <AppShell persistWorkspace={!launch && startupReady} />
+          <AppShell persistWorkspace={startupReady} initialWorkspace={initialWorkspace} />
         )}
       </ErrorBoundary>
       <Suspense fallback={null}>
@@ -155,7 +170,9 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
         {logViewerOpen ? <LogViewerDialog /> : null}
         {quickLauncherOpen ? <QuickLauncherDialog /> : null}
         {workspacesOpen ? <WorkspaceDialog /> : null}
-        {!launch ? <PasswordVaultStartupUnlock onReady={finishStartup} /> : null}
+        {!launch || launch.kind === 'workspace' ? (
+          <PasswordVaultStartupUnlock onReady={finishStartup} />
+        ) : null}
         {dialogOpen ? <DialogHost /> : null}
         {toastOpen ? <ToastHost /> : null}
       </Suspense>

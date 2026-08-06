@@ -84,7 +84,7 @@ import { useUiStore } from '../state/ui.js';
 import { useWorkspacesStore } from '../state/workspaces.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
 import { formatTimestamp } from '../time-format.js';
-import { openWorkspace } from '../workspace-persistence.js';
+import { focusOpenWorkspace, openWorkspace } from '../workspace-persistence.js';
 import {
   AuthPromptDialog,
   type AuthPromptRequest,
@@ -141,6 +141,7 @@ export function QuickLauncherDialog() {
   const workspaces = useWorkspacesStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspacesStore((state) => state.activeId);
   const workspaceBusy = useWorkspacesStore((state) => state.busy);
+  const openWorkspaceWindowCounts = useWorkspacesStore((state) => state.openWindowCounts);
   const { data: sshData, isLoading: sshLoading } = useSshConfig();
   const { data: savedData, isLoading: savedLoading } = useSavedHostProfiles();
   const { data: tunnelData, isLoading: tunnelsLoading } = useTunnels();
@@ -198,6 +199,7 @@ export function QuickLauncherDialog() {
         savedHosts,
         workspaces,
         activeWorkspaceId,
+        openWorkspaceWindowCounts,
         commands,
         localShellProfiles,
         tunnels,
@@ -210,6 +212,7 @@ export function QuickLauncherDialog() {
       activeWorkspaceId,
       commands,
       localShellProfiles,
+      openWorkspaceWindowCounts,
       forwards,
       savedHosts,
       sshHosts,
@@ -410,6 +413,9 @@ export function QuickLauncherDialog() {
         break;
       case 'workspace':
         if (result.workspace.id === activeWorkspaceId) {
+          close();
+        } else if (focusOpenWorkspace(result.workspace.id)) {
+          showToast('info', `Switched to the window showing “${result.workspace.name}”.`);
           close();
         } else if (liveCount > 0) {
           setPendingWorkspace(result.workspace);
@@ -736,6 +742,7 @@ function buildCatalogResults({
   savedHosts,
   workspaces,
   activeWorkspaceId,
+  openWorkspaceWindowCounts,
   commands,
   localShellProfiles,
   tunnels,
@@ -748,6 +755,7 @@ function buildCatalogResults({
   savedHosts: readonly SavedHostProfile[];
   workspaces: readonly WorkspaceSummary[];
   activeWorkspaceId?: string;
+  openWorkspaceWindowCounts: Readonly<Record<string, number>>;
   commands: readonly CommandButton[];
   localShellProfiles: readonly LocalShellProfileConfig[];
   tunnels: readonly TunnelRecord[];
@@ -838,6 +846,7 @@ function buildCatalogResults({
   }
 
   for (const [index, workspace] of workspaces.entries()) {
+    const otherWindowCount = openWorkspaceWindowCounts[workspace.id] ?? 0;
     results.push({
       id: `workspace:${workspace.id}`,
       kind: 'workspace',
@@ -846,6 +855,10 @@ function buildCatalogResults({
       detail:
         workspace.id === activeWorkspaceId
           ? 'Current workspace'
+          : otherWindowCount > 0
+            ? otherWindowCount === 1
+              ? 'Open in another window'
+              : `Open in ${otherWindowCount} other windows`
           : `Workspace · ${formatTimestamp(workspace.lastOpenedAt ?? workspace.updatedAt)}`,
       keywords: ['workspace', workspace.isStartup ? 'startup' : ''],
       priority: workspace.id === activeWorkspaceId ? 360 : 150,

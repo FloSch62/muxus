@@ -20,6 +20,17 @@ function decodeBase64Url(value: string): string {
 export function isAppWindowLaunch(value: unknown): value is AppWindowLaunch {
   if (!value || typeof value !== 'object') return false;
   const launch = value as Record<string, unknown>;
+  if (launch.kind === 'workspace') {
+    return (
+      typeof launch.title === 'string' &&
+      launch.title.length > 0 &&
+      launch.title.length <= 200 &&
+      (launch.workspaceId === undefined ||
+        (typeof launch.workspaceId === 'string' &&
+          launch.workspaceId.length > 0 &&
+          launch.workspaceId.length <= 200))
+    );
+  }
   if (launch.kind === 'session') {
     if (typeof launch.title !== 'string' || !launch.profile || typeof launch.profile !== 'object') {
       return false;

@@ -124,6 +124,21 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   openWindow(launch: AppWindowLaunch): void {
     ipcRenderer.send('muxus:open-window', launch);
   },
+  setActiveWorkspace(
+    workspaceId?: string,
+    workspaceTitle?: string,
+    clearReloadLaunch?: boolean,
+  ): void {
+    ipcRenderer.send(
+      'muxus:active-workspace',
+      workspaceId,
+      workspaceTitle,
+      clearReloadLaunch,
+    );
+  },
+  focusWindow(): void {
+    ipcRenderer.send('muxus:focus-window');
+  },
   // Fires when the user presses the OS close-window chord (Cmd/Ctrl+W).
   // Returns an unsubscribe. The renderer closes the focused terminal tab; it
   // never closes the window from this chord.

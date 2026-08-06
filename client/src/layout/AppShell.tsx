@@ -27,7 +27,10 @@ import {
   type SplitNode,
 } from '../state/workspace-layout.js';
 import { useUiStore } from '../state/ui.js';
-import { useWorkspacePersistence } from '../workspace-persistence.js';
+import {
+  useWorkspacePersistence,
+  type WorkspaceInitialSelection,
+} from '../workspace-persistence.js';
 import { ErrorBoundary } from '../components/ErrorBoundary.js';
 import { ActionBar } from '../components/ActionBar.js';
 import { EmptyPane } from '../components/EmptyPane.js';
@@ -54,8 +57,14 @@ const RemoteEditorWorkspace = lazy(() =>
 );
 
 /** TopBar over a stable, resizable pane canvas. Hidden tabs stay mounted. */
-export function AppShell({ persistWorkspace = true }: { persistWorkspace?: boolean }) {
-  useWorkspacePersistence(persistWorkspace);
+export function AppShell({
+  persistWorkspace = true,
+  initialWorkspace,
+}: {
+  persistWorkspace?: boolean;
+  initialWorkspace?: WorkspaceInitialSelection;
+}) {
+  useWorkspacePersistence(persistWorkspace, initialWorkspace);
   const sidebarCollapsed = usePrefsStore((state) => state.sidebarCollapsed);
   const tabs = useTabsStore((state) => state.tabs);
   const root = useTabsStore((state) => state.root);

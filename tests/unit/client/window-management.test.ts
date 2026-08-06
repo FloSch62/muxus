@@ -7,6 +7,21 @@ import {
 } from '../../../client/src/window-management.js';
 
 describe('secondary window launch payloads', () => {
+  it('round-trips new and existing workspace launches', () => {
+    const create: AppWindowLaunch = {
+      kind: 'workspace',
+      title: 'Production EU',
+    };
+    const open: AppWindowLaunch = {
+      kind: 'workspace',
+      workspaceId: 'workspace-42',
+      title: 'Operations',
+    };
+
+    expect(decodeAppWindowLaunch(encodeAppWindowLaunch(create))).toEqual(create);
+    expect(decodeAppWindowLaunch(encodeAppWindowLaunch(open))).toEqual(open);
+  });
+
   it('round-trips unicode session titles and complete profiles', () => {
     const launch: AppWindowLaunch = {
       kind: 'session',
@@ -74,6 +89,10 @@ describe('secondary window launch payloads', () => {
   });
 
   it('rejects malformed or unsupported payloads', () => {
+    expect(isAppWindowLaunch({ kind: 'workspace', title: '' })).toBe(false);
+    expect(
+      isAppWindowLaunch({ kind: 'workspace', title: 'Operations', workspaceId: '' }),
+    ).toBe(false);
     expect(isAppWindowLaunch({ kind: 'session', title: 'Missing profile' })).toBe(false);
     expect(
       isAppWindowLaunch({
