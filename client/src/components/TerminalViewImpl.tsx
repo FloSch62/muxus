@@ -441,7 +441,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       // Installing a second encoder would emit printable keys twice.
       vtExtensions: { kittyKeyboard: true },
     });
-    rightClickSelectsWordDefaultRef.current = term.options.rightClickSelectsWord;
+    rightClickSelectsWordDefaultRef.current = term.options.rightClickSelectsWord ?? false;
     const fit = new FitAddon();
     fitRef.current = fit;
     termRef.current = term;
