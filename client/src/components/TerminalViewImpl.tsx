@@ -68,7 +68,7 @@ import { requiresPasteConfirmation } from '../terminal/paste-safety.js';
 import { shouldFitTerminal } from '../terminal/terminal-fit.js';
 import {
   terminalRightClickIntent,
-  XTERM_RIGHT_CLICK_OPTIONS,
+  xtermRightClickSelectsWord,
 } from '../terminal/right-click.js';
 import {
   AuthPromptDialog,
@@ -214,6 +214,8 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const imageRef = useRef<ImageAddon | null>(null);
   const keywordHighlighterRef = useRef<KeywordHighlighter | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  /** xterm's native default is enabled on macOS and disabled elsewhere. */
+  const rightClickSelectsWordDefaultRef = useRef(false);
   const lastSearchRequestRef = useRef(tab.searchRequest);
   /** Per-tab zoom offset added to the preference font size. */
   const zoomRef = useRef(0);
@@ -350,6 +352,16 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   // (copy the selection when there is one, otherwise paste), always paste,
   // or a context menu. Paste goes through term.paste() so bracketed-paste
   // mode reaches the remote shell intact.
+  const prepareRightClick = () => {
+    const term = termRef.current;
+    if (!term) return;
+    term.options.rightClickSelectsWord = xtermRightClickSelectsWord(
+      rightClickSelectsWordDefaultRef.current,
+      usePrefsStore.getState().rightClickAction,
+      term.hasSelection(),
+    );
+  };
+
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     const term = termRef.current;
@@ -398,7 +410,6 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     );
     const initialFontStack = terminalFontStack(prefs.fontFamily);
     const term = new Terminal({
-      ...XTERM_RIGHT_CLICK_OPTIONS,
       fontSize: initialFontSize,
       fontFamily: initialFontStack,
       lineHeight: prefs.lineHeight,
@@ -430,6 +441,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       // Installing a second encoder would emit printable keys twice.
       vtExtensions: { kittyKeyboard: true },
     });
+    rightClickSelectsWordDefaultRef.current = term.options.rightClickSelectsWord;
     const fit = new FitAddon();
     fitRef.current = fit;
     termRef.current = term;
@@ -1225,6 +1237,11 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     <Box sx={{ height: '100%', p: 1, pt: 0.75, minHeight: 0, position: 'relative' }}>
       <Box
         ref={containerRef}
+        onMouseDownCapture={(event) => {
+          // Firefox runs xterm's right-click handler on mousedown.
+          if (event.button === 2) prepareRightClick();
+        }}
+        onContextMenuCapture={prepareRightClick}
         onContextMenu={onContextMenu}
         sx={{
           height: '100%',

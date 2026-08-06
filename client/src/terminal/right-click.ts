@@ -1,13 +1,17 @@
 import type { RightClickAction } from '../state/prefs.js';
 
 /**
- * xterm enables word selection on right click by default on macOS. Its native
- * contextmenu listener runs before Muxus's React handler, so that behavior can
- * replace an existing selection before Muxus decides whether to copy or paste.
+ * Keep xterm's platform convention (word selection on macOS) only when it is
+ * useful to Muxus's context menu. xterm handles the native event before the
+ * React bubble handler, so every other path must suppress selection changes.
  */
-export const XTERM_RIGHT_CLICK_OPTIONS = {
-  rightClickSelectsWord: false,
-} as const;
+export function xtermRightClickSelectsWord(
+  platformDefault: boolean,
+  action: RightClickAction,
+  hasSelection: boolean,
+): boolean {
+  return platformDefault && action === 'menu' && !hasSelection;
+}
 
 export type TerminalRightClickIntent =
   | { kind: 'copy'; selection: string }
