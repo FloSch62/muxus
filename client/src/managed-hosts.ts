@@ -1,4 +1,9 @@
-import type { ManagedHostRef, SavedHostProfile, SshHostEntry } from '@muxus/shared';
+import type {
+  ManagedHostRef,
+  SavedHostProfile,
+  SshHostEntry,
+  SshProfile,
+} from '@muxus/shared';
 import {
   groupHosts,
   hostAddress,
@@ -184,15 +189,73 @@ export function managedHostCopyCommand(host: ManagedHost): { label: string; text
   }
   const profile = host.entry.profile;
   if (profile.kind === 'ssh') {
-    const target = profile.user ? `${profile.user}@${profile.target}` : profile.target;
     return {
       label: 'Copy ssh command',
-      text: `ssh${profile.port ? ` -p ${profile.port}` : ''} ${target}`,
+      text: savedSshCopyCommand(profile),
     };
   }
   return profile.kind === 'telnet'
     ? { label: 'Copy telnet command', text: `telnet ${profile.host} ${profile.port}` }
     : { label: 'Copy device path', text: profile.path };
+}
+
+/** Render a self-contained profile as a pasteable OpenSSH command. */
+function savedSshCopyCommand(profile: SshProfile): string {
+  const args = ['ssh'];
+  if (profile.port) args.push('-p', String(profile.port));
+  for (const file of profile.identityFiles ?? []) args.push('-i', file);
+  for (const file of profile.certificateFiles ?? []) {
+    args.push('-o', `CertificateFile=${file}`);
+  }
+  if (profile.identitiesOnly !== undefined) {
+    args.push('-o', `IdentitiesOnly=${profile.identitiesOnly ? 'yes' : 'no'}`);
+  }
+  if (profile.identityAgent) {
+    args.push('-o', `IdentityAgent=${profile.identityAgent}`);
+  }
+  if (profile.forwardAgent) args.push('-A');
+  if (profile.proxyJump?.length) args.push('-J', profile.proxyJump.join(','));
+  if (profile.proxyCommand) {
+    args.push('-o', `ProxyCommand=${profile.proxyCommand}`);
+  }
+  if (profile.passwordOnly) {
+    args.push(
+      '-o',
+      'PubkeyAuthentication=no',
+      '-o',
+      'PreferredAuthentications=keyboard-interactive,password',
+    );
+  }
+  for (const forward of profile.forwards ?? []) {
+    if (forward.type === 'dynamic') {
+      args.push('-D', String(forward.bindPort));
+      continue;
+    }
+    const option = forward.type === 'local' ? '-L' : '-R';
+    args.push(
+      option,
+      `${forward.bindPort}:${forward.targetHost}:${forward.targetPort}`,
+    );
+  }
+  if (profile.requestTty === 'no') args.push('-T');
+  if (profile.requestTty === 'yes') args.push('-t');
+  if (profile.requestTty === 'force') args.push('-tt');
+  if (profile.requestTty === 'auto') args.push('-o', 'RequestTTY=auto');
+  if (profile.strictHostKeyChecking) {
+    args.push(
+      '-o',
+      `StrictHostKeyChecking=${profile.strictHostKeyChecking}`,
+    );
+  }
+  args.push(profile.user ? `${profile.user}@${profile.target}` : profile.target);
+  if (profile.remoteCommand) args.push(profile.remoteCommand);
+  return args.map(shellArgument).join(' ');
+}
+
+function shellArgument(value: string): string {
+  return /^[A-Za-z0-9_@%+=:,./~-]+$/.test(value)
+    ? value
+    : `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
 function compareManagedHosts(a: ManagedHost, b: ManagedHost): number {

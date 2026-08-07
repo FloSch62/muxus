@@ -295,11 +295,9 @@ export function draftToSavedSshInput(
       forwards: draft.forwards.length > 0 ? draft.forwards : undefined,
       passwordOnly: draft.authMode === 'password' || undefined,
       remoteCommand:
-        draft.remoteCommandMode === 'shell'
-          ? 'none'
-          : draft.remoteCommandMode === 'command'
-            ? text(draft.remoteCommand)
-            : undefined,
+        draft.remoteCommandMode === 'command'
+          ? text(draft.remoteCommand)
+          : undefined,
       requestTty: draft.requestTty === 'inherit' ? undefined : draft.requestTty,
       strictHostKeyChecking:
         draft.strictHostKeyChecking === 'inherit'

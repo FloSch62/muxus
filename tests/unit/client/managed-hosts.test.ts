@@ -170,6 +170,57 @@ describe('managed host identity and clipboard actions', () => {
       label: 'Copy ssh command',
       text: 'ssh -p 2222 admin@core.example.test',
     });
+
+    const routed = {
+      ...nativeSsh,
+      entry: {
+        ...nativeSsh.entry,
+        profile: {
+          ...nativeSsh.entry.profile,
+          identityFiles: ['~/.ssh/core key'],
+          certificateFiles: ['~/.ssh/core-cert.pub'],
+          identitiesOnly: true,
+          identityAgent: 'none',
+          forwardAgent: true,
+          proxyJump: ['bastion', 'ops@jump.example.test:2200'],
+          passwordOnly: true,
+          forwards: [
+            {
+              type: 'local' as const,
+              bindPort: 8080,
+              targetHost: '127.0.0.1',
+              targetPort: 80,
+            },
+          ],
+          requestTty: 'force' as const,
+          strictHostKeyChecking: 'accept-new' as const,
+          remoteCommand: 'tmux new -A -s main',
+        },
+      },
+    };
+    expect(managedHostCopyCommand(routed).text).toBe(
+      "ssh -p 2222 -i '~/.ssh/core key' -o CertificateFile=~/.ssh/core-cert.pub " +
+        '-o IdentitiesOnly=yes -o IdentityAgent=none -A ' +
+        '-J bastion,ops@jump.example.test:2200 -o PubkeyAuthentication=no ' +
+        '-o PreferredAuthentications=keyboard-interactive,password ' +
+        '-L 8080:127.0.0.1:80 -tt -o StrictHostKeyChecking=accept-new ' +
+        "admin@core.example.test 'tmux new -A -s main'",
+    );
+
+    const proxied = {
+      ...nativeSsh,
+      entry: {
+        ...nativeSsh.entry,
+        profile: {
+          ...nativeSsh.entry.profile,
+          proxyCommand: 'cloudflared access ssh --hostname %h',
+        },
+      },
+    };
+    expect(managedHostCopyCommand(proxied).text).toBe(
+      "ssh -p 2222 -o 'ProxyCommand=cloudflared access ssh --hostname %h' " +
+        'admin@core.example.test',
+    );
   });
 
   it('offers SFTP only for SSH hosts where it is not explicitly disabled', () => {

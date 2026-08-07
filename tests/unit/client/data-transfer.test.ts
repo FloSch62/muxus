@@ -88,6 +88,72 @@ describe('Muxus transfer file parsing', () => {
     expect(parseTransferDocument(JSON.stringify(document))).toEqual(document);
   });
 
+  it('keeps reading legacy version-1 backups', () => {
+    const document = {
+      format: BACKUP_FORMAT,
+      version: 1,
+      createdAt: '2026-07-24T12:00:00.000Z',
+      data: {
+        sshHosts: [],
+        savedHosts: [
+          {
+            id: 'legacy-telnet',
+            name: 'Console',
+            profile: { kind: 'telnet', host: 'console.example.test', port: 23 },
+            metadata: {},
+          },
+        ],
+        hostOrder: [{ kind: 'profile', id: 'legacy-telnet' }],
+        preferences: {},
+        tunnels: [],
+        loggingPolicies: [],
+        historySettings: {
+          maxTotalBytes: 5 * 1024 ** 3,
+          minFreeBytes: 2 * 1024 ** 3,
+          minFreePercent: 5,
+        },
+      },
+    };
+
+    expect(parseTransferDocument(JSON.stringify(document))).toEqual(document);
+  });
+
+  it('requires version 2 for saved SSH profiles', () => {
+    expect(() =>
+      parseTransferDocument(
+        JSON.stringify({
+          format: BACKUP_FORMAT,
+          version: 1,
+          createdAt: '2026-07-24T12:00:00.000Z',
+          data: {
+            sshHosts: [],
+            savedHosts: [
+              {
+                id: 'saved-ssh',
+                name: 'Router',
+                profile: {
+                  kind: 'ssh',
+                  target: 'router.example.test',
+                  useConfig: false,
+                },
+                metadata: {},
+              },
+            ],
+            hostOrder: [{ kind: 'profile', id: 'saved-ssh' }],
+            preferences: {},
+            tunnels: [],
+            loggingPolicies: [],
+            historySettings: {
+              maxTotalBytes: 5 * 1024 ** 3,
+              minFreeBytes: 2 * 1024 ** 3,
+              minFreePercent: 5,
+            },
+          },
+        }),
+      ),
+    ).toThrow('The connection data in this file is incomplete or too large.');
+  });
+
   it('rejects invalid JSON with a useful error', () => {
     expect(() => parseTransferDocument('{not json')).toThrow(
       'This file is not valid JSON.',
@@ -99,12 +165,14 @@ describe('Muxus transfer file parsing', () => {
       parseTransferDocument(
         JSON.stringify({
           format: BACKUP_FORMAT,
-          version: 2,
+          version: TRANSFER_VERSION + 1,
           createdAt: '2026-07-24T12:00:00.000Z',
           data: {},
         }),
       ),
-    ).toThrow('Muxus transfer version 2 is not supported.');
+    ).toThrow(
+      `Muxus transfer version ${TRANSFER_VERSION + 1} is not supported.`,
+    );
   });
 
   it('rejects malformed connection entries before restore can write', () => {

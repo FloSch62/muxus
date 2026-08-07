@@ -37,7 +37,8 @@ import {
 import { isFolderIconId } from './components/sidebar/folder-icons.js';
 
 export const BACKUP_FORMAT = 'muxus-backup';
-export const TRANSFER_VERSION = 1;
+export const TRANSFER_VERSION = 2;
+const LEGACY_TRANSFER_VERSION = 1;
 export const MAX_TRANSFER_FILE_BYTES = 20 * 1024 * 1024;
 
 const JSON_HEADERS = { 'content-type': 'application/json' };
@@ -125,22 +126,32 @@ export type PortableHistorySettings = Omit<
   'storageLocation'
 >;
 
+export interface MuxusBackupData extends PortableConnections {
+  preferences: BackupPreferences;
+  tunnels: TunnelRecord[];
+  loggingPolicies: BackupLoggingPolicy[];
+  historySettings: PortableHistorySettings;
+  /** Absent in backups from before folder credentials existed. */
+  folderSettings?: PortableFolderSettings[];
+}
+
 export interface MuxusBackupV1 {
+  format: typeof BACKUP_FORMAT;
+  version: typeof LEGACY_TRANSFER_VERSION;
+  createdAt: string;
+  appVersion?: string;
+  data: MuxusBackupData;
+}
+
+export interface MuxusBackupV2 {
   format: typeof BACKUP_FORMAT;
   version: typeof TRANSFER_VERSION;
   createdAt: string;
   appVersion?: string;
-  data: PortableConnections & {
-    preferences: BackupPreferences;
-    tunnels: TunnelRecord[];
-    loggingPolicies: BackupLoggingPolicy[];
-    historySettings: PortableHistorySettings;
-    /** Absent in backups from before folder credentials existed. */
-    folderSettings?: PortableFolderSettings[];
-  };
+  data: MuxusBackupData;
 }
 
-export type TransferDocument = MuxusBackupV1;
+export type TransferDocument = MuxusBackupV1 | MuxusBackupV2;
 export type TransferConflictStrategy = 'keep' | 'replace';
 
 export interface RestoreSelection {
@@ -185,7 +196,7 @@ export async function fetchDataSummary(): Promise<DataSummary> {
 
 export async function createBackupDocument(
   appVersion?: string,
-): Promise<MuxusBackupV1> {
+): Promise<MuxusBackupV2> {
   const snapshot = await fetchBaseSnapshot();
   const profileKeys = [
     '*',
@@ -385,7 +396,10 @@ export function parseTransferDocument(text: string): TransferDocument {
     throw new Error('This file is not valid JSON.');
   }
   if (!isRecord(parsed)) throw new Error('This is not a Muxus transfer file.');
-  if (parsed.version !== TRANSFER_VERSION) {
+  if (
+    parsed.version !== LEGACY_TRANSFER_VERSION &&
+    parsed.version !== TRANSFER_VERSION
+  ) {
     throw new Error(
       typeof parsed.version === 'number'
         ? `Muxus transfer version ${parsed.version} is not supported.`
@@ -402,7 +416,7 @@ export function parseTransferDocument(text: string): TransferDocument {
   ) {
     throw new Error('The Muxus transfer file is incomplete.');
   }
-  validateConnections(parsed.data);
+  validateConnections(parsed.data, parsed.version);
   validateBackupData(parsed.data);
   return parsed as unknown as TransferDocument;
 }
@@ -900,7 +914,10 @@ function validFolderStyles(value: unknown): value is Record<string, FolderStyle>
   );
 }
 
-function validateConnections(data: Record<string, unknown>): void {
+function validateConnections(
+  data: Record<string, unknown>,
+  version: TransferDocument['version'],
+): void {
   if (
     !boundedArray(data.sshHosts, 10_000) ||
     !boundedArray(data.savedHosts, 10_000) ||
@@ -923,9 +940,9 @@ function validateConnections(data: Record<string, unknown>): void {
         nonEmptyString(host.id) &&
         nonEmptyString(host.name) &&
         isRecord(host.profile) &&
-        (host.profile.kind === 'ssh' ||
-          host.profile.kind === 'telnet' ||
-          host.profile.kind === 'serial') &&
+        (host.profile.kind === 'telnet' ||
+          host.profile.kind === 'serial' ||
+          (version >= 2 && host.profile.kind === 'ssh')) &&
         isRecord(host.metadata),
     ) ||
     !data.hostOrder.every(

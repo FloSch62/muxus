@@ -176,6 +176,10 @@ describe('SSH host editor draft', () => {
       remoteCommand: 'none',
       requestTty: 'auto',
     });
+    const savedProfile = draftToSavedSshInput(draft).profile;
+    expect(savedProfile.kind).toBe('ssh');
+    if (savedProfile.kind !== 'ssh') throw new Error('Expected an SSH profile');
+    expect(savedProfile.remoteCommand).toBeUndefined();
   });
 
   it('selects the current per-host agent for live key detection', () => {
