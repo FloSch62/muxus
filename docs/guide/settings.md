@@ -149,11 +149,16 @@ Telnet/serial hosts, workspaces, tunnels and preferences. **Restore a backup** m
 back in; items absent from the file are not deleted.
 
 **Export OpenSSH** writes the SSH hosts out as a standard `ssh_config` for use with another
-client. Muxus-only settings remain in the backup.
+client. Non-secret shared folder defaults are copied into each affected host block so the
+export remains usable outside Muxus. Folder and host passwords are omitted; other
+Muxus-only settings remain in the backup.
 
 !!! info "What a backup excludes"
 
     Private key files, passwords and recorded session history are never part of a backup.
+
+    A backup can contain a saved SSH `ProxyCommand`. Restoring it does not run the command,
+    but opening that connection later does. Restore backups only from sources you trust.
 
 ## Debug
 

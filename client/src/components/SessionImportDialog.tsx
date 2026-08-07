@@ -39,6 +39,7 @@ import {
 import type {
   ImportedSession,
   ImportedSessionParseResult,
+  ImportedSshStorage,
   SkippedImportedSession,
 } from '../session-import.js';
 import { errorDetails, showToast } from '../state/toast.js';
@@ -88,7 +89,10 @@ export function SessionImportDialog<T extends ImportedSession>({
   reviewNotice: string;
   privacyNotice: string;
   parse: (content: string) => ImportedSessionParseResult<T>;
-  connections: (sessions: readonly T[]) => PortableConnections;
+  connections: (
+    sessions: readonly T[],
+    sshStorage: ImportedSshStorage,
+  ) => PortableConnections;
   autoSource?: AutoImportSource;
 }) {
   const queryClient = useQueryClient();
@@ -98,6 +102,7 @@ export function SessionImportDialog<T extends ImportedSession>({
   const [pending, setPending] = useState<PendingImport<T> | null>(null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [conflicts, setConflicts] = useState<TransferConflictStrategy>('keep');
+  const [sshStorage, setSshStorage] = useState<ImportedSshStorage>('muxus');
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState<'detect' | 'file' | 'import' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -111,11 +116,14 @@ export function SessionImportDialog<T extends ImportedSession>({
     [savedProfiles?.profiles],
   );
   const isConflict = useCallback(
-    (session: ImportedSession) =>
-      session.kind === 'ssh'
-        ? existingAliases.has(session.alias)
-        : existingProfileIds.has(session.profileId),
-    [existingAliases, existingProfileIds],
+    (session: T) => {
+      const converted = connections([session], sshStorage);
+      const profile = converted.savedHosts[0];
+      if (profile) return existingProfileIds.has(profile.id);
+      const sshHost = converted.sshHosts[0];
+      return sshHost ? existingAliases.has(sshHost.alias) : false;
+    },
+    [connections, existingAliases, existingProfileIds, sshStorage],
   );
   const conflictingSessions = useMemo(
     () => pending?.parsed.sessions.filter(isConflict) ?? [],
@@ -128,6 +136,8 @@ export function SessionImportDialog<T extends ImportedSession>({
       searchableSessionValues(session).some((value) => value?.toLowerCase().includes(needle)),
     );
   }, [pending, search]);
+  const hasSshSessions =
+    pending?.parsed.sessions.some((session) => session.kind === 'ssh') ?? false;
 
   const review = (content: string, source: string) => {
     const parsed = parse(content);
@@ -183,7 +193,10 @@ export function SessionImportDialog<T extends ImportedSession>({
     setBusy('import');
     setError(null);
     try {
-      const result = await restoreImportedConnections(connections(included), conflicts);
+      const result = await restoreImportedConnections(
+        connections(included, sshStorage),
+        conflicts,
+      );
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['ssh-config'] }),
         queryClient.invalidateQueries({ queryKey: ['saved-host-profiles'] }),
@@ -257,6 +270,35 @@ export function SessionImportDialog<T extends ImportedSession>({
                 </Typography>
                 <SkippedSessionList sessions={pending.parsed.skippedSessions} />
               </Alert>
+            ) : null}
+
+            {hasSshSessions ? (
+              <FormControl>
+                <FormLabel>Store imported SSH hosts in</FormLabel>
+                <RadioGroup
+                  row
+                  value={sshStorage}
+                  onChange={(event) =>
+                    setSshStorage(event.target.value as ImportedSshStorage)
+                  }
+                >
+                  <FormControlLabel
+                    value="muxus"
+                    control={<Radio />}
+                    label="Muxus app data only"
+                  />
+                  <FormControlLabel
+                    value="openssh"
+                    control={<Radio />}
+                    label="OpenSSH config"
+                  />
+                </RadioGroup>
+                <Typography variant="caption" color="text.secondary">
+                  {sshStorage === 'muxus'
+                    ? 'SSH connection settings stay in the Muxus database; ssh_config is not changed.'
+                    : 'Creates standard Host blocks that also work with ssh in any terminal.'}
+                </Typography>
+              </FormControl>
             ) : null}
 
             <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>

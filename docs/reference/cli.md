@@ -46,8 +46,9 @@ build uses Electron's per-app directory:
 | macOS | `~/Library/Application Support/Muxus/muxus.sqlite3` | `~/Library/Application Support/Muxus/muxus.sqlite3` |
 | Windows | `%APPDATA%\Muxus\muxus.sqlite3` | `%APPDATA%\Muxus\muxus.sqlite3` |
 
-Connection settings are not stored there; they remain in `~/.ssh/config`. Moving between
-the two builds is done with [backup and restore](../guide/settings.md#backup-data).
+Muxus-only SSH, Telnet and serial connection settings are stored there; OpenSSH-backed
+hosts remain in `~/.ssh/config`. Moving between the two builds is done with
+[backup and restore](../guide/settings.md#backup-data).
 
 ## Workspace scripts
 

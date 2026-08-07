@@ -27,26 +27,41 @@ export interface FolderAuthSource {
   ): { id: string; path: string; auth: FolderAuthSettings } | undefined;
 }
 
+export interface SavedProfileFolderAuthSource extends FolderAuthSource {
+  groupForSavedHost(id: string): string | undefined;
+}
+
 /**
  * Per-alias folder defaults for the dial path: the host's folder chain
  * (nearest first) collapses to one set of option lines, and every folder with
  * settings contributes a vault password candidate.
  */
 export function folderAuthResolver(source: FolderAuthSource): FolderAuthLookup {
-  return (alias) => {
-    const group = source.groupForAlias(alias);
-    if (!group) return undefined;
-    const rows = folderChain(group)
-      .map((path) => source.folderSettingsForPath(path))
-      .filter((row) => row !== undefined);
-    if (rows.length === 0) return undefined;
-    return {
-      optionLines: folderAuthOptionLines(mergeFolderAuth(rows.map((row) => row.auth))),
-      passwords: rows.map((row) => ({
-        account: folderPasswordAccount(row.id),
-        label: folderPasswordLabel(row.path),
-      })),
-    };
+  return (alias) => folderAuthForGroup(source, source.groupForAlias(alias));
+}
+
+/** Folder defaults for a Muxus-owned profile, keyed by its stable database ID. */
+export function savedProfileFolderAuthResolver(
+  source: SavedProfileFolderAuthSource,
+): FolderAuthLookup {
+  return (id) => folderAuthForGroup(source, source.groupForSavedHost(id));
+}
+
+function folderAuthForGroup(
+  source: FolderAuthSource,
+  group: string | undefined,
+): FolderAuthDefaults | undefined {
+  if (!group) return undefined;
+  const rows = folderChain(group)
+    .map((path) => source.folderSettingsForPath(path))
+    .filter((row) => row !== undefined);
+  if (rows.length === 0) return undefined;
+  return {
+    optionLines: folderAuthOptionLines(mergeFolderAuth(rows.map((row) => row.auth))),
+    passwords: rows.map((row) => ({
+      account: folderPasswordAccount(row.id),
+      label: folderPasswordLabel(row.path),
+    })),
   };
 }
 

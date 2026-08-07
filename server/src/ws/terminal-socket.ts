@@ -417,7 +417,8 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
     // Shell-less transport (`ssh -N`): the socket holds a dial lease so the
     // client can start forwards on the connId; once those hold their own
     // leases the socket closes and the transport lives on with them.
-    const dialLease = await ctx.connections.connect(connectMsg.profile, io, 'dial');
+    const profile = ctx.connections.resolveProfile(connectMsg.profile);
+    const dialLease = await ctx.connections.connect(profile, io, 'dial');
     if (!socketOpen) {
       dialLease.release();
       return;
@@ -433,7 +434,7 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
       socket.close();
     });
     socket.once('close', () => unsubscribeDialClose());
-    app.log.info({ target: connectMsg.profile.target, host: conn.host, user: conn.user, connId: conn.id, reused: dialLease.reused }, 'ssh transport dialed');
+    app.log.info({ target: profile.target, host: conn.host, user: conn.user, connId: conn.id, reused: dialLease.reused }, 'ssh transport dialed');
     if (conn.metadataAlias) {
       try {
         ctx.database.recordOpenSshConnection(conn.metadataAlias);
@@ -459,7 +460,11 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
     return;
   }
 
-  const { profile, cols, rows } = connectMsg;
+  const { cols, rows } = connectMsg;
+  const profile =
+    connectMsg.profile.kind === 'ssh'
+      ? ctx.connections.resolveProfile(connectMsg.profile)
+      : connectMsg.profile;
   recorder = SessionRecorder.start(
     ctx.database,
     ctx.history,
@@ -687,6 +692,13 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
   });
 
   app.log.info({ target: profile.target, host: conn.host, user: conn.user, connId: conn.id, transport }, 'ssh session established');
+  if (profile.profileId) {
+    try {
+      ctx.database.recordSavedHostConnection(profile.profileId);
+    } catch (err) {
+      app.log.warn({ err, profileId: profile.profileId }, 'could not record recent connection');
+    }
+  }
   if (conn.metadataAlias) {
     try {
       ctx.database.recordOpenSshConnection(conn.metadataAlias);

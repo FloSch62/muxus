@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiFetch } from '../../../client/src/api/http.js';
+import type { HostUpsertRequest } from '@muxus/shared';
 import {
   BACKUP_FORMAT,
   TRANSFER_VERSION,
   createBackupDocument,
+  createOpenSshExport,
   parseTransferDocument,
   restoreImportedConnections,
   sanitizePreferences,
@@ -86,6 +88,72 @@ describe('Muxus transfer file parsing', () => {
     expect(parseTransferDocument(JSON.stringify(document))).toEqual(document);
   });
 
+  it('keeps reading legacy version-1 backups', () => {
+    const document = {
+      format: BACKUP_FORMAT,
+      version: 1,
+      createdAt: '2026-07-24T12:00:00.000Z',
+      data: {
+        sshHosts: [],
+        savedHosts: [
+          {
+            id: 'legacy-telnet',
+            name: 'Console',
+            profile: { kind: 'telnet', host: 'console.example.test', port: 23 },
+            metadata: {},
+          },
+        ],
+        hostOrder: [{ kind: 'profile', id: 'legacy-telnet' }],
+        preferences: {},
+        tunnels: [],
+        loggingPolicies: [],
+        historySettings: {
+          maxTotalBytes: 5 * 1024 ** 3,
+          minFreeBytes: 2 * 1024 ** 3,
+          minFreePercent: 5,
+        },
+      },
+    };
+
+    expect(parseTransferDocument(JSON.stringify(document))).toEqual(document);
+  });
+
+  it('requires version 2 for saved SSH profiles', () => {
+    expect(() =>
+      parseTransferDocument(
+        JSON.stringify({
+          format: BACKUP_FORMAT,
+          version: 1,
+          createdAt: '2026-07-24T12:00:00.000Z',
+          data: {
+            sshHosts: [],
+            savedHosts: [
+              {
+                id: 'saved-ssh',
+                name: 'Router',
+                profile: {
+                  kind: 'ssh',
+                  target: 'router.example.test',
+                  useConfig: false,
+                },
+                metadata: {},
+              },
+            ],
+            hostOrder: [{ kind: 'profile', id: 'saved-ssh' }],
+            preferences: {},
+            tunnels: [],
+            loggingPolicies: [],
+            historySettings: {
+              maxTotalBytes: 5 * 1024 ** 3,
+              minFreeBytes: 2 * 1024 ** 3,
+              minFreePercent: 5,
+            },
+          },
+        }),
+      ),
+    ).toThrow('The connection data in this file is incomplete or too large.');
+  });
+
   it('rejects invalid JSON with a useful error', () => {
     expect(() => parseTransferDocument('{not json')).toThrow(
       'This file is not valid JSON.',
@@ -97,12 +165,14 @@ describe('Muxus transfer file parsing', () => {
       parseTransferDocument(
         JSON.stringify({
           format: BACKUP_FORMAT,
-          version: 2,
+          version: TRANSFER_VERSION + 1,
           createdAt: '2026-07-24T12:00:00.000Z',
           data: {},
         }),
       ),
-    ).toThrow('Muxus transfer version 2 is not supported.');
+    ).toThrow(
+      `Muxus transfer version ${TRANSFER_VERSION + 1} is not supported.`,
+    );
   });
 
   it('rejects malformed connection entries before restore can write', () => {
@@ -353,6 +423,89 @@ describe('backing up folder credentials', () => {
   });
 });
 
+describe('exporting Muxus-only SSH hosts to OpenSSH', () => {
+  it('materializes non-secret folder defaults and marks an omitted folder password', async () => {
+    const previews: HostUpsertRequest[] = [];
+    apiFetchMock.mockImplementation(async (url, options) => {
+      if (url === '/api/ssh/config') return { hosts: [] } as never;
+      if (url === '/api/profiles') {
+        return {
+          profiles: [
+            {
+              id: 'saved-1',
+              kind: 'ssh',
+              name: 'Core router',
+              profile: {
+                kind: 'ssh',
+                profileId: 'saved-1',
+                target: 'router.example.test',
+                useConfig: false,
+                user: 'profile-user',
+              },
+              metadata: {
+                profileId: 'saved-1',
+                group: 'Prod/EU',
+                connectCount: 0,
+              },
+              createdAt: '2026-08-07T00:00:00.000Z',
+              updatedAt: '2026-08-07T00:00:00.000Z',
+            },
+          ],
+        } as never;
+      }
+      if (url === '/api/folders/settings') {
+        return {
+          folders: [
+            {
+              id: 'prod',
+              path: 'Prod',
+              auth: {
+                user: 'folder-user',
+                identityFiles: ['~/.ssh/prod'],
+                identityAgent: 'SSH_AUTH_SOCK',
+              },
+              hasPassword: true,
+              createdAt: '2026-08-07T00:00:00.000Z',
+              updatedAt: '2026-08-07T00:00:00.000Z',
+            },
+            {
+              id: 'prod-eu',
+              path: 'Prod/EU',
+              auth: { port: 2222 },
+              hasPassword: false,
+              createdAt: '2026-08-07T00:00:00.000Z',
+              updatedAt: '2026-08-07T00:00:00.000Z',
+            },
+          ],
+        } as never;
+      }
+      if (url === '/api/ssh/config/preview') {
+        if (typeof options?.body !== 'string') throw new Error('preview body was not JSON');
+        const request = JSON.parse(options.body) as HostUpsertRequest;
+        previews.push(request);
+        return { text: `Host ${request.aliases[0]}` } as never;
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+
+    await expect(createOpenSshExport()).resolves.toContain('Host Core-router');
+    expect(previews).toEqual([
+      expect.objectContaining({
+        aliases: ['Core-router'],
+        description:
+          'Exported from Muxus app data. Shared folder password omitted.',
+        options: expect.objectContaining({
+          hostname: 'router.example.test',
+          user: 'profile-user',
+          port: 2222,
+          identityFiles: ['~/.ssh/prod'],
+          identityAgent: 'SSH_AUTH_SOCK',
+        }),
+      }),
+    ]);
+  });
+});
+
 describe('restoring SSH hosts', () => {
   const importedSecondaryAlias = {
     sshHosts: [
@@ -470,6 +623,54 @@ describe('restoring imported serial hosts', () => {
         }),
       }),
     );
+  });
+});
+
+describe('restoring Muxus-only SSH hosts', () => {
+  const importedSsh = {
+    sshHosts: [],
+    savedHosts: [
+      {
+        id: 'mobaxterm-ssh-router',
+        name: 'Core router',
+        profile: {
+          kind: 'ssh' as const,
+          target: 'router.example.test',
+          useConfig: false as const,
+          user: 'admin',
+          passwordOnly: true,
+        },
+        metadata: { group: 'Lab' },
+      },
+    ],
+    hostOrder: [],
+  };
+
+  it('restores through the native profile endpoint rather than ssh_config', async () => {
+    apiFetchMock
+      .mockResolvedValueOnce({ hosts: [] })
+      .mockResolvedValueOnce({ profiles: [] })
+      .mockResolvedValueOnce({ id: 'mobaxterm-ssh-router' })
+      .mockResolvedValueOnce({ id: 'mobaxterm-ssh-router' });
+
+    await expect(
+      restoreImportedConnections(importedSsh, 'replace'),
+    ).resolves.toEqual({ added: 1, updated: 0, skipped: 0 });
+    expect(apiFetchMock).toHaveBeenNthCalledWith(
+      3,
+      '/api/profiles',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({
+          id: 'mobaxterm-ssh-router',
+          name: 'Core router',
+          profile: importedSsh.savedHosts[0]?.profile,
+        }),
+      }),
+    );
+    expect(
+      apiFetchMock.mock.calls.some(([url]) => url === '/api/ssh/config/hosts'),
+    ).toBe(false);
   });
 });
 

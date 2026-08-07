@@ -242,4 +242,34 @@ describe('SecureCRT connection conversion', () => {
     expect(JSON.stringify(portable)).not.toContain('/private/key');
     expect(JSON.stringify(portable)).not.toContain('private-key-bytes');
   });
+
+  it('stores SSH sessions alongside native serial profiles when requested', () => {
+    const portable = secureCrtConnections(
+      parseSecureCrtSessions(EXPORT).sessions,
+      'muxus',
+    );
+
+    expect(portable.sshHosts).toEqual([]);
+    expect(portable.savedHosts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: expect.stringMatching(/^securecrt-ssh-/),
+          name: 'Core router',
+          profile: expect.objectContaining({
+            kind: 'ssh',
+            target: 'router.example.test',
+            useConfig: false,
+            user: 'deploy',
+            port: 2222,
+            passwordOnly: true,
+          }),
+          metadata: { group: 'Customers & labs/Europe' },
+        }),
+        expect.objectContaining({
+          id: expect.stringMatching(/^securecrt-serial-/),
+          profile: expect.objectContaining({ kind: 'serial' }),
+        }),
+      ]),
+    );
+  });
 });

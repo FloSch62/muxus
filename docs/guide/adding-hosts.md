@@ -4,9 +4,15 @@ icon: lucide/square-pen
 
 # Adding & editing hosts
 
-The host editor writes plain OpenSSH. Every field it exposes becomes part of a `Host` block
-in the configuration file. The attributes Muxus adds on top (display name, folder, colour,
-highlighting, logging policy) are stored in its own database.
+The SSH editor lets you choose where a new host lives:
+
+- **Muxus app data only** keeps a self-contained SSH profile in the local database and
+  does not change `~/.ssh/config`.
+- **OpenSSH config** writes a standard `Host` block that also works with `ssh`, `scp`
+  and `rsync` outside Muxus.
+
+Presentation attributes such as folder, colour, highlighting and logging policy always
+live in the Muxus database.
 
 Open the editor with **+** at the top of the sidebar, from a host's **Edit host** menu
 entry, or by pressing ++enter++ on a search that matched nothing.
@@ -19,7 +25,8 @@ entry, or by pressing ++enter++ on a search that matched nothing.
 
 !!! info "What a save rewrites"
 
-    Saving rewrites **only that block**. Comments, ordering, `Match` blocks and every other
+    This applies only to hosts stored in OpenSSH config. Saving rewrites **only that block**.
+    Comments, ordering, `Match` blocks and every other
     host in the file are left untouched. The write is atomic, and the previous contents are
     kept next to it as `<file>.muxus.bak`.
 
@@ -27,6 +34,7 @@ entry, or by pressing ++enter++ on a search that matched nothing.
 
 | Field | Writes |
 | --- | --- |
+| **Save host in** | Selects Muxus app data or an OpenSSH configuration file for a new SSH host. |
 | **Alias** | The `Host` line. Several aliases separated by spaces are accepted; the first one names the session. |
 | **HostName** | `HostName`. Empty means the alias is used as the hostname, as in OpenSSH. |
 | **Port** | `Port`, omitted when it is 22. |
@@ -123,8 +131,8 @@ panel shows the **exact block** that will be written.
 
 ## Saving
 
-The footer offers **Save** and **Save & connect**. The second writes the block and opens a
-session to it immediately.
+The footer offers **Save** and **Save & connect**. The second persists the selected storage
+type and opens a session immediately.
 
-Duplicating a host copies every field into a new block with a fresh alias. Deleting a host
-removes only its block from the file it lives in.
+Duplicating a host keeps its storage type. Deleting an OpenSSH host removes only its block;
+deleting a Muxus-only host removes only its database profile.

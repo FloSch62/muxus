@@ -264,10 +264,11 @@ export interface SerialPortsResponse {
 }
 
 export type SavedHostSessionProfile =
+  | import('./ws-protocol.js').SshProfile
   | import('./ws-protocol.js').TelnetProfile
   | import('./ws-protocol.js').SerialProfile;
 
-/** Telnet/serial host stored natively by Muxus rather than in ssh_config. */
+/** SSH/Telnet/serial host stored natively by Muxus rather than in ssh_config. */
 export interface SavedHostProfile {
   id: string;
   kind: SavedHostSessionProfile['kind'];

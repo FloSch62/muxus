@@ -35,7 +35,7 @@ and history.
 ## What is stored, and what is refused
 
 The local SQLite database holds folders, colours, display names, sidebar order, workspaces,
-saved tunnels, saved Telnet/serial hosts, per-host highlighting and logging policy,
+saved tunnels, Muxus-only SSH/Telnet/serial hosts, per-host highlighting and logging policy,
 connection timestamps, and—only when the user opts in—encrypted SSH passwords. It is
 created `0600` in a `0700` directory.
 
@@ -44,8 +44,11 @@ Objects whose field names include `password`, `passphrase`, `secret`, `token` or
 `privateKey` are refused at those persistence boundaries. The dedicated password-vault
 tables are the only place credential ciphertext can be written.
 
-Connection settings are not in the database. They remain in
-[`~/.ssh/config`](ssh-config.md).
+OpenSSH-backed connection settings remain in [`~/.ssh/config`](ssh-config.md). When a user
+explicitly chooses **Muxus only**, the SSH profile is stored in the database instead. A
+saved `ProxyCommand` is executable configuration: restoring a backup does not execute it,
+but opening that connection later does, so portable backups must be treated as trusted
+configuration rather than passive data.
 
 ## Password vault
 

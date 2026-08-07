@@ -7,9 +7,14 @@ import HighlightOutlinedIcon from '@mui/icons-material/HighlightOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
-import { useSessionLoggingPolicy } from '../api/queries.js';
+import type { SavedHostProfile } from '@muxus/shared';
+import { useSessionLoggingPolicy, useSshConfig, useSshKeys } from '../api/queries.js';
 import { useSaveSessionLoggingPolicy } from '../api/session-history.js';
-import { useSshConfig, useSshKeys } from '../api/queries.js';
+import {
+  useDeleteHostProfile,
+  useSaveHostProfile,
+  useUpdateHostProfileMetadata,
+} from '../api/profiles.js';
 import {
   fetchHostPreview,
   useDeleteHost,
@@ -17,7 +22,7 @@ import {
   useUpsertHost,
 } from '../api/ssh-config.js';
 import { confirmDeleteHost, shortenSshPath } from '../host-actions.js';
-import { connectTarget } from '../session-actions.js';
+import { connectSavedHost, connectTarget } from '../session-actions.js';
 import {
   hostSessionLoggingDraft,
   sessionLoggingPolicyInput,
@@ -28,8 +33,10 @@ import { AuthSection } from './host-editor/AuthSection.js';
 import {
   blankDraft,
   draftFromEntry,
+  draftFromSavedSshProfile,
   draftProblem,
   draftToRequest,
+  draftToSavedSshInput,
   identityAgentForDetection,
   type HostDraft,
 } from './host-editor/draft.js';
@@ -55,7 +62,10 @@ type Section =
   | 'highlighting'
   | 'advanced';
 type OpenState = Exclude<HostEditorState, false>;
-type SshEditorState = Extract<OpenState, { mode: 'new' | 'duplicate' | 'edit' }>;
+type SshEditorState = Extract<
+  OpenState,
+  { mode: 'new' | 'duplicate' | 'edit' | 'duplicate-profile' | 'edit-profile' }
+>;
 
 export function HostEditorDialog() {
   const state = useUiStore((s) => s.hostEditor);
@@ -141,21 +151,36 @@ function initialSshDraft(state: OpenState): HostDraft {
   if (state.mode === 'edit' || state.mode === 'duplicate') {
     return draftFromEntry(state.entry, state.mode === 'duplicate');
   }
+  if (
+    (state.mode === 'edit-profile' || state.mode === 'duplicate-profile') &&
+    state.entry.profile.kind === 'ssh'
+  ) {
+    return draftFromSavedSshProfile(
+      state.entry,
+      state.mode === 'duplicate-profile',
+    );
+  }
   return blankDraft();
 }
 
 function initialNativeDraft(state: OpenState): NativeHostDraft {
-  if (state.mode === 'edit-profile' || state.mode === 'duplicate-profile') {
-    return nativeDraftFromProfile(state.entry, state.mode === 'duplicate-profile');
+  if (
+    (state.mode === 'edit-profile' || state.mode === 'duplicate-profile') &&
+    state.entry.profile.kind !== 'ssh'
+  ) {
+    return nativeDraftFromProfile(
+      state.entry,
+      state.mode === 'duplicate-profile',
+    );
   }
   return blankNativeDraft(state.mode === 'new' ? state.prefillTarget : undefined);
 }
 
 /**
- * The Host block editor — Muxus's session editor. Everything here reads and
- * writes ~/.ssh/config: general addressing, authentication (key picker with
- * agent awareness), direct/ProxyJump/ProxyCommand routing, port forwards with
- * the live tunnel diagram, and free-form options with an exact preview.
+ * The SSH editor persists either a standard OpenSSH Host block or a
+ * self-contained Muxus database profile. Both paths share the same explicit
+ * addressing, authentication, routing, forwarding, logging, and presentation
+ * controls; only OpenSSH storage exposes raw ssh_config options.
  */
 function SshHostEditorContent({
   state,
@@ -168,6 +193,11 @@ function SshHostEditorContent({
 }) {
   const setState = useUiStore((s) => s.setHostEditor);
   const { data: config } = useSshConfig();
+  const editingProfile =
+    (state.mode === 'edit-profile' || state.mode === 'duplicate-profile') &&
+    state.entry.profile.kind === 'ssh'
+      ? state.entry
+      : undefined;
   const inheritedIdentityAgent =
     state.mode === 'edit' && state.entry.options.identityAgent === undefined
       ? state.entry.resolved.identityAgent
@@ -175,7 +205,11 @@ function SshHostEditorContent({
   const detectedIdentityAgent = identityAgentForDetection(draft, inheritedIdentityAgent);
   const { data: keys } = useSshKeys(true, detectedIdentityAgent);
   const loggingPolicyKey =
-    state.mode === 'edit' ? `ssh:${state.entry.alias}` : '*';
+    state.mode === 'edit'
+      ? `ssh:${state.entry.alias}`
+      : state.mode === 'edit-profile'
+        ? `profile:${state.entry.id}`
+        : '*';
   const { data: loggingPolicy } = useSessionLoggingPolicy(loggingPolicyKey);
 
   const [section, setSection] = useState<Section>('general');
@@ -183,6 +217,7 @@ function SshHostEditorContent({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const connectAfter = useRef(false);
   const savedAlias = useRef('');
+  const savedProfile = useRef<SavedHostProfile | undefined>(undefined);
 
   const editing = state.mode === 'edit' ? state.entry : undefined;
   const previousAlias = editing?.alias;
@@ -190,13 +225,27 @@ function SshHostEditorContent({
   const close = () => setState(false);
   const finish = () => {
     close();
+    if (!connectAfter.current) return;
+    if (draft.storage === 'muxus') {
+      if (savedProfile.current) connectSavedHost(savedProfile.current);
+      return;
+    }
     const alias = draft.aliasText.trim().split(/\s+/)[0];
-    if (connectAfter.current && alias) connectTarget(alias);
+    if (alias) connectTarget(alias);
   };
   const saveLoggingPolicy = useSaveSessionLoggingPolicy(finish);
   const updateMetadata = useUpdateSshMetadata(() => {
     saveLoggingPolicy.mutate({
       profileKey: `ssh:${savedAlias.current}`,
+      policy: draft.sessionLogging.inherit
+        ? null
+        : sessionLoggingPolicyInput(draft.sessionLogging),
+    });
+  });
+  const updateProfileMetadata = useUpdateHostProfileMetadata((profile) => {
+    savedProfile.current = profile;
+    saveLoggingPolicy.mutate({
+      profileKey: `profile:${profile.id}`,
       policy: draft.sessionLogging.inherit
         ? null
         : sessionLoggingPolicyInput(draft.sessionLogging),
@@ -222,7 +271,28 @@ function SshHostEditorContent({
       },
     });
   });
+  const saveProfile = useSaveHostProfile((profile) => {
+    savedProfile.current = profile;
+    const highlights = draft.keywordHighlights;
+    updateProfileMetadata.mutate({
+      id: profile.id,
+      patch: {
+        displayName: draft.displayName.trim() || null,
+        group: draft.group.trim() || null,
+        color: draft.color ?? null,
+        disableSftp: draft.disableSftp,
+        consoleCompatibility: draft.consoleCompatibility,
+        keywordHighlights:
+          highlights.inheritGlobal &&
+          !highlights.profileId &&
+          highlights.rules.length === 0
+            ? null
+            : highlights,
+      },
+    });
+  });
   const deleteHost = useDeleteHost(close);
+  const deleteProfile = useDeleteHostProfile(close);
 
   const loading = draft.sessionLogging.loaded ? null : 'Loading session logging settings…';
   const problem = loading ? null : draftProblem(draft);
@@ -235,7 +305,8 @@ function SshHostEditorContent({
         ...current,
         sessionLogging: hostSessionLoggingDraft(
           loggingPolicy,
-          state.mode !== 'edit' || !loggingPolicy.overridden,
+          (state.mode !== 'edit' && state.mode !== 'edit-profile') ||
+            !loggingPolicy.overridden,
         ),
       };
     });
@@ -243,7 +314,7 @@ function SshHostEditorContent({
 
   // Live preview of the exact block text, rendered by the server (debounced).
   useEffect(() => {
-    if (problem) return;
+    if (problem || draft.storage !== 'openssh') return;
     const timer = setTimeout(() => {
       fetchHostPreview(draftToRequest(draft, previousAlias))
         .then((text) => {
@@ -258,10 +329,30 @@ function SshHostEditorContent({
   const set = (patch: Partial<HostDraft>) => setDraft((d) => ({ ...d, ...patch }));
   const save = (connect: boolean) => {
     connectAfter.current = connect;
+    if (draft.storage === 'muxus') {
+      saveProfile.mutate(
+        draftToSavedSshInput(
+          draft,
+          state.mode === 'edit-profile'
+            ? editingProfile?.id
+            : savedProfile.current?.id,
+        ),
+      );
+      return;
+    }
     upsert.mutate(draftToRequest(draft, previousAlias));
   };
 
-  const title = state.mode === 'edit' ? `Edit ${state.entry.alias}` : state.mode === 'duplicate' ? `Duplicate ${state.entry.alias}` : 'Add host';
+  const title =
+    state.mode === 'edit'
+      ? `Edit ${state.entry.alias}`
+      : state.mode === 'duplicate'
+        ? `Duplicate ${state.entry.alias}`
+        : state.mode === 'edit-profile'
+          ? `Edit ${state.entry.name}`
+          : state.mode === 'duplicate-profile'
+            ? `Duplicate ${state.entry.name}`
+            : 'Add host';
 
   const sections: EditorSectionDef<Section>[] = [
     { value: 'general', label: 'General', icon: <DnsOutlinedIcon fontSize="small" /> },
@@ -301,7 +392,11 @@ function SshHostEditorContent({
   return (
     <EditorShell
       title={title}
-      storage={`Saved to ${shortenSshPath(draft.file || config?.path || '~/.ssh/config')}`}
+      storage={
+        draft.storage === 'muxus'
+          ? 'Saved in Muxus app data — ssh_config is unchanged'
+          : `Saved to ${shortenSshPath(draft.file || config?.path || '~/.ssh/config')}`
+      }
       typeKind={state.mode === 'new' ? 'ssh' : undefined}
       onTypeChange={
         state.mode === 'new'
@@ -313,7 +408,13 @@ function SshHostEditorContent({
       onSection={setSection}
       problem={problem}
       loading={loading}
-      busy={upsert.isPending || updateMetadata.isPending || saveLoggingPolicy.isPending}
+      busy={
+        upsert.isPending ||
+        updateMetadata.isPending ||
+        saveProfile.isPending ||
+        updateProfileMetadata.isPending ||
+        saveLoggingPolicy.isPending
+      }
       onDelete={
         state.mode === 'edit'
           ? () => {
@@ -322,13 +423,28 @@ function SshHostEditorContent({
                 if (confirmed) deleteHost.mutate(alias);
               });
             }
-          : undefined
+          : state.mode === 'edit-profile' && editingProfile
+            ? () => {
+                void confirmDeleteHost({ name: editingProfile.name }).then(
+                  (confirmed) => {
+                    if (confirmed) deleteProfile.mutate(editingProfile.id);
+                  },
+                );
+              }
+            : undefined
       }
-      deletePending={deleteHost.isPending}
+      deletePending={deleteHost.isPending || deleteProfile.isPending}
       onClose={close}
       onSave={save}
     >
-      {section === 'general' && <GeneralSection draft={draft} set={set} config={config} />}
+      {section === 'general' && (
+        <GeneralSection
+          draft={draft}
+          set={set}
+          config={config}
+          canChooseStorage={state.mode === 'new'}
+        />
+      )}
       {section === 'auth' && <AuthSection draft={draft} set={set} keys={keys} />}
       {section === 'route' && <RouteSection draft={draft} set={set} config={config} />}
       {section === 'forwards' && <ForwardsSection draft={draft} set={set} />}
@@ -348,7 +464,15 @@ function SshHostEditorContent({
           onChange={(keywordHighlights) => set({ keywordHighlights })}
         />
       )}
-      {section === 'advanced' && <AdvancedSection draft={draft} set={set} preview={preview} previewError={previewError} />}
+      {section === 'advanced' && (
+        <AdvancedSection
+          draft={draft}
+          set={set}
+          preview={preview}
+          previewError={previewError}
+          configBacked={draft.storage === 'openssh'}
+        />
+      )}
     </EditorShell>
   );
 }

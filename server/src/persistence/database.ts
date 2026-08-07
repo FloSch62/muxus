@@ -611,7 +611,9 @@ export function assertSecretFree(value: unknown, location = 'config'): void {
       words.some((word, index) => word === 'private' && words[index + 1] === 'key');
     const referenceOnly =
       ['path', 'file', 'filename', 'ref', 'reference', 'id'].includes(words.at(-1) ?? '');
-    if (sensitive && !referenceOnly) {
+    // This is an authentication policy flag, not password material.
+    const safePolicy = key === 'passwordOnly' && typeof child === 'boolean';
+    if (sensitive && !referenceOnly && !safePolicy) {
       throw new Error(
         `${location}.${key} must not be stored in profile or workspace data; use the encrypted password vault`,
       );
@@ -689,6 +691,19 @@ export class MuxusDatabase {
     return row ? optionalString(row.group_name) : undefined;
   }
 
+  /** The sidebar folder a Muxus-owned host lives in. */
+  groupForSavedHost(id: string): string | undefined {
+    const row = this.db
+      .prepare(`
+        SELECT groups.name AS group_name
+        FROM connection_profiles AS profiles
+        LEFT JOIN connection_groups AS groups ON groups.id = profiles.group_id
+        WHERE profiles.id = ? AND profiles.kind = 'ssh'
+      `)
+      .get(id);
+    return optionalString(row?.group_name);
+  }
+
   /** Whether this OpenSSH alias must avoid SFTP and Unix shell probing. */
   sftpDisabledForAlias(alias: string): boolean {
     const row = this.metadataByAlias.get(alias);
@@ -698,6 +713,28 @@ export class MuxusDatabase {
   /** Whether this OpenSSH alias needs the stricter console session shape. */
   consoleCompatibilityForAlias(alias: string): boolean {
     const row = this.metadataByAlias.get(alias);
+    return Number(row?.console_compatibility) === 1;
+  }
+
+  /** Whether one Muxus-owned host must avoid SFTP and shell probing. */
+  sftpDisabledForSavedHost(id: string): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT disable_sftp FROM connection_profiles
+         WHERE id = ? AND kind = 'ssh'`,
+      )
+      .get(id);
+    return Number(row?.disable_sftp) === 1;
+  }
+
+  /** Whether one Muxus-owned host needs the stricter console session shape. */
+  consoleCompatibilityForSavedHost(id: string): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT console_compatibility FROM connection_profiles
+         WHERE id = ? AND kind = 'ssh'`,
+      )
+      .get(id);
     return Number(row?.console_compatibility) === 1;
   }
 
@@ -752,7 +789,7 @@ export class MuxusDatabase {
   /**
    * Persist one complete visual group order across both host sources. Rows
    * for OpenSSH hosts are created lazily so even otherwise-unmodified hosts
-   * can participate in sorting; saved Telnet/serial hosts must already exist.
+   * can participate in sorting; Muxus-owned hosts must already exist.
    */
   reorderManagedHosts(refs: readonly ManagedHostRef[]): void {
     const keys = refs.map((ref) => (ref.kind === 'ssh' ? `ssh:${ref.alias}` : `profile:${ref.id}`));
@@ -763,7 +800,7 @@ export class MuxusDatabase {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const savedExists = this.db.prepare(
-        `SELECT id FROM connection_profiles WHERE id = ? AND kind IN ('serial', 'telnet')`,
+        `SELECT id FROM connection_profiles WHERE id = ? AND kind IN ('ssh', 'serial', 'telnet')`,
       );
       const update = this.db.prepare(`
         UPDATE connection_profiles
@@ -1121,7 +1158,7 @@ export class MuxusDatabase {
         SELECT profiles.*, groups.name AS group_name
         FROM connection_profiles AS profiles
         LEFT JOIN connection_groups AS groups ON groups.id = profiles.group_id
-        WHERE profiles.kind IN ('serial', 'telnet')
+        WHERE profiles.kind IN ('ssh', 'serial', 'telnet')
         ORDER BY profiles.sort_order, profiles.name COLLATE NOCASE
       `)
       .all()
@@ -1131,6 +1168,9 @@ export class MuxusDatabase {
   saveSavedHostProfile(input: SavedHostProfileInput): SavedHostProfile {
     requireNonEmpty(input.name, 'name');
     const kind = input.profile.kind;
+    if (kind === 'ssh' && input.profile.useConfig !== false) {
+      throw new Error('Muxus-owned SSH profiles must set useConfig to false');
+    }
     const { kind: _kind, profileId: _profileId, ...config } = input.profile;
     assertSecretFree(config, 'profile.config');
     const id = input.id ?? nanoid();
@@ -1138,7 +1178,7 @@ export class MuxusDatabase {
       .prepare(`SELECT kind FROM connection_profiles WHERE id = ?`)
       .get(id) as { kind?: unknown } | undefined;
     if (current) {
-      if (current.kind !== 'serial' && current.kind !== 'telnet') {
+      if (current.kind !== 'ssh' && current.kind !== 'serial' && current.kind !== 'telnet') {
         throw new Error('profile ID belongs to a different connection type');
       }
       this.db
@@ -1165,7 +1205,7 @@ export class MuxusDatabase {
         SELECT profiles.*, groups.name AS group_name
         FROM connection_profiles AS profiles
         LEFT JOIN connection_groups AS groups ON groups.id = profiles.group_id
-        WHERE profiles.id = ? AND profiles.kind IN ('serial', 'telnet')
+        WHERE profiles.id = ? AND profiles.kind IN ('ssh', 'serial', 'telnet')
       `)
       .get(id);
     return row ? savedHostFromRow(row) : undefined;
@@ -1177,7 +1217,7 @@ export class MuxusDatabase {
         SELECT profiles.*, groups.name AS group_name
         FROM connection_profiles AS profiles
         LEFT JOIN connection_groups AS groups ON groups.id = profiles.group_id
-        WHERE profiles.id = ? AND profiles.kind IN ('serial', 'telnet')
+        WHERE profiles.id = ? AND profiles.kind IN ('ssh', 'serial', 'telnet')
       `)
       .get(id);
     if (!current) throw new Error('saved host not found');
@@ -1230,7 +1270,7 @@ export class MuxusDatabase {
         SET last_connected_at = CURRENT_TIMESTAMP,
             connect_count = connect_count + 1,
             updated_at = CURRENT_TIMESTAMP
-        WHERE id = ? AND kind IN ('serial', 'telnet')
+        WHERE id = ? AND kind IN ('ssh', 'serial', 'telnet')
       `)
       .run(id);
   }
@@ -1238,7 +1278,7 @@ export class MuxusDatabase {
   deleteSavedHostProfile(id: string): boolean {
     const deleted =
       this.db
-        .prepare(`DELETE FROM connection_profiles WHERE id = ? AND kind IN ('serial', 'telnet')`)
+        .prepare(`DELETE FROM connection_profiles WHERE id = ? AND kind IN ('ssh', 'serial', 'telnet')`)
         .run(id).changes > 0;
     if (deleted) {
       this.db

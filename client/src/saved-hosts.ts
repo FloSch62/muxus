@@ -6,9 +6,18 @@ export function savedHostDisplayName(profile: SavedHostProfile): string {
 }
 
 export function savedHostAddress(profile: SavedHostProfile): string {
-  return profile.profile.kind === 'telnet'
-    ? `${profile.profile.host}:${profile.profile.port}`
-    : `${profile.profile.path} · ${profile.profile.baudRate} baud`;
+  const connection = profile.profile;
+  if (connection.kind === 'ssh') {
+    const target = connection.user
+      ? `${connection.user}@${connection.target}`
+      : connection.target;
+    return connection.port && connection.port !== 22
+      ? `${target}:${connection.port}`
+      : target;
+  }
+  return connection.kind === 'telnet'
+    ? `${connection.host}:${connection.port}`
+    : `${connection.path} · ${connection.baudRate} baud`;
 }
 
 /** Everything a search may look at, lower-cased once per profile. */

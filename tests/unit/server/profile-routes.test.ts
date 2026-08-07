@@ -24,6 +24,56 @@ afterEach(async () => {
 const auth = () => ({ authorization: `Bearer ${TOKEN}` });
 
 describe('saved host profile routes', () => {
+  it('stores SSH connection settings without creating an ssh_config host', async () => {
+    const create = await app.inject({
+      method: 'PUT',
+      url: '/api/profiles',
+      headers: auth(),
+      payload: {
+        id: 'muxus-ssh-core-router',
+        name: 'Core router',
+        profile: {
+          kind: 'ssh',
+          target: 'router.example.test',
+          useConfig: false,
+          user: 'admin',
+          port: 2222,
+          identityFiles: ['~/.ssh/router'],
+          identitiesOnly: true,
+          proxyJump: ['bastion'],
+        },
+      },
+    });
+
+    expect(create.statusCode).toBe(200);
+    expect(create.json()).toMatchObject({
+      id: 'muxus-ssh-core-router',
+      kind: 'ssh',
+      profile: {
+        kind: 'ssh',
+        target: 'router.example.test',
+        useConfig: false,
+        user: 'admin',
+        port: 2222,
+      },
+    });
+
+    const config = await app.inject({
+      method: 'GET',
+      url: '/api/ssh/config',
+      headers: auth(),
+    });
+    expect(config.statusCode).toBe(200);
+    expect(
+      config
+        .json()
+        .hosts.some(
+          (host: { resolved: { hostname: string } }) =>
+            host.resolved.hostname === 'router.example.test',
+        ),
+    ).toBe(false);
+  });
+
   it('creates and updates an imported profile with a caller-supplied ID', async () => {
     const id = 'securecrt-serial-2p5f9abc';
     const create = await app.inject({

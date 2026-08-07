@@ -27,10 +27,12 @@ export function GeneralSection({
   draft,
   set,
   config,
+  canChooseStorage = false,
 }: {
   draft: HostDraft;
   set: (patch: Partial<HostDraft>) => void;
   config: SshConfigResponse | undefined;
+  canChooseStorage?: boolean;
 }) {
   const [newFileName, setNewFileName] = useState('');
   const rootPath = config?.path ?? '~/.ssh/config';
@@ -46,17 +48,43 @@ export function GeneralSection({
   };
 
   const primary = draftAliases(draft)[0];
+  const configBacked = draft.storage === 'openssh';
 
   return (
     <Stack spacing={2}>
+      {canChooseStorage ? (
+        <TextField
+          select
+          label="Save host in"
+          value={draft.storage}
+          onChange={(event) =>
+            set({ storage: event.target.value as HostDraft['storage'] })
+          }
+          helperText={
+            configBacked
+              ? 'Writes a standard Host block that also works with ssh in any terminal.'
+              : 'Keeps this connection in the Muxus database and does not change ssh_config.'
+          }
+          fullWidth
+        >
+          <MenuItem value="muxus">Muxus app data only</MenuItem>
+          <MenuItem value="openssh">OpenSSH config</MenuItem>
+        </TextField>
+      ) : null}
       <Stack direction="row" spacing={1.5}>
         <TextField
-          label="Alias"
+          label={configBacked ? 'Alias' : 'Name'}
           value={draft.aliasText}
           onChange={(e) => set({ aliasText: e.target.value })}
           required
           fullWidth
-          helperText={primary ? `Connect with: ssh ${primary}` : 'The name you connect as — also works in any terminal'}
+          helperText={
+            configBacked
+              ? primary
+                ? `Connect with: ssh ${primary}`
+                : 'The name you connect as — also works in any terminal'
+              : 'How this host appears in Muxus'
+          }
         />
       </Stack>
       <Stack direction="row" spacing={1.5}>
@@ -64,7 +92,8 @@ export function GeneralSection({
           label="HostName"
           value={draft.hostname}
           onChange={(e) => set({ hostname: e.target.value })}
-          placeholder="defaults to the alias"
+          placeholder={configBacked ? 'defaults to the alias' : 'router.example.com'}
+          required={!configBacked}
           fullWidth
         />
         <TextField
@@ -76,51 +105,55 @@ export function GeneralSection({
         />
       </Stack>
       <TextField label="User" value={draft.user} onChange={(e) => set({ user: e.target.value })} placeholder="current user" fullWidth />
-      <TextField
-        label="Description"
-        value={draft.description}
-        onChange={(e) => set({ description: e.target.value })}
-        placeholder="shown in the host list"
-        helperText="Stored as a # comment above the Host block"
-        fullWidth
-        multiline
-        maxRows={3}
-      />
-      <Stack spacing={1}>
+      {configBacked ? (
         <TextField
-          select
-          label="Config file"
-          value={selectValue}
-          onChange={(e) => {
-            const v = e.target.value;
-            if (v === NEW_FILE) applyNewFile(newFileName || 'group');
-            else set({ file: v === rootPath ? '' : v });
-          }}
+          label="Description"
+          value={draft.description}
+          onChange={(e) => set({ description: e.target.value })}
+          placeholder="shown in the host list"
+          helperText="Stored as a # comment above the Host block"
           fullWidth
-        >
-          {[rootPath, ...files.filter((f) => f !== rootPath)].map((f) => (
-            <MenuItem key={f} value={f === rootPath ? rootPath : f}>
-              {shortenPath(f)}
-            </MenuItem>
-          ))}
-          <MenuItem value={NEW_FILE}>New group file…</MenuItem>
-        </TextField>
-        {selectValue === NEW_FILE && (
-          <>
-            <TextField
-              label="Group name"
-              value={newFileName}
-              onChange={(e) => applyNewFile(e.target.value)}
-              placeholder="work"
-              fullWidth
-            />
-            <Typography variant="caption" color="text.secondary">
-              Creates {shortenPath(draft.file || `${sshDir}config.d/…`)} and adds an Include to your config — the sidebar groups hosts by
-              file.
-            </Typography>
-          </>
-        )}
-      </Stack>
+          multiline
+          maxRows={3}
+        />
+      ) : null}
+      {configBacked ? (
+        <Stack spacing={1}>
+          <TextField
+            select
+            label="Config file"
+            value={selectValue}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === NEW_FILE) applyNewFile(newFileName || 'group');
+              else set({ file: v === rootPath ? '' : v });
+            }}
+            fullWidth
+          >
+            {[rootPath, ...files.filter((f) => f !== rootPath)].map((f) => (
+              <MenuItem key={f} value={f === rootPath ? rootPath : f}>
+                {shortenPath(f)}
+              </MenuItem>
+            ))}
+            <MenuItem value={NEW_FILE}>New group file…</MenuItem>
+          </TextField>
+          {selectValue === NEW_FILE ? (
+            <>
+              <TextField
+                label="Group name"
+                value={newFileName}
+                onChange={(e) => applyNewFile(e.target.value)}
+                placeholder="work"
+                fullWidth
+              />
+              <Typography variant="caption" color="text.secondary">
+                Creates {shortenPath(draft.file || `${sshDir}config.d/…`)} and adds
+                an Include to your config — the sidebar groups hosts by file.
+              </Typography>
+            </>
+          ) : null}
+        </Stack>
+      ) : null}
 
       <Divider />
       <Stack spacing={1.5}>
@@ -135,11 +168,13 @@ export function GeneralSection({
           label="After connecting"
           value={draft.remoteCommandMode}
           onChange={(e) => set({ remoteCommandMode: e.target.value as RemoteCommandMode })}
-          helperText={remoteCommandHelp(draft.remoteCommandMode)}
+          helperText={remoteCommandHelp(draft.remoteCommandMode, configBacked)}
           fullWidth
         >
-          <MenuItem value="inherit">Use SSH configuration</MenuItem>
-          <MenuItem value="shell">Open a login shell</MenuItem>
+          <MenuItem value="inherit">
+            {configBacked ? 'Use SSH configuration' : 'Open a login shell'}
+          </MenuItem>
+          {configBacked ? <MenuItem value="shell">Open a login shell</MenuItem> : null}
           <MenuItem value="command">Run a startup command</MenuItem>
         </TextField>
         {draft.remoteCommandMode === 'command' ? (
@@ -157,11 +192,17 @@ export function GeneralSection({
           label="Terminal allocation (TTY)"
           value={draft.requestTty}
           onChange={(e) => set({ requestTty: e.target.value as RequestTtyMode })}
-          helperText={requestTtyHelp(draft.requestTty, draft.remoteCommandMode)}
+          helperText={requestTtyHelp(
+            draft.requestTty,
+            draft.remoteCommandMode,
+            configBacked,
+          )}
           fullWidth
         >
-          <MenuItem value="inherit">Use SSH configuration</MenuItem>
-          <MenuItem value="auto">Automatic</MenuItem>
+          <MenuItem value="inherit">
+            {configBacked ? 'Use SSH configuration' : 'Automatic'}
+          </MenuItem>
+          {configBacked ? <MenuItem value="auto">Automatic</MenuItem> : null}
           <MenuItem value="yes">Always allocate a terminal</MenuItem>
           <MenuItem value="no">Do not allocate a terminal</MenuItem>
           <MenuItem value="force">Force terminal allocation</MenuItem>
@@ -170,17 +211,20 @@ export function GeneralSection({
 
       <Divider />
       <Typography variant="caption" color="text.secondary">
-        Display name, group and color are local to Muxus — they never touch your
-        ssh config.
+        {configBacked
+          ? 'Display name, group and color are local to Muxus — they never touch your ssh config.'
+          : 'Group and color are stored with this connection in Muxus app data.'}
       </Typography>
-      <TextField
-        label="Display name"
-        value={draft.displayName}
-        onChange={(e) => set({ displayName: e.target.value })}
-        placeholder={primary ?? 'the alias'}
-        helperText="Optional — only changes how this host appears in Muxus."
-        fullWidth
-      />
+      {configBacked ? (
+        <TextField
+          label="Display name"
+          value={draft.displayName}
+          onChange={(e) => set({ displayName: e.target.value })}
+          placeholder={primary ?? 'the alias'}
+          helperText="Optional — only changes how this host appears in Muxus."
+          fullWidth
+        />
+      ) : null}
       <FolderPathField
         value={draft.group}
         onChange={(group: string) => set({ group })}
@@ -191,18 +235,24 @@ export function GeneralSection({
   );
 }
 
-function remoteCommandHelp(mode: RemoteCommandMode): string {
+function remoteCommandHelp(mode: RemoteCommandMode, configBacked: boolean): string {
   switch (mode) {
     case 'shell':
       return 'Explicitly disables an inherited RemoteCommand and opens the normal shell.';
     case 'command':
       return 'Runs one command after authentication instead of opening the normal shell.';
     default:
-      return 'Uses any RemoteCommand inherited from matching SSH configuration.';
+      return configBacked
+        ? 'Uses any RemoteCommand inherited from matching SSH configuration.'
+        : 'Opens the server’s default login shell.';
   }
 }
 
-function requestTtyHelp(value: RequestTtyMode, commandMode: RemoteCommandMode): string {
+function requestTtyHelp(
+  value: RequestTtyMode,
+  commandMode: RemoteCommandMode,
+  configBacked: boolean,
+): string {
   switch (value) {
     case 'auto':
       return commandMode === 'command'
@@ -215,6 +265,11 @@ function requestTtyHelp(value: RequestTtyMode, commandMode: RemoteCommandMode): 
     case 'no':
       return 'Runs without a terminal.';
     default:
+      if (!configBacked) {
+        return commandMode === 'command'
+          ? 'Runs startup commands without a terminal unless you choose another setting.'
+          : 'Allocates a terminal for a login shell.';
+      }
       return commandMode === 'command'
         ? 'Inherits RequestTTY; SSH normally runs startup commands without a terminal.'
         : 'Inherits RequestTTY; SSH normally allocates a terminal for a login shell.';

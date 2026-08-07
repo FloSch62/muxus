@@ -8,6 +8,7 @@ import type {
 } from '@muxus/shared';
 import {
   serialProfileSchema,
+  sshProfileSchema,
   telnetProfileSchema,
 } from '@muxus/shared/ws-protocol';
 import type { AppContext } from '../app.js';
@@ -17,10 +18,14 @@ import { metadataPatchSchema } from './metadata-schema.js';
 const savedProfileSchema = z.object({
   id: z.string().min(1).max(200).optional(),
   name: z.string().trim().min(1).max(200),
-  profile: z.discriminatedUnion('kind', [telnetProfileSchema, serialProfileSchema]),
+  profile: z.discriminatedUnion('kind', [
+    sshProfileSchema,
+    telnetProfileSchema,
+    serialProfileSchema,
+  ]),
 });
 
-/** Muxus-owned Telnet and serial hosts. */
+/** Muxus-owned SSH, Telnet, and serial hosts. */
 export function registerProfileRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/profiles', (): SavedHostProfilesResponse => ({
     profiles: ctx.database.listSavedHostProfiles(),

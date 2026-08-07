@@ -44,6 +44,9 @@ const upsertSchema = z.object({
     proxyCommand: z.string().optional(),
     forwards: z.array(forwardSchema).optional(),
     passwordOnly: z.boolean().optional(),
+    remoteCommand: z.string().optional(),
+    requestTty: z.enum(['no', 'yes', 'force', 'auto']).optional(),
+    strictHostKeyChecking: z.enum(['yes', 'no', 'accept-new', 'ask']).optional(),
     extras: z.array(z.object({ keyword: z.string(), value: z.string() })).optional(),
   }),
 });

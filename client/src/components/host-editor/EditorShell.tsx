@@ -116,7 +116,18 @@ export function EditorShell<S extends string>({
               />
             ))}
           </Tabs>
-          <Box sx={{ flex: 1, minWidth: 0, overflowY: 'auto', pt: 0.5, pr: 0.5, pb: 1 }}>
+          <Box
+            sx={{
+              flex: 1,
+              minWidth: 0,
+              overflowY: 'auto',
+              // Outlined fields float their labels above the input border.
+              // Keep that first label inside the scroll container's clip area.
+              pt: 1.5,
+              pr: 0.5,
+              pb: 1,
+            }}
+          >
             {children}
           </Box>
         </Stack>

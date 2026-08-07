@@ -29,11 +29,13 @@ export function AdvancedSection({
   set,
   preview,
   previewError,
+  configBacked = true,
 }: {
   draft: HostDraft;
   set: (patch: Partial<HostDraft>) => void;
   preview: string;
   previewError: string | null;
+  configBacked?: boolean;
 }) {
   const sshAlgorithms = useAppInfo().data?.sshAlgorithms;
   const legacyState = legacyPresetState(draft.extras);
@@ -72,101 +74,111 @@ export function AdvancedSection({
         </Typography>
       </Stack>
 
-      <Stack spacing={1}>
-        <Typography variant="body2" color="text.secondary">
-          Additional ssh_config options. Applied options are used by Muxus; others are preserved
-          for OpenSSH.
-        </Typography>
-        {draft.extras.map((e, i) => {
-          const keyword = e.keyword.trim().toLowerCase();
-          const unsupported = unsupportedEntries(e.keyword, e.value, sshAlgorithms);
-          return (
-            <Stack key={i} direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
-              <TextField
-                label="Option"
-                value={e.keyword}
-                onChange={(ev) => update(i, { keyword: ev.target.value })}
-                sx={{ width: 180, flexShrink: 0 }}
-              />
-              <TextField
-                label="Value"
-                value={e.value}
-                onChange={(ev) => update(i, { value: ev.target.value })}
-                fullWidth
-                error={unsupported.length > 0}
-                helperText={
-                  unsupported.length
-                    ? `Skipped when connecting — not supported by the SSH engine: ${unsupported.join(', ')}`
-                    : undefined
-                }
-              />
-              <Box sx={{ width: 62, flexShrink: 0, display: 'flex', justifyContent: 'center', pt: 1.25 }}>
-                {keyword &&
-                  (DIAL_TIME_KEYWORDS.has(keyword) ? (
-                    <Tooltip title="Muxus applies this option when connecting.">
-                      <Chip size="small" label="applied" color="success" variant="outlined" sx={{ height: 18, fontSize: 10 }} />
-                    </Tooltip>
-                  ) : (
-                    <Tooltip title="Kept in the config for OpenSSH — Muxus does not use this option.">
-                      <Chip size="small" label="kept" variant="outlined" sx={{ height: 18, fontSize: 10, color: 'text.secondary' }} />
-                    </Tooltip>
-                  ))}
-              </Box>
-              <IconButton size="small" aria-label="Remove option" sx={{ mt: 0.75 }} onClick={() => set({ extras: draft.extras.filter((_, j) => j !== i) })}>
-                <DeleteOutlineIcon fontSize="small" />
-              </IconButton>
-            </Stack>
-          );
-        })}
-        <Stack direction="row" spacing={1}>
-          <Button size="small" startIcon={<AddIcon />} onClick={() => set({ extras: [...draft.extras, { keyword: '', value: '' }] })}>
-            Add option
-          </Button>
-          <Tooltip
-            title={
-              legacyState === 'conflict'
-                ? 'An algorithm list uses a removal (-) policy the preset will not rewrite. Adjust the lists manually.'
-                : 'Adds the key exchange, host key and cipher options old console servers and network gear need. Merged into the modern defaults, so current hosts keep working.'
-            }
-          >
-            <span>
-              <Button
-                size="small"
-                startIcon={<SettingsEthernetIcon />}
-                disabled={legacyState === 'enabled' || legacyState === 'conflict'}
-                onClick={() => set({ extras: applyLegacyPreset(draft.extras) })}
-              >
-                Legacy device algorithms
-              </Button>
-            </span>
-          </Tooltip>
+      {configBacked ? (
+        <Stack spacing={1}>
+          <Typography variant="body2" color="text.secondary">
+            Additional ssh_config options. Applied options are used by Muxus; others are
+            preserved for OpenSSH.
+          </Typography>
+          {draft.extras.map((e, i) => {
+            const keyword = e.keyword.trim().toLowerCase();
+            const unsupported = unsupportedEntries(e.keyword, e.value, sshAlgorithms);
+            return (
+              <Stack key={i} direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+                <TextField
+                  label="Option"
+                  value={e.keyword}
+                  onChange={(ev) => update(i, { keyword: ev.target.value })}
+                  sx={{ width: 180, flexShrink: 0 }}
+                />
+                <TextField
+                  label="Value"
+                  value={e.value}
+                  onChange={(ev) => update(i, { value: ev.target.value })}
+                  fullWidth
+                  error={unsupported.length > 0}
+                  helperText={
+                    unsupported.length
+                      ? `Skipped when connecting — not supported by the SSH engine: ${unsupported.join(', ')}`
+                      : undefined
+                  }
+                />
+                <Box sx={{ width: 62, flexShrink: 0, display: 'flex', justifyContent: 'center', pt: 1.25 }}>
+                  {keyword &&
+                    (DIAL_TIME_KEYWORDS.has(keyword) ? (
+                      <Tooltip title="Muxus applies this option when connecting.">
+                        <Chip size="small" label="applied" color="success" variant="outlined" sx={{ height: 18, fontSize: 10 }} />
+                      </Tooltip>
+                    ) : (
+                      <Tooltip title="Kept in the config for OpenSSH — Muxus does not use this option.">
+                        <Chip size="small" label="kept" variant="outlined" sx={{ height: 18, fontSize: 10, color: 'text.secondary' }} />
+                      </Tooltip>
+                    ))}
+                </Box>
+                <IconButton size="small" aria-label="Remove option" sx={{ mt: 0.75 }} onClick={() => set({ extras: draft.extras.filter((_, j) => j !== i) })}>
+                  <DeleteOutlineIcon fontSize="small" />
+                </IconButton>
+              </Stack>
+            );
+          })}
+          <Stack direction="row" spacing={1}>
+            <Button size="small" startIcon={<AddIcon />} onClick={() => set({ extras: [...draft.extras, { keyword: '', value: '' }] })}>
+              Add option
+            </Button>
+            <Tooltip
+              title={
+                legacyState === 'conflict'
+                  ? 'An algorithm list uses a removal (-) policy the preset will not rewrite. Adjust the lists manually.'
+                  : 'Adds the key exchange, host key and cipher options old console servers and network gear need. Merged into the modern defaults, so current hosts keep working.'
+              }
+            >
+              <span>
+                <Button
+                  size="small"
+                  startIcon={<SettingsEthernetIcon />}
+                  disabled={legacyState === 'enabled' || legacyState === 'conflict'}
+                  onClick={() => set({ extras: applyLegacyPreset(draft.extras) })}
+                >
+                  Legacy device algorithms
+                </Button>
+              </span>
+            </Tooltip>
+          </Stack>
         </Stack>
-      </Stack>
+      ) : null}
 
-      <Stack spacing={0.75}>
+      {configBacked ? (
+        <Stack spacing={0.75}>
+          <Typography variant="body2" color="text.secondary">
+            This is written to the config:
+          </Typography>
+          <Box
+            component="pre"
+            sx={{
+              m: 0,
+              p: 1.5,
+              borderRadius: 1,
+              border: 1,
+              borderColor: previewError ? 'error.main' : 'divider',
+              bgcolor: 'action.hover',
+              fontFamily: '"JetBrains Mono", monospace',
+              fontSize: 12,
+              lineHeight: 1.6,
+              overflowX: 'auto',
+              minHeight: 72,
+              whiteSpace: 'pre',
+            }}
+          >
+            {previewError ?? preview ?? ''}
+          </Box>
+        </Stack>
+      ) : (
         <Typography variant="body2" color="text.secondary">
-          This is written to the config:
+          Raw ssh_config options are only available when a host is stored in OpenSSH
+          config. The connection settings in the other sections are stored directly by
+          Muxus.
         </Typography>
-        <Box
-          component="pre"
-          sx={{
-            m: 0,
-            p: 1.5,
-            borderRadius: 1,
-            border: 1,
-            borderColor: previewError ? 'error.main' : 'divider',
-            bgcolor: 'action.hover',
-            fontFamily: '"JetBrains Mono", monospace',
-            fontSize: 12,
-            lineHeight: 1.6,
-            overflowX: 'auto',
-            minHeight: 72,
-            whiteSpace: 'pre',
-          }}
-        >
-          {previewError ?? preview ?? ''}
-        </Box>
-      </Stack>
+      )}
     </Stack>
   );
 }

@@ -47,18 +47,18 @@ The terminal is a current one: kitty graphics, so `kitten icat`, yazi previews a
 matplotlib render inline over SSH, plus the kitty keyboard protocol, bundled Nerd Font
 coverage and fifteen colour schemes.
 
-Hosts come from `~/.ssh/config` — Muxus reads it, resolves it, and writes edits back into
-it, so the list is the same one `ssh` uses. Folders, colours, workspaces and history go in
-a local database, because OpenSSH has no field for them.
+Muxus reads every host from `~/.ssh/config`, while also letting you keep selected SSH hosts
+in its local database without changing OpenSSH. Folders, colours, workspaces and history
+use the same local database.
 
 <div class="grid cards" markdown>
 
--   :material-file-cog-outline: **Your ssh config, not ours**
+-   :material-file-cog-outline: **OpenSSH or Muxus-only**
 
     ---
 
-    Every `Host` block appears in the sidebar, including the files pulled in with
-    `Include`. Edits are written back in place, atomically, with a `.muxus.bak`.
+    Every `Host` block appears in the sidebar, including files pulled in with `Include`.
+    New and imported SSH hosts can instead stay entirely in Muxus app data.
 
     [:octicons-arrow-right-24: Your hosts](guide/hosts.md)
 

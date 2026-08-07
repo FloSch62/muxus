@@ -2,6 +2,8 @@ import type {
   ConfigForward,
   HostKeywordHighlightConfig,
   HostUpsertRequest,
+  SavedHostProfile,
+  SavedHostProfileInput,
   SshHostEntry,
 } from '@muxus/shared';
 import {
@@ -17,6 +19,8 @@ export type StrictHostKeyCheckingMode = 'inherit' | 'yes' | 'no' | 'accept-new' 
 
 /** Everything the editor form holds, in form-friendly shapes (ports as text). */
 export interface HostDraft {
+  /** Whether Muxus owns the connection or writes an OpenSSH Host block. */
+  storage: 'openssh' | 'muxus';
   /** Space-separated aliases for the Host line (usually one). */
   aliasText: string;
   description: string;
@@ -60,6 +64,7 @@ export function blankDraft(prefillTarget = ''): HostDraft {
   const target = prefillTarget.trim();
   const parsed = /[@:]/.test(target) ? parseHostTarget(target) : undefined;
   return {
+    storage: 'openssh',
     aliasText: parsed?.host ?? target,
     description: '',
     displayName: '',
@@ -100,6 +105,7 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
   const identityAgent = identityAgentDraft(o.identityAgent);
   const remoteCommand = remoteCommandDraft(o.remoteCommand);
   return {
+    storage: 'openssh',
     aliasText: duplicate ? `${entry.alias}-copy` : entry.aliases.join(' '),
     description: entry.description ?? '',
     displayName: duplicate ? '' : (entry.metadata?.displayName ?? ''),
@@ -144,6 +150,63 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
   };
 }
 
+/** Build the SSH form from a Muxus-owned database profile. */
+export function draftFromSavedSshProfile(
+  saved: SavedHostProfile,
+  duplicate: boolean,
+): HostDraft {
+  if (saved.profile.kind !== 'ssh') {
+    throw new Error('saved host is not an SSH profile');
+  }
+  const profile = saved.profile;
+  const identityAgent = identityAgentDraft(profile.identityAgent);
+  const remoteCommand = remoteCommandDraft(profile.remoteCommand);
+  return {
+    storage: 'muxus',
+    aliasText: duplicate ? `${saved.name} copy` : saved.name,
+    description: '',
+    displayName: duplicate ? '' : (saved.metadata.displayName ?? ''),
+    group: saved.metadata.group ?? '',
+    color: saved.metadata.color,
+    disableSftp: saved.metadata.disableSftp ?? false,
+    consoleCompatibility: saved.metadata.consoleCompatibility ?? false,
+    file: '',
+    hostname: profile.target,
+    user: profile.user ?? '',
+    port: profile.port?.toString() ?? '',
+    authMode:
+      profile.passwordOnly
+        ? 'password'
+        : (profile.identityFiles?.length || profile.certificateFiles?.length)
+          ? 'key'
+          : 'default',
+    identityFiles: profile.identityFiles ?? [],
+    certificateFiles: profile.certificateFiles ?? [],
+    identitiesOnly: profile.identitiesOnly ?? false,
+    identityAgentMode: identityAgent.mode,
+    identityAgent: identityAgent.value,
+    forwardAgent: profile.forwardAgent ?? false,
+    routeMode: profile.proxyCommand
+      ? 'command'
+      : profile.proxyJump?.length
+        ? 'jump'
+        : 'direct',
+    proxyJump: profile.proxyJump ?? [],
+    proxyCommand: profile.proxyCommand ?? '',
+    forwards: profile.forwards ?? [],
+    remoteCommandMode: remoteCommand.mode,
+    remoteCommand: remoteCommand.value,
+    requestTty: profile.requestTty ?? 'inherit',
+    strictHostKeyChecking: profile.strictHostKeyChecking ?? 'inherit',
+    extras: [],
+    keywordHighlights: saved.metadata.keywordHighlights ?? {
+      inheritGlobal: true,
+      rules: [],
+    },
+    sessionLogging: blankHostSessionLoggingDraft(),
+  };
+}
+
 export function draftAliases(draft: HostDraft): string[] {
   return draft.aliasText.trim().split(/\s+/).filter(Boolean);
 }
@@ -151,10 +214,20 @@ export function draftAliases(draft: HostDraft): string[] {
 const ALIAS_RE = /^[^\s#*?!]+$/;
 
 export function draftProblem(draft: HostDraft): string | null {
+  if (draft.storage === 'muxus') {
+    if (!draft.aliasText.trim()) return 'A name is required — it labels this host in Muxus.';
+    if (draft.aliasText.trim().length > 200) return 'The host name must be 200 characters or fewer.';
+    if (!draft.hostname.trim()) return 'Enter a hostname or IP address.';
+    if (draft.extras.length > 0) {
+      return 'Additional ssh_config options require OpenSSH config storage.';
+    }
+  }
   const aliases = draftAliases(draft);
-  if (!aliases.length) return 'An alias is required — it is what you connect as.';
-  for (const a of aliases) {
-    if (!ALIAS_RE.test(a)) return `"${a}" is not a valid alias (no spaces, wildcards or "!").`;
+  if (draft.storage === 'openssh') {
+    if (!aliases.length) return 'An alias is required — it is what you connect as.';
+    for (const a of aliases) {
+      if (!ALIAS_RE.test(a)) return `"${a}" is not a valid alias (no spaces, wildcards or "!").`;
+    }
   }
   if (draft.port && !portOk(draft.port)) return 'Port must be 1–65535.';
   if (draft.authMode === 'key' && !draft.identityFiles.some((f) => f.trim())) return 'Pick at least one key file, or switch the auth mode.';
@@ -178,6 +251,60 @@ export function draftProblem(draft: HostDraft): string | null {
     return 'Every highlighting rule needs a keyword.';
   }
   return null;
+}
+
+/** Serialize a database-backed SSH host without involving ssh_config. */
+export function draftToSavedSshInput(
+  draft: HostDraft,
+  existingId?: string,
+): SavedHostProfileInput {
+  const text = (value: string) => value.trim() || undefined;
+  return {
+    id: existingId,
+    name: draft.aliasText.trim(),
+    profile: {
+      kind: 'ssh',
+      target: draft.hostname.trim(),
+      useConfig: false,
+      user: text(draft.user),
+      port: draft.port ? Number(draft.port) : undefined,
+      identityFiles:
+        draft.authMode === 'key'
+          ? draft.identityFiles.map((file) => file.trim()).filter(Boolean)
+          : undefined,
+      certificateFiles:
+        draft.authMode === 'key'
+          ? draft.certificateFiles.map((file) => file.trim()).filter(Boolean)
+          : undefined,
+      identitiesOnly: draft.authMode === 'key' ? true : undefined,
+      identityAgent:
+        draft.identityAgentMode === 'environment'
+          ? 'SSH_AUTH_SOCK'
+          : draft.identityAgentMode === 'none'
+            ? 'none'
+            : draft.identityAgentMode === 'custom'
+              ? text(draft.identityAgent)
+              : undefined,
+      forwardAgent: draft.forwardAgent || undefined,
+      proxyJump:
+        draft.routeMode === 'jump' && draft.proxyJump.length > 0
+          ? draft.proxyJump
+          : undefined,
+      proxyCommand:
+        draft.routeMode === 'command' ? text(draft.proxyCommand) : undefined,
+      forwards: draft.forwards.length > 0 ? draft.forwards : undefined,
+      passwordOnly: draft.authMode === 'password' || undefined,
+      remoteCommand:
+        draft.remoteCommandMode === 'command'
+          ? text(draft.remoteCommand)
+          : undefined,
+      requestTty: draft.requestTty === 'inherit' ? undefined : draft.requestTty,
+      strictHostKeyChecking:
+        draft.strictHostKeyChecking === 'inherit'
+          ? undefined
+          : draft.strictHostKeyChecking,
+    },
+  };
 }
 
 function portOk(v: string): boolean {

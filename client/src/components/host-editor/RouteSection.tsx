@@ -71,12 +71,30 @@ export function RouteSection({
         <FormControlLabel
           value="jump"
           control={<Radio size="small" />}
-          label={<Labeled title="Jump hosts" sub="Writes ProxyJump — connect through one or more SSH bastions" />}
+          label={
+            <Labeled
+              title="Jump hosts"
+              sub={
+                draft.storage === 'openssh'
+                  ? 'Writes ProxyJump — connect through one or more SSH bastions'
+                  : 'Connect through one or more SSH bastions'
+              }
+            />
+          }
         />
         <FormControlLabel
           value="command"
           control={<Radio size="small" />}
-          label={<Labeled title="Proxy command" sub="Writes ProxyCommand — use a command's stdin/stdout as the transport" />}
+          label={
+            <Labeled
+              title="Proxy command"
+              sub={
+                draft.storage === 'openssh'
+                  ? "Writes ProxyCommand — use a command's stdin/stdout as the transport"
+                  : "Use a command's stdin/stdout as the transport"
+              }
+            />
+          }
         />
       </RadioGroup>
 

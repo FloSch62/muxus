@@ -60,13 +60,15 @@ export function nativeDraftFromProfile(saved: SavedHostProfile, duplicate: boole
   if (saved.profile.kind === 'telnet') {
     draft.host = saved.profile.host;
     draft.port = String(saved.profile.port);
-  } else {
+  } else if (saved.profile.kind === 'serial') {
     draft.path = saved.profile.path;
     draft.baudRate = String(saved.profile.baudRate);
     draft.dataBits = saved.profile.dataBits;
     draft.stopBits = saved.profile.stopBits;
     draft.parity = saved.profile.parity;
     draft.flowControl = saved.profile.flowControl;
+  } else {
+    throw new Error('saved host is not a Telnet or serial profile');
   }
   return draft;
 }

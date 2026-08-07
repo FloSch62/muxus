@@ -24,7 +24,12 @@ export function sessionProfileIdentity(profile: SessionProfile): {
 } {
   switch (profile.kind) {
     case 'ssh':
-      return { profileKey: `ssh:${profile.target}`, host: profile.target };
+      return {
+        profileKey: profile.profileId
+          ? `profile:${profile.profileId}`
+          : `ssh:${profile.target}`,
+        host: profile.target,
+      };
     case 'telnet': {
       const host = `${profile.host}:${profile.port}`;
       return {

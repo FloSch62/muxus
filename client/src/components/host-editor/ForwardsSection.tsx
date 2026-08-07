@@ -23,7 +23,9 @@ export function ForwardsSection({ draft, set }: { draft: HostDraft; set: (patch:
       <Divider />
       {draft.forwards.length === 0 ? (
         <Typography variant="body2" color="text.secondary">
-          No forwards configured. Rules added here are written to the Host block and start with every connection.
+          {draft.storage === 'openssh'
+            ? 'No forwards configured. Rules added here are written to the Host block and start with every connection.'
+            : 'No forwards configured. Rules added here are stored in Muxus and start with every connection.'}
         </Typography>
       ) : (
         <Stack spacing={0.75}>
