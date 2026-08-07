@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  activateCommandButton,
   commandButtonInput,
   filterCommandButtons,
 } from '../../../client/src/command-buttons.js';
@@ -54,5 +55,31 @@ describe('commandButtonInput', () => {
         sendEnter: true,
       }),
     ).toBe('one\rtwo\r');
+  });
+});
+
+describe('activateCommandButton', () => {
+  it('returns focus to the terminal after sending the command', () => {
+    const events: string[] = [];
+
+    const sent = activateCommandButton(
+      {
+        sendInput: (input) => {
+          expect(input).toBe('uptime\r');
+          events.push('send');
+          return true;
+        },
+        focus: () => events.push('focus'),
+      },
+      {
+        id: 'uptime',
+        label: 'Uptime',
+        command: 'uptime',
+        sendEnter: true,
+      },
+    );
+
+    expect(sent).toBe(true);
+    expect(events).toEqual(['send', 'focus']);
   });
 });

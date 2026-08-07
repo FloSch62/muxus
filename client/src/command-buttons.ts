@@ -1,4 +1,5 @@
 import type { CommandButton } from './state/prefs.js';
+import type { TerminalHandle } from './terminal/terminal-registry.js';
 
 const SEARCH_WORD_SEPARATOR = /\s+/;
 
@@ -20,6 +21,17 @@ export function commandButtonInput(button: CommandButton): string {
   const command = button.command.replace(/\r\n|\n/g, '\r');
   if (!button.sendEnter || command.endsWith('\r')) return command;
   return `${command}\r`;
+}
+
+/** Send a saved command and return keyboard focus to its terminal. */
+export function activateCommandButton(
+  terminal: Pick<TerminalHandle, 'focus' | 'sendInput'> | undefined,
+  button: CommandButton,
+): boolean {
+  if (!terminal) return false;
+  const sent = terminal.sendInput(commandButtonInput(button));
+  terminal.focus();
+  return sent;
 }
 
 export function newPreferenceId(prefix: string): string {

@@ -4,7 +4,7 @@ import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
-import { commandButtonInput } from '../command-buttons.js';
+import { activateCommandButton } from '../command-buttons.js';
 import { usePrefsStore } from '../state/prefs.js';
 import { showToast } from '../state/toast.js';
 import { useTabsStore } from '../state/tabs.js';
@@ -46,7 +46,7 @@ export const ActionBar = memo(function ActionBar() {
               variant="outlined"
               disabled={!connected || !button.command}
               onClick={() => {
-                const sent = terminalHandle(activeTab?.id)?.sendInput(commandButtonInput(button));
+                const sent = activateCommandButton(terminalHandle(activeTab?.id), button);
                 if (!sent) showToast('warning', 'The active terminal is not connected.');
               }}
               sx={{ minWidth: 0, whiteSpace: 'nowrap', py: 0.25 }}
