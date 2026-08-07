@@ -56,7 +56,7 @@ const RemoteEditorWorkspace = lazy(() =>
   loadRemoteEditorWorkspace().then((module) => ({ default: module.RemoteEditorWorkspace })),
 );
 
-/** TopBar over a stable, resizable pane canvas. Hidden tabs stay mounted. */
+/** App chrome over a stable, resizable pane canvas. Hidden tabs stay mounted. */
 export function AppShell({
   persistWorkspace = true,
   initialWorkspace,
@@ -70,31 +70,36 @@ export function AppShell({
   const root = useTabsStore((state) => state.root);
   const activePaneId = useTabsStore((state) => state.activePaneId);
   const zoomedPaneId = useTabsStore((state) => state.zoomedPaneId);
+  const focusMode = useUiStore((state) => state.focusMode);
   const forwardingOpen = useUiStore((state) => state.forwardingOpen);
   const setHostEditor = useUiStore((state) => state.setHostEditor);
 
   return (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <Box
+      data-focus-mode={focusMode ? 'true' : 'false'}
+      sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}
+    >
       <TopBar />
-      <ActionBar />
+      {focusMode ? null : <ActionBar />}
       <Box sx={{ flex: 1, display: 'flex', minHeight: 0 }}>
-        {!sidebarCollapsed && <SessionSidebar />}
+        {focusMode || sidebarCollapsed ? null : <SessionSidebar />}
         <Box sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>
           <PaneCanvas
             root={root}
             tabs={tabs}
             activePaneId={activePaneId}
             zoomedPaneId={zoomedPaneId}
+            hideChrome={focusMode}
             onAddHost={() => setHostEditor({ mode: 'new' })}
           />
         </Box>
-        {forwardingOpen && (
+        {forwardingOpen && !focusMode ? (
           <ErrorBoundary label="The forwarding panel">
             <Suspense fallback={null}>
               <ForwardingPanel />
             </Suspense>
           </ErrorBoundary>
-        )}
+        ) : null}
       </Box>
     </Box>
   );
@@ -111,12 +116,14 @@ function PaneCanvas({
   tabs,
   activePaneId,
   zoomedPaneId,
+  hideChrome,
   onAddHost,
 }: {
   root: PaneNode;
   tabs: TerminalTab[];
   activePaneId: string;
   zoomedPaneId: string | null;
+  hideChrome: boolean;
   onAddHost: () => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -166,7 +173,14 @@ function PaneCanvas({
       for (const [, element] of tabRefs.current) {
         const paneId = element.dataset.paneId;
         const rect = paneId ? rects.get(paneId) : undefined;
-        if (rect) positionBox(element, rect, paneId === zoomedPaneId, layout.tabStripHeight);
+        if (rect) {
+          positionBox(
+            element,
+            rect,
+            paneId === zoomedPaneId,
+            hideChrome ? 0 : layout.tabStripHeight,
+          );
+        }
       }
       for (const divider of flat.dividers) {
         const element = dividerRefs.current.get(divider.splitId);
@@ -177,7 +191,7 @@ function PaneCanvas({
         if (rect) positionBox(element, rect, false, 0);
       }
     },
-    [zoomedPaneId],
+    [hideChrome, zoomedPaneId],
   );
 
   useLayoutEffect(() => {
@@ -197,6 +211,7 @@ function PaneCanvas({
           tabNumberById={tabNumberById}
           empty={!occupiedPaneIds.has(pane.id)}
           focused={pane.id === activePaneId}
+          hideChrome={hideChrome}
           opacity={paneFocusOpacity(
             highlightedPaneIds.has(pane.id),
             dimInactivePanes,
@@ -385,6 +400,7 @@ function PaneChrome({
   tabNumberById,
   empty,
   focused,
+  hideChrome,
   opacity,
   zoomed,
   onAddHost,
@@ -394,6 +410,7 @@ function PaneChrome({
   tabNumberById: ReadonlyMap<string, number>;
   empty: boolean;
   focused: boolean;
+  hideChrome: boolean;
   opacity: number;
   zoomed: boolean;
   onAddHost: () => void;
@@ -417,12 +434,14 @@ function PaneChrome({
         ...(zoomed ? { bgcolor: 'background.default' } : {}),
       }}
     >
-      <TabStrip
-        paneId={pane.id}
-        tabNumberById={tabNumberById}
-        focused={focused}
-        zoomed={zoomed}
-      />
+      {hideChrome ? null : (
+        <TabStrip
+          paneId={pane.id}
+          tabNumberById={tabNumberById}
+          focused={focused}
+          zoomed={zoomed}
+        />
+      )}
       {empty && (
         <Box sx={{ flex: 1, minHeight: 0 }}>
           <EmptyPane onAddHost={onAddHost} />

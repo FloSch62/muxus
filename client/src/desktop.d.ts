@@ -20,7 +20,7 @@ declare global {
         setItem(name: string, value: string): void;
         removeItem(name: string): void;
       };
-      setTitleBarOverlay(options: { color: string; symbolColor: string }): void;
+      setTitleBarOverlay(options: { color: string; symbolColor: string; height: number }): void;
       /** Scale the whole window natively (the interface zoom preference). */
       setZoomFactor(factor: number): void;
       getAppInfo(): Promise<AppInfo | undefined>;

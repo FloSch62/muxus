@@ -1,4 +1,4 @@
-import { memo, type ReactNode, useState } from 'react';
+import { memo, type ReactNode, useLayoutEffect, useState } from 'react';
 import AppBar from '@mui/material/AppBar';
 import Badge from '@mui/material/Badge';
 import Box from '@mui/material/Box';
@@ -15,12 +15,14 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import BrightnessAutoOutlinedIcon from '@mui/icons-material/BrightnessAutoOutlined';
 import BoltOutlinedIcon from '@mui/icons-material/BoltOutlined';
+import CenterFocusStrongOutlinedIcon from '@mui/icons-material/CenterFocusStrongOutlined';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
 import DeleteSweepOutlinedIcon from '@mui/icons-material/DeleteSweepOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
+import FullscreenExitOutlinedIcon from '@mui/icons-material/FullscreenExitOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import KeyboardAltOutlinedIcon from '@mui/icons-material/KeyboardAltOutlined';
 import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
@@ -41,6 +43,7 @@ import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import { useForwards } from '../api/queries.js';
 import { copyToClipboard } from '../clipboard.js';
 import { layout } from '../theme.js';
+import { setTitleBarHeight } from '../titlebar-overlay.js';
 import { useChordLabel } from '../keymap/hints.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { showToast } from '../state/toast.js';
@@ -72,6 +75,8 @@ export const TopBar = memo(function TopBar() {
   const mode = usePrefsStore((s) => s.themeMode);
   const sidebarCollapsed = usePrefsStore((s) => s.sidebarCollapsed);
   const setPrefs = usePrefsStore((s) => s.set);
+  const focusMode = useUiStore((s) => s.focusMode);
+  const setFocusMode = useUiStore((s) => s.setFocusMode);
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
   const setCommandButtonsOpen = useUiStore((s) => s.setCommandButtonsOpen);
   const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
@@ -90,6 +95,7 @@ export const TopBar = memo(function TopBar() {
   const terminalReady = !!activeTab?.profile;
   const [terminalMenu, setTerminalMenu] = useState<HTMLElement | null>(null);
   const [appearanceMenu, setAppearanceMenu] = useState<HTMLElement | null>(null);
+  const focusModeChord = useChordLabel('app.focus-mode');
   const sidebarChord = useChordLabel('app.sidebar');
   const findChord = useChordLabel('terminal.find');
   const selectAllChord = useChordLabel('terminal.select-all');
@@ -102,8 +108,19 @@ export const TopBar = memo(function TopBar() {
 
   const handle = () => terminalHandle(activeTab?.id);
   const closeMenu = () => setTerminalMenu(null);
+  const toggleFocusMode = () => setFocusMode(!focusMode);
   const currentAppearance =
     APPEARANCE_OPTIONS.find((option) => option.mode === mode) ?? SYSTEM_APPEARANCE;
+
+  useLayoutEffect(() => {
+    // Focus mode can be entered through the global shortcut while a portaled
+    // menu is open. Clear both anchors before paint for every entry path.
+    if (focusMode) {
+      setTerminalMenu(null);
+      setAppearanceMenu(null);
+    }
+    setTitleBarHeight(focusMode ? layout.focusTopBarHeight : layout.topBarHeight);
+  }, [focusMode]);
 
   return (
     <AppBar position="static" color="transparent" sx={{ borderBottom: 1, borderColor: 'divider' }}>
@@ -116,18 +133,23 @@ export const TopBar = memo(function TopBar() {
         variant="dense"
         sx={{
           gap: 1.5,
-          minHeight: layout.topBarHeight,
           WebkitAppRegion: 'drag',
-          // double the specificity: MUI's responsive gutter rule wins otherwise
+          // Double the specificity so MUI's responsive height and gutter rules
+          // cannot make the compact focus-mode titlebar grow again.
           '&&': {
+            minHeight: focusMode ? layout.focusTopBarHeight : layout.topBarHeight,
             pl: 'calc(env(titlebar-area-x, 0px) + 16px)',
             pr: 'calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 16px)',
           },
           '& button, & input, & a, & [role="button"]': {
             WebkitAppRegion: 'no-drag',
           },
+          ...(focusMode
+            ? { '& > :not([data-focus-mode-control])': { display: 'none' } }
+            : {}),
         }}
       >
+        <Box data-focus-mode-control sx={{ flex: 1, display: focusMode ? 'block' : 'none' }} />
         <Tooltip title={withChord(sidebarCollapsed ? 'Show hosts' : 'Hide hosts', sidebarChord)}>
           <IconButton size="small" aria-label="Toggle hosts sidebar" onClick={() => setPrefs({ sidebarCollapsed: !sidebarCollapsed })} sx={{ mr: 0.5 }}>
             <MenuIcon fontSize="small" />
@@ -244,6 +266,21 @@ export const TopBar = memo(function TopBar() {
             onClick={() => setSettingsOpen(true)}
           >
             <SettingsOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title={withChord(focusMode ? 'Exit focus mode' : 'Enter focus mode', focusModeChord)}>
+          <IconButton
+            data-focus-mode-control
+            size="small"
+            aria-label={focusMode ? 'Exit focus mode' : 'Enter focus mode'}
+            color={focusMode ? 'primary' : 'default'}
+            onClick={toggleFocusMode}
+          >
+            {focusMode ? (
+              <FullscreenExitOutlinedIcon fontSize="small" />
+            ) : (
+              <CenterFocusStrongOutlinedIcon fontSize="small" />
+            )}
           </IconButton>
         </Tooltip>
       </Toolbar>

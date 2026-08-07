@@ -381,16 +381,23 @@ ipcMain.on('muxus:close-window', (event) => {
   senderWindow(event)?.close();
 });
 
-const overlayColorsByWindow = new WeakMap<BrowserWindow, { color: string; symbolColor: string }>();
+interface TitleBarOverlayOptions {
+  color: string;
+  symbolColor: string;
+  height: number;
+}
+
+const overlayOptionsByWindow = new WeakMap<BrowserWindow, TitleBarOverlayOptions>();
 
 /** Repaint the native overlay, sized to the window's current scale. */
-function applyTitleBarOverlay(win: BrowserWindow, colors: { color: string; symbolColor: string }): void {
+function applyTitleBarOverlay(win: BrowserWindow, options: TitleBarOverlayOptions): void {
   if (isMac) return;
-  overlayColorsByWindow.set(win, colors);
+  overlayOptionsByWindow.set(win, options);
   try {
     win.setTitleBarOverlay({
-      ...colors,
-      height: Math.round(TITLEBAR_HEIGHT * win.webContents.getZoomFactor()),
+      color: options.color,
+      symbolColor: options.symbolColor,
+      height: Math.round(options.height * win.webContents.getZoomFactor()),
     });
   } catch {
     /* overlay not supported in this environment */
@@ -401,9 +408,22 @@ ipcMain.on('muxus:set-titlebar-overlay', (event, options: unknown) => {
   if (isMac) return;
   const win = senderWindow(event);
   if (!win) return;
-  const { color, symbolColor } = (options ?? {}) as { color?: unknown; symbolColor?: unknown };
-  if (typeof color !== 'string' || typeof symbolColor !== 'string') return;
-  applyTitleBarOverlay(win, { color, symbolColor });
+  const { color, symbolColor, height } = (options ?? {}) as {
+    color?: unknown;
+    symbolColor?: unknown;
+    height?: unknown;
+  };
+  if (
+    typeof color !== 'string' ||
+    typeof symbolColor !== 'string' ||
+    typeof height !== 'number' ||
+    !Number.isFinite(height) ||
+    height < 24 ||
+    height > 200
+  ) {
+    return;
+  }
+  applyTitleBarOverlay(win, { color, symbolColor, height });
 });
 
 // Interface scale, driven by the preference rather than a zoom accelerator.
@@ -411,8 +431,8 @@ ipcMain.on('muxus:set-zoom-factor', (event, value: unknown) => {
   const win = senderWindow(event);
   if (!win || typeof value !== 'number' || !Number.isFinite(value)) return;
   win.webContents.setZoomFactor(Math.min(2, Math.max(0.5, value)));
-  const colors = overlayColorsByWindow.get(win);
-  if (colors) applyTitleBarOverlay(win, colors);
+  const options = overlayOptionsByWindow.get(win);
+  if (options) applyTitleBarOverlay(win, options);
 });
 
 // One sync call, at preload time only: the boot snapshot the bridge serves

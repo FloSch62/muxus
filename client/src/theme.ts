@@ -26,6 +26,8 @@ declare module '@mui/material/styles' {
 export const layout = {
   /** TopBar toolbar height; the Electron titlebar overlay uses the same value. */
   topBarHeight: 52,
+  /** Minimal draggable titlebar retained while focus mode hides application chrome. */
+  focusTopBarHeight: 32,
   /** Session sidebar width. */
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   /** Tab strip height under the top bar. */
