@@ -135,6 +135,17 @@ describe('default bindings', () => {
     useUiStore.getState().setCommandButtonMenuOpen(false);
   });
 
+  it('toggles focus mode with its default chord', () => {
+    useUiStore.getState().setFocusMode(false);
+    const commands = commandsForChord('Mod+Shift+B');
+
+    expect(commands.map((command) => command.id)).toEqual(['app.focus-mode']);
+    expect(commands[0]?.run()).toBe(true);
+    expect(useUiStore.getState().focusMode).toBe(true);
+    expect(commands[0]?.run()).toBe(true);
+    expect(useUiStore.getState().focusMode).toBe(false);
+  });
+
   it('gives every direction its own split, focus, and move-tab chord', () => {
     for (const direction of ['left', 'right', 'up', 'down'] as const) {
       expect(commandChords(keyCommand(`pane.split.${direction}`)!).length).toBeGreaterThan(0);

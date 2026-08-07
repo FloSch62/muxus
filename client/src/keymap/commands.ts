@@ -419,6 +419,18 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
     },
   },
   {
+    id: 'app.focus-mode',
+    title: 'Toggle focus mode',
+    category: 'app',
+    defaultChords: ['Mod+Shift+B'],
+    keywords: ['distraction free', 'zen', 'fullscreen', 'hide chrome'],
+    run: () => {
+      const ui = useUiStore.getState();
+      ui.setFocusMode(!ui.focusMode);
+      return true;
+    },
+  },
+  {
     id: 'app.settings',
     title: 'Open settings',
     category: 'app',

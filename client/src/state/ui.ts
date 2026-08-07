@@ -24,6 +24,8 @@ export type FolderDialogState =
   | { mode: 'move-host'; hostKey: string; hostName: string; currentPath: string };
 
 interface UiState {
+  /** Temporary distraction-free presentation; saved visibility preferences stay untouched. */
+  focusMode: boolean;
   settingsOpen: boolean;
   commandButtonMenuOpen: boolean;
   commandButtonsOpen: boolean;
@@ -42,6 +44,7 @@ interface UiState {
   forwardingOpen: boolean;
   /** Diagnostic log viewer (settings → debug). */
   logViewerOpen: boolean;
+  setFocusMode: (active: boolean) => void;
   setSettingsOpen: (open: boolean) => void;
   setCommandButtonMenuOpen: (open: boolean) => void;
   setCommandButtonsOpen: (open: boolean) => void;
@@ -58,6 +61,7 @@ interface UiState {
 }
 
 export const useUiStore = create<UiState>()((set) => ({
+  focusMode: false,
   settingsOpen: false,
   commandButtonMenuOpen: false,
   commandButtonsOpen: false,
@@ -71,6 +75,7 @@ export const useUiStore = create<UiState>()((set) => ({
   folderDialog: false,
   forwardingOpen: false,
   logViewerOpen: false,
+  setFocusMode: (focusMode) => set({ focusMode }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setCommandButtonMenuOpen: (commandButtonMenuOpen) => set({ commandButtonMenuOpen }),
   setCommandButtonsOpen: (commandButtonsOpen) => set({ commandButtonsOpen }),

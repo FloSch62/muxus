@@ -99,7 +99,7 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
       ipcRenderer.send('muxus:state:remove-item', name);
     },
   },
-  setTitleBarOverlay(options: { color: string; symbolColor: string }) {
+  setTitleBarOverlay(options: { color: string; symbolColor: string; height: number }) {
     ipcRenderer.send('muxus:set-titlebar-overlay', options);
   },
   setZoomFactor(factor: number) {

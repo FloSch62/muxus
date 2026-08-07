@@ -1,4 +1,4 @@
-import { titleBarColors } from './theme.js';
+import { layout, titleBarColors } from './theme.js';
 
 type TitleBarMode = 'light' | 'dark';
 
@@ -9,6 +9,7 @@ export type TitleBarDimmer = {
 };
 
 let currentMode: TitleBarMode = 'light';
+let currentHeight: number = layout.topBarHeight;
 const backdropOpacities = new Map<object, number>();
 let lastApplied: string | undefined;
 
@@ -22,14 +23,19 @@ function applyTitleBarOverlay() {
   const dim = backdropOpacities.size ? Math.max(...backdropOpacities.values()) : 0;
   const colors = titleBarColors(currentMode, { dim });
   if (transparentBackground) colors.color = '#00000000';
-  const key = `${colors.color}|${colors.symbolColor}`;
+  const key = `${colors.color}|${colors.symbolColor}|${currentHeight}`;
   if (key === lastApplied) return;
   lastApplied = key;
-  window.muxusDesktop?.setTitleBarOverlay(colors);
+  window.muxusDesktop?.setTitleBarOverlay({ ...colors, height: currentHeight });
 }
 
 export function setTitleBarMode(mode: TitleBarMode) {
   currentMode = mode;
+  applyTitleBarOverlay();
+}
+
+export function setTitleBarHeight(height: number) {
+  currentHeight = height;
   applyTitleBarOverlay();
 }
 
