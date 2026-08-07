@@ -5,7 +5,6 @@ import {
   useRef,
   useState,
   type DragEvent,
-  type WheelEvent,
 } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -243,15 +242,6 @@ export function TabStrip({
     });
   };
 
-  const handleTabWheel = (event: WheelEvent<HTMLDivElement>) => {
-    const viewport = tabViewportRef.current;
-    if (!viewport || !scrollState.overflow) return;
-    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
-    if (!delta) return;
-    event.preventDefault();
-    viewport.scrollLeft += delta;
-  };
-
   useEffect(() => {
     if (!renaming) return;
     requestAnimationFrame(() => renameInputRef.current?.select());
@@ -266,10 +256,26 @@ export function TabStrip({
     const observer = new ResizeObserver(updateScrollState);
     observer.observe(viewport);
     observer.observe(actions);
+
+    const handleWheel = (event: WheelEvent) => {
+      const maxScrollLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+      if (maxScrollLeft <= TAB_SCROLL_TOLERANCE) return;
+
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY)
+        ? event.deltaX
+        : event.deltaY;
+      if (!delta) return;
+
+      event.preventDefault();
+      viewport.scrollLeft += delta;
+    };
+
     viewport.addEventListener('scroll', updateScrollState, { passive: true });
+    viewport.addEventListener('wheel', handleWheel, { passive: false });
     return () => {
       observer.disconnect();
       viewport.removeEventListener('scroll', updateScrollState);
+      viewport.removeEventListener('wheel', handleWheel);
     };
   }, [orderKey, updateScrollState]);
 
@@ -343,7 +349,6 @@ export function TabStrip({
       role="tablist"
       aria-label="Terminal tabs"
       tabIndex={-1}
-      onWheel={handleTabWheel}
       sx={{
         height: layout.tabStripHeight,
         flexShrink: 0,
