@@ -63,11 +63,32 @@ My host!=#109#0%two.example.com%22%%%rest
     ]);
   });
 
+  it('uses the protocol field instead of the leading metadata identifier', () => {
+    const parsed = parseMobaXtermSessions(`
+[Bookmarks]
+SubRep=
+Custom icon SSH=#114#0%airframe.example.com%2222%root%%rest
+`);
+
+    expect(parsed.sessions).toEqual([
+      {
+        id: expect.any(String),
+        kind: 'ssh',
+        name: 'Custom icon SSH',
+        alias: 'Custom-icon-SSH',
+        host: 'airframe.example.com',
+        port: 2222,
+        username: 'root',
+        authMode: 'password',
+      },
+    ]);
+  });
+
   it('counts unsupported and malformed bookmark entries', () => {
     const parsed = parseMobaXtermSessions(`
 [Bookmarks]
-RDP=#91#0%desktop.example.com
-VNC=#5#0%desktop.example.com
+RDP=#91#4%desktop.example.com
+VNC=#5#5%desktop.example.com
 Broken SSH=#109#0%%22%root%%
 Valid=#109#0%valid.example.com%22%root%%
 `);
@@ -98,7 +119,7 @@ Valid=#109#0%valid.example.com%22%root%%
       parseMobaXtermSessions(`
 [Bookmarks]
 SubRep=
-RDP=#91#0%desktop.example.com
+RDP=#91#4%desktop.example.com
 `),
     ).toThrow('No SSH sessions were found');
   });

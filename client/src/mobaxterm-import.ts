@@ -11,9 +11,9 @@ import {
   uniqueImportAlias,
 } from './session-import.js';
 
-const MOBAXTERM_SSH_SESSION_TYPE = 109;
+const MOBAXTERM_SSH_PROTOCOL = 0;
 const BOOKMARK_SECTION_RE = /^Bookmarks(?:_\d+)?$/i;
-const SESSION_TYPE_RE = /^#(\d+)#/;
+const SESSION_HEADER_RE = /^#\d+#(\d+)(?=%)/;
 const NON_SSH_REASON = 'Session type is not SSH (only SSH sessions can be imported)';
 const MISSING_NAME_REASON = 'SSH session has no name';
 const MISSING_HOST_REASON = 'SSH session has no hostname';
@@ -27,8 +27,8 @@ export interface MobaXtermParseResult
 /**
  * Parse SSH bookmarks from MobaXterm.ini or an .mxtsessions export.
  *
- * Session values use `#TYPE#flags%host%port%username%auth%...`; SSH is type
- * 109. This intentionally reads bookmark structure only—no P/C secret stores.
+ * Session values use `#metadata#protocol%host%port%username%auth%...`; SSH uses
+ * protocol 0. This intentionally reads bookmark structure only—no P/C secret stores.
  */
 export function parseMobaXtermSessions(text: string): MobaXtermParseResult {
   if (new TextEncoder().encode(text).byteLength > MAX_MOBAXTERM_IMPORT_BYTES) {
@@ -72,15 +72,15 @@ export function parseMobaXtermSessions(text: string): MobaXtermParseResult {
       continue;
     }
 
-    const typeMatch = SESSION_TYPE_RE.exec(value);
-    if (!typeMatch) continue;
-    const type = Number.parseInt(typeMatch[1] ?? '', 10);
-    if (type !== MOBAXTERM_SSH_SESSION_TYPE) {
+    const headerMatch = SESSION_HEADER_RE.exec(value);
+    if (!headerMatch) continue;
+    const protocol = Number.parseInt(headerMatch[1] ?? '', 10);
+    if (protocol !== MOBAXTERM_SSH_PROTOCOL) {
       skip(lineIndex, name, undefined, NON_SSH_REASON);
       continue;
     }
 
-    const fields = value.slice(typeMatch[0].length).split('%');
+    const fields = value.slice(headerMatch[0].length).split('%');
     const host = fields[1]?.trim();
     if (!name) {
       skip(lineIndex, name, host, MISSING_NAME_REASON);
