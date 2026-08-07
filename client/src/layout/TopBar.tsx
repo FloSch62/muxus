@@ -108,15 +108,17 @@ export const TopBar = memo(function TopBar() {
 
   const handle = () => terminalHandle(activeTab?.id);
   const closeMenu = () => setTerminalMenu(null);
-  const toggleFocusMode = () => {
-    setTerminalMenu(null);
-    setAppearanceMenu(null);
-    setFocusMode(!focusMode);
-  };
+  const toggleFocusMode = () => setFocusMode(!focusMode);
   const currentAppearance =
     APPEARANCE_OPTIONS.find((option) => option.mode === mode) ?? SYSTEM_APPEARANCE;
 
   useLayoutEffect(() => {
+    // Focus mode can be entered through the global shortcut while a portaled
+    // menu is open. Clear both anchors before paint for every entry path.
+    if (focusMode) {
+      setTerminalMenu(null);
+      setAppearanceMenu(null);
+    }
     setTitleBarHeight(focusMode ? layout.focusTopBarHeight : layout.topBarHeight);
   }, [focusMode]);
 
