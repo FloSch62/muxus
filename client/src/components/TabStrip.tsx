@@ -1,4 +1,12 @@
-import { useEffect, useLayoutEffect, useRef, useState, type DragEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type WheelEvent,
+} from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import ButtonBase from '@mui/material/ButtonBase';
@@ -27,7 +35,10 @@ import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutli
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import GridViewOutlinedIcon from '@mui/icons-material/GridViewOutlined';
 import HorizontalSplitOutlinedIcon from '@mui/icons-material/HorizontalSplitOutlined';
-import LinkOffOutlinedIcon from '@mui/icons-material/LinkOffOutlined';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import KeyboardArrowLeftIcon from '@mui/icons-material/KeyboardArrowLeft';
+import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';
+import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import OpenInFullOutlinedIcon from '@mui/icons-material/OpenInFullOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutlineOutlined';
@@ -77,6 +88,37 @@ const statusDot: Record<TabStatus, 'warning' | 'success' | 'error'> = {
 
 /** Color flags a tab can be marked with (context menu). */
 const TAB_FLAG_COLORS = ['#ef5350', '#ffa726', '#ffee58', '#66bb6a', '#26c6da', '#42a5f5', '#ab47bc', '#ec407a'];
+
+const TAB_SCROLL_EDGE = 36;
+const TAB_SCROLL_TOLERANCE = 8;
+
+type TabScrollState = {
+  overflow: boolean;
+  canScrollLeft: boolean;
+  canScrollRight: boolean;
+};
+
+const INITIAL_TAB_SCROLL_STATE: TabScrollState = {
+  overflow: false,
+  canScrollLeft: false,
+  canScrollRight: false,
+};
+
+function tabStatusLabel(tab: TerminalTab): string {
+  if (tab.profile === null) return 'Choose a session';
+  switch (tab.status) {
+    case 'connected':
+      return 'Connected';
+    case 'connecting':
+      return 'Connecting';
+    case 'interrupted':
+      return tab.failureReason ?? 'Connection interrupted';
+    case 'closed':
+      return tab.failureReason ?? 'Disconnected';
+    default:
+      return 'Ready';
+  }
+}
 
 /** Which side of the hovered tab a drop at this pointer position lands on. */
 function dropEdge(event: DragEvent<HTMLElement>): 'before' | 'after' {
@@ -129,8 +171,12 @@ export function TabStrip({
   const flipLefts = useRef(new Map<string, number>());
   /** Hovered midpoints are unreliable while tabs are sliding; pause live resorting until then. */
   const settleUntil = useRef(0);
+  const tabViewportRef = useRef<HTMLDivElement>(null);
+  const tabActionsRef = useRef<HTMLDivElement>(null);
   const orderKey = tabs.map((tab) => tab.id).join('\n');
   const previousOrderKey = useRef(orderKey);
+  const [scrollState, setScrollState] = useState<TabScrollState>(INITIAL_TAB_SCROLL_STATE);
+  const [allTabsMenuAnchor, setAllTabsMenuAnchor] = useState<HTMLElement | null>(null);
   const [menu, setMenu] = useState<{ position: { top: number; left: number }; tab: TerminalTab } | null>(null);
   const [paneMenu, setPaneMenu] = useState<{ top: number; left: number } | null>(null);
   const [renaming, setRenaming] = useState<TerminalTab | null>(null);
@@ -149,10 +195,89 @@ export function TabStrip({
     splitActivePane(direction);
   };
 
+  const updateScrollState = useCallback(() => {
+    const viewport = tabViewportRef.current;
+    if (!viewport) return;
+    const maxScrollLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+    const next = {
+      overflow: maxScrollLeft > TAB_SCROLL_TOLERANCE,
+      canScrollLeft: viewport.scrollLeft > TAB_SCROLL_TOLERANCE,
+      canScrollRight: viewport.scrollLeft < maxScrollLeft - TAB_SCROLL_TOLERANCE,
+    };
+    setScrollState((current) =>
+      current.overflow === next.overflow &&
+      current.canScrollLeft === next.canScrollLeft &&
+      current.canScrollRight === next.canScrollRight
+        ? current
+        : next,
+    );
+  }, []);
+
+  const revealTab = useCallback((tabId: string, behavior: ScrollBehavior = 'smooth') => {
+    const viewport = tabViewportRef.current;
+    const element = tabElements.current.get(tabId);
+    if (!viewport || !element) return;
+
+    const reservedRight = tabActionsRef.current?.offsetWidth ?? 0;
+    const visibleLeft = viewport.scrollLeft + TAB_SCROLL_EDGE;
+    const visibleRight =
+      viewport.scrollLeft + viewport.clientWidth - reservedRight - TAB_SCROLL_EDGE;
+    const tabLeft = element.offsetLeft;
+    const tabRight = tabLeft + element.offsetWidth;
+    if (tabLeft < visibleLeft) {
+      viewport.scrollTo({ left: Math.max(0, tabLeft - TAB_SCROLL_EDGE), behavior });
+    } else if (tabRight > visibleRight) {
+      viewport.scrollTo({
+        left: tabRight - viewport.clientWidth + reservedRight + TAB_SCROLL_EDGE,
+        behavior,
+      });
+    }
+  }, []);
+
+  const scrollTabs = (direction: -1 | 1) => {
+    const viewport = tabViewportRef.current;
+    if (!viewport) return;
+    viewport.scrollBy({
+      left: direction * Math.max(160, viewport.clientWidth * 0.72),
+      behavior: 'smooth',
+    });
+  };
+
+  const handleTabWheel = (event: WheelEvent<HTMLDivElement>) => {
+    const viewport = tabViewportRef.current;
+    if (!viewport || !scrollState.overflow) return;
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+    if (!delta) return;
+    event.preventDefault();
+    viewport.scrollLeft += delta;
+  };
+
   useEffect(() => {
     if (!renaming) return;
     requestAnimationFrame(() => renameInputRef.current?.select());
   }, [renaming]);
+
+  useLayoutEffect(() => {
+    const viewport = tabViewportRef.current;
+    const actions = tabActionsRef.current;
+    if (!viewport || !actions) return;
+
+    updateScrollState();
+    const observer = new ResizeObserver(updateScrollState);
+    observer.observe(viewport);
+    observer.observe(actions);
+    viewport.addEventListener('scroll', updateScrollState, { passive: true });
+    return () => {
+      observer.disconnect();
+      viewport.removeEventListener('scroll', updateScrollState);
+    };
+  }, [orderKey, updateScrollState]);
+
+  useEffect(() => {
+    if (!activeId) return;
+    const frame = requestAnimationFrame(() => revealTab(activeId));
+    return () => cancelAnimationFrame(frame);
+  }, [activeId, orderKey, revealTab]);
 
   // FLIP: when this pane's tab order changes (live drag resorting, reorder
   // chords, drops), slide each tab from its previous slot instead of teleporting.
@@ -213,10 +338,12 @@ export function TabStrip({
 
   return (
     <Stack
+      ref={tabViewportRef}
       direction="row"
       role="tablist"
       aria-label="Terminal tabs"
       tabIndex={-1}
+      onWheel={handleTabWheel}
       sx={{
         height: layout.tabStripHeight,
         flexShrink: 0,
@@ -224,8 +351,13 @@ export function TabStrip({
         bgcolor: 'sidebar',
         borderBottom: 1,
         borderColor: 'divider',
+        position: 'relative',
+        containerType: 'inline-size',
         overflowX: 'auto',
+        overflowY: 'hidden',
         scrollbarWidth: 'none',
+        overscrollBehaviorX: 'contain',
+        '&::-webkit-scrollbar': { display: 'none' },
         transition: (theme) => theme.transitions.create('border-color', {
           duration: theme.transitions.duration.shortest,
         }),
@@ -277,6 +409,36 @@ export function TabStrip({
         setPaneMenu({ top: e.clientY, left: e.clientX });
       }}
     >
+      {scrollState.canScrollLeft ? (
+        <Box
+          sx={{
+            position: 'sticky',
+            left: 0,
+            width: 0,
+            flexShrink: 0,
+            zIndex: 3,
+          }}
+        >
+          <Tooltip title="Earlier tabs">
+            <IconButton
+              size="small"
+              aria-label="Show earlier tabs"
+              onClick={() => scrollTabs(-1)}
+              sx={(theme) => ({
+                position: 'absolute',
+                top: 5,
+                left: 2,
+                bgcolor: alpha(theme.palette.sidebar, 0.94),
+                boxShadow: `8px 0 14px ${alpha(theme.palette.sidebar, 0.9)}`,
+                backdropFilter: 'blur(6px)',
+                '&:hover': { bgcolor: theme.palette.action.hover },
+              })}
+            >
+              <KeyboardArrowLeftIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      ) : null}
       {tabs.map((tab) => {
         const active = tab.id === activeId;
         const tabNumber = tabNumberById.get(tab.id);
@@ -380,8 +542,11 @@ export function TabStrip({
               alignItems: 'center',
               gap: 0.75,
               px: 1.25,
-              minWidth: 0,
-              maxWidth: 220,
+              flex: active
+                ? '0 0 clamp(168px, 20vw, 210px)'
+                : '0 0 clamp(128px, 15vw, 190px)',
+              minWidth: active ? 168 : 128,
+              maxWidth: active ? 210 : 190,
               position: 'relative',
               cursor: 'grab',
               userSelect: 'none',
@@ -447,65 +612,92 @@ export function TabStrip({
               '&:hover .muxus-tab-close': { visibility: 'visible' },
             })}
           >
-            <Box
-              component="span"
-              sx={{ position: 'relative', display: 'flex', width: 18, flexShrink: 0 }}
+            <Tooltip
+              title={tab.status === 'idle' ? '' : tabStatusLabel(tab)}
+              placement="bottom"
             >
-              <TabIcon
-                className="muxus-tab-icon"
-                sx={{
-                  fontSize: 15,
-                  color: hasUnreadOutput
-                    ? 'info.main'
-                    : active && focused
-                      ? 'primary.main'
-                      : 'text.secondary',
-                }}
-              />
-              {tabNumber !== undefined ? (
-                <Box
-                  component="span"
-                  className="muxus-tab-number"
-                  aria-hidden
-                  title={`Tab ${tabNumber}`}
-                >
-                  {tabNumber}
-                </Box>
-              ) : null}
-              {hasUnreadOutput ? (
-                <Box
-                  component="span"
-                  aria-label="New terminal output"
+              <Box
+                component="span"
+                sx={{ position: 'relative', display: 'flex', width: 18, flexShrink: 0 }}
+              >
+                <TabIcon
+                  className="muxus-tab-icon"
                   sx={{
-                    position: 'absolute',
-                    top: -2,
-                    right: -3,
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    bgcolor: 'info.main',
-                    boxShadow: (theme) => `0 0 0 2px ${theme.palette.sidebar}`,
+                    fontSize: 15,
+                    color: hasUnreadOutput
+                      ? 'info.main'
+                      : active && focused
+                        ? 'primary.main'
+                        : 'text.secondary',
                   }}
                 />
-              ) : null}
-            </Box>
-            <Typography
-              variant="body2"
-              noWrap
-              sx={{
-                // Flat weight on purpose: the underline, icon tint and lifted
-                // background already mark the active tab, and a weight jump
-                // would re-measure the title on every switch. Weight and
-                // tracking follow the sidebar labels (treeLabelSx).
-                fontWeight: 450,
-                letterSpacing: -0.1,
-                color: active ? 'text.primary' : hasUnreadOutput ? 'info.main' : 'text.secondary',
-                flex: 1,
-                minWidth: 0,
-              }}
-            >
-              {tab.title}
-            </Typography>
+                {tabNumber !== undefined ? (
+                  <Box
+                    component="span"
+                    className="muxus-tab-number"
+                    aria-hidden
+                    title={`Tab ${tabNumber}`}
+                  >
+                    {tabNumber}
+                  </Box>
+                ) : null}
+                {hasUnreadOutput ? (
+                  <Box
+                    component="span"
+                    aria-label="New terminal output"
+                    sx={(theme) => ({
+                      position: 'absolute',
+                      top: 0,
+                      right: 1,
+                      width: 5,
+                      height: 5,
+                      borderRadius: '50%',
+                      bgcolor: 'info.main',
+                      boxShadow: `0 0 0 1px ${
+                        active ? theme.palette.background.default : theme.palette.sidebar
+                      }`,
+                    })}
+                  />
+                ) : null}
+                {tab.status !== 'idle' ? (
+                  <Box
+                    component="span"
+                    aria-hidden
+                    sx={(theme) => ({
+                      position: 'absolute',
+                      right: 1,
+                      bottom: 1,
+                      width: 5,
+                      height: 5,
+                      borderRadius: '50%',
+                      bgcolor: statusTextColor(statusDot[tab.status])(theme),
+                      boxShadow: `0 0 0 1px ${
+                        active ? theme.palette.background.default : theme.palette.sidebar
+                      }`,
+                    })}
+                  />
+                ) : null}
+              </Box>
+            </Tooltip>
+            <Tooltip title={tab.title} enterDelay={650} placement="bottom">
+              <Typography
+                variant="body2"
+                noWrap
+                sx={{
+                  // Flat weight on purpose: the underline, icon tint and lifted
+                  // background already mark the active tab, and a weight jump
+                  // would re-measure the title on every switch. Weight and
+                  // tracking follow the sidebar labels (treeLabelSx).
+                  fontWeight: 450,
+                  letterSpacing: -0.1,
+                  color: active ? 'text.primary' : hasUnreadOutput ? 'info.main' : 'text.secondary',
+                  flex: 1,
+                  minWidth: 0,
+                }}
+              >
+                {tab.title}
+              </Typography>
+            </Tooltip>
             {tab.pinned ? (
               <PinIcon
                 aria-label="Pinned"
@@ -524,46 +716,6 @@ export function TabStrip({
                   color={multiExecTargets.length >= 2 ? 'warning' : 'disabled'}
                   sx={{ fontSize: 14, flexShrink: 0 }}
                 />
-              </Tooltip>
-            )}
-            {tab.status !== 'idle' && (
-              <Tooltip
-                title={
-                  tab.status === 'closed' && tab.failureReason
-                    ? tab.failureReason
-                    : tab.status === 'interrupted'
-                      ? tab.failureReason ?? 'Connection interrupted'
-                    : tab.status === 'connected'
-                      ? 'Connected'
-                      : tab.status === 'connecting'
-                        ? 'Connecting'
-                        : 'Disconnected'
-                }
-              >
-                {tab.status === 'closed' ? (
-                  <LinkOffOutlinedIcon
-                    aria-label="Disconnected"
-                    sx={{ color: 'error.main', fontSize: 15, flexShrink: 0 }}
-                  />
-                ) : (
-                  <Box
-                    component="span"
-                    aria-label={
-                      tab.status === 'interrupted'
-                        ? 'Connection interrupted'
-                        : tab.status === 'connecting'
-                          ? 'Connecting'
-                          : 'Connected'
-                    }
-                    sx={(theme) => ({
-                      width: 7,
-                      height: 7,
-                      borderRadius: '50%',
-                      flexShrink: 0,
-                      bgcolor: statusTextColor(statusDot[tab.status])(theme),
-                    })}
-                  />
-                )}
               </Tooltip>
             )}
             <IconButton
@@ -597,68 +749,197 @@ export function TabStrip({
           })}
         />
       ) : null}
-      <Tooltip title={withChord('New tab', newTabChord)}>
-        <IconButton
-          size="small"
-          aria-label="New tab"
-          onClick={() => {
-            focusPane(paneId);
-            openEmptyTab();
-          }}
-          sx={{ alignSelf: 'center', ml: 0.5 }}
-        >
-          <AddIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
       <Box sx={{ flex: 1, minWidth: 4 }} />
-      <Tooltip title={withChord('Split right', splitRightChord)}>
-        <IconButton
-          size="small"
-          aria-label="Split pane right"
-          onClick={() => splitPane('right')}
-          sx={{ alignSelf: 'center' }}
-        >
-          <VerticalSplitOutlinedIcon sx={{ fontSize: 17 }} />
-        </IconButton>
-      </Tooltip>
-      <Tooltip title={withChord('Split down', splitDownChord)}>
-        <IconButton
-          size="small"
-          aria-label="Split pane down"
-          onClick={() => splitPane('down')}
-          sx={{ alignSelf: 'center' }}
-        >
-          <HorizontalSplitOutlinedIcon sx={{ fontSize: 17 }} />
-        </IconButton>
-      </Tooltip>
-      {canClosePane && (
-        <Tooltip title={withChord(zoomed ? 'Restore layout' : 'Zoom pane', zoomChord)}>
+      <Stack
+        ref={tabActionsRef}
+        direction="row"
+        sx={(theme) => ({
+          position: 'sticky',
+          right: 0,
+          flexShrink: 0,
+          alignItems: 'center',
+          pl: 0.25,
+          borderLeft: 1,
+          borderColor: 'divider',
+          bgcolor: 'sidebar',
+          boxShadow: `-8px 0 16px ${alpha(theme.palette.sidebar, 0.72)}`,
+          zIndex: 2,
+          '@container (max-width: 560px)': {
+            '& .muxus-pane-action-full': { display: 'none' },
+          },
+        })}
+      >
+        {scrollState.canScrollRight ? (
+          <Tooltip title="Later tabs">
+            <IconButton
+              size="small"
+              aria-label="Show later tabs"
+              onClick={() => scrollTabs(1)}
+              sx={(theme) => ({
+                position: 'absolute',
+                right: '100%',
+                bgcolor: alpha(theme.palette.sidebar, 0.94),
+                boxShadow: `-8px 0 14px ${alpha(theme.palette.sidebar, 0.9)}`,
+                backdropFilter: 'blur(6px)',
+                '&:hover': { bgcolor: theme.palette.action.hover },
+              })}
+            >
+              <KeyboardArrowRightIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        ) : null}
+        <Tooltip title={withChord('New tab', newTabChord)}>
           <IconButton
             size="small"
-            aria-label={zoomed ? 'Restore pane layout' : 'Zoom pane'}
-            onClick={() => toggleZoom(paneId)}
-            sx={{ alignSelf: 'center', color: zoomed ? 'primary.main' : undefined }}
+            aria-label="New tab"
+            onClick={() => {
+              focusPane(paneId);
+              openEmptyTab();
+            }}
+            sx={{ alignSelf: 'center' }}
           >
-            {zoomed ? (
-              <CloseFullscreenOutlinedIcon sx={{ fontSize: 15 }} />
-            ) : (
-              <OpenInFullOutlinedIcon sx={{ fontSize: 15 }} />
-            )}
+            <AddIcon fontSize="small" />
           </IconButton>
         </Tooltip>
-      )}
-      {canClosePane && (
-        <Tooltip title={withChord('Close pane', closePaneChord)}>
+        {tabs.length > 1 ? (
+          <Tooltip title={`Show all ${tabs.length} tabs`}>
+            <IconButton
+              size="small"
+              aria-label={`Show all ${tabs.length} tabs`}
+              aria-controls={allTabsMenuAnchor ? `pane-${paneId}-all-tabs-menu` : undefined}
+              aria-expanded={allTabsMenuAnchor ? 'true' : undefined}
+              aria-haspopup="menu"
+              onClick={(event) => setAllTabsMenuAnchor(event.currentTarget)}
+              sx={{
+                alignSelf: 'center',
+                color: scrollState.overflow ? 'text.primary' : 'text.secondary',
+              }}
+            >
+              <KeyboardArrowDownIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        ) : null}
+        <Divider orientation="vertical" flexItem sx={{ my: 0.75, mx: 0.25 }} />
+        <Tooltip title={withChord('Split right', splitRightChord)}>
           <IconButton
+            className="muxus-pane-action-full"
             size="small"
-            aria-label="Close pane"
-            onClick={() => void requestClosePane(paneId)}
-            sx={{ alignSelf: 'center', mr: 0.5 }}
+            aria-label="Split pane right"
+            onClick={() => splitPane('right')}
+            sx={{ alignSelf: 'center' }}
           >
-            <CloseIcon sx={{ fontSize: 16 }} />
+            <VerticalSplitOutlinedIcon sx={{ fontSize: 17 }} />
           </IconButton>
         </Tooltip>
-      )}
+        <Tooltip title={withChord('Split down', splitDownChord)}>
+          <IconButton
+            className="muxus-pane-action-full"
+            size="small"
+            aria-label="Split pane down"
+            onClick={() => splitPane('down')}
+            sx={{ alignSelf: 'center' }}
+          >
+            <HorizontalSplitOutlinedIcon sx={{ fontSize: 17 }} />
+          </IconButton>
+        </Tooltip>
+        {canClosePane && (
+          <Tooltip title={withChord(zoomed ? 'Restore layout' : 'Zoom pane', zoomChord)}>
+            <IconButton
+              className="muxus-pane-action-full"
+              size="small"
+              aria-label={zoomed ? 'Restore pane layout' : 'Zoom pane'}
+              onClick={() => toggleZoom(paneId)}
+              sx={{ alignSelf: 'center', color: zoomed ? 'primary.main' : undefined }}
+            >
+              {zoomed ? (
+                <CloseFullscreenOutlinedIcon sx={{ fontSize: 15 }} />
+              ) : (
+                <OpenInFullOutlinedIcon sx={{ fontSize: 15 }} />
+              )}
+            </IconButton>
+          </Tooltip>
+        )}
+        <Tooltip title="More pane actions">
+          <IconButton
+            className="muxus-pane-action-compact"
+            size="small"
+            aria-label="More pane actions"
+            onClick={(event) => setPaneMenu({ top: event.clientY, left: event.clientX })}
+            sx={{
+              alignSelf: 'center',
+              display: 'none',
+              '@container (max-width: 560px)': { display: 'inline-flex' },
+            }}
+          >
+            <MoreHorizIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        {canClosePane && (
+          <Tooltip title={withChord('Close pane', closePaneChord)}>
+            <IconButton
+              size="small"
+              aria-label="Close pane"
+              onClick={() => void requestClosePane(paneId)}
+              sx={{ alignSelf: 'center', mr: 0.5 }}
+            >
+              <CloseIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          </Tooltip>
+        )}
+      </Stack>
+
+      <Menu
+        id={`pane-${paneId}-all-tabs-menu`}
+        open={!!allTabsMenuAnchor}
+        anchorEl={allTabsMenuAnchor}
+        onClose={() => setAllTabsMenuAnchor(null)}
+        variant="menu"
+        slotProps={{
+          paper: {
+            sx: {
+              width: 320,
+              maxWidth: 'calc(100vw - 24px)',
+              maxHeight: 'min(460px, calc(100vh - 48px))',
+            },
+          },
+        }}
+      >
+        {tabs.map((tab) => {
+          const active = tab.id === activeId;
+          const hasUnreadOutput = unreadOutputIds.has(tab.id);
+          const TabIcon =
+            tab.profile === null
+              ? AddIcon
+              : tab.profile.kind === 'local'
+                ? TerminalIcon
+                : hostKindIcon(tab.profile.kind);
+          return (
+            <MenuItem
+              key={tab.id}
+              selected={active}
+              onClick={() => {
+                activate(tab.id);
+                setAllTabsMenuAnchor(null);
+              }}
+              sx={{ gap: 1 }}
+            >
+              <ListItemIcon sx={{ minWidth: 30 }}>
+                <TabIcon
+                  fontSize="small"
+                  color={hasUnreadOutput ? 'info' : active ? 'primary' : 'inherit'}
+                />
+              </ListItemIcon>
+              <ListItemText
+                primary={tab.title}
+                secondary={tabStatusLabel(tab)}
+                slotProps={{ primary: { noWrap: true }, secondary: { noWrap: true } }}
+              />
+              {tab.pinned ? <PinIcon aria-label="Pinned" sx={{ ml: 1, fontSize: 14 }} /> : null}
+              {active ? <CheckIcon aria-label="Active tab" sx={{ ml: 0.5, fontSize: 18 }} /> : null}
+            </MenuItem>
+          );
+        })}
+      </Menu>
 
       <Menu
         open={!!paneMenu}
