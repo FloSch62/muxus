@@ -85,8 +85,8 @@ connection setting changes.
 
 ### Shared credentials
 
-A folder can hold shared SSH defaults — username, port, a private key and a password —
-that every host inside it inherits. Open **Rename, move & style…** and fill in the
+A folder can provide a default username, port, private key and password for every host
+inside it. Open **Rename, move & style…** and fill in the
 **Shared SSH credentials** section.
 
 Precedence is always: the host's own settings first, then the nearest folder, then its

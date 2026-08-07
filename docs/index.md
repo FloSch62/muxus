@@ -38,14 +38,14 @@ a remote editor, saved tunnels, and images in the terminal.
 
 ## What it is
 
-A desktop terminal client built around the session rather than the shell. Open a host and
-you get a terminal — then split it, drag a tab into the pane beside it, open the file
-browser, edit a remote file in Monaco and start a tunnel, all over the same connection and
-without a second login. Save the arrangement as a workspace and reopen it tomorrow.
+A desktop terminal client built around the session rather than the shell. Open a host to
+get a terminal, then split it, drag a tab into the pane beside it, open the file browser,
+edit a remote file in Monaco and start a tunnel. They all use the same connection, without
+a second login. Save the arrangement as a workspace and reopen it tomorrow.
 
-The terminal is a current one: kitty graphics, so `kitten icat`, yazi previews and
-matplotlib render inline over SSH, plus the kitty keyboard protocol, bundled Nerd Font
-coverage and fifteen colour schemes.
+The terminal supports kitty graphics, so `kitten icat`, yazi previews and matplotlib render
+inline over SSH. It also supports the kitty keyboard protocol, includes Nerd Font coverage
+and comes with fifteen colour schemes.
 
 Muxus reads every host from `~/.ssh/config`, while also letting you keep selected SSH hosts
 in its local database without changing OpenSSH. Folders, colours, workspaces and history
@@ -62,7 +62,7 @@ use the same local database.
 
     [:octicons-arrow-right-24: Your hosts](guide/hosts.md)
 
--   :material-image-outline: **A terminal that draws**
+-   :material-image-outline: **Inline terminal images**
 
     ---
 
@@ -71,7 +71,7 @@ use the same local database.
 
     [:octicons-arrow-right-24: Images in the terminal](guide/graphics.md)
 
--   :material-view-split-vertical: **Panes without the prefix dance**
+-   :material-view-split-vertical: **Split panes**
 
     ---
 
@@ -80,7 +80,7 @@ use the same local database.
 
     [:octicons-arrow-right-24: Tabs & panes](guide/tabs-and-panes.md)
 
--   :material-transit-connection-variant: **Full connect-through**
+-   :material-transit-connection-variant: **Jump hosts and proxy commands**
 
     ---
 
@@ -89,7 +89,7 @@ use the same local database.
 
     [:octicons-arrow-right-24: Connecting](guide/connecting.md)
 
--   :material-folder-network-outline: **Files and an editor, in the session**
+-   :material-folder-network-outline: **SFTP and remote editing**
 
     ---
 
@@ -98,7 +98,7 @@ use the same local database.
 
     [:octicons-arrow-right-24: File browser](guide/files.md)
 
--   :material-swap-horizontal: **Tunnels that outlive terminals**
+-   :material-swap-horizontal: **Persistent tunnels**
 
     ---
 
@@ -107,7 +107,7 @@ use the same local database.
 
     [:octicons-arrow-right-24: Tunnels](guide/tunnels.md)
 
--   :material-view-dashboard-outline: **Workspaces you can come back to**
+-   :material-view-dashboard-outline: **Saved workspaces**
 
     ---
 
@@ -116,7 +116,7 @@ use the same local database.
 
     [:octicons-arrow-right-24: Workspaces](guide/workspaces.md)
 
--   :material-magnify: **One key for everything**
+-   :material-magnify: **Quick launcher**
 
     ---
 

@@ -92,13 +92,14 @@ include the global set.
 
 ## Behavior
 
-Tab behaviour, including **confirm before closing a live session**, which is on by default
-because closing a connected tab ends its shell, and the restore switches, both on by
-default: **automatically reconnect remote sessions** — restoring a workspace dials its
-remote tabs, and a dropped connection redials a few times on its own; turn it off to
-restore remote tabs without logging in — and **restore terminal history**, which saves
-recent output locally every few seconds and replays it above the new session after a
-restore or reconnect.
+**Confirm before closing a live session** is on by default because closing a connected tab
+ends its shell.
+
+The two restore switches are also on by default. **Automatically reconnect remote
+sessions** dials remote tabs when restoring a workspace and retries a dropped connection a
+few times. Turn it off to restore remote tabs without logging in. **Restore terminal
+history** saves recent output locally every few seconds and replays it above the new
+session after a restore or reconnect.
 
 ## Keyboard
 
@@ -165,13 +166,13 @@ Muxus-only settings remain in the backup.
 **Debug mode** raises the app's logging to connection-level detail: every dial, each
 authentication method as it is tried, waits on the SSH agent, host key verification, and
 the raw error behind a failed connection. Warnings and errors are always captured, even
-while debug mode is off — a failure can be inspected after the fact, and turning on debug
-mode is only needed for the verbose detail around the next attempt.
+while debug mode is off. A failure can therefore be inspected after the fact. Turn on
+debug mode only when the next attempt needs verbose detail.
 
 **View logs** opens a live viewer with level and text filters; **Export logs** saves
-everything as a text file. Logs live in a small, bounded in-memory buffer on this machine
-only — they reset when the app quits and are never written to disk or sent anywhere
-unless exported.
+everything as a text file. Logs live in a small, bounded in-memory buffer on this machine.
+They reset when the app quits and are never written to disk or sent anywhere unless
+exported.
 
 !!! tip "When the app will not start"
 

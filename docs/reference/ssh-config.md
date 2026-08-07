@@ -48,7 +48,7 @@ These keywords are modelled as fields. They appear as controls in the
 | `IdentityFile` | Keys offered, in order |
 | `CertificateFile` | User certificates, paired with their key |
 | `IdentitiesOnly` | Restricts authentication to the listed identities |
-| `IdentityAgent` | Agent source — inherited, `SSH_AUTH_SOCK`, custom socket/variable, or disabled |
+| `IdentityAgent` | Agent source: inherited, `SSH_AUTH_SOCK`, custom socket/variable, or disabled |
 | `ForwardAgent` | Agent forwarding, when an agent is present |
 | `ProxyJump` | Jump chain, comma-separated and nestable |
 | `ProxyCommand` | External transport command (`%h`, `%p`, `%r` expand at dial time) |
@@ -64,7 +64,7 @@ but the dialler still applies them the way `ssh` would:
 
 | Keyword | Used for |
 | --- | --- |
-| `Ciphers`, `KexAlgorithms`, `HostKeyAlgorithms`, `MACs` | Algorithm negotiation, including the `+`/`^`/`-` list syntax and `*` patterns. Entries the SSH engine does not implement are skipped with a notice, so a config shared with OpenSSH keeps working — and the editor flags them while you type. |
+| `Ciphers`, `KexAlgorithms`, `HostKeyAlgorithms`, `MACs` | Algorithm negotiation, including the `+`/`^`/`-` list syntax and `*` patterns. Entries the SSH engine does not implement are skipped with a notice, so a config shared with OpenSSH keeps working. The editor flags them while you type. |
 | `Compression` | `yes` prefers zlib like `ssh -C` |
 | `ConnectTimeout` | Dial timeout; defaults to 20 seconds |
 | `ServerAliveInterval`, `ServerAliveCountMax` | Keepalives; default 15 seconds / 3 missed replies |

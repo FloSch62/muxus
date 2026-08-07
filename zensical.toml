@@ -1,16 +1,16 @@
 # ============================================================================
-# Muxus documentation — built with Zensical (https://zensical.org)
+# Muxus documentation, built with Zensical (https://zensical.org)
 # Zensical reads this file natively. Build: `zensical build`, preview: `zensical serve`.
 # ============================================================================
 
 [project]
 site_name = "Muxus"
-site_description = "Muxus — a free, open-source SSH, Telnet and serial client. OpenSSH-native hosts, split panes, kitty graphics, SFTP, a remote editor and saved tunnels."
+site_description = "Muxus is a free, open-source SSH, Telnet and serial client with OpenSSH-native hosts, split panes, kitty graphics, SFTP, a remote editor and saved tunnels."
 site_author = "Muxus authors"
 site_url = "https://flosch62.github.io/muxus/"
 
 copyright = """
-Copyright &copy; 2026 the Muxus authors — released under the MIT license.
+Copyright &copy; 2026 the Muxus authors. Released under the MIT license.
 """
 
 repo_name = "FloSch62/muxus"
@@ -19,7 +19,7 @@ edit_uri = "edit/main/docs/"
 
 extra_css = ["assets/stylesheets/extra.css"]
 
-# Explicit navigation — mirrors the docs/ tree but gives us full control of
+# Explicit navigation mirrors the docs/ tree but gives us full control of
 # order and titles. Top-level entries become tabs (navigation.tabs is on below).
 nav = [
   { "Home" = "index.md" },
@@ -120,7 +120,7 @@ icon = "fontawesome/brands/github"
 link = "https://github.com/FloSch62/muxus"
 
 # ----------------------------------------------------------------------------
-# Markdown extensions — the same stack Material-based sites use.
+# Markdown extensions use the same stack as Material-based sites.
 # ----------------------------------------------------------------------------
 [project.markdown_extensions.abbr]
 [project.markdown_extensions.admonition]

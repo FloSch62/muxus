@@ -43,7 +43,7 @@ By default, restore brings the whole workspace back:
 - **Local shells start fresh.** A new PTY, in the same pane, in the same position.
 - **Remote sessions reconnect.** SSH, Telnet and serial tabs are dialled again with their
   titles and colours; hosts that authenticate interactively prompt as usual. Restoring a
-  layout never resumes a remote process — pair it with tmux or screen for that.
+  layout never resumes a remote process. Use tmux or screen for that.
 - **Terminal history comes back.** Each tab replays its recent output (about the last
   thousand lines, saved locally every few seconds while you work) above a dim divider;
   the new session continues below it. Reconnects keep the buffer the same way.
@@ -53,10 +53,10 @@ a few times with growing delays before falling back to *press any key to reconne
 
 Both behaviours have switches in Settings → Behavior. Turning **Automatically reconnect
 remote sessions** off restores remote tabs without dialling them, so a large layout does
-not trigger a set of simultaneous logins and 2FA prompts — reconnect them individually
-from the tab menu, or use the workspace dialog to reconnect selected sessions or all of
-them. Turning **Restore terminal history** off keeps scrollback out of local storage and
-restores every tab empty.
+not trigger a set of simultaneous logins and 2FA prompts. Reconnect them individually from
+the tab menu, or use the workspace dialog to reconnect selected sessions or all of them.
+Turning **Restore terminal history** off keeps scrollback out of local storage and restores
+every tab empty.
 
 ## Launching a set at once
 

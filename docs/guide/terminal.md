@@ -57,7 +57,7 @@ immediately.
 ## Local shell profiles
 
 [Settings → Local shells](settings.md#local-shells) can save several local launch
-configurations side by side—for example PowerShell, Command Prompt and individual WSL
+configurations side by side, such as PowerShell, Command Prompt and individual WSL
 distributions. A profile can supply executable arguments, a starting directory and commands
 to run when its interactive shell starts. Saved profiles are launchable from both the hosts
 sidebar and the quick launcher.
@@ -105,8 +105,8 @@ whole-word switches.
   <figcaption>Global rules, with per-host rules that add to them or replace them.</figcaption>
 </figure>
 
-A named highlighting profile can hold a platform-specific rule set—such as one for Nokia
-SR OS—and be assigned to any number of SSH, Telnet or serial hosts. Profiles can be
+A named highlighting profile can hold a platform-specific rule set, such as one for Nokia
+SR OS, and be assigned to any number of SSH, Telnet or serial hosts. Profiles can be
 imported and exported as JSON files from **Settings → Highlighting**, so a rule set can be
 shared without recreating it. Editing a profile updates every assigned open terminal.
 

@@ -127,11 +127,11 @@ THEME=dark node hack/record.mjs    # dark only
 KEEP=1 node hack/record.mjs        # leave the frames in /tmp to re-encode by hand
 ```
 
-`hack/record.mjs` walks one window through five beats — open a saved host, split the pane,
-draw a chart in the terminal, the quick launcher, the file browser and the editor — with a
-pointer and a caption drawn over the page, because a screen recording captures neither the
-mouse nor the keys that drove it. Frames come off Chrome's screencast at device resolution
-and are stitched with `ffmpeg`, which has to be on `PATH`.
+`hack/record.mjs` walks one window through five beats: opening a saved host, splitting the
+pane, drawing a chart in the terminal, opening the quick launcher, and using the file
+browser and editor. It draws a pointer and caption over the page because a screen recording
+captures neither the mouse nor the keys that drove it. Frames come off Chrome's screencast
+at device resolution and are stitched with `ffmpeg`, which has to be on `PATH`.
 
 Running `node hack/demo-env.mjs` on its own starts the sandbox and prints a URL, which is
 also a way to test a change without touching the real `~/.ssh`.

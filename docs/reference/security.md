@@ -36,8 +36,8 @@ and history.
 
 The local SQLite database holds folders, colours, display names, sidebar order, workspaces,
 saved tunnels, Muxus-only SSH/Telnet/serial hosts, per-host highlighting and logging policy,
-connection timestamps, and—only when the user opts in—encrypted SSH passwords. It is
-created `0600` in a `0700` directory.
+connection timestamps and encrypted SSH passwords when the user opts in. It is created
+`0600` in a `0700` directory.
 
 **Credential material is rejected from ordinary profile, tunnel and workspace data.**
 Objects whose field names include `password`, `passphrase`, `secret`, `token` or
@@ -94,8 +94,8 @@ remain in garbage-collected memory for an unspecified short period after use. Ma
 controlling the logged-in session or Muxus can capture credentials while they are used.
 
 Deleting a credential enables SQLite secure deletion, checkpoints and truncates the WAL.
-Deleting the whole vault additionally compacts the active database and attempts to remove
-its OS credential-store entry. Reset still completes if the credential store is
+Deleting the whole vault also compacts the active database and attempts to remove its OS
+credential-store entry. Reset still completes if the credential store is
 unavailable, because the orphaned random key has no ciphertext or vault metadata to open.
 An existing backup paired with an entry that could not be removed may still be usable;
 backups, filesystem snapshots, storage-device remapping and forensic copies are outside
