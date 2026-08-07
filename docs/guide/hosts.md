@@ -5,7 +5,7 @@ icon: lucide/server
 # Your hosts
 
 The sidebar lists every concrete `Host` block in the OpenSSH configuration, including files
-pulled in with `Include`, together with the Telnet and serial hosts stored by Muxus.
+pulled in with `Include`, together with SSH, Telnet and serial hosts stored by Muxus.
 
 Muxus does not import the configuration. It reads `~/.ssh/config` directly and writes edits
 back to the same file in place.
@@ -17,20 +17,21 @@ Muxus. On Windows, **Find sessions** reads bookmarks from the current user's loc
 MobaXterm installation. On every platform, you can choose `MobaXterm.ini`, `.mxtsessions`,
 `.mobaconf` or a text export instead.
 
-The review lists every detected SSH session and flags aliases that already exist. Choose
-which sessions to include and whether existing aliases should be kept or replaced. Muxus
+The review lists every detected SSH session. Choose whether SSH hosts should stay in Muxus
+app data only or be written as OpenSSH `Host` blocks, then select which sessions to include
+and whether matching hosts should be kept or replaced. Muxus
 preserves the display name, host, port, username, password-vs-key authentication intent and
 the `SubRep` folder hierarchy.
 
-Passwords and private key files are not copied. They remain outside `ssh_config`; Muxus
+Passwords and private key files are not copied. Muxus
 uses your SSH agent or asks for credentials when you connect.
 
 ## Import from SecureCRT
 
 In SecureCRT, choose **Tools → Export Settings**, include **Sessions**, and save the XML
 export. Then open **Settings → Backup & data → SecureCRT import** in Muxus and choose that
-file. The review preserves nested folders and lets you select individual sessions or keep
-and replace aliases that already exist.
+file. The review preserves nested folders, offers Muxus-only or OpenSSH storage for SSH
+sessions, and lets you select individual sessions or keep and replace matching hosts.
 
 Muxus imports SSH names, hosts, ports, usernames and password-vs-key authentication intent.
 Serial sessions include their device path, baud rate, data bits, stop bits, parity and flow
@@ -44,7 +45,7 @@ SecureCRT settings are never imported.
 <figure markdown="span">
   ![The hosts sidebar with folders and colours](../assets/screenshots/sidebar.png#only-light){ .shadow }
   ![The hosts sidebar with folders and colours](../assets/screenshots/sidebar-dark.png#only-dark){ .shadow }
-  <figcaption>Folders, colours, icons and live-session dots are stored by Muxus. The connection details come from OpenSSH.</figcaption>
+  <figcaption>Folders, colours, icons and live-session dots are stored by Muxus. SSH connection details can come from OpenSSH or a Muxus-only profile.</figcaption>
 </figure>
 
 ## Host rows
@@ -88,11 +89,11 @@ A folder can hold shared SSH defaults — username, port, a private key and a pa
 that every host inside it inherits. Open **Rename, move & style…** and fill in the
 **Shared SSH credentials** section.
 
-Precedence is always: the host's own settings first, then anything in `ssh_config`
-(including `Host *` blocks), then the nearest folder, then its parents. A folder never
-overrides something you configured on the host or in `ssh_config` — it only fills the
-gaps, so one folder entry can carry the login for a whole lab while individual hosts
-still override it by setting their own user or key.
+Precedence is always: the host's own settings first, then the nearest folder, then its
+parents. OpenSSH-backed hosts also use anything resolved from `ssh_config` (including
+`Host *` blocks) before consulting the folder. Muxus-only hosts do not read final-host
+settings from `ssh_config`; only named `ProxyJump` hops can still resolve there. A folder
+therefore fills gaps without replacing a value configured directly on the host.
 
 The shared password is kept in the encrypted [password vault](settings.md) and is tried
 automatically when a host falls back to password login; a password remembered for the

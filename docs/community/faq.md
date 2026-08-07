@@ -6,14 +6,15 @@ icon: lucide/circle-help
 
 ### Does Muxus change my `~/.ssh/config`?
 
-Only on request. Adding, editing or deleting a host rewrites that block and nothing else,
-atomically, leaving a `.muxus.bak` of the previous contents. Folders, colours and
-workspaces are stored in Muxus's own database.
+Only when you choose **OpenSSH config** storage. A new SSH host can instead be saved in
+**Muxus app data only**, and MobaXterm/SecureCRT imports offer the same choice. OpenSSH
+edits rewrite that block and nothing else, atomically, leaving a `.muxus.bak` of the
+previous contents.
 
 ### Will `ssh` on the command line still work?
 
-Yes. Muxus writes standard OpenSSH blocks, appends to `known_hosts`, and reads the agent.
-Anything added in Muxus is usable by `ssh`, `scp` and `rsync`.
+Yes for hosts stored in OpenSSH config. Muxus-only database hosts are intentionally private
+to the app and do not appear to `ssh`, `scp` or `rsync`.
 
 ### Do I need to import my hosts?
 
@@ -39,8 +40,9 @@ as a single-user local tool. Do not put it behind a reverse proxy.
 ### Where is my data?
 
 The application database is in the platform data directory (`~/.local/share/muxus/`,
-`~/Library/Application Support/Muxus/`, `%APPDATA%\Muxus\`). Connection settings are in
-`~/.ssh/config`. See the [CLI reference](../reference/cli.md#data-locations).
+`~/Library/Application Support/Muxus/`, `%APPDATA%\Muxus\`). Muxus-only host settings are
+stored there; OpenSSH-backed hosts remain in `~/.ssh/config`. See the
+[CLI reference](../reference/cli.md#data-locations).
 
 ### Are my passwords stored anywhere?
 

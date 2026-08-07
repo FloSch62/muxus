@@ -40,6 +40,7 @@ export interface ImportedSerialSession extends ImportedSessionBase {
 }
 
 export type ImportedSession = ImportedSshSession | ImportedSerialSession;
+export type ImportedSshStorage = 'openssh' | 'muxus';
 
 export interface SkippedImportedSession {
   /** Stable inside one parsed file and used as the React list key. */
@@ -62,6 +63,7 @@ export interface ImportedSessionParseResult<T extends ImportedSession = Imported
 export function importedConnections(
   sessions: readonly ImportedSession[],
   sourceName: string,
+  sshStorage: ImportedSshStorage = 'openssh',
 ): PortableConnections {
   const sshHosts: PortableSshHost[] = [];
   const savedHosts: PortableSavedHost[] = [];
@@ -72,6 +74,25 @@ export function importedConnections(
       ...(session.folder ? { group: session.folder } : {}),
     };
     if (session.kind === 'ssh') {
+      if (sshStorage === 'muxus') {
+        savedHosts.push({
+          id: stableImportId(
+            `${sourceName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-ssh`,
+            session.id,
+          ),
+          name: session.name,
+          profile: {
+            kind: 'ssh',
+            target: session.host,
+            useConfig: false,
+            ...(session.username ? { user: session.username } : {}),
+            ...(session.port === 22 ? {} : { port: session.port }),
+            ...(session.authMode === 'password' ? { passwordOnly: true } : {}),
+          },
+          metadata: session.folder ? { group: session.folder } : {},
+        });
+        continue;
+      }
       const options: HostBlockOptions = {
         hostname: session.host,
         ...(session.username ? { user: session.username } : {}),

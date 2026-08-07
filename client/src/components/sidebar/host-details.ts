@@ -7,7 +7,25 @@ import type { ManagedHost } from '../../managed-hosts.js';
  */
 export function hostDetailLines(host: ManagedHost): string[] {
   const lines: string[] = [];
-  if (host.kind !== 'ssh') return lines;
+  if (host.kind === 'profile') {
+    const profile = host.entry.profile;
+    if (profile.kind !== 'ssh') return lines;
+    if (profile.proxyJump?.length) lines.push(`via ${profile.proxyJump.join(' → ')}`);
+    if (profile.identityFiles?.length) {
+      lines.push(
+        `Key ${profile.identityFiles.map((file) => file.split(/[\\/]/).pop()).join(', ')}`,
+      );
+    }
+    if (profile.passwordOnly) lines.push('Password authentication');
+    if (host.entry.metadata.consoleCompatibility) lines.push('Console compatibility');
+    else if (host.entry.metadata.disableSftp) lines.push('SFTP disabled');
+    if (profile.forwards?.length) {
+      lines.push(
+        `${profile.forwards.length} port forward${profile.forwards.length > 1 ? 's' : ''} on connect`,
+      );
+    }
+    return lines;
+  }
   if (host.entry.description) lines.push(host.entry.description);
   const resolved = host.entry.resolved;
   if (!resolved) return lines;

@@ -183,6 +183,13 @@ export function managedHostCopyCommand(host: ManagedHost): { label: string; text
     return { label: 'Copy ssh command', text: `ssh ${host.entry.alias}` };
   }
   const profile = host.entry.profile;
+  if (profile.kind === 'ssh') {
+    const target = profile.user ? `${profile.user}@${profile.target}` : profile.target;
+    return {
+      label: 'Copy ssh command',
+      text: `ssh${profile.port ? ` -p ${profile.port}` : ''} ${target}`,
+    };
+  }
   return profile.kind === 'telnet'
     ? { label: 'Copy telnet command', text: `telnet ${profile.host} ${profile.port}` }
     : { label: 'Copy device path', text: profile.path };

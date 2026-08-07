@@ -8,6 +8,7 @@ import {
   type ImportedSerialSession,
   type ImportedSession,
   type ImportedSessionParseResult,
+  type ImportedSshStorage,
   type ImportedSshSession,
   uniqueImportAlias,
 } from './session-import.js';
@@ -194,8 +195,13 @@ export function parseSecureCrtSessions(text: string): SecureCrtParseResult {
 
 export function secureCrtConnections(
   sessions: readonly SecureCrtSession[],
+  sshStorage: ImportedSshStorage = 'openssh',
 ): PortableConnections {
-  return importedConnections(sessions as readonly ImportedSession[], 'SecureCRT');
+  return importedConnections(
+    sessions as readonly ImportedSession[],
+    'SecureCRT',
+    sshStorage,
+  );
 }
 
 function directElements(parent: Element, tagName: string): Element[] {

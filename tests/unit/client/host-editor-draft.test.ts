@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import type { SshHostEntry } from '@muxus/shared';
+import type { SavedHostProfile, SshHostEntry } from '@muxus/shared';
 import {
   blankDraft,
   draftFromEntry,
+  draftFromSavedSshProfile,
+  draftProblem,
   draftToRequest,
+  draftToSavedSshInput,
   identityAgentForDetection,
 } from '../../../client/src/components/host-editor/draft.js';
 
@@ -37,6 +40,59 @@ const entry: SshHostEntry = {
 };
 
 describe('SSH host editor draft', () => {
+  it('loads and saves a self-contained Muxus SSH profile', () => {
+    const saved: SavedHostProfile = {
+      id: 'muxus-router',
+      kind: 'ssh',
+      name: 'Core router',
+      profile: {
+        kind: 'ssh',
+        profileId: 'muxus-router',
+        target: 'router.example.test',
+        useConfig: false,
+        user: 'admin',
+        port: 2222,
+        identityFiles: ['~/.ssh/router'],
+        identitiesOnly: true,
+        proxyJump: ['bastion'],
+      },
+      metadata: {
+        profileId: 'muxus-router',
+        group: 'Production',
+        connectCount: 0,
+      },
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    };
+
+    const draft = draftFromSavedSshProfile(saved, false);
+    expect(draft).toMatchObject({
+      storage: 'muxus',
+      aliasText: 'Core router',
+      hostname: 'router.example.test',
+      user: 'admin',
+      port: '2222',
+      group: 'Production',
+      authMode: 'key',
+      routeMode: 'jump',
+    });
+    expect(draftProblem(draft)).toBeNull();
+    expect(draftToSavedSshInput(draft, saved.id)).toMatchObject({
+      id: 'muxus-router',
+      name: 'Core router',
+      profile: {
+        kind: 'ssh',
+        target: 'router.example.test',
+        useConfig: false,
+        user: 'admin',
+        port: 2222,
+        identityFiles: ['~/.ssh/router'],
+        identitiesOnly: true,
+        proxyJump: ['bastion'],
+      },
+    });
+  });
+
   it('loads and saves modeled connection options as first-class fields', () => {
     const draft = draftFromEntry(entry, false);
     expect(draft.authMode).toBe('key');

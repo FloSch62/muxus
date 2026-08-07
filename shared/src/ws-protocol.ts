@@ -35,23 +35,43 @@ export const localProfileSchema = z.object({
 
 export const sshProfileSchema = z.object({
   kind: z.literal('ssh'),
+  /** Stable Muxus database profile when this is a saved host. */
+  profileId: z.string().min(1).max(200).optional(),
   /**
    * Host alias from ~/.ssh/config, or an ad-hoc "[user@]host[:port]".
    * Everything else — HostName, User, Port, keys, ProxyJump, forwards —
    * resolves server-side from the config, exactly like `ssh <target>`.
    */
   target: z.string().min(1),
-  /** False for a self-contained tunnel profile; jump aliases still resolve from config. */
+  /** False for a self-contained saved host or tunnel; jump aliases may still resolve from config. */
   useConfig: z.boolean().optional(),
   /** Quick-connect overrides on top of config resolution. */
   user: z.string().optional(),
   port: z.number().int().min(1).max(65535).optional(),
   /** Tunnel-owned overrides; passwords/passphrases still travel only in prompts. */
   identityFiles: z.array(z.string().min(1).max(4096)).max(32).optional(),
+  certificateFiles: z.array(z.string().min(1).max(4096)).max(32).optional(),
   identitiesOnly: z.boolean().optional(),
+  /** Agent socket path, environment indirection, SSH_AUTH_SOCK, or none. */
+  identityAgent: z.string().min(1).max(4096).optional(),
   forwardAgent: z.boolean().optional(),
   proxyJump: z.array(z.string().min(1).max(500)).max(8).optional(),
+  proxyCommand: z.string().min(1).max(32_768).optional(),
+  forwards: z
+    .array(
+      z.object({
+        type: z.enum(['local', 'remote', 'dynamic']),
+        bindPort: z.number().int().min(1).max(65535),
+        targetHost: z.string().min(1).max(4096).optional(),
+        targetPort: z.number().int().min(1).max(65535).optional(),
+      }),
+    )
+    .max(64)
+    .optional(),
   passwordOnly: z.boolean().optional(),
+  remoteCommand: z.string().min(1).max(32_768).optional(),
+  requestTty: z.enum(['no', 'yes', 'force', 'auto']).optional(),
+  strictHostKeyChecking: z.enum(['yes', 'no', 'accept-new', 'ask']).optional(),
 });
 
 export const telnetProfileSchema = z.object({

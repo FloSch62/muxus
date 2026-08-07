@@ -9,6 +9,7 @@ import {
   findMetadataAlias,
   muxKey,
   observeSshTransportHealth,
+  SshConnectionManager,
   sshKeepaliveOptions,
   terminalPtyOptions,
 } from '../../../server/src/ssh/connection-manager.js';
@@ -93,8 +94,16 @@ describe('buildChain', () => {
       user: 'deploy',
       port: 2222,
       identityFiles: ['~/.ssh/tunnel_ed25519'],
+      certificateFiles: ['~/.ssh/tunnel_ed25519-cert.pub'],
       identitiesOnly: true,
+      identityAgent: 'none',
       proxyJump: ['bastion'],
+      forwards: [
+        { type: 'local', bindPort: 8080, targetHost: '127.0.0.1', targetPort: 80 },
+      ],
+      remoteCommand: 'tmux new -A -s main',
+      requestTty: 'yes',
+      strictHostKeyChecking: 'accept-new',
     });
 
     expect(chain.map((hop) => hop.resolved.hostname)).toEqual([
@@ -105,10 +114,20 @@ describe('buildChain', () => {
     expect(chain[1]).toMatchObject({ user: 'deploy', port: 2222 });
     expect(chain[1]!.resolved).toMatchObject({
       identitiesOnly: true,
+      identityAgent: 'none',
       proxyJump: ['bastion'],
+      forwards: [
+        { type: 'local', bindPort: 8080, targetHost: '127.0.0.1', targetPort: 80 },
+      ],
+      remoteCommand: 'tmux new -A -s main',
+      requestTty: 'yes',
+      strictHostKeyChecking: 'accept-new',
     });
     expect(chain[1]!.resolved.identityFiles[0]).toMatch(
       /[\\/]\.ssh[\\/]tunnel_ed25519$/,
+    );
+    expect(chain[1]!.resolved.certificateFiles[0]).toMatch(
+      /[\\/]\.ssh[\\/]tunnel_ed25519-cert\.pub$/,
     );
   });
 
@@ -141,6 +160,44 @@ describe('buildChain', () => {
     const jumped = buildChain(doc, { target: 'app', proxyJump: ['bastion'] });
     expect(jumped.map((hop) => hop.spec.host)).toEqual(['bastion', 'app']);
     expect(jumped[1]!.resolved.proxyCommand).toBeUndefined();
+  });
+});
+
+describe('saved SSH profile resolution', () => {
+  it('uses the current database profile instead of stale client fields', () => {
+    const manager = new SshConnectionManager({} as never, {
+      savedSshProfile: (id) =>
+        id === 'saved-1'
+          ? {
+              kind: 'ssh',
+              profileId: id,
+              target: 'current.example.test',
+              useConfig: false,
+              user: 'current-user',
+            }
+          : undefined,
+    });
+
+    expect(
+      manager.resolveProfile({
+        kind: 'ssh',
+        profileId: 'saved-1',
+        target: 'stale.example.test',
+        useConfig: false,
+        user: 'stale-user',
+      }),
+    ).toMatchObject({
+      target: 'current.example.test',
+      user: 'current-user',
+    });
+    expect(() =>
+      manager.resolveProfile({
+        kind: 'ssh',
+        profileId: 'deleted',
+        target: 'stale.example.test',
+        useConfig: false,
+      }),
+    ).toThrow(/not found/);
   });
 });
 

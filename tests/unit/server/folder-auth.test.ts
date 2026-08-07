@@ -8,6 +8,7 @@ import {
   folderAuthOptionLines,
   folderAuthResolver,
   mergeFolderAuth,
+  savedProfileFolderAuthResolver,
 } from '../../../server/src/ssh/folder-auth.js';
 import { folderPasswordAccount } from '../../../server/src/security/password-vault.js';
 import { loadConfigDocument, resolveHost } from '../../../server/src/ssh/ssh-config.js';
@@ -189,6 +190,33 @@ describe('buildChain with folder defaults', () => {
     expect(chain[0]!.port).toBe(22);
     expect(chain[0]!.folderPasswords).toBeUndefined();
   });
+
+  it('applies folder defaults to saved Muxus profiles without reading ssh_config', () => {
+    const doc = docOf('Host db.example.test\n  User config-user\n  Port 2200');
+    const chain = buildChain(
+      doc,
+      { target: 'db.example.test', useConfig: false, profileId: 'saved-1' },
+      undefined,
+      () => ({
+        optionLines: folderAuthOptionLines({
+          user: 'folder-user',
+          port: 2222,
+          identityFiles: ['~/.ssh/folder_key'],
+        }),
+        passwords: [{ account: 'acct', label: 'Folder' }],
+      }),
+    );
+
+    expect(chain[0]).toMatchObject({
+      user: 'folder-user',
+      port: 2222,
+      folderPasswords: [{ account: 'acct', label: 'Folder' }],
+    });
+    expect(chain[0]!.resolved.hostname).toBe('db.example.test');
+    expect(chain[0]!.resolved.identityFiles.map((file) => path.basename(file))).toEqual([
+      'folder_key',
+    ]);
+  });
 });
 
 describe('folderAuthResolver', () => {
@@ -219,5 +247,19 @@ describe('folderAuthResolver', () => {
       folderSettingsForPath: () => undefined,
     });
     expect(empty('web')).toBeUndefined();
+  });
+
+  it('resolves the same defaults for a saved profile through its database ID', () => {
+    const savedResolver = savedProfileFolderAuthResolver({
+      groupForAlias: () => undefined,
+      groupForSavedHost: (id) => (id === 'saved-1' ? 'Prod/EU' : undefined),
+      folderSettingsForPath: (path) => settings.get(folderPathKey(path)),
+    });
+
+    const defaults = savedResolver('saved-1');
+    expect(
+      Object.fromEntries(defaults!.optionLines.map((line) => [line.key, line.args[0]])),
+    ).toEqual({ user: 'root', port: '2222' });
+    expect(savedResolver('missing')).toBeUndefined();
   });
 });

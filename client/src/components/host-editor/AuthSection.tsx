@@ -67,7 +67,20 @@ export function AuthSection({
             <Labeled title="Agent & default keys" sub="OpenSSH order: SSH agent first, then ~/.ssh/id_* files" />
           }
         />
-        <FormControlLabel value="key" control={<Radio size="small" />} label={<Labeled title="Specific key file" sub="Writes IdentityFile — exactly these keys are offered" />} />
+        <FormControlLabel
+          value="key"
+          control={<Radio size="small" />}
+          label={
+            <Labeled
+              title="Specific key file"
+              sub={
+                draft.storage === 'openssh'
+                  ? 'Writes IdentityFile — exactly these keys are offered'
+                  : 'Exactly these keys are offered for this Muxus connection'
+              }
+            />
+          }
+        />
         <FormControlLabel
           value="password"
           control={<Radio size="small" />}
@@ -159,7 +172,10 @@ export function AuthSection({
             <Box>
               <Typography variant="body2">User certificates</Typography>
               <Typography variant="caption" color="text.secondary">
-                Writes CertificateFile. Each certificate is matched to its private key above.
+                {draft.storage === 'openssh'
+                  ? 'Writes CertificateFile. '
+                  : 'Each saved certificate is used with this Muxus connection. '}
+                Each certificate is matched to its private key above.
               </Typography>
             </Box>
             {draft.certificateFiles.map((file, i) => (
@@ -230,10 +246,12 @@ export function AuthSection({
               ...(identityAgentMode === 'none' ? { forwardAgent: false } : {}),
             });
           }}
-          helperText={agentSourceHelp(draft.identityAgentMode)}
+          helperText={agentSourceHelp(draft.identityAgentMode, draft.storage === 'openssh')}
           fullWidth
         >
-          <MenuItem value="default">Use SSH configuration</MenuItem>
+          <MenuItem value="default">
+            {draft.storage === 'openssh' ? 'Use SSH configuration' : 'Default environment agent'}
+          </MenuItem>
           <MenuItem value="environment">SSH_AUTH_SOCK environment agent</MenuItem>
           <MenuItem value="custom">Custom socket or environment variable</MenuItem>
           <MenuItem value="none">Do not use an agent</MenuItem>
@@ -283,11 +301,18 @@ export function AuthSection({
               strictHostKeyChecking: e.target.value as StrictHostKeyCheckingMode,
             })
           }
-          helperText={hostVerificationHelp(draft.strictHostKeyChecking)}
+          helperText={hostVerificationHelp(
+            draft.strictHostKeyChecking,
+            draft.storage === 'openssh',
+          )}
           fullWidth
         >
-          <MenuItem value="inherit">Use SSH configuration</MenuItem>
-          <MenuItem value="ask">Ask before trusting a new host</MenuItem>
+          <MenuItem value="inherit">
+            {draft.storage === 'openssh' ? 'Use SSH configuration' : 'Ask before trusting'}
+          </MenuItem>
+          {draft.storage === 'openssh' ? (
+            <MenuItem value="ask">Ask before trusting a new host</MenuItem>
+          ) : null}
           <MenuItem value="accept-new">Trust new hosts automatically</MenuItem>
           <MenuItem value="yes">Require a saved host key</MenuItem>
           <MenuItem value="no">Disable strict checking (no)</MenuItem>
@@ -297,7 +322,10 @@ export function AuthSection({
   );
 }
 
-function hostVerificationHelp(value: StrictHostKeyCheckingMode): string {
+function hostVerificationHelp(
+  value: StrictHostKeyCheckingMode,
+  configBacked: boolean,
+): string {
   switch (value) {
     case 'yes':
       return 'Refuses hosts whose key is not already saved.';
@@ -308,11 +336,13 @@ function hostVerificationHelp(value: StrictHostKeyCheckingMode): string {
     case 'ask':
       return 'Prompts before saving a first-contact key and whenever a saved key changes.';
     default:
-      return 'Inherits StrictHostKeyChecking; the normal default is to ask.';
+      return configBacked
+        ? 'Inherits StrictHostKeyChecking; the normal default is to ask.'
+        : 'Prompts before saving a first-contact key and whenever a saved key changes.';
   }
 }
 
-function agentSourceHelp(mode: IdentityAgentMode): string {
+function agentSourceHelp(mode: IdentityAgentMode, configBacked: boolean): string {
   switch (mode) {
     case 'environment':
       return 'Overrides inherited agent settings and reads SSH_AUTH_SOCK when connecting.';
@@ -321,7 +351,9 @@ function agentSourceHelp(mode: IdentityAgentMode): string {
     case 'none':
       return 'Disables agent authentication and agent forwarding for this host.';
     default:
-      return 'Inherits the normal SSH configuration and environment.';
+      return configBacked
+        ? 'Inherits the normal SSH configuration and environment.'
+        : 'Uses the agent from SSH_AUTH_SOCK and the normal default key files.';
   }
 }
 

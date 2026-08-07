@@ -1,5 +1,6 @@
 import type {
   FolderAuthSettings,
+  FolderSettingsRecord,
   FolderSettingsResponse,
   HostBlockOptions,
   HostUpsertRequest,
@@ -229,13 +230,46 @@ export async function createBackupDocument(
 }
 
 export async function createOpenSshExport(): Promise<string> {
-  const { hosts } = await apiFetch<SshConfigResponse>('/api/ssh/config');
+  const [{ hosts }, saved, folderSettings] = await Promise.all([
+    apiFetch<SshConfigResponse>('/api/ssh/config'),
+    apiFetch<SavedHostProfilesResponse>('/api/profiles'),
+    apiFetch<FolderSettingsResponse>('/api/folders/settings'),
+  ]);
+  const usedAliases = new Set(hosts.flatMap((host) => host.aliases));
+  const nativeSshHosts = saved.profiles.flatMap((profile) => {
+    if (profile.profile.kind !== 'ssh') return [];
+    const inherited = savedProfileFolderDefaults(
+      profile.metadata.group,
+      folderSettings.folders,
+    );
+    const base = openSshExportAlias(profile.name, profile.profile.target);
+    let alias = base;
+    let suffix = 2;
+    while (usedAliases.has(alias)) alias = `${base}-${suffix++}`;
+    usedAliases.add(alias);
+    return [
+      {
+        aliases: [alias],
+        description: inherited.hasPassword
+          ? 'Exported from Muxus app data. Shared folder password omitted.'
+          : 'Exported from Muxus app data.',
+        options: portableSavedSshOptions(profile, inherited.auth),
+      },
+    ];
+  });
   const blocks = await Promise.all(
-    hosts.map((host) =>
-      fetchHostPreview({
+    [
+      ...hosts.map((host) => ({
         aliases: host.aliases,
         description: host.description,
         options: portableSshOptions(host),
+      })),
+      ...nativeSshHosts,
+    ].map((host) =>
+      fetchHostPreview({
+        aliases: host.aliases,
+        description: host.description,
+        options: host.options,
       }),
     ),
   );
@@ -248,6 +282,78 @@ export async function createOpenSshExport(): Promise<string> {
     ...blocks.map((block) => block.trim()),
     '',
   ].join('\n\n');
+}
+
+function portableSavedSshOptions(
+  profile: SavedHostProfile,
+  inherited: FolderAuthSettings,
+): HostBlockOptions {
+  if (profile.profile.kind !== 'ssh') return {};
+  const saved = profile.profile;
+  return {
+    hostname: saved.target,
+    user: saved.user ?? inherited.user,
+    port: saved.port ?? inherited.port,
+    identityFiles: saved.identityFiles ?? inherited.identityFiles,
+    certificateFiles: saved.certificateFiles,
+    identitiesOnly: saved.identitiesOnly ?? inherited.identitiesOnly,
+    identityAgent: saved.identityAgent ?? inherited.identityAgent,
+    forwardAgent: saved.forwardAgent ?? inherited.forwardAgent,
+    proxyJump: saved.proxyJump,
+    proxyCommand: saved.proxyCommand,
+    forwards: saved.forwards,
+    passwordOnly: saved.passwordOnly,
+    remoteCommand: saved.remoteCommand,
+    requestTty: saved.requestTty,
+    strictHostKeyChecking: saved.strictHostKeyChecking,
+  };
+}
+
+/** Materialize the non-secret defaults the saved profile inherits in Muxus. */
+function savedProfileFolderDefaults(
+  group: string | undefined,
+  folders: readonly FolderSettingsRecord[],
+): { auth: FolderAuthSettings; hasPassword: boolean } {
+  const parts = (group ?? '')
+    .replace(/\\/g, '/')
+    .split('/')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return { auth: {}, hasPassword: false };
+
+  const byPath = new Map(
+    folders.map((folder) => [folder.path.toLocaleLowerCase(), folder]),
+  );
+  const auth: FolderAuthSettings = {};
+  let hasPassword = false;
+  for (let length = parts.length; length > 0; length--) {
+    const folder = byPath.get(parts.slice(0, length).join('/').toLocaleLowerCase());
+    if (!folder) continue;
+    hasPassword ||= folder.hasPassword;
+    if (auth.user === undefined) auth.user = folder.auth.user;
+    if (auth.port === undefined) auth.port = folder.auth.port;
+    if (auth.identityFiles === undefined) auth.identityFiles = folder.auth.identityFiles;
+    if (auth.identitiesOnly === undefined) auth.identitiesOnly = folder.auth.identitiesOnly;
+    if (auth.identityAgent === undefined) auth.identityAgent = folder.auth.identityAgent;
+    if (auth.forwardAgent === undefined) auth.forwardAgent = folder.auth.forwardAgent;
+  }
+  return { auth, hasPassword };
+}
+
+function openSshExportAlias(name: string, target: string): string {
+  return (
+    name
+      .trim()
+      .replace(/[\s#*?!]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 240) ||
+    target
+      .trim()
+      .replace(/[\s#*?!]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 240) ||
+    'muxus-host'
+  );
 }
 
 export function saveTransferDocument(
@@ -817,7 +923,9 @@ function validateConnections(data: Record<string, unknown>): void {
         nonEmptyString(host.id) &&
         nonEmptyString(host.name) &&
         isRecord(host.profile) &&
-        (host.profile.kind === 'telnet' || host.profile.kind === 'serial') &&
+        (host.profile.kind === 'ssh' ||
+          host.profile.kind === 'telnet' ||
+          host.profile.kind === 'serial') &&
         isRecord(host.metadata),
     ) ||
     !data.hostOrder.every(

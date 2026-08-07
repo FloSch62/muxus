@@ -107,7 +107,8 @@ The desktop app keeps its data in Electron's per-app directory:
 | :material-linux: Linux | `~/.config/Muxus/muxus.sqlite3` |
 
 Session history, when enabled, is stored alongside it or at the location set in
-[Settings](../guide/settings.md). SSH connection settings still come from `~/.ssh/config`.
+[Settings](../guide/settings.md). OpenSSH-backed settings still come from
+`~/.ssh/config`; hosts saved as **Muxus app data only** live in this database.
 Passwords you explicitly choose to remember are encrypted in the application database by
 the password vault. The raw vault key is never stored in this directory; the default
 never-prompt policy uses the OS credential store. See the

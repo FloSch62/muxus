@@ -146,6 +146,7 @@ describe('terminal socket dial mode', () => {
     const postAuth = new Promise<void>((resolve) => {
       finishPostAuth = resolve;
     });
+    const resolveProfile = vi.fn((profile: unknown) => profile);
     const release = vi.fn();
     const connect = vi.fn().mockResolvedValue({
       connection: {
@@ -172,7 +173,7 @@ describe('terminal socket dial mode', () => {
       },
     };
     const ctx = {
-      connections: { connect },
+      connections: { connect, resolveProfile },
       database: { recordOpenSshConnection: vi.fn() },
     };
     registerTerminalSocket(app as never, ctx as never);

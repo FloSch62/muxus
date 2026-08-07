@@ -147,4 +147,30 @@ Key host=#109#0%key.example.com%22%bob%3%rest
       },
     ]);
   });
+
+  it('can keep imported SSH sessions in Muxus app data', () => {
+    const parsed = parseMobaXtermSessions(`
+[Bookmarks]
+SubRep=Customers\\Acme
+Password host=#109#0%pw.example.com%2200%alice%%rest
+`);
+    const portable = mobaXtermConnections(parsed.sessions, 'muxus');
+
+    expect(portable.sshHosts).toEqual([]);
+    expect(portable.savedHosts).toEqual([
+      {
+        id: expect.stringMatching(/^mobaxterm-ssh-/),
+        name: 'Password host',
+        profile: {
+          kind: 'ssh',
+          target: 'pw.example.com',
+          useConfig: false,
+          user: 'alice',
+          port: 2200,
+          passwordOnly: true,
+        },
+        metadata: { group: 'Customers/Acme' },
+      },
+    ]);
+  });
 });

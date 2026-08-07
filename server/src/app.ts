@@ -8,7 +8,10 @@ import fastifyStatic from '@fastify/static';
 import { TERMINAL_WS_PROTOCOL } from '@muxus/shared/ws-protocol';
 import type { ServerConfig } from './config.js';
 import { SshConnectionManager } from './ssh/connection-manager.js';
-import { folderAuthResolver } from './ssh/folder-auth.js';
+import {
+  folderAuthResolver,
+  savedProfileFolderAuthResolver,
+} from './ssh/folder-auth.js';
 import { ForwardManager } from './forwards/forward-manager.js';
 import { registerAppRoutes } from './routes/app.js';
 import { registerSshRoutes } from './routes/ssh.js';
@@ -93,9 +96,17 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   await vault.initialize();
   const connections = new SshConnectionManager(app.log, {
     vault,
+    savedSshProfile: (id) => {
+      const profile = database.savedHostProfile(id)?.profile;
+      return profile?.kind === 'ssh' ? profile : undefined;
+    },
     folderAuth: folderAuthResolver(database),
+    profileFolderAuth: savedProfileFolderAuthResolver(database),
     disableSftpForHost: (alias) => database.sftpDisabledForAlias(alias),
     consoleCompatibilityForHost: (alias) => database.consoleCompatibilityForAlias(alias),
+    disableSftpForProfile: (id) => database.sftpDisabledForSavedHost(id),
+    consoleCompatibilityForProfile: (id) =>
+      database.consoleCompatibilityForSavedHost(id),
   });
   const forwards = new ForwardManager(connections, app.log);
   const historySettings = database.sessionHistorySettings();

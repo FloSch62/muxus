@@ -483,6 +483,15 @@ function RestoreReviewDialog({
   const connectionCount =
     pending.document.data.sshHosts.length +
     pending.document.data.savedHosts.length;
+  const proxyCommandCount =
+    pending.document.data.sshHosts.filter(
+      (host) => !!host.options.proxyCommand?.trim(),
+    ).length +
+    pending.document.data.savedHosts.filter(
+      (host) =>
+        host.profile.kind === 'ssh' &&
+        !!host.profile.proxyCommand?.trim(),
+    ).length;
   const categories = [
     {
       key: 'preferences' as const,
@@ -673,6 +682,14 @@ function RestoreReviewDialog({
           This is a merge: items that are not in the file are never deleted.
           Active terminal sessions are not interrupted.
         </Alert>
+        {selection.connections && proxyCommandCount > 0 ? (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            {proxyCommandCount}{' '}
+            {proxyCommandCount === 1 ? 'connection contains' : 'connections contain'} a
+            ProxyCommand. Muxus does not run it during restore, but it will run as a local
+            shell command when that connection is opened. Restore only backups you trust.
+          </Alert>
+        ) : null}
         {error ? (
           <Alert severity="error" sx={{ mb: 2 }}>
             {error} Some items may already have been restored; it is safe to

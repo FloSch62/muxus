@@ -3,8 +3,10 @@ import {
   cleanImportName,
   importedConnections,
   normalizeImportFolder,
+  stableImportId,
   type SkippedImportedSession,
   type ImportedSessionParseResult,
+  type ImportedSshStorage,
   type ImportedSshSession,
   uniqueImportAlias,
 } from './session-import.js';
@@ -95,7 +97,10 @@ export function parseMobaXtermSessions(text: string): MobaXtermParseResult {
     const alias = uniqueImportAlias(name, host, aliases, 'mobaxterm-host');
     aliases.add(alias);
     sessions.push({
-      id: `${lineIndex}:${alias}`,
+      id: stableImportId(
+        'mobaxterm-session',
+        `${currentFolder ?? ''}\0${alias}`,
+      ),
       kind: 'ssh',
       name,
       alias,
@@ -120,6 +125,7 @@ export function parseMobaXtermSessions(text: string): MobaXtermParseResult {
 /** Convert reviewed MobaXterm rows into the existing portable restore pipeline. */
 export function mobaXtermConnections(
   sessions: readonly MobaXtermSession[],
+  sshStorage: ImportedSshStorage = 'openssh',
 ): PortableConnections {
-  return importedConnections(sessions, 'MobaXterm');
+  return importedConnections(sessions, 'MobaXterm', sshStorage);
 }

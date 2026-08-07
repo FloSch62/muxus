@@ -269,9 +269,13 @@ export class SshConnectionManager {
   private readonly automaticPlainShellKeys = new Set<string>();
   private readonly loadConfig: () => ConfigDocument;
   private readonly vault: PasswordVault | undefined;
+  private readonly savedSshProfile: ((id: string) => SshProfile | undefined) | undefined;
   private readonly folderAuth: FolderAuthLookup | undefined;
+  private readonly profileFolderAuth: FolderAuthLookup | undefined;
   private readonly disableSftpForHost: ((alias: string) => boolean) | undefined;
   private readonly consoleCompatibilityForHost: ((alias: string) => boolean) | undefined;
+  private readonly disableSftpForProfile: ((id: string) => boolean) | undefined;
+  private readonly consoleCompatibilityForProfile: ((id: string) => boolean) | undefined;
   private readonly agentOperationTimeoutMs: number;
   private readonly agentWaitStatusMs: number;
   readonly knownHosts: KnownHostsStore;
@@ -282,12 +286,20 @@ export class SshConnectionManager {
       knownHosts?: KnownHostsStore;
       loadConfig?: () => ConfigDocument;
       vault?: PasswordVault;
+      /** Current database-owned SSH profile, keyed by stable profile ID. */
+      savedSshProfile?: (id: string) => SshProfile | undefined;
       /** Folder-inherited connection defaults per alias (Muxus sidebar folders). */
       folderAuth?: FolderAuthLookup;
+      /** Folder defaults for Muxus-owned profiles, keyed by stable profile ID. */
+      profileFolderAuth?: FolderAuthLookup;
       /** Muxus-owned per-host compatibility setting; never written to ssh_config. */
       disableSftpForHost?: (alias: string) => boolean;
       /** Muxus-owned console compatibility setting; never written to ssh_config. */
       consoleCompatibilityForHost?: (alias: string) => boolean;
+      /** Muxus-owned compatibility setting for a database-backed SSH host. */
+      disableSftpForProfile?: (id: string) => boolean;
+      /** Muxus-owned console setting for a database-backed SSH host. */
+      consoleCompatibilityForProfile?: (id: string) => boolean;
       /** Test seam; production uses the exported responsive-agent defaults. */
       agentOperationTimeoutMs?: number;
       /** Test seam; production uses the exported responsive-agent defaults. */
@@ -297,9 +309,13 @@ export class SshConnectionManager {
     this.knownHosts = options.knownHosts ?? new KnownHostsStore();
     this.loadConfig = options.loadConfig ?? (() => loadConfigDocument());
     this.vault = options.vault;
+    this.savedSshProfile = options.savedSshProfile;
     this.folderAuth = options.folderAuth;
+    this.profileFolderAuth = options.profileFolderAuth;
     this.disableSftpForHost = options.disableSftpForHost;
     this.consoleCompatibilityForHost = options.consoleCompatibilityForHost;
+    this.disableSftpForProfile = options.disableSftpForProfile;
+    this.consoleCompatibilityForProfile = options.consoleCompatibilityForProfile;
     this.agentOperationTimeoutMs =
       options.agentOperationTimeoutMs ?? DEFAULT_AGENT_OPERATION_TIMEOUT_MS;
     this.agentWaitStatusMs =
@@ -344,19 +360,31 @@ export class SshConnectionManager {
     owner: ConnectionLeaseOwner = 'terminal',
     opts: { freshTransport?: boolean; forcePlainShell?: boolean } = {},
   ): Promise<MuxedConnectionLease> {
+    profile = this.resolveProfile(profile);
     const doc = this.loadConfig();
-    const chain = buildChain(doc, profile, this.folderAuth);
+    const chain = buildChain(
+      doc,
+      profile,
+      this.folderAuth,
+      this.profileFolderAuth,
+    );
     const target = chain[chain.length - 1]!;
     const metadataAlias =
       profile.useConfig === false ? undefined : findMetadataAlias(doc, target.spec.host);
     const regularKey = muxKey(chain);
     const consoleCompatibility =
       (metadataAlias ? (this.consoleCompatibilityForHost?.(metadataAlias) ?? false) : false) ||
+      (profile.profileId
+        ? (this.consoleCompatibilityForProfile?.(profile.profileId) ?? false)
+        : false) ||
       this.automaticPlainShellKeys.has(regularKey) ||
       opts.forcePlainShell === true;
     const disableSftp =
       consoleCompatibility ||
-      (metadataAlias ? (this.disableSftpForHost?.(metadataAlias) ?? false) : false);
+      (metadataAlias ? (this.disableSftpForHost?.(metadataAlias) ?? false) : false) ||
+      (profile.profileId
+        ? (this.disableSftpForProfile?.(profile.profileId) ?? false)
+        : false);
     const key = muxKey(chain, disableSftp, consoleCompatibility);
     const configForwards = target.resolved.forwards;
     const label = `${target.user}@${target.resolved.hostname}:${target.port}`;
@@ -410,6 +438,20 @@ export class SshConnectionManager {
     } finally {
       if (this.pendingDials.get(key) === tracked) this.pendingDials.delete(key);
     }
+  }
+
+  /**
+   * A stable database ID is a reference, not permission for a client or a
+   * stale workspace to replace the saved connection fields. Resolve it at the
+   * server boundary so edits and deletions take effect on the next dial.
+   */
+  resolveProfile(profile: SshProfile): SshProfile {
+    if (!profile.profileId) return profile;
+    const saved = this.savedSshProfile?.(profile.profileId);
+    if (!saved || saved.profileId !== profile.profileId || saved.useConfig !== false) {
+      throw new Error(`saved SSH profile "${profile.profileId}" was not found`);
+    }
+    return saved;
   }
 
   /** Least-busy live, healthy transport with the same dial plan, if any. */
@@ -1013,6 +1055,7 @@ export function buildChain(
   doc: ConfigDocument,
   profile: Omit<SshProfile, 'kind'>,
   folderAuthFor?: FolderAuthLookup,
+  profileFolderAuthFor?: FolderAuthLookup,
 ): ChainHop[] {
   const chain: ChainHop[] = [];
   const visited = new Set<string>();
@@ -1022,8 +1065,16 @@ export function buildChain(
     if (visited.has(spec.host)) throw new Error(`ProxyJump cycle detected at "${spec.host}"`);
     visited.add(spec.host);
     const fromConfig = !final || profile.useConfig !== false;
-    const folder = fromConfig ? folderAuthFor?.(spec.host) : undefined;
-    const base = fromConfig ? resolveHost(doc, spec.host, folder?.optionLines) : directSettings(spec.host);
+    const folder = fromConfig
+      ? folderAuthFor?.(spec.host)
+      : final && profile.profileId
+        ? profileFolderAuthFor?.(profile.profileId)
+        : undefined;
+    const base = fromConfig
+      ? resolveHost(doc, spec.host, folder?.optionLines)
+      : folder
+        ? resolveHost(EMPTY_CONFIG_DOCUMENT, spec.host, folder.optionLines)
+        : directSettings(spec.host);
     const user = (final ? profile.user : undefined) ?? spec.user ?? base.user ?? os.userInfo().username;
     const resolved: ResolvedTarget = final
       ? {
@@ -1034,12 +1085,25 @@ export function buildChain(
               : profile.identityFiles.map((file) =>
                   expandIdentityPath(file, { h: base.hostname, r: user }),
                 ),
+          certificateFiles:
+            profile.certificateFiles === undefined
+              ? base.certificateFiles
+              : profile.certificateFiles.map((file) =>
+                  expandIdentityPath(file, { h: base.hostname, r: user }),
+                ),
           identitiesOnly: profile.identitiesOnly ?? base.identitiesOnly,
+          identityAgent: profile.identityAgent ?? base.identityAgent,
           forwardAgent: profile.forwardAgent ?? base.forwardAgent,
           proxyJump: profile.proxyJump ?? base.proxyJump,
           proxyCommand:
-            profile.proxyJump === undefined ? base.proxyCommand : undefined,
+            profile.proxyCommand ??
+            (profile.proxyJump === undefined ? base.proxyCommand : undefined),
+          forwards: profile.forwards ?? base.forwards,
           passwordOnly: profile.passwordOnly ?? base.passwordOnly,
+          remoteCommand: profile.remoteCommand ?? base.remoteCommand,
+          requestTty: profile.requestTty ?? base.requestTty,
+          strictHostKeyChecking:
+            profile.strictHostKeyChecking ?? base.strictHostKeyChecking,
         }
       : base;
     for (const hopSpec of resolved.proxyJump) walk(parseHostSpec(hopSpec), false, depth + 1);
@@ -1056,6 +1120,15 @@ export function buildChain(
   walk(parseHostSpec(profile.target), true, 0);
   return chain;
 }
+
+/** Empty base used to apply only Muxus folder defaults to a DB-backed host. */
+const EMPTY_CONFIG_DOCUMENT: ConfigDocument = {
+  rootPath: '',
+  files: new Map(),
+  fileOrder: [],
+  blocks: [],
+  sequence: [],
+};
 
 function directSettings(hostname: string): ResolvedTarget {
   return {

@@ -461,7 +461,45 @@ describe('hybrid OpenSSH metadata', () => {
   });
 });
 
-describe('saved Telnet and serial hosts', () => {
+describe('Muxus-owned saved hosts', () => {
+  it('round-trips a self-contained SSH profile without an OpenSSH alias', () => {
+    database = new MuxusDatabase(':memory:');
+    const created = database.saveSavedHostProfile({
+      id: 'muxus-ssh-router',
+      name: 'Core router',
+      profile: {
+        kind: 'ssh',
+        target: 'router.example.test',
+        useConfig: false,
+        user: 'admin',
+        port: 2222,
+        passwordOnly: true,
+      },
+    });
+
+    expect(created).toMatchObject({
+      id: 'muxus-ssh-router',
+      kind: 'ssh',
+      name: 'Core router',
+      profile: {
+        kind: 'ssh',
+        profileId: 'muxus-ssh-router',
+        target: 'router.example.test',
+        useConfig: false,
+        user: 'admin',
+        port: 2222,
+        passwordOnly: true,
+      },
+    });
+    expect(database.listSavedHostProfiles()).toHaveLength(1);
+    expect(() =>
+      database!.saveSavedHostProfile({
+        name: 'Config-dependent profile',
+        profile: { kind: 'ssh', target: 'router-alias' },
+      }),
+    ).toThrow(/useConfig/);
+  });
+
   it('upserts supplied import IDs without crossing connection-kind ownership', () => {
     database = new MuxusDatabase(':memory:');
     const created = database.saveSavedHostProfile({
@@ -643,6 +681,7 @@ describe('credential and workspace safety', () => {
         },
       }),
     ).not.toThrow();
+    expect(() => assertSecretFree({ passwordOnly: true })).not.toThrow();
     expect(() =>
       database!.createNativeConnection({
         kind: 'ssh',

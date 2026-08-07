@@ -280,7 +280,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   );
   const { data: sshConfig } = useSshConfig(tab.profile.kind === 'ssh' && tab.profile.useConfig !== false);
   const savedProfileId =
-    tab.profile.kind === 'telnet' || tab.profile.kind === 'serial'
+    tab.profile.kind === 'ssh' ||
+    tab.profile.kind === 'telnet' ||
+    tab.profile.kind === 'serial'
       ? tab.profile.profileId
       : undefined;
   const { data: savedHosts } = useSavedHostProfiles(!!savedProfileId);

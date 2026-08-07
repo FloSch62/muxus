@@ -1,15 +1,21 @@
 import type { ManagedHost } from '../../managed-hosts.js';
-import { connectHost } from '../../session-actions.js';
+import { connectManagedHost } from '../../session-actions.js';
 import { useTabsStore } from '../../state/tabs.js';
 
 /** Whether the host context menu may offer the SSH-backed file browser. */
 export function managedHostSupportsSftp(
   host: ManagedHost,
-): host is Extract<ManagedHost, { kind: 'ssh' }> {
+): boolean {
+  if (host.kind === 'ssh') {
+    return (
+      host.entry.metadata?.disableSftp !== true &&
+      host.entry.metadata?.consoleCompatibility !== true
+    );
+  }
   return (
-    host.kind === 'ssh' &&
-    host.entry.metadata?.disableSftp !== true &&
-    host.entry.metadata?.consoleCompatibility !== true
+    host.entry.profile.kind === 'ssh' &&
+    host.entry.metadata.disableSftp !== true &&
+    host.entry.metadata.consoleCompatibility !== true
   );
 }
 
@@ -23,18 +29,25 @@ export function openManagedHostSftp(host: ManagedHost): string | undefined {
 
   const state = useTabsStore.getState();
   const matching = state.tabs.filter(
-    (tab) =>
-      tab.profile?.kind === 'ssh' &&
-      tab.profile.target === host.entry.alias &&
-      (tab.status === 'connecting' || tab.status === 'connected') &&
-      tab.sftpAvailable !== false,
+    (tab) => {
+      if (tab.profile?.kind !== 'ssh') return false;
+      const sameHost =
+        host.kind === 'ssh'
+          ? !tab.profile.profileId && tab.profile.target === host.entry.alias
+          : tab.profile.profileId === host.entry.id;
+      return (
+        sameHost &&
+        (tab.status === 'connecting' || tab.status === 'connected') &&
+        tab.sftpAvailable !== false
+      );
+    },
   );
   const reusable =
     matching.find((tab) => tab.id === state.activeId && !!tab.connId) ??
     matching.find((tab) => !!tab.connId) ??
     matching.find((tab) => tab.id === state.activeId) ??
     matching[0];
-  const id = reusable?.id ?? connectHost(host.entry);
+  const id = reusable?.id ?? connectManagedHost(host);
   const next = useTabsStore.getState();
   next.update(id, { sftpOpen: true });
   next.activate(id);

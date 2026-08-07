@@ -119,6 +119,12 @@ describe('SessionRecorder', () => {
     expect(sessionProfileIdentity({ kind: 'ssh', target: 'edge' }).profileKey)
       .toBe('ssh:edge');
     expect(sessionProfileIdentity({
+      kind: 'ssh',
+      profileId: 'saved-ssh-1',
+      target: 'edge.example.test',
+      useConfig: false,
+    }).profileKey).toBe('profile:saved-ssh-1');
+    expect(sessionProfileIdentity({
       kind: 'telnet',
       profileId: 'saved-1',
       host: 'router',

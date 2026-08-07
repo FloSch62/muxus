@@ -82,6 +82,28 @@ function serialHost(name: string): SavedHostProfile {
   };
 }
 
+function nativeSshHost(name: string): SavedHostProfile {
+  return {
+    id: `native-ssh-${name}`,
+    kind: 'ssh',
+    name,
+    profile: {
+      kind: 'ssh',
+      profileId: `native-ssh-${name}`,
+      target: `${name}.example.test`,
+      useConfig: false,
+      user: 'admin',
+      port: 2222,
+    },
+    metadata: {
+      profileId: `native-ssh-${name}`,
+      connectCount: 0,
+    },
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+  };
+}
+
 describe('managed host groups', () => {
   it('places ungrouped SSH, Telnet, and serial profiles in one Hosts group', () => {
     const groups = groupManagedHosts(
@@ -120,6 +142,7 @@ describe('managed host groups', () => {
 
 describe('managed host identity and clipboard actions', () => {
   const ssh = { kind: 'ssh' as const, entry: sshHost('router') };
+  const nativeSsh = { kind: 'profile' as const, entry: nativeSshHost('core') };
   const telnet = { kind: 'profile' as const, entry: telnetHost('console') };
   const serial = { kind: 'profile' as const, entry: serialHost('rack') };
 
@@ -143,6 +166,10 @@ describe('managed host identity and clipboard actions', () => {
       label: 'Copy device path',
       text: 'COM3',
     });
+    expect(managedHostCopyCommand(nativeSsh)).toEqual({
+      label: 'Copy ssh command',
+      text: 'ssh -p 2222 admin@core.example.test',
+    });
   });
 
   it('offers SFTP only for SSH hosts where it is not explicitly disabled', () => {
@@ -154,6 +181,7 @@ describe('managed host identity and clipboard actions', () => {
     };
 
     expect(managedHostSupportsSftp(ssh)).toBe(true);
+    expect(managedHostSupportsSftp(nativeSsh)).toBe(true);
     expect(managedHostSupportsSftp({ kind: 'ssh', entry: disabled })).toBe(false);
 
     const consoleCompatible = sshHost('console-compatible');
@@ -163,6 +191,15 @@ describe('managed host identity and clipboard actions', () => {
       consoleCompatibility: true,
     };
     expect(managedHostSupportsSftp({ kind: 'ssh', entry: consoleCompatible })).toBe(false);
+    expect(
+      managedHostSupportsSftp({
+        ...nativeSsh,
+        entry: {
+          ...nativeSsh.entry,
+          metadata: { ...nativeSsh.entry.metadata, disableSftp: true },
+        },
+      }),
+    ).toBe(false);
     expect(managedHostSupportsSftp(telnet)).toBe(false);
     expect(managedHostSupportsSftp(serial)).toBe(false);
   });
