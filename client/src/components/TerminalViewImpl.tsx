@@ -72,6 +72,7 @@ import {
 import { openTerminalWebLink } from '../terminal/web-links.js';
 import { requiresPasteConfirmation } from '../terminal/paste-safety.js';
 import { shouldFitTerminal } from '../terminal/terminal-fit.js';
+import { terminalSelectionText } from '../terminal/selection-text.js';
 import { normalizeTerminalKeyboardInput } from '../terminal/keyboard-input.js';
 import {
   terminalRightClickIntent,
@@ -377,7 +378,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     if (!term) return;
     const intent = terminalRightClickIntent(
       usePrefsStore.getState().rightClickAction,
-      term.getSelection(),
+      terminalSelectionText(term),
     );
     if (intent.kind === 'menu') {
       setCtxMenu({ top: e.clientY, left: e.clientX, selection: intent.selection });
@@ -574,7 +575,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       clear: () => term.clear(),
       selectAll: () => term.selectAll(),
       hasSelection: () => term.hasSelection(),
-      getSelection: () => term.getSelection(),
+      getSelection: () => terminalSelectionText(term),
       bufferText: () => bufferText(term),
       bufferHtml: () => serialize.serializeAsHTML({ includeGlobalBackground: true }),
       persistSnapshot: async () => {
@@ -665,8 +666,20 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     // in the capture phase, and anything it declines is encoded for the shell
     // (kitty keyboard protocol included) exactly as if Muxus had no bindings.
     const onSelection = term.onSelectionChange(() => {
-      if (usePrefsStore.getState().copyOnSelect && term.hasSelection()) void copyToClipboard(term.getSelection());
+      if (usePrefsStore.getState().copyOnSelect && term.hasSelection()) {
+        void copyToClipboard(terminalSelectionText(term));
+      }
     });
+    const onNativeCopy = (event: ClipboardEvent) => {
+      if (!term.hasSelection() || !event.clipboardData) return;
+      const nativeSelection = term.getSelection();
+      const selection = terminalSelectionText(term);
+      if (selection === nativeSelection) return;
+      event.clipboardData.setData('text/plain', selection);
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    el.addEventListener('copy', onNativeCopy, { capture: true });
 
     let ws: WebSocket | undefined;
     let disposed = false;
@@ -1192,6 +1205,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       onBinary.dispose();
       onResize.dispose();
       onSelection.dispose();
+      el.removeEventListener('copy', onNativeCopy, { capture: true });
       onSearchResults.dispose();
       commandTracker.dispose();
       cwdTracker?.dispose();
