@@ -45,8 +45,16 @@ function decodePropertyValue(value: string): string | undefined {
   return decoded;
 }
 
+function windowsTerminalCwd(value: string | undefined): value is string {
+  return !!value && /^(?:[a-z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+)/i.test(value);
+}
+
 function validTerminalCwd(value: string | undefined): value is string {
-  return !!value && value.startsWith('/') && value.length <= MAX_TERMINAL_CWD_LENGTH;
+  return (
+    !!value &&
+    (value.startsWith('/') || windowsTerminalCwd(value)) &&
+    value.length <= MAX_TERMINAL_CWD_LENGTH
+  );
 }
 
 /** Reads current-directory reports from shell integration and standard OSC 7. */
@@ -57,7 +65,11 @@ export class CwdTracker {
 
   handleProperty(data: string): boolean {
     if (!data.startsWith(CWD_PROPERTY_PREFIX)) return false;
-    this.report(decodePropertyValue(data.slice(CWD_PROPERTY_PREFIX.length)));
+    const value = data.slice(CWD_PROPERTY_PREFIX.length);
+    // cmd.exe's $P prompt token supplies a native path but cannot escape its
+    // backslashes according to the OSC 133 property convention. It is still
+    // unambiguous at the drive-letter/UNC root, so preserve it as reported.
+    this.report(windowsTerminalCwd(value) ? value : decodePropertyValue(value));
     return true;
   }
 
@@ -65,7 +77,9 @@ export class CwdTracker {
     try {
       const uri = new URL(data);
       if (uri.protocol !== 'file:') return false;
-      this.report(decodeURIComponent(uri.pathname));
+      const pathname = decodeURIComponent(uri.pathname);
+      const windowsDrivePath = pathname.match(/^\/([a-z]:\/.*)$/i)?.[1];
+      this.report(windowsDrivePath ? windowsDrivePath.replaceAll('/', '\\') : pathname);
       return true;
     } catch {
       return false;

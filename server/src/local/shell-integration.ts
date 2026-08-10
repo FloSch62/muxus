@@ -109,16 +109,30 @@ export interface ShellIntegration {
   env: Record<string, string>;
 }
 
+// cmd.exe expands $E to ESC and $P to its current drive and directory every
+// time it draws a prompt. Prefixing the user's prompt with this invisible OSC
+// property gives Windows local terminals the same live cwd reports as the
+// bash/zsh shims without replacing the visible prompt.
+const CMD_CWD_PROMPT_PREFIX = '$E]133;P;Cwd=$P$E' + '\\';
+
 /** Spawn arguments and env that switch integration on for a given shell.
  *  Unrecognized shells spawn untouched (fish emits OSC 133 on its own). */
 export function shellIntegration(
   shell: string,
   baseEnv: NodeJS.ProcessEnv,
   root: string | null = integrationRoot(),
+  platform: NodeJS.Platform = process.platform,
 ): ShellIntegration {
   const none: ShellIntegration = { args: [], env: {} };
-  if (process.platform === 'win32' || !root) return none;
-  const name = path.basename(shell);
+  const name = platform === 'win32' ? path.win32.basename(shell).toLowerCase() : path.basename(shell);
+  if (platform === 'win32') {
+    if (name !== 'cmd' && name !== 'cmd.exe') return none;
+    return {
+      args: [],
+      env: { PROMPT: `${CMD_CWD_PROMPT_PREFIX}${baseEnv.PROMPT || '$P$G'}` },
+    };
+  }
+  if (!root) return none;
   if (name === 'zsh') {
     const env: Record<string, string> = { ZDOTDIR: path.join(root, 'zsh') };
     const userZdotdir = baseEnv.ZDOTDIR?.trim();

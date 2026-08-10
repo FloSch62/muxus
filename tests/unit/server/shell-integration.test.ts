@@ -59,6 +59,28 @@ describe('shellIntegration', () => {
     expect(result.env).toEqual({});
   });
 
+  it('prefixes the native cmd prompt with a live Windows cwd report', () => {
+    const result = shellIntegration(
+      String.raw`C:\Windows\System32\cmd.exe`,
+      { PROMPT: '$S$P$G' },
+      null,
+      'win32',
+    );
+
+    expect(result.args).toEqual([]);
+    expect(result.env).toEqual({ PROMPT: String.raw`$E]133;P;Cwd=$P$E\$S$P$G` });
+  });
+
+  it('uses the standard visible cmd prompt when none was configured', () => {
+    expect(shellIntegration('cmd.exe', {}, null, 'win32').env).toEqual({
+      PROMPT: String.raw`$E]133;P;Cwd=$P$E\$P$G`,
+    });
+  });
+
+  it('leaves other Windows shells untouched', () => {
+    expect(shellIntegration('powershell.exe', {}, null, 'win32')).toEqual({ args: [], env: {} });
+  });
+
   it('leaves other shells untouched', () => {
     expect(shellIntegration('/usr/bin/fish', {}, root)).toEqual({ args: [], env: {} });
   });

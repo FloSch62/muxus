@@ -101,6 +101,16 @@ describe('CwdTracker', () => {
     expect(paths).toEqual(['/srv/with;semi\\backslash']);
   });
 
+  it('reports native Windows cwd properties emitted by cmd prompts', () => {
+    const paths: string[] = [];
+    const tracker = new CwdTracker((path) => paths.push(path));
+
+    expect(tracker.handleProperty(String.raw`P;Cwd=C:\Users\alice\project`)).toBe(true);
+    expect(tracker.handleProperty(String.raw`P;Cwd=C:\Users\alice\project`)).toBe(true);
+    expect(tracker.handleProperty(String.raw`P;Cwd=D:\source`)).toBe(true);
+    expect(paths).toEqual([String.raw`C:\Users\alice\project`, String.raw`D:\source`]);
+  });
+
   it('accepts standard file URIs and ignores invalid or relative paths', () => {
     const paths: string[] = [];
     const tracker = new CwdTracker((path) => paths.push(path));
@@ -109,6 +119,14 @@ describe('CwdTracker', () => {
     expect(tracker.handleProperty('P;Cwd=relative/path')).toBe(true);
     expect(tracker.handleFileUri('https://example.test/srv/app')).toBe(false);
     expect(paths).toEqual(['/srv/my app']);
+  });
+
+  it('converts Windows OSC 7 file URIs to native drive paths', () => {
+    const paths: string[] = [];
+    const tracker = new CwdTracker((path) => paths.push(path));
+
+    expect(tracker.handleFileUri('file:///C:/Users/alice/my%20project')).toBe(true);
+    expect(paths).toEqual([String.raw`C:\Users\alice\my project`]);
   });
 
   it('leaves unrelated shell-integration properties for other handlers', () => {
