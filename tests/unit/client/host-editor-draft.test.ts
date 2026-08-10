@@ -59,6 +59,9 @@ describe('SSH host editor draft', () => {
       metadata: {
         profileId: 'muxus-router',
         group: 'Production',
+        terminalScheme: 'nord',
+        terminalFontColor: '#f8f8f2',
+        terminalBackgroundColor: '#282a36',
         connectCount: 0,
       },
       createdAt: '2026-01-01T00:00:00Z',
@@ -73,6 +76,9 @@ describe('SSH host editor draft', () => {
       user: 'admin',
       port: '2222',
       group: 'Production',
+      terminalScheme: 'nord',
+      terminalFontColor: '#f8f8f2',
+      terminalBackgroundColor: '#282a36',
       authMode: 'key',
       routeMode: 'jump',
     });
@@ -129,6 +135,9 @@ describe('SSH host editor draft', () => {
     expect(draft.identitiesOnly).toBe(true);
     expect(draft.disableSftp).toBe(false);
     expect(draft.consoleCompatibility).toBe(false);
+    expect(draft.terminalScheme).toBeUndefined();
+    expect(draft.terminalFontColor).toBeUndefined();
+    expect(draft.terminalBackgroundColor).toBeUndefined();
     expect(draftToRequest(draft).options.proxyCommand).toBeUndefined();
   });
 
@@ -141,6 +150,9 @@ describe('SSH host editor draft', () => {
           connectCount: 0,
           disableSftp: true,
           consoleCompatibility: true,
+          terminalScheme: 'solarized-dark',
+          terminalFontColor: '#eeeeee',
+          terminalBackgroundColor: '#101820',
         },
       },
       false,
@@ -148,6 +160,9 @@ describe('SSH host editor draft', () => {
 
     expect(draft.disableSftp).toBe(true);
     expect(draft.consoleCompatibility).toBe(true);
+    expect(draft.terminalScheme).toBe('solarized-dark');
+    expect(draft.terminalFontColor).toBe('#eeeeee');
+    expect(draft.terminalBackgroundColor).toBe('#101820');
     expect(draftToRequest(draft).options).not.toHaveProperty('disableSftp');
     expect(draftToRequest(draft).options).not.toHaveProperty('consoleCompatibility');
   });

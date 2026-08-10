@@ -25,6 +25,9 @@ const serialHost: SavedHostProfile = {
   metadata: {
     profileId: 'serial-console',
     group: 'Lab',
+    terminalScheme: 'gruvbox-dark',
+    terminalFontColor: '#ebdbb2',
+    terminalBackgroundColor: '#282828',
     keywordHighlights: {
       inheritGlobal: false,
       profileId: 'nokia-sros',
@@ -71,6 +74,9 @@ describe('nativeDraftFromProfile', () => {
     expect(draft).toMatchObject({
       name: 'Rack console',
       group: 'Lab',
+      terminalScheme: 'gruvbox-dark',
+      terminalFontColor: '#ebdbb2',
+      terminalBackgroundColor: '#282828',
       path: '/dev/ttyUSB0',
       baudRate: '9600',
       dataBits: 7,
@@ -123,12 +129,18 @@ describe('nativeDraftMetadataPatch', () => {
     expect(nativeDraftMetadataPatch(blankNativeDraft())).toEqual({
       group: null,
       color: null,
+      terminalScheme: null,
+      terminalFontColor: null,
+      terminalBackgroundColor: null,
       keywordHighlights: null,
     });
     const draft = nativeDraftFromProfile(serialHost, false);
     expect(nativeDraftMetadataPatch(draft)).toEqual({
       group: 'Lab',
       color: null,
+      terminalScheme: 'gruvbox-dark',
+      terminalFontColor: '#ebdbb2',
+      terminalBackgroundColor: '#282828',
       keywordHighlights: serialHost.metadata.keywordHighlights,
     });
   });

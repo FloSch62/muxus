@@ -45,6 +45,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 18, name: 'lock-workspaces' },
       { version: 19, name: 'host-disable-sftp' },
       { version: 20, name: 'host-console-compatibility' },
+      { version: 21, name: 'host-terminal-appearance' },
     ]);
   });
 
@@ -151,8 +152,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 20,
-      name: 'host-console-compatibility',
+      version: 21,
+      name: 'host-terminal-appearance',
     });
     expect(database.passwordVaultConfig()).toMatchObject({
       formatVersion: 2,
@@ -332,6 +333,9 @@ describe('hybrid OpenSSH metadata', () => {
       displayName: 'Production',
       group: 'Work',
       color: '#3b82f6',
+      terminalScheme: 'nord',
+      terminalFontColor: '#f8f8f2',
+      terminalBackgroundColor: '#282a36',
       disableSftp: true,
       consoleCompatibility: true,
       keywordHighlights: {
@@ -355,6 +359,9 @@ describe('hybrid OpenSSH metadata', () => {
       displayName: 'Production',
       group: 'Work',
       color: '#3b82f6',
+      terminalScheme: 'nord',
+      terminalFontColor: '#f8f8f2',
+      terminalBackgroundColor: '#282a36',
       disableSftp: true,
       consoleCompatibility: true,
       keywordHighlights: {
@@ -375,6 +382,17 @@ describe('hybrid OpenSSH metadata', () => {
 
     database.updateOpenSshMetadata('production', { disableSftp: false });
     expect(database.sftpDisabledForAlias('production')).toBe(false);
+
+    database.updateOpenSshMetadata('production', {
+      terminalScheme: null,
+      terminalFontColor: null,
+      terminalBackgroundColor: null,
+    });
+    expect(database.openSshMetadata(['production']).get('production')).toMatchObject({
+      terminalScheme: undefined,
+      terminalFontColor: undefined,
+      terminalBackgroundColor: undefined,
+    });
   });
 
   it('moves hosts between case-insensitive groups and can clear organization', () => {

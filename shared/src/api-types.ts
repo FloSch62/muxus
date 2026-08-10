@@ -441,6 +441,11 @@ export interface OpenSshProfileMetadata {
   group?: string;
   color?: string;
   icon?: string;
+  /** Built-in terminal color scheme selected for this host. */
+  terminalScheme?: string;
+  /** Host-specific terminal foreground and background overrides. */
+  terminalFontColor?: string;
+  terminalBackgroundColor?: string;
   /** Muxus-only terminal highlighting for this OpenSSH alias. */
   keywordHighlights?: HostKeywordHighlightConfig;
   /** Do not open SFTP channels or probe for remote Unix shell integration. */
@@ -456,6 +461,9 @@ export interface OpenSshMetadataPatch {
   group?: string | null;
   color?: string | null;
   icon?: string | null;
+  terminalScheme?: string | null;
+  terminalFontColor?: string | null;
+  terminalBackgroundColor?: string | null;
   keywordHighlights?: HostKeywordHighlightConfig | null;
   disableSftp?: boolean;
   consoleCompatibility?: boolean;

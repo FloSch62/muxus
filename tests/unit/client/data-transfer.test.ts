@@ -202,13 +202,15 @@ describe('Muxus transfer file parsing', () => {
   });
 });
 
-function mockBackupSnapshot(folders: unknown[] = []): void {
+function mockBackupSnapshot(folders: unknown[] = [], profiles: unknown[] = []): void {
   apiFetchMock
     .mockResolvedValueOnce({ hosts: [] })
-    .mockResolvedValueOnce({ profiles: [] })
-    .mockResolvedValueOnce({ tunnels: [] })
-    .mockResolvedValueOnce({ overridden: false })
-    .mockResolvedValueOnce({ overridden: false })
+    .mockResolvedValueOnce({ profiles })
+    .mockResolvedValueOnce({ tunnels: [] });
+  for (let index = 0; index < 2 + profiles.length; index++) {
+    apiFetchMock.mockResolvedValueOnce({ overridden: false });
+  }
+  apiFetchMock
     .mockResolvedValueOnce({
       settings: {
         storageLocation: '/tmp/muxus-history',
@@ -443,6 +445,34 @@ describe('backing up folder credentials', () => {
   });
 });
 
+describe('backing up host terminal schemes', () => {
+  it('keeps the per-host override in portable metadata', async () => {
+    mockBackupSnapshot([], [
+      {
+        id: 'console',
+        kind: 'telnet',
+        name: 'Console',
+        profile: { kind: 'telnet', host: 'console.example.test', port: 23 },
+        metadata: {
+          profileId: 'console',
+          terminalScheme: 'solarized-dark',
+          terminalFontColor: '#fdf6e3',
+          terminalBackgroundColor: '#002b36',
+          connectCount: 0,
+        },
+        createdAt: '2026-08-10T00:00:00.000Z',
+        updatedAt: '2026-08-10T00:00:00.000Z',
+      },
+    ]);
+
+    const document = await createBackupDocument();
+
+    expect(document.data.savedHosts[0]?.metadata.terminalScheme).toBe('solarized-dark');
+    expect(document.data.savedHosts[0]?.metadata.terminalFontColor).toBe('#fdf6e3');
+    expect(document.data.savedHosts[0]?.metadata.terminalBackgroundColor).toBe('#002b36');
+  });
+});
+
 describe('exporting Muxus-only SSH hosts to OpenSSH', () => {
   it('materializes non-secret folder defaults and marks an omitted folder password', async () => {
     const previews: HostUpsertRequest[] = [];
@@ -588,7 +618,12 @@ describe('restoring imported serial hosts', () => {
           parity: 'none' as const,
           flowControl: 'none' as const,
         },
-        metadata: { group: 'Lab' },
+        metadata: {
+          group: 'Lab',
+          terminalScheme: 'nord',
+          terminalFontColor: '#eceff4',
+          terminalBackgroundColor: '#2e3440',
+        },
       },
     ],
     hostOrder: [],
@@ -637,6 +672,9 @@ describe('restoring imported serial hosts', () => {
           group: 'Lab',
           color: null,
           icon: null,
+          terminalScheme: 'nord',
+          terminalFontColor: '#eceff4',
+          terminalBackgroundColor: '#2e3440',
           keywordHighlights: null,
           disableSftp: false,
           consoleCompatibility: false,

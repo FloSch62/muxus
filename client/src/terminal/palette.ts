@@ -413,6 +413,28 @@ export const TERMINAL_SCHEMES: readonly TerminalScheme[] = [
 const SCHEMES_BY_ID = new Map(TERMINAL_SCHEMES.map((scheme) => [scheme.id, scheme]));
 const DEFAULT_SCHEME = SCHEMES_BY_ID.get('vscode-dark')!;
 
+export function isTerminalSchemeId(value: unknown): value is string {
+  return typeof value === 'string' && SCHEMES_BY_ID.has(value);
+}
+
+/** A stale or future host override must inherit the current app preference. */
+export function terminalSchemeIdForHost(
+  applicationSchemeId: string,
+  hostSchemeId: string | undefined,
+): string {
+  return isTerminalSchemeId(hostSchemeId) ? hostSchemeId : applicationSchemeId;
+}
+
+const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
+
+/** A valid host color wins; malformed or absent metadata inherits the app value. */
+export function terminalColorForHost(
+  applicationColor: string,
+  hostColor: string | undefined,
+): string {
+  return hostColor && HEX_COLOR_RE.test(hostColor) ? hostColor : applicationColor;
+}
+
 /** Resolve a scheme id, falling back to the VS Code dark default. */
 export function terminalScheme(id: string | undefined): TerminalScheme {
   return (id === undefined ? undefined : SCHEMES_BY_ID.get(id)) ?? DEFAULT_SCHEME;
@@ -434,8 +456,8 @@ export function themeWithColorOverrides(
   fontColor: string,
   backgroundColor: string,
 ): ITheme {
-  const foreground = /^#[0-9a-f]{6}$/i.test(fontColor) ? fontColor : undefined;
-  const background = /^#[0-9a-f]{6}$/i.test(backgroundColor) ? backgroundColor : undefined;
+  const foreground = HEX_COLOR_RE.test(fontColor) ? fontColor : undefined;
+  const background = HEX_COLOR_RE.test(backgroundColor) ? backgroundColor : undefined;
   if (!foreground && !background) return theme;
   return {
     ...theme,

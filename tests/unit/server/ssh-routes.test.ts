@@ -32,18 +32,27 @@ afterEach(async () => {
 const auth = () => ({ authorization: `Bearer ${TOKEN}` });
 
 describe('OpenSSH host keyword metadata', () => {
-  it('persists independent per-host SFTP and console compatibility settings', async () => {
+  it('persists independent per-host terminal and compatibility settings', async () => {
     const response = await app.inject({
       method: 'PATCH',
       url: '/api/ssh/config/hosts/production/metadata',
       headers: auth(),
-      payload: { disableSftp: true, consoleCompatibility: true },
+      payload: {
+        terminalScheme: 'catppuccin-mocha',
+        terminalFontColor: '#cdd6f4',
+        terminalBackgroundColor: '#1e1e2e',
+        disableSftp: true,
+        consoleCompatibility: true,
+      },
     });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       disableSftp: true,
       consoleCompatibility: true,
+      terminalScheme: 'catppuccin-mocha',
+      terminalFontColor: '#cdd6f4',
+      terminalBackgroundColor: '#1e1e2e',
     });
   });
 
@@ -99,6 +108,17 @@ describe('OpenSSH host keyword metadata', () => {
           ],
         },
       },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('rejects malformed per-host terminal colors', async () => {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/ssh/config/hosts/production/metadata',
+      headers: auth(),
+      payload: { terminalFontColor: 'orange' },
     });
 
     expect(response.statusCode).toBe(400);

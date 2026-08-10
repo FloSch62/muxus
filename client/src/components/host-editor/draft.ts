@@ -28,6 +28,10 @@ export interface HostDraft {
   displayName: string;
   group: string;
   color?: string;
+  /** Empty follows the application theme's terminal scheme preference. */
+  terminalScheme?: string;
+  terminalFontColor?: string;
+  terminalBackgroundColor?: string;
   /** Muxus-only plain-shell mode: no SFTP or shell integration. */
   disableSftp: boolean;
   /** Muxus-only console mode: also no env requests, with PTY rejection fallback. */
@@ -70,6 +74,9 @@ export function blankDraft(prefillTarget = ''): HostDraft {
     displayName: '',
     group: '',
     color: undefined,
+    terminalScheme: undefined,
+    terminalFontColor: undefined,
+    terminalBackgroundColor: undefined,
     disableSftp: false,
     consoleCompatibility: false,
     file: '',
@@ -111,6 +118,9 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
     displayName: duplicate ? '' : (entry.metadata?.displayName ?? ''),
     group: entry.metadata?.group ?? '',
     color: entry.metadata?.color,
+    terminalScheme: entry.metadata?.terminalScheme,
+    terminalFontColor: entry.metadata?.terminalFontColor,
+    terminalBackgroundColor: entry.metadata?.terminalBackgroundColor,
     disableSftp: entry.metadata?.disableSftp ?? false,
     consoleCompatibility: entry.metadata?.consoleCompatibility ?? false,
     file: entry.file,
@@ -168,6 +178,9 @@ export function draftFromSavedSshProfile(
     displayName: duplicate ? '' : (saved.metadata.displayName ?? ''),
     group: saved.metadata.group ?? '',
     color: saved.metadata.color,
+    terminalScheme: saved.metadata.terminalScheme,
+    terminalFontColor: saved.metadata.terminalFontColor,
+    terminalBackgroundColor: saved.metadata.terminalBackgroundColor,
     disableSftp: saved.metadata.disableSftp ?? false,
     consoleCompatibility: saved.metadata.consoleCompatibility ?? false,
     file: '',

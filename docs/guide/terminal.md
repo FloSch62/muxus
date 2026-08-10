@@ -48,6 +48,12 @@ Light schemes: **Paper**, **VS Code Light**, **GitHub Light**, **Gruvbox Light**
 **One Dark**, **Nord**, **Gruvbox Dark**, **Catppuccin Mocha**, **Monokai**, **Solarized
 Dark**.
 
+Each saved host has a **Terminal appearance** editor section where its colour scheme,
+text colour and background colour can override the application defaults. Leave an option
+on **Use application default** to keep following the global preference. Host overrides
+apply to open terminals immediately, which makes sessions easy to identify when the tab
+strip and sidebar are hidden in focus mode.
+
 Scheme, font family, size and line height are in
 [Settings → Appearance](settings.md#appearance). Cursor style (block, underline, bar),
 blink, clipboard behaviour and scrollback length are in
