@@ -7,8 +7,9 @@ icon: lucide/file-pen
 Alt + left-click an underlined file path in a local or SSH terminal to open it in
 [Monaco](https://microsoft.github.io/monaco-editor/), the editor used by VS Code. Files in
 SSH sessions use that session's live SFTP transport; files in local terminals are read and
-saved directly on the machine running Muxus. The modifier can be changed to Ctrl, Cmd on
-macOS, or a direct click in **Settings → Terminal → Open terminal file links**.
+saved directly on the machine running Muxus. The modifier can be changed to Ctrl on Linux
+and Windows, Cmd on macOS, or a direct click in
+**Settings → Terminal → Open terminal file links**.
 Double-clicking a file in the [file browser](files.md) opens the same editor.
 
 <figure markdown="span">

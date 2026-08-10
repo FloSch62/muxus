@@ -13,7 +13,6 @@ const NON_MAC_OPTIONS: readonly TerminalFileLinkActivationOption[] = [
 
 const MAC_OPTIONS: readonly TerminalFileLinkActivationOption[] = [
   { value: 'alt', label: 'Option + left click' },
-  { value: 'ctrl', label: 'Control + left click' },
   { value: 'meta', label: 'Cmd + left click' },
   { value: 'direct', label: 'Direct left click' },
 ];
@@ -25,10 +24,20 @@ export function terminalFileLinkActivationOptions(
   return isMac ? MAC_OPTIONS : NON_MAC_OPTIONS;
 }
 
-/** Gracefully handle a Cmd preference restored from a macOS backup elsewhere. */
+/** Map a cross-platform backup to a gesture that is safe on this platform. */
 export function terminalFileLinkActivationForPlatform(
   activation: TerminalFileLinkActivation,
   isMac: boolean,
 ): TerminalFileLinkActivation {
-  return activation === 'meta' && !isMac ? 'alt' : activation;
+  if (activation === 'meta' && !isMac) return 'alt';
+  if (activation === 'ctrl' && isMac) return 'meta';
+  return activation;
+}
+
+/** Keep xterm's Alt cursor movement from competing with an Alt file-open gesture. */
+export function altClickMovesCursorForFileLinkActivation(
+  activation: TerminalFileLinkActivation,
+  isMac: boolean,
+): boolean {
+  return terminalFileLinkActivationForPlatform(activation, isMac) !== 'alt';
 }

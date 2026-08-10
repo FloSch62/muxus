@@ -5,6 +5,7 @@ import {
   terminalFileLinkCandidates,
 } from '../../../client/src/terminal/file-links.js';
 import {
+  altClickMovesCursorForFileLinkActivation,
   terminalFileLinkActivationForPlatform,
   terminalFileLinkActivationOptions,
 } from '../../../client/src/terminal/file-link-activation.js';
@@ -108,15 +109,23 @@ describe('terminal file links', () => {
     ]);
     expect(terminalFileLinkActivationOptions(true).map((option) => option.value)).toEqual([
       'alt',
-      'ctrl',
       'meta',
       'direct',
     ]);
   });
 
-  it('falls back to Alt when a Cmd preference is restored on a non-Mac platform', () => {
+  it('maps cross-platform modifier preferences to safe native gestures', () => {
     expect(terminalFileLinkActivationForPlatform('meta', false)).toBe('alt');
     expect(terminalFileLinkActivationForPlatform('meta', true)).toBe('meta');
+    expect(terminalFileLinkActivationForPlatform('ctrl', true)).toBe('meta');
+    expect(terminalFileLinkActivationForPlatform('ctrl', false)).toBe('ctrl');
+  });
+
+  it('disables xterm cursor movement only while Alt opens file links', () => {
+    expect(altClickMovesCursorForFileLinkActivation('alt', false)).toBe(false);
+    expect(altClickMovesCursorForFileLinkActivation('ctrl', false)).toBe(true);
+    expect(altClickMovesCursorForFileLinkActivation('meta', true)).toBe(true);
+    expect(altClickMovesCursorForFileLinkActivation('direct', false)).toBe(true);
   });
 
   it('finds absolute, relative, dotfile, and conventional file paths', () => {

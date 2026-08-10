@@ -69,7 +69,10 @@ import {
   attachTerminalFileLinks,
   resolveTerminalFilePath,
 } from '../terminal/file-links.js';
-import { terminalFileLinkActivationForPlatform } from '../terminal/file-link-activation.js';
+import {
+  altClickMovesCursorForFileLinkActivation,
+  terminalFileLinkActivationForPlatform,
+} from '../terminal/file-link-activation.js';
 import { openTerminalWebLink } from '../terminal/web-links.js';
 import { requiresPasteConfirmation } from '../terminal/paste-safety.js';
 import { shouldFitTerminal } from '../terminal/terminal-fit.js';
@@ -433,6 +436,10 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       cursorBlink: prefs.cursorBlink,
       cursorStyle: prefs.cursorStyle,
       scrollback: prefs.scrollback,
+      altClickMovesCursor: altClickMovesCursorForFileLinkActivation(
+        prefs.terminalFileLinkActivation,
+        IS_MAC,
+      ),
       // ED2 pushes the screen into scrollback instead of blanking it, so a
       // shell that clears on login cannot destroy freshly restored history.
       scrollOnEraseInDisplay: true,
@@ -771,7 +778,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           unloadQueuedRevision !== snapshotRevision,
       },
     );
-    const unsubscribeReconnectPreference = usePrefsStore.subscribe((state, previous) => {
+    const unsubscribePreferences = usePrefsStore.subscribe((state, previous) => {
+      if (state.terminalFileLinkActivation !== previous.terminalFileLinkActivation) {
+        term.options.altClickMovesCursor = altClickMovesCursorForFileLinkActivation(
+          state.terminalFileLinkActivation,
+          IS_MAC,
+        );
+      }
       if (
         previous.autoReconnectRemote &&
         !state.autoReconnectRemote &&
@@ -1194,7 +1207,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       clearInterval(snapshotTimer);
       if (quietSnapshotTimer !== undefined) clearTimeout(quietSnapshotTimer);
       unregisterUnloadFlush();
-      unsubscribeReconnectPreference();
+      unsubscribePreferences();
       // The buffer outlives this socket generation: a reconnect replays it in
       // place, and the stored copy keeps the tail output a restart would lose.
       if (usePrefsStore.getState().restoreScrollback) {
