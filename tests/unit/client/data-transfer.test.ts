@@ -30,6 +30,7 @@ beforeEach(() => {
     activePaneBorder: false,
     dimInactivePanes: false,
     inactivePaneDimStrength: 0.15,
+    terminalFileLinkActivation: 'alt',
     localShellProfiles: [],
     defaultLocalShellProfileId: '',
     keywordHighlightProfiles: [],
@@ -230,6 +231,7 @@ describe('backing up preferences', () => {
       activePaneBorder: false,
       dimInactivePanes: true,
       inactivePaneDimStrength: 0.35,
+      terminalFileLinkActivation: 'ctrl',
     });
     mockBackupSnapshot();
 
@@ -243,6 +245,7 @@ describe('backing up preferences', () => {
     expect(document.data.preferences.activePaneBorder).toBe(false);
     expect(document.data.preferences.dimInactivePanes).toBe(true);
     expect(document.data.preferences.inactivePaneDimStrength).toBe(0.35);
+    expect(document.data.preferences.terminalFileLinkActivation).toBe('ctrl');
   });
 
   it('includes saved local shell profiles and their default selection', async () => {
@@ -287,6 +290,23 @@ describe('backing up preferences', () => {
     const document = await createBackupDocument();
 
     expect(document.data.preferences.keywordHighlightProfiles).toEqual([profile]);
+  });
+});
+
+describe('restoring terminal file link activation preferences', () => {
+  const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
+
+  it.each(['direct', 'alt', 'ctrl', 'meta'] as const)('restores %s activation', (value) => {
+    expect(sanitizePreferences(prefs({ terminalFileLinkActivation: value }))).toMatchObject({
+      terminalFileLinkActivation: value,
+    });
+  });
+
+  it('drops malformed activation settings', () => {
+    expect(
+      sanitizePreferences(prefs({ terminalFileLinkActivation: 'double-click' }))
+        .terminalFileLinkActivation,
+    ).toBeUndefined();
   });
 });
 

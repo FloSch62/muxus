@@ -1,4 +1,5 @@
 import type { IDisposable, ILink, Terminal } from '@xterm/xterm';
+import type { TerminalFileLinkActivation } from '../state/prefs.js';
 
 const MAX_LOGICAL_LINE_LENGTH = 4_096;
 const SHELL_TOKEN_BOUNDARY = /\s/;
@@ -389,10 +390,22 @@ function mappedFileLinks(term: Terminal, bufferLineNumber: number): MappedTermin
   return links;
 }
 
-/** Register ordinary hover-and-click file links while leaving other terminal text untouched. */
+function activationMatches(
+  event: MouseEvent,
+  activation: TerminalFileLinkActivation,
+): boolean {
+  if (event.shiftKey) return false;
+  if (activation === 'direct') return !event.altKey && !event.ctrlKey && !event.metaKey;
+  if (activation === 'alt') return event.altKey && !event.ctrlKey && !event.metaKey;
+  if (activation === 'ctrl') return event.ctrlKey && !event.altKey && !event.metaKey;
+  return event.metaKey && !event.altKey && !event.ctrlKey;
+}
+
+/** Register file links while leaving non-activating clicks available for terminal selection. */
 export function attachTerminalFileLinks(
   term: Terminal,
   onOpen: (candidate: string) => void | Promise<void>,
+  activation: TerminalFileLinkActivation | (() => TerminalFileLinkActivation) = 'direct',
 ): IDisposable {
   return term.registerLinkProvider({
     provideLinks: (bufferLineNumber, callback) => {
@@ -404,9 +417,15 @@ export function attachTerminalFileLinks(
           // them on leave, matching a normal browser-link affordance.
           decorations: { pointerCursor: true, underline: true },
           activate: (event) => {
-            if (event.button !== 0) return;
+            const currentActivation =
+              typeof activation === 'function' ? activation() : activation;
+            if (event.button !== 0 || !activationMatches(event, currentActivation)) return;
             event.preventDefault();
             event.stopPropagation();
+            // A tiny pointer movement can create a selection before xterm
+            // delivers the mouse-up activation. Do not leave it behind the
+            // editor after a deliberate file-open gesture.
+            term.clearSelection();
             void onOpen(candidate.path);
           },
         };

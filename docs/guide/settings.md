@@ -41,6 +41,9 @@ because storage policy should not change under a running recorder.
 - **Cursor**: block, underline or bar, blinking or not.
 - **Right-click**: copy-selection-otherwise-paste (the terminal convention), always paste,
   or a context menu.
+- **Open terminal file links**: choose Alt or direct left click on every platform, plus Ctrl
+  on Linux and Windows or Cmd on macOS. Alt + left click is the default so ordinary clicks
+  and double-clicks remain available for terminal text selection.
 - **Copy on select**, **OSC 52 clipboard writes** from terminal programs such as tmux and
   Zellij, and the **multiline paste confirmation**. OSC 52 reads remain blocked so a
   terminal program cannot retrieve the local clipboard.

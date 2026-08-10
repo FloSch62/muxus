@@ -65,6 +65,7 @@ import {
   interfaceZoomLabel,
 } from '../interface-zoom.js';
 import { useChordLabel } from '../keymap/hints.js';
+import { IS_MAC } from '../platform.js';
 import {
   MAX_INACTIVE_PANE_DIM_STRENGTH,
   MIN_INACTIVE_PANE_DIM_STRENGTH,
@@ -73,6 +74,7 @@ import {
   usePrefsStore,
   type RightClickAction,
   type TabNumberVisibility,
+  type TerminalFileLinkActivation,
   type ThemeMode,
 } from '../state/prefs.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
@@ -80,6 +82,10 @@ import { showErrorToast, showToast } from '../state/toast.js';
 import { confirmAction } from '../state/dialogs.js';
 import { useUiStore } from '../state/ui.js';
 import { TERMINAL_SCHEMES, terminalScheme, type TerminalScheme } from '../terminal/palette.js';
+import {
+  terminalFileLinkActivationForPlatform,
+  terminalFileLinkActivationOptions,
+} from '../terminal/file-link-activation.js';
 import {
   readInstalledTerminalFontFamilies,
   terminalFontFamilies,
@@ -127,6 +133,7 @@ const TERMINAL_SCHEME_GROUPS = [
 ] as const;
 
 const SCHEME_SWATCH_COLORS = ['red', 'green', 'yellow', 'blue', 'magenta', 'cyan'] as const;
+const TERMINAL_FILE_LINK_ACTIVATION_OPTIONS = terminalFileLinkActivationOptions(IS_MAC);
 
 /**
  * All preferences, applied live — including already-open terminals. The one
@@ -647,6 +654,26 @@ function TerminalSection() {
             <MenuItem value="copy-paste">Copy selection, otherwise paste (terminal convention)</MenuItem>
             <MenuItem value="paste">Always paste</MenuItem>
             <MenuItem value="menu">Show context menu</MenuItem>
+          </TextField>
+          <TextField
+            select
+            label="Open terminal file links"
+            value={terminalFileLinkActivationForPlatform(
+              prefs.terminalFileLinkActivation,
+              IS_MAC,
+            )}
+            onChange={(e) =>
+              prefs.set({
+                terminalFileLinkActivation: e.target.value as TerminalFileLinkActivation,
+              })
+            }
+            sx={{ maxWidth: 420 }}
+          >
+            {TERMINAL_FILE_LINK_ACTIVATION_OPTIONS.map((option) => (
+              <MenuItem key={option.value} value={option.value}>
+                {option.label}
+              </MenuItem>
+            ))}
           </TextField>
           <FormControlLabel
             control={<Switch size="small" checked={prefs.copyOnSelect} onChange={(e) => prefs.set({ copyOnSelect: e.target.checked })} />}

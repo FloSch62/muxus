@@ -4,6 +4,11 @@ import {
   resolveTerminalFilePath,
   terminalFileLinkCandidates,
 } from '../../../client/src/terminal/file-links.js';
+import {
+  altClickMovesCursorForFileLinkActivation,
+  terminalFileLinkActivationForPlatform,
+  terminalFileLinkActivationOptions,
+} from '../../../client/src/terminal/file-link-activation.js';
 import { openTerminalWebLink } from '../../../client/src/terminal/web-links.js';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -24,6 +29,7 @@ interface StubLinkProvider {
 function terminalWithLine(text: string, spareCells = 1): {
   terminal: Parameters<typeof attachTerminalFileLinks>[0];
   provider: () => StubLinkProvider;
+  clearSelection: ReturnType<typeof vi.fn>;
 } {
   const cell = {
     chars: '',
@@ -44,6 +50,7 @@ function terminalWithLine(text: string, spareCells = 1): {
     },
   };
   let registered: StubLinkProvider | undefined;
+  const clearSelection = vi.fn();
   const terminal = {
     buffer: {
       active: {
@@ -55,9 +62,11 @@ function terminalWithLine(text: string, spareCells = 1): {
       registered = provider;
       return { dispose: () => undefined };
     },
+    clearSelection,
   } as unknown as Parameters<typeof attachTerminalFileLinks>[0];
   return {
     terminal,
+    clearSelection,
     provider: () => {
       if (!registered) throw new Error('link provider was not registered');
       return registered;
@@ -65,7 +74,60 @@ function terminalWithLine(text: string, spareCells = 1): {
   };
 }
 
+function mouseEvent(
+  modifiers: Partial<Pick<MouseEvent, 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey'>> = {},
+  button = 0,
+): {
+  event: MouseEvent;
+  preventDefault: ReturnType<typeof vi.fn>;
+  stopPropagation: ReturnType<typeof vi.fn>;
+} {
+  const preventDefault = vi.fn();
+  const stopPropagation = vi.fn();
+  return {
+    event: {
+      button,
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      preventDefault,
+      stopPropagation,
+      ...modifiers,
+    } as unknown as MouseEvent,
+    preventDefault,
+    stopPropagation,
+  };
+}
+
 describe('terminal file links', () => {
+  it('only offers Cmd activation on macOS', () => {
+    expect(terminalFileLinkActivationOptions(false).map((option) => option.value)).toEqual([
+      'alt',
+      'ctrl',
+      'direct',
+    ]);
+    expect(terminalFileLinkActivationOptions(true).map((option) => option.value)).toEqual([
+      'alt',
+      'meta',
+      'direct',
+    ]);
+  });
+
+  it('maps cross-platform modifier preferences to safe native gestures', () => {
+    expect(terminalFileLinkActivationForPlatform('meta', false)).toBe('alt');
+    expect(terminalFileLinkActivationForPlatform('meta', true)).toBe('meta');
+    expect(terminalFileLinkActivationForPlatform('ctrl', true)).toBe('meta');
+    expect(terminalFileLinkActivationForPlatform('ctrl', false)).toBe('ctrl');
+  });
+
+  it('disables xterm cursor movement only while Alt opens file links', () => {
+    expect(altClickMovesCursorForFileLinkActivation('alt', false)).toBe(false);
+    expect(altClickMovesCursorForFileLinkActivation('ctrl', false)).toBe(true);
+    expect(altClickMovesCursorForFileLinkActivation('meta', true)).toBe(true);
+    expect(altClickMovesCursorForFileLinkActivation('direct', false)).toBe(true);
+  });
+
   it('finds absolute, relative, dotfile, and conventional file paths', () => {
     expect(
       terminalFileLinkCandidates(
@@ -161,10 +223,9 @@ describe('terminal file links', () => {
     ).toEqual(['lic.txt']);
   });
 
-  it('underlines a detected path on hover and opens it with a plain left-click', () => {
+  it('underlines a detected path on hover and maps its terminal range', () => {
     const { terminal, provider } = terminalWithLine('output: src/main.ts');
-    const onOpen = vi.fn();
-    attachTerminalFileLinks(terminal, onOpen);
+    attachTerminalFileLinks(terminal, vi.fn());
     let links: ProvidedLink[] | undefined;
     provider().provideLinks(1, (provided) => {
       links = provided;
@@ -175,24 +236,65 @@ describe('terminal file links', () => {
       end: { x: 19, y: 1 },
     });
 
-    const preventDefault = vi.fn();
-    const stopPropagation = vi.fn();
-    links![0]!.activate(
-      { button: 2, altKey: true, preventDefault, stopPropagation } as unknown as MouseEvent,
-      'src/main.ts',
-    );
+    expect(links![0]!.decorations).toEqual({ pointerCursor: true, underline: true });
+  });
+
+  it.each([
+    ['direct', {}, { altKey: true }],
+    ['alt', { altKey: true }, {}],
+    ['ctrl', { ctrlKey: true }, {}],
+    ['meta', { metaKey: true }, {}],
+  ] as const)(
+    'opens a link only for the configured %s activation gesture',
+    (activation, matchingModifiers, nonMatchingModifiers) => {
+      const { terminal, provider, clearSelection } = terminalWithLine('output: src/main.ts');
+      const onOpen = vi.fn();
+      attachTerminalFileLinks(terminal, onOpen, activation);
+      let links: ProvidedLink[] | undefined;
+      provider().provideLinks(1, (provided) => {
+        links = provided;
+      });
+
+      const wrongButton = mouseEvent(matchingModifiers, 2);
+      links![0]!.activate(wrongButton.event, 'src/main.ts');
+      expect(onOpen).not.toHaveBeenCalled();
+
+      const ignored = mouseEvent(nonMatchingModifiers);
+      links![0]!.activate(ignored.event, 'src/main.ts');
+      expect(onOpen).not.toHaveBeenCalled();
+      expect(ignored.preventDefault).not.toHaveBeenCalled();
+      expect(ignored.stopPropagation).not.toHaveBeenCalled();
+
+      const selectionGesture = mouseEvent({ ...matchingModifiers, shiftKey: true });
+      links![0]!.activate(selectionGesture.event, 'src/main.ts');
+      expect(onOpen).not.toHaveBeenCalled();
+
+      const matching = mouseEvent(matchingModifiers);
+      links![0]!.activate(matching.event, 'src/main.ts');
+      expect(onOpen).toHaveBeenCalledOnce();
+      expect(onOpen).toHaveBeenCalledWith('src/main.ts');
+      expect(matching.preventDefault).toHaveBeenCalledOnce();
+      expect(matching.stopPropagation).toHaveBeenCalledOnce();
+      expect(clearSelection).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('reads the activation setting when clicked so open terminals update immediately', () => {
+    const { terminal, provider } = terminalWithLine('output: src/main.ts');
+    const onOpen = vi.fn();
+    let activation: 'alt' | 'ctrl' = 'alt';
+    attachTerminalFileLinks(terminal, onOpen, () => activation);
+    let links: ProvidedLink[] | undefined;
+    provider().provideLinks(1, (provided) => {
+      links = provided;
+    });
+
+    links![0]!.activate(mouseEvent({ ctrlKey: true }).event, 'src/main.ts');
     expect(onOpen).not.toHaveBeenCalled();
 
-    expect(links![0]!.decorations).toEqual({ pointerCursor: true, underline: true });
-
-    links![0]!.activate(
-      { button: 0, altKey: false, preventDefault, stopPropagation } as unknown as MouseEvent,
-      'src/main.ts',
-    );
-    expect(onOpen).toHaveBeenCalledOnce();
+    activation = 'ctrl';
+    links![0]!.activate(mouseEvent({ ctrlKey: true }).event, 'src/main.ts');
     expect(onOpen).toHaveBeenCalledWith('src/main.ts');
-    expect(preventDefault).toHaveBeenCalledOnce();
-    expect(stopPropagation).toHaveBeenCalledOnce();
   });
 
   it('keeps a link ending in the terminal last column on the current row', () => {
