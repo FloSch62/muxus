@@ -21,6 +21,7 @@ export interface MarkerHost {
 
 const MAX_TERMINAL_CWD_LENGTH = 4096;
 const CWD_PROPERTY_PREFIX = 'P;Cwd=';
+const RAW_WINDOWS_CWD_PROPERTY_PREFIX = 'P;CwdRaw=';
 
 /** Decode the escaping used by OSC 133/633 property values. */
 function decodePropertyValue(value: string): string | undefined {
@@ -45,8 +46,16 @@ function decodePropertyValue(value: string): string | undefined {
   return decoded;
 }
 
+function windowsTerminalCwd(value: string | undefined): value is string {
+  return !!value && /^(?:[a-z]:[\\/]|\\\\[^\\/]+[\\/][^\\/]+)/i.test(value);
+}
+
 function validTerminalCwd(value: string | undefined): value is string {
-  return !!value && value.startsWith('/') && value.length <= MAX_TERMINAL_CWD_LENGTH;
+  return (
+    !!value &&
+    (value.startsWith('/') || windowsTerminalCwd(value)) &&
+    value.length <= MAX_TERMINAL_CWD_LENGTH
+  );
 }
 
 /** Reads current-directory reports from shell integration and standard OSC 7. */
@@ -56,16 +65,28 @@ export class CwdTracker {
   constructor(private readonly onChange: (cwd: string) => void) {}
 
   handleProperty(data: string): boolean {
-    if (!data.startsWith(CWD_PROPERTY_PREFIX)) return false;
-    this.report(decodePropertyValue(data.slice(CWD_PROPERTY_PREFIX.length)));
-    return true;
+    if (data.startsWith(CWD_PROPERTY_PREFIX)) {
+      this.report(decodePropertyValue(data.slice(CWD_PROPERTY_PREFIX.length)));
+      return true;
+    }
+    if (data.startsWith(RAW_WINDOWS_CWD_PROPERTY_PREFIX)) {
+      const value = data.slice(RAW_WINDOWS_CWD_PROPERTY_PREFIX.length);
+      // cmd.exe's $P prompt token cannot apply OSC property escaping. Keep its
+      // internal property distinct so standards-compliant Cwd values above
+      // always decode doubled backslashes and \xNN escapes.
+      this.report(windowsTerminalCwd(value) ? value : undefined);
+      return true;
+    }
+    return false;
   }
 
   handleFileUri(data: string): boolean {
     try {
       const uri = new URL(data);
       if (uri.protocol !== 'file:') return false;
-      this.report(decodeURIComponent(uri.pathname));
+      const pathname = decodeURIComponent(uri.pathname);
+      const windowsDrivePath = pathname.match(/^\/([a-z]:\/.*)$/i)?.[1];
+      this.report(windowsDrivePath ? windowsDrivePath.replaceAll('/', '\\') : pathname);
       return true;
     } catch {
       return false;
