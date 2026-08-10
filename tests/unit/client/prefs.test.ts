@@ -47,6 +47,27 @@ describe('appearance preference', () => {
   });
 });
 
+describe('terminal file link activation preference', () => {
+  it('defaults to Alt + left click so normal terminal selection remains available', () => {
+    expect(usePrefsStore.getInitialState().terminalFileLinkActivation).toBe('alt');
+  });
+
+  it.each(['direct', 'alt', 'ctrl', 'meta'] as const)(
+    'keeps the valid %s activation setting during migration',
+    (terminalFileLinkActivation) => {
+      expect(migratePrefsState({ terminalFileLinkActivation }, 12)).toEqual({
+        terminalFileLinkActivation,
+      });
+    },
+  );
+
+  it('drops malformed persisted activation settings', () => {
+    expect(
+      migratePrefsState({ terminalFileLinkActivation: 'double-click', monoFontSize: 16 }, 12),
+    ).toEqual({ monoFontSize: 16 });
+  });
+});
+
 describe('split pane focus preferences', () => {
   it('leaves both indicators off by default with dimming set to 15%', () => {
     const initial = usePrefsStore.getInitialState();

@@ -69,6 +69,7 @@ import {
   attachTerminalFileLinks,
   resolveTerminalFilePath,
 } from '../terminal/file-links.js';
+import { terminalFileLinkActivationForPlatform } from '../terminal/file-link-activation.js';
 import { openTerminalWebLink } from '../terminal/web-links.js';
 import { requiresPasteConfirmation } from '../terminal/paste-safety.js';
 import { shouldFitTerminal } from '../terminal/terminal-fit.js';
@@ -661,7 +662,15 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         : undefined;
     const fileLinks =
       tab.profile.kind === 'ssh' || tab.profile.kind === 'local'
-        ? attachTerminalFileLinks(term, (candidate) => openLinkedTerminalFile(tab.id, candidate))
+        ? attachTerminalFileLinks(
+            term,
+            (candidate) => openLinkedTerminalFile(tab.id, candidate),
+            () =>
+              terminalFileLinkActivationForPlatform(
+                usePrefsStore.getState().terminalFileLinkActivation,
+                IS_MAC,
+              ),
+          )
         : undefined;
 
     // Application chords never reach xterm: the shortcut layer consumes them

@@ -30,6 +30,7 @@ import {
   MAX_INACTIVE_PANE_DIM_STRENGTH,
   MIN_INACTIVE_PANE_DIM_STRENGTH,
   isLocalShellProfileArray,
+  isTerminalFileLinkActivation,
   usePrefsStore,
   type FolderStyle,
   type PrefsState,
@@ -64,6 +65,7 @@ const PREFERENCE_KEYS = [
   'copyOnSelect',
   'allowOsc52ClipboardWrite',
   'rightClickAction',
+  'terminalFileLinkActivation',
   'pasteWarnMultiline',
   'confirmCloseConnected',
   'notifyOnNewVersion',
@@ -818,6 +820,9 @@ export function sanitizePreferences(
   }
   if (['copy-paste', 'paste', 'menu'].includes(input.rightClickAction)) {
     output.rightClickAction = input.rightClickAction;
+  }
+  if (isTerminalFileLinkActivation(input.terminalFileLinkActivation)) {
+    output.terminalFileLinkActivation = input.terminalFileLinkActivation;
   }
   if (typeof input.pasteWarnMultiline === 'boolean') {
     output.pasteWarnMultiline = input.pasteWarnMultiline;

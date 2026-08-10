@@ -9,6 +9,7 @@ import type { KeywordHighlightProfile, KeywordHighlightRule } from '@muxus/share
 export type ThemeMode = 'light' | 'dark' | 'os';
 export type EffectiveThemeMode = Exclude<ThemeMode, 'os'>;
 export type RightClickAction = 'copy-paste' | 'paste' | 'menu';
+export type TerminalFileLinkActivation = 'direct' | 'alt' | 'ctrl' | 'meta';
 export type TabNumberVisibility = 'shortcut' | 'always';
 
 export const DEFAULT_INACTIVE_PANE_DIM_STRENGTH = 0.15;
@@ -105,6 +106,8 @@ export interface PrefsState {
   allowOsc52ClipboardWrite: boolean;
   /** Right-click: copy selection / paste (terminal convention), always paste, or context menu. */
   rightClickAction: RightClickAction;
+  /** Mouse gesture that opens a detected terminal file path in the editor. */
+  terminalFileLinkActivation: TerminalFileLinkActivation;
   /** Preview multiline pastes before they can run several shell commands. */
   pasteWarnMultiline: boolean;
   /** Ask before closing a tab with a live session. */
@@ -172,6 +175,12 @@ function isTabNumberVisibility(value: unknown): value is TabNumberVisibility {
   return value === 'shortcut' || value === 'always';
 }
 
+export function isTerminalFileLinkActivation(
+  value: unknown,
+): value is TerminalFileLinkActivation {
+  return value === 'direct' || value === 'alt' || value === 'ctrl' || value === 'meta';
+}
+
 export function terminalSchemeIdForMode(
   prefs: Pick<PrefsState, 'lightTerminalScheme' | 'darkTerminalScheme'>,
   mode: EffectiveThemeMode,
@@ -189,6 +198,9 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   // A missing or invalid value falls through to the store's System default.
   if (!isThemeMode(state.themeMode)) delete state.themeMode;
   if (!isTabNumberVisibility(state.tabNumberVisibility)) delete state.tabNumberVisibility;
+  if (!isTerminalFileLinkActivation(state.terminalFileLinkActivation)) {
+    delete state.terminalFileLinkActivation;
+  }
   if (typeof state.activePaneBorder !== 'boolean') delete state.activePaneBorder;
   if (typeof state.dimInactivePanes !== 'boolean') delete state.dimInactivePanes;
   if (
@@ -326,6 +338,7 @@ export const usePrefsStore = create<PrefsState>()(
       copyOnSelect: false,
       allowOsc52ClipboardWrite: true,
       rightClickAction: 'copy-paste',
+      terminalFileLinkActivation: 'alt',
       pasteWarnMultiline: true,
       confirmCloseConnected: true,
       autoReconnectRemote: true,
@@ -354,7 +367,7 @@ export const usePrefsStore = create<PrefsState>()(
     }),
     {
       name: 'muxus-prefs',
-      version: 12,
+      version: 13,
       migrate: migratePrefsState,
       storage: createJSONStorage(() => muxusStateStorage),
     },
