@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   TERMINAL_MINIMUM_CONTRAST_RATIO,
   TERMINAL_SCHEMES,
+  terminalColorForHost,
+  terminalSchemeIdForHost,
   terminalScheme,
   themeWithColorOverrides,
   themeWithFontColor,
@@ -91,6 +93,18 @@ describe('terminal palettes', () => {
   it('keeps VS Code dark as the fallback even though light schemes are listed first', () => {
     expect(terminalScheme(undefined).id).toBe('vscode-dark');
     expect(terminalScheme('unknown').id).toBe('vscode-dark');
+  });
+
+  it('uses a valid host override and otherwise inherits the application scheme', () => {
+    expect(terminalSchemeIdForHost('paper', 'dracula')).toBe('dracula');
+    expect(terminalSchemeIdForHost('paper', undefined)).toBe('paper');
+    expect(terminalSchemeIdForHost('paper', 'removed-scheme')).toBe('paper');
+  });
+
+  it('uses valid host colors and inherits when host metadata is absent or malformed', () => {
+    expect(terminalColorForHost('#112233', '#aabbcc')).toBe('#aabbcc');
+    expect(terminalColorForHost('#112233', undefined)).toBe('#112233');
+    expect(terminalColorForHost('#112233', 'orange')).toBe('#112233');
   });
 });
 

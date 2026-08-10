@@ -6,6 +6,7 @@ import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import HighlightOutlinedIcon from '@mui/icons-material/HighlightOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
+import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import type { SavedHostProfile } from '@muxus/shared';
 import { useSessionLoggingPolicy, useSshConfig, useSshKeys } from '../api/queries.js';
@@ -45,6 +46,7 @@ import { ForwardsSection } from './host-editor/ForwardsSection.js';
 import { GeneralSection } from './host-editor/GeneralSection.js';
 import { HighlightingSection } from './host-editor/HighlightingSection.js';
 import { LoggingSection } from './host-editor/LoggingSection.js';
+import { TerminalAppearanceSection } from './host-editor/TerminalAppearanceSection.js';
 import {
   blankNativeDraft,
   nativeDraftFromProfile,
@@ -55,6 +57,7 @@ import { NativeHostEditorContent } from './NativeHostEditorContent.js';
 
 type Section =
   | 'general'
+  | 'appearance'
   | 'auth'
   | 'route'
   | 'forwards'
@@ -260,6 +263,9 @@ function SshHostEditorContent({
         displayName: draft.displayName.trim() || null,
         group: draft.group.trim() || null,
         color: draft.color ?? null,
+        terminalScheme: draft.terminalScheme ?? null,
+        terminalFontColor: draft.terminalFontColor ?? null,
+        terminalBackgroundColor: draft.terminalBackgroundColor ?? null,
         disableSftp: draft.disableSftp,
         consoleCompatibility: draft.consoleCompatibility,
         keywordHighlights:
@@ -280,6 +286,9 @@ function SshHostEditorContent({
         displayName: draft.displayName.trim() || null,
         group: draft.group.trim() || null,
         color: draft.color ?? null,
+        terminalScheme: draft.terminalScheme ?? null,
+        terminalFontColor: draft.terminalFontColor ?? null,
+        terminalBackgroundColor: draft.terminalBackgroundColor ?? null,
         disableSftp: draft.disableSftp,
         consoleCompatibility: draft.consoleCompatibility,
         keywordHighlights:
@@ -356,6 +365,16 @@ function SshHostEditorContent({
 
   const sections: EditorSectionDef<Section>[] = [
     { value: 'general', label: 'General', icon: <DnsOutlinedIcon fontSize="small" /> },
+    {
+      value: 'appearance',
+      label: 'Terminal appearance',
+      icon: <PaletteOutlinedIcon fontSize="small" />,
+      count: [
+        draft.terminalScheme,
+        draft.terminalFontColor,
+        draft.terminalBackgroundColor,
+      ].filter(Boolean).length || undefined,
+    },
     { value: 'auth', label: 'Authentication', icon: <KeyOutlinedIcon fontSize="small" /> },
     {
       value: 'route',
@@ -446,6 +465,9 @@ function SshHostEditorContent({
         />
       )}
       {section === 'auth' && <AuthSection draft={draft} set={set} keys={keys} />}
+      {section === 'appearance' && (
+        <TerminalAppearanceSection value={draft} onChange={set} />
+      )}
       {section === 'route' && <RouteSection draft={draft} set={set} config={config} />}
       {section === 'forwards' && <ForwardsSection draft={draft} set={set} />}
       {section === 'logging' && (

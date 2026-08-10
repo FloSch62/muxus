@@ -20,6 +20,10 @@ export interface NativeHostDraft {
   group: string;
   /** Muxus row color, applied with the same metadata patch. */
   color?: string;
+  /** Empty follows the application theme's terminal scheme preference. */
+  terminalScheme?: string;
+  terminalFontColor?: string;
+  terminalBackgroundColor?: string;
   host: string;
   port: string;
   path: string;
@@ -38,6 +42,9 @@ export function blankNativeDraft(prefillTarget = ''): NativeHostDraft {
     name: '',
     group: '',
     color: undefined,
+    terminalScheme: undefined,
+    terminalFontColor: undefined,
+    terminalBackgroundColor: undefined,
     host,
     port: port ?? '23',
     path: '',
@@ -56,6 +63,9 @@ export function nativeDraftFromProfile(saved: SavedHostProfile, duplicate: boole
   draft.name = duplicate ? `${saved.name} copy` : saved.name;
   draft.group = saved.metadata.group ?? '';
   draft.color = saved.metadata.color;
+  draft.terminalScheme = saved.metadata.terminalScheme;
+  draft.terminalFontColor = saved.metadata.terminalFontColor;
+  draft.terminalBackgroundColor = saved.metadata.terminalBackgroundColor;
   draft.keywordHighlights = saved.metadata.keywordHighlights ?? draft.keywordHighlights;
   if (saved.profile.kind === 'telnet') {
     draft.host = saved.profile.host;
@@ -116,6 +126,9 @@ export function nativeDraftMetadataPatch(draft: NativeHostDraft): OpenSshMetadat
   return {
     group: draft.group.trim() || null,
     color: draft.color ?? null,
+    terminalScheme: draft.terminalScheme ?? null,
+    terminalFontColor: draft.terminalFontColor ?? null,
+    terminalBackgroundColor: draft.terminalBackgroundColor ?? null,
     keywordHighlights:
       highlights.inheritGlobal && !highlights.profileId && highlights.rules.length === 0
         ? null

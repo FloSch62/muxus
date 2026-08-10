@@ -167,6 +167,9 @@ describe('saved host profile routes', () => {
       payload: {
         group: 'Network lab',
         color: '#22c55e',
+        terminalScheme: 'solarized-dark',
+        terminalFontColor: '#fdf6e3',
+        terminalBackgroundColor: '#002b36',
       },
     });
     expect(organize.statusCode).toBe(200);
@@ -175,6 +178,9 @@ describe('saved host profile routes', () => {
       metadata: {
         group: 'Network lab',
         color: '#22c55e',
+        terminalScheme: 'solarized-dark',
+        terminalFontColor: '#fdf6e3',
+        terminalBackgroundColor: '#002b36',
       },
     });
 

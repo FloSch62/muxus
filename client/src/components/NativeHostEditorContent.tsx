@@ -14,6 +14,7 @@ import LanguageOutlinedIcon from '@mui/icons-material/LanguageOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
 import UsbOutlinedIcon from '@mui/icons-material/UsbOutlined';
+import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import type { SavedHostProfile, SerialPortInfo, SerialProfile } from '@muxus/shared';
 import { useDeleteHostProfile, useSaveHostProfile, useUpdateHostProfileMetadata } from '../api/profiles.js';
 import { useSaveSessionLoggingPolicy } from '../api/session-history.js';
@@ -31,6 +32,7 @@ import { HostColorPicker } from './HostColorPicker.js';
 import { EditorShell, type EditorSectionDef } from './host-editor/EditorShell.js';
 import { HighlightingSection } from './host-editor/HighlightingSection.js';
 import { LoggingSection } from './host-editor/LoggingSection.js';
+import { TerminalAppearanceSection } from './host-editor/TerminalAppearanceSection.js';
 import {
   nativeDraftMetadataPatch,
   nativeDraftProblem,
@@ -44,7 +46,7 @@ const COMMON_BAUD_RATES = [
 ];
 
 type NativeEditorState = Exclude<HostEditorState, false>;
-type NativeSection = 'general' | 'line' | 'logging' | 'highlighting';
+type NativeSection = 'general' | 'appearance' | 'line' | 'logging' | 'highlighting';
 
 /**
  * Telnet/serial editor rendered into the shared host-editor shell, so the
@@ -136,6 +138,16 @@ export function NativeHostEditorContent({
       label: 'General',
       icon: kind === 'telnet' ? <LanguageOutlinedIcon fontSize="small" /> : <UsbOutlinedIcon fontSize="small" />,
     },
+    {
+      value: 'appearance',
+      label: 'Terminal appearance',
+      icon: <PaletteOutlinedIcon fontSize="small" />,
+      count: [
+        draft.terminalScheme,
+        draft.terminalFontColor,
+        draft.terminalBackgroundColor,
+      ].filter(Boolean).length || undefined,
+    },
     ...(kind === 'serial'
       ? [{ value: 'line' as const, label: 'Line settings', icon: <TuneOutlinedIcon fontSize="small" /> }]
       : []),
@@ -191,6 +203,9 @@ export function NativeHostEditorContent({
         <GeneralSection kind={kind} draft={draft} set={set} />
       )}
       {activeSection === 'line' && <LineSettingsSection draft={draft} set={set} />}
+      {activeSection === 'appearance' && (
+        <TerminalAppearanceSection value={draft} onChange={set} />
+      )}
       {activeSection === 'logging' && (
         <LoggingSection
           value={draft.sessionLogging}

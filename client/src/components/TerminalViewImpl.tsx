@@ -53,6 +53,8 @@ import {
 } from '../state/prefs.js';
 import { useTabsStore, type SessionTab } from '../state/tabs.js';
 import {
+  terminalColorForHost,
+  terminalSchemeIdForHost,
   TERMINAL_MINIMUM_CONTRAST_RATIO,
   terminalScheme,
   themeWithColorOverrides,
@@ -270,18 +272,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const cursorBlink = usePrefsStore((s) => s.cursorBlink);
   const cursorStyle = usePrefsStore((s) => s.cursorStyle);
   const scrollback = usePrefsStore((s) => s.scrollback);
-  const schemeId = usePrefsStore((prefs) =>
+  const applicationSchemeId = usePrefsStore((prefs) =>
     terminalSchemeIdForMode(prefs, theme.palette.mode),
   );
   const fontColor = usePrefsStore((s) => s.fontColor);
   const backgroundColor = usePrefsStore((s) => s.backgroundColor);
   const globalKeywordHighlights = usePrefsStore((s) => s.keywordHighlights);
   const keywordHighlightProfiles = usePrefsStore((s) => s.keywordHighlightProfiles);
-  const scheme = terminalScheme(schemeId);
-  const terminalTheme = useMemo(
-    () => themeWithColorOverrides(scheme.theme, fontColor, backgroundColor),
-    [scheme, fontColor, backgroundColor],
-  );
   const { data: sshConfig } = useSshConfig(tab.profile.kind === 'ssh' && tab.profile.useConfig !== false);
   const savedProfileId =
     tab.profile.kind === 'ssh' ||
@@ -290,16 +287,37 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       ? tab.profile.profileId
       : undefined;
   const { data: savedHosts } = useSavedHostProfiles(!!savedProfileId);
-  const hostKeywordHighlights = useMemo(() => {
+  const hostMetadata = useMemo(() => {
     if (savedProfileId) {
       return savedHosts?.profiles.find((profile) => profile.id === savedProfileId)
-        ?.metadata.keywordHighlights;
+        ?.metadata;
     }
     if (tab.profile.kind !== 'ssh' || tab.profile.useConfig === false) return undefined;
     const target = tab.profile.target;
-    return sshConfig?.hosts.find((host) => host.aliases.includes(target))?.metadata
-      ?.keywordHighlights;
+    return sshConfig?.hosts.find((host) => host.aliases.includes(target))?.metadata;
   }, [sshConfig, savedHosts, savedProfileId, tab.profile]);
+  const schemeId = terminalSchemeIdForHost(
+    applicationSchemeId,
+    hostMetadata?.terminalScheme,
+  );
+  const scheme = terminalScheme(schemeId);
+  const effectiveFontColor = terminalColorForHost(
+    fontColor,
+    hostMetadata?.terminalFontColor,
+  );
+  const effectiveBackgroundColor = terminalColorForHost(
+    backgroundColor,
+    hostMetadata?.terminalBackgroundColor,
+  );
+  const terminalTheme = useMemo(
+    () => themeWithColorOverrides(
+      scheme.theme,
+      effectiveFontColor,
+      effectiveBackgroundColor,
+    ),
+    [scheme, effectiveFontColor, effectiveBackgroundColor],
+  );
+  const hostKeywordHighlights = hostMetadata?.keywordHighlights;
   const keywordHighlights = useMemo(
     () =>
       resolveKeywordHighlights(
@@ -446,11 +464,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       allowProposedApi: true,
       // ImageAddon uses a bottom layer for negative-z Kitty placements.
       allowTransparency: true,
-      theme: themeWithColorOverrides(
-        terminalScheme(terminalSchemeIdForMode(prefs, theme.palette.mode)).theme,
-        prefs.fontColor,
-        prefs.backgroundColor,
-      ),
+      theme: terminalTheme,
       // ANSI uses the same palette entries for foregrounds and backgrounds,
       // so combinations chosen by remote tools are not always legible in
       // every theme. Let xterm adjust only the rendered foreground as needed.

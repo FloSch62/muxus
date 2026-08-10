@@ -391,6 +391,18 @@ const MIGRATIONS = [
         CHECK(console_compatibility IN (0, 1));
     `,
   },
+  {
+    version: 21,
+    name: 'host-terminal-appearance',
+    sql: `
+      ALTER TABLE connection_profiles
+        ADD COLUMN terminal_scheme TEXT;
+      ALTER TABLE connection_profiles
+        ADD COLUMN terminal_font_color TEXT;
+      ALTER TABLE connection_profiles
+        ADD COLUMN terminal_background_color TEXT;
+    `,
+  },
 ] as const;
 
 function migrateDraftPasswordVault(db: DatabaseSync): void {
@@ -469,6 +481,9 @@ export interface OpenSshMetadata {
   group?: string;
   color?: string;
   icon?: string;
+  terminalScheme?: string;
+  terminalFontColor?: string;
+  terminalBackgroundColor?: string;
   keywordHighlights?: HostKeywordHighlightConfig;
   disableSftp?: boolean;
   consoleCompatibility?: boolean;
@@ -652,6 +667,9 @@ export class MuxusDatabase {
         profiles.sort_order,
         profiles.color,
         profiles.icon,
+        profiles.terminal_scheme,
+        profiles.terminal_font_color,
+        profiles.terminal_background_color,
         profiles.keyword_highlights_json,
         profiles.disable_sftp,
         profiles.console_compatibility,
@@ -755,6 +773,9 @@ export class MuxusDatabase {
             group_id = ?,
             color = ?,
             icon = ?,
+            terminal_scheme = ?,
+            terminal_font_color = ?,
+            terminal_background_color = ?,
             keyword_highlights_json = ?,
             disable_sftp = ?,
             console_compatibility = ?,
@@ -766,6 +787,15 @@ export class MuxusDatabase {
         groupId,
         patch.color === undefined ? nullableString(current.color) : patch.color,
         patch.icon === undefined ? nullableString(current.icon) : patch.icon,
+        patch.terminalScheme === undefined
+          ? nullableString(current.terminal_scheme)
+          : patch.terminalScheme,
+        patch.terminalFontColor === undefined
+          ? nullableString(current.terminal_font_color)
+          : patch.terminalFontColor,
+        patch.terminalBackgroundColor === undefined
+          ? nullableString(current.terminal_background_color)
+          : patch.terminalBackgroundColor,
         patch.keywordHighlights === undefined
           ? nullableString(current.keyword_highlights_json)
           : patch.keywordHighlights === null
@@ -1232,6 +1262,9 @@ export class MuxusDatabase {
             group_id = ?,
             color = ?,
             icon = ?,
+            terminal_scheme = ?,
+            terminal_font_color = ?,
+            terminal_background_color = ?,
             keyword_highlights_json = ?,
             disable_sftp = ?,
             console_compatibility = ?,
@@ -1243,6 +1276,15 @@ export class MuxusDatabase {
         groupId,
         patch.color === undefined ? nullableString(current.color) : patch.color,
         patch.icon === undefined ? nullableString(current.icon) : patch.icon,
+        patch.terminalScheme === undefined
+          ? nullableString(current.terminal_scheme)
+          : patch.terminalScheme,
+        patch.terminalFontColor === undefined
+          ? nullableString(current.terminal_font_color)
+          : patch.terminalFontColor,
+        patch.terminalBackgroundColor === undefined
+          ? nullableString(current.terminal_background_color)
+          : patch.terminalBackgroundColor,
         patch.keywordHighlights === undefined
           ? nullableString(current.keyword_highlights_json)
           : patch.keywordHighlights === null
@@ -2049,6 +2091,9 @@ function metadataFromRow(row: SqlRow): OpenSshMetadata {
     group: optionalString(row.group_name),
     color: optionalString(row.color),
     icon: optionalString(row.icon),
+    terminalScheme: optionalString(row.terminal_scheme),
+    terminalFontColor: optionalString(row.terminal_font_color),
+    terminalBackgroundColor: optionalString(row.terminal_background_color),
     keywordHighlights: keywordHighlightsFromJson(row.keyword_highlights_json),
     ...(Number(row.disable_sftp) === 1 ? { disableSftp: true } : {}),
     ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),
@@ -2072,6 +2117,9 @@ function savedHostFromRow(row: SqlRow): SavedHostProfile {
       group: optionalString(row.group_name),
       color: optionalString(row.color),
       icon: optionalString(row.icon),
+      terminalScheme: optionalString(row.terminal_scheme),
+      terminalFontColor: optionalString(row.terminal_font_color),
+      terminalBackgroundColor: optionalString(row.terminal_background_color),
       keywordHighlights: keywordHighlightsFromJson(row.keyword_highlights_json),
       ...(Number(row.disable_sftp) === 1 ? { disableSftp: true } : {}),
       ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),

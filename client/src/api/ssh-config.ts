@@ -71,6 +71,15 @@ export function useUpdateSshMetadata(onSuccess?: (metadata: OpenSshProfileMetada
               ...(patch.group !== undefined ? { group: patch.group ?? undefined } : {}),
               ...(patch.color !== undefined ? { color: patch.color ?? undefined } : {}),
               ...(patch.icon !== undefined ? { icon: patch.icon ?? undefined } : {}),
+              ...(patch.terminalScheme !== undefined
+                ? { terminalScheme: patch.terminalScheme ?? undefined }
+                : {}),
+              ...(patch.terminalFontColor !== undefined
+                ? { terminalFontColor: patch.terminalFontColor ?? undefined }
+                : {}),
+              ...(patch.terminalBackgroundColor !== undefined
+                ? { terminalBackgroundColor: patch.terminalBackgroundColor ?? undefined }
+                : {}),
               ...(patch.keywordHighlights !== undefined
                 ? { keywordHighlights: patch.keywordHighlights ?? undefined }
                 : {}),
