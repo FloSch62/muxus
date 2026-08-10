@@ -7,8 +7,11 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
+import { terminalFontStack, usePrefsStore } from '../state/prefs.js';
 import { pasteLineNumberWindow } from '../terminal/paste-line-numbers.js';
 import { pasteLineCount } from '../terminal/paste-safety.js';
+
+const EDITOR_PADDING_Y_PX = 8.5;
 
 function updateLineNumberGutter(
   gutter: HTMLPreElement | null,
@@ -22,12 +25,9 @@ function updateLineNumberGutter(
   gutter.style.transform = `translateY(${-window.offsetPx}px)`;
 }
 
-function measureEditorLineHeight(textArea: HTMLTextAreaElement, lineCount: number): number {
-  if (lineCount > 1 && textArea.scrollHeight > textArea.clientHeight) {
-    return textArea.scrollHeight / lineCount;
-  }
+function measureEditorLineHeight(textArea: HTMLTextAreaElement, fallback: number): number {
   const measured = Number.parseFloat(getComputedStyle(textArea).lineHeight);
-  return Number.isFinite(measured) && measured > 0 ? measured : 18;
+  return Number.isFinite(measured) && measured > 0 ? measured : fallback;
 }
 
 export function PasteConfirmDialog({
@@ -39,20 +39,27 @@ export function PasteConfirmDialog({
   onCancel: () => void;
   onConfirm: (text: string) => void;
 }) {
+  const monoFontSize = usePrefsStore((state) => state.monoFontSize);
+  const fontFamily = usePrefsStore((state) => state.fontFamily);
+  const lineHeight = usePrefsStore((state) => state.lineHeight);
   const [text, setText] = useState(initialText);
   const pasteButtonRef = useRef<HTMLButtonElement>(null);
   const lineNumbersRef = useRef<HTMLPreElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
-  const lineHeightRef = useRef(18);
+  const editorFontFamily = terminalFontStack(fontFamily);
+  const editorLineHeightPx = monoFontSize * lineHeight;
+  const lineHeightRef = useRef(editorLineHeightPx);
   const lineCount = text.length === 0 ? 0 : pasteLineCount(text);
   const visibleLineCount = Math.max(1, lineCount);
   const initialLineNumbers = pasteLineNumberWindow(visibleLineCount, 0).labels;
-  const gutterWidth = 30 + String(visibleLineCount).length * 8;
+  const gutterWidth = Math.ceil(
+    30 + String(visibleLineCount).length * monoFontSize * 0.65,
+  );
 
   useLayoutEffect(() => {
     const textArea = textAreaRef.current;
     if (textArea) {
-      lineHeightRef.current = measureEditorLineHeight(textArea, visibleLineCount);
+      lineHeightRef.current = measureEditorLineHeight(textArea, editorLineHeightPx);
     }
     updateLineNumberGutter(
       lineNumbersRef.current,
@@ -60,7 +67,7 @@ export function PasteConfirmDialog({
       textArea?.scrollTop ?? 0,
       lineHeightRef.current,
     );
-  }, [visibleLineCount]);
+  }, [editorFontFamily, editorLineHeightPx, monoFontSize, visibleLineCount]);
 
   return (
     <Dialog
@@ -104,12 +111,13 @@ export function PasteConfirmDialog({
                 top: 0,
                 right: 0,
                 m: 0,
-                pt: '16.5px',
+                // The gutter itself starts inside the one-pixel input outline.
+                pt: `${EDITOR_PADDING_Y_PX - 1}px`,
                 pr: 1.25,
                 color: 'text.disabled',
-                fontFamily: '"JetBrains Mono", monospace',
-                fontSize: 12,
-                lineHeight: 1.5,
+                fontFamily: editorFontFamily,
+                fontSize: monoFontSize,
+                lineHeight,
                 textAlign: 'right',
                 userSelect: 'none',
                 willChange: 'transform',
@@ -136,10 +144,15 @@ export function PasteConfirmDialog({
                 'aria-label': 'Content to paste',
                 spellCheck: false,
                 wrap: 'off',
+                style: {
+                  fontFamily: editorFontFamily,
+                  fontSize: monoFontSize,
+                  lineHeight,
+                },
                 onScroll: (event: UIEvent<HTMLTextAreaElement>) => {
                   lineHeightRef.current = measureEditorLineHeight(
                     event.currentTarget,
-                    visibleLineCount,
+                    editorLineHeightPx,
                   );
                   updateLineNumberGutter(
                     lineNumbersRef.current,
@@ -153,11 +166,7 @@ export function PasteConfirmDialog({
             sx={{
               '& .MuiOutlinedInput-root': {
                 pl: `${gutterWidth + 12}px`,
-              },
-              '& .MuiInputBase-inputMultiline': {
-                fontFamily: '"JetBrains Mono", monospace',
-                fontSize: 12,
-                lineHeight: 1.5,
+                py: `${EDITOR_PADDING_Y_PX}px`,
               },
             }}
           />
