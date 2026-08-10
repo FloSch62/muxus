@@ -113,7 +113,7 @@ export interface ShellIntegration {
 // time it draws a prompt. Prefixing the user's prompt with this invisible OSC
 // property gives Windows local terminals the same live cwd reports as the
 // bash/zsh shims without replacing the visible prompt.
-const CMD_CWD_PROMPT_PREFIX = '$E]133;P;Cwd=$P$E' + '\\';
+const CMD_CWD_PROMPT_PREFIX = '$E]133;P;CwdRaw=$P$E' + '\\';
 
 /** Spawn arguments and env that switch integration on for a given shell.
  *  Unrecognized shells spawn untouched (fish emits OSC 133 on its own). */

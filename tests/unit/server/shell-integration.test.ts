@@ -68,12 +68,12 @@ describe('shellIntegration', () => {
     );
 
     expect(result.args).toEqual([]);
-    expect(result.env).toEqual({ PROMPT: String.raw`$E]133;P;Cwd=$P$E\$S$P$G` });
+    expect(result.env).toEqual({ PROMPT: String.raw`$E]133;P;CwdRaw=$P$E\$S$P$G` });
   });
 
   it('uses the standard visible cmd prompt when none was configured', () => {
     expect(shellIntegration('cmd.exe', {}, null, 'win32').env).toEqual({
-      PROMPT: String.raw`$E]133;P;Cwd=$P$E\$P$G`,
+      PROMPT: String.raw`$E]133;P;CwdRaw=$P$E\$P$G`,
     });
   });
 

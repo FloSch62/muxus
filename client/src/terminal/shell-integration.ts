@@ -21,6 +21,7 @@ export interface MarkerHost {
 
 const MAX_TERMINAL_CWD_LENGTH = 4096;
 const CWD_PROPERTY_PREFIX = 'P;Cwd=';
+const RAW_WINDOWS_CWD_PROPERTY_PREFIX = 'P;CwdRaw=';
 
 /** Decode the escaping used by OSC 133/633 property values. */
 function decodePropertyValue(value: string): string | undefined {
@@ -64,13 +65,19 @@ export class CwdTracker {
   constructor(private readonly onChange: (cwd: string) => void) {}
 
   handleProperty(data: string): boolean {
-    if (!data.startsWith(CWD_PROPERTY_PREFIX)) return false;
-    const value = data.slice(CWD_PROPERTY_PREFIX.length);
-    // cmd.exe's $P prompt token supplies a native path but cannot escape its
-    // backslashes according to the OSC 133 property convention. It is still
-    // unambiguous at the drive-letter/UNC root, so preserve it as reported.
-    this.report(windowsTerminalCwd(value) ? value : decodePropertyValue(value));
-    return true;
+    if (data.startsWith(CWD_PROPERTY_PREFIX)) {
+      this.report(decodePropertyValue(data.slice(CWD_PROPERTY_PREFIX.length)));
+      return true;
+    }
+    if (data.startsWith(RAW_WINDOWS_CWD_PROPERTY_PREFIX)) {
+      const value = data.slice(RAW_WINDOWS_CWD_PROPERTY_PREFIX.length);
+      // cmd.exe's $P prompt token cannot apply OSC property escaping. Keep its
+      // internal property distinct so standards-compliant Cwd values above
+      // always decode doubled backslashes and \xNN escapes.
+      this.report(windowsTerminalCwd(value) ? value : undefined);
+      return true;
+    }
+    return false;
   }
 
   handleFileUri(data: string): boolean {
