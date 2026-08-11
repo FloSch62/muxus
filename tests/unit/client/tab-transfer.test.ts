@@ -33,6 +33,11 @@ class TestDataTransfer {
     this.values.set(type, value);
   }
 
+  clearData(type?: string): void {
+    if (type === undefined) this.values.clear();
+    else this.values.delete(type);
+  }
+
   getData(type: string): string {
     return this.values.get(type) ?? '';
   }
@@ -140,13 +145,15 @@ describe('cross-window tab transfer', () => {
     vi.resetModules();
     const transfer = await import('../../../client/src/tab-drag.js');
     const data = new TestDataTransfer();
+    data.setData('text/plain', 'Router');
 
     transfer.writeTabTransfer(data as never, 'opaque-token');
 
     expect(transfer.hasTabTransfer(data as never)).toBe(true);
     expect(transfer.readTabTransfer(data as never)).toBe('opaque-token');
     expect(data.getData(transfer.TAB_TRANSFER_MIME)).toBe('opaque-token');
-    expect(data.getData('text/plain')).toBe('muxus-tab:opaque-token');
+    expect(data.getData('text/plain')).toBe('');
+    expect(data.types).toEqual([transfer.TAB_TRANSFER_MIME]);
   });
 
   it('detaches rejected drops only when they end outside the source window', async () => {

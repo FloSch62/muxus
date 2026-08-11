@@ -1,5 +1,4 @@
 export const TAB_TRANSFER_MIME = 'application/x-muxus-tab';
-const TEXT_PREFIX = 'muxus-tab:';
 
 let active: { tabId: string; transferId: string } | undefined;
 
@@ -29,8 +28,10 @@ export function endTabDrag(transferId: string): void {
 }
 
 export function writeTabTransfer(dataTransfer: DataTransfer, transferId: string): void {
+  // A text/plain payload is exported by the OS as a "Dragged Text" file when
+  // the pointer leaves the window. Keep tab drags private to Muxus instead.
+  dataTransfer.clearData();
   dataTransfer.setData(TAB_TRANSFER_MIME, transferId);
-  dataTransfer.setData('text/plain', `${TEXT_PREFIX}${transferId}`);
 }
 
 export function hasTabTransfer(dataTransfer: DataTransfer): boolean {
@@ -41,9 +42,7 @@ export function hasTabTransfer(dataTransfer: DataTransfer): boolean {
 
 export function readTabTransfer(dataTransfer: DataTransfer): string | undefined {
   const custom = dataTransfer.getData(TAB_TRANSFER_MIME);
-  if (custom) return custom;
-  const text = dataTransfer.getData('text/plain');
-  return text.startsWith(TEXT_PREFIX) ? text.slice(TEXT_PREFIX.length) : undefined;
+  return custom || undefined;
 }
 
 interface WindowScreenBounds {
