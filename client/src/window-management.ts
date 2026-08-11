@@ -38,6 +38,16 @@ export function isAppWindowLaunch(value: unknown): value is AppWindowLaunch {
     const profile = launch.profile as Record<string, unknown>;
     return isSessionProfile(profile);
   }
+  if (launch.kind === 'tab-transfer') {
+    return (
+      typeof launch.transferId === 'string' &&
+      launch.transferId.length > 0 &&
+      launch.transferId.length <= 200 &&
+      typeof launch.title === 'string' &&
+      launch.title.length > 0 &&
+      launch.title.length <= 500
+    );
+  }
   return (
     launch.kind === 'sftp' &&
     typeof launch.connId === 'string' &&

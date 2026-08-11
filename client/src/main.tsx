@@ -18,6 +18,12 @@ if (windowLaunch?.kind === 'session') {
   const id = useTabsStore.getState().open(windowLaunch.profile, windowLaunch.title);
   if (windowLaunch.color) useTabsStore.getState().update(id, { color: windowLaunch.color });
 }
+if (windowLaunch?.kind === 'tab-transfer') {
+  const paneId = useTabsStore.getState().activePaneId;
+  void import('./tab-transfer.js').then((module) =>
+    module.receiveTabTransfer(windowLaunch.transferId, paneId),
+  );
+}
 if (windowLaunch?.kind !== 'sftp') installShortcuts();
 
 const queryClient = new QueryClient({

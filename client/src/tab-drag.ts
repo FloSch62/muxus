@@ -8,9 +8,14 @@ function randomId(): string {
     `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
+/** Create the opaque identity shared by a source and destination renderer. */
+export function createTabTransferId(): string {
+  return randomId();
+}
+
 /** Start the synchronous portion of an HTML drag; cross-window setup stays lazy. */
 export function beginTabDrag(tabId: string): string {
-  const transferId = randomId();
+  const transferId = createTabTransferId();
   active = { tabId, transferId };
   return transferId;
 }
@@ -39,4 +44,27 @@ export function readTabTransfer(dataTransfer: DataTransfer): string | undefined 
   if (custom) return custom;
   const text = dataTransfer.getData('text/plain');
   return text.startsWith(TEXT_PREFIX) ? text.slice(TEXT_PREFIX.length) : undefined;
+}
+
+interface WindowScreenBounds {
+  screenX: number;
+  screenY: number;
+  outerWidth: number;
+  outerHeight: number;
+}
+
+/** A rejected drop is a detach only when the pointer actually left this window. */
+export function shouldDetachTabDrag(
+  event: Pick<DragEvent, 'dataTransfer' | 'screenX' | 'screenY'>,
+  bounds: WindowScreenBounds = window,
+): boolean {
+  if (event.dataTransfer?.dropEffect !== 'none') return false;
+  const right = bounds.screenX + bounds.outerWidth;
+  const bottom = bounds.screenY + bounds.outerHeight;
+  return (
+    event.screenX < bounds.screenX ||
+    event.screenX >= right ||
+    event.screenY < bounds.screenY ||
+    event.screenY >= bottom
+  );
 }

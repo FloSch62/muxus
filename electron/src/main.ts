@@ -10,6 +10,7 @@ import {
   ipcMain,
   Menu,
   nativeTheme,
+  screen,
   shell,
   type MenuItemConstructorOptions,
 } from 'electron';
@@ -32,6 +33,7 @@ import { importLoginShellEnvironment } from './login-shell-environment.js';
 import { initMainLog, installCrashCapture, mainLog, mainLogPath } from './main-log.js';
 import { readLocalMobaXtermSessions } from './mobaxterm.js';
 import { workspaceOwnershipUpdate } from './workspace-window-state.js';
+import { pointInsideAnyWindow } from './tab-detach.js';
 
 // Name first: userData (and with it the log location) derives from it.
 app.setName('Muxus');
@@ -477,6 +479,22 @@ ipcMain.on('muxus:open-window', (event, value: unknown) => {
   createWindow(appUrl, launch);
 });
 
+ipcMain.handle('muxus:detach-tab', (event, value: unknown): boolean => {
+  if (!isManagedWindowSender(event) || !appUrl) return false;
+  const launch = parseWindowLaunch(value);
+  if (launch?.kind !== 'tab-transfer') return false;
+  const cursor = screen.getCursorScreenPoint();
+  const bounds = [...managedWindows]
+    .filter(
+      (candidate) =>
+        !candidate.isDestroyed() && candidate.isVisible() && !candidate.isMinimized(),
+    )
+    .map((candidate) => candidate.getBounds());
+  if (pointInsideAnyWindow(cursor, bounds)) return false;
+  createWindow(appUrl, launch);
+  return true;
+});
+
 ipcMain.on(
   'muxus:active-workspace',
   (event, value: unknown, title: unknown, clearLaunch: unknown) => {
@@ -653,6 +671,19 @@ function parseWindowLaunch(value: unknown): AppWindowLaunch | undefined {
         (profile.flowControl === undefined ||
           ['none', 'hardware', 'software'].includes(profile.flowControl as string)));
     if (!valid) return undefined;
+    return value as AppWindowLaunch;
+  }
+  if (launch.kind === 'tab-transfer') {
+    if (
+      typeof launch.transferId !== 'string' ||
+      launch.transferId.length === 0 ||
+      launch.transferId.length > 200 ||
+      typeof launch.title !== 'string' ||
+      launch.title.length === 0 ||
+      launch.title.length > 500
+    ) {
+      return undefined;
+    }
     return value as AppWindowLaunch;
   }
   if (

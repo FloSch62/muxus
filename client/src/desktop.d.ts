@@ -33,6 +33,10 @@ declare global {
       listLocalFontFamilies(): Promise<string[] | undefined>;
       /** Open a secondary native application window. */
       openWindow(launch: AppWindowLaunch): void;
+      /** Open a tab-transfer window when the native cursor is outside every app window. */
+      detachTab(
+        launch: Extract<AppWindowLaunch, { kind: 'tab-transfer' }>,
+      ): Promise<boolean>;
       /** Register the saved workspace currently owned by this native window. */
       setActiveWorkspace(
         workspaceId?: string,

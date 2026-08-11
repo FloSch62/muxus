@@ -284,6 +284,16 @@ export function tabsInOrder(
   return ordered;
 }
 
+/** Browser-style bulk close target: unpinned tabs after one tab in its strip. */
+export function closableTabIdsToRight(
+  paneTabs: readonly TerminalTab[],
+  tabId: string,
+): string[] {
+  const index = paneTabs.findIndex((tab) => tab.id === tabId);
+  if (index < 0) return [];
+  return paneTabs.slice(index + 1).filter((tab) => !tab.pinned).map((tab) => tab.id);
+}
+
 /** Insert a tab at an exact target, while keeping each pane's pinned group first. */
 export function insertIntoPane(
   tabs: readonly TerminalTab[],

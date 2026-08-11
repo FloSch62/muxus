@@ -1,6 +1,7 @@
 import type {
   ManagedHostRef,
   SavedHostProfile,
+  SessionProfile,
   SshHostEntry,
   SshProfile,
 } from '@muxus/shared';
@@ -22,6 +23,22 @@ import {
 export type ManagedHost =
   | { kind: 'ssh'; entry: SshHostEntry }
   | { kind: 'profile'; entry: SavedHostProfile };
+
+/** Resolve the persisted host which produced a live tab, when one still exists. */
+export function editableManagedHostForProfile(
+  profile: SessionProfile,
+  sshHosts: readonly SshHostEntry[],
+  savedProfiles: readonly SavedHostProfile[],
+): ManagedHost | undefined {
+  if (profile.kind === 'local') return undefined;
+  if (profile.profileId) {
+    const entry = savedProfiles.find((candidate) => candidate.id === profile.profileId);
+    return entry ? { kind: 'profile', entry } : undefined;
+  }
+  if (profile.kind !== 'ssh' || profile.useConfig === false) return undefined;
+  const entry = sshHosts.find((candidate) => candidate.aliases.includes(profile.target));
+  return entry ? { kind: 'ssh', entry } : undefined;
+}
 
 export interface ManagedHostGroup
   extends Omit<HostGroup, 'hosts'> {

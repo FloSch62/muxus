@@ -19,6 +19,7 @@ import { showToast } from './state/toast.js';
 import { confirmDiscardRemoteEditors } from './editor/remote-editor-registry.js';
 import { findPane, visibleTabIds } from './state/workspace-layout.js';
 import { openAppWindow } from './window-management.js';
+import { createTabTransferId, shouldDetachTabDrag } from './tab-drag.js';
 
 /**
  * How long a launch swallows an identical repeat. A tab appears instantly but
@@ -260,6 +261,38 @@ export function openTabInNewWindow(tabId: string): void {
     title: tab.title,
     ...(tab.color ? { color: tab.color } : {}),
   });
+}
+
+/** Open a new window which claims the existing tab instead of redialing it. */
+export function moveTabToNewWindow(tabId: string): void {
+  const tab = useTabsStore.getState().tabs.find((candidate) => candidate.id === tabId);
+  if (!tab) return;
+  const transferId = createTabTransferId();
+  void import('./tab-transfer.js').then((module) =>
+    module.registerTabTransferSource(transferId, tabId),
+  );
+  // Keep the native/web window open inside the original user gesture. The
+  // destination retries its claim while the lazily loaded source registers.
+  openTabTransferInNewWindow(transferId, tab.title);
+}
+
+/** Finish a drag outside this renderer by opening a destination for its token. */
+export function openTabTransferInNewWindow(transferId: string, title: string): void {
+  openAppWindow({ kind: 'tab-transfer', transferId, title });
+}
+
+/** Detach a drag using native cursor bounds on desktop and DOM bounds on the web. */
+export function detachTabToNewWindow(
+  transferId: string,
+  title: string,
+  event: Pick<DragEvent, 'dataTransfer' | 'screenX' | 'screenY'>,
+): void {
+  const launch = { kind: 'tab-transfer' as const, transferId, title };
+  if (window.muxusDesktop) {
+    void window.muxusDesktop.detachTab(launch);
+    return;
+  }
+  if (shouldDetachTabDrag(event)) openAppWindow(launch);
 }
 
 /** Open a listed host as a fresh SSH session in a separate app window. */

@@ -106,7 +106,8 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const workspacesOpen = useUiStore((s) => s.workspacesOpen);
   const dialogOpen = useDialogStore((s) => s.queue.length > 0);
   const toastOpen = useToastStore((s) => !!s.toast);
-  const [startupReady, setStartupReady] = useState(launch?.kind === 'session');
+  const standaloneLaunch = launch?.kind === 'session' || launch?.kind === 'tab-transfer';
+  const [startupReady, setStartupReady] = useState(standaloneLaunch);
   const [newWorkspaceId] = useState(() =>
     launch?.kind === 'workspace' && !launch.workspaceId
       ? (globalThis.crypto?.randomUUID?.() ??
@@ -120,7 +121,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const effectiveMode = themeMode === 'os' ? osTheme : themeMode;
   const theme = useMemo(() => buildTheme(effectiveMode), [effectiveMode]);
   const initialWorkspace: WorkspaceInitialSelection | undefined =
-    launch?.kind === 'session'
+    standaloneLaunch
       ? { kind: 'blank' }
       : launch?.kind === 'workspace'
         ? launch.workspaceId
