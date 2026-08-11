@@ -1368,6 +1368,29 @@ export class MuxusDatabase {
     return this.workspace(id)!;
   }
 
+  saveWorkspaceWithDefaultName(input: {
+    layout: unknown;
+    multiExecGroups?: WorkspaceMultiExecGroup[];
+  }): WorkspaceRecord {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const names = new Set(
+        this.db
+          .prepare('SELECT name FROM workspaces')
+          .all()
+          .map((row) => String(row.name).trim().toLocaleLowerCase()),
+      );
+      let number = 1;
+      while (names.has(`workspace ${number}`)) number++;
+      const workspace = this.saveWorkspace({ ...input, name: `Workspace ${number}` });
+      this.db.exec('COMMIT');
+      return workspace;
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
   workspace(id: string): WorkspaceRecord | undefined {
     const row = this.db
       .prepare(`

@@ -41,6 +41,7 @@ import WorkspacesOutlinedIcon from '@mui/icons-material/WorkspacesOutlined';
 import {
   deleteWorkspace,
   focusOpenWorkspace,
+  nextWorkspaceName,
   openWorkspace,
   refreshWorkspaceCatalog,
   renameWorkspace,
@@ -77,13 +78,6 @@ interface WorkspaceMenu {
 function activityLabel(workspace: WorkspaceSummary): string {
   const opened = workspace.lastOpenedAt;
   return `${opened ? 'Opened' : 'Updated'} ${formatTimestamp(opened ?? workspace.updatedAt)}`;
-}
-
-function nextWorkspaceName(workspaces: readonly WorkspaceSummary[]): string {
-  const names = new Set(workspaces.map((workspace) => workspace.name.trim().toLocaleLowerCase()));
-  let number = 1;
-  while (names.has(`workspace ${number}`)) number++;
-  return `Workspace ${number}`;
 }
 
 export function WorkspaceDialog() {
