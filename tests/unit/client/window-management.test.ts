@@ -54,6 +54,16 @@ describe('secondary window launch payloads', () => {
     expect(decodeAppWindowLaunch(encodeAppWindowLaunch(launch))).toEqual(launch);
   });
 
+  it('round-trips a live-tab transfer with an empty title', () => {
+    const launch: AppWindowLaunch = {
+      kind: 'tab-transfer',
+      transferId: 'opaque-transfer-token',
+      title: '',
+    };
+
+    expect(decodeAppWindowLaunch(encodeAppWindowLaunch(launch))).toEqual(launch);
+  });
+
   it('accepts cross-platform Telnet and serial session launches', () => {
     const telnet: AppWindowLaunch = {
       kind: 'session',

@@ -44,7 +44,6 @@ export function isAppWindowLaunch(value: unknown): value is AppWindowLaunch {
       launch.transferId.length > 0 &&
       launch.transferId.length <= 200 &&
       typeof launch.title === 'string' &&
-      launch.title.length > 0 &&
       launch.title.length <= 500
     );
   }
