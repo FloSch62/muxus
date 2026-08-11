@@ -20,7 +20,6 @@ import {
 
 const SAVE_DELAY_MS = 350;
 const RETRY_DELAY_MS = 2_000;
-const DEFAULT_WORKSPACE_NAME = 'Workspace 1';
 const WORKSPACE_UNLOAD_PRIORITY = 100;
 
 interface WorkspaceSnapshot {
@@ -66,6 +65,13 @@ function mergeSummary(
 ): WorkspaceSummary[] {
   const summary = summaryOf(workspace);
   return [summary, ...summaries.filter((candidate) => candidate.id !== workspace.id)];
+}
+
+export function nextWorkspaceName(workspaces: readonly WorkspaceSummary[]): string {
+  const names = new Set(workspaces.map((workspace) => workspace.name.trim().toLocaleLowerCase()));
+  let number = 1;
+  while (names.has(`workspace ${number}`)) number++;
+  return `Workspace ${number}`;
 }
 
 export class WorkspaceRuntime {
@@ -519,13 +525,13 @@ export class WorkspaceRuntime {
     if (!this.pending || this.stopped) return Promise.resolve();
     const snapshot = this.pending;
     this.pending = undefined;
-    const { activeId, activeName } = useWorkspacesStore.getState();
+    const { activeId, activeName, workspaces } = useWorkspacesStore.getState();
     const save = apiFetch<WorkspaceRecord>('/api/workspaces', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         id: activeId,
-        name: activeId ? activeName : DEFAULT_WORKSPACE_NAME,
+        name: activeId ? activeName : nextWorkspaceName(workspaces),
         layout: snapshot.layout,
         multiExecGroups: snapshot.multiExecGroups,
       }),
@@ -619,10 +625,10 @@ export class WorkspaceRuntime {
 
   flushOnUnload(maxBodyBytes = PAGE_KEEPALIVE_BODY_LIMIT_BYTES): number {
     if (!this.pending || this.activeWorkspaceIsLocked()) return 0;
-    const { activeId, activeName } = useWorkspacesStore.getState();
+    const { activeId, activeName, workspaces } = useWorkspacesStore.getState();
     const body = JSON.stringify({
       id: activeId,
-      name: activeId ? activeName : DEFAULT_WORKSPACE_NAME,
+      name: activeId ? activeName : nextWorkspaceName(workspaces),
       layout: this.pending.layout,
       multiExecGroups: this.pending.multiExecGroups,
     });
