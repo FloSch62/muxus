@@ -691,6 +691,15 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
                 usePrefsStore.getState().terminalFileLinkActivation,
                 IS_MAC,
               ),
+            () => {
+              const current = useTabsStore
+                .getState()
+                .tabs.find((candidate) => candidate.id === tab.id);
+              return (
+                current?.profile?.kind === 'local' ||
+                (current?.profile?.kind === 'ssh' && current.sftpAvailable === true)
+              );
+            },
           )
         : undefined;
 
