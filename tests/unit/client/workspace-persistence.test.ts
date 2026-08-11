@@ -120,9 +120,55 @@ describe('workspace persistence', () => {
     await vi.advanceTimersByTimeAsync(400);
 
     expect(created).toMatchObject({ name: 'Workspace 2' });
+    const createRequest = fetchMock.mock.calls.find(
+      ([path, init]) => path === '/api/workspaces' && init?.method === 'PUT',
+    );
+    expect(JSON.parse(createRequest?.[1]?.body as string)).toMatchObject({
+      name: 'Workspace 2',
+      allocateDefaultName: true,
+    });
     expect(useWorkspacesStore.getState()).toMatchObject({
       activeId: 'new-default',
       activeName: 'Workspace 2',
+    });
+
+    runtime.stop();
+  });
+
+  it('requests server-side name allocation when unloading an unsaved window', async () => {
+    const existing: WorkspaceRecord = {
+      id: 'existing-default',
+      name: 'Workspace 1',
+      layout: { version: 1, root: null },
+      multiExecGroups: [],
+      isLocked: false,
+      isStartup: false,
+      createdAt: '2026-08-11T08:00:00Z',
+      updatedAt: '2026-08-11T08:00:00Z',
+    };
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const path =
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = init?.method ?? 'GET';
+      if (path === '/api/workspaces' && method === 'GET') {
+        return json({ workspaces: [summaryOf(existing)] });
+      }
+      if (path === '/api/workspaces' && method === 'PUT') return json(existing);
+      throw new Error(`Unexpected request: ${method} ${path}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const runtime = new WorkspaceRuntime({ kind: 'blank' });
+    await runtime.start();
+    useTabsStore.getState().open({ kind: 'local' }, 'Transferred session');
+
+    expect(runtime.flushOnUnload()).toBeGreaterThan(0);
+    const unloadRequest = fetchMock.mock.calls.find(
+      ([path, init]) => path === '/api/workspaces' && init?.method === 'PUT',
+    );
+    expect(JSON.parse(unloadRequest?.[1]?.body as string)).toMatchObject({
+      name: 'Workspace 2',
+      allocateDefaultName: true,
     });
 
     runtime.stop();

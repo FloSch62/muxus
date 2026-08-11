@@ -532,6 +532,7 @@ export class WorkspaceRuntime {
       body: JSON.stringify({
         id: activeId,
         name: activeId ? activeName : nextWorkspaceName(workspaces),
+        allocateDefaultName: !activeId,
         layout: snapshot.layout,
         multiExecGroups: snapshot.multiExecGroups,
       }),
@@ -629,6 +630,7 @@ export class WorkspaceRuntime {
     const body = JSON.stringify({
       id: activeId,
       name: activeId ? activeName : nextWorkspaceName(workspaces),
+      allocateDefaultName: !activeId,
       layout: this.pending.layout,
       multiExecGroups: this.pending.multiExecGroups,
     });

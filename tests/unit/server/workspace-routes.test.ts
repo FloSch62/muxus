@@ -115,6 +115,36 @@ describe('workspace routes', () => {
     });
   });
 
+  it('allocates implicit default workspace names on the server', async () => {
+    const first = await app.inject({
+      method: 'PUT',
+      url: '/api/workspaces',
+      headers: auth(),
+      payload: { name: 'Workspace 1', layout },
+    });
+    expect(first.statusCode).toBe(200);
+
+    const [second, third] = await Promise.all([
+      app.inject({
+        method: 'PUT',
+        url: '/api/workspaces',
+        headers: auth(),
+        payload: { name: 'Workspace 2', allocateDefaultName: true, layout },
+      }),
+      app.inject({
+        method: 'PUT',
+        url: '/api/workspaces',
+        headers: auth(),
+        payload: { name: 'Workspace 2', allocateDefaultName: true, layout },
+      }),
+    ]);
+
+    expect([second.statusCode, third.statusCode]).toEqual([200, 200]);
+    expect(new Set([second.json().name, third.json().name])).toEqual(
+      new Set(['Workspace 2', 'Workspace 3']),
+    );
+  });
+
   it('renames, opens, and configures a startup workspace', async () => {
     const save = await app.inject({
       method: 'PUT',
