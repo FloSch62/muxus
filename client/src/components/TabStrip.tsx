@@ -30,7 +30,9 @@ import CheckIcon from '@mui/icons-material/Check';
 import CloseFullscreenOutlinedIcon from '@mui/icons-material/CloseFullscreenOutlined';
 import CloseIcon from '@mui/icons-material/Close';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import DriveFileMoveOutlinedIcon from '@mui/icons-material/DriveFileMoveOutlined';
 import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import GridViewOutlinedIcon from '@mui/icons-material/GridViewOutlined';
 import HorizontalSplitOutlinedIcon from '@mui/icons-material/HorizontalSplitOutlined';
@@ -50,6 +52,8 @@ import { useChordLabel } from '../keymap/hints.js';
 import { ChordHint, withChord } from './ChordHint.js';
 import {
   duplicateTab,
+  detachTabToNewWindow,
+  moveTabToNewWindow,
   openEmptyTab,
   openTabInNewWindow,
   requestClosePane,
@@ -57,6 +61,7 @@ import {
   splitActivePane,
 } from '../session-actions.js';
 import {
+  closableTabIdsToRight,
   useTabsStore,
   type PaneDirection,
   type TabStatus,
@@ -66,6 +71,10 @@ import { findPane } from '../state/workspace-layout.js';
 import { layout, statusTextColor } from '../theme.js';
 import { useMultiExecStore } from '../state/multi-exec.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
+import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
+import { editableManagedHostForProfile } from '../managed-hosts.js';
+import { useUiStore } from '../state/ui.js';
+import { loadHostEditorDialog } from '../lazy-features.js';
 import { hostKindIcon } from './host-kind-icon.js';
 import {
   activeTabTransfer,
@@ -158,6 +167,13 @@ export function TabStrip({
   const setPinned = useTabsStore((s) => s.setPinned);
   const moveTabToNewPane = useTabsStore((s) => s.moveTabToNewPane);
   const reconnect = useTabsStore((s) => s.reconnect);
+  const setHostEditor = useUiStore((s) => s.setHostEditor);
+  const { data: sshConfig } = useSshConfig(
+    allTabs.some((tab) => tab.profile?.kind === 'ssh' && tab.profile.useConfig !== false),
+  );
+  const { data: savedHostProfiles } = useSavedHostProfiles(
+    allTabs.some((tab) => tab.profile !== null && tab.profile.kind !== 'local' && !!tab.profile.profileId),
+  );
   const multiExecTargets = useMultiExecStore((s) => s.selectedIds);
   const multiExecSelected = new Set(multiExecTargets);
   const toggleMultiExecTarget = useMultiExecStore((s) => s.toggleTarget);
@@ -312,6 +328,14 @@ export function TabStrip({
 
   const openMenu = (tab: TerminalTab, position: { top: number; left: number }) => setMenu({ position, tab });
   const menuTab = menu ? allTabs.find((t) => t.id === menu.tab.id) : undefined;
+  const editableMenuHost = menuTab?.profile
+    ? editableManagedHostForProfile(
+        menuTab.profile,
+        sshConfig?.hosts ?? [],
+        savedHostProfiles?.profiles ?? [],
+      )
+    : undefined;
+  const menuTabIdsToRight = menuTab ? closableTabIdsToRight(tabs, menuTab.id) : [];
   const menuTabSupportsSftp =
     menuTab?.profile?.kind === 'ssh' &&
     (menuTab.status === 'connecting' || menuTab.status === 'connected') &&
@@ -521,11 +545,13 @@ export function TabStrip({
               setDropIndicator(null);
               dropTab(transferId, tab.id, dropEdge(event));
             }}
-            onDragEnd={() => {
+            onDragEnd={(event) => {
               setDraggingId(null);
               setDropIndicator(null);
               const current = activeTabTransfer();
-              if (current?.tabId === tab.id) endTabDrag(current.transferId);
+              if (current?.tabId !== tab.id) return;
+              detachTabToNewWindow(current.transferId, tab.title, event);
+              endTabDrag(current.transferId);
             }}
             onClick={() => activate(tab.id)}
             onKeyDown={(e) => {
@@ -1067,6 +1093,26 @@ export function TabStrip({
           <ListItemText>Rename tab</ListItemText>
         </MenuItem>
         <MenuItem
+          disabled={!editableMenuHost}
+          onMouseEnter={() => void loadHostEditorDialog()}
+          onFocus={() => void loadHostEditorDialog()}
+          onClick={() => {
+            if (editableMenuHost) {
+              setHostEditor(
+                editableMenuHost.kind === 'ssh'
+                  ? { mode: 'edit', entry: editableMenuHost.entry }
+                  : { mode: 'edit-profile', entry: editableMenuHost.entry },
+              );
+            }
+            setMenu(null);
+          }}
+        >
+          <ListItemIcon>
+            <EditOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Edit host</ListItemText>
+        </MenuItem>
+        <MenuItem
           onClick={() => {
             if (menuTab) setPinned(menuTab.id, !menuTab.pinned);
             setMenu(null);
@@ -1103,6 +1149,19 @@ export function TabStrip({
             <OpenInNewOutlinedIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>Open in new window</ListItemText>
+        </MenuItem>
+        <MenuItem
+          onMouseEnter={() => void loadTabTransfer()}
+          onFocus={() => void loadTabTransfer()}
+          onClick={() => {
+            if (menuTab) moveTabToNewWindow(menuTab.id);
+            setMenu(null);
+          }}
+        >
+          <ListItemIcon>
+            <DriveFileMoveOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Move to new window</ListItemText>
         </MenuItem>
         {menuTabSupportsSftp ? (
           <MenuItem
@@ -1300,6 +1359,18 @@ export function TabStrip({
             <CloseIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>Close other tabs</ListItemText>
+        </MenuItem>
+        <MenuItem
+          disabled={menuTabIdsToRight.length === 0}
+          onClick={() => {
+            void requestCloseTabs(menuTabIdsToRight);
+            setMenu(null);
+          }}
+        >
+          <ListItemIcon>
+            <CloseIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Close tabs to the right</ListItemText>
         </MenuItem>
       </Menu>
 

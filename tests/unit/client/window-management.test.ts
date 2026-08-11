@@ -44,6 +44,26 @@ describe('secondary window launch payloads', () => {
     expect(decodeAppWindowLaunch(encodeAppWindowLaunch(launch))).toEqual(launch);
   });
 
+  it('round-trips an opaque live-tab transfer', () => {
+    const launch: AppWindowLaunch = {
+      kind: 'tab-transfer',
+      transferId: 'opaque-transfer-token',
+      title: 'Serial console',
+    };
+
+    expect(decodeAppWindowLaunch(encodeAppWindowLaunch(launch))).toEqual(launch);
+  });
+
+  it('round-trips a live-tab transfer with an empty title', () => {
+    const launch: AppWindowLaunch = {
+      kind: 'tab-transfer',
+      transferId: 'opaque-transfer-token',
+      title: '',
+    };
+
+    expect(decodeAppWindowLaunch(encodeAppWindowLaunch(launch))).toEqual(launch);
+  });
+
   it('accepts cross-platform Telnet and serial session launches', () => {
     const telnet: AppWindowLaunch = {
       kind: 'session',
@@ -94,6 +114,9 @@ describe('secondary window launch payloads', () => {
       isAppWindowLaunch({ kind: 'workspace', title: 'Operations', workspaceId: '' }),
     ).toBe(false);
     expect(isAppWindowLaunch({ kind: 'session', title: 'Missing profile' })).toBe(false);
+    expect(
+      isAppWindowLaunch({ kind: 'tab-transfer', title: 'Router', transferId: '' }),
+    ).toBe(false);
     expect(
       isAppWindowLaunch({
         kind: 'session',

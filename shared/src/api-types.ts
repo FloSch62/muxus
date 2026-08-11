@@ -320,6 +320,12 @@ export type AppWindowLaunch =
       color?: string;
     }
   | {
+      /** One live tab claimed from another renderer through an opaque token. */
+      kind: 'tab-transfer';
+      transferId: string;
+      title: string;
+    }
+  | {
       kind: 'sftp';
       connId: string;
       title: string;

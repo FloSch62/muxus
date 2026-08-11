@@ -148,4 +148,21 @@ describe('cross-window tab transfer', () => {
     expect(data.getData(transfer.TAB_TRANSFER_MIME)).toBe('opaque-token');
     expect(data.getData('text/plain')).toBe('muxus-tab:opaque-token');
   });
+
+  it('detaches rejected drops only when they end outside the source window', async () => {
+    vi.resetModules();
+    const { shouldDetachTabDrag } = await import('../../../client/src/tab-drag.js');
+    const bounds = { screenX: 100, screenY: 50, outerWidth: 800, outerHeight: 600 };
+    const event = (screenX: number, screenY: number, dropEffect = 'none') => ({
+      dataTransfer: { dropEffect },
+      screenX,
+      screenY,
+    });
+
+    expect(shouldDetachTabDrag(event(99, 300) as never, bounds)).toBe(true);
+    expect(shouldDetachTabDrag(event(900, 300) as never, bounds)).toBe(true);
+    expect(shouldDetachTabDrag(event(400, 650) as never, bounds)).toBe(true);
+    expect(shouldDetachTabDrag(event(400, 300) as never, bounds)).toBe(false);
+    expect(shouldDetachTabDrag(event(950, 300, 'move') as never, bounds)).toBe(false);
+  });
 });

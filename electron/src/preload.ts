@@ -124,6 +124,10 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   openWindow(launch: AppWindowLaunch): void {
     ipcRenderer.send('muxus:open-window', launch);
   },
+  /** Detach a tab only when the native cursor is outside every Muxus window. */
+  detachTab(launch: Extract<AppWindowLaunch, { kind: 'tab-transfer' }>): Promise<boolean> {
+    return ipcRenderer.invoke('muxus:detach-tab', launch);
+  },
   setActiveWorkspace(
     workspaceId?: string,
     workspaceTitle?: string,

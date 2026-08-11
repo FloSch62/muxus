@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SavedHostProfile, SshHostEntry } from '@muxus/shared';
 import {
+  editableManagedHostForProfile,
   groupManagedHosts,
   managedHostCopyCommand,
   managedHostKey,
@@ -145,6 +146,40 @@ describe('managed host identity and clipboard actions', () => {
   const nativeSsh = { kind: 'profile' as const, entry: nativeSshHost('core') };
   const telnet = { kind: 'profile' as const, entry: telnetHost('console') };
   const serial = { kind: 'profile' as const, entry: serialHost('rack') };
+
+  it('resolves the persisted host behind a session profile for editing', () => {
+    expect(
+      editableManagedHostForProfile(
+        { kind: 'ssh', target: 'router' },
+        [ssh.entry],
+        [nativeSsh.entry, telnet.entry],
+      ),
+    ).toEqual(ssh);
+    expect(
+      editableManagedHostForProfile(
+        { ...telnet.entry.profile, profileId: telnet.entry.id },
+        [ssh.entry],
+        [nativeSsh.entry, telnet.entry],
+      ),
+    ).toEqual(telnet);
+    expect(
+      editableManagedHostForProfile(
+        { kind: 'ssh', target: 'unlisted.example.test' },
+        [ssh.entry],
+        [nativeSsh.entry],
+      ),
+    ).toBeUndefined();
+    expect(
+      editableManagedHostForProfile(
+        { kind: 'ssh', target: 'router', useConfig: false },
+        [ssh.entry],
+        [],
+      ),
+    ).toBeUndefined();
+    expect(
+      editableManagedHostForProfile({ kind: 'local' }, [ssh.entry], [nativeSsh.entry]),
+    ).toBeUndefined();
+  });
 
   it('derives stable keys matching the reorder refs', () => {
     expect(managedHostKey(ssh)).toBe('ssh:router');

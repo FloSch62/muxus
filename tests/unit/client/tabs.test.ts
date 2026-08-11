@@ -9,7 +9,10 @@ import {
 } from '../../../client/src/components/sidebar/host-sftp-action.js';
 import { useDialogStore } from '../../../client/src/state/dialogs.js';
 import { usePrefsStore } from '../../../client/src/state/prefs.js';
-import { useTabsStore } from '../../../client/src/state/tabs.js';
+import {
+  closableTabIdsToRight,
+  useTabsStore,
+} from '../../../client/src/state/tabs.js';
 import { findPane } from '../../../client/src/state/workspace-layout.js';
 
 /** Let the close flow run up to the point where it raises its dialog. */
@@ -875,6 +878,22 @@ describe('moving tabs between panes', () => {
       [thirdId, false],
       [firstId, false],
     ]);
+  });
+
+  it('selects only unpinned tabs to the right for browser-style bulk close', () => {
+    const store = useTabsStore.getState();
+    const pinnedSourceId = store.open({ kind: 'local' }, 'Pinned source');
+    const pinnedNeighborId = store.open({ kind: 'local' }, 'Pinned neighbor');
+    const firstId = store.open({ kind: 'local' }, 'One');
+    const secondId = store.open({ kind: 'local' }, 'Two');
+    useTabsStore.getState().setPinned(pinnedSourceId, true);
+    useTabsStore.getState().setPinned(pinnedNeighborId, true);
+    const tabs = useTabsStore.getState().tabs;
+
+    expect(closableTabIdsToRight(tabs, pinnedSourceId)).toEqual([firstId, secondId]);
+    expect(closableTabIdsToRight(tabs, firstId)).toEqual([secondId]);
+    expect(closableTabIdsToRight(tabs, secondId)).toEqual([]);
+    expect(closableTabIdsToRight(tabs, 'missing')).toEqual([]);
   });
 
   it('keeps a pinned tab ahead of unpinned tabs when moving it to another pane', () => {
