@@ -239,10 +239,10 @@ describe('terminal file links', () => {
     expect(links![0]!.decorations).toEqual({ pointerCursor: true, underline: true });
   });
 
-  it('does not create file links while the session disables them', () => {
+  it('does not create file links until the session positively enables them', () => {
     const { terminal, provider } = terminalWithLine('output: src/main.ts');
-    let enabled = false;
-    attachTerminalFileLinks(terminal, vi.fn(), 'direct', () => enabled);
+    let available: boolean | undefined;
+    attachTerminalFileLinks(terminal, vi.fn(), 'direct', () => available === true);
 
     let links: ProvidedLink[] | undefined;
     provider().provideLinks(1, (provided) => {
@@ -250,7 +250,13 @@ describe('terminal file links', () => {
     });
     expect(links).toBeUndefined();
 
-    enabled = true;
+    available = false;
+    provider().provideLinks(1, (provided) => {
+      links = provided;
+    });
+    expect(links).toBeUndefined();
+
+    available = true;
     provider().provideLinks(1, (provided) => {
       links = provided;
     });

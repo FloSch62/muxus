@@ -697,7 +697,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
                 .tabs.find((candidate) => candidate.id === tab.id);
               return (
                 current?.profile?.kind === 'local' ||
-                (current?.profile?.kind === 'ssh' && current.sftpAvailable !== false)
+                (current?.profile?.kind === 'ssh' && current.sftpAvailable === true)
               );
             },
           )
