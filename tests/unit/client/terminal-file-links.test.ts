@@ -239,6 +239,24 @@ describe('terminal file links', () => {
     expect(links![0]!.decorations).toEqual({ pointerCursor: true, underline: true });
   });
 
+  it('does not create file links while the session disables them', () => {
+    const { terminal, provider } = terminalWithLine('output: src/main.ts');
+    let enabled = false;
+    attachTerminalFileLinks(terminal, vi.fn(), 'direct', () => enabled);
+
+    let links: ProvidedLink[] | undefined;
+    provider().provideLinks(1, (provided) => {
+      links = provided;
+    });
+    expect(links).toBeUndefined();
+
+    enabled = true;
+    provider().provideLinks(1, (provided) => {
+      links = provided;
+    });
+    expect(links).toHaveLength(1);
+  });
+
   it.each([
     ['direct', {}, { altKey: true }],
     ['alt', { altKey: true }, {}],

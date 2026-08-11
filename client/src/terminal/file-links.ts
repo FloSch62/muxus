@@ -406,9 +406,15 @@ export function attachTerminalFileLinks(
   term: Terminal,
   onOpen: (candidate: string) => void | Promise<void>,
   activation: TerminalFileLinkActivation | (() => TerminalFileLinkActivation) = 'direct',
+  enabled: boolean | (() => boolean) = true,
 ): IDisposable {
   return term.registerLinkProvider({
     provideLinks: (bufferLineNumber, callback) => {
+      const currentEnabled = typeof enabled === 'function' ? enabled() : enabled;
+      if (!currentEnabled) {
+        callback(undefined);
+        return;
+      }
       const links = mappedFileLinks(term, bufferLineNumber).map(({ candidate, range, text }) => {
         const link: ILink = {
           range,
