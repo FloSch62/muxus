@@ -2,7 +2,7 @@ diff --git a/src/serialport_win.cpp b/src/serialport_win.cpp
 index 7e79216a37635a41d1c2db030f4009ea5d0d24b2..7f8bac6f701a7fcabfe96b2a61df3e381ca59366 100644
 --- a/src/serialport_win.cpp
 +++ b/src/serialport_win.cpp
-@@ -326,18 +326,28 @@ bool IsClosingHandle(int fd) {
+@@ -326,18 +326,30 @@ bool IsClosingHandle(int fd) {
  
  void __stdcall WriteIOCompletion(DWORD errorCode, DWORD bytesTransferred, OVERLAPPED* ov) {
    WriteBaton* baton = static_cast<WriteBaton*>(ov->hEvent);
@@ -32,7 +32,9 @@ index 7e79216a37635a41d1c2db030f4009ea5d0d24b2..7f8bac6f701a7fcabfe96b2a61df3e38
        baton->complete = true;
      }
 +  } else {
-+    // Zero-byte completion with no error — avoid hanging in WriteThread.
++    // Avoid hanging while still surfacing the incomplete write.
++    _snprintf_s(baton->errorString, ERROR_STRING_SIZE, _TRUNCATE,
++                "Writing to COM port (WriteIOCompletion): zero bytes transferred");
 +    baton->complete = true;
    }
  }
