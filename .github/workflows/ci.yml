@@ -139,7 +139,7 @@ jobs:
           $app = "electron/release/win-arm64-unpacked/resources/app.asar.unpacked/node_modules"
           $binaries = @(
             "$app/node-pty/prebuilds/win32-arm64/pty.node"
-            "$app/@serialport/bindings-cpp/prebuilds/win32-arm64/@serialport+bindings-cpp.armv8.node"
+            "$app/@serialport/bindings-cpp/build/Release/bindings.node"
           )
           foreach ($binary in $binaries) {
             if (-not (Test-Path -LiteralPath $binary)) {

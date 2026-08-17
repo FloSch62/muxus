@@ -18,6 +18,10 @@ extraResources:
 icon: build/icon.png
 artifactName: muxus-${version}-${os}-${arch}.${ext}
 npmRebuild: true
+# Muxus carries a source patch for @serialport/bindings-cpp's Windows APC
+# completion handling. Do not replace it with the package's stale ARM64
+# prebuild, which treats its internal baton pointer as an event handle.
+buildDependenciesFromSource: true
 win:
   target:
     - target: nsis

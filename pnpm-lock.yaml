@@ -8,6 +8,9 @@ overrides:
   brace-expansion@>=5.0.0 <5.0.8: 5.0.8
   dompurify@>=3.4.0 <3.4.12: 3.4.12
 
+patchedDependencies:
+  '@serialport/bindings-cpp@13.0.0': 1b9fdeec738893532bb06e0a4b6281e811c97d3ae6facc5d7e59c00cb6d40dba
+
 importers:
 
   .:
@@ -4300,7 +4303,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@serialport/bindings-cpp@13.0.0(supports-color@7.2.0)':
+  '@serialport/bindings-cpp@13.0.0(patch_hash=1b9fdeec738893532bb06e0a4b6281e811c97d3ae6facc5d7e59c00cb6d40dba)(supports-color@7.2.0)':
     dependencies:
       '@serialport/bindings-interface': 1.2.2
       '@serialport/parser-readline': 12.0.0
@@ -6050,7 +6053,7 @@ snapshots:
   serialport@13.0.0(supports-color@7.2.0):
     dependencies:
       '@serialport/binding-mock': 10.2.2(supports-color@7.2.0)
-      '@serialport/bindings-cpp': 13.0.0(supports-color@7.2.0)
+      '@serialport/bindings-cpp': 13.0.0(patch_hash=1b9fdeec738893532bb06e0a4b6281e811c97d3ae6facc5d7e59c00cb6d40dba)(supports-color@7.2.0)
       '@serialport/parser-byte-length': 13.0.0
       '@serialport/parser-cctalk': 13.0.0
       '@serialport/parser-delimiter': 13.0.0

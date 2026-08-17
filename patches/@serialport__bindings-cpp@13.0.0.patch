@@ -1,0 +1,70 @@
+diff --git a/src/serialport_win.cpp b/src/serialport_win.cpp
+index 7e79216a37635a41d1c2db030f4009ea5d0d24b2..7f8bac6f701a7fcabfe96b2a61df3e381ca59366 100644
+--- a/src/serialport_win.cpp
++++ b/src/serialport_win.cpp
+@@ -326,18 +326,28 @@ bool IsClosingHandle(int fd) {
+ 
+ void __stdcall WriteIOCompletion(DWORD errorCode, DWORD bytesTransferred, OVERLAPPED* ov) {
+   WriteBaton* baton = static_cast<WriteBaton*>(ov->hEvent);
+-  DWORD bytesWritten;
+-  if (!GetOverlappedResult(int2handle(baton->fd), ov, &bytesWritten, TRUE)) {
+-    errorCode = GetLastError();
+-    ErrorCodeToString("Writing to COM port (GetOverlappedResult)", errorCode, baton->errorString);
++
++  if (errorCode) {
++    ErrorCodeToString("Writing to COM port (WriteIOCompletion)", errorCode, baton->errorString);
+     baton->complete = true;
+     return;
+   }
+-  if (bytesWritten) {
+-    baton->offset += bytesWritten;
++
++  // bytesTransferred is already provided by the APC completion callback.
++  // Do NOT call GetOverlappedResult here — MSDN explicitly states:
++  //   "Do not use GetOverlappedResult for I/O operations that use
++  //    ReadFileEx or WriteFileEx completion routines."
++  // The overlapped's hEvent holds a WriteBaton pointer (not a Windows event
++  // handle), so GetOverlappedResult fails with ERROR_INVALID_HANDLE on
++  // drivers that inspect hEvent (e.g. usbser.sys used by USB serial chips).
++  if (bytesTransferred) {
++    baton->offset += bytesTransferred;
+     if (baton->offset >= baton->bufferLength) {
+       baton->complete = true;
+     }
++  } else {
++    // Zero-byte completion with no error — avoid hanging in WriteThread.
++    baton->complete = true;
+   }
+ }
+ 
+@@ -441,13 +451,15 @@ void __stdcall ReadIOCompletion(DWORD errorCode, DWORD bytesTransferred, OVERLAP
+     return;
+   }
+ 
++  // bytesTransferred is already provided by the APC completion callback.
++  // Do NOT call GetOverlappedResult here — MSDN explicitly states:
++  //   "Do not use GetOverlappedResult for I/O operations that use
++  //    ReadFileEx or WriteFileEx completion routines."
++  // The overlapped's hEvent holds a ReadBaton pointer (not a Windows event
++  // handle), so GetOverlappedResult fails with ERROR_INVALID_HANDLE on
++  // drivers that inspect hEvent (e.g. usbser.sys used by ESP32 native USB).
++
+   DWORD lastError;
+-  if (!GetOverlappedResult(int2handle(baton->fd), ov, &bytesTransferred, TRUE)) {
+-    lastError = GetLastError();
+-    ErrorCodeToString("Reading from COM port (GetOverlappedResult)", lastError, baton->errorString);
+-    baton->complete = true;
+-    return;
+-  }
+   if (bytesTransferred) {
+     baton->bytesToRead -= bytesTransferred;
+     baton->bytesRead += bytesTransferred;
+@@ -455,7 +467,7 @@ void __stdcall ReadIOCompletion(DWORD errorCode, DWORD bytesTransferred, OVERLAP
+   }
+   if (!baton->bytesToRead) {
+     baton->complete = true;
+-    CloseHandle(ov->hEvent);
++    // Note: ov->hEvent is a baton pointer, not a Windows handle — do not CloseHandle
+     return;
+   }
+ 

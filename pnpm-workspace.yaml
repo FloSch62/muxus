@@ -25,3 +25,5 @@ allowBuilds:
   electron-winstaller: false
   cpu-features: false
   '@serialport/bindings-cpp': true
+patchedDependencies:
+  '@serialport/bindings-cpp@13.0.0': patches/@serialport__bindings-cpp@13.0.0.patch
