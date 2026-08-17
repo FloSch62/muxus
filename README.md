@@ -29,6 +29,12 @@ pnpm start
 For development setup, architecture, the security model and how the screenshots are
 generated, use the docs.
 
+## Support
+
+<a href="https://www.buymeacoffee.com/FloSch62">
+  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-blue.png" alt="Buy Me a Coffee" height="60">
+</a>
+
 ## License
 
 [MIT](./LICENSE)
