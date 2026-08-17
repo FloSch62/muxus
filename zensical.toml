@@ -56,6 +56,14 @@ nav = [
     { "Architecture" = "reference/architecture.md" },
     { "Security model" = "reference/security.md" },
   ] },
+  { "Release notes" = [
+    { "0.6" = "release-notes/0.6.md" },
+    { "0.5" = "release-notes/0.5.md" },
+    { "0.4" = "release-notes/0.4.md" },
+    { "0.3" = "release-notes/0.3.md" },
+    { "0.2" = "release-notes/0.2.md" },
+    { "0.1" = "release-notes/0.1.md" },
+  ] },
   { "Community" = [
     "community/index.md",
     { "Contributing" = "community/contributing.md" },
