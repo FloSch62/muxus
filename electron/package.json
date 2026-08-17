@@ -43,7 +43,7 @@
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",
     "@muxus/server": "workspace:*",
-    "@types/node": "^24.13.3",
+    "@types/node": "^26.1.2",
     "electron": "43.2.0",
     "electron-builder": "^26.15.7",
     "esbuild": "^0.28.1",
