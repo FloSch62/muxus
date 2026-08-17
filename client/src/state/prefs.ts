@@ -106,7 +106,7 @@ export interface PrefsState {
   allowOsc52ClipboardWrite: boolean;
   /** Right-click: copy selection / paste (terminal convention), always paste, or context menu. */
   rightClickAction: RightClickAction;
-  /** Mouse gesture that opens a detected terminal file path in the editor. */
+  /** Mouse gesture that opens a detected terminal file path or web URL. */
   terminalFileLinkActivation: TerminalFileLinkActivation;
   /** Preview multiline pastes before they can run several shell commands. */
   pasteWarnMultiline: boolean;

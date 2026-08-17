@@ -486,7 +486,20 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     term.loadAddon(fit);
     term.loadAddon(new Unicode11Addon());
     term.unicode.activeVersion = '11';
-    term.loadAddon(new WebLinksAddon(openTerminalWebLink));
+    term.loadAddon(
+      new WebLinksAddon((event, uri) =>
+        openTerminalWebLink(
+          event,
+          uri,
+          () =>
+            terminalFileLinkActivationForPlatform(
+              usePrefsStore.getState().terminalFileLinkActivation,
+              IS_MAC,
+            ),
+          () => term.clearSelection(),
+        ),
+      ),
+    );
     // xterm 6.1 streams Kitty APC payloads straight into ImageAddon's WASM
     // base64 decoder. This also handles Sixel and iTerm2 inline images.
     const image = new ImageAddon({

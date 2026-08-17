@@ -1,5 +1,6 @@
 import type { IDisposable, ILink, Terminal } from '@xterm/xterm';
 import type { TerminalFileLinkActivation } from '../state/prefs.js';
+import { terminalLinkActivationMatches } from './file-link-activation.js';
 
 const MAX_LOGICAL_LINE_LENGTH = 4_096;
 const SHELL_TOKEN_BOUNDARY = /\s/;
@@ -390,17 +391,6 @@ function mappedFileLinks(term: Terminal, bufferLineNumber: number): MappedTermin
   return links;
 }
 
-function activationMatches(
-  event: MouseEvent,
-  activation: TerminalFileLinkActivation,
-): boolean {
-  if (event.shiftKey) return false;
-  if (activation === 'direct') return !event.altKey && !event.ctrlKey && !event.metaKey;
-  if (activation === 'alt') return event.altKey && !event.ctrlKey && !event.metaKey;
-  if (activation === 'ctrl') return event.ctrlKey && !event.altKey && !event.metaKey;
-  return event.metaKey && !event.altKey && !event.ctrlKey;
-}
-
 /** Register file links while leaving non-activating clicks available for terminal selection. */
 export function attachTerminalFileLinks(
   term: Terminal,
@@ -425,7 +415,7 @@ export function attachTerminalFileLinks(
           activate: (event) => {
             const currentActivation =
               typeof activation === 'function' ? activation() : activation;
-            if (event.button !== 0 || !activationMatches(event, currentActivation)) return;
+            if (!terminalLinkActivationMatches(event, currentActivation)) return;
             event.preventDefault();
             event.stopPropagation();
             // A tiny pointer movement can create a selection before xterm

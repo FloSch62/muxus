@@ -339,31 +339,80 @@ describe('terminal file links', () => {
 });
 
 describe('terminal web links', () => {
-  it('opens a valid web URL directly so Electron can hand it to the system browser', () => {
+  it.each([
+    ['direct', {}, { altKey: true }],
+    ['alt', { altKey: true }, {}],
+    ['ctrl', { ctrlKey: true }, {}],
+    ['meta', { metaKey: true }, {}],
+  ] as const)(
+    'opens a valid web URL only for the configured %s activation gesture',
+    (activation, matchingModifiers, nonMatchingModifiers) => {
+      const open = vi.fn();
+      const clearSelection = vi.fn();
+      vi.stubGlobal('window', { open });
+
+      const wrongButton = mouseEvent(matchingModifiers, 2);
+      openTerminalWebLink(wrongButton.event, 'https://google.com', activation, clearSelection);
+
+      const ignored = mouseEvent(nonMatchingModifiers);
+      openTerminalWebLink(ignored.event, 'https://google.com', activation, clearSelection);
+
+      const selectionGesture = mouseEvent({ ...matchingModifiers, shiftKey: true });
+      openTerminalWebLink(
+        selectionGesture.event,
+        'https://google.com',
+        activation,
+        clearSelection,
+      );
+
+      expect(open).not.toHaveBeenCalled();
+      expect(ignored.preventDefault).not.toHaveBeenCalled();
+      expect(ignored.stopPropagation).not.toHaveBeenCalled();
+
+      const matching = mouseEvent(matchingModifiers);
+      openTerminalWebLink(matching.event, 'https://google.com', activation, clearSelection);
+
+      expect(open).toHaveBeenCalledWith('https://google.com/', '_blank', 'noopener');
+      expect(matching.preventDefault).toHaveBeenCalledOnce();
+      expect(matching.stopPropagation).toHaveBeenCalledOnce();
+      expect(clearSelection).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('reads the activation setting when clicked so open terminals update immediately', () => {
     const open = vi.fn();
     vi.stubGlobal('window', { open });
-    const preventDefault = vi.fn();
-    const stopPropagation = vi.fn();
+    let activation: 'alt' | 'ctrl' = 'alt';
 
     openTerminalWebLink(
-      { preventDefault, stopPropagation } as unknown as MouseEvent,
+      mouseEvent({ ctrlKey: true }).event,
       'https://google.com',
+      () => activation,
+    );
+    expect(open).not.toHaveBeenCalled();
+
+    activation = 'ctrl';
+
+    openTerminalWebLink(
+      mouseEvent({ ctrlKey: true }).event,
+      'https://google.com',
+      () => activation,
     );
 
     expect(open).toHaveBeenCalledWith('https://google.com/', '_blank', 'noopener');
-    expect(preventDefault).toHaveBeenCalledOnce();
-    expect(stopPropagation).toHaveBeenCalledOnce();
   });
 
   it('ignores malformed and non-web URLs', () => {
     const open = vi.fn();
     vi.stubGlobal('window', { open });
-    const event = { preventDefault: vi.fn(), stopPropagation: vi.fn() } as unknown as MouseEvent;
+    const event = mouseEvent();
 
-    openTerminalWebLink(event, 'file:///etc/passwd');
-    openTerminalWebLink(event, 'not a URL');
+    openTerminalWebLink(event.event, 'file:///etc/passwd');
+    openTerminalWebLink(event.event, 'not a URL');
 
     expect(open).not.toHaveBeenCalled();
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(event.stopPropagation).not.toHaveBeenCalled();
   });
 });
 

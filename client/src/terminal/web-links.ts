@@ -1,3 +1,6 @@
+import type { TerminalFileLinkActivation } from '../state/prefs.js';
+import { terminalLinkActivationMatches } from './file-link-activation.js';
+
 const WEB_PROTOCOLS = new Set(['http:', 'https:']);
 
 /**
@@ -6,7 +9,15 @@ const WEB_PROTOCOLS = new Set(['http:', 'https:']);
  * browser; WebLinksAddon's default two-step about:blank flow is denied before
  * it can assign the real URL.
  */
-export function openTerminalWebLink(event: MouseEvent, uri: string): void {
+export function openTerminalWebLink(
+  event: MouseEvent,
+  uri: string,
+  activation: TerminalFileLinkActivation | (() => TerminalFileLinkActivation) = 'direct',
+  clearSelection?: () => void,
+): void {
+  const currentActivation = typeof activation === 'function' ? activation() : activation;
+  if (!terminalLinkActivationMatches(event, currentActivation)) return;
+
   let url: string;
   try {
     const parsed = new URL(uri);
@@ -18,5 +29,6 @@ export function openTerminalWebLink(event: MouseEvent, uri: string): void {
 
   event.preventDefault();
   event.stopPropagation();
+  clearSelection?.();
   window.open(url, '_blank', 'noopener');
 }

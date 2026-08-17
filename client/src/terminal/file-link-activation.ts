@@ -34,6 +34,18 @@ export function terminalFileLinkActivationForPlatform(
   return activation;
 }
 
+/** Match only the configured left-click gesture, leaving every other click to the terminal. */
+export function terminalLinkActivationMatches(
+  event: Pick<MouseEvent, 'altKey' | 'button' | 'ctrlKey' | 'metaKey' | 'shiftKey'>,
+  activation: TerminalFileLinkActivation,
+): boolean {
+  if (event.button !== 0 || event.shiftKey) return false;
+  if (activation === 'direct') return !event.altKey && !event.ctrlKey && !event.metaKey;
+  if (activation === 'alt') return event.altKey && !event.ctrlKey && !event.metaKey;
+  if (activation === 'ctrl') return event.ctrlKey && !event.altKey && !event.metaKey;
+  return event.metaKey && !event.altKey && !event.ctrlKey;
+}
+
 /** Keep xterm's Alt cursor movement from competing with an Alt file-open gesture. */
 export function altClickMovesCursorForFileLinkActivation(
   activation: TerminalFileLinkActivation,
