@@ -56,7 +56,7 @@ The desktop build rebuilds `node-pty` and `serialport` against Electron's ABI. B
 `pnpm electron` dev run:
 
 ```bash
-pnpm --filter @muxus/electron rebuild
+pnpm --filter @muxus/electron run rebuild
 ```
 
 ## Installers
