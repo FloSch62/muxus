@@ -575,7 +575,7 @@ function TerminalSection() {
           </TextField>
           <TextField
             select
-            label="Open terminal file links"
+            label="Open terminal links"
             value={terminalFileLinkActivationForPlatform(
               prefs.terminalFileLinkActivation,
               IS_MAC,
