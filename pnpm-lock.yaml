@@ -121,6 +121,9 @@ importers:
       '@napi-rs/keyring':
         specifier: ^1.3.0
         version: 1.3.0
+      '@serialport/bindings-cpp':
+        specifier: 13.0.0
+        version: 13.0.0(patch_hash=ccb198c80fb1ddcec527a44a9df5ada0b5b49112eaf75cb0fbd0397b15ff2cf4)(supports-color@7.2.0)
       node-pty:
         specifier: ^1.1.0
         version: 1.1.0
