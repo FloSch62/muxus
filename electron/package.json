@@ -23,7 +23,7 @@
   "dependencies": {
     "@muxus/shared": "workspace:*",
     "@napi-rs/keyring": "^1.3.0",
-    "@serialport/bindings-cpp": "13.0.0",
+    "@serialport/bindings-cpp": "13.0.1",
     "node-pty": "^1.1.0",
     "serialport": "^13.0.0"
   },
@@ -44,9 +44,9 @@
     "@electron/rebuild": "^4.0.1",
     "@muxus/server": "workspace:*",
     "@types/node": "^24.13.3",
-    "electron": "43.2.0",
+    "electron": "43.4.1",
     "electron-builder": "^26.15.7",
-    "esbuild": "^0.28.1",
+    "esbuild": "^0.28.2",
     "shell-env": "^4.0.3",
     "sharp": "^0.35.3",
     "typescript": "^7.0.2"
