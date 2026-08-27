@@ -402,6 +402,12 @@ function treeTicks(rootPid) {
 const renderers = process.argv.slice(2).length
   ? process.argv.slice(2)
   : ['dom', 'webgl'];
+// Condition simulation knobs: PERF_CPU_THROTTLE=4 slows the page main thread
+// via CDP (weak-CPU stand-in — GPU process raster is unaffected, which is
+// exactly the asymmetry the WebGL renderer could exploit); PERF_DPR=2 renders
+// at 2x device scale (hi-dpi stand-in — DOM text raster gets 4x the pixels).
+const CPU_THROTTLE = Math.max(1, Number(process.env.PERF_CPU_THROTTLE || 1));
+const DPR = Math.max(1, Number(process.env.PERF_DPR || 1));
 // Repetitions per phase cell; medians are reported so one GC storm cannot
 // masquerade as a renderer property.
 const REPS = Math.max(1, Number(process.env.REPS || 1));
@@ -465,8 +471,18 @@ const cpuSecondsBetween = (t0, t1) => {
 const results = [];
 try {
   for (const renderer of renderers) {
-    const context = await browser.newContext({ viewport: null });
+    // deviceScaleFactor requires a fixed viewport; keep the physical window
+    // size so the simulated hi-dpi page area matches the dpr=1 runs.
+    const context = await browser.newContext(
+      DPR > 1
+        ? { viewport: { width: 1920, height: 1080 }, deviceScaleFactor: DPR }
+        : { viewport: null },
+    );
     const pg = await context.newPage();
+    if (CPU_THROTTLE > 1) {
+      const cdp = await context.newCDPSession(pg);
+      await cdp.send('Emulation.setCPUThrottlingRate', { rate: CPU_THROTTLE });
+    }
     await pg.goto(`${origin}/?renderer=${renderer}&reps=${REPS}`);
     await pg.waitForFunction('window.__PERF && window.__PERF.done', null, { timeout: 900_000 });
     const result = await pg.evaluate('window.__PERF');
@@ -503,7 +519,7 @@ const row = (cells) =>
   cells.map((c, i) => String(c).padStart([8, 8, 6, 6, 6, 7, 8, 8, 8][i])).join(' ');
 
 console.log(`\nmuxus webgl terminal renderer benchmark`);
-console.log(`display ${DISPLAY}  ${HEADED ? 'headed (physical)' : 'headless (software GL expected)'}  reps=${REPS}\n`);
+console.log(`display ${DISPLAY}  ${HEADED ? 'headed (physical)' : 'headless (software GL expected)'}  reps=${REPS}  cpu_throttle=${CPU_THROTTLE}x  dpr=${DPR}x\n`);
 for (const r of results) {
   console.log(`renderer=${r.renderer}  gpu="${r.glRenderer ?? '— (dom)'}"${r.glError ? '  addon error: ' + r.glError : ''}`);
   console.log(`viewport ${r.viewport.w}x${r.viewport.h}@${r.viewport.dpr}x  document.hidden=${r.hidden}\n`);
