@@ -59,6 +59,7 @@ const PREFERENCE_KEYS = [
   'scrollback',
   'cursorBlink',
   'cursorStyle',
+  'webglRenderer',
   'localShell',
   'localShellProfiles',
   'defaultLocalShellProfileId',
@@ -804,6 +805,7 @@ export function sanitizePreferences(
   if (['block', 'underline', 'bar'].includes(input.cursorStyle)) {
     output.cursorStyle = input.cursorStyle;
   }
+  if (typeof input.webglRenderer === 'boolean') output.webglRenderer = input.webglRenderer;
   if (typeof input.localShell === 'string' && input.localShell.length <= 4096) {
     output.localShell = input.localShell;
   }

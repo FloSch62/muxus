@@ -640,6 +640,28 @@ function TerminalSection() {
           sx={{ width: 200 }}
         />
       </Box>
+      <Box>
+        <SectionTitle>Renderer</SectionTitle>
+        <FormControlLabel
+          control={
+            <Switch
+              size="small"
+              checked={prefs.webglRenderer}
+              onChange={(e) => prefs.set({ webglRenderer: e.target.checked })}
+            />
+          }
+          label={
+            <Box>
+              <Typography variant="body2">GPU renderer (WebGL)</Typography>
+              <Typography variant="caption" color="text.secondary">
+                Paints terminals on the GPU instead of the DOM — smoother under
+                heavy output, slightly more CPU while idle. Applies to open
+                terminals immediately.
+              </Typography>
+            </Box>
+          }
+        />
+      </Box>
     </Stack>
   );
 }

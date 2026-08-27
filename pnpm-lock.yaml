@@ -81,6 +81,9 @@ importers:
       '@xterm/addon-web-links':
         specifier: ^0.13.0-beta.292
         version: 0.13.0-beta.292(@xterm/xterm@6.1.0-beta.292)
+      '@xterm/addon-webgl':
+        specifier: 0.20.0-beta.291
+        version: 0.20.0-beta.291(@xterm/xterm@6.1.0-beta.292)
       '@xterm/xterm':
         specifier: ^6.1.0-beta.292
         version: 6.1.0-beta.292
@@ -1634,6 +1637,7 @@ packages:
   '@xmldom/xmldom@0.8.13':
     resolution: {integrity: sha512-KRYzxepc14G/CEpEGc3Yn+JKaAeT63smlDr+vjB8jRfgTBBI9wRj/nkQEO+ucV8p8I9bfKLWp37uHgFrbntPvw==}
     engines: {node: '>=10.0.0'}
+    deprecated: this version has critical issues, please update to the latest version
 
   '@xterm/addon-clipboard@0.3.0-beta.292':
     resolution: {integrity: sha512-UNjPtLHO9do8lDoYcfuipBtQzjjex2iOudN7G+2ExqcvecVnex6v0UGxUttgg0xN+a6TTEZkdIaWIi/kZnjtoA==}
@@ -1667,6 +1671,11 @@ packages:
 
   '@xterm/addon-web-links@0.13.0-beta.292':
     resolution: {integrity: sha512-1k3i3N8Jm0ZU9oQD5X9WNiWOMRkHFkgFZT9ZoUNHteBksrUbWGVnjZLXxRBfhvYUPYD5pzwrq/i6OtQzggJRXA==}
+    peerDependencies:
+      '@xterm/xterm': ^6.1.0-beta.292
+
+  '@xterm/addon-webgl@0.20.0-beta.291':
+    resolution: {integrity: sha512-gH7r5g8f2NWMhBtaeApuwLQTJmX4uq7zT0okjeNWkFAD0nxzbUPB+kt6sogZZ5K90XYPt2OLu/bhuvF6DmKqOQ==}
     peerDependencies:
       '@xterm/xterm': ^6.1.0-beta.292
 
@@ -4591,6 +4600,10 @@ snapshots:
       '@xterm/xterm': 6.1.0-beta.292
 
   '@xterm/addon-web-links@0.13.0-beta.292(@xterm/xterm@6.1.0-beta.292)':
+    dependencies:
+      '@xterm/xterm': 6.1.0-beta.292
+
+  '@xterm/addon-webgl@0.20.0-beta.291(@xterm/xterm@6.1.0-beta.292)':
     dependencies:
       '@xterm/xterm': 6.1.0-beta.292
 

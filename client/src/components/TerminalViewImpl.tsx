@@ -30,6 +30,9 @@ import { SearchAddon, type ISearchOptions } from '@xterm/addon-search';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+// Type-only: the addon stays lazily imported at runtime so it lands in its
+// own async chunk instead of the eager xterm bundle.
+import type { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import type { AppInfo, TerminalServerMessage } from '@muxus/shared';
 import {
@@ -228,6 +231,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const searchRef = useRef<SearchAddon | null>(null);
   const serializeRef = useRef<SerializeAddon | null>(null);
   const imageRef = useRef<ImageAddon | null>(null);
+  const webglAddonRef = useRef<WebglAddon | null>(null);
   const keywordHighlighterRef = useRef<KeywordHighlighter | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   /** xterm's native default is enabled on macOS and disabled elsewhere. */
@@ -272,6 +276,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const cursorBlink = usePrefsStore((s) => s.cursorBlink);
   const cursorStyle = usePrefsStore((s) => s.cursorStyle);
   const scrollback = usePrefsStore((s) => s.scrollback);
+  const webglRenderer = usePrefsStore((s) => s.webglRenderer);
   const applicationSchemeId = usePrefsStore((prefs) =>
     terminalSchemeIdForMode(prefs, theme.palette.mode),
   );
@@ -1286,6 +1291,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       searchRef.current = null;
       serializeRef.current = null;
       imageRef.current = null;
+      webglAddonRef.current = null;
       keywordHighlighterRef.current = null;
       termRef.current = null;
       wsRef.current = null;
@@ -1325,6 +1331,51 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       })
       .catch(() => undefined);
   }, [monoFontSize, fontFamily, lineHeight, cursorBlink, cursorStyle, scrollback, terminalTheme, generation]);
+
+  // The GPU renderer is a live preference: loading the addon hands painting
+  // over to WebGL, disposing it drops back to the DOM renderer — no session
+  // reopen either way. The import stays lazy so the chunk lands outside the
+  // eager bundle, and a context loss (backgrounded tab, GPU driver reset)
+  // disposes the addon, which also returns to the DOM renderer.
+  //
+  // The renderers disagree on cell width: DOM keeps the fractional measured
+  // width (14px JetBrains Mono = 8.4px) while WebGL floors it to whole device
+  // pixels (8.0). Swapping without a refit leaves the grid sized for the other
+  // renderer — dead space beside the pane and a visibly different pitch — so
+  // every swap refits.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    if (!webglRenderer) {
+      if (webglAddonRef.current) {
+        webglAddonRef.current.dispose();
+        webglAddonRef.current = null;
+        fitTerminal();
+      }
+      return;
+    }
+    if (webglAddonRef.current) return;
+    let cancelled = false;
+    void import('@xterm/addon-webgl')
+      .then(({ WebglAddon }) => {
+        if (cancelled || termRef.current !== term || webglAddonRef.current) return;
+        const webgl = new WebglAddon();
+        webgl.onContextLoss(() => {
+          webglAddonRef.current = null;
+          webgl.dispose();
+          fitTerminal();
+        });
+        webglAddonRef.current = webgl;
+        term.loadAddon(webgl);
+        fitTerminal();
+      })
+      .catch(() => {
+        // No usable WebGL on this machine — stay on the DOM renderer.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [webglRenderer, generation]);
 
   useEffect(() => {
     keywordHighlighterRef.current?.setRules(keywordHighlights);
