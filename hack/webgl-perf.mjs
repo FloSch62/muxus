@@ -183,37 +183,46 @@ function progressPool(count) {
 // or renderer that cannot keep up builds a backlog instead of pacing the feed.
 // A write callback closing means the chunk is parsed; pending counts chunks
 // the parser has not caught up with. drainMs = backlog still flushing after
-// the feed stopped.
+// the feed stopped. parseRate counts only chunks acknowledged DURING the
+// feed window — chunks parsed while draining are not feed throughput.
 function sustain(makeChunk, durationMs) {
   return new Promise((resolve) => {
     const t0 = performance.now();
     let last = t0;
     let written = 0;
     let acked = 0;
+    let ackedAtFeedEnd = 0;
     let pending = 0;
     let stopped = false;
     let feedEnded = 0;
+    const offer = (dt) => {
+      const chunk = makeChunk(dt);
+      if (!chunk) return;
+      pending++;
+      term.write(chunk, () => { pending--; acked += chunk.length; });
+      written += chunk.length;
+    };
     const feedOnce = () => {
       if (stopped) return;
       const now = performance.now();
       if (now - t0 >= durationMs) {
+        // Offer the final [last, deadline] slice too: when the parser blocks
+        // the main thread past the deadline, skipping it short-changes
+        // exactly the overloaded cells and flatters their fps/drain numbers.
+        offer((t0 + durationMs - last) / 1000);
         stopped = true;
-        feedEnded = now;
+        feedEnded = performance.now();
+        ackedAtFeedEnd = acked;
         drain();
         return;
       }
-      const chunk = makeChunk((now - last) / 1000);
+      offer((now - last) / 1000);
       last = now;
-      if (chunk) {
-        pending++;
-        term.write(chunk, () => { pending--; acked += chunk.length; });
-        written += chunk.length;
-      }
       setTimeout(feedOnce, 4);
     };
     const drain = () => {
       if (pending === 0) {
-        resolve({ written, acked, wallMs: feedEnded - t0, drainMs: performance.now() - feedEnded });
+        resolve({ written, ackedAtFeedEnd, wallMs: feedEnded - t0, drainMs: performance.now() - feedEnded });
         return;
       }
       setTimeout(drain, 10);
@@ -230,13 +239,19 @@ function idleFrames(n) {
 }
 
 function frameStats(t0, t1) {
-  const inWindow = frames.filter((t) => t >= t0 && t <= t1);
+  // Count every inter-frame gap overlapping the window — including stalls
+  // that begin before t0 or end after t1. Filtering to frames inside the
+  // window silently drops exactly those boundary-spanning stalls, which are
+  // the overloaded cells' worst latencies.
   const deltas = [];
-  for (let i = 1; i < inWindow.length; i++) deltas.push(inWindow[i] - inWindow[i - 1]);
+  for (let i = 1; i < frames.length; i++) {
+    const a = frames[i - 1], b = frames[i];
+    if (a < t1 && b > t0) deltas.push(b - a);
+  }
   deltas.sort((a, b) => a - b);
   const q = (p) => (deltas.length ? deltas[Math.min(deltas.length - 1, (p * deltas.length) | 0)] : null);
   return {
-    fps: inWindow.length > 1 ? (inWindow.length - 1) / ((inWindow[inWindow.length - 1] - inWindow[0]) / 1000) : 0,
+    fps: deltas.length / ((t1 - t0) / 1000),
     p50: q(0.5), p95: q(0.95), p99: q(0.99),
     max: deltas.length ? deltas[deltas.length - 1] : null,
     jank34: deltas.filter((d) => d > 34).length,
@@ -274,7 +289,7 @@ async function runRate(phase, pool, offered, durationMs) {
   const e0 = clock();
   const heap0 = performance.memory ? performance.memory.usedJSHeapSize : null;
   const lt0 = longTasks;
-  const { acked, wallMs, drainMs } = await sustain(makeChunk, durationMs);
+  const { ackedAtFeedEnd, wallMs, drainMs } = await sustain(makeChunk, durationMs);
   const tFeed = t0 + wallMs;
   const stats = frameStats(t0, tFeed); // during the feed — renderer under load
   await idleFrames(3);
@@ -283,7 +298,7 @@ async function runRate(phase, pool, offered, durationMs) {
     offered,
     startEpoch: e0,
     feedEndEpoch: clock() - (performance.now() - tFeed),
-    parseRate: isProgress ? acked / barLen / (wallMs / 1000) : acked / 1.048576e6 / (wallMs / 1000),
+    parseRate: isProgress ? ackedAtFeedEnd / barLen / (wallMs / 1000) : ackedAtFeedEnd / 1.048576e6 / (wallMs / 1000),
     drainMs,
     longTasks: longTasks - lt0,
     heapDelta: heap0 != null && performance.memory
