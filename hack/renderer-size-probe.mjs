@@ -7,8 +7,13 @@ import path from 'node:path';
 import { chromium } from 'playwright-core';
 
 const CHROME = path.join(os.homedir(), '.cache/ms-playwright/chromium-1223/chrome-linux64/chrome');
-const TOKEN = '7f3t2Q8kw-5kuEiwoe-4vmUW8BrV092-';
-const BASE = 'http://127.0.0.1:3002';
+// Servers mint a fresh token per start, so it must come from the environment.
+const TOKEN = process.env.MUXUS_TOKEN;
+const BASE = process.env.MUXUS_URL ?? 'http://127.0.0.1:3002';
+if (!TOKEN) {
+  console.error('MUXUS_TOKEN is required — the running server prints it in its browser URL.');
+  process.exit(1);
+}
 
 const browser = await chromium.launch({
   executablePath: CHROME,

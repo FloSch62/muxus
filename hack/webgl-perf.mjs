@@ -188,10 +188,13 @@ function progressPool(count) {
 function sustain(makeChunk, durationMs) {
   return new Promise((resolve) => {
     const t0 = performance.now();
+    const deadline = t0 + durationMs;
     let last = t0;
     let written = 0;
-    let acked = 0;
-    let ackedAtFeedEnd = 0;
+    // Counts bytes whose parse callback ran before the nominal deadline —
+    // callbacks delayed past it by a blocking parser task are drain, not
+    // feed throughput, even when the task ends before our timer fires.
+    let ackedInWindow = 0;
     let pending = 0;
     let stopped = false;
     let feedEnded = 0;
@@ -199,7 +202,10 @@ function sustain(makeChunk, durationMs) {
       const chunk = makeChunk(dt);
       if (!chunk) return;
       pending++;
-      term.write(chunk, () => { pending--; acked += chunk.length; });
+      term.write(chunk, () => {
+        pending--;
+        if (performance.now() <= deadline) ackedInWindow += chunk.length;
+      });
       written += chunk.length;
     };
     const feedOnce = () => {
@@ -209,10 +215,9 @@ function sustain(makeChunk, durationMs) {
         // Offer the final [last, deadline] slice too: when the parser blocks
         // the main thread past the deadline, skipping it short-changes
         // exactly the overloaded cells and flatters their fps/drain numbers.
-        offer((t0 + durationMs - last) / 1000);
+        offer((deadline - last) / 1000);
         stopped = true;
         feedEnded = performance.now();
-        ackedAtFeedEnd = acked;
         drain();
         return;
       }
@@ -222,7 +227,7 @@ function sustain(makeChunk, durationMs) {
     };
     const drain = () => {
       if (pending === 0) {
-        resolve({ written, ackedAtFeedEnd, wallMs: feedEnded - t0, drainMs: performance.now() - feedEnded });
+        resolve({ written, ackedInWindow, wallMs: feedEnded - t0, drainMs: performance.now() - feedEnded });
         return;
       }
       setTimeout(drain, 10);
@@ -289,16 +294,19 @@ async function runRate(phase, pool, offered, durationMs) {
   const e0 = clock();
   const heap0 = performance.memory ? performance.memory.usedJSHeapSize : null;
   const lt0 = longTasks;
-  const { ackedAtFeedEnd, wallMs, drainMs } = await sustain(makeChunk, durationMs);
+  const { ackedInWindow, wallMs, drainMs } = await sustain(makeChunk, durationMs);
   const tFeed = t0 + wallMs;
-  const stats = frameStats(t0, tFeed); // during the feed — renderer under load
+  // Let a few idle frames land AFTER the feed end before slicing the window:
+  // a stall spanning the boundary only becomes countable once its trailing
+  // frame exists in the log, and the drain can finish before the next vblank.
   await idleFrames(3);
+  const stats = frameStats(t0, tFeed); // during the feed — renderer under load
   return {
     phase,
     offered,
     startEpoch: e0,
     feedEndEpoch: clock() - (performance.now() - tFeed),
-    parseRate: isProgress ? ackedAtFeedEnd / barLen / (wallMs / 1000) : ackedAtFeedEnd / 1.048576e6 / (wallMs / 1000),
+    parseRate: isProgress ? ackedInWindow / barLen / (wallMs / 1000) : ackedInWindow / 1.048576e6 / (wallMs / 1000),
     drainMs,
     longTasks: longTasks - lt0,
     heapDelta: heap0 != null && performance.memory
@@ -471,13 +479,13 @@ const cpuSecondsBetween = (t0, t1) => {
 const results = [];
 try {
   for (const renderer of renderers) {
-    // deviceScaleFactor requires a fixed viewport; keep the physical window
-    // size so the simulated hi-dpi page area matches the dpr=1 runs.
-    const context = await browser.newContext(
-      DPR > 1
-        ? { viewport: { width: 1920, height: 1080 }, deviceScaleFactor: DPR }
-        : { viewport: null },
-    );
+    // Fixed viewport for every run: viewport:null defers to the OS window's
+    // inner size, which is neither guaranteed 1920x1080 nor equal across
+    // machines — that would make DPR runs differ in page area, not just DPR.
+    const context = await browser.newContext({
+      viewport: { width: 1920, height: 1080 },
+      deviceScaleFactor: DPR,
+    });
     const pg = await context.newPage();
     if (CPU_THROTTLE > 1) {
       const cdp = await context.newCDPSession(pg);

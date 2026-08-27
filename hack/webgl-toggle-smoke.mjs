@@ -5,7 +5,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
-import { startDemoEnv } from '/home/coderred/Projects/muxus/hack/demo-env.mjs';
+import { startDemoEnv } from './demo-env.mjs';
 
 const CHROME = path.join(os.homedir(), '.cache/ms-playwright/chromium-1223/chrome-linux64/chrome');
 const env = await startDemoEnv();
