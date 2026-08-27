@@ -96,6 +96,11 @@ interface AppInfo {
   version: string;
 }
 
+type DesktopClipboardContent =
+  | { kind: 'text'; text: string }
+  | { kind: 'image'; png: Uint8Array<ArrayBuffer> }
+  | { kind: 'empty' };
+
 interface UpdateManifest {
   version?: unknown;
   releaseName?: unknown;
@@ -593,12 +598,14 @@ ipcMain.handle('muxus:check-for-update', async (event, options?: { force?: unkno
 });
 
 ipcMain.handle(
-  'muxus:read-clipboard-image-png',
-  (event): Uint8Array<ArrayBuffer> | undefined => {
+  'muxus:read-clipboard-content',
+  (event): DesktopClipboardContent | undefined => {
     if (!isManagedWindowSender(event)) return undefined;
-    const image = clipboard.readImage();
-    if (image.isEmpty()) return undefined;
+    const text = clipboard.readText();
+    if (text) return { kind: 'text', text };
 
+    const image = clipboard.readImage();
+    if (image.isEmpty()) return { kind: 'empty' };
     const { width, height } = image.getSize();
     const pixels = width * height;
     if (
@@ -614,7 +621,7 @@ ipcMain.handle(
     if (png.byteLength > CLIPBOARD_IMAGE_MAX_BYTES) {
       throw new Error('The clipboard image is too large to paste.');
     }
-    return Uint8Array.from(png);
+    return { kind: 'image', png: Uint8Array.from(png) };
   },
 );
 

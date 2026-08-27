@@ -5,6 +5,11 @@ import type {
   UpdateCheckResult,
 } from '@muxus/shared';
 
+type DesktopClipboardContent =
+  | { kind: 'text'; text: string }
+  | { kind: 'image'; png: Uint8Array<ArrayBuffer> }
+  | { kind: 'empty' };
+
 declare global {
   /** Bridge exposed by the Electron preload (absent in regular browsers). */
   interface Window {
@@ -25,8 +30,8 @@ declare global {
       setZoomFactor(factor: number): void;
       getAppInfo(): Promise<AppInfo | undefined>;
       checkForUpdate(options?: { force?: boolean }): Promise<UpdateCheckResult>;
-      /** Read an OS clipboard image as validated PNG bytes. */
-      readClipboardImagePng(): Promise<Uint8Array<ArrayBuffer> | undefined>;
+      /** Capture OS clipboard text or a validated PNG in one main-process snapshot. */
+      readClipboardContent(): Promise<DesktopClipboardContent | undefined>;
       /** Choose an SSH private key with the operating system's file picker. */
       selectPrivateKey(): Promise<string | undefined>;
       /** Read bookmark-only sessions from the current Windows user's MobaXterm install. */

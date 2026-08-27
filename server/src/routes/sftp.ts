@@ -20,6 +20,8 @@ const MAX_RECURSIVE_DELETE = 10_000;
 /** Monaco is a text editor, not a way to accidentally buffer huge remote artifacts. */
 const MAX_EDITOR_BYTES = 8 * 1024 * 1024;
 const DOWNLOAD_TICKET_TTL_MS = 2 * 60 * 1000;
+const CLIPBOARD_IMAGE_MODE = 0o600;
+const CLIPBOARD_IMAGE_TEMP_DIR = '/tmp';
 
 interface ConnParams {
   connId: string;
@@ -303,6 +305,31 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
           throw err;
         }
         return { ok: true };
+      });
+    } catch (err) {
+      return sendError(reply, err);
+    }
+  });
+
+  app.post('/api/sftp/:connId/clipboard-image', async (req, reply) => {
+    try {
+      return await withSftp(req, async (sftp) => {
+        const body = req.body;
+        if (!body || typeof (body as NodeJS.ReadableStream).pipe !== 'function') {
+          throw new HttpProblem(400, 'expected an application/octet-stream body');
+        }
+        const file = path.join(
+          CLIPBOARD_IMAGE_TEMP_DIR,
+          `muxus-paste-${Date.now()}-${randomBytes(16).toString('hex')}.png`,
+        );
+        await atomicStreamUpload(
+          sftp,
+          file,
+          body as NodeJS.ReadableStream,
+          false,
+          CLIPBOARD_IMAGE_MODE,
+        );
+        return { path: file };
       });
     } catch (err) {
       return sendError(reply, err);
