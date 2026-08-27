@@ -39,7 +39,11 @@ import {
   wsUrl,
 } from '../api/http.js';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
-import { copyToClipboard, readFromClipboard } from '../clipboard.js';
+import {
+  copyToClipboard,
+  readFromClipboard,
+  readImagePngFromClipboard,
+} from '../clipboard.js';
 import { loadMonacoTextEditor, loadRemoteEditorWorkspace } from '../lazy-features.js';
 import { IS_MAC } from '../platform.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
@@ -84,6 +88,10 @@ import {
   terminalRightClickIntent,
   xtermRightClickSelectsWord,
 } from '../terminal/right-click.js';
+import {
+  pasteTerminalClipboard,
+  uploadTerminalClipboardImage,
+} from '../terminal/clipboard-paste.js';
 import {
   AuthPromptDialog,
   type AuthPromptRequest,
@@ -373,13 +381,36 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   };
 
   const pasteFromClipboard = () => {
-    void readFromClipboard().then((text) => {
-      if (text === null) {
-        showToast('warning', 'Clipboard read unavailable or denied — allow clipboard access, or paste with the keyboard.');
-        return;
-      }
-      if (text) pasteText(text);
-    });
+    void pasteTerminalClipboard({
+      readText: readFromClipboard,
+      readImagePng: readImagePngFromClipboard,
+      uploadImage: async (png) => {
+        const current = useTabsStore.getState().tabs.find((candidate) => candidate.id === tab.id);
+        if (current?.profile?.kind !== 'ssh') {
+          throw new Error('Image paste is available in SSH terminals.');
+        }
+        if (current.sftpAvailable === false) {
+          throw new Error('Image paste requires SFTP, which is disabled for this host.');
+        }
+        if (!current.connId) {
+          throw new Error('Reconnect the SSH session before pasting an image.');
+        }
+        return uploadTerminalClipboardImage(current.connId, png);
+      },
+      pasteText,
+    })
+      .then((result) => {
+        if (result.status === 'skipped' && result.reason === 'unavailable') {
+          showToast(
+            'warning',
+            'Clipboard read unavailable or denied — allow clipboard access, or paste with the keyboard.',
+          );
+        }
+      })
+      .catch((error: unknown) => {
+        const detail = error instanceof Error ? error.message : String(error);
+        showToast('error', `Could not paste the image. ${detail}`);
+      });
   };
 
   // Right-click behavior is a preference: the terminal-emulator convention
@@ -657,6 +688,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         return Math.round(((base + zoomRef.current) / base) * 100);
       },
       paste: (text) => pasteText(text),
+      pasteClipboard: pasteFromClipboard,
       setLogging: (patch) => {
         const socket = wsRef.current;
         if (!socket || socket.readyState !== WebSocket.OPEN) return false;
@@ -667,7 +699,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
 
     const onNativePaste = (event: ClipboardEvent) => {
       const text = event.clipboardData?.getData('text/plain');
-      if (!text || !usePrefsStore.getState().pasteWarnMultiline || !requiresPasteConfirmation(text)) return;
+      if (!text) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        pasteFromClipboard();
+        return;
+      }
+      if (!usePrefsStore.getState().pasteWarnMultiline || !requiresPasteConfirmation(text)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       setSearchOpen(false);

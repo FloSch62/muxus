@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   app,
+  clipboard,
   BrowserWindow,
   dialog,
   type IpcMainEvent,
@@ -70,6 +71,8 @@ const EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 const TITLEBAR_HEIGHT = 52;
 const UPDATE_MANIFEST_URL = 'https://flosch62.github.io/muxus/latest.json';
 const UPDATE_CHECK_TIMEOUT_MS = 10_000;
+const CLIPBOARD_IMAGE_MAX_BYTES = 18 * 1024 * 1024;
+const CLIPBOARD_IMAGE_MAX_PIXELS = 32 * 1024 * 1024;
 
 let primaryWindow: BrowserWindow | undefined;
 let appUrl: string | undefined;
@@ -588,6 +591,32 @@ ipcMain.handle('muxus:check-for-update', async (event, options?: { force?: unkno
   updateCheck ??= checkForUpdate();
   return updateCheck;
 });
+
+ipcMain.handle(
+  'muxus:read-clipboard-image-png',
+  (event): Uint8Array<ArrayBuffer> | undefined => {
+    if (!isManagedWindowSender(event)) return undefined;
+    const image = clipboard.readImage();
+    if (image.isEmpty()) return undefined;
+
+    const { width, height } = image.getSize();
+    const pixels = width * height;
+    if (
+      width <= 0 ||
+      height <= 0 ||
+      !Number.isFinite(pixels) ||
+      pixels > CLIPBOARD_IMAGE_MAX_PIXELS
+    ) {
+      throw new Error('The clipboard image is too large to paste.');
+    }
+
+    const png = image.toPNG();
+    if (png.byteLength > CLIPBOARD_IMAGE_MAX_BYTES) {
+      throw new Error('The clipboard image is too large to paste.');
+    }
+    return Uint8Array.from(png);
+  },
+);
 
 ipcMain.handle('muxus:select-private-key', async (event): Promise<string | undefined> => {
   const win = senderWindow(event);

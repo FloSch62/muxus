@@ -1,4 +1,4 @@
-import { copyToClipboard, readFromClipboard } from '../clipboard.js';
+import { copyToClipboard } from '../clipboard.js';
 import { IS_MAC } from '../platform.js';
 import { requestCloseRemoteEditor } from '../editor/remote-editor-registry.js';
 import {
@@ -288,9 +288,7 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
     run: () => {
       const handle = activeTerminal();
       if (!handle) return false;
-      void readFromClipboard().then((text) => {
-        if (text) handle.paste(text);
-      });
+      handle.pasteClipboard();
       return true;
     },
   },

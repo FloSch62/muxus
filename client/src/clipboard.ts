@@ -12,6 +12,11 @@ export async function readFromClipboard(): Promise<string | null> {
   }
 }
 
+/** Read an image through the packaged Electron bridge; regular browsers have no image fallback. */
+export function readImagePngFromClipboard(): Promise<Uint8Array<ArrayBuffer> | undefined> {
+  return window.muxusDesktop?.readClipboardImagePng() ?? Promise.resolve(undefined);
+}
+
 /**
  * Copy text to the clipboard. The async Clipboard API only exists in secure
  * contexts (https/localhost/Electron); when the UI is served over plain http

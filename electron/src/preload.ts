@@ -111,6 +111,10 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   checkForUpdate(options?: { force?: boolean }) {
     return ipcRenderer.invoke('muxus:check-for-update', options);
   },
+  /** Read an OS clipboard image as validated PNG bytes. */
+  readClipboardImagePng(): Promise<Uint8Array<ArrayBuffer> | undefined> {
+    return ipcRenderer.invoke('muxus:read-clipboard-image-png');
+  },
   /** Open a native single-file picker and return only the user-selected path. */
   selectPrivateKey(): Promise<string | undefined> {
     return ipcRenderer.invoke('muxus:select-private-key');

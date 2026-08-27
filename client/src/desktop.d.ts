@@ -25,6 +25,8 @@ declare global {
       setZoomFactor(factor: number): void;
       getAppInfo(): Promise<AppInfo | undefined>;
       checkForUpdate(options?: { force?: boolean }): Promise<UpdateCheckResult>;
+      /** Read an OS clipboard image as validated PNG bytes. */
+      readClipboardImagePng(): Promise<Uint8Array<ArrayBuffer> | undefined>;
       /** Choose an SSH private key with the operating system's file picker. */
       selectPrivateKey(): Promise<string | undefined>;
       /** Read bookmark-only sessions from the current Windows user's MobaXterm install. */
