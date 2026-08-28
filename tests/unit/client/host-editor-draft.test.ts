@@ -229,4 +229,10 @@ describe('SSH host editor draft', () => {
       port: '',
     });
   });
+
+  it('prefills the selected folder for a new host', () => {
+    expect(blankDraft('', 'Production/Edge')).toMatchObject({
+      group: 'Production/Edge',
+    });
+  });
 });

@@ -36,11 +36,11 @@ export interface NativeHostDraft {
   sessionLogging: HostSessionLoggingDraft;
 }
 
-export function blankNativeDraft(prefillTarget = ''): NativeHostDraft {
+export function blankNativeDraft(prefillTarget = '', group = ''): NativeHostDraft {
   const { host, port } = parseHostTarget(prefillTarget);
   return {
     name: '',
-    group: '',
+    group,
     color: undefined,
     terminalScheme: undefined,
     terminalFontColor: undefined,
