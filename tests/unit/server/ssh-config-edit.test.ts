@@ -136,6 +136,18 @@ describe('upsertHost', () => {
     expect(hosts.find((h) => h.alias === 'web')!.file).toBe(groupFile);
   });
 
+  it('moves a host from an include file back to the root config', () => {
+    const root = seed(['Host web', '  HostName web.example.com', ''].join('\n'));
+    const groupFile = path.join(path.dirname(root), 'config.d', 'work');
+    upsertHost(req({ previousAlias: 'web', file: groupFile }), root);
+
+    upsertHost(req({ previousAlias: 'web', file: root }), root);
+
+    expect(readFileSync(root, 'utf8')).toContain('HostName web.example.com');
+    expect(readFileSync(groupFile, 'utf8')).not.toContain('Host web');
+    expect(listHosts(loadConfigDocument(root))[0]!.file).toBe(root);
+  });
+
   it('refuses config files outside the root config directory', () => {
     const root = seed('');
     expect(() => upsertHost(req({ file: '/etc/passwd' }), root)).toThrowError(/must live under/);
