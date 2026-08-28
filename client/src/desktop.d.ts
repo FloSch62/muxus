@@ -1,6 +1,7 @@
 import type {
   AppInfo,
   AppWindowLaunch,
+  CommandLineLaunch,
   MobaXtermSessionSource,
   UpdateCheckResult,
 } from '@muxus/shared';
@@ -15,6 +16,8 @@ declare global {
       authToken: string;
       /** One-shot payload describing the content of a secondary app window. */
       windowLaunch?: AppWindowLaunch;
+      /** One-shot host, folder, or workspace target supplied to the executable. */
+      commandLineLaunch?: CommandLineLaunch;
       stateStorage: {
         getItem(name: string): string | null;
         setItem(name: string, value: string): void;
@@ -33,6 +36,8 @@ declare global {
       listLocalFontFamilies(): Promise<string[] | undefined>;
       /** Open a secondary native application window. */
       openWindow(launch: AppWindowLaunch): void;
+      /** Subscribe to launch targets forwarded by later executable invocations. */
+      onCommandLineLaunch(callback: (launch: CommandLineLaunch) => void): () => void;
       /** Open a tab-transfer window when the native cursor is outside every app window. */
       detachTab(
         launch: Extract<AppWindowLaunch, { kind: 'tab-transfer' }>,

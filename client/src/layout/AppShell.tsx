@@ -32,6 +32,7 @@ import {
   type WorkspaceInitialSelection,
 } from '../workspace-persistence.js';
 import { ErrorBoundary } from '../components/ErrorBoundary.js';
+import { CommandLineLaunchHandler } from '../components/CommandLineLaunchHandler.js';
 import { ActionBar } from '../components/ActionBar.js';
 import { EmptyPane } from '../components/EmptyPane.js';
 import { SessionSidebar } from '../components/SessionSidebar.js';
@@ -79,6 +80,7 @@ export function AppShell({
       data-focus-mode={focusMode ? 'true' : 'false'}
       sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}
     >
+      <CommandLineLaunchHandler />
       <TopBar />
       {focusMode ? null : <ActionBar />}
       <Box sx={{ flex: 1, display: 'flex', minHeight: 0 }}>

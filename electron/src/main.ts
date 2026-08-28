@@ -22,9 +22,15 @@ import {
 import { isNewerVersion } from '@muxus/shared';
 import type {
   AppWindowLaunch,
+  CommandLineLaunch,
   MobaXtermSessionSource,
   UpdateCheckResult,
 } from '@muxus/shared';
+import {
+  canHandleCommandLineLaunch,
+  parseCommandLineLaunch,
+  parseCommandLineLaunchData,
+} from './command-line.js';
 import {
   developmentUserDataPath,
   seedDevelopmentDatabase,
@@ -75,6 +81,8 @@ let primaryWindow: BrowserWindow | undefined;
 let appUrl: string | undefined;
 const managedWindows = new Set<BrowserWindow>();
 const windowLaunches = new Map<number, AppWindowLaunch>();
+const commandLineLaunches = new Map<number, CommandLineLaunch>();
+const deferredCommandLineLaunches: CommandLineLaunch[] = [];
 const activeWorkspaceByWebContents = new Map<number, string>();
 let server: RunningServer | undefined;
 let closing: Promise<void> | undefined;
@@ -275,7 +283,11 @@ async function checkForUpdate(force = false): Promise<UpdateCheckResult> {
   }
 }
 
-function createWindow(url: string, launch?: AppWindowLaunch): BrowserWindow {
+function createWindow(
+  url: string,
+  launch?: AppWindowLaunch,
+  commandLineLaunch?: CommandLineLaunch,
+): BrowserWindow {
   const state = loadWindowState();
   const appOrigin = new URL(url).origin;
   const isPrimary = !primaryWindow;
@@ -312,6 +324,7 @@ function createWindow(url: string, launch?: AppWindowLaunch): BrowserWindow {
   managedWindows.add(win);
   const webContentsId = win.webContents.id;
   if (launch) windowLaunches.set(webContentsId, launch);
+  if (commandLineLaunch) commandLineLaunches.set(webContentsId, commandLineLaunch);
   if (isPrimary) primaryWindow = win;
   if (state.maximized && isPrimary) win.maximize();
   // The menu stays installed so its accelerators (zoom, reload, devtools,
@@ -323,6 +336,7 @@ function createWindow(url: string, launch?: AppWindowLaunch): BrowserWindow {
   win.on('closed', () => {
     managedWindows.delete(win);
     windowLaunches.delete(webContentsId);
+    commandLineLaunches.delete(webContentsId);
     activeWorkspaceByWebContents.delete(webContentsId);
     if (primaryWindow === win) primaryWindow = undefined;
   });
@@ -456,6 +470,15 @@ ipcMain.on('muxus:window-launch', (event) => {
   event.returnValue = isManagedWindowSender(event)
     ? windowLaunches.get(event.sender.id)
     : undefined;
+});
+
+ipcMain.on('muxus:command-line-launch', (event) => {
+  if (!isManagedWindowSender(event)) {
+    event.returnValue = undefined;
+    return;
+  }
+  event.returnValue = commandLineLaunches.get(event.sender.id);
+  commandLineLaunches.delete(event.sender.id);
 });
 
 ipcMain.on('muxus:open-window', (event, value: unknown) => {
@@ -706,14 +729,44 @@ function validProfileId(value: unknown): boolean {
   );
 }
 
-if (!app.requestSingleInstanceLock()) {
+const initialCommandLineLaunch = parseCommandLineLaunch(process.argv);
+
+function commandLineLaunchWindow(): BrowserWindow | undefined {
+  return [...managedWindows].find((candidate) =>
+    canHandleCommandLineLaunch(windowLaunches.get(candidate.webContents.id)),
+  );
+}
+
+// Electron may reorder split-form custom switches in second-instance argv.
+// Preserve the launch parsed by the invoking process as structured data.
+if (!app.requestSingleInstanceLock(initialCommandLineLaunch ?? {})) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    const win = primaryWindow ?? [...managedWindows][0];
-    if (win) {
-      if (win.isMinimized()) win.restore();
-      win.focus();
+  app.on('second-instance', (_event, commandLine, _workingDirectory, additionalData) => {
+    const launch =
+      parseCommandLineLaunchData(additionalData) ??
+      parseCommandLineLaunch(commandLine);
+    const win = launch
+      ? (commandLineLaunchWindow() ?? (appUrl ? createWindow(appUrl) : undefined))
+      : (primaryWindow ?? [...managedWindows][0]);
+    if (!win) {
+      if (launch) deferredCommandLineLaunches.push(launch);
+      return;
+    }
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    if (launch) {
+      const send = () => {
+        if (!win.isDestroyed()) {
+          win.webContents.send('muxus:command-line-launch-requested', launch);
+        }
+      };
+      if (win.webContents.isLoadingMainFrame()) {
+        win.webContents.once('did-finish-load', send);
+      } else {
+        send();
+      }
     }
   });
 
@@ -766,7 +819,16 @@ if (!app.requestSingleInstanceLock()) {
     buildMenu();
     const url = server.url;
     appUrl = url;
-    createWindow(url);
+    const win = createWindow(url, undefined, initialCommandLineLaunch);
+    if (deferredCommandLineLaunches.length > 0) {
+      const launches = deferredCommandLineLaunches.splice(0);
+      win.webContents.once('did-finish-load', () => {
+        if (win.isDestroyed()) return;
+        for (const launch of launches) {
+          win.webContents.send('muxus:command-line-launch-requested', launch);
+        }
+      });
+    }
   });
 
   // The server (and its SSH connections) is tied to the window, so quit

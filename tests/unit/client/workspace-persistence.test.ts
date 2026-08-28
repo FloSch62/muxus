@@ -240,6 +240,69 @@ describe('workspace persistence', () => {
     runtime.stop();
   });
 
+  it('resolves a command-line workspace name before loading startup defaults', async () => {
+    const persisted: WorkspaceRecord = {
+      id: 'night-shift-id',
+      name: 'Night shift',
+      layout: {
+        version: 1,
+        root: {
+          id: 'pane-night',
+          type: 'pane',
+          activeTabId: 'night-shell',
+          tabs: [
+            {
+              id: 'night-shell',
+              kind: 'terminal',
+              title: 'Night shell',
+              profile: { kind: 'local' },
+              offerReconnect: true,
+            },
+          ],
+        },
+        activePaneId: 'pane-night',
+      },
+      multiExecGroups: [],
+      isLocked: false,
+      isStartup: false,
+      createdAt: '2026-08-05T20:00:00Z',
+      updatedAt: '2026-08-05T20:00:00Z',
+    };
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const path =
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = init?.method ?? 'GET';
+      if (path === '/api/workspaces' && method === 'GET') {
+        return json({ workspaces: [summaryOf(persisted)] });
+      }
+      if (path === `/api/workspaces/${persisted.id}` && method === 'GET') {
+        return json(persisted);
+      }
+      if (path === `/api/workspaces/${persisted.id}/open` && method === 'POST') {
+        return json(persisted);
+      }
+      throw new Error(`Unexpected request: ${method} ${path}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const runtime = new WorkspaceRuntime({ kind: 'open-name', name: 'NIGHT SHIFT' });
+    await runtime.start();
+
+    expect(useWorkspacesStore.getState()).toMatchObject({
+      activeId: persisted.id,
+      activeName: persisted.name,
+      ready: true,
+    });
+    expect(useTabsStore.getState().tabs).toEqual([
+      expect.objectContaining({ id: 'night-shell', title: 'Night shell' }),
+    ]);
+    expect(fetchMock.mock.calls.map(([path]) => path)).not.toContain(
+      '/api/workspaces/startup',
+    );
+
+    runtime.stop();
+  });
+
   it('restores a locked workspace after one of its sessions was closed', async () => {
     const persisted: WorkspaceRecord = {
       id: 'locked-operations',
