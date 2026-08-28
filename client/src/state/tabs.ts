@@ -186,6 +186,8 @@ interface TabsState {
   reconnectAll: (options?: ReconnectOptions) => void;
   /** Replace every remote session in the current workspace, including live ones. */
   forceReconnectAll: () => void;
+  /** Replace one remote session's connection, even while it is live. */
+  forceReconnect: (id: string) => void;
   /** Record terminal output, notifying only while the tab is hidden. */
   notifyOutput: (id: string) => void;
   update: (id: string, patch: TabUpdate) => void;
@@ -905,6 +907,24 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
     set((state) => ({
       tabs: state.tabs.map((tab) =>
         isRemoteSessionTab(tab)
+          ? {
+              ...tab,
+              ...reconnectPatch(tab, {
+                freshTransport:
+                  tab.profile.kind === 'ssh' ? freshTransport : undefined,
+              }),
+            }
+          : tab,
+      ),
+    }));
+  },
+  forceReconnect: (id) => {
+    // A token of its own: this tab dials a replacement transport while its
+    // siblings keep the connection they are on.
+    const freshTransport = newId('fresh');
+    set((state) => ({
+      tabs: state.tabs.map((tab) =>
+        tab.id === id && isRemoteSessionTab(tab)
           ? {
               ...tab,
               ...reconnectPatch(tab, {

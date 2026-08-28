@@ -134,6 +134,12 @@ a few times before waiting for a key press. You can also use **Reconnect** from 
 menu. SSH tabs additionally offer **Reconnect + tmux** and **Reconnect + screen**, which
 dial a fresh transport and then reattach the existing multiplexer session.
 
+**Force reconnect (new connection)** in the tab menu replaces one tab's connection, even
+while the session is live. It never multiplexes onto an established transport, so it also
+recovers an ended SSH tab whose shared connection went dead while other tabs still hold
+it. Once the replacement is up, new sessions to that host use it instead of the old
+transport.
+
 The [workspace](workspaces.md) dialog reconnects selected ended sessions, all ended
 sessions, or force-reconnects every remote tab. Force reconnect ends live shells; use tmux
 or screen when remote programs must survive. Saved tunnels keep their existing

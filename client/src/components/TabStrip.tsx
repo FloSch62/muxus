@@ -44,6 +44,7 @@ import OpenInFullOutlinedIcon from '@mui/icons-material/OpenInFullOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutlineOutlined';
 import ReplayOutlinedIcon from '@mui/icons-material/ReplayOutlined';
+import RestartAltOutlinedIcon from '@mui/icons-material/RestartAltOutlined';
 import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined';
@@ -58,10 +59,12 @@ import {
   openTabInNewWindow,
   requestClosePane,
   requestCloseTabs,
+  requestForceReconnect,
   splitActivePane,
 } from '../session-actions.js';
 import {
   closableTabIdsToRight,
+  isRemoteSessionTab,
   useTabsStore,
   type PaneDirection,
   type TabStatus,
@@ -343,6 +346,14 @@ export function TabStrip({
   const canSplitMenuTab = !!menuTab && allTabs.some(
     (tab) => tab.paneId === menuTab.paneId && tab.id !== menuTab.id,
   );
+  // Offered only where it differs from plain Reconnect: a live session has no
+  // other way to replace its connection, and a closed SSH tab would otherwise
+  // multiplex back onto the possibly dead shared transport.
+  const canForceReconnectMenuTab =
+    !!menuTab &&
+    isRemoteSessionTab(menuTab) &&
+    (menuTab.status !== 'closed' || menuTab.profile.kind === 'ssh');
+  const menuTabReconnectable = !!menuTab?.profile && menuTab.status === 'closed';
 
   const commitRename = () => {
     if (renaming && renameValue.trim()) update(renaming.id, { title: renameValue.trim() });
@@ -1202,9 +1213,9 @@ export function TabStrip({
           </ListItemIcon>
           <ListItemText>Move tab to split down</ListItemText>
         </MenuItem>
+        {menuTabReconnectable || canForceReconnectMenuTab ? <Divider /> : null}
         {menuTab?.profile && menuTab.status === 'closed' ? (
           <>
-            <Divider />
             <MenuItem
               onClick={() => {
                 reconnect([menuTab.id]);
@@ -1243,6 +1254,19 @@ export function TabStrip({
               </>
             ) : null}
           </>
+        ) : null}
+        {canForceReconnectMenuTab ? (
+          <MenuItem
+            onClick={() => {
+              if (menuTab) void requestForceReconnect(menuTab.id);
+              setMenu(null);
+            }}
+          >
+            <ListItemIcon>
+              <RestartAltOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Force reconnect (new connection)</ListItemText>
+          </MenuItem>
         ) : null}
         <Divider />
         <Box sx={{ px: 2, py: 0.5 }}>

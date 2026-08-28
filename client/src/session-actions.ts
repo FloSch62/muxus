@@ -229,6 +229,25 @@ export async function requestForceReconnectAll(): Promise<boolean> {
   return true;
 }
 
+/** Replace one remote session's connection, warning first when it is live. */
+export async function requestForceReconnect(tabId: string): Promise<boolean> {
+  const tab = useTabsStore.getState().tabs.find((candidate) => candidate.id === tabId);
+  if (!tab || !isRemoteSessionTab(tab)) return false;
+  if (tab.status !== 'closed') {
+    const confirmed = await confirmAction({
+      title: `Force reconnect ${tab.title}?`,
+      description:
+        'This ends the current session and starts a fresh connection in the same tab. Remote programs survive only when they run in tmux or screen.',
+      confirmLabel: 'Force reconnect',
+      destructive: true,
+    });
+    if (!confirmed) return false;
+  }
+  if (!(await confirmDiscardRemoteEditors([tabId]))) return false;
+  useTabsStore.getState().forceReconnect(tabId);
+  return true;
+}
+
 /** Duplicate an open tab (same profile, fresh session). */
 export function duplicateTab(tabId: string): boolean {
   const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId);

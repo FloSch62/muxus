@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  requestForceReconnect,
   requestForceReconnectAll,
   requestClosePane,
   splitActivePane,
@@ -487,6 +488,80 @@ describe('workspace restoration', () => {
         freshTransport: expect.any(String),
       }),
     ]);
+  });
+
+  it('force reconnects one session while its siblings keep their transport', () => {
+    const sshId = useTabsStore.getState().open(
+      { kind: 'ssh', target: 'router' },
+      'Router',
+    );
+    const siblingId = useTabsStore.getState().open(
+      { kind: 'ssh', target: 'router' },
+      'Router 2',
+    );
+    useTabsStore.getState().update(sshId, { status: 'connected', connId: 'shared' });
+    useTabsStore.getState().update(siblingId, { status: 'connected', connId: 'shared' });
+
+    useTabsStore.getState().forceReconnect(sshId);
+
+    expect(useTabsStore.getState().tabs).toEqual([
+      expect.objectContaining({
+        id: sshId,
+        status: 'connecting',
+        connId: undefined,
+        reconnectRequest: 1,
+        freshTransport: expect.any(String),
+      }),
+      expect.objectContaining({
+        id: siblingId,
+        status: 'connected',
+        connId: 'shared',
+        reconnectRequest: 0,
+      }),
+    ]);
+    expect(useTabsStore.getState().tabs[1]!.freshTransport).toBeUndefined();
+  });
+
+  it('confirms before force reconnecting one live session', async () => {
+    const sshId = useTabsStore.getState().open(
+      { kind: 'ssh', target: 'router' },
+      'Router',
+    );
+    useTabsStore.getState().update(sshId, { status: 'connected' });
+
+    const pending = requestForceReconnect(sshId);
+    await settle();
+
+    expect(useDialogStore.getState().queue[0]).toMatchObject({
+      kind: 'confirm',
+      title: 'Force reconnect Router?',
+      destructive: true,
+    });
+    await answerDialog(true);
+
+    expect(await pending).toBe(true);
+    expect(useTabsStore.getState().tabs[0]).toMatchObject({
+      status: 'connecting',
+      reconnectRequest: 1,
+      freshTransport: expect.any(String),
+    });
+  });
+
+  it('force reconnects an ended session without a confirmation', async () => {
+    const sshId = useTabsStore.getState().open(
+      { kind: 'ssh', target: 'router' },
+      'Router',
+    );
+    useTabsStore.getState().update(sshId, { status: 'closed' });
+
+    expect(await requestForceReconnect(sshId)).toBe(true);
+
+    expect(useDialogStore.getState().queue).toEqual([]);
+    expect(useTabsStore.getState().tabs[0]).toMatchObject({
+      status: 'connecting',
+      reconnectRequest: 1,
+      freshTransport: expect.any(String),
+    });
   });
 
   it('keeps an unfulfilled fresh-transport request across retries until success', () => {
