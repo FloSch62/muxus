@@ -821,6 +821,16 @@ describe('restoring the OSC 52 clipboard preference', () => {
   });
 });
 
+describe('restoring the GPU renderer preference', () => {
+  const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
+
+  it('restores only boolean renderer choices', () => {
+    expect(sanitizePreferences(prefs({ webglRenderer: true })))
+      .toMatchObject({ webglRenderer: true });
+    expect(sanitizePreferences(prefs({ webglRenderer: 'off' })).webglRenderer).toBeUndefined();
+  });
+});
+
 describe('restoring the update notification preference', () => {
   const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
 

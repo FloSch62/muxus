@@ -108,6 +108,8 @@ export interface PrefsState {
   scrollback: number;
   cursorBlink: boolean;
   cursorStyle: 'block' | 'underline' | 'bar';
+  /** Render terminals on the GPU via WebGL; off keeps the DOM renderer. */
+  webglRenderer: boolean;
   /** Local terminal shell; 'auto' lets the server pick the login shell. */
   localShell: string;
   /** Named alternatives offered wherever a local terminal can be launched. */
@@ -227,6 +229,7 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   }
   if (typeof state.activePaneBorder !== 'boolean') delete state.activePaneBorder;
   if (typeof state.dimInactivePanes !== 'boolean') delete state.dimInactivePanes;
+  if (typeof state.webglRenderer !== 'boolean') delete state.webglRenderer;
   if (
     typeof state.inactivePaneDimStrength !== 'number' ||
     !Number.isFinite(state.inactivePaneDimStrength) ||
@@ -356,6 +359,7 @@ export const usePrefsStore = create<PrefsState>()(
       scrollback: 10_000,
       cursorBlink: true,
       cursorStyle: 'block',
+      webglRenderer: false,
       localShell: 'auto',
       localShellProfiles: [],
       defaultLocalShellProfileId: '',

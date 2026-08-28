@@ -118,6 +118,19 @@ describe('split pane focus preferences', () => {
   });
 });
 
+describe('GPU renderer preference', () => {
+  it('defaults to the DOM renderer', () => {
+    expect(usePrefsStore.getInitialState().webglRenderer).toBe(false);
+  });
+
+  it('keeps a boolean choice and drops malformed persisted values', () => {
+    expect(migratePrefsState({ webglRenderer: true }, 12)).toEqual({ webglRenderer: true });
+    expect(migratePrefsState({ webglRenderer: 'off', monoFontSize: 16 }, 12)).toEqual({
+      monoFontSize: 16,
+    });
+  });
+});
+
 describe('tab number visibility preference', () => {
   it('defaults to revealing numbers while Alt is held', () => {
     expect(usePrefsStore.getInitialState().tabNumberVisibility).toBe('shortcut');
