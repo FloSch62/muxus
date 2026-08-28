@@ -1,3 +1,9 @@
+export type ClipboardContent =
+  | { kind: 'text'; text: string }
+  | { kind: 'image'; png: Uint8Array<ArrayBuffer> }
+  | { kind: 'empty' }
+  | { kind: 'unavailable' };
+
 /**
  * Read text from the clipboard. The async Clipboard API has no legacy read
  * fallback (execCommand('paste') never worked reliably), so this returns null
@@ -10,6 +16,16 @@ export async function readFromClipboard(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/** Capture one clipboard snapshot; the packaged app reads text and image synchronously. */
+export async function readClipboardContent(): Promise<ClipboardContent> {
+  if (window.muxusDesktop?.readClipboardContent) {
+    return (await window.muxusDesktop.readClipboardContent()) ?? { kind: 'unavailable' };
+  }
+  const text = await readFromClipboard();
+  if (text === null) return { kind: 'unavailable' };
+  return text ? { kind: 'text', text } : { kind: 'empty' };
 }
 
 /**

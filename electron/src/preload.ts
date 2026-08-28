@@ -39,6 +39,11 @@ interface LocalFontData {
 
 type QueryLocalFonts = () => Promise<LocalFontData[]>;
 
+type DesktopClipboardContent =
+  | { kind: 'text'; text: string }
+  | { kind: 'image'; png: Uint8Array<ArrayBuffer> }
+  | { kind: 'empty' };
+
 let localFontFamilies: Promise<string[] | undefined> | undefined;
 
 /**
@@ -110,6 +115,10 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   },
   checkForUpdate(options?: { force?: boolean }) {
     return ipcRenderer.invoke('muxus:check-for-update', options);
+  },
+  /** Capture OS clipboard text or a validated PNG in one main-process snapshot. */
+  readClipboardContent(): Promise<DesktopClipboardContent | undefined> {
+    return ipcRenderer.invoke('muxus:read-clipboard-content');
   },
   /** Open a native single-file picker and return only the user-selected path. */
   selectPrivateKey(): Promise<string | undefined> {

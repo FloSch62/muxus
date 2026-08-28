@@ -39,7 +39,10 @@ import {
   wsUrl,
 } from '../api/http.js';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
-import { copyToClipboard, readFromClipboard } from '../clipboard.js';
+import {
+  copyToClipboard,
+  readClipboardContent,
+} from '../clipboard.js';
 import { loadMonacoTextEditor, loadRemoteEditorWorkspace } from '../lazy-features.js';
 import { IS_MAC } from '../platform.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
@@ -85,6 +88,13 @@ import {
   terminalRightClickIntent,
   xtermRightClickSelectsWord,
 } from '../terminal/right-click.js';
+import {
+  isCurrentTerminalImagePasteTarget,
+  pasteTerminalClipboard,
+  type TerminalClipboardPayload,
+  TerminalClipboardPasteQueue,
+  uploadTerminalClipboardImage,
+} from '../terminal/clipboard-paste.js';
 import {
   AuthPromptDialog,
   type AuthPromptRequest,
@@ -221,12 +231,19 @@ async function openLinkedTerminalFile(tabId: string, candidate: string): Promise
   useTabsStore.getState().openEditor(tabId, path);
 }
 
+interface PendingPaste {
+  text: string;
+  broadcast: boolean;
+  resolve: () => void;
+}
+
 export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; active: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const searchRef = useRef<SearchAddon | null>(null);
+  const terminalInputReadyRef = useRef(false);
   const serializeRef = useRef<SerializeAddon | null>(null);
   const imageRef = useRef<ImageAddon | null>(null);
   const keywordHighlighterRef = useRef<KeywordHighlighter | null>(null);
@@ -242,10 +259,14 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const carryBufferRef = useRef<string | null>(null);
   /** Stored history is fetched at most once per mounted tab. */
   const snapshotFetchedRef = useRef(false);
+  const suppressNextInputBroadcastRef = useRef(false);
+  const clipboardPasteQueueRef = useRef<TerminalClipboardPasteQueue | null>(null);
+  const clipboardPasteQueue = (clipboardPasteQueueRef.current ??= new TerminalClipboardPasteQueue());
+  const pendingPasteResolverRef = useRef<(() => void) | null>(null);
   const theme = useTheme();
   const [authPrompt, setAuthPrompt] = useState<AuthPromptRequest | null>(null);
   const [hostKey, setHostKey] = useState<HostKeyRequest | null>(null);
-  const [pendingPaste, setPendingPaste] = useState<string | null>(null);
+  const [pendingPaste, setPendingPaste] = useState<PendingPaste | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchCase, setSearchCase] = useState(false);
@@ -257,6 +278,14 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     left: number;
     selection: string;
   } | null>(null);
+  useEffect(
+    () => () => {
+      clipboardPasteQueueRef.current?.cancelAll();
+      pendingPasteResolverRef.current?.();
+      pendingPasteResolverRef.current = null;
+    },
+    [],
+  );
   const [generation, setGeneration] = useState(tab.connectOnMount ? 1 : 0);
   const reconnectRequest = useTabsStore(
     (s) => s.tabs.find((candidate) => candidate.id === tab.id)?.reconnectRequest ?? 0,
@@ -343,13 +372,23 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     [searchCase, searchWord, searchRegex],
   );
 
-  const pasteText = (text: string) => {
+  const pasteToTerminal = (text: string, broadcast: boolean) => {
+    const term = termRef.current;
+    if (!term) return;
+    if (!broadcast) suppressNextInputBroadcastRef.current = true;
+    term.paste(text);
+  };
+
+  const pasteText = (text: string, broadcast = true): Promise<void> => {
     if (usePrefsStore.getState().pasteWarnMultiline && requiresPasteConfirmation(text)) {
       setSearchOpen(false);
-      setPendingPaste(text);
-      return;
+      const { promise, resolve } = Promise.withResolvers<void>();
+      pendingPasteResolverRef.current = resolve;
+      setPendingPaste({ text, broadcast, resolve });
+      return promise;
     }
-    termRef.current?.paste(text);
+    pasteToTerminal(text, broadcast);
+    return Promise.resolve();
   };
 
   /** Refit, unless the pane is hidden and there is nothing to measure. */
@@ -373,14 +412,64 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     }
   };
 
-  const pasteFromClipboard = () => {
-    void readFromClipboard().then((text) => {
-      if (text === null) {
-        showToast('warning', 'Clipboard read unavailable or denied — allow clipboard access, or paste with the keyboard.');
-        return;
-      }
-      if (text) pasteText(text);
+  const pasteFromClipboard = (
+    capture: (signal: AbortSignal) => Promise<TerminalClipboardPayload> = () =>
+      readClipboardContent(),
+  ) => {
+    const operation = clipboardPasteQueue.enqueue(capture, (clipboard, signal) => {
+      let uploadedConnectionId: string | undefined;
+      return pasteTerminalClipboard(clipboard, {
+        uploadImage: async (png) => {
+          const current = useTabsStore
+            .getState()
+            .tabs.find((candidate) => candidate.id === tab.id);
+          if (current?.profile?.kind !== 'ssh') {
+            throw new Error('Image paste is available in SSH terminals.');
+          }
+          if (current.sftpAvailable === false) {
+            throw new Error('Image paste requires SFTP, which is disabled for this host.');
+          }
+          if (!current.connId) {
+            throw new Error('Reconnect the SSH session before pasting an image.');
+          }
+          uploadedConnectionId = current.connId;
+          return uploadTerminalClipboardImage(current.connId, png, signal);
+        },
+        pasteText,
+        pasteImagePath: async (path) => {
+          signal.throwIfAborted();
+          const current = useTabsStore
+            .getState()
+            .tabs.find((candidate) => candidate.id === tab.id);
+          if (
+            !isCurrentTerminalImagePasteTarget({
+              connectionId: current?.connId,
+              expectedConnectionId: uploadedConnectionId,
+              inputReady: terminalInputReadyRef.current,
+              socketOpen: wsRef.current?.readyState === WebSocket.OPEN,
+              ssh: current?.profile?.kind === 'ssh',
+            })
+          ) {
+            throw new Error('The SSH session disconnected before the image path was pasted.');
+          }
+          await pasteText(path, false);
+        },
+      });
     });
+    void operation
+      .then((result) => {
+        if (result.status === 'skipped' && result.reason === 'unavailable') {
+          showToast(
+            'warning',
+            'Clipboard read unavailable or denied — allow clipboard access, or paste with the keyboard.',
+          );
+        }
+      })
+      .catch((error: unknown) => {
+        if (error instanceof Error && error.name === 'AbortError') return;
+        const detail = error instanceof Error ? error.message : String(error);
+        showToast('error', `Could not paste clipboard content. ${detail}`);
+      });
   };
 
   // Right-click behavior is a preference: the terminal-emulator convention
@@ -427,6 +516,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    terminalInputReadyRef.current = false;
     const shouldConnect = generation > 0;
     const reconnectCwd =
       tab.profile.kind === 'ssh' && tab.reconnectRequest > 0
@@ -657,7 +747,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         const base = usePrefsStore.getState().monoFontSize;
         return Math.round(((base + zoomRef.current) / base) * 100);
       },
-      paste: (text) => pasteText(text),
+      paste: (text) =>
+        pasteFromClipboard(() => Promise.resolve({ kind: 'text', text })),
+      pasteClipboard: pasteFromClipboard,
       setLogging: (patch) => {
         const socket = wsRef.current;
         if (!socket || socket.readyState !== WebSocket.OPEN) return false;
@@ -667,12 +759,14 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     });
 
     const onNativePaste = (event: ClipboardEvent) => {
-      const text = event.clipboardData?.getData('text/plain');
-      if (!text || !usePrefsStore.getState().pasteWarnMultiline || !requiresPasteConfirmation(text)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      setSearchOpen(false);
-      setPendingPaste(text);
+      const text = event.clipboardData?.getData('text/plain');
+      if (text) {
+        pasteFromClipboard(() => Promise.resolve({ kind: 'text', text }));
+      } else {
+        pasteFromClipboard();
+      }
     };
     el.addEventListener('paste', onNativePaste, true);
 
@@ -975,6 +1069,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             break;
           case 'ready': {
             ready = true;
+            terminalInputReadyRef.current = true;
             if (!attachingExistingSession || readyAt === 0) readyAt = Date.now();
             if (!attachingExistingSession) rendererReattachAttempts = 0;
             if (rendererStableTimer !== undefined) clearTimeout(rendererStableTimer);
@@ -1055,6 +1150,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         socketFailed = true;
       };
       socket.onclose = (event) => {
+        terminalInputReadyRef.current = false;
         if (wsRef.current === socket) wsRef.current = null;
         if (disposed) return;
         clearTransientStatus();
@@ -1217,8 +1313,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     const onData = term.onData((data) => {
       const normalized = normalizeTerminalKeyboardInput(data, inputKeyEvent, IS_MAC);
       inputKeyEvent = undefined;
-      if (sendInput(normalized)) broadcastTerminalInput(tab.id, normalized);
-      else reconnectFromTerminalInput();
+      const broadcast = !suppressNextInputBroadcastRef.current;
+      suppressNextInputBroadcastRef.current = false;
+      if (sendInput(normalized)) {
+        if (broadcast) broadcastTerminalInput(tab.id, normalized);
+      } else {
+        reconnectFromTerminalInput();
+      }
     });
     const onBinary = term.onBinary((data) => {
       const bytes = new Uint8Array(data.length);
@@ -1306,6 +1407,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       imageRef.current = null;
       keywordHighlighterRef.current = null;
       termRef.current = null;
+      terminalInputReadyRef.current = false;
       wsRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1656,11 +1758,17 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       <HostKeyDialog request={hostKey} onAnswer={answerHostKey} />
       {pendingPaste !== null ? (
         <PasteConfirmDialog
-          initialText={pendingPaste}
-          onCancel={() => setPendingPaste(null)}
+          initialText={pendingPaste.text}
+          onCancel={() => {
+            setPendingPaste(null);
+            pendingPasteResolverRef.current = null;
+            pendingPaste.resolve();
+          }}
           onConfirm={(text) => {
             setPendingPaste(null);
-            termRef.current?.paste(text);
+            pendingPasteResolverRef.current = null;
+            pasteToTerminal(text, pendingPaste.broadcast);
+            pendingPaste.resolve();
             termRef.current?.focus();
           }}
         />
