@@ -1,13 +1,16 @@
 // One-off smoke: does the GPU renderer toggle actually swap the live terminal?
-//   node /tmp/webgl-toggle-smoke.mjs
+//   node hack/webgl-toggle-smoke.mjs
 // Headed on :0, drives the real UI: connect demo host, open Settings,
-// flip "GPU renderer (WebGL)" off and on, assert the xterm layers swap.
+// flip "GPU renderer (WebGL)" on and off, assert the xterm layers swap.
+// Set CHROME to override the browser.
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
 import { startDemoEnv } from './demo-env.mjs';
 
-const CHROME = path.join(os.homedir(), '.cache/ms-playwright/chromium-1223/chrome-linux64/chrome');
+const CHROME =
+  process.env.CHROME ||
+  path.join(os.homedir(), '.cache/ms-playwright/chromium-1223/chrome-linux64/chrome');
 const env = await startDemoEnv();
 
 const layers = (page) =>
@@ -61,14 +64,14 @@ try {
   await page.locator('[role="treeitem"][aria-label="web-01"]').first().click();
   await page.waitForSelector('.xterm-screen');
   await page.waitForSelector('.xterm-screen canvas, .xterm-rows > div');
-  await page.waitForTimeout(1500); // lazy addon import + first prompt
+  await page.waitForTimeout(1500); // first prompt
 
   // The WebGL text canvas is classless; DOM mode has no canvases at all.
   const isWebgl = (s) => s.domRows === 0 && (s.canvases?.length ?? 0) > 0;
   const isDom = (s) => s.domRows > 0 && (s.canvases?.length ?? 0) === 0;
 
   const initial = await layers(page);
-  expect('default pref renders on GPU', isWebgl(initial), JSON.stringify(initial));
+  expect('default pref renders on DOM', isDom(initial), JSON.stringify(initial));
 
   const toggle = async () => {
     await page.click('[aria-label="Settings"]');
@@ -92,12 +95,19 @@ try {
   };
 
   await toggle();
+  await page.waitForTimeout(1200); // lazy addon import
+  const on = await layers(page);
+  expect('toggle on → WebGL renderer live', isWebgl(on), JSON.stringify(on));
+  await page.screenshot({ path: '/tmp/muxus-webgl-perf/toggle-on.png' });
+
+  await toggle();
   await page.waitForTimeout(600);
   const off = await layers(page);
   expect('toggle off → DOM renderer live', isDom(off), JSON.stringify(off));
   await page.screenshot({ path: '/tmp/muxus-webgl-perf/toggle-off.png' });
 
-  // The session itself must survive the renderer swap.
+  // The session itself must survive the round-trip; read the echo from the
+  // DOM rows, which only exist while the DOM renderer is active.
   await page.locator('.xterm-screen').first().click();
   await page.keyboard.type('echo renderer-swap-ok');
   await page.keyboard.press('Enter');
@@ -108,13 +118,7 @@ try {
       () => document.querySelector('.xterm-rows')?.textContent?.includes('renderer-swap-ok') ?? false,
     );
   }
-  expect('session alive after swap to DOM', echoed, '');
-
-  await toggle();
-  await page.waitForTimeout(1200); // lazy import again
-  const on = await layers(page);
-  expect('toggle on → WebGL renderer live', isWebgl(on), JSON.stringify(on));
-  await page.screenshot({ path: '/tmp/muxus-webgl-perf/toggle-on.png' });
+  expect('session alive after renderer round-trip', echoed, '');
 
   expect('no console errors', consoleErrors.length === 0, consoleErrors.join(' | '));
   await browser.close();

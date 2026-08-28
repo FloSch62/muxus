@@ -205,6 +205,7 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   }
   if (typeof state.activePaneBorder !== 'boolean') delete state.activePaneBorder;
   if (typeof state.dimInactivePanes !== 'boolean') delete state.dimInactivePanes;
+  if (typeof state.webglRenderer !== 'boolean') delete state.webglRenderer;
   if (
     typeof state.inactivePaneDimStrength !== 'number' ||
     !Number.isFinite(state.inactivePaneDimStrength) ||
@@ -334,7 +335,7 @@ export const usePrefsStore = create<PrefsState>()(
       scrollback: 10_000,
       cursorBlink: true,
       cursorStyle: 'block',
-      webglRenderer: true,
+      webglRenderer: false,
       localShell: 'auto',
       localShellProfiles: [],
       defaultLocalShellProfileId: '',

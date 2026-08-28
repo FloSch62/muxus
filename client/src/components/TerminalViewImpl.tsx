@@ -223,6 +223,9 @@ async function openLinkedTerminalFile(tabId: string, candidate: string): Promise
   useTabsStore.getState().openEditor(tabId, path);
 }
 
+/** One warning per page load: the failure is machine-wide, not per-terminal. */
+let webglUnavailableWarned = false;
+
 export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; active: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -361,6 +364,15 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     if (!shouldFitTerminal(containerRef.current)) return false;
     fitRef.current?.fit();
     return true;
+  };
+
+  /** Return to the DOM renderer — the pref-off path and context loss share it. */
+  const dropWebglAddon = () => {
+    const webgl = webglAddonRef.current;
+    if (!webgl) return;
+    webglAddonRef.current = null;
+    webgl.dispose();
+    fitTerminal();
   };
 
   const applyZoom = (action: 'in' | 'out' | 'reset') => {
@@ -541,6 +553,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     ])
       .then(() => {
         if (termRef.current !== term) return;
+        // The WebGL atlas caches glyphs rasterized with the fallback face;
+        // refresh alone would repaint those same bitmaps.
+        webglAddonRef.current?.clearTextureAtlas();
         term.refresh(0, term.rows - 1);
         fitTerminal();
       })
@@ -1326,6 +1341,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         ) {
           return;
         }
+        webglAddonRef.current?.clearTextureAtlas();
         term.refresh(0, term.rows - 1);
         fitTerminal();
       })
@@ -1347,11 +1363,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     const term = termRef.current;
     if (!term) return;
     if (!webglRenderer) {
-      if (webglAddonRef.current) {
-        webglAddonRef.current.dispose();
-        webglAddonRef.current = null;
-        fitTerminal();
-      }
+      dropWebglAddon();
       return;
     }
     if (webglAddonRef.current) return;
@@ -1360,17 +1372,23 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       .then(({ WebglAddon }) => {
         if (cancelled || termRef.current !== term || webglAddonRef.current) return;
         const webgl = new WebglAddon();
-        webgl.onContextLoss(() => {
-          webglAddonRef.current = null;
+        webgl.onContextLoss(() => dropWebglAddon());
+        try {
+          term.loadAddon(webgl);
+        } catch (err) {
           webgl.dispose();
-          fitTerminal();
-        });
+          throw err;
+        }
+        // Only a live addon may reach the ref: a failed activation must not
+        // suppress retries or make toggle-off dispose a renderer that never ran.
         webglAddonRef.current = webgl;
-        term.loadAddon(webgl);
         fitTerminal();
       })
       .catch(() => {
-        // No usable WebGL on this machine — stay on the DOM renderer.
+        // Chunk fetch failed or WebGL2 is unusable — the DOM renderer stays.
+        if (webglUnavailableWarned) return;
+        webglUnavailableWarned = true;
+        showToast('warning', 'GPU rendering is unavailable here — terminals keep the standard renderer.');
       });
     return () => {
       cancelled = true;

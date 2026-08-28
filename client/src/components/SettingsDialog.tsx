@@ -656,7 +656,8 @@ function TerminalSection() {
               <Typography variant="caption" color="text.secondary">
                 Paints terminals on the GPU instead of the DOM — smoother under
                 heavy output, slightly more CPU while idle. Applies to open
-                terminals immediately.
+                terminals immediately; where WebGL is unavailable, terminals
+                keep the standard renderer.
               </Typography>
             </Box>
           }

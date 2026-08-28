@@ -2,11 +2,14 @@
 // Drives the LIVE muxus web server, opens a local terminal, toggles the
 // renderer, and measures the character cell grid + glyph ink width per mode.
 //   node hack/renderer-size-probe.mjs
+// Set CHROME to override the browser.
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
 
-const CHROME = path.join(os.homedir(), '.cache/ms-playwright/chromium-1223/chrome-linux64/chrome');
+const CHROME =
+  process.env.CHROME ||
+  path.join(os.homedir(), '.cache/ms-playwright/chromium-1223/chrome-linux64/chrome');
 // Servers mint a fresh token per start, so it must come from the environment.
 const TOKEN = process.env.MUXUS_TOKEN;
 const BASE = process.env.MUXUS_URL ?? 'http://127.0.0.1:3002';
@@ -25,6 +28,7 @@ const browser = await chromium.launch({
     '--window-size=1920,1080',
     '--disable-backgrounding-occluded-windows',
     '--disable-renderer-backgrounding',
+    '--disable-background-timer-throttling',
   ],
 });
 const page = await (await browser.newContext({ viewport: null })).newPage();
@@ -52,7 +56,7 @@ await page.goto(`${BASE}/#token=${TOKEN}`, { waitUntil: 'domcontentloaded' });
 await page.waitForSelector('text=Local terminal');
 await page.click('text=Local terminal');
 await page.waitForSelector('.xterm-screen');
-await page.waitForTimeout(2500); // webfonts + lazy addon + first prompt
+await page.waitForTimeout(2500); // webfonts + first prompt
 
 const measure = () =>
   page.evaluate(() => {
@@ -87,11 +91,22 @@ const measure = () =>
 
 const toggle = async () => {
   await page.click('[aria-label="Settings"]');
-  await page.waitForSelector('.MuiDialog-paper');
-  await page.waitForTimeout(500);
-  await page.click('.MuiDialog-paper [role="button"]:has-text("Terminal")');
+  // The dialog container intercepts pointer events during the paper
+  // transition, so click through the DOM instead of coordinates.
+  await page.waitForSelector('.MuiDialog-paper [role="button"]:has-text("Terminal")');
+  await page.waitForTimeout(600);
+  await page.evaluate(() =>
+    [...document.querySelectorAll('.MuiDialog-paper [role="button"]')]
+      .find((b) => b.textContent.trim() === 'Terminal')
+      .click(),
+  );
   await page.waitForSelector('.MuiDialog-paper >> text=GPU renderer (WebGL)');
-  await page.click('.MuiDialog-paper >> text=GPU renderer (WebGL)');
+  await page.evaluate(() =>
+    [...document.querySelectorAll('.MuiDialog-paper .MuiFormControlLabel-root')]
+      .find((l) => l.textContent.includes('GPU renderer'))
+      .querySelector('input[type="checkbox"]')
+      .click(),
+  );
   await page.keyboard.press('Escape');
   await page.waitForTimeout(1500); // swap + lazy import
 };
@@ -109,16 +124,16 @@ const report = (label, m) => {
 };
 
 console.log('mode after load:', JSON.stringify((await measure()).domRows ? 'dom' : 'webgl?'));
-report('after load (default = webgl on)', await measure());
-
-await toggle(); // → DOM
-const dom = await measure();
-report('after toggle OFF (dom)', dom);
-await page.locator('.xterm-screen').screenshot({ path: '/tmp/muxus-webgl-perf/size-dom.png' });
+report('after load (default = dom)', await measure());
 
 await toggle(); // → WebGL
 const webgl = await measure();
 report('after toggle ON (webgl)', webgl);
 await page.locator('.xterm-screen').screenshot({ path: '/tmp/muxus-webgl-perf/size-webgl.png' });
+
+await toggle(); // → DOM
+const dom = await measure();
+report('after toggle OFF (dom)', dom);
+await page.locator('.xterm-screen').screenshot({ path: '/tmp/muxus-webgl-perf/size-dom.png' });
 
 await browser.close();
