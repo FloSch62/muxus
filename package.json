@@ -1,12 +1,12 @@
 {
   "name": "muxus",
-  "version": "0.6.3",
+  "version": "0.7.0",
   "private": true,
-  "packageManager": "pnpm@11.17.0",
+  "packageManager": "pnpm@12.0.0",
   "description": "Free, open-source SSH, Telnet, and serial client — kitty graphics, split-pane sessions, SFTP, port forwarding",
   "license": "MIT",
   "engines": {
-    "node": ">=24.17.0"
+    "node": ">=24.20.0"
   },
   "scripts": {
     "dev": "pnpm -r --parallel --stream dev",
@@ -26,9 +26,9 @@
     "record-docs": "node hack/record.mjs && THEME=dark node hack/record.mjs"
   },
   "devDependencies": {
-    "oxlint": "^1.76.0",
+    "oxlint": "^1.80.0",
     "oxlint-tsgolint": "^7.0.2001",
-    "playwright-core": "^1.62.0",
+    "playwright-core": "^1.62.1",
     "typescript": "^7.0.2"
   }
 }

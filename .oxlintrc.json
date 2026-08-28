@@ -16,7 +16,15 @@
     "react/rules-of-hooks": "error",
     "react/no-unstable-nested-components": "error",
     "react/jsx-no-constructed-context-values": "error",
-    "react/no-object-type-as-default-prop": "error"
+    "react/no-object-type-as-default-prop": "error",
+    // Oxlint 1.80 added these React Compiler rules to its correctness set.
+    // Keep the established lint baseline until the UI can be migrated as a
+    // focused change with dedicated interaction testing.
+    "react/preserve-manual-memoization": "off",
+    "react/purity": "off",
+    "react/refs": "off",
+    "react/set-state-in-effect": "off",
+    "react/static-components": "off"
   },
   "overrides": [
     {
