@@ -66,6 +66,12 @@ describe('blankNativeDraft', () => {
       port: '23',
     });
   });
+
+  it('prefills the selected folder for Telnet and serial hosts', () => {
+    expect(blankNativeDraft('', 'Lab/Consoles')).toMatchObject({
+      group: 'Lab/Consoles',
+    });
+  });
 });
 
 describe('nativeDraftFromProfile', () => {

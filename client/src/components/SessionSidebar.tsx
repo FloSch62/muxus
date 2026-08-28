@@ -679,6 +679,7 @@ export function SessionSidebar() {
             folder={{
               menu: folderMenu,
               onClose: () => setFolderMenu(null),
+              onNewHost: (node) => setHostEditor({ mode: 'new', group: node.path }),
               onNewChild: (node) => setFolderDialog({ mode: 'new', parentPath: node.path }),
               onEdit: (node) => setFolderDialog({ mode: 'edit', path: node.path }),
               onLaunch: launchNode,

@@ -142,7 +142,9 @@ function editorKind(state: OpenState): 'ssh' | 'telnet' | 'serial' {
 }
 
 function stateIdentity(state: OpenState): string {
-  if (state.mode === 'new') return `new:${state.prefillTarget ?? ''}`;
+  if (state.mode === 'new') {
+    return `new:${state.prefillTarget ?? ''}:${state.group ?? ''}`;
+  }
   if (state.mode === 'edit-profile' || state.mode === 'duplicate-profile') {
     return `${state.mode}:${state.entry.id}`;
   }
@@ -150,7 +152,7 @@ function stateIdentity(state: OpenState): string {
 }
 
 function initialSshDraft(state: OpenState): HostDraft {
-  if (state.mode === 'new') return blankDraft(state.prefillTarget);
+  if (state.mode === 'new') return blankDraft(state.prefillTarget, state.group);
   if (state.mode === 'edit' || state.mode === 'duplicate') {
     return draftFromEntry(state.entry, state.mode === 'duplicate');
   }
@@ -176,7 +178,10 @@ function initialNativeDraft(state: OpenState): NativeHostDraft {
       state.mode === 'duplicate-profile',
     );
   }
-  return blankNativeDraft(state.mode === 'new' ? state.prefillTarget : undefined);
+  return blankNativeDraft(
+    state.mode === 'new' ? state.prefillTarget : undefined,
+    state.mode === 'new' ? state.group : undefined,
+  );
 }
 
 /**
@@ -419,7 +424,7 @@ function SshHostEditorContent({
       typeKind={state.mode === 'new' ? 'ssh' : undefined}
       onTypeChange={
         state.mode === 'new'
-          ? (kind) => setState({ mode: 'new', kind, prefillTarget: state.prefillTarget })
+          ? (kind) => setState({ ...state, kind })
           : undefined
       }
       sections={sections}

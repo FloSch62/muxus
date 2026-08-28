@@ -4,13 +4,14 @@ import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import CreateNewFolderOutlinedIcon from '@mui/icons-material/CreateNewFolderOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
+import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
 import UnfoldLessIcon from '@mui/icons-material/UnfoldLess';
 import type { FolderNode } from '../../host-tree.js';
-import { loadFolderDialog } from '../../lazy-features.js';
+import { loadFolderDialog, loadHostEditorDialog } from '../../lazy-features.js';
 
 export interface FolderMenuState {
   anchor: HTMLElement;
@@ -21,6 +22,7 @@ export interface FolderMenuState {
 export function FolderContextMenu({
   menu,
   onClose,
+  onNewHost,
   onNewChild,
   onEdit,
   onLaunch,
@@ -32,6 +34,7 @@ export function FolderContextMenu({
 }: {
   menu: FolderMenuState | null;
   onClose: () => void;
+  onNewHost: (node: FolderNode) => void;
   onNewChild: (node: FolderNode) => void;
   onEdit: (node: FolderNode) => void;
   onLaunch: (node: FolderNode) => void;
@@ -75,6 +78,16 @@ export function FolderContextMenu({
         Move down
       </MenuItem>
       <Divider />
+      <MenuItem
+        onMouseEnter={() => void loadHostEditorDialog()}
+        onFocus={() => void loadHostEditorDialog()}
+        onClick={run(onNewHost)}
+      >
+        <ListItemIcon>
+          <DnsOutlinedIcon fontSize="small" />
+        </ListItemIcon>
+        New host…
+      </MenuItem>
       <MenuItem
         onMouseEnter={() => void loadFolderDialog()}
         onFocus={() => void loadFolderDialog()}

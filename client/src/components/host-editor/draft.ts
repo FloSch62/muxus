@@ -62,7 +62,7 @@ export interface HostDraft {
   sessionLogging: HostSessionLoggingDraft;
 }
 
-export function blankDraft(prefillTarget = ''): HostDraft {
+export function blankDraft(prefillTarget = '', group = ''): HostDraft {
   // A quick-connect target already carries the fields the form asks for; a bare
   // name the sidebar could not find is just the alias.
   const target = prefillTarget.trim();
@@ -72,7 +72,7 @@ export function blankDraft(prefillTarget = ''): HostDraft {
     aliasText: parsed?.host ?? target,
     description: '',
     displayName: '',
-    group: '',
+    group,
     color: undefined,
     terminalScheme: undefined,
     terminalFontColor: undefined,
