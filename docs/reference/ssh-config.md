@@ -67,7 +67,7 @@ but the dialler still applies them the way `ssh` would:
 | `Ciphers`, `KexAlgorithms`, `HostKeyAlgorithms`, `MACs` | Algorithm negotiation, including the `+`/`^`/`-` list syntax and `*` patterns. Entries the SSH engine does not implement are skipped with a notice, so a config shared with OpenSSH keeps working. The editor flags them while you type. |
 | `Compression` | `yes` prefers zlib like `ssh -C` |
 | `ConnectTimeout` | Dial timeout; defaults to 20 seconds |
-| `ServerAliveInterval`, `ServerAliveCountMax` | Keepalives; default 15 seconds / 3 missed replies |
+| `ServerAliveInterval`, `ServerAliveCountMax` | Keepalives; OpenSSH defaults to disabled / 3 missed replies. Muxus supplies the interval selected in Settings (30 seconds by default) when the config leaves it unset. |
 | `PasswordAuthentication no`, `KbdInteractiveAuthentication no` | Removes that rung from the auth ladder (the legacy `ChallengeResponseAuthentication` spelling works too) |
 | `UserKnownHostsFile`, `GlobalKnownHostsFile` | Host keys verify against these files instead; new keys are recorded into the first user file, `none` disables, and user-file path tokens such as `%h`, `%n`, and `%p` expand per connection |
 | `SetEnv`, `SendEnv` | Session environment, with `-pattern` removals and SetEnv overriding |

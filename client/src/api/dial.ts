@@ -4,6 +4,7 @@ import type {
   AuthPromptResult,
 } from '../components/AuthPromptDialog.js';
 import type { HostKeyRequest } from '../components/HostKeyDialog.js';
+import { sshKeepalivePrefField } from '../state/prefs.js';
 import { closeTerminalWebSocket, wsProtocols, wsUrl } from './http.js';
 
 /** Interactive hooks a shell-less dial needs from the UI. */
@@ -53,6 +54,7 @@ export function dialConnection(
             kind: 'ssh',
             target,
             ...(sshOptions === undefined ? {} : { useConfig: false, ...sshOptions }),
+            ...sshKeepalivePrefField(),
           },
         }),
       );

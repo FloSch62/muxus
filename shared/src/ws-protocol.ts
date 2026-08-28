@@ -7,6 +7,9 @@ export const TERMINAL_WS_AUTH_PREFIX = 'muxus.auth.';
 /** Clean-close reason that explicitly ends the backend terminal lifecycle. */
 export const TERMINAL_SESSION_CLOSE_REASON = 'terminal session closed';
 
+/** Upper bound for the Muxus-wide ServerAliveInterval fallback, in seconds. */
+export const MAX_SSH_KEEPALIVE_INTERVAL_SECONDS = 3600;
+
 /** Protocols offered by browser WebSocket clients during the HTTP upgrade. */
 export function terminalWebSocketProtocols(token: string): string[] {
   return [TERMINAL_WS_PROTOCOL, `${TERMINAL_WS_AUTH_PREFIX}${token}`];
@@ -45,6 +48,16 @@ export const sshProfileSchema = z.object({
   target: z.string().min(1),
   /** False for a self-contained saved host or tunnel; jump aliases may still resolve from config. */
   useConfig: z.boolean().optional(),
+  /**
+   * Muxus-wide fallback for ServerAliveInterval, in seconds. An explicit
+   * ssh_config value still wins for the host or jump hop.
+   */
+  keepaliveIntervalSeconds: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_SSH_KEEPALIVE_INTERVAL_SECONDS)
+    .optional(),
   /** Quick-connect overrides on top of config resolution. */
   user: z.string().optional(),
   port: z.number().int().min(1).max(65535).optional(),
@@ -142,6 +155,12 @@ export const terminalClientMessageSchema = z.discriminatedUnion('op', [
   z.object({
     op: z.literal('connect'),
     profile: sessionProfileSchema,
+    /**
+     * Replacement-group token: skip SSH transports established before this
+     * request and dial a replacement. Connects carrying the same token share
+     * one replacement connection (one login for a force-reconnected window).
+     */
+    freshTransport: z.string().min(1).max(100).optional(),
     /** User-facing tab title retained in session history. */
     title: z.string().trim().min(1).max(500).optional(),
     cols: z.number().int().positive(),

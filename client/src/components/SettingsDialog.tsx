@@ -66,6 +66,7 @@ import {
 import { useChordLabel } from '../keymap/hints.js';
 import { IS_MAC } from '../platform.js';
 import {
+  DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
   MAX_INACTIVE_PANE_DIM_STRENGTH,
   MIN_INACTIVE_PANE_DIM_STRENGTH,
   clampInactivePaneDimStrength,
@@ -644,6 +645,8 @@ function TerminalSection() {
   );
 }
 
+const SSH_KEEPALIVE_CHOICES = [0, 15, DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS, 60, 120];
+
 function BehaviorSection() {
   const prefs = usePrefsStore();
 
@@ -672,6 +675,31 @@ function BehaviorSection() {
       <Box>
         <SectionTitle>Restore & reconnect</SectionTitle>
         <Stack spacing={1.5}>
+          <TextField
+            select
+            label="SSH keepalive interval"
+            value={prefs.sshKeepaliveIntervalSeconds}
+            onChange={(event) =>
+              prefs.set({ sshKeepaliveIntervalSeconds: Number(event.target.value) })
+            }
+            helperText="Keeps idle SSH connections active. A host's ServerAliveInterval setting takes precedence; changes apply on reconnect."
+            sx={{ width: 280 }}
+          >
+            <MenuItem value={0}>SSH configuration only</MenuItem>
+            <MenuItem value={15}>Every 15 seconds</MenuItem>
+            <MenuItem value={DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS}>
+              Every 30 seconds (recommended)
+            </MenuItem>
+            <MenuItem value={60}>Every minute</MenuItem>
+            <MenuItem value={120}>Every 2 minutes</MenuItem>
+            {SSH_KEEPALIVE_CHOICES.includes(prefs.sshKeepaliveIntervalSeconds) ? null : (
+              // A hand-edited or newer-version value must stay visible and
+              // active instead of rendering the select blank.
+              <MenuItem value={prefs.sshKeepaliveIntervalSeconds}>
+                Every {prefs.sshKeepaliveIntervalSeconds} seconds (custom)
+              </MenuItem>
+            )}
+          </TextField>
           <FormControlLabel
             control={
               <Switch

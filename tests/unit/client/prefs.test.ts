@@ -9,6 +9,7 @@ import {
 import { DEFAULT_SIDEBAR_WIDTH } from '../../../client/src/sidebar-width.js';
 import {
   DEFAULT_INACTIVE_PANE_DIM_STRENGTH,
+  DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
   MONO_FONT_FALLBACK,
   clampInactivePaneDimStrength,
   isLocalShellProfileArray,
@@ -27,6 +28,23 @@ const ubuntuProfile = {
   cwd: 'C:\\work',
   startupCommand: 'cd project',
 };
+
+describe('SSH keepalive preference', () => {
+  it('defaults to a 30-second fallback', () => {
+    expect(usePrefsStore.getInitialState().sshKeepaliveIntervalSeconds).toBe(
+      DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
+    );
+  });
+
+  it('keeps valid values and drops malformed persisted values', () => {
+    expect(migratePrefsState({ sshKeepaliveIntervalSeconds: 60 }, 13)).toEqual({
+      sshKeepaliveIntervalSeconds: 60,
+    });
+    expect(
+      migratePrefsState({ sshKeepaliveIntervalSeconds: -1, monoFontSize: 16 }, 13),
+    ).toEqual({ monoFontSize: 16 });
+  });
+});
 
 describe('appearance preference', () => {
   it('defaults new installations to the system appearance', () => {

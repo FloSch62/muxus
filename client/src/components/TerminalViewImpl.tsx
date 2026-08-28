@@ -47,6 +47,7 @@ import { showToast } from '../state/toast.js';
 import { broadcastTerminalInput } from '../state/multi-exec.js';
 import {
   TERMINAL_SYMBOL_FONT,
+  sshKeepalivePrefField,
   terminalFontStack,
   terminalSchemeIdForMode,
   usePrefsStore,
@@ -850,6 +851,12 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         // it was not when the terminal mounted. Measure now so the remote PTY
         // starts at the size on screen instead of being resized a beat later.
         if (!fitted) fitted = fitTerminal();
+        // Read the preference at send time, the way dialConnection does, so a
+        // change made while this socket was opening still applies.
+        const profile =
+          tab.profile.kind === 'ssh'
+            ? { ...tab.profile, ...sshKeepalivePrefField() }
+            : tab.profile;
         socket.send(JSON.stringify(
           attachTerminalId
             ? {
@@ -860,7 +867,8 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
               }
             : {
                 op: 'connect',
-                profile: tab.profile,
+                profile,
+                freshTransport: tab.freshTransport,
                 title: tab.title,
                 cols: term.cols,
                 rows: term.rows,
@@ -988,6 +996,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
               : shouldWaitForTerminalOutput(tab.profile.kind, receivedTerminalOutput);
             const sftpAvailable =
               tab.profile.kind === 'ssh' ? ctl.sftpAvailable !== false : undefined;
+            // Clear only the token this connect carried: a ready outracing the
+            // effect teardown must not erase a newer gesture's token.
+            const tokenUnchanged =
+              useTabsStore
+                .getState()
+                .tabs.find((candidate) => candidate.id === tab.id)
+                ?.freshTransport === tab.freshTransport;
             updateTab(tab.id, {
               status: transportSuspect
                 ? 'interrupted'
@@ -1001,6 +1016,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
               sftpAvailable,
               ...(sftpAvailable === false ? { sftpOpen: false } : {}),
               transferId: undefined,
+              // The replacement connection is live; retries from here on may
+              // multiplex normally again.
+              ...(tokenUnchanged ? { freshTransport: undefined } : {}),
             });
             if (pendingTransferId) {
               completeTabTransfer(pendingTransferId);

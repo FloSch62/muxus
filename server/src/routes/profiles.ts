@@ -19,7 +19,9 @@ const savedProfileSchema = z.object({
   id: z.string().min(1).max(200).optional(),
   name: z.string().trim().min(1).max(200),
   profile: z.discriminatedUnion('kind', [
-    sshProfileSchema,
+    // The keepalive fallback is an application preference each connect sends
+    // for itself — never a stored connection field that could outvote it.
+    sshProfileSchema.omit({ keepaliveIntervalSeconds: true }),
     telnetProfileSchema,
     serialProfileSchema,
   ]),

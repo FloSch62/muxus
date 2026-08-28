@@ -12,7 +12,7 @@ import {
   type LocalShellProfileConfig,
 } from './state/prefs.js';
 import { useMultiExecStore } from './state/multi-exec.js';
-import { useTabsStore } from './state/tabs.js';
+import { isRemoteSessionTab, useTabsStore } from './state/tabs.js';
 import type { PaneDirection, SessionSetLayout } from './state/tabs.js';
 import { confirmAction } from './state/dialogs.js';
 import { showToast } from './state/toast.js';
@@ -198,6 +198,53 @@ export function toggleMultiExec(): boolean {
       ? 'Connect at least two sessions to mirror input.'
       : 'Pick the terminals to mirror input into from the multi-exec control.',
   );
+  return true;
+}
+
+/** Replace every remote connection in this window after warning about live shells. */
+export async function requestForceReconnectAll(): Promise<boolean> {
+  const state = useTabsStore.getState();
+  const remoteSessions = state.tabs.filter(isRemoteSessionTab);
+  if (!remoteSessions.length) return false;
+  const liveCount = remoteSessions.filter((tab) => tab.status !== 'closed').length;
+  const confirmed = await confirmAction({
+    title: `Force reconnect ${remoteSessions.length} remote session${remoteSessions.length === 1 ? '' : 's'}?`,
+    description: liveCount
+      ? `This ends ${liveCount} live or connecting session${liveCount === 1 ? '' : 's'} and starts fresh connections in the same tabs. Remote programs survive only when they run in tmux or screen.`
+      : 'This starts fresh connections for every remote tab.',
+    confirmLabel: 'Force reconnect all',
+    destructive: liveCount > 0,
+  });
+  if (
+    !confirmed ||
+    !(await confirmDiscardRemoteEditors(remoteSessions.map((tab) => tab.id)))
+  ) {
+    return false;
+  }
+  useTabsStore.getState().forceReconnectAll();
+  showToast(
+    'info',
+    `Reconnecting ${remoteSessions.length} remote session${remoteSessions.length === 1 ? '' : 's'}…`,
+  );
+  return true;
+}
+
+/** Replace one remote session's connection, warning first when it is live. */
+export async function requestForceReconnect(tabId: string): Promise<boolean> {
+  const tab = useTabsStore.getState().tabs.find((candidate) => candidate.id === tabId);
+  if (!tab || !isRemoteSessionTab(tab)) return false;
+  if (tab.status !== 'closed') {
+    const confirmed = await confirmAction({
+      title: `Force reconnect ${tab.title}?`,
+      description:
+        'This ends the current session and starts a fresh connection in the same tab. Remote programs survive only when they run in tmux or screen.',
+      confirmLabel: 'Force reconnect',
+      destructive: true,
+    });
+    if (!confirmed) return false;
+  }
+  if (!(await confirmDiscardRemoteEditors([tabId]))) return false;
+  useTabsStore.getState().forceReconnect(tabId);
   return true;
 }
 
