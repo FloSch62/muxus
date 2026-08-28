@@ -126,7 +126,7 @@ export function GeneralSection({
             onChange={(e) => {
               const v = e.target.value;
               if (v === NEW_FILE) applyNewFile(newFileName || 'group');
-              else set({ file: v === rootPath ? '' : v });
+              else set({ file: v });
             }}
             fullWidth
           >
