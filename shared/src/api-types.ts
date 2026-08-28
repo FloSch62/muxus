@@ -301,6 +301,16 @@ export interface HostOrderRequest {
 }
 
 /**
+ * One target supplied when the desktop executable is launched from a command
+ * line. Names stay unresolved until the renderer has loaded the same host and
+ * workspace catalogs used by the rest of the UI.
+ */
+export type CommandLineLaunch =
+  | { kind: 'host'; name: string }
+  | { kind: 'folder'; name: string }
+  | { kind: 'workspace'; name: string };
+
+/**
  * One extra application window requested by the renderer. Workspace windows
  * either create a named workspace or open an existing one; session windows
  * start a fresh shell; SFTP windows stay attached to an existing SSH

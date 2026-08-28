@@ -1,5 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { AppWindowLaunch, MobaXtermSessionSource } from '@muxus/shared';
+import type {
+  AppWindowLaunch,
+  CommandLineLaunch,
+  MobaXtermSessionSource,
+} from '@muxus/shared';
 
 // Client state is mirrored here and persisted with fire-and-forget messages.
 // sendSync is deliberately avoided for the steady-state path: it parks the
@@ -32,6 +36,30 @@ const windowLaunch: AppWindowLaunch | undefined = (() => {
     return undefined;
   }
 })();
+
+const commandLineLaunch: CommandLineLaunch | undefined = (() => {
+  try {
+    const value: unknown = ipcRenderer.sendSync('muxus:command-line-launch');
+    return value && typeof value === 'object' ? (value as CommandLineLaunch) : undefined;
+  } catch {
+    return undefined;
+  }
+})();
+
+const commandLineLaunchListeners = new Set<(launch: CommandLineLaunch) => void>();
+const queuedCommandLineLaunches: CommandLineLaunch[] = [];
+
+// Register in preload so a second executable invocation cannot race React's
+// subscription while the first window is still loading.
+ipcRenderer.on('muxus:command-line-launch-requested', (_event, value: unknown) => {
+  if (!value || typeof value !== 'object') return;
+  const launch = value as CommandLineLaunch;
+  if (commandLineLaunchListeners.size === 0) {
+    queuedCommandLineLaunches.push(launch);
+    return;
+  }
+  for (const listener of commandLineLaunchListeners) listener(launch);
+});
 
 interface LocalFontData {
   family?: unknown;
@@ -86,6 +114,7 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   platform: process.platform,
   authToken,
   windowLaunch,
+  commandLineLaunch,
   stateStorage: {
     getItem(name: string): string | null {
       return stateSnapshot[name] ?? null;
@@ -123,6 +152,11 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   listLocalFontFamilies,
   openWindow(launch: AppWindowLaunch): void {
     ipcRenderer.send('muxus:open-window', launch);
+  },
+  onCommandLineLaunch(callback: (launch: CommandLineLaunch) => void): () => void {
+    commandLineLaunchListeners.add(callback);
+    for (const launch of queuedCommandLineLaunches.splice(0)) callback(launch);
+    return () => commandLineLaunchListeners.delete(callback);
   },
   /** Detach a tab only when the native cursor is outside every Muxus window. */
   detachTab(launch: Extract<AppWindowLaunch, { kind: 'tab-transfer' }>): Promise<boolean> {

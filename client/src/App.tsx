@@ -104,6 +104,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const logViewerOpen = useUiStore((s) => s.logViewerOpen);
   const quickLauncherOpen = useUiStore((s) => s.quickLauncherOpen);
   const workspacesOpen = useUiStore((s) => s.workspacesOpen);
+  const commandLineLaunch = window.muxusDesktop?.commandLineLaunch;
   const dialogOpen = useDialogStore((s) => s.queue.length > 0);
   const toastOpen = useToastStore((s) => !!s.toast);
   const standaloneLaunch = launch?.kind === 'session' || launch?.kind === 'tab-transfer';
@@ -127,7 +128,11 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
         ? launch.workspaceId
           ? { kind: 'open', id: launch.workspaceId }
           : { kind: 'new', id: newWorkspaceId!, name: launch.title }
-        : undefined;
+        : commandLineLaunch?.kind === 'workspace'
+          ? { kind: 'open-name', name: commandLineLaunch.name }
+          : commandLineLaunch
+            ? { kind: 'blank' }
+            : undefined;
   useLayoutEffect(() => {
     // Keep the desktop app's native window controls in sync with the theme.
     setTitleBarMode(effectiveMode);
