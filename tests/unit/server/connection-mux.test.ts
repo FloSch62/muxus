@@ -296,7 +296,7 @@ describe('SSH connection multiplexing', () => {
     expect(started.stats.connections).toBe(3);
   }, 15_000);
 
-  it('honors the freshTransport escape hatch', async () => {
+  it('honors the freshTransport escape hatch and retires the replaced transport', async () => {
     const started = await startServer();
     server = started.server;
     manager = makeManager();
@@ -304,12 +304,106 @@ describe('SSH connection multiplexing', () => {
     const first = makeIo();
     const a = await manager.connect(profile(started.port), first.io);
     const second = makeIo();
-    const b = await manager.connect(profile(started.port), second.io, 'terminal', { freshTransport: true });
+    const b = await manager.connect(profile(started.port), second.io, 'terminal', {
+      freshTransport: 'wave-a',
+    });
 
     expect(a.reused).toBe(false);
     expect(b.reused).toBe(false);
     expect(b.connection.id).not.toBe(a.connection.id);
     expect(started.stats.connections).toBe(2);
+
+    // Later sessions multiplex onto the replacement, never the replaced one.
+    const third = await manager.connect(profile(started.port), makeIo().io);
+    expect(third.reused).toBe(true);
+    expect(third.connection.id).toBe(b.connection.id);
+    expect(started.stats.connections).toBe(2);
+  }, 15_000);
+
+  it('deduplicates same-gesture fresh transports without reusing the old one', async () => {
+    const started = await startServer();
+    server = started.server;
+    manager = makeManager();
+
+    const old = await manager.connect(profile(started.port), makeIo().io);
+    const [first, second] = await Promise.all([
+      manager.connect(profile(started.port), makeIo().io, 'terminal', {
+        freshTransport: 'wave-b',
+      }),
+      manager.connect(profile(started.port), makeIo().io, 'terminal', {
+        freshTransport: 'wave-b',
+      }),
+    ]);
+
+    expect(first.connection.id).not.toBe(old.connection.id);
+    expect(second.connection.id).toBe(first.connection.id);
+    expect(started.stats.connections).toBe(2);
+
+    // A straggler from the same gesture reuses the established replacement
+    // instead of dialing yet another transport.
+    const straggler = await manager.connect(profile(started.port), makeIo().io, 'terminal', {
+      freshTransport: 'wave-b',
+    });
+    expect(straggler.reused).toBe(true);
+    expect(straggler.connection.id).toBe(first.connection.id);
+    expect(started.stats.connections).toBe(2);
+  }, 15_000);
+
+  it('never joins an in-flight dial from before the force reconnect', async () => {
+    const started = await startServer();
+    server = started.server;
+    manager = makeManager();
+
+    // A dial stuck at an unanswered auth prompt used to capture the forced
+    // reconnect, which then inherited the hang it was meant to escape.
+    let releasePrompt: (() => void) | undefined;
+    let promptShown!: () => void;
+    const prompted = new Promise<void>((resolve) => {
+      promptShown = resolve;
+    });
+    const hungIo: ConnectIo = {
+      status: () => undefined,
+      prompt: () =>
+        new Promise((resolve) => {
+          releasePrompt = () => resolve({ answers: [PASSWORD] });
+          promptShown();
+        }),
+      hostKey: () => Promise.resolve(true),
+    };
+    const hung = manager.connect(profile(started.port), hungIo);
+    hung.catch(() => undefined);
+    await prompted;
+
+    const fresh = await manager.connect(profile(started.port), makeIo().io, 'terminal', {
+      freshTransport: 'wave-c',
+    });
+    expect(fresh.reused).toBe(false);
+    expect(started.stats.connections).toBe(2);
+
+    // Unblock the abandoned dial so teardown can close its transport cleanly.
+    releasePrompt?.();
+    (await hung).release();
+  }, 15_000);
+
+  it('gives concurrent overflow fallbacks their own dedicated transports', async () => {
+    const started = await startServer({ maxShellsPerConnection: 1 });
+    server = started.server;
+    manager = makeManager();
+
+    const a = await manager.connectShell(profile(started.port), makeIo().io, 80, 24, 'xterm-256color');
+    // Two panes overflowing at once must not share one fallback dial — on a
+    // MaxSessions=1 host the second shell would be refused with no retry.
+    const [b, c] = await Promise.all([
+      manager.connectShell(profile(started.port), makeIo().io, 80, 24, 'xterm-256color'),
+      manager.connectShell(profile(started.port), makeIo().io, 80, 24, 'xterm-256color'),
+    ]);
+
+    expect(a.transport).toBe('new');
+    expect([b.transport, c.transport]).toEqual(['overflow', 'overflow']);
+    expect(
+      new Set([a.lease.connection.id, b.lease.connection.id, c.lease.connection.id]).size,
+    ).toBe(3);
+    expect(started.stats).toMatchObject({ connections: 3, shells: 3 });
   }, 15_000);
 
   it('opens a plain shell in console mode when the host rejects pty-req', async () => {

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  requestForceReconnectAll,
   requestClosePane,
   splitActivePane,
 } from '../../../client/src/session-actions.js';
@@ -409,6 +410,107 @@ describe('workspace restoration', () => {
         reconnectMode: undefined,
       }),
     ]);
+  });
+
+  it('force reconnects every remote session without replacing local shells', () => {
+    const localId = useTabsStore.getState().open({ kind: 'local' }, 'Local');
+    const sshId = useTabsStore.getState().open(
+      { kind: 'ssh', target: 'router' },
+      'Router',
+    );
+    const telnetId = useTabsStore.getState().open(
+      { kind: 'telnet', host: 'console', port: 23 },
+      'Console',
+    );
+    useTabsStore.getState().update(sshId, {
+      status: 'connected',
+      connId: 'old-transport',
+    });
+    useTabsStore.getState().update(telnetId, {
+      status: 'interrupted',
+      failureReason: 'not responding',
+      disconnectReason: 'disconnected',
+    });
+
+    useTabsStore.getState().forceReconnectAll();
+
+    expect(useTabsStore.getState().tabs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: localId,
+          status: 'connecting',
+          reconnectRequest: 0,
+        }),
+        expect.objectContaining({
+          id: sshId,
+          status: 'connecting',
+          connId: undefined,
+          reconnectRequest: 1,
+          freshTransport: expect.any(String),
+          failureReason: undefined,
+        }),
+        expect.objectContaining({
+          id: telnetId,
+          status: 'connecting',
+          reconnectRequest: 1,
+          freshTransport: undefined,
+          failureReason: undefined,
+          disconnectReason: undefined,
+        }),
+      ]),
+    );
+  });
+
+  it('confirms before force reconnecting live remote sessions', async () => {
+    const sshId = useTabsStore.getState().open(
+      { kind: 'ssh', target: 'router' },
+      'Router',
+    );
+    useTabsStore.getState().update(sshId, { status: 'connected' });
+
+    const pending = requestForceReconnectAll();
+    await settle();
+
+    expect(useDialogStore.getState().queue[0]).toMatchObject({
+      kind: 'confirm',
+      title: 'Force reconnect 1 remote session?',
+      destructive: true,
+    });
+    await answerDialog(true);
+
+    expect(await pending).toBe(true);
+    expect(useTabsStore.getState().tabs).toEqual([
+      expect.objectContaining({
+        id: sshId,
+        status: 'connecting',
+        reconnectRequest: 1,
+        freshTransport: expect.any(String),
+      }),
+    ]);
+  });
+
+  it('keeps an unfulfilled fresh-transport request across retries until success', () => {
+    const sshId = useTabsStore.getState().open(
+      { kind: 'ssh', target: 'router' },
+      'Router',
+    );
+    useTabsStore.getState().update(sshId, { status: 'connected' });
+    useTabsStore.getState().forceReconnectAll();
+    const token = useTabsStore.getState().tabs[0]!.freshTransport;
+    expect(token).toEqual(expect.any(String));
+
+    // A failed forced dial retries through reconnect() and must stay fresh —
+    // never silently multiplex onto the transport it was meant to replace.
+    useTabsStore.getState().update(sshId, { status: 'closed' });
+    useTabsStore.getState().reconnect([sshId]);
+    expect(useTabsStore.getState().tabs[0]!.freshTransport).toBe(token);
+
+    // Success clears it, the way the terminal ready handler does.
+    useTabsStore.getState().update(sshId, {
+      status: 'connected',
+      freshTransport: undefined,
+    });
+    expect(useTabsStore.getState().tabs[0]!.freshTransport).toBeUndefined();
   });
 
   it('clears stale failure details when manually reconnecting', () => {

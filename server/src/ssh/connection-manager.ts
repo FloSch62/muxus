@@ -133,6 +133,12 @@ export interface ManagedConnection {
   sftpAvailable: boolean;
   /** *Forward lines resolved from ssh config — auto-started once the session is up. */
   configForwards: ConfigForward[];
+  /** Force-reconnect group that dialed this transport, so sibling requests
+   *  from the same gesture share the one replacement connection. */
+  replacementToken?: string;
+  /** Replaced by a forced fresh transport: never handed out for sharing again;
+   *  existing leases (tunnels, transfers) keep it alive until they release. */
+  superseded?: boolean;
   /** Current passive keepalive health of the transport. */
   health(): SshTransportHealth;
   /** Session defaults come from the dialed target when none are passed. */
@@ -264,7 +270,10 @@ export class SshConnectionManager {
   private readonly closeReasons = new WeakMap<Client, string>();
   private readonly postAuth = new WeakMap<Client, Promise<void>>();
   /** In-flight dials by mux key, so simultaneous sessions share one TCP connection and one auth round-trip. */
-  private readonly pendingDials = new Map<string, Promise<ManagedConnection>>();
+  private readonly pendingDials = new Map<
+    string,
+    { promise: Promise<ManagedConnection>; freshToken?: string }
+  >();
   /** Dial plans whose optional integration setup killed the remote transport; reset on app restart. */
   private readonly automaticPlainShellKeys = new Set<string>();
   private readonly loadConfig: () => ConfigDocument;
@@ -334,7 +343,12 @@ export class SshConnectionManager {
 
   /** Live transports (forwarding panel, connection reuse when starting tunnels). */
   list(): ConnectionInfo[] {
-    return this.connections.list().map((conn) => ({
+    // A superseded transport still carries its existing tunnels, but new
+    // consumers must land on the replacement, not the corpse-to-be.
+    return this.connections
+      .list()
+      .filter((conn) => !conn.superseded)
+      .map((conn) => ({
       id: conn.id,
       target: conn.profile.target,
       host: conn.host,
@@ -358,7 +372,15 @@ export class SshConnectionManager {
     profile: SshProfile,
     io: ConnectIo,
     owner: ConnectionLeaseOwner = 'terminal',
-    opts: { freshTransport?: boolean; forcePlainShell?: boolean } = {},
+    opts: {
+      /** Force-reconnect group token: skip transports established before this
+       *  request; requests sharing a token share one replacement connection. */
+      freshTransport?: string;
+      /** Internal fallbacks (MaxSessions overflow, plain-console retry): dial
+       *  an own transport without joining or retiring anyone else's. */
+      dedicatedTransport?: boolean;
+      forcePlainShell?: boolean;
+    } = {},
   ): Promise<MuxedConnectionLease> {
     profile = this.resolveProfile(profile);
     const doc = this.loadConfig();
@@ -393,8 +415,11 @@ export class SshConnectionManager {
       'ssh connect requested',
     );
 
-    if (!opts.freshTransport) {
-      const shared = this.acquireShared(key, owner, target);
+    const freshToken = opts.dedicatedTransport ? undefined : opts.freshTransport;
+    if (!opts.dedicatedTransport) {
+      // A force-reconnect request skips every pre-existing transport but may
+      // still share the replacement its own gesture already established.
+      const shared = this.acquireShared(key, owner, target, freshToken);
       if (shared) {
         shared.connection.configForwards = mergeConfigForwards(
           shared.connection.configForwards,
@@ -405,11 +430,13 @@ export class SshConnectionManager {
         return shared;
       }
       const pending = this.pendingDials.get(key);
-      if (pending) {
+      // A failed dial fails every session waiting on it — auth prompts and
+      // errors surface on the session that started the dial. A fresh request
+      // never waits on the dial it is trying to escape: it joins an in-flight
+      // dial only when that dial belongs to its own force-reconnect group.
+      if (pending && (!freshToken || pending.freshToken === freshToken)) {
         io.status(`Waiting for the SSH connection to ${label} …`, { transient: true });
-        // A failed dial fails every session waiting on it — auth prompts and
-        // errors surface on the session that started the dial.
-        const conn = await pending;
+        const conn = await pending.promise;
         const lease = this.connections.acquire(conn.id, owner);
         if (lease) {
           conn.configForwards = mergeConfigForwards(conn.configForwards, configForwards);
@@ -428,15 +455,25 @@ export class SshConnectionManager {
       metadataAlias,
       disableSftp,
       consoleCompatibility,
-    );
+    ).then((lease) => {
+      if (freshToken) {
+        // Tag before waiters observe the connection, and retire the replaced
+        // transports so no later session multiplexes onto them.
+        lease.connection.replacementToken = freshToken;
+        this.retireReplacedTransports(key, lease.connection.id);
+      }
+      return lease;
+    });
     const tracked = dial.then((lease) => lease.connection);
     tracked.catch(() => undefined); // waiters observe the rejection through their own await
-    this.pendingDials.set(key, tracked);
+    if (!opts.dedicatedTransport) {
+      this.pendingDials.set(key, { promise: tracked, freshToken });
+    }
     try {
       const lease = await dial;
       return { ...lease, reused: false, target };
     } finally {
-      if (this.pendingDials.get(key) === tracked) this.pendingDials.delete(key);
+      if (this.pendingDials.get(key)?.promise === tracked) this.pendingDials.delete(key);
     }
   }
 
@@ -451,24 +488,54 @@ export class SshConnectionManager {
     if (!saved || saved.profileId !== profile.profileId || saved.useConfig !== false) {
       throw new Error(`saved SSH profile "${profile.profileId}" was not found`);
     }
-    return saved;
+    // Connection fields come from the database. The keepalive fallback is an
+    // application preference supplied by the current renderer, so the wire
+    // value always wins — including its absence (preference set to
+    // configuration-only), which must clear anything a client stored.
+    return { ...saved, keepaliveIntervalSeconds: profile.keepaliveIntervalSeconds };
   }
 
-  /** Least-busy live, healthy transport with the same dial plan, if any. */
+  /**
+   * Least-busy live, healthy transport with the same dial plan, if any.
+   * A superseded transport is never handed out again; a force-reconnect
+   * request reuses only the replacement its own gesture established.
+   */
   private acquireShared(
     key: string,
     owner: ConnectionLeaseOwner,
     target: ChainHop,
+    freshToken?: string,
   ): MuxedConnectionLease | undefined {
     const candidates = this.connections
       .list()
-      .filter((conn) => conn.muxKey === key && conn.health() === 'healthy')
+      .filter(
+        (conn) =>
+          conn.muxKey === key &&
+          conn.health() === 'healthy' &&
+          (freshToken ? conn.replacementToken === freshToken : !conn.superseded),
+      )
       .sort((a, b) => this.connections.leaseCount(a.id) - this.connections.leaseCount(b.id));
     for (const conn of candidates) {
       const lease = this.connections.acquire(conn.id, owner);
       if (lease) return { ...lease, reused: true, target };
     }
     return undefined;
+  }
+
+  /**
+   * A live replacement makes every older same-plan transport ineligible for
+   * new consumers. Their existing leases (tunnels, transfers) stay valid, and
+   * the transport still closes only after the last of them releases.
+   */
+  private retireReplacedTransports(key: string, replacementId: string): void {
+    for (const conn of this.connections.list()) {
+      if (conn.id === replacementId || conn.muxKey !== key || conn.superseded) continue;
+      conn.superseded = true;
+      this.log.info(
+        { connId: conn.id, host: conn.host },
+        'ssh transport superseded by a forced replacement',
+      );
+    }
   }
 
   /**
@@ -484,8 +551,9 @@ export class SshConnectionManager {
     cols: number,
     rows: number,
     term: string,
+    opts: { freshTransport?: string } = {},
   ): Promise<TerminalShell> {
-    const lease = await this.connect(profile, io);
+    const lease = await this.connect(profile, io, 'terminal', opts);
     try {
       const stream = await lease.connection.shell(cols, rows, term, sessionSettings(lease.target.resolved));
       return { lease, stream, transport: lease.reused ? 'shared' : 'new' };
@@ -500,7 +568,7 @@ export class SshConnectionManager {
         'shared ssh transport refused a session; dialing a dedicated connection',
       );
       io.status('The shared SSH connection refused another session — opening a dedicated one …', { transient: true });
-      const dedicated = await this.connect(profile, io, 'terminal', { freshTransport: true });
+      const dedicated = await this.connect(profile, io, 'terminal', { dedicatedTransport: true });
       try {
         const stream = await dedicated.connection.shell(cols, rows, term, sessionSettings(dedicated.target.resolved));
         return { lease: dedicated, stream, transport: 'overflow' };
@@ -546,7 +614,7 @@ export class SshConnectionManager {
       { transient: true },
     );
     const compatible = await this.connect(profile, io, 'terminal', {
-      freshTransport: true,
+      dedicatedTransport: true,
       forcePlainShell: true,
     });
     try {
@@ -1002,9 +1070,10 @@ export class SshConnectionManager {
 /**
  * Identity of a dial plan for connection sharing: the resolved hop sequence
  * (user@hostname:port and agent-forwarding policy for each hop) plus the
- * expanded ProxyCommand transport when one applies. Other auth settings are
- * deliberately absent — they matter while establishing a transport, not for
- * attaching to an established one.
+ * expanded ProxyCommand transport when one applies. Settings that matter only
+ * while establishing a transport — auth and keepalive policy alike — are
+ * deliberately absent: a keepalive preference change must not fork sharing
+ * (and demand a second login) while the established transport still works.
  */
 export function muxKey(
   chain: ChainHop[],
@@ -1070,11 +1139,19 @@ export function buildChain(
       : final && profile.profileId
         ? profileFolderAuthFor?.(profile.profileId)
         : undefined;
-    const base = fromConfig
+    const configuredBase = fromConfig
       ? resolveHost(doc, spec.host, folder?.optionLines)
       : folder
         ? resolveHost(EMPTY_CONFIG_DOCUMENT, spec.host, folder.optionLines)
         : directSettings(spec.host);
+    // The application preference is a fallback, not an override: aliases with
+    // an explicit ServerAliveInterval (including 0) keep their own policy.
+    // Apply it to jump hops as well so every TCP leg stays alive while idle.
+    const base = {
+      ...configuredBase,
+      serverAliveInterval:
+        configuredBase.serverAliveInterval ?? profile.keepaliveIntervalSeconds,
+    };
     const user = (final ? profile.user : undefined) ?? spec.user ?? base.user ?? os.userInfo().username;
     const resolved: ResolvedTarget = final
       ? {

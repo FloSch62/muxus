@@ -59,6 +59,13 @@ interface TabBase {
   reconnectRequest: number;
   /** Optional multiplexer to attach after the replacement SSH shell is ready. */
   reconnectMode?: ReattachMode;
+  /**
+   * Replacement-group token: the next SSH connection must not multiplex onto
+   * an established transport, but connects sharing the token (one force
+   * reconnect gesture) share one replacement connection. Kept across failed
+   * retries; cleared when a connection succeeds.
+   */
+  freshTransport?: string;
   /** Most recent connection/end reason, shown without requiring terminal scrollback. */
   failureReason?: string;
   disconnectReason?: 'completed' | 'failed' | 'disconnected';
@@ -100,6 +107,7 @@ type TabUpdate = Partial<{
   captureInput: boolean;
   failureReason: string | undefined;
   disconnectReason: 'completed' | 'failed' | 'disconnected' | undefined;
+  freshTransport: string | undefined;
 }>;
 
 export interface ReconnectOptions {
@@ -176,6 +184,8 @@ interface TabsState {
   reconnect: (tabIds: readonly string[], options?: ReconnectOptions) => void;
   /** Reconnect every ended/restored session in the current workspace. */
   reconnectAll: (options?: ReconnectOptions) => void;
+  /** Replace every remote session in the current workspace, including live ones. */
+  forceReconnectAll: () => void;
   /** Record terminal output, notifying only while the tab is hidden. */
   notifyOutput: (id: string) => void;
   update: (id: string, patch: TabUpdate) => void;
@@ -183,6 +193,35 @@ interface TabsState {
 
 let nextId = 1;
 const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${nextId++}`;
+
+/** Session tabs that dial a transport — everything but local shells. */
+export function isRemoteSessionTab(tab: TerminalTab): tab is SessionTab {
+  return !!tab.profile && tab.profile.kind !== 'local';
+}
+
+/**
+ * Shared patch for dialing a replacement session into an existing tab. An
+ * unfulfilled fresh-transport request survives retries — the ready handler
+ * clears it on success — so a failed forced dial never falls back silently
+ * onto the very transport it was meant to replace.
+ */
+function reconnectPatch(
+  tab: SessionTab,
+  options?: { reattach?: ReattachMode; freshTransport?: string },
+) {
+  return {
+    status: 'connecting' as const,
+    connectOnMount: true,
+    connId: undefined,
+    terminalId: undefined,
+    transferId: undefined,
+    reconnectRequest: tab.reconnectRequest + 1,
+    reconnectMode: tab.profile.kind === 'ssh' ? options?.reattach : undefined,
+    freshTransport: options?.freshTransport ?? tab.freshTransport,
+    failureReason: undefined,
+    disconnectReason: undefined,
+  };
+}
 const initialPane = (): PaneLeaf => ({ id: newId('pane'), type: 'pane', activeTabId: null });
 const initial = initialPane();
 
@@ -846,18 +885,7 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
     set((state) => ({
       tabs: state.tabs.map((tab) =>
         tab.profile && tab.status === 'closed' && requested.has(tab.id)
-          ? {
-              ...tab,
-              status: 'connecting' as const,
-              connectOnMount: true,
-              terminalId: undefined,
-              transferId: undefined,
-              reconnectRequest: tab.reconnectRequest + 1,
-              reconnectMode:
-                tab.profile.kind === 'ssh' ? options?.reattach : undefined,
-              failureReason: undefined,
-              disconnectReason: undefined,
-            }
+          ? { ...tab, ...reconnectPatch(tab, options) }
           : tab,
       ),
     }));
@@ -866,21 +894,28 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
     set((state) => ({
       tabs: state.tabs.map((tab) =>
         tab.profile && tab.status === 'closed'
-          ? {
-              ...tab,
-              status: 'connecting' as const,
-              connectOnMount: true,
-              terminalId: undefined,
-              transferId: undefined,
-              reconnectRequest: tab.reconnectRequest + 1,
-              reconnectMode:
-                tab.profile.kind === 'ssh' ? options?.reattach : undefined,
-              failureReason: undefined,
-              disconnectReason: undefined,
-            }
+          ? { ...tab, ...reconnectPatch(tab, options) }
           : tab,
       ),
     })),
+  forceReconnectAll: () => {
+    // One token for the whole gesture: every SSH tab skips established
+    // transports, while the window still shares one replacement per host.
+    const freshTransport = newId('fresh');
+    set((state) => ({
+      tabs: state.tabs.map((tab) =>
+        isRemoteSessionTab(tab)
+          ? {
+              ...tab,
+              ...reconnectPatch(tab, {
+                freshTransport:
+                  tab.profile.kind === 'ssh' ? freshTransport : undefined,
+              }),
+            }
+          : tab,
+      ),
+    }));
+  },
   notifyOutput: (id) =>
     set((state) => {
       const tab = state.tabs.find((candidate) => candidate.id === id);

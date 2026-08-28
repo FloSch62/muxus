@@ -19,6 +19,15 @@ export function serialOpenOptions(profile: SerialProfile): ConstructorParameters
   };
 }
 
+const BUSY_RETRY_TOTAL_MS = 2500;
+const BUSY_RETRY_DELAY_MS = 150;
+
+function isSerialBusyError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code = (error as NodeJS.ErrnoException).code;
+  return code === 'EBUSY' || /cannot lock port|resource busy|access is denied/i.test(error.message);
+}
+
 export class SerialTransport extends EventEmitter implements TerminalTransport {
   private ended = false;
   private closed = false;
@@ -41,12 +50,29 @@ export class SerialTransport extends EventEmitter implements TerminalTransport {
     });
   }
 
-  static connect(profile: SerialProfile): Promise<SerialTransport> {
+  static async connect(profile: SerialProfile): Promise<SerialTransport> {
+    // Replacing a live session reopens the device while the previous fd is
+    // still releasing its exclusive lock (close and open race on separate
+    // connections), so a busy port gets a short grace period before failing.
+    const deadline = Date.now() + BUSY_RETRY_TOTAL_MS;
+    for (;;) {
+      try {
+        return await SerialTransport.open(profile);
+      } catch (error) {
+        if (!isSerialBusyError(error) || Date.now() >= deadline) {
+          throw friendlySerialError(error as Error, profile.path);
+        }
+        await new Promise((resolve) => setTimeout(resolve, BUSY_RETRY_DELAY_MS));
+      }
+    }
+  }
+
+  private static open(profile: SerialProfile): Promise<SerialTransport> {
     return new Promise((resolve, reject) => {
       const port = new SerialPort(serialOpenOptions(profile));
       port.open((error) => {
         if (error) {
-          reject(friendlySerialError(error, profile.path));
+          reject(error);
           return;
         }
         resolve(new SerialTransport(port));

@@ -4,9 +4,10 @@ icon: lucide/settings
 
 # Settings
 
-Settings are opened with ++ctrl+comma++ or the gear control in the top bar. Changes apply
-immediately to open terminals. Session logging is the exception and saves explicitly,
-because storage policy should not change under a running recorder.
+Settings are opened with ++ctrl+comma++ or the gear control in the top bar. Most changes
+apply immediately to open terminals. SSH keepalive changes apply on the next connection;
+session logging saves explicitly because storage policy should not change under a running
+recorder.
 
 <figure markdown="span">
   ![The settings dialog](../assets/screenshots/settings.png#only-light){ .shadow }
@@ -98,6 +99,13 @@ include the global set.
 
 **Confirm before closing a live session** is on by default because closing a connected tab
 ends its shell.
+
+**SSH keepalive interval** defaults to 30 seconds. It sends a protocol-level probe while an
+SSH connection is idle so firewalls, NATs and VPNs do not silently discard it. An explicit
+`ServerAliveInterval` in the host's OpenSSH configuration takes precedence; choose **SSH
+configuration only** to disable the Muxus fallback. A changed interval applies when a
+connection is dialed fresh; tabs that share an existing transport keep its keepalive until
+it is replaced, for example by **Force reconnect all** in the workspace dialog.
 
 The two restore switches are also on by default. **Automatically reconnect remote
 sessions** dials remote tabs when restoring a workspace and retries a dropped connection a

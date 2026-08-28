@@ -31,6 +31,7 @@ import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
+import ReplayOutlinedIcon from '@mui/icons-material/ReplayOutlined';
 import RestoreOutlinedIcon from '@mui/icons-material/RestoreOutlined';
 import SaveAsOutlinedIcon from '@mui/icons-material/SaveAsOutlined';
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
@@ -51,13 +52,14 @@ import {
   setStartupWorkspace,
   setWorkspaceLocked,
 } from '../workspace-persistence.js';
+import { requestForceReconnectAll } from '../session-actions.js';
 import {
   selectWorkspaces,
   type WorkspaceSort,
 } from '../workspace-list.js';
 import { confirmDiscardRemoteEditors } from '../editor/remote-editor-registry.js';
 import { confirmAction } from '../state/dialogs.js';
-import { useTabsStore } from '../state/tabs.js';
+import { isRemoteSessionTab, useTabsStore } from '../state/tabs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
 import { useWorkspacesStore } from '../state/workspaces.js';
@@ -109,6 +111,9 @@ export function WorkspaceDialog() {
   const reconnectable = useMemo(
     () => tabs.filter((tab) => tab.profile && tab.status === 'closed'),
     [tabs],
+  );
+  const hasLiveRemote = tabs.some(
+    (tab) => isRemoteSessionTab(tab) && tab.status !== 'closed',
   );
   const liveCount = tabs.filter(
     (tab) => tab.profile && (tab.status === 'connected' || tab.status === 'connecting'),
@@ -882,6 +887,19 @@ export function WorkspaceDialog() {
             }}
           >
             {selectedIds.length ? 'Reconnect selected' : 'Reconnect all'}
+          </Button>
+        ) : null}
+        {hasLiveRemote ? (
+          <Button
+            color="warning"
+            startIcon={<ReplayOutlinedIcon />}
+            onClick={() =>
+              void requestForceReconnectAll().then((reconnected) => {
+                if (reconnected) setSelectedIds([]);
+              })
+            }
+          >
+            Force reconnect all
           </Button>
         ) : null}
         <Box sx={{ flex: 1 }} />

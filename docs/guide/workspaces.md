@@ -55,6 +55,11 @@ Both behaviours have switches in Settings → Behavior. Turning **Automatically 
 remote sessions** off restores remote tabs without dialling them, so a large layout does
 not trigger a set of simultaneous logins and 2FA prompts. Reconnect them individually from
 the tab menu, or use the workspace dialog to reconnect selected sessions or all of them.
+**Force reconnect all** replaces every SSH, Telnet and serial terminal session in the
+current workspace, including sessions that still appear connected. It ends their live
+shells, so use tmux or screen for remote work that must survive the replacement. Saved
+tunnels keep their existing connections and are not restarted. The action is also
+searchable by name in the quick launcher.
 Turning **Restore terminal history** off keeps scrollback out of local storage and restores
 every tab empty.
 

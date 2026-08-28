@@ -5,6 +5,7 @@ import { DEFAULT_SFTP_PANEL_WIDTH } from '../sftp-panel-width.js';
 import { muxusStateStorage } from './persist-storage.js';
 import { isKeywordHighlightProfileArray } from '../highlight-profiles.js';
 import type { KeywordHighlightProfile, KeywordHighlightRule } from '@muxus/shared';
+import { MAX_SSH_KEEPALIVE_INTERVAL_SECONDS } from '@muxus/shared/ws-protocol';
 
 export type ThemeMode = 'light' | 'dark' | 'os';
 export type EffectiveThemeMode = Exclude<ThemeMode, 'os'>;
@@ -15,6 +16,17 @@ export type TabNumberVisibility = 'shortcut' | 'always';
 export const DEFAULT_INACTIVE_PANE_DIM_STRENGTH = 0.15;
 export const MIN_INACTIVE_PANE_DIM_STRENGTH = 0.1;
 export const MAX_INACTIVE_PANE_DIM_STRENGTH = 0.6;
+export const DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS = 30;
+
+/**
+ * SSH keepalive fallback as wire fields for a connect or dial message, read
+ * at send time so the current preference applies. Empty when the preference
+ * says the OpenSSH configuration alone decides.
+ */
+export function sshKeepalivePrefField(): { keepaliveIntervalSeconds?: number } {
+  const interval = usePrefsStore.getState().sshKeepaliveIntervalSeconds;
+  return interval > 0 ? { keepaliveIntervalSeconds: interval } : {};
+}
 
 /** Keep hand-edited or older persisted values from making a pane illegible. */
 export function clampInactivePaneDimStrength(value: number): number {
@@ -114,6 +126,8 @@ export interface PrefsState {
   confirmCloseConnected: boolean;
   /** Dial remote sessions on workspace restore and retry dropped connections. */
   autoReconnectRemote: boolean;
+  /** SSH keepalive fallback in seconds; zero relies entirely on ssh_config. */
+  sshKeepaliveIntervalSeconds: number;
   /** Show a notification at startup when a newer release is available. */
   notifyOnNewVersion: boolean;
   /** Persist recent terminal output and replay it on restore and reconnect. */
@@ -200,6 +214,14 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   if (!isTabNumberVisibility(state.tabNumberVisibility)) delete state.tabNumberVisibility;
   if (!isTerminalFileLinkActivation(state.terminalFileLinkActivation)) {
     delete state.terminalFileLinkActivation;
+  }
+  if (
+    typeof state.sshKeepaliveIntervalSeconds !== 'number' ||
+    !Number.isInteger(state.sshKeepaliveIntervalSeconds) ||
+    state.sshKeepaliveIntervalSeconds < 0 ||
+    state.sshKeepaliveIntervalSeconds > MAX_SSH_KEEPALIVE_INTERVAL_SECONDS
+  ) {
+    delete state.sshKeepaliveIntervalSeconds;
   }
   if (typeof state.activePaneBorder !== 'boolean') delete state.activePaneBorder;
   if (typeof state.dimInactivePanes !== 'boolean') delete state.dimInactivePanes;
@@ -342,6 +364,7 @@ export const usePrefsStore = create<PrefsState>()(
       pasteWarnMultiline: true,
       confirmCloseConnected: true,
       autoReconnectRemote: true,
+      sshKeepaliveIntervalSeconds: DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
       notifyOnNewVersion: true,
       restoreScrollback: true,
       interfaceZoom: 1,
@@ -367,7 +390,7 @@ export const usePrefsStore = create<PrefsState>()(
     }),
     {
       name: 'muxus-prefs',
-      version: 13,
+      version: 14,
       migrate: migratePrefsState,
       storage: createJSONStorage(() => muxusStateStorage),
     },
