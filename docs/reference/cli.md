@@ -21,9 +21,10 @@ the current pane layout, matching the sidebar's default **Launch hosts** action.
 accepts its name or ID.
 
 Only one launch target may be supplied at a time. If Muxus is already running, the new
-invocation is forwarded to its existing window. Windows installations are not added to
-`PATH`; AutoHotkey, Stream Deck, PowerShell, and shortcuts can invoke `muxus.exe` by its full
-installation path.
+invocation is forwarded to its existing process. A workspace that is not already open uses
+a new window, preserving live sessions in the current one. Windows installations are not
+added to `PATH`; AutoHotkey, Stream Deck, PowerShell, and shortcuts can invoke `muxus.exe`
+by its full installation path.
 
 Flags accept both `--host edge-router` and `--host=edge-router`.
 

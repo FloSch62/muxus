@@ -14,10 +14,8 @@ import {
 } from '../session-actions.js';
 import { showToast } from '../state/toast.js';
 import { useWorkspacesStore } from '../state/workspaces.js';
-import {
-  focusOpenWorkspace,
-  openWorkspace,
-} from '../workspace-persistence.js';
+import { focusOpenWorkspace } from '../workspace-persistence.js';
+import { openAppWindow } from '../window-management.js';
 
 interface QueuedLaunch {
   id: number;
@@ -130,8 +128,12 @@ export function CommandLineLaunchHandler() {
       } else if (focusOpenWorkspace(resolution.value.id)) {
         showToast('info', `Switched to the window showing “${resolution.value.name}”.`);
       } else {
-        await openWorkspace(resolution.value.id);
-        showToast('success', `Opened workspace “${resolution.value.name}”.`);
+        openAppWindow({
+          kind: 'workspace',
+          workspaceId: resolution.value.id,
+          title: resolution.value.name,
+        });
+        showToast('info', `Opening workspace “${resolution.value.name}” in a new window.`);
       }
     })()
       .catch((error: unknown) => {

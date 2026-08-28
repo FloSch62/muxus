@@ -26,7 +26,11 @@ import type {
   MobaXtermSessionSource,
   UpdateCheckResult,
 } from '@muxus/shared';
-import { parseCommandLineLaunch } from './command-line.js';
+import {
+  canHandleCommandLineLaunch,
+  parseCommandLineLaunch,
+  parseCommandLineLaunchData,
+} from './command-line.js';
 import {
   developmentUserDataPath,
   seedDevelopmentDatabase,
@@ -727,12 +731,24 @@ function validProfileId(value: unknown): boolean {
 
 const initialCommandLineLaunch = parseCommandLineLaunch(process.argv);
 
-if (!app.requestSingleInstanceLock()) {
+function commandLineLaunchWindow(): BrowserWindow | undefined {
+  return [...managedWindows].find((candidate) =>
+    canHandleCommandLineLaunch(windowLaunches.get(candidate.webContents.id)),
+  );
+}
+
+// Electron may reorder split-form custom switches in second-instance argv.
+// Preserve the launch parsed by the invoking process as structured data.
+if (!app.requestSingleInstanceLock(initialCommandLineLaunch ?? {})) {
   app.quit();
 } else {
-  app.on('second-instance', (_event, commandLine) => {
-    const win = primaryWindow ?? [...managedWindows][0];
-    const launch = parseCommandLineLaunch(commandLine);
+  app.on('second-instance', (_event, commandLine, _workingDirectory, additionalData) => {
+    const launch =
+      parseCommandLineLaunchData(additionalData) ??
+      parseCommandLineLaunch(commandLine);
+    const win = launch
+      ? (commandLineLaunchWindow() ?? (appUrl ? createWindow(appUrl) : undefined))
+      : (primaryWindow ?? [...managedWindows][0]);
     if (!win) {
       if (launch) deferredCommandLineLaunches.push(launch);
       return;

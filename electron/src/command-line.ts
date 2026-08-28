@@ -1,4 +1,4 @@
-import type { CommandLineLaunch } from '@muxus/shared';
+import type { AppWindowLaunch, CommandLineLaunch } from '@muxus/shared';
 
 const TARGET_FLAGS = {
   '--host': 'host',
@@ -35,4 +35,31 @@ export function parseCommandLineLaunch(
   }
 
   return launch;
+}
+
+/** Validate the structured payload forwarded through Electron's single-instance lock. */
+export function parseCommandLineLaunchData(
+  value: unknown,
+): CommandLineLaunch | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const candidate = value as Record<string, unknown>;
+  if (
+    candidate.kind !== 'host' &&
+    candidate.kind !== 'folder' &&
+    candidate.kind !== 'workspace'
+  ) {
+    return undefined;
+  }
+  if (typeof candidate.name !== 'string') return undefined;
+  const name = candidate.name.trim();
+  return name && name.length <= MAX_TARGET_LENGTH
+    ? { kind: candidate.kind, name }
+    : undefined;
+}
+
+/** SFTP-only windows do not mount the client-side command request handler. */
+export function canHandleCommandLineLaunch(
+  windowLaunch: AppWindowLaunch | undefined,
+): boolean {
+  return windowLaunch?.kind !== 'sftp';
 }
