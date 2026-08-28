@@ -13,16 +13,8 @@ beforeAll(() => {
     parseFromString(text: string, mimeType: DOMParserSupportedType): Document {
       let failed = false;
       const parser = new XmlDomParser({
-        errorHandler: {
-          warning: () => {
-            failed = true;
-          },
-          error: () => {
-            failed = true;
-          },
-          fatalError: () => {
-            failed = true;
-          },
+        onError: () => {
+          failed = true;
         },
       });
       const document = parser.parseFromString(text, mimeType) as unknown as Document;

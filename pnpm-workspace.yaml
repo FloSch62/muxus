@@ -13,8 +13,9 @@ supportedArchitectures:
   os: [current]
   cpu: [current, x64, arm64]
 overrides:
+  '@serialport/bindings-cpp': 13.0.1
   'brace-expansion@>=5.0.0 <5.0.8': 5.0.8
-  'dompurify@>=3.4.0 <3.4.12': 3.4.12
+  'dompurify@>=3.4.0 <3.4.13': 3.4.13
 allowBuilds:
   esbuild: true
   electron: true
@@ -26,4 +27,4 @@ allowBuilds:
   cpu-features: false
   '@serialport/bindings-cpp': true
 patchedDependencies:
-  '@serialport/bindings-cpp@13.0.0': patches/@serialport__bindings-cpp@13.0.0.patch
+  '@serialport/bindings-cpp@13.0.1': patches/@serialport__bindings-cpp@13.0.1.patch

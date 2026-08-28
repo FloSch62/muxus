@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  NODE_VERSION: 24.18.0
+  NODE_VERSION: 24.20.0
   RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
 
 jobs:
