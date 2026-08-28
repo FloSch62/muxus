@@ -171,6 +171,25 @@ function profile(port: number): SshProfile {
   return { kind: 'ssh', target: '127.0.0.1', user: 'tester', port, passwordOnly: true, useConfig: false };
 }
 
+/** ConnectIo that parks its dial at the auth prompt until released. */
+function hangingIo(): { io: ConnectIo; prompted: Promise<void>; release: () => void } {
+  let release: (() => void) | undefined;
+  let shown!: () => void;
+  const prompted = new Promise<void>((resolve) => {
+    shown = resolve;
+  });
+  const io: ConnectIo = {
+    status: () => undefined,
+    prompt: () =>
+      new Promise((resolve) => {
+        release = () => resolve({ answers: [PASSWORD] });
+        shown();
+      }),
+    hostKey: () => Promise.resolve(true),
+  };
+  return { io, prompted, release: () => release?.() };
+}
+
 describe('SSH connection multiplexing', () => {
   let manager: SshConnectionManager | undefined;
   let server: Server | undefined;
@@ -356,23 +375,10 @@ describe('SSH connection multiplexing', () => {
 
     // A dial stuck at an unanswered auth prompt used to capture the forced
     // reconnect, which then inherited the hang it was meant to escape.
-    let releasePrompt: (() => void) | undefined;
-    let promptShown!: () => void;
-    const prompted = new Promise<void>((resolve) => {
-      promptShown = resolve;
-    });
-    const hungIo: ConnectIo = {
-      status: () => undefined,
-      prompt: () =>
-        new Promise((resolve) => {
-          releasePrompt = () => resolve({ answers: [PASSWORD] });
-          promptShown();
-        }),
-      hostKey: () => Promise.resolve(true),
-    };
-    const hung = manager.connect(profile(started.port), hungIo);
+    const stuck = hangingIo();
+    const hung = manager.connect(profile(started.port), stuck.io);
     hung.catch(() => undefined);
-    await prompted;
+    await stuck.prompted;
 
     const fresh = await manager.connect(profile(started.port), makeIo().io, 'terminal', {
       freshTransport: 'wave-c',
@@ -381,8 +387,42 @@ describe('SSH connection multiplexing', () => {
     expect(started.stats.connections).toBe(2);
 
     // Unblock the abandoned dial so teardown can close its transport cleanly.
-    releasePrompt?.();
+    stuck.release();
     (await hung).release();
+  }, 15_000);
+
+  it('keeps overlapping force-reconnect gestures joinable side by side', async () => {
+    const started = await startServer();
+    server = started.server;
+    manager = makeManager();
+
+    // Two gestures with in-flight dials: a straggler from the first gesture
+    // must join its own gesture's dial, not the newer one's, and never start
+    // a third transport.
+    const slowA = hangingIo();
+    const dialA = manager.connect(profile(started.port), slowA.io, 'terminal', {
+      freshTransport: 'wave-a',
+    });
+    dialA.catch(() => undefined);
+    await slowA.prompted;
+    const slowB = hangingIo();
+    const dialB = manager.connect(profile(started.port), slowB.io, 'terminal', {
+      freshTransport: 'wave-b',
+    });
+    dialB.catch(() => undefined);
+    await slowB.prompted;
+
+    const straggler = manager.connect(profile(started.port), makeIo().io, 'terminal', {
+      freshTransport: 'wave-a',
+    });
+    slowA.release();
+    slowB.release();
+    const [a, b, joined] = await Promise.all([dialA, dialB, straggler]);
+
+    expect(joined.reused).toBe(true);
+    expect(joined.connection.id).toBe(a.connection.id);
+    expect(b.connection.id).not.toBe(a.connection.id);
+    expect(started.stats.connections).toBe(2);
   }, 15_000);
 
   it('gives concurrent overflow fallbacks their own dedicated transports', async () => {

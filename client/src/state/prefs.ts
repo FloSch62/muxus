@@ -25,7 +25,9 @@ export const DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS = 30;
  */
 export function sshKeepalivePrefField(): { keepaliveIntervalSeconds?: number } {
   const interval = usePrefsStore.getState().sshKeepaliveIntervalSeconds;
-  return interval > 0 ? { keepaliveIntervalSeconds: interval } : {};
+  // Explicit undefined (dropped by JSON serialization) so a stale field on a
+  // persisted profile can never outvote a disabled preference.
+  return { keepaliveIntervalSeconds: interval > 0 ? interval : undefined };
 }
 
 /** Keep hand-edited or older persisted values from making a pane illegible. */

@@ -269,10 +269,15 @@ export class SshConnectionManager {
   private readonly connections = new ConnectionLeaseRegistry<ManagedConnection>();
   private readonly closeReasons = new WeakMap<Client, string>();
   private readonly postAuth = new WeakMap<Client, Promise<void>>();
-  /** In-flight dials by mux key, so simultaneous sessions share one TCP connection and one auth round-trip. */
+  /**
+   * In-flight dials by mux key, so simultaneous sessions share one TCP
+   * connection and one auth round-trip. A list, not a single slot: overlapping
+   * force-reconnect gestures each keep their own dial joinable until it
+   * settles, so a straggler always finds the dial of its own gesture.
+   */
   private readonly pendingDials = new Map<
     string,
-    { promise: Promise<ManagedConnection>; freshToken?: string }
+    Array<{ promise: Promise<ManagedConnection>; freshToken?: string }>
   >();
   /** Dial plans whose optional integration setup killed the remote transport; reset on app restart. */
   private readonly automaticPlainShellKeys = new Set<string>();
@@ -429,12 +434,16 @@ export class SshConnectionManager {
         io.status(`Reusing the SSH connection to ${label} (multiplexed).`, { transient: true });
         return shared;
       }
-      const pending = this.pendingDials.get(key);
+      const pendingList = this.pendingDials.get(key) ?? [];
       // A failed dial fails every session waiting on it — auth prompts and
       // errors surface on the session that started the dial. A fresh request
       // never waits on the dial it is trying to escape: it joins an in-flight
       // dial only when that dial belongs to its own force-reconnect group.
-      if (pending && (!freshToken || pending.freshToken === freshToken)) {
+      // Regular requests join the newest dial.
+      const pending = freshToken
+        ? pendingList.find((entry) => entry.freshToken === freshToken)
+        : pendingList.at(-1);
+      if (pending) {
         io.status(`Waiting for the SSH connection to ${label} …`, { transient: true });
         const conn = await pending.promise;
         const lease = this.connections.acquire(conn.id, owner);
@@ -467,13 +476,20 @@ export class SshConnectionManager {
     const tracked = dial.then((lease) => lease.connection);
     tracked.catch(() => undefined); // waiters observe the rejection through their own await
     if (!opts.dedicatedTransport) {
-      this.pendingDials.set(key, { promise: tracked, freshToken });
+      const list = this.pendingDials.get(key);
+      if (list) list.push({ promise: tracked, freshToken });
+      else this.pendingDials.set(key, [{ promise: tracked, freshToken }]);
     }
     try {
       const lease = await dial;
       return { ...lease, reused: false, target };
     } finally {
-      if (this.pendingDials.get(key)?.promise === tracked) this.pendingDials.delete(key);
+      const list = this.pendingDials.get(key);
+      if (list) {
+        const index = list.findIndex((entry) => entry.promise === tracked);
+        if (index >= 0) list.splice(index, 1);
+        if (list.length === 0) this.pendingDials.delete(key);
+      }
     }
   }
 

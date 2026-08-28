@@ -996,6 +996,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
               : shouldWaitForTerminalOutput(tab.profile.kind, receivedTerminalOutput);
             const sftpAvailable =
               tab.profile.kind === 'ssh' ? ctl.sftpAvailable !== false : undefined;
+            // Clear only the token this connect carried: a ready outracing the
+            // effect teardown must not erase a newer gesture's token.
+            const tokenUnchanged =
+              useTabsStore
+                .getState()
+                .tabs.find((candidate) => candidate.id === tab.id)
+                ?.freshTransport === tab.freshTransport;
             updateTab(tab.id, {
               status: transportSuspect
                 ? 'interrupted'
@@ -1011,7 +1018,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
               transferId: undefined,
               // The replacement connection is live; retries from here on may
               // multiplex normally again.
-              freshTransport: undefined,
+              ...(tokenUnchanged ? { freshTransport: undefined } : {}),
             });
             if (pendingTransferId) {
               completeTabTransfer(pendingTransferId);
