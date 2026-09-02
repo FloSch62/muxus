@@ -180,6 +180,13 @@ export function managedHostDisplayName(host: ManagedHost): string {
     : savedHostDisplayName(host.entry);
 }
 
+/** Alphabetize a mixed host list by the name shown in the sidebar. */
+export function alphabetizeManagedHosts(hosts: readonly ManagedHost[]): ManagedHost[] {
+  return hosts.toSorted((left, right) =>
+    managedHostDisplayName(left).localeCompare(managedHostDisplayName(right)),
+  );
+}
+
 export function managedHostAddress(host: ManagedHost): string {
   return host.kind === 'ssh' ? hostAddress(host.entry) : savedHostAddress(host.entry);
 }

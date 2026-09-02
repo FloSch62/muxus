@@ -9,6 +9,7 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
+import SortByAlphaIcon from '@mui/icons-material/SortByAlpha';
 import UnfoldLessIcon from '@mui/icons-material/UnfoldLess';
 import type { FolderNode } from '../../host-tree.js';
 import { loadFolderDialog, loadHostEditorDialog } from '../../lazy-features.js';
@@ -29,8 +30,10 @@ export function FolderContextMenu({
   onCollapseAll,
   onDelete,
   onMove,
+  onSortHosts,
   canMoveUp,
   canMoveDown,
+  canSortHosts,
 }: {
   menu: FolderMenuState | null;
   onClose: () => void;
@@ -41,8 +44,10 @@ export function FolderContextMenu({
   onCollapseAll: (node: FolderNode) => void;
   onDelete: (node: FolderNode) => void;
   onMove: (node: FolderNode, delta: -1 | 1) => void;
+  onSortHosts: (node: FolderNode) => void;
   canMoveUp: boolean;
   canMoveDown: boolean;
+  canSortHosts: boolean;
 }) {
   const run = (action: (node: FolderNode) => void) => () => {
     if (menu) action(menu.node);
@@ -76,6 +81,12 @@ export function FolderContextMenu({
           <KeyboardArrowDownIcon fontSize="small" />
         </ListItemIcon>
         Move down
+      </MenuItem>
+      <MenuItem disabled={!canSortHosts} onClick={run(onSortHosts)}>
+        <ListItemIcon>
+          <SortByAlphaIcon fontSize="small" />
+        </ListItemIcon>
+        Sort hosts alphabetically
       </MenuItem>
       <Divider />
       <MenuItem

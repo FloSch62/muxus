@@ -48,6 +48,7 @@ import {
   type VisibleNode,
 } from '../host-tree.js';
 import {
+  alphabetizeManagedHosts,
   bestManagedHostMatch,
   groupManagedHosts,
   managedHostDisplayName,
@@ -101,8 +102,8 @@ const fixedRowSx = [treeRowSx(0, undefined), { gap: 0.75 }] as const;
 
 /** Saved Telnet/serial profiles and live OpenSSH hosts in one host manager. */
 export function SessionSidebar() {
-  const { data: config } = useSshConfig();
-  const { data: savedData } = useSavedHostProfiles();
+  const { data: config, isSuccess: sshConfigReady } = useSshConfig();
+  const { data: savedData, isSuccess: savedProfilesReady } = useSavedHostProfiles();
   const setHostEditor = useUiStore((s) => s.setHostEditor);
   const setFolderDialog = useUiStore((s) => s.setFolderDialog);
   const sidebarWidth = usePrefsStore((state) => state.sidebarWidth);
@@ -177,13 +178,16 @@ export function SessionSidebar() {
     updateProfileMetadata.isPending ||
     applyFolderMoves.isPending;
   const filtering = !!needle;
-  const reorderEnabled = !filtering && !mutating;
+  // Both catalogs must be complete before an order can be persisted: writing
+  // a partial list would leave the omitted source carrying conflicting ranks.
+  const hostCatalogsReady = sshConfigReady && savedProfilesReady;
+  const reorderEnabled = hostCatalogsReady && !filtering && !mutating;
   useEffect(() => {
     setSearchCollapsed(EMPTY_KEYS);
   }, [needle]);
   // Folder edits rewrite paths across hosts the filter may be hiding, so they
   // are only offered against the full list.
-  const folderEditsEnabled = !filtering && !mutating;
+  const folderEditsEnabled = hostCatalogsReady && !filtering && !mutating;
 
   const commitOrder = useCallback(
     (keys: readonly string[]) =>
@@ -194,6 +198,14 @@ export function SessionSidebar() {
         }),
       ),
     [reorder, hostByKey],
+  );
+
+  const alphabetizeHosts = useCallback(
+    (items: readonly ManagedHost[]) => {
+      if (!reorderEnabled || items.length < 2) return;
+      commitOrder(alphabetizeManagedHosts(items).map(managedHostKey));
+    },
+    [commitOrder, reorderEnabled],
   );
 
   /** Reorder a host among its siblings — folders are always alphabetical. */
@@ -445,6 +457,9 @@ export function SessionSidebar() {
       ? { index: siblings.keys.indexOf(folderMenu!.node.key), total: siblings.keys.length }
       : { index: -1, total: 0 };
   }, [folderMenu, tree]);
+  const folderMenuHostCount = folderMenu
+    ? siblingHostKeys(folderMenu.node).length
+    : 0;
 
   const empty = hosts.length === 0 && profiles.length === 0;
 
@@ -686,18 +701,27 @@ export function SessionSidebar() {
               onCollapseAll: collapseSubtree,
               onDelete: deleteFolder,
               onMove: (node, delta) => moveFolderByKey(node.key, delta),
+              onSortHosts: (node) =>
+                alphabetizeHosts(
+                  node.children.flatMap((child) =>
+                    child.kind === 'host' ? [child.host] : [],
+                  ),
+                ),
               canMoveUp: reorderEnabled && folderMenuPosition.index > 0,
               canMoveDown:
                 reorderEnabled &&
                 folderMenuPosition.index >= 0 &&
                 folderMenuPosition.index < folderMenuPosition.total - 1,
+              canSortHosts: reorderEnabled && folderMenuHostCount > 1,
             }}
             panel={{
               position: panelMenu,
               onClose: () => setPanelMenu(null),
               onNewHost: () => setHostEditor({ mode: 'new' }),
               onNewFolder: () => setFolderDialog({ mode: 'new' }),
+              onSortHosts: () => alphabetizeHosts(allHosts),
               folderEditsEnabled,
+              canSortHosts: reorderEnabled && allHosts.length > 1,
             }}
             launch={{ target: launchTarget, onClose: () => setLaunchTarget(null) }}
           />
