@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "docs/**"
+      - "overrides/**"
       - "zensical.toml"
       - "hack/write-latest-manifest.mjs"
       - ".github/workflows/docs.yml"

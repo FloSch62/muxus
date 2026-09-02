@@ -133,6 +133,18 @@ browser and editor. It draws a pointer and caption over the page because a scree
 captures neither the mouse nor the keys that drove it. Frames come off Chrome's screencast
 at device resolution and are stitched with `ffmpeg`, which has to be on `PATH`.
 
+The animated session map behind the landing page hero is generated too, into a theme
+partial that `overrides/partials/muxus-hero.html` includes:
+
+```bash
+node hack/docs-hero.mjs   # → overrides/partials/muxus-hero-bg.html
+```
+
+It lays out terminal panes, links and packets with a fixed seed, so the output only changes
+when the script does. Every host is a small element animated on the compositor with
+transform and opacity alone, and `docs/assets/javascripts/hero.js` pauses the field while
+it is scrolled out of view. Colours come from `docs/assets/stylesheets/extra.css`.
+
 Running `node hack/demo-env.mjs` on its own starts the sandbox and prints a URL, which is
 also a way to test a change without touching the real `~/.ssh`.
 
