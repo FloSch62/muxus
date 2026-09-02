@@ -18,6 +18,7 @@ repo_url = "https://github.com/FloSch62/muxus"
 edit_uri = "edit/main/docs/"
 
 extra_css = ["assets/stylesheets/extra.css"]
+extra_javascript = ["assets/javascripts/hero.js"]
 
 # Explicit navigation mirrors the docs/ tree but gives us full control of
 # order and titles. Top-level entries become tabs (navigation.tabs is on below).
@@ -76,6 +77,7 @@ nav = [
 # ----------------------------------------------------------------------------
 [project.theme]
 language = "en"
+custom_dir = "overrides"
 logo = "assets/muxus.svg"
 favicon = "assets/muxus.svg"
 

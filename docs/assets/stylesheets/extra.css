@@ -32,19 +32,592 @@
   display: none;
 }
 
-/* The landing-page tour: one recording per theme, plus a still for readers who
-   asked their system for less motion. */
+.md-typeset figure figcaption {
+  margin-top: 0.4rem;
+  color: var(--md-default-fg-color--light);
+  font-size: 0.78rem;
+}
+
+/* Buttons follow the app: 8px corners, weight 600 */
+.md-typeset .md-button {
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------------
+   Landing page hero. Rendered by overrides/partials/muxus-hero.html for pages
+   with `hero: true`; the session map comes from hack/docs-hero.mjs.
+   Colours are theme variables: the dark values are the defaults and match the
+   app's chrome greys, the light scheme overrides them below.
+   --------------------------------------------------------------------------- */
+.muxus-hero {
+  --mh-bg-a: #141417;
+  --mh-bg-b: #1b1b1f;
+  --mh-bg-c: #17171b;
+  --mh-tint-1: rgba(0, 220, 232, 0.14);
+  --mh-tint-2: rgba(110, 139, 251, 0.22);
+  --mh-tint-3: rgba(45, 212, 191, 0.10);
+  --mh-glow-a: rgba(0, 220, 232, 0.20);
+  --mh-glow-b: rgba(110, 139, 251, 0.26);
+  --mh-shade: 21, 21, 24;
+  --mh-shade-strength: 0.80;
+  --mh-fg: #f4f4f6;
+  --mh-fg-muted: rgba(244, 244, 246, 0.76);
+  --mh-fg-faint: rgba(244, 244, 246, 0.62);
+  --mh-sat: 90%;
+  --mh-light: 64%;
+  --mh-pane-fill: rgba(21, 21, 24, 0.80);
+  --mh-pane-stroke: 0.55;
+  --mh-bar: rgba(230, 230, 234, 0.26);
+  --mh-text: rgba(230, 230, 234, 0.74);
+  --mh-grid: #8fb8ff;
+  --mh-grid-opacity: 0.14;
+  --mh-line: #7fb6ff;
+  --mh-line-opacity: 0.45;
+  --mh-field: 1;
+  --mh-pill-border: rgba(255, 255, 255, 0.14);
+  --mh-pill-bg: rgba(255, 255, 255, 0.06);
+  --mh-pill-fg: rgba(255, 255, 255, 0.82);
+  --mh-btn-border: rgba(255, 255, 255, 0.28);
+  --mh-btn-border-hover: rgba(255, 255, 255, 0.55);
+  --mh-btn-hover: rgba(255, 255, 255, 0.10);
+  --mh-primary-bg: #f4f4f6;
+  --mh-primary-fg: #151518;
+  --mh-primary-hover: #ffffff;
+  --mh-icon: #00dce8;
+
+  position: relative;
+  overflow: hidden;
+  color: var(--mh-fg);
+  padding: 3.6rem 0 7.6rem;
+  background:
+    radial-gradient(70% 90% at 50% -20%, var(--mh-tint-1), transparent 70%),
+    radial-gradient(45% 65% at 88% 85%, var(--mh-tint-2), transparent 70%),
+    radial-gradient(40% 60% at 8% 95%, var(--mh-tint-3), transparent 70%),
+    linear-gradient(180deg, var(--mh-bg-a) 0%, var(--mh-bg-b) 55%, var(--mh-bg-c) 100%);
+}
+
+[data-md-color-scheme="default"] .muxus-hero {
+  --mh-bg-a: #fbfbfc;
+  --mh-bg-b: #f4f4f6;
+  --mh-bg-c: #f7f7f9;
+  --mh-tint-1: rgba(20, 189, 227, 0.18);
+  --mh-tint-2: rgba(59, 102, 245, 0.14);
+  --mh-tint-3: rgba(13, 148, 136, 0.10);
+  --mh-glow-a: rgba(20, 189, 227, 0.22);
+  --mh-glow-b: rgba(59, 102, 245, 0.18);
+  --mh-shade: 248, 248, 250;
+  --mh-shade-strength: 0.84;
+  --mh-fg: #1c1c21;
+  --mh-fg-muted: #4a4a55;
+  --mh-fg-faint: #6e6e78;
+  --mh-sat: 82%;
+  --mh-light: 46%;
+  --mh-pane-fill: rgba(255, 255, 255, 0.86);
+  --mh-pane-stroke: 0.62;
+  --mh-bar: rgba(28, 28, 33, 0.22);
+  --mh-text: rgba(28, 28, 33, 0.74);
+  --mh-grid: #3b66f5;
+  --mh-grid-opacity: 0.14;
+  --mh-line: #3b66f5;
+  --mh-line-opacity: 0.42;
+  --mh-field: 1;
+  --mh-pill-border: rgba(28, 28, 33, 0.12);
+  --mh-pill-bg: rgba(255, 255, 255, 0.78);
+  --mh-pill-fg: #3f3f49;
+  --mh-btn-border: rgba(28, 28, 33, 0.26);
+  --mh-btn-border-hover: rgba(28, 28, 33, 0.5);
+  --mh-btn-hover: rgba(28, 28, 33, 0.06);
+  --mh-primary-bg: #3b66f5;
+  --mh-primary-fg: #ffffff;
+  --mh-primary-hover: #2f57e0;
+  --mh-icon: #0ea5c9;
+}
+
+.muxus-hero::after {
+  /* thin brand line where the tab bar meets the hero */
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent 0%, #00dce8 30%, #6e8bfb 70%, transparent 100%);
+  opacity: 0.85;
+}
+
+.muxus-hero__bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  container-type: size;
+}
+
+/* Two soft colour pools drifting behind the field. Plain gradients on their own layers,
+   so moving them is a compositor transform and nothing repaints. */
+.muxus-hero__glows {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+}
+
+.muxus-hero__glow {
+  position: absolute;
+  border-radius: 50%;
+  will-change: transform;
+}
+
+.muxus-hero__glow--a {
+  left: 50%;
+  top: 38%;
+  width: 64rem;
+  height: 30rem;
+  margin: -15rem 0 0 -32rem;
+  background: radial-gradient(closest-side, var(--mh-glow-a), transparent 100%);
+  animation: mx-drift-a 26s ease-in-out infinite;
+}
+
+.muxus-hero__glow--b {
+  left: 80%;
+  top: 92%;
+  width: 52rem;
+  height: 26rem;
+  margin: -13rem 0 0 -26rem;
+  background: radial-gradient(closest-side, var(--mh-glow-b), transparent 100%);
+  animation: mx-drift-b 34s ease-in-out infinite;
+}
+
+.muxus-hero__defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+/* The scene is a fixed 1600x560 box scaled up to cover the hero. Hosts sit at percentage
+   positions inside it, so they line up with the static SVG's viewBox. */
+.muxus-hero__scene {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  width: 100%;
+  width: max(100cqw, calc(100cqh * 2.857143));
+  aspect-ratio: 1600 / 560;
+  will-change: transform;
+}
+
+.muxus-hero__static {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.muxus-hero__grid {
+  fill: var(--mh-grid);
+  opacity: var(--mh-grid-opacity);
+}
+
+.muxus-hero__grid circle,
+#mx-grid circle {
+  fill: var(--mh-grid);
+}
+
+.muxus-hero__links line {
+  stroke: var(--mh-line);
+  stroke-opacity: var(--mh-line-opacity);
+  stroke-width: 1;
+  stroke-dasharray: 3 7;
+}
+
+.muxus-hero__layer {
+  position: absolute;
+  inset: 0;
+  opacity: var(--mh-field);
+}
+
+.muxus-hero__layer--far {
+  will-change: transform;
+}
+
+/* Hosts. Each pane drifts up and lights up in one animation; only transform and opacity
+   move, with literal keyframe values, so the compositor runs it without main-thread work.
+   The hue is per element (--h), lightness and saturation come from the theme. */
+.mx-pane {
+  position: absolute;
+  display: block;
+  opacity: 0.5;
+  animation: mx-float var(--t) ease-in-out var(--d) infinite;
+  will-change: transform, opacity;
+}
+
+.mx-pane svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.mx-pane--l {
+  width: 112px;
+  height: 72px;
+  margin: -36px 0 0 -56px;
+}
+
+.mx-pane--s {
+  width: 56px;
+  height: 36px;
+  margin: -18px 0 0 -28px;
+}
+
+.mx-pane__body {
+  fill: var(--mh-pane-fill);
+  stroke: hsl(var(--h) var(--mh-sat) var(--mh-light) / var(--mh-pane-stroke));
+  stroke-width: 1;
+}
+
+.mx-pane__bar {
+  stroke: hsl(var(--h) var(--mh-sat) var(--mh-light) / 0.28);
+  stroke-width: 1;
+}
+
+.mx-pane__dot {
+  fill: hsl(var(--h) var(--mh-sat) var(--mh-light));
+}
+
+.mx-pane__dot--2 {
+  opacity: 0.55;
+}
+
+.mx-pane__dot--3 {
+  opacity: 0.3;
+}
+
+.mx-pane__line {
+  fill: var(--mh-bar);
+}
+
+.mx-pane__prompt {
+  font-family: var(--md-code-font-family, "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-style: normal;
+  font-size: 9px;
+  font-weight: 500;
+  fill: var(--mh-text);
+}
+
+.mx-pane__ps {
+  fill: hsl(var(--h) var(--mh-sat) var(--mh-light));
+}
+
+.mx-cursor {
+  position: absolute;
+  width: 5px;
+  height: 9px;
+  border-radius: 1px;
+  background: hsl(var(--h) var(--mh-sat) var(--mh-light));
+  animation: mx-blink 1.1s steps(1, end) var(--d) infinite;
+  will-change: opacity;
+}
+
+.mx-dot {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  margin: -2px 0 0 -2px;
+  border-radius: 50%;
+  background: hsl(var(--h) var(--mh-sat) var(--mh-light));
+  box-shadow: 0 0 0 3px hsl(var(--h) var(--mh-sat) var(--mh-light) / 0.14);
+  opacity: 0.3;
+  animation: mx-twinkle var(--t) ease-in-out var(--d) infinite;
+  will-change: transform, opacity;
+}
+
+.mx-dot--still {
+  opacity: 0.45;
+  animation: none;
+  will-change: auto;
+}
+
+.muxus-hero__packets {
+  position: absolute;
+  inset: 0;
+}
+
+/* The packet element is the link's bounding box; the dot sits in the corner it starts
+   from and the keyframes slide the box by its own size, so no per-element values are
+   needed inside the animation. */
+.mx-packet {
+  position: absolute;
+  opacity: 0;
+  animation: mx-travel-es var(--t) ease-in-out var(--d) infinite;
+  will-change: transform, opacity;
+}
+
+.mx-packet::after {
+  content: "";
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: hsl(var(--h) var(--mh-sat) var(--mh-light));
+  box-shadow: 0 0 8px 1px hsl(var(--h) var(--mh-sat) var(--mh-light) / 0.7);
+}
+
+.mx-packet--es::after { left: 0;    top: 0; }
+.mx-packet--en::after { left: 0;    top: 100%; }
+.mx-packet--ws::after { left: 100%; top: 0; }
+.mx-packet--wn::after { left: 100%; top: 100%; }
+
+.mx-packet--en { animation-name: mx-travel-en; }
+.mx-packet--ws { animation-name: mx-travel-ws; }
+.mx-packet--wn { animation-name: mx-travel-wn; }
+
+.muxus-hero__shade {
+  /* keep the middle calm so the copy stays readable over the field */
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(48% 62% at 50% 44%, rgba(var(--mh-shade), var(--mh-shade-strength)), rgba(var(--mh-shade), 0) 100%),
+    linear-gradient(180deg, rgba(var(--mh-shade), 0) 70%, rgba(var(--mh-shade), 0.55) 100%);
+}
+
+@keyframes mx-float {
+  0%, 100% { transform: translateY(0);     opacity: 0.5; }
+  50%      { transform: translateY(-12px); opacity: 1; }
+}
+
+@keyframes mx-twinkle {
+  0%, 100% { transform: scale(1);   opacity: 0.3; }
+  50%      { transform: scale(1.5); opacity: 0.95; }
+}
+
+@keyframes mx-blink {
+  0%, 49%   { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+@keyframes mx-travel-es {
+  0%   { transform: translate(0, 0); opacity: 0; }
+  12%  { opacity: 1; }
+  88%  { opacity: 1; }
+  100% { transform: translate(100%, 100%); opacity: 0; }
+}
+
+@keyframes mx-travel-en {
+  0%   { transform: translate(0, 0); opacity: 0; }
+  12%  { opacity: 1; }
+  88%  { opacity: 1; }
+  100% { transform: translate(100%, -100%); opacity: 0; }
+}
+
+@keyframes mx-travel-ws {
+  0%   { transform: translate(0, 0); opacity: 0; }
+  12%  { opacity: 1; }
+  88%  { opacity: 1; }
+  100% { transform: translate(-100%, 100%); opacity: 0; }
+}
+
+@keyframes mx-travel-wn {
+  0%   { transform: translate(0, 0); opacity: 0; }
+  12%  { opacity: 1; }
+  88%  { opacity: 1; }
+  100% { transform: translate(-100%, -100%); opacity: 0; }
+}
+
+@keyframes mx-drift-a {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50%      { transform: translate3d(70px, 28px, 0); }
+}
+
+@keyframes mx-drift-b {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50%      { transform: translate3d(-60px, -40px, 0); }
+}
+
+/* hero.js adds this while the hero is scrolled out of view */
+.muxus-hero--idle .muxus-hero__bg * {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .muxus-hero .mx-pane,
+  .muxus-hero .mx-dot,
+  .muxus-hero .mx-cursor,
+  .muxus-hero .muxus-hero__glow {
+    animation: none;
+  }
+  .muxus-hero .mx-pane {
+    opacity: 0.8;
+  }
+  .muxus-hero .mx-dot {
+    opacity: 0.6;
+  }
+  .mx-packet {
+    display: none;
+  }
+}
+
+.muxus-hero__inner {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  padding: 0 1rem;
+}
+
+.muxus-hero__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0.25rem 0.8rem 0.25rem 0.4rem;
+  border: 1px solid var(--mh-pill-border);
+  border-radius: 999px;
+  background: var(--mh-pill-bg);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mh-pill-fg);
+}
+
+.muxus-hero__brand img {
+  height: 1.3rem;
+  width: auto;
+}
+
+.muxus-hero h1 {
+  margin: 1.1rem auto 0.8rem;
+  font-size: clamp(2.2rem, 5.2vw, 3.5rem);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  color: var(--mh-fg);
+}
+
+.muxus-hero h1 em {
+  /* Gradient text. The clip follows the box, so pad it or the last glyph's
+     overhang (tightened by the negative letter-spacing) gets cut off. */
+  font-style: normal;
+  padding: 0.06em 0.12em 0.06em 0.04em;
+  margin: -0.06em -0.08em -0.06em -0.04em;
+  background: linear-gradient(90deg, #00dce8 0%, #4fb3ff 50%, #6e8bfb 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+[data-md-color-scheme="default"] .muxus-hero h1 em {
+  background-image: linear-gradient(90deg, #0891b2 0%, #2f7de1 50%, #3b66f5 100%);
+}
+
+.muxus-hero__lead {
+  margin: 0 auto 1.6rem;
+  max-width: 40rem;
+  font-size: clamp(0.95rem, 1.5vw, 1.1rem);
+  line-height: 1.65;
+  color: var(--mh-fg-muted);
+}
+
+.muxus-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.7rem;
+  margin: 0;
+}
+
+.muxus-hero .md-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.6em 1.3em;
+  border-color: var(--mh-btn-border);
+  border-radius: 8px;
+  color: var(--mh-fg);
+  font-weight: 600;
+}
+
+.muxus-hero .md-button svg {
+  width: 1.05em;
+  height: 1.05em;
+  fill: currentcolor;
+}
+
+.muxus-hero .md-button:hover,
+.muxus-hero .md-button:focus {
+  background: var(--mh-btn-hover);
+  border-color: var(--mh-btn-border-hover);
+  color: var(--mh-fg);
+}
+
+.muxus-hero .md-button--primary,
+.muxus-hero .md-button--primary:hover,
+.muxus-hero .md-button--primary:focus {
+  background: var(--mh-primary-bg);
+  border-color: var(--mh-primary-bg);
+  color: var(--mh-primary-fg);
+}
+
+.muxus-hero .md-button--primary:hover,
+.muxus-hero .md-button--primary:focus {
+  background: var(--mh-primary-hover);
+  border-color: var(--mh-primary-hover);
+}
+
+.muxus-hero__facts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem 1.6rem;
+  margin: 2.2rem auto 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.76rem;
+  color: var(--mh-fg-faint);
+}
+
+.md-typeset .muxus-hero__facts li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.md-typeset .muxus-hero__facts code {
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+  background: var(--mh-pill-bg);
+  color: inherit;
+  font-size: 0.9em;
+}
+
+.muxus-hero__facts svg {
+  width: 1rem;
+  height: 1rem;
+  fill: var(--mh-icon);
+}
+
+/* The landing-page tour: one recording per theme, plus a still for readers who asked
+   their system for less motion. It overlaps the lower edge of the hero. */
+.md-typeset .muxus-tour {
+  position: relative;
+  z-index: 2;
+  margin-top: -5.6rem;
+}
+
 .muxus-tour video,
 .muxus-tour img {
   display: block;
   width: 100%;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18), 0 8px 24px rgba(0, 0, 0, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 2px 6px rgba(20, 20, 30, 0.14), 0 24px 60px rgba(20, 20, 30, 0.22);
 }
 
 [data-md-color-scheme="slate"] .muxus-tour video,
 [data-md-color-scheme="slate"] .muxus-tour img {
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3), 0 24px 60px rgba(0, 0, 0, 0.45);
 }
 
 [data-md-color-scheme="default"] .muxus-tour .only-dark,
@@ -67,56 +640,60 @@
   }
 }
 
-.md-typeset figure figcaption {
-  margin-top: 0.4rem;
-  color: var(--md-default-fg-color--light);
-  font-size: 0.78rem;
+/* The hero carries the page title, so drop the theme's fallback h1 and the edit/view
+   buttons, which would otherwise sit between the hero and the tour. */
+.md-content__inner:has(.muxus-tour) > h1,
+.md-content__inner:has(.muxus-tour) > .md-content__button {
+  display: none;
 }
 
-/* Hero block on the landing page */
-.muxus-hero {
-  text-align: center;
-  padding: 1.2rem 0 0.4rem;
-}
-.muxus-hero h1 {
-  font-weight: 800;
-  font-size: 2.6rem;
-  margin: 0.2rem 0 0.4rem;
-  letter-spacing: -0.02em;
-}
-
-/* The app icon in place of a glyph in the hero title */
-.muxus-hero h1 .muxus-hero-logo {
-  height: 1.15em;
-  width: auto;
-  vertical-align: -0.18em;
-  margin-right: 0.2em;
-}
-.muxus-hero p.tagline {
-  font-size: 1.05rem;
-  color: var(--md-default-fg-color--light);
-  max-width: 44rem;
-  margin: 0 auto 1.2rem;
+@media screen and (max-width: 44.9375em) {
+  .muxus-hero {
+    padding: 2.6rem 0 5.4rem;
+  }
+  .muxus-hero__facts {
+    gap: 0.4rem 1rem;
+  }
+  .md-typeset .muxus-tour {
+    margin-top: -3.6rem;
+  }
+  .muxus-tour video,
+  .muxus-tour img {
+    border-radius: 8px;
+  }
 }
 
 /* Feature grid (uses Material's grid cards) */
 .md-typeset .grid.cards > ul > li,
 .md-typeset .grid.cards > ol > li {
-  border-radius: 0.6rem;
+  border-radius: 10px;
   border-color: var(--md-default-fg-color--lighter);
-  transition: border-color 125ms ease, box-shadow 125ms ease;
+  transition: border-color 125ms ease, box-shadow 125ms ease, transform 125ms ease;
 }
 
 /* The default card border is nearly invisible in light mode, so darken it. */
 [data-md-color-scheme="default"] .md-typeset .grid.cards > ul > li,
 [data-md-color-scheme="default"] .md-typeset .grid.cards > ol > li {
-  border-color: rgba(0, 0, 0, 0.16);
+  border-color: rgba(0, 0, 0, 0.14);
 }
 
 .md-typeset .grid.cards > ul > li:hover,
 .md-typeset .grid.cards > ol > li:hover {
   border-color: var(--md-accent-fg-color);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 6px 18px rgba(0, 0, 0, 0.07);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
+}
+
+[data-md-color-scheme="slate"] .md-typeset .grid.cards > ul > li:hover,
+[data-md-color-scheme="slate"] .md-typeset .grid.cards > ol > li:hover {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-typeset .grid.cards > ul > li:hover,
+  .md-typeset .grid.cards > ol > li:hover {
+    transform: none;
+  }
 }
 
 /* Keyboard keys a touch tighter */

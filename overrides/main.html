@@ -1,0 +1,13 @@
+{#
+  Muxus theme overrides. Zensical looks here first, then falls back to its
+  built-in templates. Pages that set `hero: true` in their front matter get
+  the full-width landing hero rendered below the tab bar.
+#}
+{% extends "base.html" %}
+
+{% block tabs %}
+  {{ super() }}
+  {% if page.meta and page.meta.hero %}
+    {% include "partials/muxus-hero.html" %}
+  {% endif %}
+{% endblock %}

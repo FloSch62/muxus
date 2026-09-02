@@ -1,23 +1,10 @@
 ---
 icon: lucide/house
+hero: true
 hide:
   - navigation
   - toc
 ---
-
-<div class="muxus-hero" markdown>
-
-# ![](assets/muxus.svg){ .muxus-hero-logo } Muxus
-
-<p class="tagline">
-A free, open-source SSH, Telnet and serial client. Split panes, saved workspaces, SFTP,
-a remote editor, saved tunnels, and images in the terminal.
-</p>
-
-[Get started :material-arrow-right:](install/index.md){ .md-button .md-button--primary }
-[Download :simple-github:](https://github.com/FloSch62/muxus/releases){ .md-button }
-
-</div>
 
 <div class="muxus-tour">
   <video class="only-light" poster="assets/screenshots/tour-poster.png"
