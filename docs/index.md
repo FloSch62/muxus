@@ -135,3 +135,11 @@ use the same local database.
     [:octicons-arrow-right-24: Quickstart](quickstart.md)
 
 </div>
+
+## Made by
+
+Muxus is built by me (FloSch), in the open and in my spare time. It is free and stays free.
+If it saves you time, a coffee keeps the releases coming. [More about me](about.md).
+
+[:simple-buymeacoffee: Buy me a coffee](https://www.buymeacoffee.com/FloSch62){ .md-button .md-button--primary }
+[:material-star-outline: Star on GitHub](https://github.com/FloSch62/muxus){ .md-button }

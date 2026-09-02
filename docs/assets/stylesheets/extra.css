@@ -38,10 +38,21 @@
   font-size: 0.78rem;
 }
 
-/* Buttons follow the app: 8px corners, weight 600 */
+/* Buttons follow the app: 8px corners, weight 600. An icon shortcode inside a button
+   sits on the text baseline with a small gap. */
 .md-typeset .md-button {
   border-radius: 8px;
   font-weight: 600;
+}
+
+.md-typeset .md-button .twemoji {
+  margin-right: 0.35em;
+  vertical-align: -0.2em;
+}
+
+.md-typeset .md-button .twemoji svg {
+  width: 1.1em;
+  height: 1.1em;
 }
 
 /* ---------------------------------------------------------------------------

@@ -3,7 +3,6 @@ import Autocomplete from '@mui/material/Autocomplete';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import CircularProgress from '@mui/material/CircularProgress';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import Divider from '@mui/material/Divider';
@@ -14,7 +13,6 @@ import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
-import Link from '@mui/material/Link';
 import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
 import Slider from '@mui/material/Slider';
@@ -29,7 +27,6 @@ import { useTheme } from '@mui/material/styles';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import BugReportOutlinedIcon from '@mui/icons-material/BugReportOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import CachedOutlinedIcon from '@mui/icons-material/CachedOutlined';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import HighlightOutlinedIcon from '@mui/icons-material/HighlightOutlined';
@@ -40,18 +37,12 @@ import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import PasswordOutlinedIcon from '@mui/icons-material/PasswordOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
-import type { UpdateCheckResult } from '@muxus/shared';
-import { checkForUpdate } from '../api/app.js';
 import { fetchAppLogs, formatLogEntry } from '../api/logs.js';
 import {
   useSaveSessionHistorySettings,
   useSaveSessionLoggingPolicy,
 } from '../api/session-history.js';
-import {
-  useAppInfo,
-  useSessionHistoryStorage,
-  useSessionLoggingPolicy,
-} from '../api/queries.js';
+import { useSessionHistoryStorage, useSessionLoggingPolicy } from '../api/queries.js';
 import {
   FALLBACK_SESSION_LOGGING_POLICY,
   hostSessionLoggingDraft,
@@ -91,6 +82,7 @@ import {
   terminalFontFamilies,
   terminalFontIsAvailable,
 } from '../terminal/font-catalog.js';
+import { AboutSection } from './AboutSection.js';
 import { chordSx } from './chord-style.js';
 import { HighlightProfilesSection } from './HighlightProfilesSection.js';
 import { LocalShellProfilesSection } from './LocalShellProfilesSection.js';
@@ -1127,25 +1119,6 @@ function HistoryStorageSettings({ onDirtyChange }: { onDirtyChange: (dirty: bool
   );
 }
 
-function updateReasonLabel(reason?: string): string {
-  switch (reason) {
-    case 'timeout':
-      return 'The update check timed out.';
-    case 'network':
-      return 'The update check could not reach GitHub.';
-    case 'no-release':
-      return 'No published release was found.';
-    case 'missing-version':
-    case 'missing-release-url':
-      return 'The latest release metadata is incomplete.';
-    default:
-      return reason?.startsWith('manifest-')
-        ? `The update manifest returned ${reason.replace('manifest-', '')}.`
-        : 'The update check could not be completed.';
-  }
-}
-
-/** Diagnostic logging: the verbose-capture toggle plus log viewer and export. */
 function DebugSection() {
   const debugMode = usePrefsStore((s) => s.debugMode);
   const set = usePrefsStore((s) => s.set);
@@ -1216,96 +1189,6 @@ function DebugSection() {
           them. If the app fails to launch entirely, the desktop shell also writes
           logs/main.log in its data directory.
         </Typography>
-      </Box>
-    </Stack>
-  );
-}
-
-function AboutSection() {
-  const { data: info } = useAppInfo();
-  const prefs = usePrefsStore();
-  const [checking, setChecking] = useState(false);
-  const [result, setResult] = useState<UpdateCheckResult | null>(null);
-
-  const checkForUpdates = () => {
-    setChecking(true);
-    setResult(null);
-    void checkForUpdate({ force: true })
-      .then(setResult)
-      .catch(() => setResult({ available: false, currentVersion: info?.version ?? '', reason: 'network' }))
-      .finally(() => setChecking(false));
-  };
-
-  const updatesAvailable = result?.available === true;
-
-  return (
-    <Stack spacing={3}>
-      <Box>
-        <SectionTitle>About</SectionTitle>
-        <Stack spacing={1.25}>
-          <Typography variant="body2">
-            Muxus {info?.version ?? ''} · {String(info?.platform ?? '')}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Free, open-source SSH, Telnet, and serial client — kitty graphics, split-pane
-            workspaces, SFTP and terminal-independent port forwarding.
-          </Typography>
-          <Link href="https://github.com/FloSch62/muxus" target="_blank" rel="noreferrer">
-            github.com/FloSch62/muxus
-          </Link>
-        </Stack>
-      </Box>
-      <Box>
-        <SectionTitle>Updates</SectionTitle>
-        <Stack spacing={1.5} sx={{ alignItems: 'flex-start' }}>
-          <FormControlLabel
-            control={
-              <Switch
-                size="small"
-                checked={prefs.notifyOnNewVersion}
-                onChange={(e) => prefs.set({ notifyOnNewVersion: e.target.checked })}
-              />
-            }
-            label={
-              <Box>
-                <Typography variant="body2">Notify me when a new version is available</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Off: no notification at startup — checking here still works.
-                </Typography>
-              </Box>
-            }
-          />
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-            <Button
-              variant="contained"
-              startIcon={checking ? <CircularProgress color="inherit" size={16} /> : <CachedOutlinedIcon />}
-              disabled={checking}
-              onClick={checkForUpdates}
-            >
-              Check for updates
-            </Button>
-            {updatesAvailable ? (
-              <Button startIcon={<DownloadOutlinedIcon />} href={result.releaseUrl} target="_blank" rel="noreferrer">
-                Download
-              </Button>
-            ) : null}
-          </Stack>
-          {result?.available === false && result.latestVersion ? (
-            <Alert severity="success" variant="outlined">
-              Muxus is up to date. Latest release: {result.latestVersion}.
-            </Alert>
-          ) : null}
-          {result?.available === false && !result.latestVersion ? (
-            <Alert severity="warning" variant="outlined">
-              {updateReasonLabel(result.reason)}
-            </Alert>
-          ) : null}
-          {updatesAvailable ? (
-            <Alert severity="info" variant="outlined">
-              Muxus {result.latestVersion} is available. You are running {result.currentVersion}.
-            </Alert>
-          ) : null}
-        </Stack>
       </Box>
     </Stack>
   );
