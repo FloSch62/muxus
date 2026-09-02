@@ -33,3 +33,12 @@ reports and feature ideas are welcome.
 
 - :simple-github: **Source & issues**: [github.com/FloSch62/muxus](https://github.com/FloSch62/muxus)
 - :material-download: **Releases**: [github.com/FloSch62/muxus/releases](https://github.com/FloSch62/muxus/releases)
+- :material-account-outline: **The author**: [About](../about.md), or [flosch.me](https://flosch.me/)
+
+## Support the project
+
+Muxus is built by me (FloSch) in my spare time, and it is free and stays free. If it saves you
+time, a coffee keeps the releases coming, and a star helps others find it.
+
+[:simple-buymeacoffee: Buy me a coffee](https://www.buymeacoffee.com/FloSch62){ .md-button .md-button--primary }
+[:material-star-outline: Star on GitHub](https://github.com/FloSch62/muxus){ .md-button }
