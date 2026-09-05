@@ -6,15 +6,15 @@
   "description": "Free, open-source SSH, Telnet, and serial client — kitty graphics, split-pane sessions, SFTP, port forwarding",
   "license": "MIT",
   "engines": {
-    "node": ">=24.20.0"
+    "node": ">=24.20.0",
+    "bun": ">=1.4.0"
   },
   "scripts": {
     "dev": "pnpm -r --parallel --stream dev",
     "build": "pnpm -r build",
     "check:bundle": "pnpm --filter @muxus/client build && pnpm --filter @muxus/client check:bundle",
-    "start": "node server/dist/index.js",
-    "electron": "pnpm build && pnpm --filter @muxus/electron start",
-    "dist": "pnpm build && pnpm --filter @muxus/electron dist",
+    "start": "bun server/dist/index.js",
+    "dist": "pnpm build && pnpm --filter @muxus/desktop dist",
     "typecheck": "pnpm --filter @muxus/shared --filter @muxus/server build && pnpm -r typecheck",
     "test": "pnpm --filter @muxus/tests test",
     "test:watch": "pnpm --filter @muxus/tests test:watch",
@@ -22,10 +22,15 @@
     "lint": "oxlint . --deny-warnings",
     "serve-docs": "uvx --native-tls zensical serve --open",
     "build-docs": "uvx --native-tls zensical build --clean",
-    "capture-docs": "node hack/capture.mjs && THEME=dark node hack/capture.mjs",
-    "record-docs": "node hack/record.mjs && THEME=dark node hack/record.mjs"
+    "capture-docs": "bun hack/capture.mjs && THEME=dark bun hack/capture.mjs",
+    "record-docs": "bun hack/record.mjs && THEME=dark bun hack/record.mjs",
+    "desktop": "pnpm build && pnpm --filter @muxus/desktop start",
+    "test:desktop": "pnpm --filter @muxus/tests test:desktop",
+    "smoke": "bun hack/smoke-runtime.ts"
   },
   "devDependencies": {
+    "bun": "1.4.0",
+    "node-gyp": "13.0.2",
     "oxlint": "^1.80.0",
     "oxlint-tsgolint": "^7.0.2001",
     "playwright-core": "^1.62.1",

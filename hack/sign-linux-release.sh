@@ -20,17 +20,19 @@ if [ ! -f "$public_key_file" ]; then
 fi
 
 shopt -s nullglob
-appimages=("$artifact_dir"/*.AppImage)
+installers=("$artifact_dir"/*-Setup.tar.gz)
+payloads=("$artifact_dir"/stable-linux-*.tar.zst)
+metadata=("$artifact_dir"/stable-linux-*-update.json)
 debs=("$artifact_dir"/*.deb)
 shopt -u nullglob
 
-if [ "${#appimages[@]}" -eq 0 ] || [ "${#debs[@]}" -eq 0 ]; then
-  echo "Expected at least one AppImage and one .deb in $artifact_dir" >&2
+if [ "${#installers[@]}" -eq 0 ] || [ "${#debs[@]}" -eq 0 ]; then
+  echo "Expected at least one Electrobun setup archive and one .deb in $artifact_dir" >&2
   exit 1
 fi
 
 artifact_names=()
-for artifact in "${appimages[@]}" "${debs[@]}"; do
+for artifact in "${installers[@]}" "${payloads[@]}" "${metadata[@]}" "${debs[@]}"; do
   name=$(basename "$artifact")
   if [[ "$name" == *$'\n'* ]]; then
     echo "Release artifact names must not contain newlines" >&2

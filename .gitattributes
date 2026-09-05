@@ -1,1 +1,2 @@
-*.patch text eol=lf
+# Patch context lines must retain their leading space, including blank lines.
+*.patch text eol=lf whitespace=-blank-at-eol

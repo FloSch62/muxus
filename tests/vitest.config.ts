@@ -8,6 +8,12 @@ export default defineConfig({
   test: {
     include: ['unit/**/*.test.ts'],
     environment: 'node',
+    coverage: {
+      provider: 'istanbul',
+      allowExternal: true,
+      reporter: ['text-summary', 'json', 'html'],
+    },
+    server: { deps: { inline: ['zod'] } },
   },
   resolve: {
     // Tests exercise workspace sources directly — no build step required.

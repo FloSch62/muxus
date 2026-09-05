@@ -11,7 +11,7 @@ let home: string;
 
 beforeEach(async () => {
   home = mkdtempSync(path.join(os.tmpdir(), 'muxus-ssh-routes-'));
-  vi.stubEnv('HOME', home);
+  vi.spyOn(os, 'homedir').mockReturnValue(home);
   ({ app } = await buildApp(
     resolveConfig({
       token: TOKEN,
@@ -25,6 +25,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await app.close();
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
   rmSync(home, { recursive: true, force: true });
 });

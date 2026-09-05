@@ -1,3 +1,4 @@
+import ssh2Constants from '../../../server/src/ssh/ssh2-internals.js';
 import { describe, expect, it } from 'vitest';
 import { connectionAlgorithms } from '../../../server/src/ssh/algorithms.js';
 
@@ -28,7 +29,7 @@ describe('connectionAlgorithms', () => {
   it('expands wildcard patterns against the supported table', () => {
     const { algorithms } = connectionAlgorithms({ ciphers: '-*cbc' });
     expect(algorithms).toEqual({
-      cipher: { remove: ['aes256-cbc', 'aes192-cbc', 'aes128-cbc', '3des-cbc'] },
+      cipher: { remove: ssh2Constants.SUPPORTED_CIPHER.filter((cipher: string) => cipher.endsWith('cbc')) },
     });
   });
 

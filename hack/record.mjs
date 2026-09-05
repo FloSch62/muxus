@@ -1,8 +1,8 @@
 // The animated tour on the docs landing page.
 //
-//   node hack/record.mjs              # light -> docs/assets/screenshots/tour.mp4
-//   THEME=dark node hack/record.mjs   # dark  -> tour-dark.mp4
-//   KEEP=1 node hack/record.mjs       # leave the PNG frames in /tmp to re-encode
+//   pnpm exec bun hack/record.mjs              # light -> docs/assets/screenshots/tour.mp4
+//   THEME=dark pnpm exec bun hack/record.mjs   # dark  -> tour-dark.mp4
+//   KEEP=1 pnpm exec bun hack/record.mjs       # leave the PNG frames in /tmp to re-encode
 //
 // Each run also writes <name>-poster.png, the still the <video> shows first.
 //

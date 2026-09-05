@@ -223,6 +223,7 @@ async function startTestAgent({
 // spawned ad hoc, so this suite runs on POSIX only.
 describe.skipIf(process.platform === 'win32')('ssh-agent authentication', () => {
   beforeAll(() => {
+  vi.spyOn(os, 'homedir').mockReturnValue(tmp);
     const keyPath = path.join(tmp, 'agent-key');
     execFileSync('ssh-keygen', ['-t', 'ed25519', '-N', '', '-f', keyPath, '-C', 'muxus-test'], {
       stdio: 'ignore',
@@ -247,6 +248,7 @@ describe.skipIf(process.platform === 'win32')('ssh-agent authentication', () => 
   });
 
   afterAll(() => {
+  vi.restoreAllMocks();
     if (agentPid) execFileSync('kill', [agentPid]);
     for (const [key, value] of Object.entries(savedEnv)) {
       if (value === undefined) delete process.env[key];

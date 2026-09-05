@@ -18,7 +18,9 @@ SFTP, a remote editor, saved tunnels, and images in the terminal.
 
 ## Run From Source
 
-Requires Node.js >= 24.17 and pnpm:
+Requires Node.js >= 24.20 and pnpm. Bun 1.4.0 is installed locally by pnpm;
+the serial binding needs a C/C++ toolchain and Python 3. Desktop builds also need Go 1.26
+and the platform webview libraries. See [building from source](https://flosch62.github.io/muxus/community/development/).
 
 ```bash
 pnpm install

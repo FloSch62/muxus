@@ -5,7 +5,7 @@ icon: lucide/monitor
 # Desktop app
 
 The desktop build wraps the Muxus server and UI in a native window. The server runs
-in-process on a random localhost port, the window is frameless with the top bar serving as
+in-process in Bun on a random localhost port, the window is frameless with the top bar serving as
 the titlebar, and its size and position persist between launches.
 
 ## Download
@@ -15,16 +15,21 @@ Installers are published on the
 
 | Platform | File |
 | --- | --- |
-| :material-microsoft-windows: Windows | `muxus-<version>-win-x64.exe` |
-| :material-apple: macOS (universal) | `muxus-<version>-mac-universal.dmg` |
-| :material-linux: Linux | `muxus-<version>-linux-x86_64.AppImage` or `muxus-<version>-linux-amd64.deb` |
+| :material-microsoft-windows: Windows x64 / ARM64 | `win-x64-Muxus-Setup.zip` / `win-arm64-Muxus-Setup.zip` |
+| :material-apple: macOS (Apple Silicon) | `macos-arm64-Muxus.dmg` |
+| :material-linux: Linux x64 | `linux-x64-Muxus-Setup.tar.gz` or `muxus-<version>-linux-x64.deb` |
+
+The UI uses the operating system's webview: WebView2 on Windows, WKWebView on macOS,
+and WebKitGTK 4.1 on Linux. These packages replace the previous Electron installers;
+Intel macOS packages are no longer built.
 
 ## Install & launch
 
 === ":material-microsoft-windows: Windows"
 
-    1. Run the installer and follow the prompts. The install directory is selectable.
-    2. Launch **Muxus** from the Start menu.
+    1. Extract the archive matching your machine and run `installer.exe`.
+    2. Follow the installer prompts.
+    3. Launch **Muxus** from the Start menu.
 
     The builds are not code-signed yet, so SmartScreen may report an unrecognised
     publisher. Choose **More info → Run anyway**.
@@ -45,24 +50,29 @@ Installers are published on the
 
 === ":material-linux: Linux"
 
-    === "AppImage"
+    The `.deb` installs the required system libraries automatically. For the archive,
+    install GTK 3, WebKitGTK 4.1, Ayatana AppIndicator, libsecret, fontconfig and xdg-utils
+    through your distribution first.
+
+    === "Installer archive"
 
         ```bash
-        chmod +x muxus-*-linux-x86_64.AppImage
-        ./muxus-*-linux-x86_64.AppImage
+        mkdir muxus-setup
+        tar -xzf linux-x64-Muxus-Setup.tar.gz -C muxus-setup
+        ./muxus-setup/installer
         ```
 
     === "Debian / Ubuntu (.deb)"
 
         ```bash
-        sudo apt install ./muxus-*-linux-amd64.deb
+        sudo apt install ./muxus-*-linux-x64.deb
         muxus
         ```
 
     === "Verify the download"
 
-        Each release includes a signed `SHA256SUMS-linux.txt` manifest covering both
-        Linux packages. Download these additional files from the same release:
+        Each release includes a signed `SHA256SUMS-linux.txt` manifest covering the
+        Linux installers and update payload. Download these additional files from the same release:
 
         - `SHA256SUMS-linux.txt`
         - `SHA256SUMS-linux.txt.asc`
@@ -88,17 +98,18 @@ Installers are published on the
 - **A frameless window.** The top bar is the titlebar: it is a drag region, and the native
   window controls sit inside it (traffic lights on the left on macOS, minimise / maximise /
   close on the right elsewhere).
-- **Native serial access.** `serialport` and `node-pty` are compiled against Electron's ABI
-  in the packaged app, so local shells and COM/TTY consoles work without further setup.
-- **A hardened shell.** The renderer receives its bootstrap credentials through an isolated
-  preload bridge instead of the URL, and unexpected navigation is blocked. See the
+- **Local shells and serial access.** Bun provides the PTY; the packaged serial binding
+  handles COM/TTY consoles, including hardware and software flow control.
+- **A hardened shell.** The renderer receives its bootstrap credentials through a typed
+  preload RPC bridge instead of the URL, and unexpected navigation is blocked. See the
   [security model](../reference/security.md).
 - **Extra windows.** The file browser and any tab can be moved into their own window, which
   reuses the same in-process server and the same live SSH transports.
 
 ## Where your data lives
 
-The desktop app keeps its data in Electron's per-app directory:
+The desktop app keeps the same data directories as previous releases, so existing
+databases, preferences, workspaces and password-vault identifiers are retained:
 
 | Platform | Application database (folders, colours, workspaces, tunnels, saved hosts, optional encrypted passwords) |
 | --- | --- |

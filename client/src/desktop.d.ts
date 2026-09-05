@@ -1,5 +1,4 @@
 import type {
-  AppInfo,
   AppWindowLaunch,
   CommandLineLaunch,
   MobaXtermSessionSource,
@@ -7,12 +6,13 @@ import type {
 } from '@muxus/shared';
 
 declare global {
-  /** Bridge exposed by the Electron preload (absent in regular browsers). */
+  /** Bridge exposed by the Electrobun preload (absent in regular browsers). */
   interface Window {
+    muxusDesktopReady?: Promise<void>;
     muxusDesktop?: {
-      /** Electron's process.platform ('linux', 'win32', 'darwin', …). */
+      /** Electrobun's process.platform ('linux', 'win32', 'darwin', …). */
       platform: string;
-      /** Per-run backend credential delivered over the isolated preload bridge. */
+      /** Per-run backend credential delivered over the native preload bridge. */
       authToken: string;
       /** One-shot payload describing the content of a secondary app window. */
       windowLaunch?: AppWindowLaunch;
@@ -23,10 +23,14 @@ declare global {
         setItem(name: string, value: string): void;
         removeItem(name: string): void;
       };
-      setTitleBarOverlay(options: { color: string; symbolColor: string; height: number }): void;
+      minimizeWindow(): void;
+      toggleMaximize(): void;
+      readClipboard(): Promise<string | null>;
+      writeClipboard(text: string): Promise<boolean>;
       /** Scale the whole window natively (the interface zoom preference). */
       setZoomFactor(factor: number): void;
-      getAppInfo(): Promise<AppInfo | undefined>;
+      setTitlebarHeight(height: number): void;
+      getAppInfo(): Promise<{ name: string; version: string } | undefined>;
       checkForUpdate(options?: { force?: boolean }): Promise<UpdateCheckResult>;
       /** Choose an SSH private key with the operating system's file picker. */
       selectPrivateKey(): Promise<string | undefined>;
@@ -50,7 +54,7 @@ declare global {
       ): void;
       /** Bring this native window to the foreground. */
       focusWindow(): void;
-      /** Subscribe to the OS close-window chord (Cmd/Ctrl+W); returns unsubscribe. */
+      /** Subscribe to the desktop close-tab command; returns unsubscribe. */
       onCloseTab(callback: () => void): () => void;
       /** Subscribe to the tab-cycling chords (Ctrl+Tab & friends); backwards=true cycles left. */
       onCycleTab(callback: (backwards: boolean) => void): () => void;

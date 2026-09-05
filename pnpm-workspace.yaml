@@ -2,13 +2,11 @@ packages:
   - shared
   - server
   - client
-  - electron
+  - desktop
   - tests
 # Keep local lockfile updates aligned with pnpm 11's CI supply-chain policy.
 minimumReleaseAge: 1440
-# Install per-arch native prebuilds (notably @napi-rs/keyring-darwin-*) for
-# both desktop CPUs so the macOS universal build can bundle the x64 slice
-# even though release runners are arm64.
+# Include native Node-API prebuilds for both desktop architectures.
 supportedArchitectures:
   os: [current]
   cpu: [current, x64, arm64]
@@ -17,13 +15,11 @@ overrides:
   'brace-expansion@>=5.0.0 <5.0.8': 5.0.8
   'dompurify@>=3.4.0 <3.4.13': 3.4.13
 allowBuilds:
+  bun: true
   esbuild: true
-  electron: true
   sharp: true
-  node-pty: true
   ssh2: true
   core-js-pure: false
-  electron-winstaller: false
   cpu-features: false
   '@serialport/bindings-cpp': true
 patchedDependencies:

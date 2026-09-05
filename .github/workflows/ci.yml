@@ -37,6 +37,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare desktop SDK
+        run: pnpm --filter @muxus/desktop prepare:sdk
+
       - name: Typecheck
         run: pnpm typecheck
 
@@ -79,18 +82,12 @@ jobs:
         include:
           - name: Linux x64
             os: ubuntu-latest
-            pack_args: "--x64"
-          - name: macOS universal
-            os: macos-latest
-            # Build universal like the release job so both per-arch
-            # @napi-rs/keyring packages are exercised on every change.
-            pack_args: "--universal"
+          - name: macOS Apple Silicon
+            os: macos-15
           - name: Windows x64
             os: windows-latest
-            pack_args: "--x64"
           - name: Windows ARM64
             os: windows-11-arm
-            pack_args: "--arm64"
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -124,41 +121,35 @@ jobs:
         if: runner.os != 'Linux'
         env:
           MUXUS_OS_KEYRING_SMOKE: "1"
-        run: pnpm --filter @muxus/tests exec vitest run unit/server/vault-key-store.os.test.ts
+        run: pnpm --filter @muxus/tests test unit/server/vault-key-store.os.test.ts
 
       - name: Build workspace
         run: pnpm build
 
-      - name: Build unpacked desktop application
-        run: pnpm --filter @muxus/electron pack:dir ${{ matrix.pack_args }}
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.x'
+          cache: false
 
-      - name: Verify Windows ARM64 native binaries
-        if: matrix.name == 'Windows ARM64'
-        shell: pwsh
-        run: |
-          $app = "electron/release/win-arm64-unpacked/resources/app.asar.unpacked/node_modules"
-          $binaries = @(
-            "$app/node-pty/prebuilds/win32-arm64/pty.node"
-            "$app/@serialport/bindings-cpp/build/Release/bindings.node"
-          )
-          foreach ($binary in $binaries) {
-            if (-not (Test-Path -LiteralPath $binary)) {
-              throw "Windows ARM64 native binary not found: $binary"
-            }
-          }
-          if (-not (Get-ChildItem -Path "$app/@napi-rs/keyring-win32-arm64-msvc/*.node")) {
-            throw "Windows ARM64 keyring binary not found"
-          }
+      - name: Install Linux desktop libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb openbox libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 libsecret-1-0 fontconfig webkit2gtk-driver
 
-      - name: Verify universal keyring binaries
-        if: runner.os == 'macOS'
-        run: |
-          app="electron/release/mac-universal/Muxus.app"
-          if [ ! -d "$app" ]; then
-            echo "Universal app bundle not found; release contents:" >&2
-            ls electron/release >&2
-            exit 1
-          fi
-          for arch in x64 arm64; do
-            ls "$app/Contents/Resources/app.asar.unpacked/node_modules/@napi-rs/keyring-darwin-$arch/"*.node
-          done
+      - name: Build unpacked native desktop
+        run: pnpm --filter @muxus/desktop run pack
+
+      - name: Verify packaged Bun runtime
+        run: pnpm smoke
+
+      - name: Native WebKitGTK tests
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum sh -c 'openbox >/tmp/muxus-openbox.log 2>&1 & pnpm test:desktop'
+
+      - name: Upload native diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-report-${{ runner.os }}-${{ runner.arch }}
+          path: |
+            tests/desktop/.results
+            tests/desktop-report

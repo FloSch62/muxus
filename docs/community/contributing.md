@@ -46,7 +46,7 @@ Muxus is a community project, and contributions of any size are welcome.
 - Keep PRs focused on one logical change.
 - Describe what changed and why, and link any related issue.
 - Include screenshots or a short clip for UI changes. The screenshot sandbox
-  (`node hack/demo-env.mjs`) provides an environment with invented hosts to record in.
+  (`pnpm exec bun hack/demo-env.mjs`) provides an environment with invented hosts to record in.
 
 ## Editing the docs
 

@@ -87,7 +87,7 @@ describe('folder settings routes', () => {
 
   beforeEach(async () => {
     home = mkdtempSync(path.join(os.tmpdir(), 'muxus-folder-routes-'));
-    vi.stubEnv('HOME', home);
+    vi.spyOn(os, 'homedir').mockReturnValue(home);
     ({ app, ctx } = await buildApp(
       resolveConfig({
         token: TOKEN,
@@ -100,7 +100,8 @@ describe('folder settings routes', () => {
   });
   afterEach(async () => {
     await app.close();
-    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  vi.unstubAllEnvs();
     rmSync(home, { recursive: true, force: true });
   });
 

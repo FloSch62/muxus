@@ -3,14 +3,29 @@
   "compilerOptions": {
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2025", "DOM"],
+    "lib": [
+      "ES2025",
+      "DOM"
+    ],
     "noEmit": true,
     "declaration": false,
-    "types": ["node"],
+    "types": [
+      "bun"
+    ],
     "paths": {
-      "@muxus/shared": ["../shared/src/index.ts"],
-      "@muxus/shared/ws-protocol": ["../shared/src/ws-protocol.ts"]
+      "@muxus/shared": [
+        "../shared/src/index.ts"
+      ],
+      "@muxus/shared/ws-protocol": [
+        "../shared/src/ws-protocol.ts"
+      ]
     }
   },
-  "include": ["unit", "vitest.config.ts"]
+  "include": [
+    "unit",
+    "vitest.config.ts",
+    "desktop",
+    "playwright.desktop.config.ts",
+    "../client/src/desktop.d.ts"
+  ]
 }

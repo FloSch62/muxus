@@ -1,0 +1,30 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": [
+      "bun"
+    ],
+    "allowImportingTsExtensions": true,
+    "declaration": false,
+    "paths": {
+      "electrobun": [
+        "./.hutch/devkit/api/sdks/main/index.ts"
+      ],
+      "electrobun/main": [
+        "./.hutch/devkit/api/sdks/main/index.ts"
+      ],
+      "electrobun/view": [
+        "./.hutch/devkit/api/browser/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "src",
+    "../client/src/desktop.d.ts",
+    "electrobun.config.ts",
+    "hutch.config.ts"
+  ]
+}
