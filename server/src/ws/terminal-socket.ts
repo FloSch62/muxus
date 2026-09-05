@@ -491,15 +491,9 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
   socket.once('close', () => recorder?.end('disconnected'));
 
   if (profile.kind === 'local') {
-    const { pty } = spawnLocalPty(profile, cols, rows);
     let startupInput = localStartupInput(profile.startupCommand);
     let startupOutput = '';
-    writeInput = (data) => pty.write(data.toString('utf8'));
-    control.onMessage = (msg) => {
-      if (handleLoggingControl(msg)) return;
-      if (msg.op === 'resize') pty.resize(msg.cols, msg.rows);
-    };
-    pty.onData((data) => {
+    const pty = spawnLocalPty(profile, cols, rows, { data: (data) => {
       recorder?.output(data);
       if (socket.readyState === socket.OPEN) socket.send(Buffer.from(data, 'utf8'), { binary: true });
       if (startupInput) {
@@ -511,12 +505,16 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
           pty.write(input);
         }
       }
-    });
-    pty.onExit(({ exitCode }) => {
+    }, exit: (exitCode) => {
       recorder?.end('completed');
       sendControl(socket, { op: 'exit', code: exitCode, reason: 'completed' });
       socket.close();
-    });
+    } });
+    writeInput = (data) => pty.write(data.toString('utf8'));
+    control.onMessage = (msg) => {
+      if (handleLoggingControl(msg)) return;
+      if (msg.op === 'resize') pty.resize(msg.cols, msg.rows);
+    };
     socket.on('close', () => pty.kill());
     sendControl(socket, { op: 'ready', connId: `local-${process.pid}` });
     return;
@@ -768,7 +766,9 @@ function attachTerminalTransport(
     socket.close();
   };
   const unsubscribeError = transport.onError((error) => finish('failed', error.message));
-  const unsubscribeClose = transport.onClose(() => finish('completed'));
+  const unsubscribeClose = transport.onClose((error) =>
+    finish(error ? 'disconnected' : 'completed', error?.message),
+  );
 
   socket.once('close', () => {
     if (closed) return;

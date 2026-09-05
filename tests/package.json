@@ -1,25 +1,28 @@
 {
   "name": "@muxus/tests",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "exit 0",
     "build": "exit 0",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test": "bun --bun node_modules/vitest/vitest.mjs run",
+    "test:watch": "bun --bun node_modules/vitest/vitest.mjs",
+    "test:coverage": "bun --bun node_modules/vitest/vitest.mjs run --coverage",
+    "test:desktop": "playwright test --config playwright.desktop.config.ts"
   },
   "devDependencies": {
     "@muxus/shared": "workspace:*",
     "@types/node": "^24.13.3",
     "@types/ssh2": "^1.15.5",
-    "@vitest/coverage-v8": "^4.1.11",
     "@xmldom/xmldom": "^0.9.12",
     "ssh2": "^1.17.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.11",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@types/bun": "^1.4.0",
+    "@vitest/coverage-istanbul": "^4.1.11",
+    "@playwright/test": "^1.62.1"
   }
 }

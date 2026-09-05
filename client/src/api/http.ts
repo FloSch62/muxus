@@ -12,7 +12,7 @@ export function initAuthToken(): void {
   const url = new URL(window.location.href);
   const fragment = new URLSearchParams(url.hash.startsWith('#') ? url.hash.slice(1) : url.hash);
   // Query support only migrates old launch URLs. New browser launches use a
-  // fragment (never sent to the server); Electron supplies the token over IPC.
+  // fragment (never sent to the server); Electrobun supplies the token over IPC.
   const fromUrl = fragment.get('token') ?? url.searchParams.get('token');
   if (fromUrl) {
     sessionStorage.setItem('muxus-token', fromUrl);

@@ -1,10 +1,6 @@
 import { chmodSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import {
-  DatabaseSync,
-  type SQLOutputValue,
-  type StatementSync,
-} from 'node:sqlite';
+import { Database, type Statement, type SQLQueryBindings } from 'bun:sqlite';
 import { nanoid } from 'nanoid';
 import type {
   FolderAuthSettings,
@@ -405,10 +401,10 @@ const MIGRATIONS = [
   },
 ] as const;
 
-function migrateDraftPasswordVault(db: DatabaseSync): void {
+function migrateDraftPasswordVault(db: Database): void {
   const columns = new Set(
     db
-      .prepare('PRAGMA table_info(password_vault)')
+      .prepare<SqlRow, SQLQueryBindings[]>('PRAGMA table_info(password_vault)')
       .all()
       .map((row) => String(row.name)),
   );
@@ -435,7 +431,7 @@ function migrateDraftPasswordVault(db: DatabaseSync): void {
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     ) STRICT;
   `);
-  db.prepare(`
+  db.prepare<SqlRow, SQLQueryBindings[]>(`
     INSERT INTO password_vault(
       singleton, format_version, vault_id, unlock_policy,
       kdf_algorithm, kdf_salt, kdf_cost, kdf_block_size,
@@ -452,10 +448,10 @@ function migrateDraftPasswordVault(db: DatabaseSync): void {
   db.exec('DROP TABLE password_vault_draft_v13');
 }
 
-function addPasswordVaultKeyCheck(db: DatabaseSync): void {
+function addPasswordVaultKeyCheck(db: Database): void {
   const columns = new Set(
     db
-      .prepare('PRAGMA table_info(password_vault)')
+      .prepare<SqlRow, SQLQueryBindings[]>('PRAGMA table_info(password_vault)')
       .all()
       .map((row) => String(row.name)),
   );
@@ -638,14 +634,14 @@ export function assertSecretFree(value: unknown, location = 'config'): void {
 }
 
 export class MuxusDatabase {
-  private readonly db: DatabaseSync;
-  private readonly metadataByAlias: StatementSync;
+  private readonly db: Database;
+  private readonly metadataByAlias: Statement<SqlRow, SQLQueryBindings[]>;
 
   constructor(readonly filename: string) {
     if (filename !== ':memory:') {
       mkdirSync(path.dirname(filename), { recursive: true, mode: 0o700 });
     }
-    this.db = new DatabaseSync(filename);
+    this.db = new Database(filename);
     if (filename !== ':memory:') {
       try {
         chmodSync(filename, 0o600);
@@ -658,7 +654,7 @@ export class MuxusDatabase {
     );
     if (filename !== ':memory:') this.db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
     this.migrate();
-    this.metadataByAlias = this.db.prepare(`
+    this.metadataByAlias = this.db.prepare<SqlRow, SQLQueryBindings[]>(`
       SELECT
         profiles.id,
         profiles.name,
@@ -688,7 +684,7 @@ export class MuxusDatabase {
 
   appliedMigrations(): Array<{ version: number; name: string }> {
     return this.db
-      .prepare('SELECT version, name FROM schema_migrations ORDER BY version')
+      .prepare<SqlRow, SQLQueryBindings[]>('SELECT version, name FROM schema_migrations ORDER BY version')
       .all()
       .map((row) => ({ version: Number(row.version), name: String(row.name) }));
   }
@@ -712,7 +708,7 @@ export class MuxusDatabase {
   /** The sidebar folder a Muxus-owned host lives in. */
   groupForSavedHost(id: string): string | undefined {
     const row = this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         SELECT groups.name AS group_name
         FROM connection_profiles AS profiles
         LEFT JOIN connection_groups AS groups ON groups.id = profiles.group_id
@@ -737,7 +733,7 @@ export class MuxusDatabase {
   /** Whether one Muxus-owned host must avoid SFTP and shell probing. */
   sftpDisabledForSavedHost(id: string): boolean {
     const row = this.db
-      .prepare(
+      .prepare<SqlRow, SQLQueryBindings[]>(
         `SELECT disable_sftp FROM connection_profiles
          WHERE id = ? AND kind = 'ssh'`,
       )
@@ -748,7 +744,7 @@ export class MuxusDatabase {
   /** Whether one Muxus-owned host needs the stricter console session shape. */
   consoleCompatibilityForSavedHost(id: string): boolean {
     const row = this.db
-      .prepare(
+      .prepare<SqlRow, SQLQueryBindings[]>(
         `SELECT console_compatibility FROM connection_profiles
          WHERE id = ? AND kind = 'ssh'`,
       )
@@ -767,7 +763,7 @@ export class MuxusDatabase {
     const groupId =
       patch.group === undefined ? nullableString(current.group_id) : this.groupIdForName(patch.group);
     this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         UPDATE connection_profiles
         SET name = ?,
             group_id = ?,
@@ -829,10 +825,10 @@ export class MuxusDatabase {
     }
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      const savedExists = this.db.prepare(
+      const savedExists = this.db.prepare<SqlRow, SQLQueryBindings[]>(
         `SELECT id FROM connection_profiles WHERE id = ? AND kind IN ('ssh', 'serial', 'telnet')`,
       );
-      const update = this.db.prepare(`
+      const update = this.db.prepare<SqlRow, SQLQueryBindings[]>(`
         UPDATE connection_profiles
         SET sort_order = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
@@ -853,7 +849,7 @@ export class MuxusDatabase {
     requireNonEmpty(alias, 'alias');
     const current = this.ensureOpenSshProfile(alias);
     this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         UPDATE connection_profiles
         SET last_connected_at = CURRENT_TIMESTAMP,
             connect_count = connect_count + 1,
@@ -880,7 +876,7 @@ export class MuxusDatabase {
       }
       if (next) {
         this.db
-          .prepare(`
+          .prepare<SqlRow, SQLQueryBindings[]>(`
             UPDATE connection_profiles
             SET connect_count = connect_count + ?,
                 last_connected_at = CASE
@@ -896,11 +892,11 @@ export class MuxusDatabase {
             nullableString(next.last_connected_at),
             String(previous.id),
           );
-        this.db.prepare('DELETE FROM connection_profiles WHERE id = ?').run(String(next.id));
+        this.db.prepare<SqlRow, SQLQueryBindings[]>('DELETE FROM connection_profiles WHERE id = ?').run(String(next.id));
       }
       const oldNameWasAlias = String(previous.name) === previousAlias;
       this.db
-        .prepare(`
+        .prepare<SqlRow, SQLQueryBindings[]>(`
           UPDATE connection_profiles
           SET ssh_alias = ?, name = ?, updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
@@ -918,14 +914,14 @@ export class MuxusDatabase {
     requireNonEmpty(input.service, 'service');
     requireNonEmpty(input.account, 'account');
     const existing = this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         SELECT id FROM credential_refs
         WHERE provider = ? AND service = ? AND account = ?
       `)
       .get(input.provider, input.service, input.account);
     const id = existing ? String(existing.id) : nanoid();
     this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         INSERT INTO credential_refs(id, provider, service, account, label)
         VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(provider, service, account) DO UPDATE SET
@@ -937,14 +933,14 @@ export class MuxusDatabase {
   }
 
   passwordVaultConfig(): PasswordVaultConfigRecord | undefined {
-    const row = this.db.prepare('SELECT * FROM password_vault WHERE singleton = 1').get();
+    const row = this.db.prepare<SqlRow, SQLQueryBindings[]>('SELECT * FROM password_vault WHERE singleton = 1').get();
     if (!row) return undefined;
     return passwordVaultConfigFromRow(row);
   }
 
   createPasswordVaultConfig(input: PasswordVaultConfigInput): void {
     this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         INSERT INTO password_vault(
           singleton, format_version, vault_id, unlock_policy,
           kdf_algorithm, kdf_salt, kdf_cost,
@@ -970,7 +966,7 @@ export class MuxusDatabase {
 
   updatePasswordVaultConfig(input: PasswordVaultConfigInput): void {
     const changed = this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         UPDATE password_vault
         SET format_version = ?, vault_id = ?, unlock_policy = ?,
             kdf_algorithm = ?, kdf_salt = ?,
@@ -1000,7 +996,7 @@ export class MuxusDatabase {
 
   pendingPasswordVaultKeyCleanup(): string[] {
     return this.db
-      .prepare(
+      .prepare<SqlRow, SQLQueryBindings[]>(
         'SELECT vault_id FROM password_vault_key_cleanup ORDER BY created_at',
       )
       .all()
@@ -1009,7 +1005,7 @@ export class MuxusDatabase {
 
   queuePasswordVaultKeyCleanup(vaultId: string): void {
     this.db
-      .prepare(
+      .prepare<SqlRow, SQLQueryBindings[]>(
         'INSERT OR IGNORE INTO password_vault_key_cleanup(vault_id) VALUES (?)',
       )
       .run(vaultId);
@@ -1017,7 +1013,7 @@ export class MuxusDatabase {
 
   finishPasswordVaultKeyCleanup(vaultId: string): void {
     this.db
-      .prepare('DELETE FROM password_vault_key_cleanup WHERE vault_id = ?')
+      .prepare<SqlRow, SQLQueryBindings[]>('DELETE FROM password_vault_key_cleanup WHERE vault_id = ?')
       .run(vaultId);
   }
 
@@ -1027,7 +1023,7 @@ export class MuxusDatabase {
     account: string,
   ): EncryptedCredentialRecord | undefined {
     const row = this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         SELECT refs.id, refs.provider, refs.service, refs.account, refs.label,
                refs.created_at, secrets.updated_at, secrets.format_version,
                secrets.nonce, secrets.ciphertext, secrets.auth_tag
@@ -1044,7 +1040,7 @@ export class MuxusDatabase {
     provider: string,
   ): EncryptedCredentialRecord | undefined {
     const row = this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         SELECT refs.id, refs.provider, refs.service, refs.account, refs.label,
                refs.created_at, secrets.updated_at, secrets.format_version,
                secrets.nonce, secrets.ciphertext, secrets.auth_tag
@@ -1058,7 +1054,7 @@ export class MuxusDatabase {
 
   listEncryptedCredentials(provider: string, service: string): EncryptedCredentialRecord[] {
     return this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         SELECT refs.id, refs.provider, refs.service, refs.account, refs.label,
                refs.created_at, secrets.updated_at, secrets.format_version,
                secrets.nonce, secrets.ciphertext, secrets.auth_tag
@@ -1088,7 +1084,7 @@ export class MuxusDatabase {
       const ref = this.upsertCredentialRef(input);
       const encrypted = seal(ref);
       this.db
-        .prepare(`
+        .prepare<SqlRow, SQLQueryBindings[]>(`
           INSERT INTO credential_secrets(
             credential_ref_id, format_version, nonce, ciphertext, auth_tag
           ) VALUES (?, ?, ?, ?, ?)
@@ -1125,7 +1121,7 @@ export class MuxusDatabase {
     return (
       Number(
         this.db
-          .prepare(`
+          .prepare<SqlRow, SQLQueryBindings[]>(`
             UPDATE credential_refs
             SET label = ?, updated_at = CURRENT_TIMESTAMP
             WHERE provider = ? AND service = ? AND account = ?
@@ -1136,12 +1132,11 @@ export class MuxusDatabase {
   }
 
   deleteEncryptedCredential(id: string, provider: string): boolean {
-    const deleted =
-      Number(
-        this.db
-          .prepare('DELETE FROM credential_refs WHERE id = ? AND provider = ?')
-          .run(id, provider).changes,
-      ) === 1;
+    // Bun's run().changes includes foreign-key cascades. RETURNING identifies
+    // the deleted credential itself, independently of its encrypted payload.
+    const deleted = this.db
+      .prepare<SqlRow, SQLQueryBindings[]>('DELETE FROM credential_refs WHERE id = ? AND provider = ? RETURNING id')
+      .get(id, provider) !== null;
     if (deleted) this.flushSensitivePages();
     return deleted;
   }
@@ -1149,8 +1144,8 @@ export class MuxusDatabase {
   deletePasswordVaultData(provider: string): void {
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      this.db.prepare('DELETE FROM credential_refs WHERE provider = ?').run(provider);
-      this.db.prepare('DELETE FROM password_vault WHERE singleton = 1').run();
+      this.db.prepare<SqlRow, SQLQueryBindings[]>('DELETE FROM credential_refs WHERE provider = ?').run(provider);
+      this.db.prepare<SqlRow, SQLQueryBindings[]>('DELETE FROM password_vault WHERE singleton = 1').run();
       this.db.exec('COMMIT');
     } catch (err) {
       this.db.exec('ROLLBACK');
@@ -1173,7 +1168,7 @@ export class MuxusDatabase {
     assertSecretFree(input.config);
     const id = nanoid();
     this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         INSERT INTO connection_profiles(
           id, kind, name, native_config_json, credential_ref_id
         ) VALUES (?, ?, ?, ?, ?)
@@ -1184,7 +1179,7 @@ export class MuxusDatabase {
 
   listSavedHostProfiles(): SavedHostProfile[] {
     return this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         SELECT profiles.*, groups.name AS group_name
         FROM connection_profiles AS profiles
         LEFT JOIN connection_groups AS groups ON groups.id = profiles.group_id
@@ -1205,14 +1200,14 @@ export class MuxusDatabase {
     assertSecretFree(config, 'profile.config');
     const id = input.id ?? nanoid();
     const current = this.db
-      .prepare(`SELECT kind FROM connection_profiles WHERE id = ?`)
+      .prepare<SqlRow, SQLQueryBindings[]>(`SELECT kind FROM connection_profiles WHERE id = ?`)
       .get(id) as { kind?: unknown } | undefined;
     if (current) {
       if (current.kind !== 'ssh' && current.kind !== 'serial' && current.kind !== 'telnet') {
         throw new Error('profile ID belongs to a different connection type');
       }
       this.db
-        .prepare(`
+        .prepare<SqlRow, SQLQueryBindings[]>(`
           UPDATE connection_profiles
           SET kind = ?, name = ?, native_config_json = ?, updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
@@ -1220,7 +1215,7 @@ export class MuxusDatabase {
         .run(kind, input.name.trim(), JSON.stringify(config), id);
     } else {
       this.db
-        .prepare(`
+        .prepare<SqlRow, SQLQueryBindings[]>(`
           INSERT INTO connection_profiles(id, kind, name, native_config_json)
           VALUES (?, ?, ?, ?)
         `)
@@ -1231,7 +1226,7 @@ export class MuxusDatabase {
 
   savedHostProfile(id: string): SavedHostProfile | undefined {
     const row = this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         SELECT profiles.*, groups.name AS group_name
         FROM connection_profiles AS profiles
         LEFT JOIN connection_groups AS groups ON groups.id = profiles.group_id
@@ -1243,7 +1238,7 @@ export class MuxusDatabase {
 
   updateSavedHostMetadata(id: string, patch: OpenSshMetadataPatch): SavedHostProfile {
     const current = this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         SELECT profiles.*, groups.name AS group_name
         FROM connection_profiles AS profiles
         LEFT JOIN connection_groups AS groups ON groups.id = profiles.group_id
@@ -1256,7 +1251,7 @@ export class MuxusDatabase {
     const groupId =
       patch.group === undefined ? nullableString(current.group_id) : this.groupIdForName(patch.group);
     this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         UPDATE connection_profiles
         SET name = ?,
             group_id = ?,
@@ -1307,7 +1302,7 @@ export class MuxusDatabase {
 
   recordSavedHostConnection(id: string): void {
     this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         UPDATE connection_profiles
         SET last_connected_at = CURRENT_TIMESTAMP,
             connect_count = connect_count + 1,
@@ -1320,11 +1315,11 @@ export class MuxusDatabase {
   deleteSavedHostProfile(id: string): boolean {
     const deleted =
       this.db
-        .prepare(`DELETE FROM connection_profiles WHERE id = ? AND kind IN ('ssh', 'serial', 'telnet')`)
+        .prepare<SqlRow, SQLQueryBindings[]>(`DELETE FROM connection_profiles WHERE id = ? AND kind IN ('ssh', 'serial', 'telnet')`)
         .run(id).changes > 0;
     if (deleted) {
       this.db
-        .prepare('DELETE FROM session_logging_policies WHERE profile_key = ?')
+        .prepare<SqlRow, SQLQueryBindings[]>('DELETE FROM session_logging_policies WHERE profile_key = ?')
         .run(`profile:${id}`);
     }
     return deleted;
@@ -1344,7 +1339,7 @@ export class MuxusDatabase {
     assertSecretFree(input.multiExecGroups, 'workspace.multiExecGroups');
     if (input.id && !overwriteLocked) {
       const existing = this.db
-        .prepare('SELECT is_locked FROM workspaces WHERE id = ?')
+        .prepare<SqlRow, SQLQueryBindings[]>('SELECT is_locked FROM workspaces WHERE id = ?')
         .get(input.id);
       if (existing && Number(existing.is_locked) === 1) {
         throw new WorkspaceLockedError(input.id);
@@ -1355,7 +1350,7 @@ export class MuxusDatabase {
     const groups = JSON.stringify(input.multiExecGroups ?? []);
     if (layout === undefined) throw new Error('workspace.layout must be JSON-serializable');
     this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         INSERT INTO workspaces(id, name, layout_json, multi_exec_groups_json)
         VALUES (?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
@@ -1376,7 +1371,7 @@ export class MuxusDatabase {
     try {
       const names = new Set(
         this.db
-          .prepare('SELECT name FROM workspaces')
+          .prepare<SqlRow, SQLQueryBindings[]>('SELECT name FROM workspaces')
           .all()
           .map((row) => String(row.name).trim().toLocaleLowerCase()),
       );
@@ -1393,7 +1388,7 @@ export class MuxusDatabase {
 
   workspace(id: string): WorkspaceRecord | undefined {
     const row = this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         SELECT id, name, layout_json, multi_exec_groups_json, is_locked, is_startup,
                created_at, updated_at, last_opened_at
         FROM workspaces WHERE id = ?
@@ -1404,7 +1399,7 @@ export class MuxusDatabase {
 
   latestWorkspace(): WorkspaceRecord | undefined {
     const row = this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         SELECT id, name, layout_json, multi_exec_groups_json, is_locked, is_startup,
                created_at, updated_at, last_opened_at
         FROM workspaces
@@ -1417,7 +1412,7 @@ export class MuxusDatabase {
 
   startupWorkspace(): WorkspaceRecord | undefined {
     const row = this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         SELECT id, name, layout_json, multi_exec_groups_json, is_locked, is_startup,
                created_at, updated_at, last_opened_at
         FROM workspaces
@@ -1430,7 +1425,7 @@ export class MuxusDatabase {
 
   listWorkspaceSummaries(): WorkspaceSummary[] {
     return this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         SELECT id, name, is_locked, is_startup, created_at, updated_at, last_opened_at
         FROM workspaces
         ORDER BY COALESCE(last_opened_at, updated_at) DESC, name COLLATE NOCASE
@@ -1449,7 +1444,7 @@ export class MuxusDatabase {
 
   listWorkspaces(): WorkspaceRecord[] {
     return this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         SELECT id, name, layout_json, multi_exec_groups_json, is_locked, is_startup,
                created_at, updated_at, last_opened_at
         FROM workspaces
@@ -1462,7 +1457,7 @@ export class MuxusDatabase {
   renameWorkspace(id: string, name: string): WorkspaceRecord | undefined {
     requireNonEmpty(name, 'name');
     const updated = this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         UPDATE workspaces
         SET name = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
@@ -1473,7 +1468,7 @@ export class MuxusDatabase {
 
   setWorkspaceLocked(id: string, isLocked: boolean): WorkspaceRecord | undefined {
     const updated = this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         UPDATE workspaces
         SET is_locked = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
@@ -1484,7 +1479,7 @@ export class MuxusDatabase {
 
   openWorkspace(id: string): WorkspaceRecord | undefined {
     const opened = this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         UPDATE workspaces
         SET last_opened_at = CURRENT_TIMESTAMP
         WHERE id = ?
@@ -1497,9 +1492,9 @@ export class MuxusDatabase {
     if (id !== null && !this.workspace(id)) return undefined;
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      this.db.prepare('UPDATE workspaces SET is_startup = 0 WHERE is_startup = 1').run();
+      this.db.prepare<SqlRow, SQLQueryBindings[]>('UPDATE workspaces SET is_startup = 0 WHERE is_startup = 1').run();
       if (id !== null) {
-        this.db.prepare('UPDATE workspaces SET is_startup = 1 WHERE id = ?').run(id);
+        this.db.prepare<SqlRow, SQLQueryBindings[]>('UPDATE workspaces SET is_startup = 1 WHERE id = ?').run(id);
       }
       this.db.exec('COMMIT');
     } catch (err) {
@@ -1510,13 +1505,13 @@ export class MuxusDatabase {
   }
 
   deleteWorkspace(id: string): boolean {
-    return this.db.prepare('DELETE FROM workspaces WHERE id = ?').run(id).changes > 0;
+    return this.db.prepare<SqlRow, SQLQueryBindings[]>('DELETE FROM workspaces WHERE id = ?').run(id).changes > 0;
   }
 
   saveTerminalSnapshot(tabId: string, data: string, formatVersion = 1): void {
     requireNonEmpty(tabId, 'tabId');
     this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         INSERT INTO terminal_snapshots(tab_id, data, format_version, updated_at)
         VALUES (?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(tab_id) DO UPDATE SET
@@ -1529,7 +1524,7 @@ export class MuxusDatabase {
 
   terminalSnapshot(tabId: string): TerminalSnapshotRecord | undefined {
     const row = this.db
-      .prepare(
+      .prepare<SqlRow, SQLQueryBindings[]>(
         'SELECT tab_id, data, format_version, updated_at FROM terminal_snapshots WHERE tab_id = ?',
       )
       .get(tabId);
@@ -1553,13 +1548,13 @@ export class MuxusDatabase {
       collectLayoutTabIds(layout?.root, referenced);
     }
     const stale = this.db
-      .prepare(`SELECT tab_id FROM terminal_snapshots WHERE updated_at <= datetime('now', ?)`)
+      .prepare<SqlRow, SQLQueryBindings[]>(`SELECT tab_id FROM terminal_snapshots WHERE updated_at <= datetime('now', ?)`)
       .all(`-${graceSeconds} seconds`);
     let pruned = 0;
     for (const row of stale) {
       const tabId = String(row.tab_id);
       if (referenced.has(tabId)) continue;
-      this.db.prepare('DELETE FROM terminal_snapshots WHERE tab_id = ?').run(tabId);
+      this.db.prepare<SqlRow, SQLQueryBindings[]>('DELETE FROM terminal_snapshots WHERE tab_id = ?').run(tabId);
       pruned++;
     }
     return pruned;
@@ -1567,7 +1562,7 @@ export class MuxusDatabase {
 
   listTunnels(): TunnelRecord[] {
     return this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         SELECT id, name, target, ssh_options_json, type, bind_port, target_host, target_port, created_at, updated_at
         FROM tunnels
         ORDER BY COALESCE(NULLIF(name, ''), target) COLLATE NOCASE, created_at
@@ -1585,7 +1580,7 @@ export class MuxusDatabase {
     }
     const id = input.id ?? nanoid();
     this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         INSERT INTO tunnels(id, name, target, ssh_options_json, type, bind_port, target_host, target_port)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
@@ -1609,7 +1604,7 @@ export class MuxusDatabase {
         dynamic ? null : input.targetPort!,
       );
     const row = this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         SELECT id, name, target, ssh_options_json, type, bind_port, target_host, target_port, created_at, updated_at
         FROM tunnels WHERE id = ?
       `)
@@ -1618,13 +1613,13 @@ export class MuxusDatabase {
   }
 
   deleteTunnel(id: string): boolean {
-    return this.db.prepare('DELETE FROM tunnels WHERE id = ?').run(id).changes > 0;
+    return this.db.prepare<SqlRow, SQLQueryBindings[]>('DELETE FROM tunnels WHERE id = ?').run(id).changes > 0;
   }
 
   sessionLoggingPolicy(profileKey: string): SessionLoggingPolicy {
     requireNonEmpty(profileKey, 'profileKey');
     const exact = this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         SELECT enabled, capture_input, max_part_bytes, max_parts
         FROM session_logging_policies WHERE profile_key = ?
       `)
@@ -1633,7 +1628,7 @@ export class MuxusDatabase {
       profileKey === '*'
         ? undefined
         : this.db
-            .prepare(`
+            .prepare<SqlRow, SQLQueryBindings[]>(`
               SELECT enabled, capture_input, max_part_bytes, max_parts
               FROM session_logging_policies WHERE profile_key = '*'
             `)
@@ -1660,7 +1655,7 @@ export class MuxusDatabase {
     requireNonEmpty(profileKey, 'profileKey');
     validateSessionLoggingPolicy(input);
     this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         INSERT INTO session_logging_policies(
           profile_key, enabled, capture_input, max_part_bytes, max_parts
         ) VALUES (?, ?, ?, ?, ?)
@@ -1685,14 +1680,14 @@ export class MuxusDatabase {
     requireNonEmpty(profileKey, 'profileKey');
     return (
       this.db
-        .prepare('DELETE FROM session_logging_policies WHERE profile_key = ?')
+        .prepare<SqlRow, SQLQueryBindings[]>('DELETE FROM session_logging_policies WHERE profile_key = ?')
         .run(profileKey).changes > 0
     );
   }
 
   sessionHistorySettings(): SessionHistorySettings {
     const row = this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         SELECT storage_location, max_total_bytes, min_free_bytes,
                min_free_percent, max_age_days
         FROM session_history_settings WHERE singleton = 1
@@ -1715,7 +1710,7 @@ export class MuxusDatabase {
   ): SessionHistorySettings {
     validateSessionHistorySettings(input);
     this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         UPDATE session_history_settings
         SET storage_location = ?,
             max_total_bytes = ?,
@@ -1755,19 +1750,19 @@ export class MuxusDatabase {
 
   hasLegacySessionHistory(): boolean {
     const table = this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         SELECT 1 FROM sqlite_master
         WHERE type = 'table' AND name = 'session_logs'
       `)
       .get();
     if (!table) return false;
-    const row = this.db.prepare('SELECT 1 FROM session_logs LIMIT 1').get();
+    const row = this.db.prepare<SqlRow, SQLQueryBindings[]>('SELECT 1 FROM session_logs LIMIT 1').get();
     return !!row;
   }
 
   private moveSessionLoggingPolicy(previousKey: string, nextKey: string): void {
     this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         INSERT INTO session_logging_policies(
           profile_key, enabled, capture_input, max_part_bytes, max_parts
         )
@@ -1783,7 +1778,7 @@ export class MuxusDatabase {
       `)
       .run(nextKey, previousKey);
     this.db
-      .prepare('DELETE FROM session_logging_policies WHERE profile_key = ?')
+      .prepare<SqlRow, SQLQueryBindings[]>('DELETE FROM session_logging_policies WHERE profile_key = ?')
       .run(previousKey);
   }
 
@@ -1792,7 +1787,7 @@ export class MuxusDatabase {
     if (existing) return existing;
     const id = nanoid();
     this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         INSERT INTO connection_profiles(id, kind, name, ssh_alias)
         VALUES (?, 'openssh', ?, ?)
       `)
@@ -1802,7 +1797,7 @@ export class MuxusDatabase {
 
   listFolderSettings(): FolderSettingsRow[] {
     return this.db
-      .prepare('SELECT * FROM folder_settings ORDER BY path_key')
+      .prepare<SqlRow, SQLQueryBindings[]>('SELECT * FROM folder_settings ORDER BY path_key')
       .all()
       .map(folderSettingsFromRow);
   }
@@ -1812,7 +1807,7 @@ export class MuxusDatabase {
     const key = folderPathKey(path);
     if (!key) return undefined;
     const row = this.db
-      .prepare('SELECT * FROM folder_settings WHERE path_key = ?')
+      .prepare<SqlRow, SQLQueryBindings[]>('SELECT * FROM folder_settings WHERE path_key = ?')
       .get(key);
     return row ? folderSettingsFromRow(row) : undefined;
   }
@@ -1823,7 +1818,7 @@ export class MuxusDatabase {
     assertSecretFree(auth, 'folder.auth');
     const key = folderPathKey(normalized);
     this.db
-      .prepare(`
+      .prepare<SqlRow, SQLQueryBindings[]>(`
         INSERT INTO folder_settings(id, path_key, path, auth_json)
         VALUES (?, ?, ?, ?)
         ON CONFLICT(path_key) DO UPDATE SET
@@ -1837,7 +1832,7 @@ export class MuxusDatabase {
 
   /** Remove one settings row only — descendants keep their own settings. */
   removeFolderSettingsRow(id: string): void {
-    this.db.prepare('DELETE FROM folder_settings WHERE id = ?').run(id);
+    this.db.prepare<SqlRow, SQLQueryBindings[]>('DELETE FROM folder_settings WHERE id = ?').run(id);
   }
 
   /**
@@ -1857,13 +1852,13 @@ export class MuxusDatabase {
     let moved = 0;
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      const update = this.db.prepare(`
+      const update = this.db.prepare<SqlRow, SQLQueryBindings[]>(`
         UPDATE folder_settings
         SET path_key = ?, path = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `);
-      const remove = this.db.prepare('DELETE FROM folder_settings WHERE id = ?');
-      const occupied = this.db.prepare('SELECT id FROM folder_settings WHERE path_key = ?');
+      const remove = this.db.prepare<SqlRow, SQLQueryBindings[]>('DELETE FROM folder_settings WHERE id = ?');
+      const occupied = this.db.prepare<SqlRow, SQLQueryBindings[]>('SELECT id FROM folder_settings WHERE path_key = ?');
       for (const row of this.listFolderSettings()) {
         const next = renameFolderPathUnder(row.path, source, target);
         if (next === undefined) continue;
@@ -1897,7 +1892,7 @@ export class MuxusDatabase {
     const removed: FolderSettingsRow[] = [];
     this.db.exec('BEGIN IMMEDIATE');
     try {
-      const remove = this.db.prepare('DELETE FROM folder_settings WHERE id = ?');
+      const remove = this.db.prepare<SqlRow, SQLQueryBindings[]>('DELETE FROM folder_settings WHERE id = ?');
       const own = this.folderSettingsForPath(target);
       if (own) {
         remove.run(own.id);
@@ -1905,12 +1900,12 @@ export class MuxusDatabase {
       }
       const parentSegments = folderPathSegments(target).slice(0, -1);
       const depth = folderPathSegments(target).length;
-      const update = this.db.prepare(`
+      const update = this.db.prepare<SqlRow, SQLQueryBindings[]>(`
         UPDATE folder_settings
         SET path_key = ?, path = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `);
-      const occupied = this.db.prepare('SELECT id FROM folder_settings WHERE path_key = ?');
+      const occupied = this.db.prepare<SqlRow, SQLQueryBindings[]>('SELECT id FROM folder_settings WHERE path_key = ?');
       for (const row of this.listFolderSettings()) {
         if (!isDescendantFolderPath(row.path, target)) continue;
         const tail = folderPathSegments(row.path).slice(depth);
@@ -1940,19 +1935,19 @@ export class MuxusDatabase {
     const normalized = name?.trim();
     if (!normalized) return null;
     const existing = this.db
-      .prepare('SELECT id, name FROM connection_groups WHERE name = ? COLLATE NOCASE ORDER BY created_at LIMIT 1')
+      .prepare<SqlRow, SQLQueryBindings[]>('SELECT id, name FROM connection_groups WHERE name = ? COLLATE NOCASE ORDER BY created_at LIMIT 1')
       .get(normalized);
     if (existing) {
       if (String(existing.name) !== normalized) {
         this.db
-          .prepare('UPDATE connection_groups SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+          .prepare<SqlRow, SQLQueryBindings[]>('UPDATE connection_groups SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
           .run(normalized, String(existing.id));
       }
       return String(existing.id);
     }
     const id = nanoid();
     this.db
-      .prepare('INSERT INTO connection_groups(id, name) VALUES (?, ?)')
+      .prepare<SqlRow, SQLQueryBindings[]>('INSERT INTO connection_groups(id, name) VALUES (?, ?)')
       .run(id, normalized);
     return id;
   }
@@ -1967,7 +1962,7 @@ export class MuxusDatabase {
     `);
     const applied = new Set(
       this.db
-        .prepare('SELECT version FROM schema_migrations')
+        .prepare<SqlRow, SQLQueryBindings[]>('SELECT version FROM schema_migrations')
         .all()
         .map((row) => Number(row.version)),
     );
@@ -1983,7 +1978,7 @@ export class MuxusDatabase {
         if ('sql' in migration) this.db.exec(migration.sql);
         else migration.run(this.db);
         this.db
-          .prepare('INSERT INTO schema_migrations(version, name) VALUES (?, ?)')
+          .prepare<SqlRow, SQLQueryBindings[]>('INSERT INTO schema_migrations(version, name) VALUES (?, ?)')
           .run(migration.version, migration.name);
         this.db.exec(`PRAGMA user_version = ${migration.version}`);
         this.db.exec('COMMIT');
@@ -1995,7 +1990,7 @@ export class MuxusDatabase {
   }
 }
 
-type SqlRow = Record<string, SQLOutputValue>;
+type SqlRow = Record<string, string | number | bigint | Uint8Array | null>;
 
 function blob(row: SqlRow, key: string): Buffer {
   const value = row[key];

@@ -90,8 +90,8 @@ terminal to that host leaves the tunnel running.
 
 ### Does it work on Windows?
 
-Yes: SSH, Telnet, local shells and `COM` serial ports. The desktop installer is an NSIS
-`.exe`.
+Yes: SSH, Telnet, local shells and `COM` serial ports. Separate x64 and ARM64 installer archives are available; extract the archive and run
+its installer. The UI uses Microsoft Edge WebView2.
 
 ### Is there a Wayland/HiDPI/scaling issue?
 

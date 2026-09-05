@@ -6,9 +6,14 @@ icon: lucide/hammer
 
 ## Requirements
 
-- **Node.js ≥ 24.17** (CI builds on 24.18)
-- **pnpm**, with the version pinned in `package.json` through `packageManager`
-- A C/C++ toolchain for the two native modules (`node-pty`, `serialport`)
+- **Node.js ≥ 24.20** for pnpm and build tools
+- **pnpm**, using the version pinned in `package.json`
+- **Bun 1.4.0**, installed locally by `pnpm install`; use `pnpm exec bun` outside scripts
+- A C/C++ toolchain and Python 3 to compile the patched serial binding
+- **Go 1.26** for the desktop launcher
+- Linux desktop builds: GTK 3, WebKitGTK 4.1, Ayatana AppIndicator, libsecret, and fontconfig
+- macOS desktop builds: an Apple Silicon Mac with Xcode command-line tools
+- Windows desktop builds: Visual Studio C++ build tools for the host architecture
 
 ## Setup
 
@@ -31,8 +36,8 @@ random one at startup. The server still binds loopback only.
 shared/     REST DTOs + the zod WebSocket protocol
 server/     Fastify server: ssh_config engine, leases, SFTP, forwards, history
 client/     React 19 + MUI, pane canvas, keymap, xterm.js
-electron/   Desktop shell (embeds the server in-process)
-tests/      vitest units
+desktop/    Electrobun shell (embeds the Bun server in-process)
+tests/      Vitest units on Bun and native WebKitGTK integration tests
 hack/       Documentation sandbox and screenshot capture
 ```
 
@@ -44,31 +49,41 @@ hack/       Documentation sandbox and screenshot capture
 | --- | --- |
 | `pnpm build` | Build every package |
 | `pnpm start` | Serve the built client from the server |
-| `pnpm electron` | Run the desktop shell in dev |
+| `pnpm desktop` | Run the desktop shell in dev |
 | `pnpm test`, `pnpm test:watch` | vitest |
 | `pnpm lint` | oxlint (`--deny-warnings`) |
 | `pnpm typecheck` | Types across the workspace |
 | `pnpm check:bundle` | Build the client and check bundle safety caps |
 
-## Native modules and Electron
+## Desktop runtime
 
-The desktop build rebuilds `node-pty` and `serialport` against Electron's ABI. Before a
-`pnpm electron` dev run:
+The app uses Electrobun 2.0.1 and Bun 1.4.0, with WebKitGTK on Linux, WKWebView on
+macOS, and WebView2 on Windows. The server uses `bun:sqlite` and `Bun.Terminal`.
+`pnpm install` compiles the patched serial Node-API binding; packaged builds include
+that binary and the OS keyring binding. No Electron ABI rebuild is needed.
 
 ```bash
-pnpm --filter @muxus/electron run rebuild
+pnpm --filter @muxus/desktop prepare:sdk  # required before standalone typechecking
+pnpm --filter @muxus/desktop run pack    # unpacked app, after pnpm build
+pnpm smoke                              # exercise its bundled Bun and native bindings
+pnpm test:desktop                       # Linux; requires webkit2gtk-driver and a display
 ```
+
+The serial patch replaces Unix libuv polling with POSIX polling and Node-API
+callbacks, and retains the Windows USB completion fix. Release packaging requires
+its compiled output and excludes unpatched prebuilds.
 
 ## Installers
 
 ```bash
 make deb    # Linux .deb
-make win    # Windows NSIS installers (x64 and ARM64)
+make win    # Windows installer for the host architecture
 make dmg    # macOS .dmg
-make all    # everything electron-builder is configured for
+make all    # native installer for the current platform
 ```
 
-Artifacts are written to `electron/release/`.
+Artifacts are written to `desktop/artifacts/`. Build on the target OS and architecture.
+CI builds Linux x64, Windows x64 and ARM64, and macOS ARM64.
 
 Publishing a GitHub release runs the installer workflow. After the installers are
 attached, that workflow redeploys the documentation site with a `latest.json` generated
@@ -101,9 +116,9 @@ Screenshots are generated, so they never contain a real host:
 pnpm build         # the capture drives the built client
 pnpm capture-docs  # both themes
 
-node hack/capture.mjs               # light only  → docs/assets/screenshots/*.png
-THEME=dark node hack/capture.mjs    # dark only   → *-dark.png
-node hack/capture.mjs sftp          # only shots whose name contains "sftp"
+pnpm exec bun hack/capture.mjs               # light only  → docs/assets/screenshots/*.png
+THEME=dark pnpm exec bun hack/capture.mjs    # dark only   → *-dark.png
+pnpm exec bun hack/capture.mjs sftp          # only shots whose name contains "sftp"
 ```
 
 `hack/capture.mjs` boots the sandbox in `hack/demo-env.mjs` first, which provides:
@@ -122,9 +137,9 @@ The animated tour on the landing page comes out of the same sandbox:
 ```bash
 pnpm record-docs   # both themes → docs/assets/screenshots/tour[-dark].mp4
 
-node hack/record.mjs               # light only, plus tour-poster.png
-THEME=dark node hack/record.mjs    # dark only
-KEEP=1 node hack/record.mjs        # leave the frames in /tmp to re-encode by hand
+pnpm exec bun hack/record.mjs               # light only, plus tour-poster.png
+THEME=dark pnpm exec bun hack/record.mjs    # dark only
+KEEP=1 pnpm exec bun hack/record.mjs        # leave the frames in /tmp to re-encode by hand
 ```
 
 `hack/record.mjs` walks one window through five beats: opening a saved host, splitting the
@@ -145,7 +160,7 @@ when the script does. Every host is a small element animated on the compositor w
 transform and opacity alone, and `docs/assets/javascripts/hero.js` pauses the field while
 it is scrolled out of view. Colours come from `docs/assets/stylesheets/extra.css`.
 
-Running `node hack/demo-env.mjs` on its own starts the sandbox and prints a URL, which is
+Running `pnpm exec bun hack/demo-env.mjs` on its own starts the sandbox and prints a URL, which is
 also a way to test a change without touching the real `~/.ssh`.
 
 ## CI

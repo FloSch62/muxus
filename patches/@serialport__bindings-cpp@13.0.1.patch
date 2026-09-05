@@ -1,5 +1,395 @@
+diff --git a/dist/unix-read.js b/dist/unix-read.js
+index e44281298b2e0594033e69ac46c4052a859f004d..b1834095236c50648cd0d8b563896cd4e9756ae0 100644
+--- a/dist/unix-read.js
++++ b/dist/unix-read.js
+@@ -26,6 +26,12 @@ const unixRead = async ({ binding, buffer, offset, length, fsReadAsync = readAsy
+     try {
+         const { bytesRead } = await fsReadAsync(binding.fd, buffer, offset, length, null);
+         if (bytesRead === 0) {
++            // Do not spin on EOF or a VMIN=0 empty read. The poller reports
++            // device hangup as an error and waits for data on a live port.
++            if (!binding.isOpen) {
++                throw new errors_1.BindingsError('Port is not open', { canceled: true });
++            }
++            await readable(binding);
+             return (0, exports.unixRead)({ binding, buffer, offset, length, fsReadAsync });
+         }
+         logger('Finished read', bytesRead, 'bytes');
+diff --git a/package.json b/package.json
+index 373d6ca3b342d169e5092ac6017b18ee8ca98e65..10731117b9edca0b6a9252d45af9d4681c8e4374 100644
+--- a/package.json
++++ b/package.json
+@@ -56,7 +56,7 @@
+   },
+   "scripts": {
+     "build": "rm -rf dist && tsc -p tsconfig-build.json",
+-    "install": "node-gyp-build",
++    "install": "node-gyp rebuild",
+     "prebuildify": "prebuildify --napi --target 20.0.0 --force --strip --verbose",
+     "prebuildify-cross": "prebuildify-cross --napi --target 20.0.0 --force --strip --verbose",
+     "rebuild": "node-gyp rebuild",
+diff --git a/src/darwin_list.cpp b/src/darwin_list.cpp
+index c39f7becf60d137738a209c4f9c7744e988cbd5e..7d4fb8c6540bba39fd56e59a27f94093e7e613c4 100644
+--- a/src/darwin_list.cpp
++++ b/src/darwin_list.cpp
+@@ -12,9 +12,9 @@
+ 
+ #include <string>
+ #include <list>
++#include <mutex>
+ 
+-uv_mutex_t list_mutex;
+-Boolean lockInitialised = FALSE;
++std::mutex list_mutex;
+ 
+ Napi::Value List(const Napi::CallbackInfo& info) {
+   Napi::Env env = info.Env();
+@@ -178,7 +178,7 @@ static stDeviceListItem* GetSerialDevices() {
+         modemFound = true;
+         kernResult = KERN_SUCCESS;
+ 
+-        uv_mutex_lock(&list_mutex);
++        list_mutex.lock();
+ 
+         io_service_t device = GetUsbDevice(modemService);
+ 
+@@ -258,7 +258,7 @@ static stDeviceListItem* GetSerialDevices() {
+           (void) IOObjectRelease(device);
+         }
+ 
+-        uv_mutex_unlock(&list_mutex);
++        list_mutex.unlock();
+       }
+     }
+ 
+@@ -273,11 +273,6 @@ static stDeviceListItem* GetSerialDevices() {
+ 
+ void ListBaton::Execute() {
+ 
+-  if (!lockInitialised) {
+-    uv_mutex_init(&list_mutex);
+-    lockInitialised = TRUE;
+-  }
+-
+   stDeviceListItem* devices = GetSerialDevices();
+   if (devices != NULL && *(devices->length) > 0) {
+     stDeviceListItem* next = devices;
+diff --git a/src/poller.cpp b/src/poller.cpp
+index 0b0469266622035c21a059035effa5c2e1c355dd..bd12c1346596b66aaafc7597d3930ef9aa54a98a 100644
+--- a/src/poller.cpp
++++ b/src/poller.cpp
+@@ -1,166 +1,107 @@
+-#include <napi.h>
+-#include <uv.h>
+ #include "./poller.h"
+-
+-Poller::Poller (const Napi::CallbackInfo &info) : Napi::ObjectWrap<Poller>(info)
+-  {
+-  Napi::Env env = info.Env();
+-  Napi::HandleScope scope(env);
+-  if (!info[0].IsNumber()) {
+-    Napi::TypeError::New(env, "First argument must be an int").ThrowAsJavaScriptException();
++#include <cerrno>
++#include <cstring>
++#include <fcntl.h>
++#include <poll.h>
++#include <unistd.h>
++
++Poller::Poller(const Napi::CallbackInfo& info) : Napi::ObjectWrap<Poller>(info) {
++  if (!info[0].IsNumber() || !info[1].IsFunction()) {
++    Napi::TypeError::New(info.Env(), "Expected a file descriptor and callback").ThrowAsJavaScriptException();
+     return;
+   }
+-  this->fd = info[0].As<Napi::Number>().Int32Value();
+-
+-  // callback
+-  if (!info[1].IsFunction()) {
+-    Napi::TypeError::New(env, "Second argument must be a function").ThrowAsJavaScriptException();
++  auto shared = std::make_shared<State>();
++  shared->fd = info[0].As<Napi::Number>().Int32Value();
++  if (pipe(shared->wake) != 0) {
++    Napi::Error::New(info.Env(), strerror(errno)).ThrowAsJavaScriptException();
+     return;
+   }
+-  this->callback = Napi::Persistent(info[1].As<Napi::Function>());
+-
+-  this->poll_handle = new uv_poll_t();
+-  memset(this->poll_handle, 0, sizeof(uv_poll_t));
+-  poll_handle->data = this;
+-  int status = uv_poll_init(uv_default_loop(), poll_handle, fd);
+-  if (0 != status) {
+-    Napi::Error::New(env, uv_strerror(status)).ThrowAsJavaScriptException();
+-    return;
++  for (int fd : shared->wake) {
++    fcntl(fd, F_SETFD, FD_CLOEXEC);
++    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+   }
+-  uv_poll_init_success = true;
++  callback = Napi::ThreadSafeFunction::New(info.Env(), info[1].As<Napi::Function>(), "Serial readiness", 0, 1);
++  state = shared;
++  auto notify = callback;
++  worker = std::thread([shared, notify]() mutable {
++    while (!shared->stopped.load()) {
++      int subscribed;
++      {
++        std::lock_guard<std::mutex> lock(shared->mutex);
++        subscribed = shared->events;
++      }
++      short flags = ((subscribed & 1) ? POLLIN : 0) | ((subscribed & 2) ? POLLOUT : 0);
++      struct pollfd fds[2] = {{shared->wake[0], POLLIN, 0}, {subscribed ? shared->fd : -1, flags, 0}};
++      int result = ::poll(fds, 2, -1);
++      if (result < 0 && errno == EINTR) continue;
++      if (shared->stopped.load()) break;
++      if (fds[0].revents) {
++        char buffer[64];
++        while (read(shared->wake[0], buffer, sizeof(buffer)) > 0) {}
++        // A subscription changed while poll was blocked; rebuild its mask.
++        continue;
++      }
++      int error = result < 0 ? errno : ((fds[1].revents & POLLNVAL) ? EBADF : 0);
++      int events = ((fds[1].revents & POLLIN) ? 1 : 0) | ((fds[1].revents & POLLOUT) ? 2 : 0);
++      // A removed terminal can return zero bytes forever. Report its hangup
++      // as an error to pending readers/writers instead of ordinary readiness.
++      if (!error && (fds[1].revents & (POLLHUP | POLLERR))) error = EIO;
++      if (!error && !events) continue;
++      {
++        std::lock_guard<std::mutex> lock(shared->mutex);
++        if (error) shared->events = 0;
++        else shared->events &= ~events;
++      }
++      notify.NonBlockingCall([shared, error, events](Napi::Env env, Napi::Function js) {
++        if (env == nullptr || shared->stopped.load()) return;
++        js.Call({error ? Napi::Error::New(env, strerror(error)).Value() : env.Null(), Napi::Number::New(env, events)});
++      });
++    }
++    notify.Release();
++  });
+ }
+ 
+-Poller::~Poller() {
+-  // if we call uv_poll_stop after uv_poll_init failed we segfault
+-  if (uv_poll_init_success) {
+-    uv_poll_stop(poll_handle);
+-    uv_unref(reinterpret_cast<uv_handle_t*> (poll_handle));
+-    uv_close(reinterpret_cast<uv_handle_t*> (poll_handle), Poller::onClose);
+-  } else {
+-    delete poll_handle;
+-  }
+-  return;
+-}
++Poller::~Poller() { stop(); }
+ 
+-void Poller::onClose(uv_handle_t* poll_handle) {
+-  // fprintf(stdout, "~Poller is closed\n");
+-  delete poll_handle;
++void Poller::wake() {
++  if (!state || state->wake[1] < 0) return;
++  const char byte = 1;
++  // A full pipe already contains a wakeup; never block the JS thread.
++  while (write(state->wake[1], &byte, 1) < 0 && errno == EINTR) {}
+ }
+ 
+-// Events can be UV_READABLE | UV_WRITABLE | UV_DISCONNECT
+-void Poller::poll(Napi::Env env, int events) {
+-  Napi::HandleScope scope(env);
+-  // fprintf(stdout, "Poller:poll for %d\n", events);
+-  this->events = this->events | events;
+-  int status = uv_poll_start(this->poll_handle, events, Poller::onData);
+-  if (0 != status) {
+-    Napi::Error::New(env, uv_strerror(status)).ThrowAsJavaScriptException();
+-  }
+-  return;
++void Poller::stop() {
++  if (!state || state->stopped.exchange(true)) return;
++  wake();
++  if (worker.joinable()) worker.join();
++  for (int& fd : state->wake) { close(fd); fd = -1; }
+ }
+ 
+-void Poller::stop(Napi::Env env) {
+-  Napi::HandleScope scope(env);
+-  int status = uv_poll_stop(this->poll_handle);
+-  if (0 != status) {
+-    Napi::Error::New(env, uv_strerror(status)).ThrowAsJavaScriptException();
++Napi::Value Poller::poll(const Napi::CallbackInfo& info) {
++  if (!info[0].IsNumber()) {
++    Napi::TypeError::New(info.Env(), "events must be an integer").ThrowAsJavaScriptException();
++    return info.Env().Undefined();
+   }
+-  return;
+-}
+-
+-int Poller::_stop() {
+-  return uv_poll_stop(poll_handle);
+-}
+-
+-void Poller::onData(uv_poll_t* handle, int status, int events) {
+-  Poller* obj = static_cast<Poller*>(handle->data);
+-  Napi::Env env = obj->Env();
+-  Napi::HandleScope scope(env);
+-
+-  // if Error
+-  if (0 != status) {
+-    // fprintf(stdout, "OnData Error status=%s events=%d\n", uv_strerror(status), events);
+-    obj->_stop(); // doesn't matter if this errors
+-    obj->callback.Call({Napi::Error::New(env, uv_strerror(status)).Value(), env.Undefined()});
+-  } else {
+-    // fprintf(stdout, "OnData status=%d events=%d subscribed=%d\n", status, events, obj->events);
+-    // remove triggered events from the poll
+-    int newEvents = obj->events & ~events;
+-    obj->poll(env, newEvents);
+-    obj->callback.Call({env.Null(), Napi::Number::New(env, events)});
++  if (state && !state->stopped.load()) {
++    {
++      std::lock_guard<std::mutex> lock(state->mutex);
++      state->events |= info[0].As<Napi::Number>().Int32Value();
++    }
++    wake();
+   }
++  return info.Env().Undefined();
++}
+ 
++Napi::Value Poller::stop(const Napi::CallbackInfo& info) {
++  stop();
++  return info.Env().Undefined();
+ }
+ 
+ Napi::Object Poller::Init(Napi::Env env, Napi::Object exports) {
+-  Napi::Function func = DefineClass(env, "Poller", {
+-    StaticMethod<&Poller::New>("New"),
++  exports.Set("Poller", DefineClass(env, "Poller", {
+     InstanceMethod<&Poller::poll>("poll"),
+     InstanceMethod<&Poller::stop>("stop"),
+-    InstanceMethod<&Poller::destroy>("destroy"),
+-  });
+-
+-  Napi::FunctionReference* constructor = new Napi::FunctionReference();
+-
+-  *constructor = Napi::Persistent(func);
+-  exports.Set("Poller", func);
+-
+-  env.SetInstanceData<Napi::FunctionReference>(constructor);
+-
++    InstanceMethod<&Poller::stop>("destroy"),
++  }));
+   return exports;
+ }
+-
+-Napi::Value Poller::New(const Napi::CallbackInfo& info) {
+-  Napi::Env env = info.Env();
+-  Napi::HandleScope scope(env);
+-
+-  if (!info[0].IsNumber()) {
+-    Napi::TypeError::New(env, "fd must be an int").ThrowAsJavaScriptException();
+-    return env.Null();
+-  }
+-  Napi::Value  fd = info[0];
+-  if (!info[1].IsFunction()) {
+-    Napi::TypeError::New(env, "cb must be a function").ThrowAsJavaScriptException();
+-    return env.Null();
+-  }
+-  Napi::Function callback = info[1].As<Napi::Function>();
+-  Napi::FunctionReference* constructor = info.Env().GetInstanceData<Napi::FunctionReference>();
+-  return constructor->New({fd, callback});
+-}
+-
+-Napi::Value Poller::poll(const Napi::CallbackInfo& info) {
+-  Napi::Env env = info.Env();
+-  Napi::HandleScope scope(env);
+-  Poller* obj = this;
+-  if (!info[0].IsNumber()) {
+-    Napi::TypeError::New(env, "events must be an int").ThrowAsJavaScriptException();
+-    return env.Null();
+-  }
+-  int events = info[0].As<Napi::Number>().Int32Value();
+-  obj->poll(env, events);
+-  return env.Undefined();
+-}
+-
+-Napi::Value Poller::stop(const Napi::CallbackInfo& info) {
+-  Napi::Env env = info.Env();
+-  Napi::HandleScope scope(env);
+-  this->stop(env);
+-  return env.Undefined();
+-}
+-
+-Napi::Value Poller::destroy(const Napi::CallbackInfo& info) {
+-  Napi::Env env = info.Env();
+-  Napi::HandleScope scope(env);
+-  Poller* obj = this;
+-  // TODO Fix destruction Segfault
+-  obj->Reset();
+-  // delete obj;
+-  return env.Undefined();
+-}
+-
+-inline Napi::FunctionReference & Poller::constructor() {
+-  static Napi::FunctionReference my_constructor;
+-  // TODO Check if required
+-  // my_constructor.SuppressDestruct();
+-  return my_constructor;
+-}
+diff --git a/src/poller.h b/src/poller.h
+index c15a2e9f23ff20998213ec1b4f9cbf2f60b0e89e..8a223e3ae9e74a0cfe7fde46b8d8013a1f989558 100644
+--- a/src/poller.h
++++ b/src/poller.h
+@@ -2,34 +2,34 @@
+ #define PACKAGES_SERIALPORT_SRC_POLLER_H_
+ 
+ #include <napi.h>
+-#include <uv.h>
++#include <atomic>
++#include <memory>
++#include <mutex>
++#include <thread>
+ 
++// Use POSIX readiness and Node-API callbacks directly. Bun does not expose a
++// libuv event loop on Unix; the same implementation also runs in Node.
+ class Poller : public Napi::ObjectWrap<Poller> {
+  public:
+   static Napi::Object Init(Napi::Env env, Napi::Object exports);
+-  explicit Poller(const Napi::CallbackInfo &info);
+-  static Napi::Value New(const Napi::CallbackInfo& info);
+-  static void onData(uv_poll_t* handle, int status, int events);
+-  static void onClose(uv_handle_t* poll_handle);
++  explicit Poller(const Napi::CallbackInfo& info);
+   ~Poller();
+ 
+  private:
+-  int fd;
+-  uv_poll_t* poll_handle = nullptr;
+-	Napi::FunctionReference callback;
+-  bool uv_poll_init_success = false;
+-
+-  // can this be read off of poll_handle?
+-  int events = 0;
+-
+-  void poll(Napi::Env env, int events);
+-  void stop(Napi::Env env);
+-  int _stop();
+-
++  struct State {
++    int fd;
++    int wake[2] = {-1, -1};
++    std::mutex mutex;
++    int events = 0;
++    std::atomic<bool> stopped{false};
++  };
++  std::shared_ptr<State> state;
++  Napi::ThreadSafeFunction callback;
++  std::thread worker;
++  void stop();
++  void wake();
+   Napi::Value poll(const Napi::CallbackInfo& info);
+   Napi::Value stop(const Napi::CallbackInfo& info);
+-  Napi::Value destroy(const Napi::CallbackInfo& info);
+-  static inline Napi::FunctionReference & constructor();
+ };
+ 
+ #endif  // PACKAGES_SERIALPORT_SRC_POLLER_H_
+\ No newline at end of file
 diff --git a/src/serialport_win.cpp b/src/serialport_win.cpp
-index 7e79216a37635a41d1c2db030f4009ea5d0d24b2..7f8bac6f701a7fcabfe96b2a61df3e381ca59366 100644
+index 7e79216a37635a41d1c2db030f4009ea5d0d24b2..2eec5ac5fe75230d06be26a92bab12344752b9ff 100644
 --- a/src/serialport_win.cpp
 +++ b/src/serialport_win.cpp
 @@ -326,18 +326,30 @@ bool IsClosingHandle(int fd) {
@@ -39,7 +429,7 @@ index 7e79216a37635a41d1c2db030f4009ea5d0d24b2..7f8bac6f701a7fcabfe96b2a61df3e38
    }
  }
  
-@@ -441,13 +451,15 @@ void __stdcall ReadIOCompletion(DWORD errorCode, DWORD bytesTransferred, OVERLAP
+@@ -441,13 +453,15 @@ void __stdcall ReadIOCompletion(DWORD errorCode, DWORD bytesTransferred, OVERLAP
      return;
    }
  
@@ -61,7 +451,7 @@ index 7e79216a37635a41d1c2db030f4009ea5d0d24b2..7f8bac6f701a7fcabfe96b2a61df3e38
    if (bytesTransferred) {
      baton->bytesToRead -= bytesTransferred;
      baton->bytesRead += bytesTransferred;
-@@ -455,7 +467,7 @@ void __stdcall ReadIOCompletion(DWORD errorCode, DWORD bytesTransferred, OVERLAP
+@@ -455,7 +469,7 @@ void __stdcall ReadIOCompletion(DWORD errorCode, DWORD bytesTransferred, OVERLAP
    }
    if (!baton->bytesToRead) {
      baton->complete = true;

@@ -59,7 +59,7 @@ install -d -m 0700 "$GNUPGHOME"
 gpg --batch --import "$test_root/signing-subkeys.asc"
 
 mkdir -p "$test_root/artifacts" "$test_root/signatures" "$test_root/stale-signatures"
-printf 'appimage fixture\n' > "$test_root/artifacts/muxus-test-linux-x86_64.AppImage"
+printf 'installer fixture\n' > "$test_root/artifacts/linux-x64-Muxus-Setup.tar.gz"
 printf 'deb fixture\n' > "$test_root/artifacts/muxus-test-linux-amd64.deb"
 
 export LINUX_SIGNING_KEY_PASSPHRASE="$test_passphrase"

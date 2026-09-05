@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { Database } from 'bun:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../../../server/src/app.js';
 import { resolveConfig } from '../../../server/src/config.js';
@@ -25,7 +25,7 @@ describe('session history v6 migration', () => {
     const application = new MuxusDatabase(databasePath);
     application.close();
 
-    const legacy = new DatabaseSync(databasePath);
+    const legacy = new Database(databasePath);
     legacy.exec('PRAGMA foreign_keys = ON');
     legacy.prepare(`
       INSERT INTO session_logs(
@@ -77,7 +77,7 @@ describe('session history v6 migration', () => {
     expect((await built.ctx.history.rawSessionLogEvents('legacy-session'))?.[0]?.raw)
       .toEqual(Buffer.from('legacy output'));
 
-    const compacted = new DatabaseSync(databasePath, { readOnly: true });
+    const compacted = new Database(databasePath, { readonly: true });
     const historyTables = compacted.prepare(`
       SELECT name FROM sqlite_master
       WHERE type = 'table'

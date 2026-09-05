@@ -36,10 +36,10 @@ jobs:
       - name: Verify package versions match the tag
         run: >-
           node -e "const root = require('./package.json');
-          const desktop = require('./electron/package.json');
+          const desktop = require('./desktop/package.json');
           const expected = 'v' + root.version;
           if (desktop.version !== root.version)
-          throw new Error('Root and Electron package versions do not match');
+          throw new Error('Root and desktop package versions do not match');
           if (process.env.RELEASE_TAG !== expected)
           throw new Error('Release tag ' + process.env.RELEASE_TAG + ' does not match package version ' + expected);
           console.log('Building Muxus ' + root.version);"
@@ -58,28 +58,16 @@ jobs:
         include:
           - name: Linux x64
             os: ubuntu-latest
-            build_args: --linux AppImage deb --x64
             artifact_name: linux-x64
-            artifact_path: |
-              electron/release/*.AppImage
-              electron/release/*.deb
           - name: Windows x64
             os: windows-latest
-            build_args: --win nsis --x64
             artifact_name: windows-x64
-            artifact_path: electron/release/*.exe
           - name: Windows ARM64
             os: windows-11-arm
-            build_args: --win nsis --arm64
             artifact_name: windows-arm64
-            artifact_path: electron/release/*.exe
-          - name: macOS universal
-            os: macos-latest
-            # These overrides also backfill tags created before the universal
-            # native-module rules were added to electron-builder.yml.
-            build_args: --mac dmg --universal -c.mac.x64ArchFiles="{**/prebuilds/darwin*/**,**/node_modules/@napi-rs/keyring-darwin-*/**}" -c.mac.singleArchFiles="**/node_modules/@napi-rs/keyring-darwin-*{,/**}"
-            artifact_name: macos-universal
-            artifact_path: electron/release/*.dmg
+          - name: macOS Apple Silicon
+            os: macos-15
+            artifact_name: macos-arm64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     steps:
@@ -103,27 +91,26 @@ jobs:
       - name: Build workspace
         run: pnpm build
 
-      - name: Build installers
-        run: pnpm --filter @muxus/electron exec electron-builder ${{ matrix.build_args }} --publish never
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.x'
+          cache: false
 
-      - name: Verify universal keyring binaries
-        if: runner.os == 'macOS'
-        run: |
-          app="electron/release/mac-universal/Muxus.app"
-          if [ ! -d "$app" ]; then
-            echo "Universal app bundle not found; release contents:" >&2
-            ls electron/release >&2
-            exit 1
-          fi
-          for arch in x64 arm64; do
-            ls "$app/Contents/Resources/app.asar.unpacked/node_modules/@napi-rs/keyring-darwin-$arch/"*.node
-          done
+      - name: Build native installers
+        run: pnpm --filter @muxus/desktop dist
+
+      - name: Build Debian package
+        if: runner.os == 'Linux'
+        run: pnpm --filter @muxus/desktop deb
+
+      - name: Verify release payload
+        run: node hack/verify-desktop-artifacts.mjs
 
       - name: Store installers
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_path }}
+          path: desktop/artifacts/*
           if-no-files-found: error
           retention-days: 1
 

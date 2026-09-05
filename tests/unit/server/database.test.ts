@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { Database } from 'bun:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   MuxusDatabase,
@@ -57,7 +57,7 @@ describe('MuxusDatabase migrations', () => {
     database.close();
     database = undefined;
 
-    const legacy = new DatabaseSync(filename);
+    const legacy = new Database(filename);
     try {
       legacy.exec(`
         DELETE FROM schema_migrations WHERE version = 20;
@@ -98,7 +98,7 @@ describe('MuxusDatabase migrations', () => {
     database.close();
     database = undefined;
 
-    const draft = new DatabaseSync(filename);
+    const draft = new Database(filename);
     try {
       draft.exec(`
         DELETE FROM schema_migrations WHERE version IN (13, 14, 15, 16);

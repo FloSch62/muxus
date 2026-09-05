@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -117,10 +117,16 @@ export function measureBundle(dist = defaultDist) {
     }
   }
 
+  const initial = measureGraph(initialKeys);
+  if (existsSync(join(dist, 'desktop-bootstrap.js'))) {
+    const bootstrap = measureFiles(['desktop-bootstrap.js']);
+    initial.raw += bootstrap.raw;
+    initial.gzip += bootstrap.gzip;
+  }
   return {
     version: REPORT_VERSION,
     metrics: {
-      initial: measureGraph(initialKeys),
+      initial,
       terminal: featureGraph('src/components/TerminalViewImpl.tsx'),
       monaco: featureGraph('src/components/MonacoTextEditor.tsx'),
       typescriptWorker: measureFiles([`assets/${typeScriptWorker}`]),
