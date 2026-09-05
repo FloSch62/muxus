@@ -1,3 +1,20 @@
+diff --git a/dist/unix-read.js b/dist/unix-read.js
+index e44281298b2e0594033e69ac46c4052a859f004d..b1834095236c50648cd0d8b563896cd4e9756ae0 100644
+--- a/dist/unix-read.js
++++ b/dist/unix-read.js
+@@ -26,6 +26,12 @@ const unixRead = async ({ binding, buffer, offset, length, fsReadAsync = readAsy
+     try {
+         const { bytesRead } = await fsReadAsync(binding.fd, buffer, offset, length, null);
+         if (bytesRead === 0) {
++            // Do not spin on EOF or a VMIN=0 empty read. The poller reports
++            // device hangup as an error and waits for data on a live port.
++            if (!binding.isOpen) {
++                throw new errors_1.BindingsError('Port is not open', { canceled: true });
++            }
++            await readable(binding);
+             return (0, exports.unixRead)({ binding, buffer, offset, length, fsReadAsync });
+         }
+         logger('Finished read', bytesRead, 'bytes');
 diff --git a/package.json b/package.json
 index 373d6ca3b342d169e5092ac6017b18ee8ca98e65..10731117b9edca0b6a9252d45af9d4681c8e4374 100644
 --- a/package.json
@@ -12,7 +29,7 @@ index 373d6ca3b342d169e5092ac6017b18ee8ca98e65..10731117b9edca0b6a9252d45af9d468
      "prebuildify-cross": "prebuildify-cross --napi --target 20.0.0 --force --strip --verbose",
      "rebuild": "node-gyp rebuild",
 diff --git a/src/darwin_list.cpp b/src/darwin_list.cpp
-index c39f7becf60d137738a209c4f9c7744e988cbd5e..e3467991cee4ea341469a675539f84ef1906e262 100644
+index c39f7becf60d137738a209c4f9c7744e988cbd5e..7d4fb8c6540bba39fd56e59a27f94093e7e613c4 100644
 --- a/src/darwin_list.cpp
 +++ b/src/darwin_list.cpp
 @@ -12,9 +12,9 @@
@@ -58,7 +75,7 @@ index c39f7becf60d137738a209c4f9c7744e988cbd5e..e3467991cee4ea341469a675539f84ef
    if (devices != NULL && *(devices->length) > 0) {
      stDeviceListItem* next = devices;
 diff --git a/src/poller.cpp b/src/poller.cpp
-index 0b0469266622035c21a059035effa5c2e1c355dd..225e67e2db304443f02198b5230b867527112ba3 100644
+index 0b0469266622035c21a059035effa5c2e1c355dd..bd12c1346596b66aaafc7597d3930ef9aa54a98a 100644
 --- a/src/poller.cpp
 +++ b/src/poller.cpp
 @@ -1,166 +1,107 @@
@@ -131,9 +148,9 @@ index 0b0469266622035c21a059035effa5c2e1c355dd..225e67e2db304443f02198b5230b8675
 +      }
 +      int error = result < 0 ? errno : ((fds[1].revents & POLLNVAL) ? EBADF : 0);
 +      int events = ((fds[1].revents & POLLIN) ? 1 : 0) | ((fds[1].revents & POLLOUT) ? 2 : 0);
-+      // Wake pending reads/writes on removal so their next syscall reports the
-+      // actual device error, instead of leaving a disconnected session pending.
-+      if (fds[1].revents & (POLLHUP | POLLERR)) events |= subscribed | 4;
++      // A removed terminal can return zero bytes forever. Report its hangup
++      // as an error to pending readers/writers instead of ordinary readiness.
++      if (!error && (fds[1].revents & (POLLHUP | POLLERR))) error = EIO;
 +      if (!error && !events) continue;
 +      {
 +        std::lock_guard<std::mutex> lock(shared->mutex);
@@ -313,7 +330,7 @@ index 0b0469266622035c21a059035effa5c2e1c355dd..225e67e2db304443f02198b5230b8675
 -  return my_constructor;
 -}
 diff --git a/src/poller.h b/src/poller.h
-index c15a2e9f23ff20998213ec1b4f9cbf2f60b0e89e..b80c89bd7cba947aef554693b7addfe333887c9e 100644
+index c15a2e9f23ff20998213ec1b4f9cbf2f60b0e89e..8a223e3ae9e74a0cfe7fde46b8d8013a1f989558 100644
 --- a/src/poller.h
 +++ b/src/poller.h
 @@ -2,34 +2,34 @@
@@ -370,6 +387,7 @@ index c15a2e9f23ff20998213ec1b4f9cbf2f60b0e89e..b80c89bd7cba947aef554693b7addfe3
  };
  
  #endif  // PACKAGES_SERIALPORT_SRC_POLLER_H_
+\ No newline at end of file
 diff --git a/src/serialport_win.cpp b/src/serialport_win.cpp
 index 7e79216a37635a41d1c2db030f4009ea5d0d24b2..2eec5ac5fe75230d06be26a92bab12344752b9ff 100644
 --- a/src/serialport_win.cpp

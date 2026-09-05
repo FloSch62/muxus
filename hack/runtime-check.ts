@@ -11,6 +11,7 @@ import { Server as SshServer } from '../server/node_modules/ssh2';
 import { startServer, SystemVaultKeyStore } from '../server/src/server.js';
 import { SessionHistoryStore } from '../server/src/session-logging/history-store.js';
 import { terminalWebSocketProtocols, TERMINAL_SESSION_CLOSE_REASON } from '../shared/src/ws-protocol.js';
+import { checkSerialRecovery } from './serial-recovery-check.js';
 
 const root = process.env.MUXUS_SMOKE_ROOT!;
 const knownHosts = path.join(root, 'known_hosts');
@@ -100,6 +101,7 @@ try {
     sshSocket.close(1000, TERMINAL_SESSION_CLOSE_REASON);
     sshd.close();
   }
+  if (process.platform === 'linux') await checkSerialRecovery(server, root);
 } finally { await server.close(); }
 
 const history = await SessionHistoryStore.open({ root: path.join(root, 'recording'), settings: { maxTotalBytes: 64 * 1024 * 1024, minFreeBytes: 0, minFreePercent: 0 } });

@@ -766,7 +766,9 @@ function attachTerminalTransport(
     socket.close();
   };
   const unsubscribeError = transport.onError((error) => finish('failed', error.message));
-  const unsubscribeClose = transport.onClose(() => finish('completed'));
+  const unsubscribeClose = transport.onClose((error) =>
+    finish(error ? 'disconnected' : 'completed', error?.message),
+  );
 
   socket.once('close', () => {
     if (closed) return;
