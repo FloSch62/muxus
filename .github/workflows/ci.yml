@@ -89,10 +89,6 @@ jobs:
           - name: Windows x64
             os: windows-latest
             arch: x64
-          # Electrobun ships x64 Windows binaries, including on ARM hosts.
-          - name: Windows ARM64 (x64 emulation)
-            os: windows-11-arm
-            arch: x64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -157,6 +153,16 @@ jobs:
           MUXUS_OS_KEYRING_SMOKE: ${{ runner.os != 'Linux' && '1' || '0' }}
         run: pnpm smoke
 
+      - name: Store Windows package for ARM testing
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-x64-unpacked
+          path: desktop/build/dev-win-x64/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Native WebKitGTK tests
         if: runner.os == 'Linux'
         run: xvfb-run --auto-servernum sh -c 'openbox >/tmp/muxus-openbox.log 2>&1 & pnpm test:desktop'
@@ -169,3 +175,57 @@ jobs:
           path: |
             tests/desktop/.results
             tests/desktop-report
+
+  windows-arm-smoke:
+    name: Runtime (Windows ARM64, x64 emulation)
+    needs: package-smoke
+    runs-on: windows-11-arm
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Install x64 Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          architecture: x64
+          cache: pnpm
+
+      # Exercise the exact x64 package. Hutch's Bun toolchain installation fails
+      # with AccessDenied on ARM; users run the prebuilt app without Hutch.
+      - name: Download Windows x64 package
+        uses: actions/download-artifact@v8
+        with:
+          name: windows-x64-unpacked
+          path: desktop/build/dev-win-x64/
+
+      # Native bindings come from the package; don't rebuild replacements here.
+      - name: Install smoke-test dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Prepare smoke-test tools
+        shell: pwsh
+        run: |
+          node node_modules/bun/install.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node desktop/node_modules/esbuild/install.js
+
+      - name: Verify x64 Node and Bun
+        shell: pwsh
+        run: |
+          node -e "require('node:assert/strict').equal(process.arch, 'x64', 'Windows builds require x64 Node')"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./node_modules/bun/bin/bun.exe -e "require('node:assert/strict').equal(process.arch, 'x64', 'Windows builds require x64 Bun')"
+
+      - name: Build shared contracts
+        run: node node_modules/typescript/bin/tsc -p shared/tsconfig.json
+
+      # Invoke Bun directly: pnpm run would auto-install skipped native bindings.
+      - name: Verify packaged Bun runtime under emulation
+        env:
+          MUXUS_OS_KEYRING_SMOKE: "1"
+        run: ./node_modules/bun/bin/bun.exe hack/smoke-runtime.ts

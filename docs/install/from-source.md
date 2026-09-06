@@ -16,8 +16,8 @@ to a browser from a local Fastify server.
 - **Go 1.26** for the desktop launcher
 - Linux desktop builds: GTK 3, WebKitGTK 4.1, Ayatana AppIndicator, libsecret, and fontconfig
 - macOS desktop builds: an Apple Silicon Mac with Xcode command-line tools
-- Windows desktop builds: x64 Node.js and Visual Studio C++ build tools targeting x64,
-  including on Windows 11 ARM64; install dependencies using x64 Node.js
+- Windows desktop builds: an x64 Windows host with x64 Node.js and Visual Studio C++
+  build tools targeting x64
 
 ## Build and run
 
@@ -78,8 +78,10 @@ make all    # native installer for the current platform
 ```
 
 Artifacts are written to `desktop/artifacts/`. Build on the target OS using its supported
-runtime architecture. CI builds Linux x64, Windows x64, and macOS ARM64, and also builds
-and tests the Windows x64 package under emulation on a Windows 11 ARM64 runner.
+runtime architecture. CI builds Linux x64, Windows x64, and macOS ARM64, and also tests
+the Windows x64 package under emulation on a Windows 11 ARM64 runner. Building on ARM
+is currently blocked by Hutch's Bun toolchain installation; use the prebuilt Windows
+x64 installer there.
 
 ## Command-line flags
 
