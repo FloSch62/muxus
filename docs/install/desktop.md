@@ -15,13 +15,17 @@ Installers are published on the
 
 | Platform | File |
 | --- | --- |
-| :material-microsoft-windows: Windows x64 / ARM64 | `win-x64-Muxus-Setup.zip` / `win-arm64-Muxus-Setup.zip` |
+| :material-microsoft-windows: Windows x64 / ARM64 | `win-x64-Muxus-Setup.zip` |
 | :material-apple: macOS (Apple Silicon) | `macos-arm64-Muxus.dmg` |
 | :material-linux: Linux x64 | `linux-x64-Muxus-Setup.tar.gz` or `muxus-<version>-linux-x64.deb` |
 
 The UI uses the operating system's webview: WebView2 on Windows, WKWebView on macOS,
 and WebKitGTK 4.1 on Linux. These packages replace the previous Electron installers;
 Intel macOS packages are no longer built.
+
+Windows 11 ARM64 uses the same x64 installer through Windows' built-in emulation.
+USB serial adapters still require a Windows ARM64 driver. Physical serial I/O with
+the Bun desktop runtime on ARM has not yet been verified with hardware.
 
 ## Install & launch
 

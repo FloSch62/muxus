@@ -22,9 +22,6 @@ jobs:
           - name: Windows x64
             os: windows-latest
             artifact_name: windows-x64
-          - name: Windows ARM64
-            os: windows-11-arm
-            artifact_name: windows-arm64
           - name: macOS Apple Silicon
             os: macos-15
             artifact_name: macos-arm64

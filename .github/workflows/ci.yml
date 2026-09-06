@@ -82,12 +82,17 @@ jobs:
         include:
           - name: Linux x64
             os: ubuntu-latest
+            arch: x64
           - name: macOS Apple Silicon
             os: macos-15
+            arch: arm64
           - name: Windows x64
             os: windows-latest
-          - name: Windows ARM64
+            arch: x64
+          # Electrobun ships x64 Windows binaries, including on ARM hosts.
+          - name: Windows ARM64 (x64 emulation)
             os: windows-11-arm
+            arch: x64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -101,10 +106,19 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 24.20.0
+          architecture: ${{ matrix.arch }}
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Verify Windows build architecture
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          node -e "require('node:assert/strict').equal(process.arch, 'x64', 'Windows builds require x64 Node')"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm exec bun -e "require('node:assert/strict').equal(process.arch, 'x64', 'Windows builds require x64 Bun')"
 
       # Runner login keychains are not reliably unlocked; give the keyring
       # roundtrip test a dedicated unlocked default keychain instead.
@@ -139,6 +153,8 @@ jobs:
         run: pnpm --filter @muxus/desktop run pack
 
       - name: Verify packaged Bun runtime
+        env:
+          MUXUS_OS_KEYRING_SMOKE: ${{ runner.os != 'Linux' && '1' || '0' }}
         run: pnpm smoke
 
       - name: Native WebKitGTK tests

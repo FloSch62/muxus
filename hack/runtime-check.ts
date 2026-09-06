@@ -17,6 +17,7 @@ const root = process.env.MUXUS_SMOKE_ROOT!;
 const knownHosts = path.join(root, 'known_hosts');
 writeFileSync(process.env.MUXUS_SSH_CONFIG!, `Host 127.0.0.1\n UserKnownHostsFile "${knownHosts.replaceAll('\\', '/')}"\n GlobalKnownHostsFile none\n IdentityAgent none\n IdentitiesOnly yes\n`);
 assert.ok(process.versions.bun, 'The packaged server must run in Bun');
+assert.equal(process.arch, process.env.MUXUS_SMOKE_ARCH, 'Packaged Bun must match the build architecture');
 assert.equal(typeof AsyncEntry, 'function');
 assert.ok(Array.isArray(await SerialPort.list()));
 const server = await startServer({ port: 0, databasePath: path.join(root, 'muxus.sqlite3'), historyPath: path.join(root, 'history'), staticRoot: process.env.MUXUS_SMOKE_STATIC, openBrowser: false, prettyLogs: false });

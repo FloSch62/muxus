@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -12,6 +12,15 @@ const app = process.env.MUXUS_SMOKE_APP ?? path.join(buildDir, readdirSync(build
 const resources = path.join(app, process.platform === 'darwin' ? 'Contents/Resources' : 'Resources');
 const binary = path.join(app, process.platform === 'darwin' ? 'Contents/MacOS/bun' : `bin/bun${process.platform === 'win32' ? '.exe' : ''}`);
 assert.ok(existsSync(binary), `Packaged Bun is missing: ${binary}`);
+if (process.platform === 'win32') {
+  assert.equal(process.arch, 'x64', 'Windows desktop builds require x64 Node and Bun, including on ARM');
+  for (const name of ['bun.exe', 'launcher.exe', 'muxus-native.exe']) {
+    const executable = readFileSync(path.join(app, 'bin', name));
+    const header = executable.readUInt32LE(0x3c);
+    assert.equal(executable.readUInt32LE(header), 0x00004550, `Invalid PE header in ${name}`);
+    assert.equal(executable.readUInt16LE(header + 4), 0x8664, `${name} must target x64`);
+  }
+}
 const require = createRequire(path.join(desktop, 'package.json'));
 const nativeRequire = createRequire(path.join(resources, 'package.json'));
 const { build } = require('esbuild') as typeof import('../desktop/node_modules/esbuild');
@@ -29,7 +38,7 @@ try {
   });
   const result = spawnSync(binary, [path.join(scratch, 'check.mjs')], {
     stdio: 'inherit', timeout: 60_000,
-    env: { ...process.env, MUXUS_SMOKE_ROOT: scratch, MUXUS_SMOKE_STATIC: path.join(resources, 'app/client'), MUXUS_SSH_CONFIG: path.join(scratch, 'ssh-config'), NODE_ENV: 'production' },
+    env: { ...process.env, MUXUS_SMOKE_ARCH: process.arch, MUXUS_SMOKE_ROOT: scratch, MUXUS_SMOKE_STATIC: path.join(resources, 'app/client'), MUXUS_SSH_CONFIG: path.join(scratch, 'ssh-config'), NODE_ENV: 'production' },
   });
   if (result.error) throw result.error;
   assert.equal(result.status, 0, 'Packaged runtime checks failed');

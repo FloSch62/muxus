@@ -13,7 +13,8 @@ icon: lucide/hammer
 - **Go 1.26** for the desktop launcher
 - Linux desktop builds: GTK 3, WebKitGTK 4.1, Ayatana AppIndicator, libsecret, and fontconfig
 - macOS desktop builds: an Apple Silicon Mac with Xcode command-line tools
-- Windows desktop builds: Visual Studio C++ build tools for the host architecture
+- Windows desktop builds: x64 Node.js and Visual Studio C++ build tools targeting x64,
+  including on Windows 11 ARM64; install dependencies using x64 Node.js
 
 ## Setup
 
@@ -73,17 +74,24 @@ The serial patch replaces Unix libuv polling with POSIX polling and Node-API
 callbacks, and retains the Windows USB completion fix. Release packaging requires
 its compiled output and excludes unpatched prebuilds.
 
+Windows desktop builds use x64 Node.js, Bun and native bindings on both x64 and ARM64
+hosts. The Go launcher targets the same architecture. CI checks the packaged executable
+architectures and loads the serial and keyring bindings under x64 emulation on Windows
+ARM64. Serial port enumeration is covered, but physical read/write, flow control and
+unplug/reconnect still need testing with an ARM64 driver and a real USB serial adapter.
+
 ## Installers
 
 ```bash
 make deb    # Linux .deb
-make win    # Windows installer for the host architecture
+make win    # Windows x64 installer (also runs on Windows 11 ARM64)
 make dmg    # macOS .dmg
 make all    # native installer for the current platform
 ```
 
-Artifacts are written to `desktop/artifacts/`. Build on the target OS and architecture.
-CI builds Linux x64, Windows x64 and ARM64, and macOS ARM64.
+Artifacts are written to `desktop/artifacts/`. Build on the target OS using its supported
+runtime architecture. CI builds Linux x64, Windows x64, and macOS ARM64, and also builds
+and tests the Windows x64 package under emulation on a Windows 11 ARM64 runner.
 
 Publishing a GitHub release runs the installer workflow. After the installers are
 attached, that workflow redeploys the documentation site with a `latest.json` generated

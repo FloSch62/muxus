@@ -39,4 +39,7 @@ ${runtime}`);
 const windows = process.platform === 'win32';
 const launcher = path.join(bin, windows ? 'launcher.exe' : 'launcher');
 renameSync(launcher, path.join(bin, windows ? 'muxus-native.exe' : 'muxus-native'));
-execFileSync('go', ['build', '-trimpath', `-ldflags=-s -w${windows ? ' -H=windowsgui' : ''}`, '-o', launcher, 'launcher/main.go'], { stdio: 'inherit', env: { ...process.env, CGO_ENABLED: '0' } });
+// Go defaults to the host CPU, which can differ from the x64 Windows runtime.
+execFileSync('go', ['build', '-trimpath', `-ldflags=-s -w${windows ? ' -H=windowsgui' : ''}`, '-o', launcher, 'launcher/main.go'], {
+  stdio: 'inherit', env: { ...process.env, CGO_ENABLED: '0', GOARCH: process.arch === 'x64' ? 'amd64' : process.arch },
+});
