@@ -13,7 +13,6 @@ import type { AppWindowLaunch } from '@muxus/shared';
 import { setDebugLogging } from './api/logs.js';
 import { applyInterfaceZoom } from './interface-zoom.js';
 import { buildTheme } from './theme.js';
-import { setTitleBarMode } from './titlebar-overlay.js';
 import { usePrefsStore } from './state/prefs.js';
 import { useUiStore } from './state/ui.js';
 import { AppShell } from './layout/AppShell.js';
@@ -133,10 +132,6 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
           : commandLineLaunch
             ? { kind: 'blank' }
             : undefined;
-  useLayoutEffect(() => {
-    // Keep the desktop app's native window controls in sync with the theme.
-    setTitleBarMode(effectiveMode);
-  }, [effectiveMode]);
   useLayoutEffect(() => {
     applyInterfaceZoom(interfaceZoom);
   }, [interfaceZoom]);

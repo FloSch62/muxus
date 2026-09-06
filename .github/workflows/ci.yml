@@ -37,6 +37,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare desktop SDK
+        run: pnpm --filter @muxus/desktop prepare:sdk
+
       - name: Typecheck
         run: pnpm typecheck
 
@@ -79,18 +82,13 @@ jobs:
         include:
           - name: Linux x64
             os: ubuntu-latest
-            pack_args: "--x64"
-          - name: macOS universal
-            os: macos-latest
-            # Build universal like the release job so both per-arch
-            # @napi-rs/keyring packages are exercised on every change.
-            pack_args: "--universal"
+            arch: x64
+          - name: macOS Apple Silicon
+            os: macos-15
+            arch: arm64
           - name: Windows x64
             os: windows-latest
-            pack_args: "--x64"
-          - name: Windows ARM64
-            os: windows-11-arm
-            pack_args: "--arm64"
+            arch: x64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -104,10 +102,19 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 24.20.0
+          architecture: ${{ matrix.arch }}
           cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Verify Windows build architecture
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          node -e "require('node:assert/strict').equal(process.arch, 'x64', 'Windows builds require x64 Node')"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm exec bun -e "require('node:assert/strict').equal(process.arch, 'x64', 'Windows builds require x64 Bun')"
 
       # Runner login keychains are not reliably unlocked; give the keyring
       # roundtrip test a dedicated unlocked default keychain instead.
@@ -124,41 +131,101 @@ jobs:
         if: runner.os != 'Linux'
         env:
           MUXUS_OS_KEYRING_SMOKE: "1"
-        run: pnpm --filter @muxus/tests exec vitest run unit/server/vault-key-store.os.test.ts
+        run: pnpm --filter @muxus/tests test unit/server/vault-key-store.os.test.ts
 
       - name: Build workspace
         run: pnpm build
 
-      - name: Build unpacked desktop application
-        run: pnpm --filter @muxus/electron pack:dir ${{ matrix.pack_args }}
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.x'
+          cache: false
 
-      - name: Verify Windows ARM64 native binaries
-        if: matrix.name == 'Windows ARM64'
+      - name: Install Linux desktop libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb openbox libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 libsecret-1-0 fontconfig webkit2gtk-driver
+
+      - name: Build unpacked native desktop
+        run: pnpm --filter @muxus/desktop run pack
+
+      - name: Verify packaged Bun runtime
+        env:
+          MUXUS_OS_KEYRING_SMOKE: ${{ runner.os != 'Linux' && '1' || '0' }}
+        run: pnpm smoke
+
+      - name: Store Windows package for ARM testing
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-x64-unpacked
+          path: desktop/build/dev-win-x64/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Native WebKitGTK tests
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum sh -c 'openbox >/tmp/muxus-openbox.log 2>&1 & pnpm test:desktop'
+
+      - name: Upload native diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-report-${{ runner.os }}-${{ runner.arch }}
+          path: |
+            tests/desktop/.results
+            tests/desktop-report
+
+  windows-arm-smoke:
+    name: Runtime (Windows ARM64, x64 emulation)
+    needs: package-smoke
+    runs-on: windows-11-arm
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Install x64 Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          architecture: x64
+          cache: pnpm
+
+      # Exercise the exact x64 package. Hutch's Bun toolchain installation fails
+      # with AccessDenied on ARM; users run the prebuilt app without Hutch.
+      - name: Download Windows x64 package
+        uses: actions/download-artifact@v8
+        with:
+          name: windows-x64-unpacked
+          path: desktop/build/dev-win-x64/
+
+      # Native bindings come from the package; don't rebuild replacements here.
+      - name: Install smoke-test dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Prepare smoke-test tools
         shell: pwsh
         run: |
-          $app = "electron/release/win-arm64-unpacked/resources/app.asar.unpacked/node_modules"
-          $binaries = @(
-            "$app/node-pty/prebuilds/win32-arm64/pty.node"
-            "$app/@serialport/bindings-cpp/build/Release/bindings.node"
-          )
-          foreach ($binary in $binaries) {
-            if (-not (Test-Path -LiteralPath $binary)) {
-              throw "Windows ARM64 native binary not found: $binary"
-            }
-          }
-          if (-not (Get-ChildItem -Path "$app/@napi-rs/keyring-win32-arm64-msvc/*.node")) {
-            throw "Windows ARM64 keyring binary not found"
-          }
+          node node_modules/bun/install.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node desktop/node_modules/esbuild/install.js
 
-      - name: Verify universal keyring binaries
-        if: runner.os == 'macOS'
+      - name: Verify x64 Node and Bun
+        shell: pwsh
         run: |
-          app="electron/release/mac-universal/Muxus.app"
-          if [ ! -d "$app" ]; then
-            echo "Universal app bundle not found; release contents:" >&2
-            ls electron/release >&2
-            exit 1
-          fi
-          for arch in x64 arm64; do
-            ls "$app/Contents/Resources/app.asar.unpacked/node_modules/@napi-rs/keyring-darwin-$arch/"*.node
-          done
+          node -e "require('node:assert/strict').equal(process.arch, 'x64', 'Windows builds require x64 Node')"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./node_modules/bun/bin/bun.exe -e "require('node:assert/strict').equal(process.arch, 'x64', 'Windows builds require x64 Bun')"
+
+      - name: Build shared contracts
+        run: node node_modules/typescript/bin/tsc -p shared/tsconfig.json
+
+      # Invoke Bun directly: pnpm run would auto-install skipped native bindings.
+      - name: Verify packaged Bun runtime under emulation
+        env:
+          MUXUS_OS_KEYRING_SMOKE: "1"
+        run: ./node_modules/bun/bin/bun.exe hack/smoke-runtime.ts

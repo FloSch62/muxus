@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import os from 'node:os';
-import pty from 'node-pty';
+import { StringDecoder } from 'node:string_decoder';
 import type { LocalProfile } from '@muxus/shared';
 import { shellIntegration } from './shell-integration.js';
 
@@ -20,11 +20,16 @@ const HOST_TERMINAL_ENV =
   /^(TERMINFO|TERM_PROGRAM|TERM_PROGRAM_VERSION|VTE_VERSION|WT_SESSION|WT_PROFILE_ID|KONSOLE_VERSION|KONSOLE_DBUS_\w+|ITERM_SESSION_ID|GNOME_TERMINAL_\w+|KITTY_\w+|WEZTERM_\w+|ALACRITTY_\w+)$/;
 
 export interface LocalPty {
-  pty: pty.IPty;
   shell: string;
+  write(data: string): void;
+  resize(cols: number, rows: number): void;
+  kill(): void;
 }
 
-export function spawnLocalPty(profile: LocalProfile, cols: number, rows: number): LocalPty {
+export function spawnLocalPty(
+  profile: LocalProfile, cols: number, rows: number,
+  events: { data(data: string): void; exit(code: number): void },
+): LocalPty {
   const shell = profile.shell?.trim() || defaultShell();
   const integration = shellIntegration(shell, process.env);
   const args = localPtyArgs(profile, integration.args);
@@ -37,14 +42,43 @@ export function spawnLocalPty(profile: LocalProfile, cols: number, rows: number)
   // Muxus renders 24-bit color; advertise it independently of terminfo.
   env.COLORTERM = 'truecolor';
   env.TERM_PROGRAM = 'muxus';
-  const spawned = pty.spawn(shell, args, {
-    name: DEFAULT_TERM,
-    cols,
-    rows,
-    cwd: profile.cwd?.trim() || os.homedir(),
-    env,
+  const decoder = new StringDecoder('utf8');
+  let drained!: () => void;
+  const outputClosed = new Promise<void>((resolve) => { drained = resolve; });
+  // Inline terminal options make Bun establish the child's controlling TTY.
+  // Passing a separately created Terminal only attaches its file descriptors
+  // and leaves POSIX shells without job control.
+  const child = Bun.spawn([shell, ...args], {
+    terminal: {
+      name: DEFAULT_TERM, cols, rows,
+      data: (_, bytes) => { const text = decoder.write(Buffer.from(bytes)); if (text) events.data(text); },
+      exit: () => drained(),
+    },
+    cwd: profile.cwd?.trim() || os.homedir(), env,
   });
-  return { pty: spawned, shell };
+  const terminal = child.terminal!;
+  void child.exited.then(async (code) => {
+    // Drain the final output. A background descendant may keep the slave open
+    // after the shell exits, so it must not hold the session open indefinitely.
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([outputClosed, new Promise<void>((resolve) => { timeout = setTimeout(resolve, 200); })]);
+    clearTimeout(timeout);
+    terminal.close();
+    const tail = decoder.end();
+    if (tail) events.data(tail);
+    events.exit(code);
+  });
+  return {
+    shell,
+    write: (data) => { if (!terminal.closed) terminal.write(data); },
+    resize: (nextCols, nextRows) => { if (!terminal.closed) terminal.resize(nextCols, nextRows); },
+    kill: () => {
+      // Kill before closing ConPTY: older Windows versions otherwise block
+      // while conhost waits for the attached process to finish.
+      if (child.exitCode === null) child.kill(process.platform === 'win32' ? 'SIGKILL' : 'SIGHUP');
+      terminal.close();
+    },
+  };
 }
 
 export function localPtyArgs(

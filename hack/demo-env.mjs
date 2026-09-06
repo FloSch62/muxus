@@ -1,7 +1,7 @@
 // A self-contained demo environment for the documentation screenshots.
 //
-//   node hack/demo-env.mjs          # start it and print the URL, then wait
-//   node hack/capture.mjs           # start it, drive it, write the screenshots
+//   pnpm exec bun hack/demo-env.mjs # start it and print the URL, then wait
+//   pnpm exec bun hack/capture.mjs  # start it, drive it, write the screenshots
 //
 // Nothing here touches your real machine: the server runs with HOME pointing at
 // a throwaway directory, so the ssh config, known_hosts, key scan and the local
@@ -19,7 +19,6 @@ import { chartPng, kittySequence } from './demo-image.mjs';
 
 const require = createRequire(path.join(process.cwd(), 'server/'));
 const ssh2 = require('ssh2');
-const pty = require('node-pty');
 
 const { Server, utils } = ssh2;
 const { STATUS_CODE: STATUS, OPEN_MODE } = utils.sftp;
@@ -502,24 +501,22 @@ function startSshd(host, keys, hostMap) {
         });
         session.on('window-change', (accept, _reject, info) => {
           size = { cols: info.cols || size.cols, rows: info.rows || size.rows };
-          shell?.resize(size.cols, size.rows);
+          shell?.terminal.resize(size.cols, size.rows);
           accept?.();
         });
         /** Attach a real pty to a channel — both `shell` and `exec` need one. */
         const attachPty = (stream, args) => {
-          shell = pty.spawn('/usr/bin/bash', args, {
-            name: 'xterm-256color',
-            cols: size.cols,
-            rows: size.rows,
+          shell = Bun.spawn(['/usr/bin/bash', ...args], {
+            terminal: {
+              name: 'xterm-256color', cols: size.cols, rows: size.rows,
+              data: (_, data) => { if (stream.writable) stream.write(data); },
+              exit: () => stream.end(),
+            },
             cwd: root,
             env: shellEnv,
           });
-          shell.onData((data) => {
-            if (stream.writable) stream.write(data);
-          });
-          shell.onExit(() => stream.end());
-          stream.on('data', (data) => shell.write(data.toString('utf8')));
-          stream.on('close', () => shell.kill());
+          stream.on('data', (data) => shell.terminal.write(data));
+          stream.on('close', () => { shell.kill(); shell.terminal.close(); });
         };
 
         session.on('shell', (accept) => {
@@ -632,6 +629,7 @@ export async function startDemoEnv() {
         ...process.env,
         MUXUS_DEMO_HOSTMAP: JSON.stringify(hostMap),
         HOME,
+        MUXUS_SSH_CONFIG: path.join(HOME, '.ssh', 'config'),
         XDG_DATA_HOME: path.join(HOME, '.local', 'share'),
         XDG_CONFIG_HOME: path.join(HOME, '.config'),
         ZDOTDIR: HOME,

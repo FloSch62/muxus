@@ -1,0 +1,51 @@
+{
+  "name": "@muxus/desktop",
+  "version": "0.8.0",
+  "private": true,
+  "description": "Muxus desktop app",
+  "license": "MIT",
+  "homepage": "https://github.com/FloSch62/muxus",
+  "author": {
+    "name": "Florian Schwarz",
+    "email": "schwarz.flori.88@gmail.com"
+  },
+  "type": "module",
+  "scripts": {
+    "prepare:sdk": "electrobun prepare",
+    "build": "electrobun prepare && node scripts/render-icon.mjs && node scripts/build-preload.mjs && node scripts/build-main.mjs && tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "start": "electrobun dev",
+    "pack": "electrobun build",
+    "dist": "node scripts/dist.mjs",
+    "deb": "node scripts/package-deb.mjs"
+  },
+  "devDependencies": {
+    "@muxus/server": "workspace:*",
+    "@muxus/shared": "workspace:*",
+    "@types/node": "^24.13.3",
+    "esbuild": "^0.28.2",
+    "sharp": "^0.35.4",
+    "typescript": "^7.0.2",
+    "electrobun": "2.0.1",
+    "@types/bun": "^1.4.0"
+  },
+  "dependencies": {
+    "@muxus/shared": "workspace:*",
+    "@napi-rs/keyring": "^1.3.0",
+    "@serialport/bindings-cpp": "13.0.1",
+    "serialport": "^13.0.0"
+  },
+  "optionalDependencies": {
+    "@napi-rs/keyring-darwin-arm64": "1.3.0",
+    "@napi-rs/keyring-darwin-x64": "1.3.0",
+    "@napi-rs/keyring-linux-arm-gnueabihf": "1.3.0",
+    "@napi-rs/keyring-linux-arm64-gnu": "1.3.0",
+    "@napi-rs/keyring-linux-arm64-musl": "1.3.0",
+    "@napi-rs/keyring-linux-riscv64-gnu": "1.3.0",
+    "@napi-rs/keyring-linux-x64-gnu": "1.3.0",
+    "@napi-rs/keyring-linux-x64-musl": "1.3.0",
+    "@napi-rs/keyring-win32-arm64-msvc": "1.3.0",
+    "@napi-rs/keyring-win32-ia32-msvc": "1.3.0",
+    "@napi-rs/keyring-win32-x64-msvc": "1.3.0"
+  }
+}

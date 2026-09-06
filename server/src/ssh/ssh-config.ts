@@ -30,7 +30,7 @@ const WILDCARD_RE = /[*?]/;
 
 /** ~/.ssh/config — the OpenSSH per-user config location on macOS, Linux and Windows. */
 export function defaultSshConfigPath(): string {
-  return path.join(os.homedir(), '.ssh', 'config');
+  return process.env.MUXUS_SSH_CONFIG ? path.resolve(process.env.MUXUS_SSH_CONFIG) : path.join(os.homedir(), '.ssh', 'config');
 }
 
 export function sshDir(): string {

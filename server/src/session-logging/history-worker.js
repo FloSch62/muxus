@@ -16,7 +16,7 @@ import {
   writeSync,
 } from 'node:fs';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { Database } from 'bun:sqlite';
 import { parentPort, workerData } from 'node:worker_threads';
 import { zstdCompressSync, zstdDecompressSync } from 'node:zlib';
 
@@ -42,7 +42,7 @@ let closed = false;
 
 mkdirSync(sessionsRoot, { recursive: true, mode: 0o700 });
 mkdirSync(trashRoot, { recursive: true, mode: 0o700 });
-const db = new DatabaseSync(databaseFile);
+const db = new Database(databaseFile);
 try {
   chmodSync(databaseFile, 0o600);
 } catch {

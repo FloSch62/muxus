@@ -31,6 +31,7 @@ function isSerialBusyError(error: unknown): boolean {
 export class SerialTransport extends EventEmitter implements TerminalTransport {
   private ended = false;
   private closed = false;
+  private closeError: Error | undefined;
   private pendingError: Error | undefined;
   private readonly pendingData: Buffer[] = [];
 
@@ -44,9 +45,10 @@ export class SerialTransport extends EventEmitter implements TerminalTransport {
       if (this.listenerCount('transport-error') > 0) this.emit('transport-error', error);
       else this.pendingError = error;
     });
-    port.on('close', () => {
+    port.on('close', (error?: Error | null) => {
       this.closed = true;
-      this.emit('transport-close');
+      this.closeError = error ?? undefined;
+      this.emit('transport-close', this.closeError);
     });
   }
 
@@ -109,9 +111,9 @@ export class SerialTransport extends EventEmitter implements TerminalTransport {
     return () => this.off('data', listener);
   }
 
-  onClose(listener: () => void): () => void {
+  onClose(listener: (error?: Error) => void): () => void {
     this.on('transport-close', listener);
-    if (this.closed) queueMicrotask(listener);
+    if (this.closed) queueMicrotask(() => listener(this.closeError));
     return () => this.off('transport-close', listener);
   }
 

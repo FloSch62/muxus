@@ -24,7 +24,7 @@ declare module '@mui/material/styles' {
  * read the same token instead of repeating the number.
  */
 export const layout = {
-  /** TopBar toolbar height; the Electron titlebar overlay uses the same value. */
+  /** Default height of the draggable desktop header. */
   topBarHeight: 52,
   /** Minimal draggable titlebar retained while focus mode hides application chrome. */
   focusTopBarHeight: 32,

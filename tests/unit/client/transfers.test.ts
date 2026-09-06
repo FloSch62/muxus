@@ -2,11 +2,6 @@ import type {} from '../../../client/src/desktop.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { downloadBlobWithProgress } from '../../../client/src/api/transfers.js';
 
-declare global {
-  interface ImportMeta {
-    readonly env: { readonly DEV: boolean };
-  }
-}
 
 afterEach(() => {
   vi.unstubAllGlobals();

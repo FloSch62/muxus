@@ -2,8 +2,8 @@ node_modules/
 dist/
 *.tsbuildinfo
 
-electron/build/
-electron/release/
+desktop/build/
+desktop/release/
 .env
 .DS_Store
 promo/
@@ -11,3 +11,13 @@ promo/
 # Zensical docs build output & cache
 site/
 .cache/
+
+.hutch/
+desktop/artifacts/
+desktop/assets/
+
+tests/desktop/.results/
+tests/desktop-report/
+tests/coverage/
+
+.cottontail-tmp/

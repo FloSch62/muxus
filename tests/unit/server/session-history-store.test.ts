@@ -8,7 +8,7 @@ import {
 import { randomBytes } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { Database } from 'bun:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { SessionHistorySettings } from '@muxus/shared';
 import { SessionHistoryStore } from '../../../server/src/session-logging/history-store.js';
@@ -254,7 +254,7 @@ describe('hybrid session history store', () => {
     await store.close();
     store = undefined;
 
-    const database = new DatabaseSync(path.join(root, 'session-history.sqlite'));
+    const database = new Database(path.join(root, 'session-history.sqlite'));
     database.prepare(`
       INSERT INTO session_logs(
         id, profile_key, title, kind, host, started_at, status,

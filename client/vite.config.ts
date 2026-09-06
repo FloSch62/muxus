@@ -2,7 +2,18 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), {
+    name: 'desktop-bootstrap',
+    // Gate execution after bundling so the SPA retains its normal entry graph
+    // and lazy feature chunks. A dynamic source entry fragments shared code.
+    transformIndexHtml: {
+      order: 'post',
+      handler(html, context) {
+        const entry = context.chunk ? `/${context.chunk.fileName}` : '/src/main.tsx';
+        return html.replace(`src="${entry}"`, `src="/desktop-bootstrap.js" data-muxus-entry="${entry}"`);
+      },
+    },
+  }],
   server: {
     port: 5174,
     proxy: {

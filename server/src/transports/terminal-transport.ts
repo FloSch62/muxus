@@ -9,6 +9,6 @@ export interface TerminalTransport {
   resume(): void;
   close(): void;
   onData(listener: (data: Buffer) => void): () => void;
-  onClose(listener: () => void): () => void;
+  onClose(listener: (error?: Error) => void): () => void;
   onError(listener: (error: Error) => void): () => void;
 }

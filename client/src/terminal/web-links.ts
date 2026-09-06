@@ -4,7 +4,7 @@ import { terminalLinkActivationMatches } from './file-link-activation.js';
 const WEB_PROTOCOLS = new Set(['http:', 'https:']);
 
 /**
- * Give Electron the complete URL in the initial window-open request. The
+ * Give Electrobun the complete URL in the initial window-open request. The
  * desktop main process intercepts that request and opens it in the system
  * browser; WebLinksAddon's default two-step about:blank flow is denied before
  * it can assign the real URL.

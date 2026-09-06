@@ -77,7 +77,7 @@ export function terminalFontIsAvailable(
   return installed.some((candidate) => normalizedFamily(candidate) === selected);
 }
 
-/** Read the host font catalog through Electron's isolated preload bridge. */
+/** Read the host font catalog through Electrobun's native preload bridge. */
 export function readInstalledTerminalFontFamilies(): Promise<string[] | undefined> {
   return window.muxusDesktop?.listLocalFontFamilies?.() ?? Promise.resolve(undefined);
 }

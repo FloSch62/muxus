@@ -4,7 +4,7 @@ import { resolveConfig, type ServerConfig } from './config.js';
 import { buildApp } from './app.js';
 import { serverUrls } from './auth.js';
 
-// The Electron shell logs its own milestones (boot, crashes) into the same
+// The Electrobun shell logs its own milestones (boot, crashes) into the same
 // in-process buffer the /api/logs viewer reads.
 export { appendAppLog } from './logging/log-buffer.js';
 export { SystemVaultKeyStore } from './security/vault-key-store.js';
@@ -20,7 +20,7 @@ export interface RunningServer {
   close(): Promise<void>;
 }
 
-/** Start the server programmatically (used by the CLI entry and the Electron shell). */
+/** Start the server programmatically (used by the CLI entry and the Electrobun shell). */
 export async function startServer(overrides: Partial<ServerConfig> = {}): Promise<RunningServer> {
   const config = resolveConfig(overrides);
   const { app } = await buildApp(config);

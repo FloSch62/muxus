@@ -52,7 +52,7 @@ class AppLogBuffer {
 }
 
 /**
- * One buffer per process. The Electron shell bundles the server into its main
+ * One buffer per process. The Electrobun shell bundles the server into its main
  * process, so shell milestones and backend logs land in the same timeline the
  * log viewer and export read.
  */

@@ -48,7 +48,7 @@ export interface AppContext {
   vault: PasswordVault;
 }
 
-// Not named __dirname: the Electron esbuild bundle defines that identifier
+// Not named __dirname: the Electrobun esbuild bundle defines that identifier
 // in its banner for CJS interop, and banner names can't be renamed around.
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 

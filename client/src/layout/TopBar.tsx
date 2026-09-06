@@ -43,7 +43,8 @@ import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import { useForwards } from '../api/queries.js';
 import { copyToClipboard } from '../clipboard.js';
 import { layout } from '../theme.js';
-import { setTitleBarHeight } from '../titlebar-overlay.js';
+import { WindowControls } from './WindowControls.js';
+import { useNativeTitlebar } from './native-titlebar.js';
 import { useChordLabel } from '../keymap/hints.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { showToast } from '../state/toast.js';
@@ -109,6 +110,7 @@ export const TopBar = memo(function TopBar() {
   const handle = () => terminalHandle(activeTab?.id);
   const closeMenu = () => setTerminalMenu(null);
   const toggleFocusMode = () => setFocusMode(!focusMode);
+  const titlebarInset = useNativeTitlebar(focusMode ? layout.focusTopBarHeight : layout.topBarHeight);
   const currentAppearance =
     APPEARANCE_OPTIONS.find((option) => option.mode === mode) ?? SYSTEM_APPEARANCE;
 
@@ -119,17 +121,12 @@ export const TopBar = memo(function TopBar() {
       setTerminalMenu(null);
       setAppearanceMenu(null);
     }
-    setTitleBarHeight(focusMode ? layout.focusTopBarHeight : layout.topBarHeight);
   }, [focusMode]);
 
   return (
     <AppBar position="static" color="transparent" sx={{ borderBottom: 1, borderColor: 'divider' }}>
-      {/* In the desktop app the window is frameless and this toolbar doubles as
-          the titlebar: it is a drag region, and the env(titlebar-area-*) vars
-          reserve space for the native window controls (traffic lights on the
-          left on macOS, min/max/close on the right on Windows/Linux). In a
-          regular browser the env() fallbacks make all of this a no-op. */}
       <Toolbar
+        className="electrobun-webkit-app-region-drag"
         variant="dense"
         sx={{
           gap: 1.5,
@@ -138,8 +135,8 @@ export const TopBar = memo(function TopBar() {
           // cannot make the compact focus-mode titlebar grow again.
           '&&': {
             minHeight: focusMode ? layout.focusTopBarHeight : layout.topBarHeight,
-            pl: 'calc(env(titlebar-area-x, 0px) + 16px)',
-            pr: 'calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 16px)',
+            pl: titlebarInset,
+            pr: '16px',
           },
           '& button, & input, & a, & [role="button"]': {
             WebkitAppRegion: 'no-drag',
@@ -283,6 +280,7 @@ export const TopBar = memo(function TopBar() {
             )}
           </IconButton>
         </Tooltip>
+        <WindowControls />
       </Toolbar>
 
       <Menu

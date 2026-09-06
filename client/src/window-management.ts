@@ -126,7 +126,7 @@ export function decodeAppWindowLaunch(value: string): AppWindowLaunch | undefine
   }
 }
 
-/** Consume the one-shot launch payload supplied by Electron or a browser URL. */
+/** Consume the one-shot launch payload supplied by Electrobun or a browser URL. */
 export function consumeAppWindowLaunch(): AppWindowLaunch | undefined {
   if (window.muxusDesktop?.windowLaunch) return window.muxusDesktop.windowLaunch;
 

@@ -5,17 +5,17 @@ icon: lucide/layers
 # Architecture
 
 Muxus is a pnpm workspace of four TypeScript/ESM packages plus a test package: a Fastify
-server on loopback, a React client, and an Electron shell that embeds both.
+server on loopback, a React client, and an Electrobun shell that embeds both.
 
 ```mermaid
 flowchart LR
-  subgraph Desktop["Electron shell"]
+  subgraph Desktop["Electrobun + Bun"]
     Client["client/: React 19 + MUI<br/>pane canvas · keymap · xterm.js"]
     Server["server/: Fastify on 127.0.0.1<br/>ssh_config engine · leases · SFTP · forwards"]
   end
   Client <-->|"REST + /ws/terminal"| Server
   Server -->|ssh2| Hosts["Your hosts"]
-  Server -->|node-pty| Local["Local shells"]
+  Server -->|Bun.Terminal| Local["Local shells"]
   Server -->|serialport| Serial["COM / TTY"]
   Server --> DB[("SQLite<br/>metadata · workspaces")]
   Server --> History[("Session history<br/>zstd segments + FTS5")]
@@ -27,9 +27,9 @@ flowchart LR
 | Package | What it is |
 | --- | --- |
 | `shared/` | REST DTOs and the zod-validated WebSocket protocol. On `/ws/terminal`, **binary frames are bytes** and **text frames are control messages**, with no framing layered on top of either. |
-| `server/` | Fastify bound to `127.0.0.1` with a per-run bearer token; a versioned SQLite database; the line-preserving `ssh_config` parser/resolver/editor; leased `ssh2` transports with ProxyJump and OpenSSH-order authentication; `known_hosts` verification; `node-pty` local shells; Telnet negotiation; cross-platform `serialport` access; SFTP routes and the forward manager; the session-history worker. |
+| `server/` | Fastify bound to `127.0.0.1` with a per-run bearer token; a versioned `bun:sqlite` database; the line-preserving `ssh_config` parser/resolver/editor; leased `ssh2` transports with ProxyJump and OpenSSH-order authentication; `known_hosts` verification; `Bun.Terminal` local shells; Telnet negotiation; cross-platform `serialport` access; SFTP routes and the forward manager; the session-history worker. |
 | `client/` | React 19 + MUI. A **flat pane canvas over a split tree**, so layout changes never remount a session; one declarative keymap dispatched ahead of the terminal; xterm.js with the Image Addon and native kitty keyboard support. |
-| `electron/` | The hardened desktop shell: embeds the server in-process, bridges bootstrap credentials through an isolated preload, blocks unexpected navigation. |
+| `desktop/` | The hardened desktop shell: embeds the server in-process, bridges bootstrap credentials through a typed preload RPC bridge, blocks unexpected navigation. |
 | `tests/` | vitest units for the security and auth boundaries, persistence and migrations, connection leases, workspace and pane behaviour, SFTP overwrite policy, paste safety and the terminal protocols. |
 
 ## Design decisions
@@ -75,7 +75,7 @@ that is not applicable returns "not handled", and the key falls through to the s
 ## Build
 
 ```bash
-pnpm build      # shared → server → client → electron
+pnpm build      # shared → server → client → desktop
 pnpm test       # vitest
 pnpm lint       # oxlint
 pnpm typecheck

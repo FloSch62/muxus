@@ -24,7 +24,7 @@ function serverVersion(): string {
     const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version?: string };
     return pkg.version ?? '0.0.0';
   } catch {
-    // Bundled main process (Electron): package.json is not on disk next to us.
+    // Bundled main process (Electrobun): package.json is not on disk next to us.
     return process.env.MUXUS_VERSION ?? '0.0.0';
   }
 }

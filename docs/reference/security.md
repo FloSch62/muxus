@@ -26,7 +26,7 @@ and sends nothing elsewhere. This page states what that means in detail.
 | Client | How it gets the token |
 | --- | --- |
 | Browser | In the URL **fragment**, which browsers never send to servers; the client removes it from the address bar immediately |
-| Desktop app | An isolated **preload bridge**, so the renderer never sees a URL containing it |
+| Desktop app | A native **preload RPC bridge**, so the renderer never sees a URL containing it |
 | Terminal sockets | A **WebSocket subprotocol**, not a query parameter |
 
 `?token=…` is not accepted for terminal sockets, because query strings are recorded in logs
@@ -150,9 +150,11 @@ which on Linux means group membership.
 
 ## The desktop shell
 
-The Electron build embeds the server in-process, uses context isolation with a narrow
-preload bridge, and blocks unexpected navigation. There is no remote content: everything
-the window loads is served from the local server.
+The Electrobun build embeds the Bun server in-process. Its system webview receives
+credentials through a narrow, typed preload RPC bridge rather than a URL. The privileged
+bridge is installed only for the local application origin, navigation is restricted to
+that origin, and external HTTP, HTTPS and mail links open through the operating system.
+The webview has no direct access to Bun or Node APIs.
 
 ## What Muxus does not do
 

@@ -1,16 +1,14 @@
 .PHONY: all deb win dmg clean
 
 all:
-	pnpm build && pnpm --filter @muxus/electron dist
+	pnpm build && pnpm --filter @muxus/desktop dist
 
-deb:
-	pnpm build && pnpm --filter @muxus/electron exec electron-builder --linux deb --x64
+deb: all
+	pnpm --filter @muxus/desktop deb
 
-win:
-	pnpm build && pnpm --filter @muxus/electron exec electron-builder --win --x64 --arm64
+win: all
 
-dmg:
-	pnpm build && pnpm --filter @muxus/electron exec electron-builder --mac dmg
+dmg: all
 
 clean:
-	rm -rf electron/release
+	rm -rf desktop/build desktop/artifacts

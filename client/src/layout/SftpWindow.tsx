@@ -8,6 +8,8 @@ import type { AppWindowLaunch } from '@muxus/shared';
 import { wsProtocols, wsUrl } from '../api/http.js';
 import { requestCloseRemoteEditor } from '../editor/remote-editor-registry.js';
 import { loadRemoteEditorWorkspace, loadSftpPanel } from '../lazy-features.js';
+import { WindowControls } from './WindowControls.js';
+import { useNativeTitlebar } from './native-titlebar.js';
 import { layout } from '../theme.js';
 
 const SftpPanel = lazy(() =>
@@ -21,6 +23,7 @@ type SftpLaunch = Extract<AppWindowLaunch, { kind: 'sftp' }>;
 
 /** Standalone file-browser window attached to the source tab's transport. */
 export function SftpWindow({ launch }: { launch: SftpLaunch }) {
+  const titlebarInset = useNativeTitlebar(layout.topBarHeight);
   const editorId = useRef(`sftp-window-${launch.connId}`);
   const [editorPaths, setEditorPaths] = useState<string[]>([]);
   const [activePath, setActivePath] = useState<string>();
@@ -66,8 +69,8 @@ export function SftpWindow({ launch }: { launch: SftpLaunch }) {
             minHeight: layout.topBarHeight,
             WebkitAppRegion: 'drag',
             '&&': {
-              pl: 'calc(env(titlebar-area-x, 0px) + 16px)',
-              pr: 'calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 16px)',
+              pl: titlebarInset,
+              pr: '16px',
             },
           }}
         >
@@ -80,6 +83,8 @@ export function SftpWindow({ launch }: { launch: SftpLaunch }) {
               SFTP
             </Typography>
           </Stack>
+          <Box sx={{ flex: 1 }} />
+          <WindowControls />
         </Toolbar>
       </AppBar>
       <Box sx={{ flex: 1, display: 'flex', minHeight: 0 }}>

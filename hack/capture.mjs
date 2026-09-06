@@ -1,8 +1,8 @@
 // Screenshot capture for the Muxus docs.
 //
-//   node hack/capture.mjs               # light theme, every shot
-//   THEME=dark node hack/capture.mjs    # dark variants, written as <name>-dark.png
-//   node hack/capture.mjs sftp          # only shots whose name contains "sftp"
+//   pnpm exec bun hack/capture.mjs               # light theme, every shot
+//   THEME=dark pnpm exec bun hack/capture.mjs    # dark variants, written as <name>-dark.png
+//   pnpm exec bun hack/capture.mjs sftp          # only shots whose name contains "sftp"
 //
 // It boots the sandbox from hack/demo-env.mjs first, so every host, folder,
 // tunnel and file on screen is invented. Set CHROME to override the browser.
