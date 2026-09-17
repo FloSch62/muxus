@@ -2,6 +2,11 @@ name: Package installers
 
 on:
   workflow_dispatch:
+    inputs:
+      sign_macos:
+        description: Sign and notarize the macOS package using the release credentials
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -36,15 +41,12 @@ jobs:
 
           - name: macOS universal
             os: macos-latest
-            build_args: >-
-              --mac dmg --universal
-              -c.mac.x64ArchFiles="{**/prebuilds/darwin*/**,**/node_modules/@napi-rs/keyring-darwin-*/**}"
-              -c.mac.singleArchFiles="**/node_modules/@napi-rs/keyring-darwin-*{,/**}"
+            build_args: --mac dmg --universal
             artifact_name: macos-dmg-universal
             artifact_path: electron/release/*.dmg
 
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 90
 
     steps:
       - name: Check out source
@@ -66,9 +68,18 @@ jobs:
         run: pnpm build
 
       - name: Build installer
-        run: >-
-          pnpm --filter @muxus/electron exec electron-builder
-          ${{ matrix.build_args }} --publish never
+        run: pnpm --filter @muxus/electron dist ${{ matrix.build_args }}
+        env:
+          MUXUS_RELEASE: ${{ inputs.sign_macos && '1' || '' }}
+          CSC_LINK: ${{ inputs.sign_macos && runner.os == 'macOS' && secrets.APPLE_CERTIFICATE_P12_BASE64 || '' }}
+          CSC_KEY_PASSWORD: ${{ inputs.sign_macos && runner.os == 'macOS' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_ID: schwarz.flori.88@googlemail.com
+          APPLE_TEAM_ID: DJY795VD98
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ inputs.sign_macos && runner.os == 'macOS' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+
+      - name: Verify macOS signatures and notarization
+        if: runner.os == 'macOS' && inputs.sign_macos
+        run: node hack/verify-macos-artifacts.mjs
 
       - name: Verify universal keyring binaries
         if: runner.os == 'macOS'

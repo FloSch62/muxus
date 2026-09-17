@@ -27,6 +27,8 @@ jobs:
     name: Verify release
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      store_eligible: ${{ steps.release.outputs.store_eligible }}
     steps:
       - name: Check out release tag
         uses: actions/checkout@v7
@@ -45,9 +47,16 @@ jobs:
           console.log('Building Muxus ' + root.version);"
 
       - name: Verify GitHub release exists
+        id: release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY"
+        run: |
+          is_preview=$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '.isDraft or .isPrerelease')
+          if [ "$is_preview" = false ]; then
+            echo "store_eligible=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "store_eligible=false" >> "$GITHUB_OUTPUT"
+          fi
 
   build:
     name: Build ${{ matrix.name }}
@@ -75,13 +84,11 @@ jobs:
             artifact_path: electron/release/*.exe
           - name: macOS universal
             os: macos-latest
-            # These overrides also backfill tags created before the universal
-            # native-module rules were added to electron-builder.yml.
-            build_args: --mac dmg --universal -c.mac.x64ArchFiles="{**/prebuilds/darwin*/**,**/node_modules/@napi-rs/keyring-darwin-*/**}" -c.mac.singleArchFiles="**/node_modules/@napi-rs/keyring-darwin-*{,/**}"
+            build_args: --mac dmg --universal
             artifact_name: macos-universal
             artifact_path: electron/release/*.dmg
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - name: Check out release tag
         uses: actions/checkout@v7
@@ -104,7 +111,57 @@ jobs:
         run: pnpm build
 
       - name: Build installers
-        run: pnpm --filter @muxus/electron exec electron-builder ${{ matrix.build_args }} --publish never
+        run: pnpm --filter @muxus/electron dist ${{ matrix.build_args }}
+        env:
+          MUXUS_RELEASE: '1'
+          CSC_LINK: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE_P12_BASE64 || '' }}
+          CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_ID: schwarz.flori.88@googlemail.com
+          APPLE_TEAM_ID: DJY795VD98
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          WINDOWS_SIGNING: ${{ vars.WINDOWS_SIGNING || 'unsigned' }}
+          WINDOWS_PUBLISHER_NAME: ${{ vars.WINDOWS_PUBLISHER_NAME }}
+          WIN_CSC_LINK: ${{ runner.os == 'Windows' && secrets.WINDOWS_CERTIFICATE_P12_BASE64 || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ runner.os == 'Windows' && secrets.WINDOWS_CERTIFICATE_PASSWORD || '' }}
+          WINDOWS_CERTIFICATE_SHA1: ${{ vars.WINDOWS_CERTIFICATE_SHA1 }}
+          WINDOWS_SIGN_SCRIPT: ${{ vars.WINDOWS_SIGN_SCRIPT }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+          AZURE_TENANT_ID: ${{ runner.os == 'Windows' && secrets.AZURE_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ runner.os == 'Windows' && secrets.AZURE_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ runner.os == 'Windows' && secrets.AZURE_CLIENT_SECRET || '' }}
+
+      - name: Verify macOS signatures and notarization
+        if: runner.os == 'macOS'
+        run: node hack/verify-macos-artifacts.mjs
+
+      - name: Verify Windows signatures
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./hack/verify-windows-signatures.ps1
+        env:
+          WINDOWS_SIGNING: ${{ vars.WINDOWS_SIGNING || 'unsigned' }}
+          WINDOWS_PUBLISHER_NAME: ${{ vars.WINDOWS_PUBLISHER_NAME }}
+
+      - name: Build Microsoft Store submission
+        if: matrix.artifact_name == 'windows-x64' && vars.MICROSOFT_STORE_IDENTITY_NAME != ''
+        run: pnpm --filter @muxus/electron dist:store
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          MICROSOFT_STORE_PRODUCT_ID: ${{ vars.MICROSOFT_STORE_PRODUCT_ID }}
+          MICROSOFT_STORE_IDENTITY_NAME: ${{ vars.MICROSOFT_STORE_IDENTITY_NAME }}
+          MICROSOFT_STORE_PUBLISHER: ${{ vars.MICROSOFT_STORE_PUBLISHER }}
+          MICROSOFT_STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.MICROSOFT_STORE_PUBLISHER_DISPLAY_NAME }}
+
+      - name: Store Microsoft Store submission
+        if: matrix.artifact_name == 'windows-x64' && vars.MICROSOFT_STORE_IDENTITY_NAME != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: muxus-windows-store
+          path: electron/release-store/*.appx
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Verify universal keyring binaries
         if: runner.os == 'macOS'
@@ -203,6 +260,8 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           path: release-assets
+          # Exclude the unsigned muxus-windows-store submission artifact.
+          pattern: '{linux-*,windows-*,macos-*}'
           merge-multiple: true
 
       - name: Upload installers to GitHub release
@@ -216,3 +275,52 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh workflow run docs.yml --ref main --repo "$GITHUB_REPOSITORY"
+
+  publish-store:
+    name: Submit Microsoft Store update
+    needs: [verify, publish]
+    if: >-
+      github.repository == 'FloSch62/muxus' &&
+      vars.MICROSOFT_STORE_PUBLISH == 'true' &&
+      vars.MICROSOFT_STORE_IDENTITY_NAME != '' &&
+      needs.verify.outputs.store_eligible == 'true' &&
+      !contains(github.event.release.tag_name || inputs.tag, '-')
+    runs-on: windows-latest
+    timeout-minutes: 30
+    concurrency:
+      group: microsoft-store-muxus
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: muxus-windows-store
+          path: store-package
+      - uses: microsoft/microsoft-store-apppublisher@v1.1
+        with:
+          version: v0.4.2
+      - name: Configure Microsoft Store credentials
+        shell: pwsh
+        env:
+          AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          AZURE_AD_APPLICATION_CLIENT_ID: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
+          AZURE_AD_APPLICATION_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+          SELLER_ID: ${{ secrets.SELLER_ID }}
+        run: |
+          foreach ($name in @('AZURE_AD_TENANT_ID', 'AZURE_AD_APPLICATION_CLIENT_ID', 'AZURE_AD_APPLICATION_SECRET', 'SELLER_ID')) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "Missing GitHub Actions secret: $name"
+            }
+          }
+          msstore reconfigure --tenantId "$env:AZURE_AD_TENANT_ID" --sellerId "$env:SELLER_ID" --clientId "$env:AZURE_AD_APPLICATION_CLIENT_ID" --clientSecret "$env:AZURE_AD_APPLICATION_SECRET"
+          if ($LASTEXITCODE -ne 0) { throw 'Microsoft Store authentication configuration failed.' }
+      - name: Submit Store update for certification
+        run: node hack/publish-microsoft-store.mjs store-package
+        env:
+          MICROSOFT_STORE_PRODUCT_ID: ${{ vars.MICROSOFT_STORE_PRODUCT_ID }}
+          MICROSOFT_STORE_IDENTITY_NAME: ${{ vars.MICROSOFT_STORE_IDENTITY_NAME }}

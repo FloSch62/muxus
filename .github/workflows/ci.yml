@@ -46,6 +46,9 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Test release submission safeguards
+        run: pnpm test:release
+
       - name: Check bundle budgets
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -131,6 +134,18 @@ jobs:
 
       - name: Build unpacked desktop application
         run: pnpm --filter @muxus/electron pack:dir ${{ matrix.pack_args }}
+
+      # CI exercises AppX without credentials or a reserved product. These
+      # placeholder packages are never uploaded or submitted to the Store.
+      - name: Smoke-test Microsoft Store packaging
+        if: matrix.name == 'Windows x64'
+        run: pnpm --filter @muxus/electron dist:store
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          MICROSOFT_STORE_PRODUCT_ID: 9MUXUS000000
+          MICROSOFT_STORE_IDENTITY_NAME: Muxus.CI
+          MICROSOFT_STORE_PUBLISHER: CN=Muxus CI
+          MICROSOFT_STORE_PUBLISHER_DISPLAY_NAME: Muxus CI
 
       - name: Verify Windows ARM64 native binaries
         if: matrix.name == 'Windows ARM64'

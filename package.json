@@ -15,6 +15,8 @@
     "start": "node server/dist/index.js",
     "electron": "pnpm build && pnpm --filter @muxus/electron start",
     "dist": "pnpm build && pnpm --filter @muxus/electron dist",
+    "dist:store": "pnpm build && pnpm --filter @muxus/electron dist:store",
+    "test:release": "node --test hack/publish-microsoft-store.test.mjs",
     "typecheck": "pnpm --filter @muxus/shared --filter @muxus/server build && pnpm -r typecheck",
     "test": "pnpm --filter @muxus/tests test",
     "test:watch": "pnpm --filter @muxus/tests test:watch",
