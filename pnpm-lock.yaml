@@ -265,8 +265,8 @@ importers:
         version: 7.0.2
     optionalDependencies:
       '@napi-rs/keyring-darwin-arm64':
-        specifier: 1.3.0
-        version: 1.3.0
+        specifier: 2.1.0
+        version: 2.1.0
       '@napi-rs/keyring-darwin-x64':
         specifier: 1.3.0
         version: 1.3.0
@@ -1040,6 +1040,12 @@ packages:
 
   '@napi-rs/keyring-darwin-arm64@1.3.0':
     resolution: {integrity: sha512-pl76hJvdYUBn6I24bXiOBMA9nbDapo3I5B+f3OorjDU4dUMSypXeKbOVehJe8fhgTiH24flMyTS3aAIy43xegQ==}
+    engines: {node: '>= 10'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@napi-rs/keyring-darwin-arm64@2.1.0':
+    resolution: {integrity: sha512-j6ATTOhmPW+N5EKwi8Yzn6P4Bz/uqnxzyYvqOL73/dgzDSYG5pS5eprqpVmOLse68WUTf79ZMqz97HnfvirJ9g==}
     engines: {node: '>= 10'}
     cpu: [arm64]
     os: [darwin]
@@ -4173,6 +4179,9 @@ snapshots:
   '@napi-rs/keyring-darwin-arm64@1.3.0':
     optional: true
 
+  '@napi-rs/keyring-darwin-arm64@2.1.0':
+    optional: true
+
   '@napi-rs/keyring-darwin-x64@1.3.0':
     optional: true
 
@@ -4442,7 +4451,7 @@ snapshots:
     dependencies:
       '@types/http-cache-semantics': 4.2.0
       '@types/keyv': 3.1.4
-      '@types/node': 26.4.0
+      '@types/node': 24.13.3
       '@types/responselike': 1.0.3
 
   '@types/chai@5.2.3':
@@ -4460,13 +4469,13 @@ snapshots:
 
   '@types/fs-extra@9.0.13':
     dependencies:
-      '@types/node': 26.4.0
+      '@types/node': 24.13.3
 
   '@types/http-cache-semantics@4.2.0': {}
 
   '@types/keyv@3.1.4':
     dependencies:
-      '@types/node': 26.4.0
+      '@types/node': 24.13.3
 
   '@types/ms@2.1.0': {}
 
@@ -4500,7 +4509,7 @@ snapshots:
 
   '@types/responselike@1.0.3':
     dependencies:
-      '@types/node': 26.4.0
+      '@types/node': 24.13.3
 
   '@types/ssh2@1.15.5':
     dependencies:
@@ -5375,7 +5384,7 @@ snapshots:
       es6-error: 4.1.1
       matcher: 3.0.0
       roarr: 2.15.4
-      semver: 7.7.4
+      semver: 7.8.5
       serialize-error: 7.0.1
     optional: true
 
