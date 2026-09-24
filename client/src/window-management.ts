@@ -79,6 +79,25 @@ function isSessionProfile(profile: Record<string, unknown>): boolean {
       (profile.port === undefined || validPort(profile.port))
     );
   }
+  if (profile.kind === 'rdp' || profile.kind === 'vnc') {
+    const gateway = profile.sshGateway as Record<string, unknown> | undefined;
+    return (
+      validProfileId(profile.profileId) &&
+      typeof profile.host === 'string' &&
+      profile.host.length > 0 &&
+      profile.host.length <= 253 &&
+      (profile.port === undefined || validPort(profile.port)) &&
+      optionalBoundedString(profile.username, 256) &&
+      optionalBoundedString(profile.domain, 256) &&
+      (gateway === undefined ||
+        (typeof gateway === 'object' &&
+          gateway !== null &&
+          typeof gateway.target === 'string' &&
+          gateway.target.length > 0 &&
+          gateway.target.length <= 500 &&
+          validProfileId(gateway.profileId)))
+    );
+  }
   if (profile.kind !== 'serial' || typeof profile.path !== 'string' || !profile.path) {
     return false;
   }

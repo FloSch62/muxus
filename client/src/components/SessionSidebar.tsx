@@ -100,7 +100,7 @@ const EMPTY_KEYS: ReadonlySet<string> = new Set();
 /** The fixed rows above the tree share the tree rows' exact geometry. */
 const fixedRowSx = [treeRowSx(0, undefined), { gap: 0.75 }] as const;
 
-/** Saved Telnet/serial profiles and live OpenSSH hosts in one host manager. */
+/** Saved Telnet/serial/RDP/VNC profiles and live OpenSSH hosts in one host manager. */
 export function SessionSidebar() {
   const { data: config, isSuccess: sshConfigReady } = useSshConfig();
   const { data: savedData, isSuccess: savedProfilesReady } = useSavedHostProfiles();

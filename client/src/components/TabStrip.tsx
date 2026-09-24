@@ -49,6 +49,7 @@ import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined';
 import PodcastsOutlinedIcon from '@mui/icons-material/PodcastsOutlined';
+import { isDesktopProfile } from '@muxus/shared/ws-protocol';
 import { useChordLabel } from '../keymap/hints.js';
 import { ChordHint, withChord } from './ChordHint.js';
 import {
@@ -354,6 +355,8 @@ export function TabStrip({
     isRemoteSessionTab(menuTab) &&
     (menuTab.status !== 'closed' || menuTab.profile.kind === 'ssh');
   const menuTabReconnectable = !!menuTab?.profile && menuTab.status === 'closed';
+  // Multi-execution and session logging act on terminal input and output.
+  const menuTabIsDesktop = !!menuTab?.profile && isDesktopProfile(menuTab.profile);
 
   const commitRename = () => {
     if (renaming && renameValue.trim()) update(renaming.id, { title: renameValue.trim() });
@@ -1314,48 +1317,52 @@ export function TabStrip({
             </Tooltip>
           </Stack>
         </Box>
-        <Divider />
-        <MenuItem
-          disabled={menuTab?.status !== 'connected'}
-          onClick={() => {
-            if (menuTab) toggleMultiExecTarget(menuTab.id);
-            setMenu(null);
-          }}
-        >
-          <ListItemIcon>
-            <PodcastsOutlinedIcon fontSize="small" color={menuTab && multiExecSelected.has(menuTab.id) ? 'warning' : 'inherit'} />
-          </ListItemIcon>
-          <ListItemText>
-            {menuTab && multiExecSelected.has(menuTab.id) ? 'Remove from multi-execution' : 'Add to multi-execution'}
-          </ListItemText>
-        </MenuItem>
-        <MenuItem
-          disabled={
-            menuTab?.status !== 'connected' ||
-            menuTab.loggingEnabled === undefined
-          }
-          onClick={() => {
-            if (menuTab) {
-              terminalHandle(menuTab.id)?.setLogging({
-                enabled: !menuTab.loggingEnabled,
-              });
+        {menuTabIsDesktop ? null : <Divider />}
+        {menuTabIsDesktop ? null : (
+          <MenuItem
+            disabled={menuTab?.status !== 'connected'}
+            onClick={() => {
+              if (menuTab) toggleMultiExecTarget(menuTab.id);
+              setMenu(null);
+            }}
+          >
+            <ListItemIcon>
+              <PodcastsOutlinedIcon fontSize="small" color={menuTab && multiExecSelected.has(menuTab.id) ? 'warning' : 'inherit'} />
+            </ListItemIcon>
+            <ListItemText>
+              {menuTab && multiExecSelected.has(menuTab.id) ? 'Remove from multi-execution' : 'Add to multi-execution'}
+            </ListItemText>
+          </MenuItem>
+        )}
+        {menuTabIsDesktop ? null : (
+          <MenuItem
+            disabled={
+              menuTab?.status !== 'connected' ||
+              menuTab.loggingEnabled === undefined
             }
-            setMenu(null);
-          }}
-        >
-          <ListItemIcon>
-            {menuTab?.loggingEnabled ? (
-              <StopCircleOutlinedIcon fontSize="small" />
-            ) : (
-              <PlayCircleOutlineIcon fontSize="small" />
-            )}
-          </ListItemIcon>
-          <ListItemText>
-            {menuTab?.loggingEnabled
-              ? 'Stop session logging'
-              : 'Start session logging'}
-          </ListItemText>
-        </MenuItem>
+            onClick={() => {
+              if (menuTab) {
+                terminalHandle(menuTab.id)?.setLogging({
+                  enabled: !menuTab.loggingEnabled,
+                });
+              }
+              setMenu(null);
+            }}
+          >
+            <ListItemIcon>
+              {menuTab?.loggingEnabled ? (
+                <StopCircleOutlinedIcon fontSize="small" />
+              ) : (
+                <PlayCircleOutlineIcon fontSize="small" />
+              )}
+            </ListItemIcon>
+            <ListItemText>
+              {menuTab?.loggingEnabled
+                ? 'Stop session logging'
+                : 'Start session logging'}
+            </ListItemText>
+          </MenuItem>
+        )}
         <Divider />
         <MenuItem
           onClick={() => {

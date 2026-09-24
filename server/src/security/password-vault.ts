@@ -762,6 +762,32 @@ export function folderPasswordLabel(path: string): string {
   return `Folder ${path}`;
 }
 
+/**
+ * An RDP or VNC login password. The protocol leads the JSON array, so it can
+ * never collide with an SSH [user, host, port] triple or a folder password.
+ */
+export function desktopPasswordAccount(input: {
+  protocol: 'rdp' | 'vnc';
+  user: string;
+  host: string;
+  port: number;
+}): string {
+  return Buffer.from(
+    JSON.stringify([input.protocol, input.user, input.host.toLowerCase(), input.port]),
+    'utf8',
+  ).toString('base64url');
+}
+
+export function desktopPasswordLabel(input: {
+  protocol: 'rdp' | 'vnc';
+  user: string;
+  host: string;
+  port: number;
+}): string {
+  const name = input.user ? `${input.user}@${input.host}` : input.host;
+  return `${input.protocol.toUpperCase()} ${name}:${input.port}`;
+}
+
 export function validateMasterPassword(password: string): void {
   validateMasterPasswordLength(password, MASTER_PASSWORD_MIN_LENGTH);
 }

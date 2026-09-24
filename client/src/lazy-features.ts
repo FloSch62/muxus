@@ -17,3 +17,4 @@ export const loadSftpPanel = () => import('./components/SftpPanel.js');
 export const loadRemoteEditorWorkspace = () => import('./components/RemoteEditorWorkspace.js');
 export const loadTerminalViewImpl = () => import('./components/TerminalViewImpl.js');
 export const loadMonacoTextEditor = () => import('./components/MonacoTextEditor.js');
+export const loadRemoteDesktopViewImpl = () => import('./components/RemoteDesktopViewImpl.js');

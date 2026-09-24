@@ -1,4 +1,4 @@
-import type { TerminalServerMessage } from '@muxus/shared';
+import type { SessionProfile, TerminalServerMessage } from '@muxus/shared';
 
 export type ReattachMode = 'tmux' | 'screen';
 export type TerminalExitMessage = Extract<TerminalServerMessage, { op: 'exit' }>;
@@ -21,7 +21,7 @@ export function rendererReattachDelayMs(attempts: number): number | undefined {
 export interface AutoReconnectInput {
   /** The auto-reconnect preference. */
   enabled: boolean;
-  profileKind: 'ssh' | 'local' | 'telnet' | 'serial';
+  profileKind: SessionProfile['kind'];
   reason: 'completed' | 'failed' | 'disconnected';
   /** Automatic attempts already made since the last stable connection. */
   attempts: number;
@@ -79,7 +79,7 @@ export function shouldDelayConnectionLost(
 
 /** SSH is only visibly responsive once its terminal channel produces output. */
 export function shouldWaitForTerminalOutput(
-  profileKind: 'ssh' | 'local' | 'telnet' | 'serial',
+  profileKind: SessionProfile['kind'],
   receivedTerminalOutput: boolean,
 ): boolean {
   return profileKind === 'ssh' && !receivedTerminalOutput;

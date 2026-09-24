@@ -732,7 +732,7 @@ function BehaviorSection() {
               <Box>
                 <Typography variant="body2">Automatically reconnect remote sessions</Typography>
                 <Typography variant="caption" color="text.secondary">
-                  Restoring a workspace dials its SSH, Telnet and serial tabs, and a dropped
+                  Restoring a workspace dials its SSH, Telnet, serial and remote desktop tabs, and a dropped
                   connection redials a few times before waiting for a key press. Off: remote
                   tabs wait until asked.
                 </Typography>

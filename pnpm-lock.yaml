@@ -111,6 +111,7 @@ overrides:
   dompurify@>=3.4.0 <3.4.13: 3.4.13
 
 patchedDependencies:
+  '@novnc/novnc@1.7.0': ffde8e6453e76045b5c2ea6b0a74b1799c63b1463ffa5814f8fbc79086d4c5aa
   '@serialport/bindings-cpp@13.0.1': ccb198c80fb1ddcec527a44a9df5ada0b5b49112eaf75cb0fbd0397b15ff2cf4
 
 importers:
@@ -159,6 +160,9 @@ importers:
       '@muxus/shared':
         specifier: workspace:*
         version: link:../shared
+      '@novnc/novnc':
+        specifier: ^1.7.0
+        version: 1.7.0(patch_hash=ffde8e6453e76045b5c2ea6b0a74b1799c63b1463ffa5814f8fbc79086d4c5aa)
       '@tanstack/react-query':
         specifier: ^5.102.8
         version: 5.102.8(react@19.2.8)
@@ -380,6 +384,9 @@ importers:
       '@types/ssh2':
         specifier: ^1.15.5
         version: 1.15.5
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       '@vitest/coverage-v8':
         specifier: ^4.1.11
         version: 4.1.11(vitest@4.1.11)
@@ -395,6 +402,9 @@ importers:
       vitest:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@24.13.3)(@vitest/coverage-v8@4.1.11)(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.12))
+      ws:
+        specifier: ^8.21.3
+        version: 8.21.3
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -1126,6 +1136,9 @@ packages:
   '@noble/hashes@2.4.0':
     resolution: {integrity: sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==}
     engines: {node: '>= 20.19.0'}
+
+  '@novnc/novnc@1.7.0':
+    resolution: {integrity: sha512-ucEJOx4T2avIRCleodk7YobZj5O2Ga2AeLfQ69A/yjG9HHba2+PDgwSkN3FttrmG+70ZGx21sElNFouK13RzyA==}
 
   '@oxc-project/types@0.147.0':
     resolution: {integrity: sha512-IJ3s6ltHLp45S0bh7phkX+gJO7A1Wuz2EaqpAhb8WjqDwbzMiWKHhyyT42tskaWjEYXtHtVCPpnBJVT9+dcRLg==}
@@ -4224,6 +4237,8 @@ snapshots:
   '@noble/hashes@1.4.0': {}
 
   '@noble/hashes@2.4.0': {}
+
+  '@novnc/novnc@1.7.0(patch_hash=ffde8e6453e76045b5c2ea6b0a74b1799c63b1463ffa5814f8fbc79086d4c5aa)': {}
 
   '@oxc-project/types@0.147.0': {}
 

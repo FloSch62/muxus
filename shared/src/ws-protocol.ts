@@ -110,17 +110,84 @@ export const serialProfileSchema = z.object({
   flowControl: z.enum(['none', 'hardware', 'software']).default('none'),
 });
 
+/**
+ * SSH host a remote desktop is reached through, the way `ssh -L` would carry
+ * it: the desktop's host and port are resolved on the far side of this hop.
+ */
+export const sshGatewaySchema = z.object({
+  /** ssh_config alias, or the saved SSH host's target when `profileId` is set. */
+  target: z.string().trim().min(1).max(500),
+  /** Muxus-owned SSH host; absent resolves `target` through ssh_config. */
+  profileId: z.string().min(1).max(200).optional(),
+});
+
+export const rdpProfileSchema = z.object({
+  kind: z.literal('rdp'),
+  /** Stable Muxus database profile when this is a saved host. */
+  profileId: z.string().min(1).max(200).optional(),
+  host: z.string().trim().min(1).max(253),
+  port: z.number().int().min(1).max(65535).default(3389),
+  /** Logon name; `DOMAIN\user` and `user@domain` work as typed. */
+  username: z.string().trim().max(256).optional(),
+  domain: z.string().trim().max(256).optional(),
+  sshGateway: sshGatewaySchema.optional(),
+  /** Text clipboard redirection; absent means on, as in mstsc. */
+  shareClipboard: z.boolean().optional(),
+});
+
+export const vncProfileSchema = z.object({
+  kind: z.literal('vnc'),
+  /** Stable Muxus database profile when this is a saved host. */
+  profileId: z.string().min(1).max(200).optional(),
+  host: z.string().trim().min(1).max(253),
+  port: z.number().int().min(1).max(65535).default(5900),
+  /** Only servers with user logins ask for one (VeNCrypt, Apple Remote Desktop, UltraVNC). */
+  username: z.string().trim().max(256).optional(),
+  sshGateway: sshGatewaySchema.optional(),
+  /** Ask the server to resize its desktop to the pane instead of scaling the picture. */
+  resizeRemote: z.boolean().optional(),
+  /** Watch without sending keyboard or mouse input. */
+  viewOnly: z.boolean().optional(),
+  /** Text clipboard sharing; absent means on. */
+  shareClipboard: z.boolean().optional(),
+});
+
+/** Sessions rendered by xterm.js over /ws/terminal. */
+export const terminalProfileSchema = z.discriminatedUnion('kind', [
+  localProfileSchema,
+  sshProfileSchema,
+  telnetProfileSchema,
+  serialProfileSchema,
+]);
+
+/** Sessions drawn as a remote screen over /ws/desktop. */
+export const desktopProfileSchema = z.discriminatedUnion('kind', [
+  rdpProfileSchema,
+  vncProfileSchema,
+]);
+
 export const sessionProfileSchema = z.discriminatedUnion('kind', [
   localProfileSchema,
   sshProfileSchema,
   telnetProfileSchema,
   serialProfileSchema,
+  rdpProfileSchema,
+  vncProfileSchema,
 ]);
 export type SessionProfile = z.infer<typeof sessionProfileSchema>;
 export type SshProfile = Extract<SessionProfile, { kind: 'ssh' }>;
 export type LocalProfile = Extract<SessionProfile, { kind: 'local' }>;
 export type TelnetProfile = Extract<SessionProfile, { kind: 'telnet' }>;
 export type SerialProfile = Extract<SessionProfile, { kind: 'serial' }>;
+export type RdpProfile = Extract<SessionProfile, { kind: 'rdp' }>;
+export type VncProfile = Extract<SessionProfile, { kind: 'vnc' }>;
+export type SshGateway = z.infer<typeof sshGatewaySchema>;
+export type DesktopProfile = z.infer<typeof desktopProfileSchema>;
+export type TerminalProfile = z.infer<typeof terminalProfileSchema>;
+
+export function isDesktopProfile(profile: SessionProfile): profile is DesktopProfile {
+  return profile.kind === 'rdp' || profile.kind === 'vnc';
+}
 
 export type AuthPromptPurpose =
   | 'authentication'
@@ -156,7 +223,7 @@ export interface AuthPromptResponse {
 export const terminalClientMessageSchema = z.discriminatedUnion('op', [
   z.object({
     op: z.literal('connect'),
-    profile: sessionProfileSchema,
+    profile: terminalProfileSchema,
     /**
      * Replacement-group token: skip SSH transports established before this
      * request and dial a replacement. Connects carrying the same token share
@@ -255,5 +322,83 @@ export type TerminalServerMessage =
       code?: number;
       message?: string;
       /** Whether the shell ended normally, setup failed, or a live transport was lost. */
+      reason: 'completed' | 'failed' | 'disconnected';
+    };
+
+/**
+ * /ws/desktop: one control socket per RDP/VNC tab. The client sends `connect`;
+ * the server dials any SSH gateway (with the same auth-prompt/host-key
+ * round-trips as a terminal), gathers credentials, then answers `ready` with a
+ * single-use ticket. The picture itself travels on a second socket that
+ * presents the ticket: /ws/desktop/rdp for IronRDP's RDCleanPath handshake,
+ * /ws/desktop/vnc (ticket as a subprotocol) for noVNC's raw RFB stream.
+ */
+export const DESKTOP_RDP_WS_PATH = '/ws/desktop/rdp';
+export const DESKTOP_VNC_WS_PATH = '/ws/desktop/vnc';
+/** A VNC stream socket offers its ticket as this subprotocol prefix. */
+export const DESKTOP_TICKET_PROTOCOL_PREFIX = 'muxus.ticket.';
+
+/** Text frames the client sends on /ws/desktop. */
+export const desktopClientMessageSchema = z.discriminatedUnion('op', [
+  z.object({ op: z.literal('connect'), profile: desktopProfileSchema }),
+  z.object({
+    op: z.literal('auth-response'),
+    answers: z.array(z.string().max(8192)).max(16),
+    rememberPassword: z.boolean().optional(),
+    skipped: z.boolean().optional(),
+  }),
+  z.object({ op: z.literal('host-key-response'), accept: z.boolean() }),
+  z.object({ op: z.literal('certificate-response'), accept: z.boolean() }),
+  /**
+   * Start another attempt with a fresh ticket. `rejected` means the server
+   * refused the last credentials, so they are asked for again.
+   */
+  z.object({ op: z.literal('retry'), rejected: z.boolean().optional() }),
+  /** A VNC server asked for these credentials mid-handshake. */
+  z.object({
+    op: z.literal('credentials-request'),
+    types: z.array(z.enum(['username', 'password'])).min(1).max(2),
+  }),
+  /** The remote desktop accepted the login; a password marked to remember is saved now. */
+  z.object({ op: z.literal('connected') }),
+]);
+export type DesktopClientMessage = z.infer<typeof desktopClientMessageSchema>;
+
+export interface DesktopCredentials {
+  username?: string;
+  password?: string;
+  domain?: string;
+}
+
+/** TLS certificate an RDP server presented that is not trusted yet. */
+export interface DesktopCertificateChallenge {
+  host: string;
+  port: number;
+  /** SHA256:… fingerprint of the leaf certificate, base64 like OpenSSH. */
+  fingerprint: string;
+  subject: string;
+  issuer: string;
+  validFrom: string;
+  validTo: string;
+  /** Why the certificate could not be verified against trusted authorities. */
+  verificationError?: string;
+  /** `new` = first contact (TOFU), `mismatch` = differs from the one trusted before. */
+  state: 'new' | 'mismatch';
+  previous?: string;
+}
+
+/** Text frames the server sends on /ws/desktop. */
+export type DesktopServerMessage =
+  | { op: 'status'; message: string; transient?: boolean }
+  | ({ op: 'auth-prompt' } & AuthPromptInfo)
+  | Extract<TerminalServerMessage, { op: 'host-key' }>
+  | ({ op: 'certificate' } & DesktopCertificateChallenge)
+  /** A ticket for the stream socket, plus the logon for RDP (NLA runs in the client). */
+  | { op: 'ready'; ticket: string; credentials?: DesktopCredentials }
+  /** Answer to `credentials-request`. */
+  | { op: 'credentials'; credentials: DesktopCredentials }
+  | {
+      op: 'exit';
+      message?: string;
       reason: 'completed' | 'failed' | 'disconnected';
     };

@@ -681,6 +681,16 @@ function parseWindowLaunch(value: unknown): AppWindowLaunch | undefined {
             Number.isInteger(profile.port) &&
             profile.port >= 1 &&
             profile.port <= 65_535))) ||
+      ((profile.kind === 'rdp' || profile.kind === 'vnc') &&
+        validProfileId(profile.profileId) &&
+        typeof profile.host === 'string' &&
+        profile.host.length > 0 &&
+        profile.host.length <= 253 &&
+        (profile.port === undefined ||
+          (typeof profile.port === 'number' &&
+            Number.isInteger(profile.port) &&
+            profile.port >= 1 &&
+            profile.port <= 65_535))) ||
       (profile.kind === 'serial' &&
         validProfileId(profile.profileId) &&
         typeof profile.path === 'string' &&

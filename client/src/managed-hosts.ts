@@ -218,6 +218,9 @@ export function managedHostCopyCommand(host: ManagedHost): { label: string; text
       text: savedSshCopyCommand(profile),
     };
   }
+  if (profile.kind === 'rdp' || profile.kind === 'vnc') {
+    return { label: 'Copy address', text: `${profile.host}:${profile.port}` };
+  }
   return profile.kind === 'telnet'
     ? { label: 'Copy telnet command', text: `telnet ${profile.host} ${profile.port}` }
     : { label: 'Copy device path', text: profile.path };

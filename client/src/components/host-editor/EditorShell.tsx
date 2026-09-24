@@ -8,11 +8,13 @@ import Stack from '@mui/material/Stack';
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import Typography from '@mui/material/Typography';
+import DesktopWindowsOutlinedIcon from '@mui/icons-material/DesktopWindowsOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import LanguageOutlinedIcon from '@mui/icons-material/LanguageOutlined';
+import ScreenShareOutlinedIcon from '@mui/icons-material/ScreenShareOutlined';
 import UsbOutlinedIcon from '@mui/icons-material/UsbOutlined';
 
-export type ConnectionKind = 'ssh' | 'telnet' | 'serial';
+export type ConnectionKind = 'ssh' | 'telnet' | 'serial' | 'rdp' | 'vnc';
 
 export interface EditorSectionDef<S extends string> {
   value: S;
@@ -26,7 +28,7 @@ export interface EditorSectionDef<S extends string> {
  * The one dialog anatomy every host editor renders into: title with a storage
  * caption, connection-type tabs while creating, a left section rail beside a
  * fixed-height content area, and a shared action row. Keeping this identical
- * for SSH, Telnet, and serial is what stops the dialog from jumping around
+ * for every connection type is what stops the dialog from jumping around
  * when the connection type changes.
  */
 export function EditorShell<S extends string>({
@@ -49,7 +51,7 @@ export function EditorShell<S extends string>({
   title: string;
   /** Where the host is persisted (ssh_config path or Muxus app data). */
   storage: string;
-  /** Set while creating a new host to offer the SSH/Telnet/serial switch. */
+  /** Set while creating a new host to offer the connection-type switch. */
   typeKind?: ConnectionKind;
   onTypeChange?: (kind: ConnectionKind) => void;
   sections: EditorSectionDef<S>[];
@@ -183,6 +185,8 @@ export function ConnectionTypeTabs({
       <Tab value="ssh" icon={<DnsOutlinedIcon fontSize="small" />} iconPosition="start" label="SSH" />
       <Tab value="telnet" icon={<LanguageOutlinedIcon fontSize="small" />} iconPosition="start" label="Telnet" />
       <Tab value="serial" icon={<UsbOutlinedIcon fontSize="small" />} iconPosition="start" label="Serial" />
+      <Tab value="rdp" icon={<DesktopWindowsOutlinedIcon fontSize="small" />} iconPosition="start" label="RDP" />
+      <Tab value="vnc" icon={<ScreenShareOutlinedIcon fontSize="small" />} iconPosition="start" label="VNC" />
     </Tabs>
   );
 }

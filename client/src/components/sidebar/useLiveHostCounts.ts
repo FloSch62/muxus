@@ -18,7 +18,7 @@ export function useLiveHostCounts(): Map<string, LiveCounts> {
           ? tab.profile.profileId
             ? `profile:${tab.profile.profileId}`
             : `ssh:${tab.profile.target}`
-          : tab.profile.kind === 'telnet' || tab.profile.kind === 'serial'
+          : tab.profile.kind !== 'local'
             ? tab.profile.profileId && `profile:${tab.profile.profileId}`
             : undefined;
       if (!key) continue;
