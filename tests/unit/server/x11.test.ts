@@ -384,6 +384,48 @@ describe('LocalX11', () => {
     expect(none.missingServerMessage()).toMatch(/no bundled X server/);
   });
 
+  it('gives every SSH transport its own bundled display', async () => {
+    const directory = mkdtempSync(path.join(tmp, 'bundled-'));
+    writeFileSync(path.join(directory, 'vcxsrv.exe'), '');
+    const listening = new Set<number>();
+    const children: FakeChild[] = [];
+    const x11 = new LocalX11({
+      log,
+      bundledServerDirectory: directory,
+      env: {},
+      platform: 'win32',
+      bundled: {
+        authDirectory: directory,
+        portInUse: async (port) => listening.has(port),
+        probeServer: async (port) => (listening.has(port) ? 'ours' : 'down'),
+        spawnServer: (_executable, args) => {
+          const child = new FakeChild();
+          const port = 6000 + Number(args[0]!.slice(1));
+          children.push(child);
+          setTimeout(() => listening.add(port), 5);
+          child.once('exit', () => listening.delete(port));
+          return child as never;
+        },
+      },
+    });
+    const hostA = {};
+    const hostB = {};
+
+    // Concurrent first windows from two hosts must not end up on one display.
+    const [a, b] = await Promise.all([x11.bundledServer(hostA), x11.bundledServer(hostB)]);
+    expect(a.display).not.toBe(b.display);
+    expect(a.auth.data.equals(b.auth.data)).toBe(false);
+    expect(await x11.bundledServer(hostA)).toBe(a);
+
+    // A closed transport takes its display down; the others keep theirs.
+    x11.release(hostA);
+    expect(children[0]!.killed).toBe(true);
+    expect(children[1]!.killed).toBe(false);
+    expect(await x11.bundledServer(hostB)).toBe(b);
+    x11.close();
+    expect(children[1]!.killed).toBe(true);
+  });
+
   it('connects to $DISPLAY with the cookie from XAUTHORITY', async () => {
     const socketDir = mkdtempSync(path.join(tmp, 'display-'));
     const socketPath = path.join(socketDir, 'xsock:3');

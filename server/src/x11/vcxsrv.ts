@@ -32,14 +32,17 @@ export interface BundledXServerOptions {
   portInUse?: (port: number) => Promise<boolean>;
   probeServer?: (port: number, auth: X11Auth) => Promise<XServerProbe>;
   authDirectory?: string;
+  /** Display numbers held by sibling servers in this process, shared between them. */
+  claimedDisplays?: Set<number>;
 }
 
 /**
- * The VcXsrv build shipped with the Windows app, started on first use.
+ * One VcXsrv display from the build shipped with the Windows app, started
+ * on first use. LocalX11 runs one per SSH transport.
  *
  * It gets its own display number and a fresh MIT-MAGIC-COOKIE-1 in a private
  * auth file, so only Muxus (and nothing else on the machine) can open windows
- * on it. One server is shared by every SSH session and stops with Muxus.
+ * on it, and it stops with its transport or with Muxus.
  *
  * Clipboard integration is off unless asked for: with it, any forwarding
  * server could read and replace the Windows clipboard.
@@ -49,6 +52,8 @@ export class BundledXServer {
   private running?: RunningXServer;
   private child?: ChildProcess;
   private authFile?: string;
+  /** Display number this server holds in the shared claim set. */
+  private claimed?: number;
   private closed = false;
 
   constructor(
@@ -59,10 +64,6 @@ export class BundledXServer {
 
   get executable(): string {
     return path.join(this.directory, VCXSRV_EXECUTABLE);
-  }
-
-  installed(): boolean {
-    return fs.existsSync(this.executable);
   }
 
   /**
@@ -101,23 +102,40 @@ export class BundledXServer {
     const child = this.child;
     this.child = undefined;
     child?.kill();
+    this.unclaim();
+  }
+
+  private unclaim(): void {
+    if (this.claimed !== undefined) this.options.claimedDisplays?.delete(this.claimed);
+    this.claimed = undefined;
   }
 
   private async start(clipboard: boolean): Promise<RunningXServer> {
     const portInUse = this.options.portInUse ?? loopbackPortInUse;
+    const claimed = this.options.claimedDisplays ?? new Set<number>();
     let first = FIRST_DISPLAY;
     for (let attempt = 0; attempt < MAX_START_ATTEMPTS; attempt++) {
       let display: number | undefined;
       for (let candidate = first; candidate <= LAST_DISPLAY; candidate++) {
-        if (!(await portInUse(X11_TCP_PORT_BASE + candidate))) {
-          display = candidate;
-          break;
-        }
+        if (claimed.has(candidate) || (await portInUse(X11_TCP_PORT_BASE + candidate))) continue;
+        // A sibling may have claimed it while the port was probed.
+        if (claimed.has(candidate)) continue;
+        display = candidate;
+        claimed.add(display);
+        this.claimed = display;
+        break;
       }
       if (display === undefined) throw new Error('no free X display number for the bundled X server');
-      const running = await this.launch(display, clipboard);
+      let running: RunningXServer | undefined;
+      try {
+        running = await this.launch(display, clipboard);
+      } catch (err) {
+        this.unclaim();
+        throw err;
+      }
       if (running) return running;
       // Another X server took the display between the scan and VcXsrv's bind.
+      this.unclaim();
       first = display + 1;
     }
     throw new Error('other programs kept taking the display numbers the bundled X server tried');
@@ -127,7 +145,8 @@ export class BundledXServer {
   private async launch(display: number, clipboard: boolean): Promise<RunningXServer | undefined> {
     const auth: X11Auth = { name: MIT_MAGIC_COOKIE, data: randomBytes(16) };
     const authDirectory = this.options.authDirectory ?? os.tmpdir();
-    const authFile = path.join(authDirectory, `muxus-x11-${process.pid}.Xauthority`);
+    const authFile = path.join(authDirectory, `muxus-x11-${process.pid}-${display}.Xauthority`);
+    if (this.authFile && this.authFile !== authFile) fs.rmSync(this.authFile, { force: true });
     fs.writeFileSync(
       authFile,
       serializeXauthority([
@@ -167,6 +186,7 @@ export class BundledXServer {
         if (ready) {
           this.starting = undefined;
           this.running = undefined;
+          this.unclaim();
         }
         if (!this.closed) this.log.warn({ display, reason: exited }, 'bundled X server stopped');
       }

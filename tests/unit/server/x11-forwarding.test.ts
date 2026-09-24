@@ -184,11 +184,12 @@ describe('X11 forwarding over SSH', () => {
     });
     const manager = makeManager(ssh.port, lines, x11);
     cleanups.push(() => manager.closeAll());
-    return { ssh, xServer, manager };
+    return { ssh, xServer, manager, x11 };
   }
 
   it('relays remote X clients to the local display with the real cookie', async () => {
-    const { ssh, xServer, manager } = await setup(true, ['  ForwardX11 yes']);
+    const { ssh, xServer, manager, x11 } = await setup(true, ['  ForwardX11 yes']);
+    const release = vi.spyOn(x11, 'release');
     const statuses: string[] = [];
     const shell = await manager.connectShell(profile, makeIo(statuses), 80, 24, 'xterm');
     expect(await firstData(shell.stream)).toContain('shell ok');
@@ -208,6 +209,10 @@ describe('X11 forwarding over SSH', () => {
     expect(statuses).toEqual([]);
     shell.stream.close();
     shell.lease.release();
+
+    // The transport's own X display goes away with it.
+    manager.closeAll();
+    await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(1));
   });
 
   it('keeps X11 off by default when forwarding would reach the user desktop', async () => {
