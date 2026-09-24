@@ -101,6 +101,15 @@ describe('session history routes', () => {
     expect(clean.headers['content-disposition']).toContain('-clean.txt');
     expect(clean.body).toBe('deploy complete\n');
     expect(clean.body).not.toContain('\x1b');
+    const timestamped = await built.app.inject({
+      method: 'GET', url: `/api/session-history/${id}/clean?timestamps=true`, headers: auth(),
+    });
+    expect(timestamped.statusCode).toBe(200);
+    expect(timestamped.body).toBe('[2026-07-24T12:00:01.000Z] deploy complete\n');
+    const invalid = await built.app.inject({
+      method: 'GET', url: `/api/session-history/${id}/clean?timestamps=invalid`, headers: auth(),
+    });
+    expect(invalid.statusCode).toBe(400);
 
     const replay = await built.app.inject({
       method: 'GET',

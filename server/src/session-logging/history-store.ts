@@ -8,6 +8,7 @@ import type {
   SessionHistorySettings,
   SessionHistoryStorageStatus,
   SessionLogDetail,
+  SessionLineTimestamp,
   SessionLogDirection,
   SessionLoggingPolicy,
 } from '@muxus/shared';
@@ -20,6 +21,7 @@ export interface HistoryEvent {
   direction: SessionLogDirection;
   raw: Buffer;
   text: string;
+  lineTimestamps?: SessionLineTimestamp[];
 }
 
 export interface SessionHistoryQuery {
