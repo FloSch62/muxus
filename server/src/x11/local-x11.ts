@@ -4,7 +4,7 @@ import type { Socket } from 'node:net';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Client, ClientChannel, X11Details, X11Options } from 'ssh2';
 import type { X11Availability } from '@muxus/shared';
-import { connectX11Endpoint, parseDisplay, type ParsedDisplay } from './display.js';
+import { connectX11Endpoint, parseDisplay, xauthTarget, type ParsedDisplay } from './display.js';
 import { BundledXServer, type BundledXServerOptions } from './vcxsrv.js';
 import { spliceX11Connection } from './x11-proxy.js';
 import { MIT_MAGIC_COOKIE, readXauthCookie, xauthorityPath, type X11Auth } from './xauthority.js';
@@ -84,7 +84,8 @@ export class LocalX11 {
     }
     if (source.kind === 'display') {
       const socket = await connectX11Endpoint(source.parsed.endpoint);
-      const auth = readXauthCookie(source.parsed.number, source.parsed.xauth, xauthorityPath(this.env));
+      const target = xauthTarget(source.parsed.endpoint, socket);
+      const auth = readXauthCookie(source.parsed.number, target, xauthorityPath(this.env));
       return { socket, auth };
     }
     throw new Error('no local X server is available');

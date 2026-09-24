@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { FastifyBaseLogger } from 'fastify';
 import { X11_TCP_PORT_BASE } from './display.js';
+import { rewriteX11Setup } from './x11-proxy.js';
 import { FAMILY_WILD, MIT_MAGIC_COOKIE, serializeXauthority, type X11Auth } from './xauthority.js';
 
 export const VCXSRV_EXECUTABLE = 'vcxsrv.exe';
@@ -15,6 +16,7 @@ const FIRST_DISPLAY = 10;
 const LAST_DISPLAY = 99;
 const START_TIMEOUT_MS = 15_000;
 const READY_POLL_MS = 100;
+const MAX_START_ATTEMPTS = 3;
 
 export interface RunningXServer {
   display: number;
@@ -26,6 +28,7 @@ export interface BundledXServerOptions {
   /** Test seams; production spawns VcXsrv and probes loopback TCP. */
   spawnServer?: (executable: string, args: string[], cwd: string) => ChildProcess;
   portInUse?: (port: number) => Promise<boolean>;
+  probeServer?: (port: number, auth: X11Auth) => Promise<XServerProbe>;
   authDirectory?: string;
 }
 
@@ -76,15 +79,26 @@ export class BundledXServer {
 
   private async start(): Promise<RunningXServer> {
     const portInUse = this.options.portInUse ?? loopbackPortInUse;
-    let display: number | undefined;
-    for (let candidate = FIRST_DISPLAY; candidate <= LAST_DISPLAY; candidate++) {
-      if (!(await portInUse(X11_TCP_PORT_BASE + candidate))) {
-        display = candidate;
-        break;
+    let first = FIRST_DISPLAY;
+    for (let attempt = 0; attempt < MAX_START_ATTEMPTS; attempt++) {
+      let display: number | undefined;
+      for (let candidate = first; candidate <= LAST_DISPLAY; candidate++) {
+        if (!(await portInUse(X11_TCP_PORT_BASE + candidate))) {
+          display = candidate;
+          break;
+        }
       }
+      if (display === undefined) throw new Error('no free X display number for the bundled X server');
+      const running = await this.launch(display);
+      if (running) return running;
+      // Another X server took the display between the scan and VcXsrv's bind.
+      first = display + 1;
     }
-    if (display === undefined) throw new Error('no free X display number for the bundled X server');
+    throw new Error('other programs kept taking the display numbers the bundled X server tried');
+  }
 
+  /** Start VcXsrv on `display`; undefined when a different server answers there. */
+  private async launch(display: number): Promise<RunningXServer | undefined> {
     const auth: X11Auth = { name: MIT_MAGIC_COOKIE, data: randomBytes(16) };
     const authDirectory = this.options.authDirectory ?? os.tmpdir();
     const authFile = path.join(authDirectory, `muxus-x11-${process.pid}.Xauthority`);
@@ -114,6 +128,7 @@ export class BundledXServer {
     const child = spawnServer(this.executable, args, this.directory);
     this.child = child;
     let exited: string | undefined;
+    let ready = false;
     child.once('error', (err) => {
       exited = err.message;
     });
@@ -121,15 +136,27 @@ export class BundledXServer {
       exited ??= `exited with ${signal ?? `code ${code}`}`;
       if (this.child === child) {
         this.child = undefined;
-        // A later X11 channel starts a fresh server.
-        this.starting = undefined;
+        // A later X11 channel starts a fresh server; a start in progress
+        // reports the failure itself.
+        if (ready) this.starting = undefined;
         if (!this.closed) this.log.warn({ display, reason: exited }, 'bundled X server stopped');
       }
     });
 
+    // Readiness is a connection setup with this server's cookie: only the
+    // VcXsrv just started can accept it, whatever else listens on the port.
+    const probe = this.options.probeServer ?? probeX11Server;
     const port = X11_TCP_PORT_BASE + display;
     const deadline = Date.now() + START_TIMEOUT_MS;
-    while (!(await portInUse(port))) {
+    for (;;) {
+      const state = await probe(port, auth);
+      if (state === 'ours') break;
+      if (state === 'foreign') {
+        this.child = undefined;
+        child.kill();
+        this.log.warn({ display }, 'another X server took the display; trying the next one');
+        return undefined;
+      }
       if (exited) throw new Error(`the bundled X server failed to start (${exited})`);
       if (Date.now() > deadline) {
         child.kill();
@@ -137,9 +164,33 @@ export class BundledXServer {
       }
       await new Promise((resolve) => setTimeout(resolve, READY_POLL_MS));
     }
+    ready = true;
     this.log.info({ display }, 'bundled X server started');
     return { display, port, auth };
   }
+}
+
+/** 'ours' accepted the cookie, 'foreign' is an X server that refused it, 'down' did not answer. */
+export type XServerProbe = 'ours' | 'foreign' | 'down';
+
+/** Little-endian X11 protocol 11.0 connection setup header. */
+const SETUP_HEADER = Buffer.from([0x6c, 0, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+/** Attempt an X11 connection setup on 127.0.0.1:port with `auth`. */
+export function probeX11Server(port: number, auth: X11Auth): Promise<XServerProbe> {
+  return new Promise((resolve) => {
+    const socket = net.connect({ host: '127.0.0.1', port, noDelay: true });
+    const done = (state: XServerProbe) => {
+      socket.destroy();
+      resolve(state);
+    };
+    socket.setTimeout(2000, () => done('down'));
+    socket.once('error', () => done('down'));
+    socket.once('close', () => done('down'));
+    socket.once('connect', () => socket.write(rewriteX11Setup(SETUP_HEADER, true, auth)));
+    // Status byte: 1 Success; 0 Failed and 2 Authenticate mean the cookie was refused.
+    socket.once('data', (reply: Buffer) => done(reply[0] === 1 ? 'ours' : 'foreign'));
+  });
 }
 
 /** True when something accepts connections on 127.0.0.1:port. */

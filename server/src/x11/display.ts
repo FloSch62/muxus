@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import net from 'node:net';
-import type { XauthTarget } from './xauthority.js';
+import { xauthTargetForPeer, type XauthTarget } from './xauthority.js';
 
 /** X display numbers map to TCP ports 6000 + n. */
 export const X11_TCP_PORT_BASE = 6000;
@@ -15,11 +15,7 @@ export interface ParsedDisplay {
   /** Display number as Xauthority records it ("0"). */
   number: string;
   screen: number;
-  /** Which Xauthority records apply to this display. */
-  xauth: XauthTarget;
 }
-
-const LOCAL_HOSTS = new Set(['', 'unix', 'localhost', '127.0.0.1', '::1']);
 
 /**
  * Parse $DISPLAY the way ssh(1) connects to it: `:n`/`unix:n` use the X11
@@ -44,12 +40,10 @@ export function parseDisplay(
       endpoint: { kind: 'unix', path: `${rawHost}:${number}` },
       number,
       screen,
-      xauth: { local: true },
     };
   }
 
   const host = rawHost.replace(/^\[(.*)\]$/, '$1');
-  const local = LOCAL_HOSTS.has(host);
   if ((host === '' || host === 'unix') && platform !== 'win32') {
     const socket = `/tmp/.X11-unix/X${number}`;
     return {
@@ -60,7 +54,6 @@ export function parseDisplay(
       },
       number,
       screen,
-      xauth: { local: true },
     };
   }
   return {
@@ -71,8 +64,12 @@ export function parseDisplay(
     },
     number,
     screen,
-    xauth: local ? { local: true } : { local: false, host },
   };
+}
+
+/** Which Xauthority records apply to a connection to `endpoint`. */
+export function xauthTarget(endpoint: X11Endpoint, socket: net.Socket): XauthTarget {
+  return endpoint.kind === 'unix' ? { local: true } : xauthTargetForPeer(socket.remoteAddress);
 }
 
 /** Open a stream to the X server; Unix sockets fall back to the abstract namespace. */

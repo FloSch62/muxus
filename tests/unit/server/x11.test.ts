@@ -7,16 +7,18 @@ import { Duplex } from 'node:stream';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { parseDisplay } from '../../../server/src/x11/display.js';
 import { LocalX11 } from '../../../server/src/x11/local-x11.js';
-import { BundledXServer } from '../../../server/src/x11/vcxsrv.js';
+import { BundledXServer, probeX11Server } from '../../../server/src/x11/vcxsrv.js';
 import { parseX11Setup, rewriteX11Setup, spliceX11Connection } from '../../../server/src/x11/x11-proxy.js';
 import {
   FAMILY_INTERNET,
+  FAMILY_INTERNET6,
   FAMILY_LOCAL,
   FAMILY_WILD,
   MIT_MAGIC_COOKIE,
   findXauthCookie,
   parseXauthority,
   serializeXauthority,
+  xauthTargetForPeer,
   type XauthEntry,
 } from '../../../server/src/x11/xauthority.js';
 
@@ -31,13 +33,11 @@ describe('parseDisplay', () => {
       endpoint: { kind: 'unix', path: '/tmp/.X11-unix/X0', abstract: '\0/tmp/.X11-unix/X0' },
       number: '0',
       screen: 0,
-      xauth: { local: true },
     });
     expect(parseDisplay('unix:1.2', 'darwin')).toEqual({
       endpoint: { kind: 'unix', path: '/tmp/.X11-unix/X1' },
       number: '1',
       screen: 2,
-      xauth: { local: true },
     });
   });
 
@@ -49,14 +49,13 @@ describe('parseDisplay', () => {
   });
 
   it('uses TCP 6000+n for host displays and for :n on Windows', () => {
-    expect(parseDisplay('localhost:10.0', 'linux')).toMatchObject({
-      endpoint: { kind: 'tcp', host: 'localhost', port: 6010 },
-      xauth: { local: true },
+    expect(parseDisplay('localhost:10.0', 'linux')?.endpoint).toEqual({ kind: 'tcp', host: 'localhost', port: 6010 });
+    expect(parseDisplay('workstation.example:1', 'linux')?.endpoint).toEqual({
+      kind: 'tcp',
+      host: 'workstation.example',
+      port: 6001,
     });
-    expect(parseDisplay('192.168.1.20:1', 'linux')).toMatchObject({
-      endpoint: { kind: 'tcp', host: '192.168.1.20', port: 6001 },
-      xauth: { local: false, host: '192.168.1.20' },
-    });
+    expect(parseDisplay('[fd00::5]:2', 'linux')?.endpoint).toEqual({ kind: 'tcp', host: 'fd00::5', port: 6002 });
     expect(parseDisplay(':0.0', 'win32')?.endpoint).toEqual({ kind: 'tcp', host: '127.0.0.1', port: 6000 });
   });
 
@@ -93,16 +92,55 @@ describe('Xauthority', () => {
       entry({ number: '1', data: cookie(8) }),
       entry({ data: cookie(1) }),
       entry({ family: FAMILY_INTERNET, address: Buffer.from([10, 0, 0, 5]), data: cookie(3) }),
+      entry({ family: FAMILY_INTERNET6, address: ipv6('fd00::5'), data: cookie(6) }),
     ];
     expect(findXauthCookie(entries, '0', { local: true }, 'workstation.example.com')?.data).toEqual(cookie(1));
     expect(findXauthCookie(entries, '1', { local: true }, 'workstation')?.data).toEqual(cookie(8));
-    expect(findXauthCookie(entries, '0', { local: false, host: '10.0.0.5' }, 'workstation')?.data).toEqual(cookie(3));
+    expect(findXauthCookie(entries, '0', xauthTargetForPeer('10.0.0.5'), 'workstation')?.data).toEqual(cookie(3));
+    expect(findXauthCookie(entries, '0', xauthTargetForPeer('fd00::5'), 'workstation')?.data).toEqual(cookie(6));
     expect(findXauthCookie(entries, '2', { local: true }, 'workstation')).toBeUndefined();
     expect(
       findXauthCookie([entry({ family: FAMILY_WILD, number: '', data: cookie(4) })], '7', { local: true }, 'x')?.data,
     ).toEqual(cookie(4));
   });
+
+  it('derives the record address from the connected peer, as libxcb does', () => {
+    expect(xauthTargetForPeer('127.0.0.1')).toEqual({ local: true });
+    expect(xauthTargetForPeer('::1')).toEqual({ local: true });
+    expect(xauthTargetForPeer('::ffff:127.0.0.1')).toEqual({ local: true });
+    expect(xauthTargetForPeer('192.168.1.20')).toEqual({
+      local: false,
+      family: FAMILY_INTERNET,
+      address: Buffer.from([192, 168, 1, 20]),
+    });
+    expect(xauthTargetForPeer('::ffff:192.168.1.20')).toEqual({
+      local: false,
+      family: FAMILY_INTERNET,
+      address: Buffer.from([192, 168, 1, 20]),
+    });
+    expect(xauthTargetForPeer('fe80::1:2%eth0')).toEqual({
+      local: false,
+      family: FAMILY_INTERNET6,
+      address: ipv6('fe80::1:2'),
+    });
+    expect(xauthTargetForPeer('2001:db8::10.0.0.1')).toMatchObject({ family: FAMILY_INTERNET6 });
+    expect((xauthTargetForPeer('2001:db8::10.0.0.1') as { address: Buffer }).address.subarray(12)).toEqual(
+      Buffer.from([10, 0, 0, 1]),
+    );
+  });
 });
+
+/** Expected FamilyInternet6 bytes, built independently of the code under test. */
+function ipv6(address: string): Buffer {
+  const [head = '', tail = ''] = address.split('::');
+  const left = head ? head.split(':') : [];
+  const right = tail ? tail.split(':') : [];
+  const groups = [...left, ...Array<string>(8 - left.length - right.length).fill('0'), ...right];
+  return Buffer.from(groups.flatMap((group) => {
+    const value = Number.parseInt(group, 16);
+    return [value >> 8, value & 0xff];
+  }));
+}
 
 /** An X11 connection setup request as a client would send it. */
 function setupRequest(littleEndian: boolean, name: string, data: Buffer): Buffer {
@@ -201,14 +239,20 @@ class FakeChild extends EventEmitter {
 }
 
 describe('BundledXServer', () => {
-  function fixture(busyPorts: number[]) {
+  /**
+   * `busyPorts` are taken before the scan; `racedPorts` are grabbed by some
+   * other X server between the scan and VcXsrv binding them.
+   */
+  function fixture(busyPorts: number[], racedPorts: number[] = []) {
     const directory = mkdtempSync(path.join(tmp, 'vcxsrv-'));
     writeFileSync(path.join(directory, 'vcxsrv.exe'), '');
     const listening = new Set(busyPorts);
+    const raced = new Set(racedPorts);
     const spawns: Array<{ executable: string; args: string[]; child: FakeChild }> = [];
     const server = new BundledXServer(directory, log, {
       authDirectory: directory,
       portInUse: async (port) => listening.has(port),
+      probeServer: async (port) => (raced.has(port) ? 'foreign' : listening.has(port) ? 'ours' : 'down'),
       spawnServer: (executable, args) => {
         const child = new FakeChild();
         spawns.push({ executable, args, child });
@@ -248,12 +292,46 @@ describe('BundledXServer', () => {
     server.close();
   });
 
+  it('probes readiness with an authenticated X11 connection setup', async () => {
+    const cookie = { name: MIT_MAGIC_COOKIE, data: Buffer.alloc(16, 0x11) };
+    // A stand-in X server that answers Success (1) only for this cookie.
+    const xServer = net.createServer((socket) =>
+      socket.once('data', (chunk: Buffer) => {
+        const setup = parseX11Setup(chunk);
+        socket.end(Buffer.from([setup.kind === 'complete' && setup.authData.equals(cookie.data) ? 1 : 0]));
+      }),
+    );
+    await new Promise<void>((resolve) => xServer.listen(0, '127.0.0.1', resolve));
+    const port = (xServer.address() as net.AddressInfo).port;
+    try {
+      expect(await probeX11Server(port, cookie)).toBe('ours');
+      expect(await probeX11Server(port, { ...cookie, data: Buffer.alloc(16) })).toBe('foreign');
+    } finally {
+      await new Promise((resolve) => xServer.close(resolve));
+    }
+    expect(await probeX11Server(port, cookie)).toBe('down');
+  });
+
+  it('moves to the next display when another X server wins the race for it', async () => {
+    const { server, spawns } = fixture([], [6010]);
+    const running = await server.ensureRunning();
+    expect(running.display).toBe(11);
+    expect(spawns.map((spawn) => spawn.args[0])).toEqual([':10', ':11']);
+    expect(spawns[0]!.child.killed).toBe(true);
+    // The loser's exit must not reset the start that is still in progress.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(await server.ensureRunning()).toBe(running);
+    expect(spawns).toHaveLength(2);
+    server.close();
+  });
+
   it('reports a server that exits during startup', async () => {
     const directory = mkdtempSync(path.join(tmp, 'vcxsrv-'));
     writeFileSync(path.join(directory, 'vcxsrv.exe'), '');
     const server = new BundledXServer(directory, log, {
       authDirectory: directory,
       portInUse: async () => false,
+      probeServer: async () => 'down',
       spawnServer: () => {
         const child = new FakeChild();
         setTimeout(() => child.emit('exit', 1, null), 5);

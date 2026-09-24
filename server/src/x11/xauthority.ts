@@ -11,6 +11,7 @@ import path from 'node:path';
  */
 
 export const FAMILY_INTERNET = 0;
+export const FAMILY_INTERNET6 = 6;
 /** Unix-domain and loopback connections; the address is the local hostname. */
 export const FAMILY_LOCAL = 256;
 /** Matches any address. */
@@ -90,16 +91,37 @@ export function xauthorityPath(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 /**
- * Where an X client connects, for picking the matching Xauthority record: a
- * local display (Unix socket or loopback TCP) or a remote TCP host.
+ * Where an X client is connected, for picking the matching Xauthority
+ * record: a local display (Unix socket or loopback TCP) or the IP address
+ * of a remote TCP display.
  */
-export type XauthTarget = { local: true } | { local: false; host: string };
+export type XauthTarget = { local: true } | { local: false; family: number; address: Buffer };
+
+/**
+ * The Xauthority address for a connected TCP display, from the socket's peer
+ * address as libxcb derives it: loopback counts as local, IPv4 (including
+ * IPv4-mapped IPv6) is FamilyInternet, other IPv6 is FamilyInternet6. Using
+ * the peer address covers DISPLAY host names without a separate lookup.
+ */
+export function xauthTargetForPeer(address: string | undefined): XauthTarget {
+  const ip = address?.replace(/%.*$/, '') ?? '';
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip)?.[1];
+  const ipv4 = mapped ?? (net.isIPv4(ip) ? ip : undefined);
+  if (ipv4) {
+    const bytes = Buffer.from(ipv4.split('.').map(Number));
+    return bytes[0] === 127 ? { local: true } : { local: false, family: FAMILY_INTERNET, address: bytes };
+  }
+  const bytes = net.isIPv6(ip) ? ipv6Bytes(ip) : undefined;
+  if (!bytes) return { local: false, family: FAMILY_INTERNET, address: Buffer.alloc(0) };
+  const loopback = bytes.subarray(0, 15).every((byte) => byte === 0) && bytes[15] === 1;
+  return loopback ? { local: true } : { local: false, family: FAMILY_INTERNET6, address: bytes };
+}
 
 /**
  * The MIT-MAGIC-COOKIE-1 credentials Xlib would send for `number`, following
  * XauGetBestAuthByAddr: a record matches on display number (empty = any) and
  * on address — FamilyWild, FamilyLocal with this machine's hostname for
- * local displays, or the host's IP address for remote TCP displays.
+ * local displays, or the peer's IP address for remote TCP displays.
  */
 export function findXauthCookie(
   entries: readonly XauthEntry[],
@@ -109,7 +131,6 @@ export function findXauthCookie(
 ): X11Auth | undefined {
   const local = Buffer.from(hostname, 'latin1');
   const localShort = Buffer.from(hostname.split('.')[0] ?? hostname, 'latin1');
-  const remote = target.local ? undefined : ipAddressBytes(target.host);
   const matchesAddress = (entry: XauthEntry): boolean => {
     if (entry.family === FAMILY_WILD) return true;
     if (target.local) {
@@ -118,8 +139,7 @@ export function findXauthCookie(
         (entry.address.equals(local) || entry.address.equals(localShort))
       );
     }
-    if (!remote) return false;
-    return entry.family === remote.family && entry.address.equals(remote.bytes);
+    return entry.family === target.family && entry.address.equals(target.address);
   };
   const entry = entries.find(
     (candidate) =>
@@ -145,8 +165,23 @@ export function readXauthCookie(
   return findXauthCookie(parseXauthority(buf), number, target);
 }
 
-/** Remote TCP displays are matched by IPv4 address; other hosts fall back to FamilyWild records. */
-function ipAddressBytes(host: string): { family: number; bytes: Buffer } | undefined {
-  if (!net.isIPv4(host)) return undefined;
-  return { family: FAMILY_INTERNET, bytes: Buffer.from(host.split('.').map(Number)) };
+/** 16 network-order bytes of a textual IPv6 address (`::` and a dotted IPv4 tail allowed). */
+function ipv6Bytes(address: string): Buffer | undefined {
+  const tail = /(\d+\.\d+\.\d+\.\d+)$/.exec(address)?.[1];
+  let text = address;
+  if (tail) {
+    const [a = 0, b = 0, c = 0, d = 0] = tail.split('.').map(Number);
+    text = `${address.slice(0, -tail.length)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const [head = '', rest] = text.split('::');
+  const groups = (part: string) => (part ? part.split(':').map((group) => Number.parseInt(group, 16)) : []);
+  const left = groups(head);
+  const right = rest === undefined ? [] : groups(rest);
+  const missing = 8 - left.length - right.length;
+  if (missing < 0 || (rest === undefined && missing !== 0)) return undefined;
+  const bytes = Buffer.alloc(16);
+  [...left, ...Array<number>(missing).fill(0), ...right].forEach((group, index) =>
+    bytes.writeUInt16BE(group, index * 2),
+  );
+  return bytes;
 }
