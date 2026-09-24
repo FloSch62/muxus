@@ -60,6 +60,7 @@ nav = [
     { "Security model" = "reference/security.md" },
   ] },
   { "Release notes" = [
+    { "0.8" = "release-notes/0.8.md" },
     { "0.7" = "release-notes/0.7.md" },
     { "0.6" = "release-notes/0.6.md" },
     { "0.5" = "release-notes/0.5.md" },
