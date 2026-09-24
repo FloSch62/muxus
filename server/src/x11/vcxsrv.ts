@@ -37,6 +37,27 @@ export interface BundledXServerOptions {
 }
 
 /**
+ * A random MIT-MAGIC-COOKIE-1 that VcXsrv can actually read back. Its
+ * LoadAuthorization opens the Xauthority file with fopen(..., "r"), which on
+ * Windows is text mode: a 0x1A byte ends the file early and "\r\n" shrinks
+ * to "\n". A cookie with either reads as zero entries, and the X server then
+ * enables local access, letting any local client in without a cookie. Drawing
+ * from the other 254 byte values keeps about 128 bits of entropy.
+ */
+export function textSafeCookie(length = 16): Buffer {
+  const cookie = Buffer.alloc(length);
+  let filled = 0;
+  while (filled < length) {
+    for (const byte of randomBytes(length)) {
+      if (byte === 0x1a || byte === 0x0d) continue;
+      cookie[filled++] = byte;
+      if (filled === length) break;
+    }
+  }
+  return cookie;
+}
+
+/**
  * One VcXsrv display from the build shipped with the Windows app, started
  * on first use. LocalX11 runs one per SSH transport.
  *
@@ -143,7 +164,7 @@ export class BundledXServer {
 
   /** Start VcXsrv on `display`; undefined when a different server answers there. */
   private async launch(display: number, clipboard: boolean): Promise<RunningXServer | undefined> {
-    const auth: X11Auth = { name: MIT_MAGIC_COOKIE, data: randomBytes(16) };
+    const auth: X11Auth = { name: MIT_MAGIC_COOKIE, data: textSafeCookie() };
     const authDirectory = this.options.authDirectory ?? os.tmpdir();
     const authFile = path.join(authDirectory, `muxus-x11-${process.pid}-${display}.Xauthority`);
     if (this.authFile && this.authFile !== authFile) fs.rmSync(this.authFile, { force: true });

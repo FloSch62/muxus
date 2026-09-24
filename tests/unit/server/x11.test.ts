@@ -7,7 +7,7 @@ import { Duplex } from 'node:stream';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { parseDisplay } from '../../../server/src/x11/display.js';
 import { LocalX11 } from '../../../server/src/x11/local-x11.js';
-import { BundledXServer, probeX11Server } from '../../../server/src/x11/vcxsrv.js';
+import { BundledXServer, probeX11Server, textSafeCookie } from '../../../server/src/x11/vcxsrv.js';
 import { parseX11Setup, rewriteX11Setup, spliceX11Connection } from '../../../server/src/x11/x11-proxy.js';
 import {
   FAMILY_INTERNET,
@@ -62,6 +62,22 @@ describe('parseDisplay', () => {
   it('rejects values that are not displays', () => {
     expect(parseDisplay('wayland-0', 'linux')).toBeUndefined();
     expect(parseDisplay('', 'linux')).toBeUndefined();
+  });
+});
+
+describe('bundled X server cookies', () => {
+  it('never contain bytes VcXsrv mangles when it reads the Xauthority file in text mode', () => {
+    const seen = new Set<number>();
+    for (let i = 0; i < 4000; i++) {
+      const cookie = textSafeCookie();
+      expect(cookie).toHaveLength(16);
+      // 0x1A ends a text-mode read and \r\n shrinks; either leaves VcXsrv
+      // with no cookie, which makes it accept local clients without one.
+      expect(cookie.includes(0x1a)).toBe(false);
+      expect(cookie.includes(0x0d)).toBe(false);
+      for (const byte of cookie) seen.add(byte);
+    }
+    expect(seen.size).toBe(254);
   });
 });
 
