@@ -9,6 +9,7 @@ import {
   blankHostSessionLoggingDraft,
   type HostSessionLoggingDraft,
 } from '../../session-logging-policy.js';
+import { keywordHighlightRulesProblem } from '../../terminal/keyword-matching.js';
 
 /**
  * Form state for Muxus-owned Telnet/serial hosts. One draft carries both
@@ -89,12 +90,12 @@ export function nativeDraftProblem(draft: NativeHostDraft, kind: 'telnet' | 'ser
     if (!draft.host.trim()) return 'Enter a hostname or IP address.';
     const port = Number(draft.port);
     if (!Number.isInteger(port) || port < 1 || port > 65_535) return 'Port must be between 1 and 65535.';
-    return null;
+  } else {
+    if (!draft.path.trim()) return 'Choose or enter a serial port.';
+    const baud = Number(draft.baudRate);
+    if (!Number.isInteger(baud) || baud < 1 || baud > 12_000_000) return 'Baud rate must be between 1 and 12000000.';
   }
-  if (!draft.path.trim()) return 'Choose or enter a serial port.';
-  const baud = Number(draft.baudRate);
-  if (!Number.isInteger(baud) || baud < 1 || baud > 12_000_000) return 'Baud rate must be between 1 and 12000000.';
-  return null;
+  return keywordHighlightRulesProblem(draft.keywordHighlights.rules);
 }
 
 export function nativeDraftToInput(

@@ -114,6 +114,29 @@ describe('nativeDraftProblem', () => {
     // The empty serial path never blocks saving a telnet host.
     expect(nativeDraftProblem({ ...draft, port: '23' }, 'serial')).toMatch(/serial port/);
   });
+
+  it('rejects empty keywords and invalid regex highlighting rules', () => {
+    const draft = { ...blankNativeDraft(), name: 'Router', host: 'router.example.test' };
+    const rule = {
+      id: 'rule',
+      keyword: '(up',
+      foreground: '#ffffff',
+      caseSensitive: false,
+      wholeWord: false,
+    };
+    const withRules = (rules: (typeof rule & { regex?: boolean })[]) => ({
+      ...draft,
+      keywordHighlights: { inheritGlobal: true, rules },
+    });
+
+    expect(nativeDraftProblem(withRules([rule]), 'telnet')).toBeNull();
+    expect(nativeDraftProblem(withRules([{ ...rule, regex: true }]), 'telnet')).toMatch(
+      /Invalid regular expression/,
+    );
+    expect(nativeDraftProblem(withRules([{ ...rule, keyword: '' }]), 'telnet')).toMatch(
+      /needs a keyword/,
+    );
+  });
 });
 
 describe('nativeDraftToInput', () => {

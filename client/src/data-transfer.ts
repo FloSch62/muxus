@@ -1078,13 +1078,16 @@ function validKeywordHighlight(value: unknown): boolean {
   return (
     isRecord(value) &&
     nonEmptyString(value.id) &&
+    (value.name === undefined ||
+      (typeof value.name === 'string' && value.name.length > 0 && value.name.length <= 100)) &&
     typeof value.keyword === 'string' &&
     value.keyword.length > 0 &&
     value.keyword.length <= 500 &&
     validHexColor(value.foreground) &&
     (value.background === undefined || validHexColor(value.background)) &&
     typeof value.caseSensitive === 'boolean' &&
-    typeof value.wholeWord === 'boolean'
+    typeof value.wholeWord === 'boolean' &&
+    (value.regex === undefined || typeof value.regex === 'boolean')
   );
 }
 

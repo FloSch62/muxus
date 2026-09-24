@@ -1,52 +1,13 @@
 import type { HostKeywordHighlightConfig, KeywordHighlightRule } from '@muxus/shared';
 import type { IBufferLine, IDecoration, IDisposable, Terminal } from '@xterm/xterm';
-
-export interface KeywordMatch {
-  start: number;
-  end: number;
-  rule: KeywordHighlightRule;
-}
-
-const MAX_DECORATIONS = 500;
-
-// Tested once per candidate match boundary while highlighting a frame.
-const WORD_CHARACTER = /[A-Za-z0-9_]/;
-
-function isWordCharacter(value: string | undefined): boolean {
-  return value !== undefined && WORD_CHARACTER.test(value);
-}
-
-/** Find literal keyword matches in rule order, including overlapping rules. */
-export function findKeywordMatches(
-  text: string,
-  rules: readonly KeywordHighlightRule[],
-  limit = MAX_DECORATIONS,
-): KeywordMatch[] {
-  const matches: KeywordMatch[] = [];
-  let foldedText: string | undefined;
-  for (const rule of rules) {
-    if (!rule.keyword || matches.length >= limit) continue;
-    const needle = rule.caseSensitive ? rule.keyword : rule.keyword.toLocaleLowerCase();
-    if (!needle) continue;
-    const haystack = rule.caseSensitive
-      ? text
-      : (foldedText ??= text.toLocaleLowerCase());
-    let from = 0;
-    while (from <= haystack.length - needle.length && matches.length < limit) {
-      const start = haystack.indexOf(needle, from);
-      if (start < 0) break;
-      const end = start + needle.length;
-      if (
-        !rule.wholeWord ||
-        (!isWordCharacter(text[start - 1]) && !isWordCharacter(text[end]))
-      ) {
-        matches.push({ start, end, rule });
-      }
-      from = start + Math.max(1, needle.length);
-    }
-  }
-  return matches;
-}
+import { KeywordMatchRetry, keywordMatchClient, type KeywordMatchClient } from './keyword-match-client.js';
+import {
+  groupKeywordMatches,
+  isSlowKeywordPattern,
+  matchKeywordLines,
+  type KeywordMatch,
+  type KeywordMatcher,
+} from './keyword-matching.js';
 
 /** Resolve the effective rules for a local/ad-hoc terminal or one saved host. */
 export function resolveKeywordHighlights(
@@ -108,19 +69,45 @@ export interface KeywordHighlighter extends IDisposable {
   setRules(rules: readonly KeywordHighlightRule[]): void;
 }
 
+interface LineSnapshot {
+  lineIndex: number;
+  text: string;
+  segments: CellSegment[];
+}
+
+function matcherFields(rule: KeywordHighlightRule): KeywordMatcher {
+  return {
+    keyword: rule.keyword,
+    caseSensitive: rule.caseSensitive,
+    wholeWord: rule.wholeWord,
+    regex: rule.regex,
+  };
+}
+
 /**
  * Highlight the visible viewport with tracked xterm decorations. Scanning is
  * frame-batched by onWriteParsed and repeated on scroll, so scrollback remains
  * correct without doing O(scrollback) work for every chunk of PTY output.
+ *
+ * Literal keywords are matched here, in the frame. Once a rule is a regex the
+ * whole set is matched by the shared worker instead, because a pattern that
+ * backtracks catastrophically would otherwise freeze the UI thread; the old
+ * decorations stay until the worker answers, so nothing flickers.
  */
 export function attachKeywordHighlighter(
   terminal: Terminal,
   initialRules: readonly KeywordHighlightRule[],
+  matcher: () => KeywordMatchClient = keywordMatchClient,
 ): KeywordHighlighter {
   let rules = [...initialRules];
+  let rulesVersion = 0;
   let decorations: IDecoration[] = [];
   let disposed = false;
   let scheduled = false;
+  // One worker request per terminal at a time; frames that arrive meanwhile
+  // collapse into a single render when it answers.
+  let waiting = false;
+  let renderAgain = false;
 
   const clear = () => {
     for (const decoration of decorations) {
@@ -130,27 +117,41 @@ export function attachKeywordHighlighter(
     decorations = [];
   };
 
-  const render = () => {
-    scheduled = false;
-    if (disposed) return;
-    clear();
-    if (rules.length === 0) return;
-
+  const visibleLines = (): LineSnapshot[] | undefined => {
     const buffer = terminal.buffer.active;
     // xterm cannot anchor decorations in the alternate buffer used by full-screen apps.
-    if (buffer.type === 'alternate') return;
-    const viewportStart = buffer.viewportY;
-    const viewportEnd = Math.min(buffer.length, viewportStart + terminal.rows);
-    let remaining = MAX_DECORATIONS;
-    for (let lineIndex = viewportStart; lineIndex < viewportEnd && remaining > 0; lineIndex++) {
+    if (buffer.type === 'alternate') return undefined;
+    const lines: LineSnapshot[] = [];
+    const viewportEnd = Math.min(buffer.length, buffer.viewportY + terminal.rows);
+    for (let lineIndex = buffer.viewportY; lineIndex < viewportEnd; lineIndex++) {
       const line = buffer.getLine(lineIndex);
-      if (!line) continue;
-      const { text, segments } = lineTextAndCells(line, terminal.cols);
-      for (const match of findKeywordMatches(text, rules, remaining)) {
-        const range = cellsForMatch(segments, match.start, match.end);
+      if (line) lines.push({ lineIndex, ...lineTextAndCells(line, terminal.cols) });
+    }
+    return lines;
+  };
+
+  const decorate = (
+    lines: readonly LineSnapshot[],
+    matches: readonly KeywordMatch[][],
+    verifyText: boolean,
+  ) => {
+    clear();
+    const buffer = terminal.buffer.active;
+    if (buffer.type === 'alternate') return;
+    lines.forEach((snapshot, index) => {
+      const lineMatches = matches[index];
+      if (!lineMatches?.length) return;
+      if (verifyText) {
+        // Output may have rewritten this line while the worker was matching;
+        // the render that output scheduled covers the new text.
+        const line = buffer.getLine(snapshot.lineIndex);
+        if (!line || lineTextAndCells(line, terminal.cols).text !== snapshot.text) return;
+      }
+      for (const match of lineMatches) {
+        const range = cellsForMatch(snapshot.segments, match.start, match.end);
         if (!range) continue;
         const marker = terminal.registerMarker(
-          lineIndex - (buffer.baseY + buffer.cursorY),
+          snapshot.lineIndex - (buffer.baseY + buffer.cursorY),
         );
         if (!marker) continue;
         const decoration = terminal.registerDecoration({
@@ -163,9 +164,59 @@ export function attachKeywordHighlighter(
         });
         if (decoration) decorations.push(decoration);
         else marker.dispose();
-        remaining--;
       }
+    });
+  };
+
+  const render = () => {
+    scheduled = false;
+    if (disposed) return;
+    if (waiting) {
+      renderAgain = true;
+      return;
     }
+    const client = matcher();
+    const active = rules.filter(
+      (rule) => rule.keyword && !(rule.regex && (!client.available || isSlowKeywordPattern(rule))),
+    );
+    const lines = active.length > 0 ? visibleLines() : undefined;
+    if (!lines) {
+      clear();
+      return;
+    }
+    const texts = lines.map((line) => line.text);
+    const matchers = active.map(matcherFields);
+    if (!active.some((rule) => rule.regex)) {
+      // Literal matching is linear, so it stays in this frame.
+      const flat = matchKeywordLines(matchers, texts);
+      decorate(lines, groupKeywordMatches(flat, active, lines.length), false);
+      return;
+    }
+    waiting = true;
+    const version = rulesVersion;
+    client
+      .match(matchers, texts)
+      .then(
+        (flat) => {
+          if (disposed || version !== rulesVersion) return;
+          decorate(lines, groupKeywordMatches(flat, active, lines.length), true);
+        },
+        (error: unknown) => {
+          // A retry follows a paused slow pattern or a replaced worker; any
+          // other failure means the worker is unavailable and regex rules drop.
+          if (!(error instanceof KeywordMatchRetry) && client.available) {
+            console.warn('Keyword highlighting failed', error);
+          }
+          renderAgain = true;
+        },
+      )
+      .finally(() => {
+        waiting = false;
+        if (renderAgain) {
+          renderAgain = false;
+          schedule();
+        }
+      });
   };
 
   const schedule = () => {
@@ -182,6 +233,7 @@ export function attachKeywordHighlighter(
   return {
     setRules(nextRules) {
       rules = [...nextRules];
+      rulesVersion++;
       schedule();
     },
     dispose() {

@@ -101,9 +101,24 @@ expression options. Every match is marked in the scrollbar.
 
 ## Keyword highlighting
 
-Highlighting rules colour literal keywords in every terminal, such as `ERROR` on red and
-`WARN` on amber. Each rule has a foreground, an optional background, and case-sensitive and
-whole-word switches.
+Highlighting rules colour keywords in every terminal, such as `ERROR` on red and
+`WARN` on amber. Each rule is one row: its colours (click the preview to change them), an
+optional name saying what it is for, the keyword, and three toggles: **Aa** matches case,
+**ab** matches whole words only, and **.\*** treats the keyword as a JavaScript regular
+expression, such as `\b(?:up|down)\b`, `^Error:.*` for a whole line, or
+`(?<!no )\bshutdown\b` to skip a negated command. An invalid pattern is flagged in the
+editor and matches nothing until it is fixed.
+
+Regular expressions are matched in a background worker, so a pattern that backtracks for
+too long cannot freeze the terminal. If one pattern keeps the worker busy for more than a
+quarter of a second, Muxus pauses it for the rest of the session, shows a notice, and
+marks it in the editor; the other rules keep working, and changing the pattern tries it
+again.
+
+**Edit as JSON** opens any rule list as text, which is quicker for bulk changes or for
+pasting rules from elsewhere. `keyword` and `foreground` are required; `name`, `background`,
+`regex`, `caseSensitive` and `wholeWord` are optional. **Apply** checks the whole list and
+names the first rule with a problem; nothing changes until it applies cleanly.
 
 <figure markdown="span">
   ![Keyword highlighting rules](../assets/screenshots/settings-highlighting.png#only-light){ .shadow }
@@ -111,10 +126,21 @@ whole-word switches.
   <figcaption>Global rules, with per-host rules that add to them or replace them.</figcaption>
 </figure>
 
-A named highlighting profile can hold a platform-specific rule set, such as one for Nokia
-SR OS, and be assigned to any number of SSH, Telnet or serial hosts. Profiles can be
-imported and exported as JSON files from **Settings → Highlighting**, so a rule set can be
+A named highlighting profile can hold a platform-specific rule set and be assigned to any
+number of SSH, Telnet or serial hosts. Profiles can be imported and exported as JSON files
+from **Settings → Highlighting**, one at a time or with **Export all**, so a rule set can be
 shared without recreating it. Editing a profile updates every assigned open terminal.
+
+Muxus ships two profiles, **Nokia SR OS** and **Nokia SR Linux**. They colour operational
+and administrative states, BGP session states, alarm severities, CLI errors, IPv4/IPv6 and
+MAC addresses, ports or interfaces, and the configuration-mode context of the MD-CLI and
+SR Linux prompts. They are ordinary profiles: assign them to your routers, edit them, and
+export them like any other. **Built-in** adds one back after it was deleted, or resets it to
+the shipped rules; hosts assigned to it keep the assignment.
+
+Files exported from a profile that uses regex rules are marked as version 2, so an older
+Muxus release refuses them instead of matching the patterns as literal text. For the same
+reason, a version 1 file that contains regex rules is rejected on import.
 
 A host can also carry its own additional rules. It can combine global, profile and host
 rules, or disable the global set and use only its profile and host rules. See the

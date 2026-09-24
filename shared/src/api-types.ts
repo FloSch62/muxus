@@ -419,16 +419,21 @@ export interface SshHostEntry {
   metadata?: OpenSshProfileMetadata;
 }
 
-/** One literal terminal keyword and the colors used to render every match. */
+/** One terminal keyword or pattern and the colors used to render every match. */
 export interface KeywordHighlightRule {
   /** Stable client-generated id used while editing and reordering rules. */
   id: string;
+  /** Optional label saying what the rule is for, e.g. "IPv4 addresses". */
+  name?: string;
+  /** Literal text, or a JavaScript regular expression source when `regex` is set. */
   keyword: string;
   /** xterm decorations require an opaque #RRGGBB color. */
   foreground: string;
   background?: string;
   caseSensitive: boolean;
   wholeWord: boolean;
+  /** Absent in rules saved before regex support; treated as a literal keyword. */
+  regex?: boolean;
 }
 
 /** A named, reusable rule set that can be assigned to any saved host. */
