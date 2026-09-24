@@ -9,7 +9,7 @@ import {
   blankHostSessionLoggingDraft,
   type HostSessionLoggingDraft,
 } from '../../session-logging-policy.js';
-import { keywordHighlightRulesProblem } from '../../terminal/keyword-highlighting.js';
+import { keywordHighlightRulesProblem } from '../../terminal/keyword-matching.js';
 
 /**
  * Form state for Muxus-owned Telnet/serial hosts. One draft carries both

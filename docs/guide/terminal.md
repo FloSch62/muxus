@@ -109,6 +109,12 @@ expression, such as `\b(?:up|down)\b`, `^Error:.*` for a whole line, or
 `(?<!no )\bshutdown\b` to skip a negated command. An invalid pattern is flagged in the
 editor and matches nothing until it is fixed.
 
+Regular expressions are matched in a background worker, so a pattern that backtracks for
+too long cannot freeze the terminal. If one pattern keeps the worker busy for more than a
+quarter of a second, Muxus pauses it for the rest of the session, shows a notice, and
+marks it in the editor; the other rules keep working, and changing the pattern tries it
+again.
+
 **Edit as JSON** opens any rule list as text, which is quicker for bulk changes or for
 pasting rules from elsewhere. `keyword` and `foreground` are required; `name`, `background`,
 `regex`, `caseSensitive` and `wholeWord` are optional. **Apply** checks the whole list and
@@ -133,7 +139,8 @@ export them like any other. **Built-in** adds one back after it was deleted, or 
 the shipped rules; hosts assigned to it keep the assignment.
 
 Files exported from a profile that uses regex rules are marked as version 2, so an older
-Muxus release refuses them instead of matching the patterns as literal text.
+Muxus release refuses them instead of matching the patterns as literal text. For the same
+reason, a version 1 file that contains regex rules is rejected on import.
 
 A host can also carry its own additional rules. It can combine global, profile and host
 rules, or disable the global set and use only its profile and host rules. See the

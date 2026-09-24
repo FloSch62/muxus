@@ -1,6 +1,6 @@
 import type { KeywordHighlightProfile, KeywordHighlightRule } from '@muxus/shared';
 import { newPreferenceId } from './command-buttons.js';
-import { keywordPatternError } from './terminal/keyword-highlighting.js';
+import { keywordPatternError } from './terminal/keyword-matching.js';
 
 export const HIGHLIGHT_PROFILE_FORMAT = 'muxus-keyword-highlighting-profiles';
 /** Version 2 added regex rules. */
@@ -69,6 +69,16 @@ export function parseHighlightProfileDocument(text: string): HighlightProfileDoc
     parsed.profiles.length === 0
   ) {
     throw new Error('The highlighting profile file is incomplete or invalid.');
+  }
+  // Version 1 predates regex rules, and a release of that era would match the
+  // pattern as literal text. A version 1 file that claims one is mislabeled.
+  if (
+    parsed.version === LITERAL_HIGHLIGHT_PROFILE_VERSION &&
+    parsed.profiles.some((profile) => profile.rules.some((rule) => rule.regex))
+  ) {
+    throw new Error(
+      `This file contains regex rules, which need highlighting profile version ${HIGHLIGHT_PROFILE_VERSION}; it says version ${LITERAL_HIGHLIGHT_PROFILE_VERSION}.`,
+    );
   }
   return {
     format: HIGHLIGHT_PROFILE_FORMAT,

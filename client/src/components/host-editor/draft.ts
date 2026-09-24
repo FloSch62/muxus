@@ -10,7 +10,7 @@ import {
   blankHostSessionLoggingDraft,
   type HostSessionLoggingDraft,
 } from '../../session-logging-policy.js';
-import { keywordHighlightRulesProblem } from '../../terminal/keyword-highlighting.js';
+import { keywordHighlightRulesProblem } from '../../terminal/keyword-matching.js';
 import { parseHostTarget } from './native-draft.js';
 
 export type IdentityAgentMode = 'default' | 'environment' | 'custom' | 'none';

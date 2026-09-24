@@ -16,7 +16,7 @@ import {
 import {
   findKeywordMatches,
   keywordHighlightRulesProblem,
-} from '../../../client/src/terminal/keyword-highlighting.js';
+} from '../../../client/src/terminal/keyword-matching.js';
 
 /** [rule id, matched text] pairs, in the order decorations would be drawn. */
 function highlights(profile: KeywordHighlightProfile, line: string): [string, string][] {

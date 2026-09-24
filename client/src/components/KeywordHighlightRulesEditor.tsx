@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -22,7 +22,11 @@ import {
   keywordHighlightRulesToJson,
   parseKeywordHighlightRulesJson,
 } from '../highlight-profiles.js';
-import { keywordPatternError } from '../terminal/keyword-highlighting.js';
+import {
+  keywordPatternError,
+  slowKeywordPatternCount,
+  subscribeSlowKeywordPatterns,
+} from '../terminal/keyword-matching.js';
 
 const MONO_FONT = '"JetBrains Mono", monospace';
 // Matches a small outlined TextField so every control in a rule row lines up.
@@ -47,6 +51,8 @@ export function KeywordHighlightRulesEditor({
 }) {
   // Non-null while the list is being edited as JSON text.
   const [json, setJson] = useState<string | null>(null);
+  // A terminal pausing a slow pattern changes what keywordPatternError reports.
+  useSyncExternalStore(subscribeSlowKeywordPatterns, slowKeywordPatternCount);
 
   if (json !== null) {
     return (

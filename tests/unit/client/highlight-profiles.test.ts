@@ -54,6 +54,14 @@ describe('highlighting profile files', () => {
     expect(parseHighlightProfileDocument(JSON.stringify(document)).profiles).toEqual([profile]);
   });
 
+  it('rejects a version 1 file that claims regex rules', () => {
+    const regexRule = { ...nokia.rules[0]!, keyword: String.raw`\bMAJOR\b`, regex: true };
+    const document = createHighlightProfileDocument([{ ...nokia, rules: [regexRule] }]);
+    expect(() =>
+      parseHighlightProfileDocument(JSON.stringify({ ...document, version: 1 })),
+    ).toThrow(/regex rules, which need highlighting profile version 2/);
+  });
+
   it('drops a false regex flag rather than exporting it', () => {
     const profile = { ...nokia, rules: [{ ...nokia.rules[0]!, regex: false }] };
     expect(createHighlightProfileDocument([profile]).profiles[0]!.rules[0]).not.toHaveProperty(
