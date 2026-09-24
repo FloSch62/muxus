@@ -18,6 +18,46 @@ afterEach(async () => {
 });
 
 describe('SessionRecorder', () => {
+  it('persists line times through delayed snapshots and coalesced batches', async () => {
+    database = new MuxusDatabase(':memory:');
+    history = await openHistory(database);
+    const recorder = SessionRecorder.start(database, history, { warn: vi.fn() } as never, { kind: 'local' });
+    recorder.setState({ enabled: true });
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-09-24T10:00:00.000Z'));
+      recorder.output('one\r\ntwo\r\nthree\r\nfour\r\nfive\r\n');
+      vi.setSystemTime(new Date('2026-09-24T10:00:05.000Z'));
+      recorder.output('six\r\n');
+      vi.setSystemTime(new Date('2026-09-24T11:00:00.000Z'));
+      recorder.end('completed');
+    } finally {
+      vi.useRealTimers();
+    }
+    const detail = (await history.sessionLog(recorder.state.sessionId!))!;
+    const output = detail.events.filter((event) => event.direction === 'output');
+    expect(output.map((event) => event.text).join('')).toBe('one\ntwo\nthree\nfour\nfive\nsix\n');
+    expect(output.flatMap((event) => event.lineTimestamps!.map((stamp) => stamp.recordedAt)))
+      .toEqual([...Array(5).fill('2026-09-24T10:00:00.000Z'), '2026-09-24T10:00:05.000Z']);
+    expect(output[0]!.lineTimestamps?.map((stamp) => stamp.offset)).toEqual([0, 4]);
+  });
+
+  it('keeps receive times across redraws, split UTF-8 and delayed drains', () => {
+    const normalizer = new TerminalTextNormalizer();
+    normalizer.write(Buffer.from('prompt> '), '2026-09-24T10:00:00.000Z');
+    normalizer.write(Buffer.from('status\r\nloading 1%'), '2026-09-24T10:00:02.000Z');
+    normalizer.write(Buffer.from('\r\x1b[2Kready\r\n'), '2026-09-24T10:00:03.000Z');
+    const unicode = Buffer.from('✓');
+    normalizer.write(unicode.subarray(0, 1), '2026-09-24T10:00:04.000Z');
+    normalizer.write(unicode.subarray(1), '2026-09-24T10:00:05.000Z');
+    expect(normalizer.finish()).toBe('prompt> status\nready\n✓');
+    expect(normalizer.takeLineTimestamps()).toEqual([
+      { offset: 0, recordedAt: '2026-09-24T10:00:02.000Z' },
+      { offset: 15, recordedAt: '2026-09-24T10:00:03.000Z' },
+      { offset: 21, recordedAt: '2026-09-24T10:00:05.000Z' },
+    ]);
+  });
+
   it('does not create a session log until logging is explicitly enabled', async () => {
     database = new MuxusDatabase(':memory:');
     history = await openHistory(database);

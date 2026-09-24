@@ -16,6 +16,7 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import FormControl from '@mui/material/FormControl';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
 import InputLabel from '@mui/material/InputLabel';
 import List from '@mui/material/List';
@@ -25,6 +26,7 @@ import MenuItem from '@mui/material/MenuItem';
 import Paper from '@mui/material/Paper';
 import Select from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
+import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
@@ -39,6 +41,7 @@ import PushPinIcon from '@mui/icons-material/PushPin';
 import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import {
+  sessionTranscript,
   SNIPPET_MATCH_END,
   SNIPPET_MATCH_START,
   type SessionLogSummary,
@@ -76,6 +79,7 @@ export function SessionHistoryDialog() {
   const initialSelectedId = useUiStore((state) => state.historySelectedId);
   const [query, setQuery] = useState(initialQuery);
   const [host, setHost] = useState('');
+  const [showTimestamps, setShowTimestamps] = useState(false);
   const [kind, setKind] = useState('');
   const [startedAfter, setStartedAfter] = useState('');
   const [startedBefore, setStartedBefore] = useState('');
@@ -111,23 +115,10 @@ export function SessionHistoryDialog() {
     if (selected && selected.id !== selectedId) setSelectedId(selected.id);
   }, [selected, selectedId]);
 
-  const previewModel = useMemo(() => {
-    let text = '';
-    const chunks: { text: string; offset: number }[] = [];
-    if (!detail) return { text, chunks };
-    const events = detail.events.slice(-MAX_PREVIEW_EVENTS);
-    for (const event of events) {
-      const marker =
-        event.direction === 'input'
-          ? '› '
-          : event.direction === 'system'
-            ? '• '
-            : '';
-      chunks.push({ text: event.text, offset: text.length + marker.length });
-      text += `${marker}${event.text}`;
-    }
-    return { text, chunks };
-  }, [detail]);
+  const previewModel = useMemo(
+    () => sessionTranscript(detail?.events.slice(-MAX_PREVIEW_EVENTS) ?? [], showTimestamps, true),
+    [detail, showTimestamps],
+  );
   const preview = previewModel.text;
 
   const matches = useMemo(
@@ -342,7 +333,7 @@ export function SessionHistoryDialog() {
                   size="small"
                   variant="outlined"
                   startIcon={<DescriptionOutlinedIcon />}
-                  onClick={() => void download(selected, 'clean')}
+                  onClick={() => void download(selected, 'clean', showTimestamps)}
                 >
                   Clean log
                 </Button>
@@ -358,7 +349,7 @@ export function SessionHistoryDialog() {
                   <IconButton
                     size="small"
                     aria-label="Copy complete clean log"
-                    onClick={() => void copyCleanLog(selected)}
+                    onClick={() => void copyCleanLog(selected, showTimestamps)}
                   >
                     <ContentCopyOutlinedIcon fontSize="small" />
                   </IconButton>
@@ -401,6 +392,25 @@ export function SessionHistoryDialog() {
                   </IconButton>
                 </Stack>
               ) : null}
+              <Box>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      size="small"
+                      checked={showTimestamps}
+                      onChange={(_, checked) => setShowTimestamps(checked)}
+                    />
+                  }
+                  label="Show timestamps (UTC)"
+                />
+                {showTimestamps ? (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                    Time each line last changed in Muxus. Applies to clean exports and copies.
+                    {detail?.events.some((event) => event.direction !== 'system' && event.text && !event.lineTimestamps?.length)
+                      ? ' Older recordings use approximate event times.' : ''}
+                  </Typography>
+                ) : null}
+              </Box>
               <Paper
                 ref={previewRef}
                 variant="outlined"
@@ -562,13 +572,15 @@ function PinSessionButton({ session }: { session: SessionLogSummary }) {
 async function download(
   session: SessionLogSummary,
   format: 'clean' | 'raw' | 'replay',
+  timestamps = false,
 ): Promise<void> {
   try {
     const suffix =
       format === 'replay'
         ? 'replay.html'
         : format;
-    const response = await apiFetchRaw(`/api/session-history/${session.id}/${suffix}`);
+    const query = format === 'clean' && timestamps ? '?timestamps=true' : '';
+    const response = await apiFetchRaw(`/api/session-history/${session.id}/${suffix}${query}`);
     const text = await response.text();
     const extension =
       format === 'raw'
@@ -592,9 +604,10 @@ async function download(
   }
 }
 
-async function copyCleanLog(session: SessionLogSummary): Promise<void> {
+async function copyCleanLog(session: SessionLogSummary, timestamps = false): Promise<void> {
   try {
-    const response = await apiFetchRaw(`/api/session-history/${session.id}/clean`);
+    const query = timestamps ? '?timestamps=true' : '';
+    const response = await apiFetchRaw(`/api/session-history/${session.id}/clean${query}`);
     const text = await response.text();
     if (!text) {
       showToast('info', 'The clean log is empty.');

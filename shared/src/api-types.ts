@@ -224,6 +224,12 @@ export interface SessionLogSummary {
 export const SNIPPET_MATCH_START = '\u0001';
 export const SNIPPET_MATCH_END = '\u0002';
 
+/** UTF-16 offset of a normalized line and the time its visible content last changed. */
+export interface SessionLineTimestamp {
+  offset: number;
+  recordedAt: string;
+}
+
 /** One timestamped, normalized replay event. Raw bytes remain server-side. */
 export interface SessionLogEvent {
   sequence: number;
@@ -231,6 +237,8 @@ export interface SessionLogEvent {
   elapsedMs: number;
   direction: SessionLogDirection;
   text: string;
+  /** Absent on older recordings, whose event timestamps are approximate. */
+  lineTimestamps?: SessionLineTimestamp[];
 }
 
 export interface SessionLogDetail extends SessionLogSummary {

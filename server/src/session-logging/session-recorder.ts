@@ -1,4 +1,9 @@
-import type { SessionLogDirection, SessionLogStatus, TerminalProfile } from '@muxus/shared';
+import type {
+  SessionLineTimestamp,
+  SessionLogDirection,
+  SessionLogStatus,
+  TerminalProfile,
+} from '@muxus/shared';
 import type { FastifyBaseLogger } from 'fastify';
 import type {
   MuxusDatabase,
@@ -163,14 +168,16 @@ export class SessionRecorder {
       !this.state.captureInput
     ) return;
     this.flushOutputNormalizerSnapshot();
-    this.append('input', data, this.inputNormalizer.write(data));
+    const text = this.inputNormalizer.write(data);
+    this.append('input', data, text, this.inputNormalizer.takeLineTimestamps());
   }
 
   output(data: Buffer | string): void {
     if (!this.state.enabled || this.state.paused || this.terminalEnded) return;
     if (this.state.captureInput) this.flushInputNormalizerSnapshot();
     const raw = typeof data === 'string' ? Buffer.from(data, 'utf8') : data;
-    this.append('output', raw, this.outputNormalizer.write(raw));
+    const text = this.outputNormalizer.write(raw);
+    this.append('output', raw, text, this.outputNormalizer.takeLineTimestamps());
   }
 
   system(message: string): void {
@@ -232,6 +239,7 @@ export class SessionRecorder {
     direction: SessionLogDirection,
     raw: Buffer,
     normalized?: string,
+    lineTimestamps: SessionLineTimestamp[] = [],
   ): void {
     const text = normalized ?? raw.toString('utf8');
     if (
@@ -247,6 +255,10 @@ export class SessionRecorder {
       previous?.direction === direction &&
       previous.rawBytes + raw.byteLength <= MAX_BUFFERED_EVENT_BYTES
     ) {
+      const offset = previous.text.reduce((length, part) => length + part.length, 0);
+      for (const stamp of lineTimestamps) {
+        previous.lineTimestamps.push({ ...stamp, offset: stamp.offset + offset });
+      }
       previous.raw.push(raw);
       previous.text.push(text);
       previous.rawBytes += raw.byteLength;
@@ -256,6 +268,7 @@ export class SessionRecorder {
         recordedAt,
         elapsedMs,
         direction,
+        lineTimestamps,
         raw: [raw],
         text: [text],
         rawBytes: raw.byteLength,
@@ -275,6 +288,7 @@ export class SessionRecorder {
     direction: SessionLogDirection,
     raw: Buffer,
     text: string,
+    lineTimestamps?: SessionLineTimestamp[],
   ): void {
     if (
       !this.state.enabled ||
@@ -290,6 +304,7 @@ export class SessionRecorder {
       direction,
       raw,
       text,
+      lineTimestamps,
     }]);
   }
 
@@ -310,6 +325,7 @@ export class SessionRecorder {
             ? event.raw[0]!
             : Buffer.concat(event.raw, event.rawBytes),
         text: event.text.join(''),
+        lineTimestamps: event.lineTimestamps,
       }));
     if (events.length > 0) this.persist(events);
   }
@@ -324,20 +340,20 @@ export class SessionRecorder {
     this.flush();
     const input = final ? this.inputNormalizer.finish() : this.inputNormalizer.drain();
     const output = final ? this.outputNormalizer.finish() : this.outputNormalizer.drain();
-    if (input) this.appendNow('input', Buffer.alloc(0), input);
-    if (output) this.appendNow('output', Buffer.alloc(0), output);
+    if (input) this.appendNow('input', Buffer.alloc(0), input, this.inputNormalizer.takeLineTimestamps());
+    if (output) this.appendNow('output', Buffer.alloc(0), output, this.outputNormalizer.takeLineTimestamps());
   }
 
   private flushInputNormalizerSnapshot(): void {
     this.flush();
     const input = this.inputNormalizer.drain();
-    if (input) this.appendNow('input', Buffer.alloc(0), input);
+    if (input) this.appendNow('input', Buffer.alloc(0), input, this.inputNormalizer.takeLineTimestamps());
   }
 
   private flushOutputNormalizerSnapshot(): void {
     this.flush();
     const output = this.outputNormalizer.drain();
-    if (output) this.appendNow('output', Buffer.alloc(0), output);
+    if (output) this.appendNow('output', Buffer.alloc(0), output, this.outputNormalizer.takeLineTimestamps());
   }
 
   private suspend(message: string): void {
@@ -374,6 +390,7 @@ interface PendingEvent {
   raw: Buffer[];
   text: string[];
   rawBytes: number;
+  lineTimestamps: SessionLineTimestamp[];
 }
 
 /**
@@ -398,10 +415,21 @@ export class TerminalTextNormalizer {
   private cursorCol = 0;
   private savedCursor: [number, number] = [0, 0];
   private committed = '';
+  private rowTimes: (string | undefined)[] = [];
+  private currentTime = '';
+  private committedTimes: SessionLineTimestamp[] = [];
+  private emittedTimes: SessionLineTimestamp[] = [];
+
+  takeLineTimestamps(): SessionLineTimestamp[] {
+    const timestamps = this.emittedTimes;
+    this.emittedTimes = [];
+    return timestamps;
+  }
 
   constructor(private readonly editableRows = 4) {}
 
-  write(data: Uint8Array): string {
+  write(data: Uint8Array, recordedAt = new Date().toISOString()): string {
+    this.currentTime = recordedAt;
     this.process(this.decoder.decode(data, { stream: true }));
     this.commitReadyRows();
     return this.takeCommitted();
@@ -433,6 +461,7 @@ export class TerminalTextNormalizer {
           continue;
         }
         if (char === '\n') {
+          this.rowTimes[this.cursorRow] ??= this.currentTime;
           this.cursorRow += 1;
           this.ensureRow(this.cursorRow);
           continue;
@@ -494,6 +523,7 @@ export class TerminalTextNormalizer {
     const row = this.ensureRow(this.cursorRow);
     while (row.length < this.cursorCol) row.push(' ');
     row[this.cursorCol] = char;
+    this.rowTimes[this.cursorRow] = this.currentTime;
     this.cursorCol += 1;
   }
 
@@ -577,9 +607,11 @@ export class TerminalTextNormalizer {
         this.eraseLine(first);
         break;
       case 'P':
+        this.rowTimes[this.cursorRow] = this.currentTime;
         this.ensureRow(this.cursorRow).splice(this.cursorCol, amount);
         break;
       case '@':
+        this.rowTimes[this.cursorRow] = this.currentTime;
         this.ensureRow(this.cursorRow).splice(
           this.cursorCol,
           0,
@@ -587,6 +619,7 @@ export class TerminalTextNormalizer {
         );
         break;
       case 'X': {
+        this.rowTimes[this.cursorRow] = this.currentTime;
         const row = this.ensureRow(this.cursorRow);
         for (let index = 0; index < amount; index += 1) {
           if (this.cursorCol + index < row.length) row[this.cursorCol + index] = ' ';
@@ -614,16 +647,21 @@ export class TerminalTextNormalizer {
     if (mode === 0) {
       this.eraseLine(0);
       this.rows.splice(this.cursorRow + 1);
+      this.rowTimes.splice(this.cursorRow + 1);
       return;
     }
     if (mode === 1) {
-      for (let row = 0; row < this.cursorRow; row += 1) this.rows[row] = [];
+      for (let row = 0; row < this.cursorRow; row += 1) {
+        this.rows[row] = [];
+        this.rowTimes[row] = this.currentTime;
+      }
       this.eraseLine(1);
     }
   }
 
   private eraseLine(mode: number): void {
     const row = this.ensureRow(this.cursorRow);
+    this.rowTimes[this.cursorRow] = this.currentTime;
     if (mode === 2) {
       this.rows[this.cursorRow] = [];
       return;
@@ -644,10 +682,12 @@ export class TerminalTextNormalizer {
   private commitReadyRows(): void {
     const count = Math.max(0, this.cursorRow - this.editableRows);
     for (let index = 0; index < count; index += 1) {
+      this.recordLineTime(index);
       this.committed += `${lineText(this.rows[index]!)}\n`;
     }
     if (count === 0) return;
     this.rows.splice(0, count);
+    this.rowTimes.splice(0, count);
     this.cursorRow -= count;
     this.savedCursor = [
       Math.max(0, this.savedCursor[0] - count),
@@ -660,12 +700,21 @@ export class TerminalTextNormalizer {
     while (last >= 0 && lineText(this.rows[last]!) === '') last -= 1;
     if (last < 0) return;
     for (let index = 0; index <= last; index += 1) {
+      this.recordLineTime(index);
       this.committed += lineText(this.rows[index]!);
       if (index < last || last < this.rows.length - 1) this.committed += '\n';
     }
   }
 
+  private recordLineTime(index: number): void {
+    this.committedTimes.push({
+      offset: this.committed.length,
+      recordedAt: this.rowTimes[index] ?? this.currentTime,
+    });
+  }
+
   private resetRows(): void {
+    this.rowTimes = [];
     this.rows = [[]];
     this.cursorRow = 0;
     this.cursorCol = 0;
@@ -675,6 +724,8 @@ export class TerminalTextNormalizer {
   private takeCommitted(): string {
     const output = this.committed;
     this.committed = '';
+    this.emittedTimes = this.committedTimes;
+    this.committedTimes = [];
     return output;
   }
 }
