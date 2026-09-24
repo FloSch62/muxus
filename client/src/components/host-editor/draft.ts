@@ -17,6 +17,8 @@ export type IdentityAgentMode = 'default' | 'environment' | 'custom' | 'none';
 export type RemoteCommandMode = 'inherit' | 'shell' | 'command';
 export type RequestTtyMode = 'inherit' | 'no' | 'yes' | 'force' | 'auto';
 export type StrictHostKeyCheckingMode = 'inherit' | 'yes' | 'no' | 'accept-new' | 'ask';
+/** ForwardX11: 'inherit' follows ssh_config, else the Muxus platform default. */
+export type ForwardX11Mode = 'inherit' | 'yes' | 'no';
 
 /** Everything the editor form holds, in form-friendly shapes (ports as text). */
 export interface HostDraft {
@@ -50,6 +52,7 @@ export interface HostDraft {
   /** Custom agent socket path or environment indirection. */
   identityAgent: string;
   forwardAgent: boolean;
+  forwardX11: ForwardX11Mode;
   routeMode: 'direct' | 'jump' | 'command';
   proxyJump: string[];
   proxyCommand: string;
@@ -93,6 +96,7 @@ export function blankDraft(prefillTarget = '', group = ''): HostDraft {
     identityAgentMode: 'default',
     identityAgent: '',
     forwardAgent: false,
+    forwardX11: 'inherit',
     routeMode: 'direct',
     proxyJump: [],
     proxyCommand: '',
@@ -140,6 +144,7 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
     identityAgentMode: identityAgent.mode,
     identityAgent: identityAgent.value,
     forwardAgent: o.forwardAgent ?? false,
+    forwardX11: forwardX11Draft(o.forwardX11),
     routeMode: o.proxyCommand
       ? 'command'
       : o.proxyJump?.length
@@ -200,6 +205,7 @@ export function draftFromSavedSshProfile(
     identityAgentMode: identityAgent.mode,
     identityAgent: identityAgent.value,
     forwardAgent: profile.forwardAgent ?? false,
+    forwardX11: forwardX11Draft(profile.forwardX11),
     routeMode: profile.proxyCommand
       ? 'command'
       : profile.proxyJump?.length
@@ -297,6 +303,7 @@ export function draftToSavedSshInput(
               ? text(draft.identityAgent)
               : undefined,
       forwardAgent: draft.forwardAgent || undefined,
+      forwardX11: forwardX11Option(draft.forwardX11),
       proxyJump:
         draft.routeMode === 'jump' && draft.proxyJump.length > 0
           ? draft.proxyJump
@@ -352,6 +359,7 @@ export function draftToRequest(draft: HostDraft, previousAlias?: string): HostUp
               ? text(draft.identityAgent)
               : undefined,
       forwardAgent: draft.forwardAgent ? true : undefined,
+      forwardX11: forwardX11Option(draft.forwardX11),
       proxyJump:
         draft.routeMode === 'jump' && draft.proxyJump.length
           ? draft.proxyJump
@@ -402,6 +410,14 @@ function identityAgentDraft(value: string | undefined): {
   if (value === 'SSH_AUTH_SOCK') return { mode: 'environment', value: '' };
   if (value.toLowerCase() === 'none') return { mode: 'none', value: '' };
   return { mode: 'custom', value };
+}
+
+function forwardX11Draft(value: boolean | undefined): ForwardX11Mode {
+  return value === undefined ? 'inherit' : value ? 'yes' : 'no';
+}
+
+function forwardX11Option(mode: ForwardX11Mode): boolean | undefined {
+  return mode === 'inherit' ? undefined : mode === 'yes';
 }
 
 function remoteCommandDraft(value: string | undefined): {

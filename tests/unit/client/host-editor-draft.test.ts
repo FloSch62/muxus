@@ -197,6 +197,22 @@ describe('SSH host editor draft', () => {
     expect(savedProfile.remoteCommand).toBeUndefined();
   });
 
+  it('writes ForwardX11 only when the host overrides the default', () => {
+    const draft = blankDraft();
+    expect(draft.forwardX11).toBe('inherit');
+    expect(draftToRequest(draft).options.forwardX11).toBeUndefined();
+
+    draft.forwardX11 = 'no';
+    expect(draftToRequest(draft).options.forwardX11).toBe(false);
+    draft.forwardX11 = 'yes';
+    const savedProfile = draftToSavedSshInput(draft).profile;
+    if (savedProfile.kind !== 'ssh') throw new Error('Expected an SSH profile');
+    expect(savedProfile.forwardX11).toBe(true);
+
+    expect(draftFromEntry({ ...entry, options: { ...entry.options, forwardX11: false } }, false).forwardX11).toBe('no');
+    expect(draftFromEntry(entry, false).forwardX11).toBe('inherit');
+  });
+
   it('selects the current per-host agent for live key detection', () => {
     const draft = blankDraft();
     expect(identityAgentForDetection(draft, '${INHERITED_AGENT}')).toBe('${INHERITED_AGENT}');

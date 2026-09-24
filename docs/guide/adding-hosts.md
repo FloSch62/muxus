@@ -80,8 +80,9 @@ The route determines how the connection is dialled.
 
 ## Port forwarding
 
-Forwards declared here are written into the block as `LocalForward`, `RemoteForward` or
-`DynamicForward`, and start with every session to this host.
+The **Forwarding** section holds the host's [X11 forwarding](x11.md) choice and its port
+forwards. Forwards declared here are written into the block as `LocalForward`,
+`RemoteForward` or `DynamicForward`, and start with every session to this host.
 
 <figure markdown="span">
   ![Port forwarding with the live tunnel diagram](../assets/screenshots/host-editor-forwards.png#only-light){ .shadow }

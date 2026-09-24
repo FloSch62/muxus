@@ -251,7 +251,7 @@ jobs:
       - build
       - sign-linux
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     permissions:
       actions: write
       contents: write
@@ -263,6 +263,25 @@ jobs:
           # Exclude the unsigned muxus-windows-store submission artifact.
           pattern: '{linux-*,windows-*,macos-*}'
           merge-multiple: true
+
+      - name: Check out the VcXsrv pin
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
+          sparse-checkout: electron/scripts/vcxsrv.mjs
+          sparse-checkout-cone-mode: false
+          path: release-source
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Windows installers ship VcXsrv (GPLv3); its corresponding source
+      # travels with every release, as the bundled NOTICE.txt promises.
+      - name: Attach VcXsrv source
+        run: node release-source/electron/scripts/vcxsrv.mjs --source release-assets
 
       - name: Upload installers to GitHub release
         env:

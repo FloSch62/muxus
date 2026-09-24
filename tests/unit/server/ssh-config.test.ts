@@ -115,6 +115,29 @@ describe('listHosts', () => {
     ]);
   });
 
+  it('keeps ForwardX11 unset unless a matching block sets it', () => {
+    const hosts = hostsOf(
+      [
+        'Host gui',
+        '  ForwardX11 yes',
+        'Host plain',
+        '  HostName plain.example.test',
+        'Host console',
+        '  ForwardX11 no',
+        '  ForwardX11 yes',
+      ].join('\n'),
+    );
+    const [gui, plain, console] = hosts;
+    expect(gui!.options.forwardX11).toBe(true);
+    expect(gui!.resolved.forwardX11).toBe(true);
+    expect(plain!.options.forwardX11).toBeUndefined();
+    expect(plain!.resolved.forwardX11).toBeUndefined();
+    // First obtained value wins; the repeat is preserved as an extra.
+    expect(console!.options.forwardX11).toBe(false);
+    expect(console!.options.extras).toEqual([{ keyword: 'ForwardX11', value: 'yes' }]);
+    expect(console!.resolved.forwardX11).toBe(false);
+  });
+
   it('resolves a single-quoted Windows identity path with spaces', () => {
     const windowsKey = String.raw`C:\Users\toweber\OneDrive - Nokia\NPI\SSH Key\keypair\securecrt_created\toweber`;
     const app = hostsOf(['Host windows', `  IdentityFile '${windowsKey}'`].join('\n'))[0]!;

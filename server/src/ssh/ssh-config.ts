@@ -445,6 +445,7 @@ export function resolveHost(
     certificateFiles: certificateFiles.map((f) => expandIdentityPath(f, identityTokens)),
     identitiesOnly: yes(first.get('identitiesonly')),
     forwardAgent: yes(first.get('forwardagent')),
+    forwardX11: flag(first.get('forwardx11')),
     proxyJump: parseProxyJumpList(first.get('proxyjump')),
     proxyCommand: parseProxyCommand(first.get('proxycommand')),
     forwards,
@@ -530,6 +531,7 @@ const RESOLVED_KEYS = new Set([
   'port',
   'identitiesonly',
   'forwardagent',
+  'forwardx11',
   'preferredauthentications',
   'pubkeyauthentication',
   'connecttimeout',
@@ -737,6 +739,12 @@ export function blockToOptions(block: HostBlock): HostBlockOptions {
       case 'forwardagent':
         out.forwardAgent = yes(opt.args[0]);
         break;
+      case 'forwardx11': {
+        const forwardX11 = flag(opt.args[0]);
+        if (forwardX11 !== undefined && out.forwardX11 === undefined) out.forwardX11 = forwardX11;
+        else extras.push({ keyword: opt.keyword, value: opt.value });
+        break;
+      }
       case 'proxyjump':
         if (!proxyConsumed) {
           out.proxyJump = parseProxyJumpList(opt.value);
@@ -825,6 +833,7 @@ export function listHosts(
         identitiesOnly: resolved.identitiesOnly,
         identityAgent: resolved.identityAgent,
         forwardAgent: resolved.forwardAgent,
+        forwardX11: resolved.forwardX11,
         proxyJump: resolved.proxyJump,
         proxyCommand: resolved.proxyCommand,
         forwards: resolved.forwards,

@@ -231,10 +231,12 @@ describe('previewHost', () => {
           strictHostKeyChecking: 'accept-new',
           remoteCommand: 'tmux new -A -s main',
           requestTty: 'yes',
+          forwardX11: false,
         },
       }),
       root,
     );
+    expect(text).toContain('  ForwardX11 no');
     expect(text).toContain('  IdentityFile ~/.ssh/app');
     expect(text).toContain('  IdentitiesOnly yes');
     expect(text).toContain('  CertificateFile ~/.ssh/app-cert.pub');

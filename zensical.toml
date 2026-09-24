@@ -45,6 +45,7 @@ nav = [
     { "File browser (SFTP)" = "guide/files.md" },
     { "Remote editor" = "guide/editor.md" },
     { "Tunnels & port forwarding" = "guide/tunnels.md" },
+    { "Graphical apps (X11)" = "guide/x11.md" },
     { "Command buttons & multi-exec" = "guide/commands.md" },
     { "Session history" = "guide/session-history.md" },
     { "Settings" = "guide/settings.md" },

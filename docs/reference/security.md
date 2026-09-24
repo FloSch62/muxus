@@ -141,6 +141,15 @@ Zellij and editor compatibility, and can be disabled at any time. OSC 52 clipboa
 are always blocked: a local or remote terminal program receives an empty value instead of
 the clipboard contents.
 
+## X11 forwarding
+
+The SSH server only ever receives a random X11 cookie; Muxus replaces it with the local
+X server's real credentials for connections that present it, and drops the rest. On
+Windows, forwarded windows go to a dedicated X server that Muxus starts with a fresh
+cookie and stops on exit, so forwarding is on by default there. On macOS and Linux,
+forwarding reaches your desktop's display and is trusted (like `ssh -Y`), so it is off
+unless a host enables it. See [Graphical apps (X11)](../guide/x11.md).
+
 ## Telnet and serial
 
 Telnet provides **no encryption and no server authentication**. All traffic, including what

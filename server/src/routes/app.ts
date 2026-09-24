@@ -45,7 +45,7 @@ function releaseUrl(value: unknown): string | undefined {
   }
 }
 
-function appInfo(): AppInfo {
+function appInfo(ctx: AppContext): AppInfo {
   return {
     name: 'Muxus',
     version: serverVersion(),
@@ -53,11 +53,12 @@ function appInfo(): AppInfo {
     homeDir: os.homedir(),
     defaultShell: defaultShell(),
     sshAlgorithms: supportedAlgorithms(),
+    x11: ctx.x11.availability(),
   };
 }
 
 async function checkForUpdate(force = false): Promise<UpdateCheckResult> {
-  const currentVersion = appInfo().version;
+  const currentVersion = serverVersion();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), UPDATE_CHECK_TIMEOUT_MS);
   try {
@@ -102,8 +103,8 @@ async function checkForUpdate(force = false): Promise<UpdateCheckResult> {
   }
 }
 
-export function registerAppRoutes(app: FastifyInstance, _ctx: AppContext): void {
-  app.get('/api/app/info', async () => appInfo());
+export function registerAppRoutes(app: FastifyInstance, ctx: AppContext): void {
+  app.get('/api/app/info', async () => appInfo(ctx));
   app.get<{ Querystring: { force?: string } }>('/api/app/update-check', async (req) => {
     if (req.query.force === 'true') updateCheck = checkForUpdate(true);
     updateCheck ??= checkForUpdate();

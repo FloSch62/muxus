@@ -40,6 +40,7 @@ const upsertSchema = z.object({
     identitiesOnly: z.boolean().optional(),
     identityAgent: z.string().optional(),
     forwardAgent: z.boolean().optional(),
+    forwardX11: z.boolean().optional(),
     proxyJump: z.array(z.string()).optional(),
     proxyCommand: z.string().optional(),
     forwards: z.array(forwardSchema).optional(),

@@ -50,6 +50,7 @@ These keywords are modelled as fields. They appear as controls in the
 | `IdentitiesOnly` | Restricts authentication to the listed identities |
 | `IdentityAgent` | Agent source: inherited, `SSH_AUTH_SOCK`, custom socket/variable, or disabled |
 | `ForwardAgent` | Agent forwarding, when an agent is present |
+| `ForwardX11` | [X11 forwarding](../guide/x11.md); unset follows the platform default (on with the built-in Windows X server) |
 | `ProxyJump` | Jump chain, comma-separated and nestable |
 | `ProxyCommand` | External transport command (`%h`, `%p`, `%r` expand at dial time) |
 | `LocalForward`, `RemoteForward`, `DynamicForward` | Forwards started with the session |

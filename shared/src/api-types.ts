@@ -19,6 +19,21 @@ export interface AppInfo {
    * warns about entries the dialer would have to skip.
    */
   sshAlgorithms: Record<string, string[]>;
+  /** The local X server forwarded X11 connections would reach. */
+  x11: X11Availability;
+}
+
+/**
+ * Local X server for X11 forwarding: `bundled` is the dedicated server the
+ * Windows app ships (forwarding on by default), `display` the user's own
+ * $DISPLAY (opt-in per host), `none` when there is nothing to forward to.
+ */
+export interface X11Availability {
+  source: 'bundled' | 'display' | 'none';
+  /** Whether hosts without a ForwardX11 setting forward X11. */
+  defaultEnabled: boolean;
+  /** The $DISPLAY in use for `display`. */
+  display?: string;
 }
 
 export type AppLogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
@@ -118,6 +133,7 @@ export const DIAL_TIME_KEYWORDS: ReadonlySet<string> = new Set([
   'remotecommand',
   'requesttty',
   'stricthostkeychecking',
+  'forwardx11',
 ]);
 
 export type UpdateCheckResult =
@@ -367,6 +383,8 @@ export interface HostBlockOptions {
   /** Per-host authentication agent: socket path, environment indirection, SSH_AUTH_SOCK, or none. */
   identityAgent?: string;
   forwardAgent?: boolean;
+  /** ForwardX11; absent = the Muxus default (on with the bundled Windows X server). */
+  forwardX11?: boolean;
   /** ProxyJump hops in order ("bastion", "user@host:2222"); absent = none. */
   proxyJump?: string[];
   /** Shell command whose stdin/stdout provide the SSH transport. */
@@ -394,6 +412,8 @@ export interface ResolvedHostSettings {
   /** Effective authentication agent after applying all matching Host blocks. */
   identityAgent?: string;
   forwardAgent: boolean;
+  /** Effective ForwardX11; undefined when no matching block sets it. */
+  forwardX11?: boolean;
   proxyJump: string[];
   /** Raw ProxyCommand after Host-pattern resolution; tokens expand at dial time. */
   proxyCommand?: string;

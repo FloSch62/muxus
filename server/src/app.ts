@@ -8,6 +8,7 @@ import fastifyStatic from '@fastify/static';
 import { TERMINAL_WS_PROTOCOL } from '@muxus/shared/ws-protocol';
 import type { ServerConfig } from './config.js';
 import { SshConnectionManager } from './ssh/connection-manager.js';
+import { LocalX11 } from './x11/local-x11.js';
 import {
   folderAuthResolver,
   savedProfileFolderAuthResolver,
@@ -46,6 +47,7 @@ export interface AppContext {
   database: MuxusDatabase;
   history: SessionHistoryStore;
   vault: PasswordVault;
+  x11: LocalX11;
 }
 
 // Not named __dirname: the Electron esbuild bundle defines that identifier
@@ -94,8 +96,10 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   const database = new MuxusDatabase(config.databasePath);
   const vault = new PasswordVault(database);
   await vault.initialize();
+  const x11 = new LocalX11({ log: app.log, bundledServerDirectory: config.x11ServerDirectory });
   const connections = new SshConnectionManager(app.log, {
     vault,
+    x11,
     savedSshProfile: (id) => {
       const profile = database.savedHostProfile(id)?.profile;
       return profile?.kind === 'ssh' ? profile : undefined;
@@ -130,6 +134,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
     database,
     history,
     vault,
+    x11,
   };
   database.pruneTerminalSnapshots();
 
@@ -217,6 +222,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   app.addHook('onClose', async () => {
     forwards.stopAll();
     connections.closeAll();
+    x11.close();
     vault.dispose();
     await history.close();
     database.close();

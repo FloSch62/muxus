@@ -218,7 +218,7 @@ add('host-editor-forwards', async () => {
   await page.locator('[role="treeitem"][aria-label*="db-primary"]').first().click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Edit host' }).first().click();
   await wait(600);
-  await page.getByRole('tab', { name: 'Port forwarding' }).click();
+  await page.getByRole('tab', { name: 'Forwarding' }).click();
   await wait(600);
   await shot(page, 'host-editor-forwards');
   await page.close_();
