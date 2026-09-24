@@ -5,7 +5,7 @@ icon: lucide/server
 # Your hosts
 
 The sidebar lists every concrete `Host` block in the OpenSSH configuration, including files
-pulled in with `Include`, together with SSH, Telnet and serial hosts stored by Muxus.
+pulled in with `Include`, together with SSH, Telnet, serial, RDP and VNC hosts stored by Muxus.
 
 Muxus does not import the configuration. It reads `~/.ssh/config` directly and writes edits
 back to the same file in place.
@@ -50,7 +50,7 @@ SecureCRT settings are never imported.
 
 ## Host rows
 
-A row shows the host name, a host-kind icon (SSH, Telnet, serial), an optional colour flag,
+A row shows the host name, a host-kind icon (SSH, Telnet, serial, RDP, VNC), an optional colour flag,
 and a green dot while a session to that host is live, with a count when there is more than
 one.
 

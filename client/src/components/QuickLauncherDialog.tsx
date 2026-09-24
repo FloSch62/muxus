@@ -101,7 +101,7 @@ type LauncherResult = ResultBase &
   (
     | { kind: 'tab'; tabId: string; reconnect: boolean }
     | { kind: 'editor'; tabId: string; path: string }
-    | { kind: 'host'; host: ManagedHost; protocol: 'ssh' | 'telnet' | 'serial' }
+    | { kind: 'host'; host: ManagedHost; protocol: SavedHostProfile['kind'] }
     | { kind: 'quick-connect'; target: string }
     | { kind: 'workspace'; workspace: WorkspaceSummary }
     | { kind: 'command'; command: CommandButton }
@@ -1008,7 +1008,7 @@ function buildActionResults({
       'shell',
       'local',
     ]),
-    actionResult('new-host', 'Add host', 'Create an SSH, Telnet, or serial host', [
+    actionResult('new-host', 'Add host', 'Create an SSH, Telnet, serial, RDP, or VNC host', [
       'new',
       'connection',
       'profile',
@@ -1180,6 +1180,8 @@ function profileSummary(profile: SessionProfile): string {
   if (profile.kind === 'ssh') return `SSH · ${profile.target}`;
   if (profile.kind === 'telnet') return `Telnet · ${profile.host}:${profile.port}`;
   if (profile.kind === 'serial') return `Serial · ${profile.path}`;
+  if (profile.kind === 'rdp') return `RDP · ${profile.host}:${profile.port}`;
+  if (profile.kind === 'vnc') return `VNC · ${profile.host}:${profile.port}`;
   return `Local${profile.cwd ? ` · ${profile.cwd}` : ''}`;
 }
 

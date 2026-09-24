@@ -16,6 +16,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { chartPng, kittySequence } from './demo-image.mjs';
+import { startDemoVnc } from './demo-vnc.mjs';
 
 const require = createRequire(path.join(process.cwd(), 'server/'));
 const ssh2 = require('ssh2');
@@ -29,6 +30,9 @@ const HOME = path.join(DEMO_ROOT, 'home');
 const REMOTES = path.join(DEMO_ROOT, 'remotes');
 const SSH_PORT_BASE = Number(process.env.MUXUS_DEMO_SSH_PORT || 2200);
 const APP_PORT = Number(process.env.MUXUS_DEMO_PORT || 3099);
+const VNC_PORT = Number(process.env.MUXUS_DEMO_VNC_PORT || 2290);
+/** The invented desktop the VNC demo host shows (hack/demo-vnc.mjs). */
+const DEMO_DESKTOP_HOST = 'design-vm.lab.internal';
 
 /**
  * The cast. Everything a screenshot shows is invented here — aliases,
@@ -620,6 +624,7 @@ export async function startDemoEnv() {
   const keys = { host: generateKeyPair(), client: generateKeyPair() };
   const hosts = DEMO_HOSTS.map((host, index) => ({ ...host, port: SSH_PORT_BASE + index + 1 }));
   const hostMap = Object.fromEntries(hosts.map((host) => [host.hostname, host.port]));
+  hostMap[DEMO_DESKTOP_HOST] = VNC_PORT;
   await buildHome(hosts, keys);
   // Screenshots show the Windows app's built-in X server. The placeholder
   // never runs: demo hosts open no X11 channels.
@@ -628,6 +633,9 @@ export async function startDemoEnv() {
   await fs.writeFile(path.join(x11ServerDir, 'vcxsrv.exe'), '');
 
   const sshds = await Promise.all(hosts.map((host) => startSshd(host, keys, hostMap)));
+  await assertPortFree(VNC_PORT);
+  // Sized to the screenshot pane (hack/capture.mjs), so noVNC draws it unscaled.
+  const vnc = await startDemoVnc({ port: VNC_PORT, width: 1132, height: 786 });
 
   const server = spawn(
     process.execPath,
@@ -677,6 +685,7 @@ export async function startDemoEnv() {
     async stop() {
       server.kill('SIGTERM');
       for (const sshd of sshds) sshd.close();
+      vnc.close();
       await new Promise((r) => setTimeout(r, 200));
     },
   };
@@ -735,8 +744,25 @@ async function seed(url, hosts) {
     },
   });
 
+  await api('/api/profiles', 'PUT', {
+    name: 'win-build',
+    profile: {
+      kind: 'rdp',
+      host: 'win-build.corp.internal',
+      port: 3389,
+      username: 'CORP\\ci',
+      sshGateway: { target: 'bastion' },
+    },
+  });
+  await api('/api/profiles', 'PUT', {
+    name: 'design-vm',
+    profile: { kind: 'vnc', host: DEMO_DESKTOP_HOST, port: 5900 },
+  });
+
   const profiles = await api('/api/profiles', 'GET');
   const byName = new Map(profiles.profiles.map((p) => [p.name, p.id]));
+  await api(`/api/profiles/${byName.get('win-build')}/metadata`, 'PATCH', { group: 'Lab', color: '#3b82f6' });
+  await api(`/api/profiles/${byName.get('design-vm')}/metadata`, 'PATCH', { group: 'Lab' });
   await api(`/api/profiles/${byName.get('core-switch (console)')}/metadata`, 'PATCH', {
     group: 'Lab/Fabric',
     color: '#eab308',

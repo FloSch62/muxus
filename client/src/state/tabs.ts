@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { SessionProfile, WorkspaceLayoutV1 } from '@muxus/shared';
+import { isDesktopProfile } from '@muxus/shared/ws-protocol';
 import type { ReattachMode } from '../connection-recovery.js';
 import {
   equalizeSplits,
@@ -199,6 +200,14 @@ const newId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${nextId
 /** Session tabs that dial a transport — everything but local shells. */
 export function isRemoteSessionTab(tab: TerminalTab): tab is SessionTab {
   return !!tab.profile && tab.profile.kind !== 'local';
+}
+
+/**
+ * Connected terminal sessions, the tabs mirrored input can reach. A remote
+ * desktop is connected too, but it has no terminal to type into.
+ */
+export function isMultiExecTarget(tab: TerminalTab): boolean {
+  return !!tab.profile && tab.status === 'connected' && !isDesktopProfile(tab.profile);
 }
 
 /**

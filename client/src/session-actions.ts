@@ -12,7 +12,7 @@ import {
   type LocalShellProfileConfig,
 } from './state/prefs.js';
 import { useMultiExecStore } from './state/multi-exec.js';
-import { isRemoteSessionTab, useTabsStore } from './state/tabs.js';
+import { isMultiExecTarget, isRemoteSessionTab, useTabsStore } from './state/tabs.js';
 import type { PaneDirection, SessionSetLayout } from './state/tabs.js';
 import { confirmAction } from './state/dialogs.js';
 import { showToast } from './state/toast.js';
@@ -189,7 +189,7 @@ export async function launchManagedHostGroup(
  */
 export function toggleMultiExec(): boolean {
   const { tabs, root, zoomedPaneId } = useTabsStore.getState();
-  const connected = tabs.filter((tab) => tab.status === 'connected').map((tab) => tab.id);
+  const connected = tabs.filter(isMultiExecTarget).map((tab) => tab.id);
   const onScreen = visibleTabIds(root, zoomedPaneId);
   if (useMultiExecStore.getState().toggleMirroring(connected, onScreen)) return true;
   showToast(

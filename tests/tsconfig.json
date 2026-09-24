@@ -12,5 +12,6 @@
       "@muxus/shared/ws-protocol": ["../shared/src/ws-protocol.ts"]
     }
   },
-  "include": ["unit", "vitest.config.ts"]
+  // Ambient typings for untyped client dependencies the tests reach.
+  "include": ["unit", "vitest.config.ts", "../client/src/remote-desktop/novnc.d.ts"]
 }

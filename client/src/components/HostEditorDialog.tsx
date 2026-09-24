@@ -53,7 +53,14 @@ import {
   type NativeHostDraft,
 } from './host-editor/native-draft.js';
 import { RouteSection } from './host-editor/RouteSection.js';
+import {
+  blankDesktopDraft,
+  desktopDraftFromProfile,
+  type DesktopHostDraft,
+} from './host-editor/desktop-draft.js';
+import type { ConnectionKind } from './host-editor/EditorShell.js';
 import { NativeHostEditorContent } from './NativeHostEditorContent.js';
+import { RemoteDesktopHostEditorContent } from './RemoteDesktopHostEditorContent.js';
 
 type Section =
   | 'general'
@@ -101,6 +108,7 @@ export function HostEditorDialog() {
 function HostEditorBody({ state }: { state: OpenState }) {
   const [sshDraft, setSshDraft] = useState<HostDraft>(() => initialSshDraft(state));
   const [nativeDraft, setNativeDraft] = useState<NativeHostDraft>(() => initialNativeDraft(state));
+  const [desktopDraft, setDesktopDraft] = useState<DesktopHostDraft>(() => initialDesktopDraft(state));
   const lastIdentity = useRef(stateIdentity(state));
 
   // Re-seed only when the edited entry itself changes — a connection-type
@@ -111,6 +119,7 @@ function HostEditorBody({ state }: { state: OpenState }) {
     lastIdentity.current = identity;
     setSshDraft(initialSshDraft(state));
     setNativeDraft(initialNativeDraft(state));
+    setDesktopDraft(initialDesktopDraft(state));
   }, [state]);
 
   const kind = editorKind(state);
@@ -120,6 +129,16 @@ function HostEditorBody({ state }: { state: OpenState }) {
         state={state as SshEditorState}
         draft={sshDraft}
         setDraft={setSshDraft}
+      />
+    );
+  }
+  if (kind === 'rdp' || kind === 'vnc') {
+    return (
+      <RemoteDesktopHostEditorContent
+        state={state}
+        kind={kind}
+        draft={desktopDraft}
+        setDraft={setDesktopDraft}
       />
     );
   }
@@ -133,7 +152,7 @@ function HostEditorBody({ state }: { state: OpenState }) {
   );
 }
 
-function editorKind(state: OpenState): 'ssh' | 'telnet' | 'serial' {
+function editorKind(state: OpenState): ConnectionKind {
   if (state.mode === 'new') return state.kind ?? 'ssh';
   if (state.mode === 'edit-profile' || state.mode === 'duplicate-profile') {
     return state.entry.kind;
@@ -171,7 +190,7 @@ function initialSshDraft(state: OpenState): HostDraft {
 function initialNativeDraft(state: OpenState): NativeHostDraft {
   if (
     (state.mode === 'edit-profile' || state.mode === 'duplicate-profile') &&
-    state.entry.profile.kind !== 'ssh'
+    (state.entry.profile.kind === 'telnet' || state.entry.profile.kind === 'serial')
   ) {
     return nativeDraftFromProfile(
       state.entry,
@@ -179,6 +198,19 @@ function initialNativeDraft(state: OpenState): NativeHostDraft {
     );
   }
   return blankNativeDraft(
+    state.mode === 'new' ? state.prefillTarget : undefined,
+    state.mode === 'new' ? state.group : undefined,
+  );
+}
+
+function initialDesktopDraft(state: OpenState): DesktopHostDraft {
+  if (
+    (state.mode === 'edit-profile' || state.mode === 'duplicate-profile') &&
+    (state.entry.profile.kind === 'rdp' || state.entry.profile.kind === 'vnc')
+  ) {
+    return desktopDraftFromProfile(state.entry, state.mode === 'duplicate-profile');
+  }
+  return blankDesktopDraft(
     state.mode === 'new' ? state.prefillTarget : undefined,
     state.mode === 'new' ? state.group : undefined,
   );

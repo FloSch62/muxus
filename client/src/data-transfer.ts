@@ -957,7 +957,10 @@ function validateConnections(
         isRecord(host.profile) &&
         (host.profile.kind === 'telnet' ||
           host.profile.kind === 'serial' ||
-          (version >= 2 && host.profile.kind === 'ssh')) &&
+          (version >= 2 &&
+            (host.profile.kind === 'ssh' ||
+              host.profile.kind === 'rdp' ||
+              host.profile.kind === 'vnc'))) &&
         isRecord(host.metadata),
     ) ||
     !data.hostOrder.every(

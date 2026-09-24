@@ -20,6 +20,7 @@
     "@mui/icons-material": "^9.4.0",
     "@mui/material": "^9.4.0",
     "@muxus/shared": "workspace:*",
+    "@novnc/novnc": "^1.7.0",
     "@tanstack/react-query": "^5.102.8",
     "@xterm/addon-clipboard": "^0.3.0-beta.302",
     "@xterm/addon-fit": "^0.12.0-beta.300",

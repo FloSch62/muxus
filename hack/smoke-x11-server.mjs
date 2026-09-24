@@ -18,15 +18,24 @@ const print = (level) => (obj, msg) => console.log(`[${level}]`, msg ?? '', type
 const log = { info: print('info'), warn: print('warn'), error: print('error'), debug: () => undefined };
 const x11 = new LocalX11({ log, bundledServerDirectory: directory, env: {}, platform: 'win32' });
 
-/** Send a little-endian protocol 11.0 setup request and read the status byte. */
+/**
+ * Send a little-endian protocol 11.0 setup request and read the whole reply,
+ * which can arrive in several chunks: an 8-byte header whose bytes 6-7 give
+ * the length of the rest in 4-byte units.
+ */
 async function handshake(auth) {
   const { socket } = await x11.connect();
   try {
     const header = Buffer.from([0x6c, 0, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     socket.write(rewriteX11Setup(header, true, auth));
     const reply = await new Promise((resolve, reject) => {
-      socket.once('data', resolve);
+      let received = Buffer.alloc(0);
+      socket.on('data', (chunk) => {
+        received = Buffer.concat([received, chunk]);
+        if (received.length >= 8 && received.length >= 8 + received.readUInt16LE(6) * 4) resolve(received);
+      });
       socket.once('error', reject);
+      socket.once('close', () => reject(new Error(`the X server closed after ${received.length} bytes`)));
       setTimeout(() => reject(new Error('no reply from the X server')), 10_000);
     });
     return reply;

@@ -1,7 +1,7 @@
 # Muxus
 
-Muxus is a free, open-source SSH, Telnet and serial client. Split panes, saved workspaces,
-SFTP, a remote editor, saved tunnels, and images in the terminal.
+Muxus is a free, open-source SSH, Telnet and serial client with RDP and VNC remote desktops.
+Split panes, saved workspaces, SFTP, a remote editor, saved tunnels, and images in the terminal.
 
 **The docs are the main entry point:** [flosch62.github.io/muxus](https://flosch62.github.io/muxus/)
 

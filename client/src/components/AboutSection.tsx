@@ -46,8 +46,8 @@ export function AboutSection() {
               .join(' · ')}
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            A free, open-source SSH, Telnet and serial client. Split panes, saved workspaces, SFTP,
-            a remote editor, saved tunnels and images in the terminal.
+            A free, open-source SSH, Telnet and serial client with RDP and VNC remote desktops. Split
+            panes, saved workspaces, SFTP, a remote editor, saved tunnels and images in the terminal.
           </Typography>
           <LinkRow
             links={[

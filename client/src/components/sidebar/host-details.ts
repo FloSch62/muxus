@@ -9,6 +9,13 @@ export function hostDetailLines(host: ManagedHost): string[] {
   const lines: string[] = [];
   if (host.kind === 'profile') {
     const profile = host.entry.profile;
+    if (profile.kind === 'rdp' || profile.kind === 'vnc') {
+      if (profile.sshGateway) lines.push(`via SSH gateway ${profile.sshGateway.target}`);
+      if (profile.kind === 'rdp' && profile.domain) lines.push(`Domain ${profile.domain}`);
+      if (profile.kind === 'vnc' && profile.viewOnly) lines.push('View only');
+      if (profile.shareClipboard === false) lines.push('Clipboard not shared');
+      return lines;
+    }
     if (profile.kind !== 'ssh') return lines;
     if (profile.proxyJump?.length) lines.push(`via ${profile.proxyJump.join(' → ')}`);
     if (profile.identityFiles?.length) {

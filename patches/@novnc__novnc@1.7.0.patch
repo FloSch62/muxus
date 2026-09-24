@@ -1,0 +1,18 @@
+diff --git a/core/util/browser.js b/core/util/browser.js
+index 63596d211bc3f2ac0c1853d58488dcbb18bd8949..62493b76ce7939dc946bf31b0d34f416f45622b1 100644
+--- a/core/util/browser.js
++++ b/core/util/browser.js
+@@ -149,7 +149,12 @@ async function _checkWebCodecsH264DecodeSupport() {
+ 
+     return true;
+ }
+-supportsWebCodecsH264Decode = await _checkWebCodecsH264DecodeSupport();
++// Muxus: resolve the probe in the background instead of with a top-level
++// await, which makes bundlers restructure the whole application's chunks.
++// The flag is only read when encodings are sent, after the handshake.
++_checkWebCodecsH264DecodeSupport().then((supported) => {
++    supportsWebCodecsH264Decode = supported;
++}, () => {});
+ 
+ /*
+  * The functions for detection of platforms and browsers below are exported

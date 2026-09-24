@@ -36,6 +36,7 @@ nav = [
     { "Your hosts" = "guide/hosts.md" },
     { "Adding & editing hosts" = "guide/adding-hosts.md" },
     { "Telnet & serial" = "guide/telnet-serial.md" },
+    { "Remote desktop (RDP & VNC)" = "guide/remote-desktop.md" },
     { "Connecting" = "guide/connecting.md" },
     { "Tabs & panes" = "guide/tabs-and-panes.md" },
     { "The terminal" = "guide/terminal.md" },

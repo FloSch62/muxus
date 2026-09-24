@@ -1,4 +1,4 @@
-import type { SessionProfile, SessionLogDirection, SessionLogStatus } from '@muxus/shared';
+import type { SessionLogDirection, SessionLogStatus, TerminalProfile } from '@muxus/shared';
 import type { FastifyBaseLogger } from 'fastify';
 import type {
   MuxusDatabase,
@@ -18,7 +18,7 @@ export interface SessionLoggingState {
 }
 
 /** Stable policy identity for saved hosts and deterministic ad-hoc endpoints. */
-export function sessionProfileIdentity(profile: SessionProfile): {
+export function sessionProfileIdentity(profile: TerminalProfile): {
   profileKey: string;
   host: string;
 } {
@@ -80,7 +80,7 @@ export class SessionRecorder {
     database: MuxusDatabase,
     history: SessionHistoryStore,
     logger: FastifyBaseLogger,
-    profile: SessionProfile,
+    profile: TerminalProfile,
     title?: string,
   ): SessionRecorder {
     const identity = sessionProfileIdentity(profile);

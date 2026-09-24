@@ -504,7 +504,7 @@ function RestoreReviewDialog({
       key: 'connections' as const,
       icon: DnsOutlinedIcon,
       label: 'Connections',
-      detail: 'SSH, Telnet and serial profiles',
+      detail: 'SSH, Telnet, serial, RDP and VNC profiles',
       count: connectionCount,
     },
     {

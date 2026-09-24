@@ -74,6 +74,67 @@ describe('saved host profile routes', () => {
     ).toBe(false);
   });
 
+  it('stores RDP and VNC hosts with their gateway and display options', async () => {
+    const rdp = await app.inject({
+      method: 'PUT',
+      url: '/api/profiles',
+      headers: auth(),
+      payload: {
+        name: 'Build server',
+        profile: {
+          kind: 'rdp',
+          host: 'win-build.example.test',
+          username: 'CORP\\ci',
+          sshGateway: { target: 'bastion' },
+          shareClipboard: false,
+        },
+      },
+    });
+    expect(rdp.statusCode).toBe(200);
+    expect(rdp.json()).toMatchObject({
+      kind: 'rdp',
+      profile: {
+        kind: 'rdp',
+        host: 'win-build.example.test',
+        port: 3389,
+        username: 'CORP\\ci',
+        sshGateway: { target: 'bastion' },
+        shareClipboard: false,
+      },
+    });
+
+    const vnc = await app.inject({
+      method: 'PUT',
+      url: '/api/profiles',
+      headers: auth(),
+      payload: { name: 'Lab console', profile: { kind: 'vnc', host: 'lab-vm', viewOnly: true } },
+    });
+    expect(vnc.json()).toMatchObject({ kind: 'vnc', profile: { port: 5900, viewOnly: true } });
+
+    const list = await app.inject({ method: 'GET', url: '/api/profiles', headers: auth() });
+    expect(list.json().profiles.map((profile: { kind: string }) => profile.kind).sort()).toEqual(['rdp', 'vnc']);
+  });
+
+  it('refuses RDP hosts with a stored password or an invalid port', async () => {
+    const withPassword = await app.inject({
+      method: 'PUT',
+      url: '/api/profiles',
+      headers: auth(),
+      payload: { name: 'Leaky', profile: { kind: 'rdp', host: 'win', password: 'hunter2' } },
+    });
+    // Unknown keys are stripped by the schema, so the password never reaches the database.
+    expect(withPassword.statusCode).toBe(200);
+    expect(JSON.stringify(withPassword.json())).not.toContain('hunter2');
+
+    const badPort = await app.inject({
+      method: 'PUT',
+      url: '/api/profiles',
+      headers: auth(),
+      payload: { name: 'Bad', profile: { kind: 'vnc', host: 'lab', port: 70000 } },
+    });
+    expect(badPort.statusCode).toBe(400);
+  });
+
   it('creates and updates an imported profile with a caller-supplied ID', async () => {
     const id = 'securecrt-serial-2p5f9abc';
     const create = await app.inject({
