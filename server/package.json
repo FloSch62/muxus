@@ -28,7 +28,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/node": "^24.13.6",
+    "@types/node": "^26.6.2",
     "@types/ssh2": "^1.15.6",
     "@types/ws": "^8.18.1",
     "pino-pretty": "^13.1.3",
