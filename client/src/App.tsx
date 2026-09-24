@@ -11,6 +11,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 import { ThemeProvider } from '@mui/material/styles';
 import type { AppWindowLaunch } from '@muxus/shared';
 import { setDebugLogging } from './api/logs.js';
+import { setX11ClipboardSharing } from './api/x11.js';
 import { applyInterfaceZoom } from './interface-zoom.js';
 import { buildTheme } from './theme.js';
 import { setTitleBarMode } from './titlebar-overlay.js';
@@ -93,6 +94,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const themeMode = usePrefsStore((s) => s.themeMode);
   const interfaceZoom = usePrefsStore((s) => s.interfaceZoom);
   const debugMode = usePrefsStore((s) => s.debugMode);
+  const x11ClipboardSharing = usePrefsStore((s) => s.x11ClipboardSharing);
   const hostEditorOpen = useUiStore((s) => !!s.hostEditor);
   const hostOrganizerOpen = useUiStore((s) => !!s.hostOrganizer);
   const folderDialogOpen = useUiStore((s) => !!s.folderDialog);
@@ -145,6 +147,10 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
     // and on every toggle. Failures are ignored — the pref re-syncs next time.
     void setDebugLogging(debugMode).catch(() => undefined);
   }, [debugMode]);
+  useEffect(() => {
+    // Same for X11 clipboard sharing, which the server otherwise keeps off.
+    void setX11ClipboardSharing(x11ClipboardSharing).catch(() => undefined);
+  }, [x11ClipboardSharing]);
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const handler = (e: MediaQueryListEvent) => setOsTheme(e.matches ? 'dark' : 'light');

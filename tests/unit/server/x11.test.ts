@@ -274,7 +274,10 @@ describe('BundledXServer', () => {
     expect(first.port).toBe(6012);
     expect(spawns[0]!.executable).toBe(path.join(directory, 'vcxsrv.exe'));
     const authFile = spawns[0]!.args[spawns[0]!.args.indexOf('-auth') + 1]!;
-    expect(spawns[0]!.args).toEqual(expect.arrayContaining([':12', '-multiwindow', '-silent-dup-error']));
+    expect(spawns[0]!.args).toEqual(
+      expect.arrayContaining([':12', '-multiwindow', '-noclipboard', '-silent-dup-error']),
+    );
+    expect(first.clipboard).toBe(false);
     expect(parseXauthority(readFileSync(authFile))).toEqual([
       { family: FAMILY_WILD, address: Buffer.alloc(0), number: '12', name: MIT_MAGIC_COOKIE, data: first.auth.data },
     ]);
@@ -289,6 +292,23 @@ describe('BundledXServer', () => {
     const second = await server.ensureRunning();
     expect(spawns).toHaveLength(2);
     expect(second.auth.data.equals(first.auth.data)).toBe(false);
+    server.close();
+  });
+
+  it('switches clipboard sharing only while no forwarded windows are open', async () => {
+    const { server, spawns } = fixture([]);
+    const plain = await server.ensureRunning(false);
+
+    // Windows are open: keep the running server rather than closing them.
+    expect(await server.ensureRunning(true, false)).toBe(plain);
+    expect(spawns).toHaveLength(1);
+
+    const shared = await server.ensureRunning(true, true);
+    expect(spawns).toHaveLength(2);
+    expect(spawns[0]!.child.killed).toBe(true);
+    expect(spawns[1]!.args).toContain('-clipboard');
+    expect(shared.clipboard).toBe(true);
+    expect(await server.ensureRunning(true, true)).toBe(shared);
     server.close();
   });
 

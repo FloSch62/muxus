@@ -137,6 +137,8 @@ export interface PrefsState {
   autoReconnectRemote: boolean;
   /** SSH keepalive fallback in seconds; zero relies entirely on ssh_config. */
   sshKeepaliveIntervalSeconds: number;
+  /** Bridge the bundled Windows X server to the system clipboard (read and write). */
+  x11ClipboardSharing: boolean;
   /** Show a notification at startup when a newer release is available. */
   notifyOnNewVersion: boolean;
   /** Persist recent terminal output and replay it on restore and reconnect. */
@@ -388,6 +390,7 @@ export const usePrefsStore = create<PrefsState>()(
       confirmCloseConnected: true,
       autoReconnectRemote: true,
       sshKeepaliveIntervalSeconds: DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
+      x11ClipboardSharing: false,
       notifyOnNewVersion: true,
       restoreScrollback: true,
       interfaceZoom: 1,

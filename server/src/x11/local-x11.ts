@@ -28,10 +28,11 @@ type Source =
  * The local X server that forwarded X11 connections land on.
  *
  * On Windows that is the bundled VcXsrv: a dedicated server that only shows
- * forwarded windows, so forwarding is on by default like MobaXterm. Elsewhere
- * it is the user's own display from $DISPLAY (XQuartz's launchd socket on
- * macOS); a remote client there can see that whole desktop, so forwarding
- * stays opt-in per host, as with OpenSSH's ForwardX11.
+ * forwarded windows and, unless the user opts in, is not bridged to the
+ * Windows clipboard, so forwarding is on by default like MobaXterm.
+ * Elsewhere it is the user's own display from $DISPLAY (XQuartz's launchd
+ * socket on macOS); a remote client there can see that whole desktop, so
+ * forwarding stays opt-in per host, as with OpenSSH's ForwardX11.
  */
 export class LocalX11 {
   private readonly log: FastifyBaseLogger;
@@ -39,6 +40,9 @@ export class LocalX11 {
   private readonly platform: NodeJS.Platform;
   private readonly bundled?: BundledXServer;
   private launchdDisplay?: string | null;
+  private clipboardSharing = false;
+  /** Forwarded connections currently open to the local X server. */
+  private openConnections = 0;
 
   constructor(options: LocalX11Options) {
     this.log = options.log;
@@ -74,21 +78,35 @@ export class LocalX11 {
     return source.kind === 'display' ? source.parsed.screen : 0;
   }
 
+  /**
+   * Whether the bundled X server shares the Windows clipboard. A running
+   * server switches once no forwarded windows are open, so a change never
+   * closes them.
+   */
+  setClipboardSharing(enabled: boolean): void {
+    this.clipboardSharing = enabled;
+  }
+
   /** Open a connection to the local X server and the credentials it expects. */
   async connect(): Promise<{ socket: Socket; auth?: X11Auth }> {
     const source = this.source();
+    let opened: { socket: Socket; auth?: X11Auth };
     if (source.kind === 'bundled') {
-      const running = await source.server.ensureRunning();
+      const running = await source.server.ensureRunning(this.clipboardSharing, this.openConnections === 0);
       const socket = await connectX11Endpoint({ kind: 'tcp', host: '127.0.0.1', port: running.port });
-      return { socket, auth: running.auth };
-    }
-    if (source.kind === 'display') {
+      opened = { socket, auth: running.auth };
+    } else if (source.kind === 'display') {
       const socket = await connectX11Endpoint(source.parsed.endpoint);
       const target = xauthTarget(source.parsed.endpoint, socket);
-      const auth = readXauthCookie(source.parsed.number, target, xauthorityPath(this.env));
-      return { socket, auth };
+      opened = { socket, auth: readXauthCookie(source.parsed.number, target, xauthorityPath(this.env)) };
+    } else {
+      throw new Error('no local X server is available');
     }
-    throw new Error('no local X server is available');
+    this.openConnections += 1;
+    opened.socket.once('close', () => {
+      this.openConnections -= 1;
+    });
+    return opened;
   }
 
   /** Shown when a host asks for ForwardX11 but there is nothing local to forward to. */

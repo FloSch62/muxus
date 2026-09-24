@@ -1,11 +1,15 @@
 import os from 'node:os';
 import { readFileSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { isNewerVersion } from '@muxus/shared';
 import type { AppInfo, UpdateCheckResult } from '@muxus/shared';
 import type { AppContext } from '../app.js';
 import { defaultShell } from '../local/pty-manager.js';
 import { supportedAlgorithms } from '../ssh/algorithms.js';
+import { HttpProblem, sendError } from '../util/errors.js';
+
+const x11SettingsSchema = z.object({ clipboard: z.boolean() });
 
 const UPDATE_MANIFEST_URL = 'https://flosch62.github.io/muxus/latest.json';
 const UPDATE_CHECK_TIMEOUT_MS = 10_000;
@@ -105,6 +109,13 @@ async function checkForUpdate(force = false): Promise<UpdateCheckResult> {
 
 export function registerAppRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/app/info', async () => appInfo(ctx));
+  // The preference lives client-side and is sent on boot and on every change.
+  app.put('/api/x11/settings', async (req, reply) => {
+    const parsed = x11SettingsSchema.safeParse(req.body);
+    if (!parsed.success) return sendError(reply, new HttpProblem(400, 'clipboard must be a boolean'));
+    ctx.x11.setClipboardSharing(parsed.data.clipboard);
+    return { clipboard: parsed.data.clipboard };
+  });
   app.get<{ Querystring: { force?: string } }>('/api/app/update-check', async (req) => {
     if (req.query.force === 'true') updateCheck = checkForUpdate(true);
     updateCheck ??= checkForUpdate();

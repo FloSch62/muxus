@@ -88,4 +88,24 @@ describe('app routes', () => {
       reason: 'missing-release-url',
     });
   });
+
+  it('accepts the X11 clipboard preference and rejects malformed values', async () => {
+    const headers = { authorization: `Bearer ${TOKEN}` };
+    const accepted = await app.inject({
+      method: 'PUT',
+      url: '/api/x11/settings',
+      headers,
+      payload: { clipboard: true },
+    });
+    expect(accepted.statusCode).toBe(200);
+    expect(accepted.json()).toEqual({ clipboard: true });
+
+    const rejected = await app.inject({
+      method: 'PUT',
+      url: '/api/x11/settings',
+      headers,
+      payload: { clipboard: 'yes' },
+    });
+    expect(rejected.statusCode).toBe(400);
+  });
 });

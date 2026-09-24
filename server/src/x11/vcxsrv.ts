@@ -22,6 +22,8 @@ export interface RunningXServer {
   display: number;
   port: number;
   auth: X11Auth;
+  /** Whether VcXsrv bridges X selections to the Windows clipboard. */
+  clipboard: boolean;
 }
 
 export interface BundledXServerOptions {
@@ -38,9 +40,13 @@ export interface BundledXServerOptions {
  * It gets its own display number and a fresh MIT-MAGIC-COOKIE-1 in a private
  * auth file, so only Muxus (and nothing else on the machine) can open windows
  * on it. One server is shared by every SSH session and stops with Muxus.
+ *
+ * Clipboard integration is off unless asked for: with it, any forwarding
+ * server could read and replace the Windows clipboard.
  */
 export class BundledXServer {
   private starting?: Promise<RunningXServer>;
+  private running?: RunningXServer;
   private child?: ChildProcess;
   private authFile?: string;
   private closed = false;
@@ -59,25 +65,45 @@ export class BundledXServer {
     return fs.existsSync(this.executable);
   }
 
-  /** Start the server if it is not running; concurrent callers share one start. */
-  ensureRunning(): Promise<RunningXServer> {
+  /**
+   * Start the server if it is not running; concurrent callers share one
+   * start. A running server with a different clipboard mode is restarted
+   * only when `idle` (no forwarded connections would lose their windows).
+   */
+  ensureRunning(clipboard = false, idle = true): Promise<RunningXServer> {
     if (this.closed) return Promise.reject(new Error('the X server is shutting down'));
-    this.starting ??= this.start().catch((err: unknown) => {
-      this.starting = undefined;
-      throw err;
-    });
+    if (this.running && this.running.clipboard !== clipboard && idle) {
+      this.log.info({ clipboard }, 'restarting the bundled X server for the clipboard setting');
+      this.stop();
+    }
+    this.starting ??= this.start(clipboard).then(
+      (running) => {
+        this.running = running;
+        return running;
+      },
+      (err: unknown) => {
+        this.starting = undefined;
+        throw err;
+      },
+    );
     return this.starting;
   }
 
   close(): void {
     this.closed = true;
-    this.starting = undefined;
-    this.child?.kill();
-    this.child = undefined;
+    this.stop();
     if (this.authFile) fs.rmSync(this.authFile, { force: true });
   }
 
-  private async start(): Promise<RunningXServer> {
+  private stop(): void {
+    this.starting = undefined;
+    this.running = undefined;
+    const child = this.child;
+    this.child = undefined;
+    child?.kill();
+  }
+
+  private async start(clipboard: boolean): Promise<RunningXServer> {
     const portInUse = this.options.portInUse ?? loopbackPortInUse;
     let first = FIRST_DISPLAY;
     for (let attempt = 0; attempt < MAX_START_ATTEMPTS; attempt++) {
@@ -89,7 +115,7 @@ export class BundledXServer {
         }
       }
       if (display === undefined) throw new Error('no free X display number for the bundled X server');
-      const running = await this.launch(display);
+      const running = await this.launch(display, clipboard);
       if (running) return running;
       // Another X server took the display between the scan and VcXsrv's bind.
       first = display + 1;
@@ -98,7 +124,7 @@ export class BundledXServer {
   }
 
   /** Start VcXsrv on `display`; undefined when a different server answers there. */
-  private async launch(display: number): Promise<RunningXServer | undefined> {
+  private async launch(display: number, clipboard: boolean): Promise<RunningXServer | undefined> {
     const auth: X11Auth = { name: MIT_MAGIC_COOKIE, data: randomBytes(16) };
     const authDirectory = this.options.authDirectory ?? os.tmpdir();
     const authFile = path.join(authDirectory, `muxus-x11-${process.pid}.Xauthority`);
@@ -114,7 +140,7 @@ export class BundledXServer {
     const args = [
       `:${display}`,
       '-multiwindow',
-      '-clipboard',
+      clipboard ? '-clipboard' : '-noclipboard',
       '-wgl',
       '-auth',
       authFile,
@@ -138,7 +164,10 @@ export class BundledXServer {
         this.child = undefined;
         // A later X11 channel starts a fresh server; a start in progress
         // reports the failure itself.
-        if (ready) this.starting = undefined;
+        if (ready) {
+          this.starting = undefined;
+          this.running = undefined;
+        }
         if (!this.closed) this.log.warn({ display, reason: exited }, 'bundled X server stopped');
       }
     });
@@ -165,8 +194,8 @@ export class BundledXServer {
       await new Promise((resolve) => setTimeout(resolve, READY_POLL_MS));
     }
     ready = true;
-    this.log.info({ display }, 'bundled X server started');
-    return { display, port, auth };
+    this.log.info({ display, clipboard }, 'bundled X server started');
+    return { display, port, auth, clipboard };
   }
 }
 
