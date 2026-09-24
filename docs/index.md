@@ -85,6 +85,15 @@ use the same local database.
 
     [:octicons-arrow-right-24: File browser](guide/files.md)
 
+-   :material-monitor: **RDP and VNC**
+
+    ---
+
+    Remote desktops open as tabs beside your terminals, with NLA, certificate pinning,
+    clipboard sharing and SSH gateways. Nothing extra to install.
+
+    [:octicons-arrow-right-24: Remote desktop](guide/remote-desktop.md)
+
 -   :material-swap-horizontal: **Persistent tunnels**
 
     ---
@@ -98,8 +107,8 @@ use the same local database.
 
     ---
 
-    Save a whole layout of local shells, SSH, Telnet and serial sessions in resizable panes
-    with tabs. Reopen it, reconnect it, or set it as your startup workspace.
+    Save a whole layout of local shells, SSH, Telnet, serial and remote desktop sessions in
+    resizable panes with tabs. Reopen it, reconnect it, or set it as your startup workspace.
 
     [:octicons-arrow-right-24: Workspaces](guide/workspaces.md)
 

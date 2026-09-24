@@ -17,6 +17,7 @@ flowchart LR
   Server -->|ssh2| Hosts["Your hosts"]
   Server -->|node-pty| Local["Local shells"]
   Server -->|serialport| Serial["COM / TTY"]
+  Server -->|"RDP (TLS) · VNC"| Desktops["Remote desktops"]
   Server --> DB[("SQLite<br/>metadata · workspaces")]
   Server --> History[("Session history<br/>zstd segments + FTS5")]
   Server -.reads.-> Config[["~/.ssh/config<br/>known_hosts"]]
@@ -27,8 +28,8 @@ flowchart LR
 | Package | What it is |
 | --- | --- |
 | `shared/` | REST DTOs and the zod-validated WebSocket protocol. On `/ws/terminal`, **binary frames are bytes** and **text frames are control messages**, with no framing layered on top of either. |
-| `server/` | Fastify bound to `127.0.0.1` with a per-run bearer token; a versioned SQLite database; the line-preserving `ssh_config` parser/resolver/editor; leased `ssh2` transports with ProxyJump and OpenSSH-order authentication; `known_hosts` verification; `node-pty` local shells; Telnet negotiation; cross-platform `serialport` access; SFTP routes and the forward manager; the session-history worker. |
-| `client/` | React 19 + MUI. A **flat pane canvas over a split tree**, so layout changes never remount a session; one declarative keymap dispatched ahead of the terminal; xterm.js with the Image Addon and native kitty keyboard support. |
+| `server/` | Fastify bound to `127.0.0.1` with a per-run bearer token; a versioned SQLite database; the line-preserving `ssh_config` parser/resolver/editor; leased `ssh2` transports with ProxyJump and OpenSSH-order authentication; `known_hosts` verification; `node-pty` local shells; Telnet negotiation; cross-platform `serialport` access; SFTP routes and the forward manager; the session-history worker; the RDCleanPath proxy for RDP and the VNC relay. |
+| `client/` | React 19 + MUI. A **flat pane canvas over a split tree**, so layout changes never remount a session; one declarative keymap dispatched ahead of the terminal; xterm.js with the Image Addon and native kitty keyboard support; IronRDP (WebAssembly, vendored in `client/src/vendor/ironrdp`) and noVNC for remote desktops, loaded with the first desktop tab. |
 | `electron/` | The hardened desktop shell: embeds the server in-process, bridges bootstrap credentials through an isolated preload, blocks unexpected navigation. |
 | `tests/` | vitest units for the security and auth boundaries, persistence and migrations, connection leases, workspace and pane behaviour, SFTP overwrite policy, paste safety and the terminal protocols. |
 
@@ -71,6 +72,37 @@ that is not applicable returns "not handled", and the key falls through to the s
    schema.
 5. The lease keeps the transport alive for the file browser, the editor and any forwards
    until the last consumer releases it.
+
+## Remote desktops
+
+RDP and VNC tabs render in the browser: IronRDP compiled to WebAssembly draws RDP into a
+canvas, and noVNC handles VNC. Neither can open TCP sockets, so the server relays for them.
+Each tab keeps a **control socket** (`/ws/desktop`) for everything that needs the user
+(the SSH gateway's prompts, credentials, certificate trust) and receives a single-use
+ticket for the **stream socket** that carries the picture.
+
+```mermaid
+sequenceDiagram
+  participant C as Desktop tab
+  participant S as Muxus server
+  participant R as RDP server
+  C->>S: /ws/desktop connect (host profile)
+  S-->>C: auth-prompt (password, vault)
+  S-->>C: ready (ticket, logon)
+  C->>S: /ws/desktop/rdp RDCleanPath request (ticket, X.224)
+  S->>R: TCP (or SSH channel), X.224 request
+  R-->>S: X.224 confirm
+  S->>R: TLS handshake
+  S-->>C: certificate prompt when untrusted (control socket)
+  S-->>C: RDCleanPath response (X.224 confirm, certificate chain)
+  C->>R: CredSSP, then the RDP session, relayed through the TLS connection
+```
+
+VNC is simpler: noVNC opens `/ws/desktop/vnc` offering the ticket as a WebSocket
+subprotocol, and the server relays raw RFB bytes to the VNC server or through an SSH
+channel. The IronRDP client is built from a pinned upstream commit by
+`client/scripts/build-ironrdp.mjs`, because the published package lags fixes that xrdp
+and Windows servers depend on.
 
 ## Build
 

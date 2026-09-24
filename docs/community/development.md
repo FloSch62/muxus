@@ -82,6 +82,23 @@ attached, that workflow redeploys the documentation site with a `latest.json` ge
 from the newest release. The desktop app and browser-hosted UI use that manifest for
 their update checks.
 
+## The RDP client (IronRDP)
+
+The RDP client is [IronRDP](https://github.com/Devolutions/IronRDP) compiled to
+WebAssembly. Its build output is committed in `client/src/vendor/ironrdp`, so a normal
+build needs no Rust. The published npm package lags upstream fixes that xrdp and Windows
+servers rely on, so Muxus builds a pinned commit, with the small patches in
+`client/scripts/ironrdp/`. To move the pin or change a patch:
+
+```bash
+cargo install wasm-pack --version 0.15.0 --locked   # once; rustup provides the pinned toolchain
+node client/scripts/build-ironrdp.mjs
+```
+
+The script clones IronRDP into `node_modules/.cache/ironrdp`, applies the patches, runs `wasm-pack` with
+IronRDP's release flags and rewrites `client/src/vendor/ironrdp`, including its README with
+the commit and patch list.
+
 ## Serial devices on Linux
 
 Serial ports usually require group membership:
@@ -118,6 +135,8 @@ node hack/capture.mjs sftp          # only shots whose name contains "sftp"
 - a throwaway `HOME` under `/tmp` with its own `~/.ssh/config`, keys and `known_hosts`;
 - one small in-process SSH server per demo host (shell, SFTP, port forwarding), so
   connections, jump chains, the file browser and the editor are all real;
+- a minimal VNC server (`hack/demo-vnc.mjs`) that draws an invented desktop for the
+  remote-desktop screenshots;
 - demo hostnames mapped onto loopback ports by a `--import` hook, so the screenshots show
   `web-01.prod.internal` while talking to `127.0.0.1`.
 

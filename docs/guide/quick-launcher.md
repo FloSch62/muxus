@@ -17,7 +17,7 @@ about, and acts on the selected result.
 
 | Category | Action |
 | --- | --- |
-| **Saved hosts** (SSH, Telnet, serial) | Connect |
+| **Saved hosts** (SSH, Telnet, serial, RDP, VNC) | Connect |
 | **Open tabs** | Switch to it, or reconnect if it dropped |
 | **Editor files** open in a session | Jump to the file |
 | **Workspaces** | Open it |

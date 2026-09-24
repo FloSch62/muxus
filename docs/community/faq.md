@@ -90,7 +90,7 @@ terminal to that host leaves the tunnel running.
 
 ### Does it work on Windows?
 
-Yes: SSH, Telnet, local shells and `COM` serial ports. The desktop installer is an NSIS
+Yes: SSH, Telnet, local shells, `COM` serial ports, and RDP and VNC remote desktops. The desktop installer is an NSIS
 `.exe`.
 
 ### Is there a Wayland/HiDPI/scaling issue?
