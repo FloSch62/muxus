@@ -27,6 +27,11 @@ win:
   target:
     - target: nsis
       arch: [x64, arm64]
+  # X server for X11 forwarding, prepared by scripts/vcxsrv.mjs. x64-only
+  # upstream; Windows on ARM runs it under emulation.
+  extraResources:
+    - from: vendor/vcxsrv
+      to: vcxsrv
 appx:
   # Reserved identity and publisher are required by scripts/build-config.ts.
   applicationId: Muxus

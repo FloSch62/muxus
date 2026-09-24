@@ -115,6 +115,15 @@ few times. Turn it off to restore remote tabs without logging in. **Restore term
 history** saves recent output locally every few seconds and replays it above the new
 session after a restore or reconnect.
 
+## X11 forwarding
+
+**Enable X11 forwarding** lets graphical programs started in SSH sessions open their
+windows locally. It is on by default except on macOS, which needs XQuartz first; while it
+is off, Muxus never requests X11 and shows no X11 hints. **Forward X11 by default** covers
+hosts without a `ForwardX11` of their own, and on Windows **Share the clipboard with X11
+apps** connects the built-in X server to the Windows clipboard. See
+[Graphical apps (X11)](x11.md#settings).
+
 ## Keyboard
 
 Controls whether **new splits continue the current session** (on by default; SSH reuses the

@@ -137,6 +137,12 @@ export interface PrefsState {
   autoReconnectRemote: boolean;
   /** SSH keepalive fallback in seconds; zero relies entirely on ssh_config. */
   sshKeepaliveIntervalSeconds: number;
+  /** X11 forwarding master switch; null follows the platform default (off on macOS). */
+  x11Enabled: boolean | null;
+  /** Forward X11 for hosts without ForwardX11; null follows the platform default. */
+  x11ForwardByDefault: boolean | null;
+  /** Bridge the bundled Windows X server to the system clipboard (read and write). */
+  x11ClipboardSharing: boolean;
   /** Show a notification at startup when a newer release is available. */
   notifyOnNewVersion: boolean;
   /** Persist recent terminal output and replay it on restore and reconnect. */
@@ -388,6 +394,9 @@ export const usePrefsStore = create<PrefsState>()(
       confirmCloseConnected: true,
       autoReconnectRemote: true,
       sshKeepaliveIntervalSeconds: DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
+      x11Enabled: null,
+      x11ForwardByDefault: null,
+      x11ClipboardSharing: false,
       notifyOnNewVersion: true,
       restoreScrollback: true,
       interfaceZoom: 1,

@@ -28,6 +28,7 @@ import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import BugReportOutlinedIcon from '@mui/icons-material/BugReportOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
+import DesktopWindowsOutlinedIcon from '@mui/icons-material/DesktopWindowsOutlined';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import HighlightOutlinedIcon from '@mui/icons-material/HighlightOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
@@ -91,6 +92,7 @@ import { TerminalSchemeSelect } from './TerminalSchemeSelect.js';
 import { DataTransferSection } from './DataTransferSection.js';
 import { MobaXtermImportDialog } from './MobaXtermImportDialog.js';
 import { PasswordVaultSection } from './PasswordVaultSection.js';
+import { X11Section } from './X11Section.js';
 import { SecureCrtImportDialog } from './SecureCrtImportDialog.js';
 
 type Section =
@@ -100,6 +102,7 @@ type Section =
   | 'logging'
   | 'highlighting'
   | 'behavior'
+  | 'x11'
   | 'keyboard'
   | 'passwords'
   | 'data'
@@ -113,6 +116,7 @@ const SECTIONS: Array<{ id: Section; label: string; icon: React.ReactNode }> = [
   { id: 'logging', label: 'Session logging', icon: <HistoryOutlinedIcon fontSize="small" /> },
   { id: 'highlighting', label: 'Highlighting', icon: <HighlightOutlinedIcon fontSize="small" /> },
   { id: 'behavior', label: 'Behavior', icon: <TuneOutlinedIcon fontSize="small" /> },
+  { id: 'x11', label: 'X11 forwarding', icon: <DesktopWindowsOutlinedIcon fontSize="small" /> },
   { id: 'keyboard', label: 'Keyboard', icon: <KeyboardOutlinedIcon fontSize="small" /> },
   { id: 'passwords', label: 'Passwords', icon: <PasswordOutlinedIcon fontSize="small" /> },
   { id: 'data', label: 'Backup & data', icon: <BackupOutlinedIcon fontSize="small" /> },
@@ -202,6 +206,7 @@ export function SettingsDialog() {
             {section === 'logging' && <SessionLoggingSection onDirtyChange={setLoggingDirty} />}
             {section === 'highlighting' && <HighlightProfilesSection />}
             {section === 'behavior' && <BehaviorSection />}
+            {section === 'x11' && <X11Section />}
             {section === 'keyboard' && <KeyboardSection />}
             {section === 'passwords' && <PasswordVaultSection />}
             {section === 'data' && (

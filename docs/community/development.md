@@ -70,6 +70,13 @@ make all    # everything electron-builder is configured for
 
 Artifacts are written to `electron/release/`.
 
+Windows builds bundle VcXsrv as the X server for [X11 forwarding](../guide/x11.md).
+`electron/scripts/vcxsrv.mjs` downloads the pinned upstream installer, checks its
+SHA-256 and keeps the files Muxus needs in `electron/vendor/vcxsrv`. Unpacking the
+installer needs 7-Zip (`7z` or `7zz` on `PATH`, or `MUXUS_7ZIP`); GitHub's Windows
+runners already have it. `dist` prepares the X server itself; run
+`node electron/scripts/vcxsrv.mjs` before `pack:dir`.
+
 Publishing a GitHub release runs the installer workflow. After the installers are
 attached, that workflow redeploys the documentation site with a `latest.json` generated
 from the newest release. The desktop app and browser-hosted UI use that manifest for

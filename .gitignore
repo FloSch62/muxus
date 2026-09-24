@@ -3,6 +3,7 @@ dist/
 *.tsbuildinfo
 
 electron/build/
+electron/vendor/
 electron/release/
 electron/release-store/
 .local/

@@ -88,4 +88,38 @@ describe('app routes', () => {
       reason: 'missing-release-url',
     });
   });
+
+  it('reports X11 status and applies settings over the platform defaults', async () => {
+    const headers = { authorization: `Bearer ${TOKEN}` };
+    const initial = await app.inject({ method: 'GET', url: '/api/x11', headers });
+    expect(initial.statusCode).toBe(200);
+    expect(initial.json()).toMatchObject({ clipboard: false, defaults: expect.any(Object) });
+
+    const accepted = await app.inject({
+      method: 'PUT',
+      url: '/api/x11/settings',
+      headers,
+      payload: { enabled: false, forwardByDefault: true, clipboard: true },
+    });
+    expect(accepted.statusCode).toBe(200);
+    expect(accepted.json()).toMatchObject({ enabled: false, forwardByDefault: true, clipboard: true });
+
+    const reverted = await app.inject({
+      method: 'PUT',
+      url: '/api/x11/settings',
+      headers,
+      payload: { clipboard: false },
+    });
+    const status = reverted.json();
+    expect(status.enabled).toBe(status.defaults.enabled);
+    expect(status.forwardByDefault).toBe(status.defaults.forwardByDefault);
+
+    const rejected = await app.inject({
+      method: 'PUT',
+      url: '/api/x11/settings',
+      headers,
+      payload: { clipboard: 'yes' },
+    });
+    expect(rejected.statusCode).toBe(400);
+  });
 });

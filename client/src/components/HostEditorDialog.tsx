@@ -392,7 +392,7 @@ function SshHostEditorContent({
             ? 1
             : undefined,
     },
-    { value: 'forwards', label: 'Port forwarding', icon: <SwapHorizOutlinedIcon fontSize="small" />, count: draft.forwards.length },
+    { value: 'forwards', label: 'Forwarding', icon: <SwapHorizOutlinedIcon fontSize="small" />, count: draft.forwards.length },
     { value: 'logging', label: 'Session logging', icon: <HistoryOutlinedIcon fontSize="small" /> },
     {
       value: 'highlighting',

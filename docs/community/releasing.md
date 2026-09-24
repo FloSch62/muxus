@@ -92,6 +92,8 @@ Store submission credentials (`AZURE_AD_*`) are separate from Azure signing cred
    `release: published` event. To rebuild, dispatch it with the existing release **tag**.
 4. The workflow verifies the version and release, builds and verifies all installers,
    signs the Linux checksums, uploads public assets, and refreshes the update manifest.
+   The assets include `vcxsrv-<version>-source.tar.gz`, the GPL source of the X server
+   bundled with the Windows installers.
 5. If Store identity variables are configured, the Windows x64 job also uploads the
    separate **muxus-windows-store** Actions artifact. AppX is excluded from GitHub downloads.
 6. With `MICROSOFT_STORE_PUBLISH=true`, stable releases submit a Store update after

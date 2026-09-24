@@ -132,8 +132,17 @@ jobs:
       - name: Build workspace
         run: pnpm build
 
+      # dist does this itself; pack:dir needs the bundled X server prepared.
+      - name: Prepare bundled X server
+        if: runner.os == 'Windows'
+        run: node electron/scripts/vcxsrv.mjs
+
       - name: Build unpacked desktop application
         run: pnpm --filter @muxus/electron pack:dir ${{ matrix.pack_args }}
+
+      - name: Smoke-test bundled X server
+        if: runner.os == 'Windows'
+        run: node hack/smoke-x11-server.mjs
 
       # CI exercises AppX without credentials or a reserved product. These
       # placeholder packages are never uploaded or submitted to the Store.

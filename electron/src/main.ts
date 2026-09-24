@@ -806,6 +806,13 @@ if (!app.requestSingleInstanceLock(initialCommandLineLaunch ?? {})) {
         staticRoot: app.isPackaged
           ? path.join(process.resourcesPath, 'client')
           : path.resolve(moduleDir, '../../client/dist'),
+        // Windows builds ship VcXsrv for X11 forwarding (see scripts/vcxsrv.mjs).
+        x11ServerDirectory:
+          process.platform !== 'win32'
+            ? undefined
+            : app.isPackaged
+              ? path.join(process.resourcesPath, 'vcxsrv')
+              : path.resolve(moduleDir, '../vendor/vcxsrv'),
       });
     } catch (err) {
       mainLog('error', 'the embedded server failed to start', err);

@@ -218,7 +218,7 @@ add('host-editor-forwards', async () => {
   await page.locator('[role="treeitem"][aria-label*="db-primary"]').first().click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Edit host' }).first().click();
   await wait(600);
-  await page.getByRole('tab', { name: 'Port forwarding' }).click();
+  await page.getByRole('tab', { name: 'Forwarding' }).click();
   await wait(600);
   await shot(page, 'host-editor-forwards');
   await page.close_();
@@ -361,6 +361,17 @@ add('settings', async () => {
   await wait(1200);
   await scrollDialogTop(page);
   await shot(page, 'settings');
+  await page.close_();
+});
+
+add('settings-x11', async () => {
+  const page = await open();
+  await page.locator('[aria-label="Settings"]').click();
+  await wait(900);
+  await page.getByRole('button', { name: 'X11 forwarding', exact: true }).click();
+  await wait(900);
+  await scrollDialogTop(page);
+  await shot(page, 'settings-x11');
   await page.close_();
 });
 

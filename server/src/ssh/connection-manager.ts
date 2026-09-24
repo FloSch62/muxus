@@ -14,6 +14,7 @@ import ssh2, {
   type Prompt,
   type PseudoTtyOptions,
   type SFTPWrapper,
+  type X11Options,
 } from 'ssh2';
 import { nanoid } from 'nanoid';
 import type { FastifyBaseLogger } from 'fastify';
@@ -71,6 +72,7 @@ import {
   type ResolvedTarget,
 } from './ssh-config.js';
 import type { FolderAuthLookup, FolderPasswordRef } from './folder-auth.js';
+import { isX11Rejection, type LocalX11, type X11Transport } from '../x11/local-x11.js';
 
 export interface HostKeyChallenge {
   host: string;
@@ -101,6 +103,8 @@ export interface SessionSettings {
   env?: Record<string, string>;
   remoteCommand?: string;
   requestTty?: ResolvedTarget['requestTty'];
+  /** ForwardX11; undefined follows the local X server's default. */
+  forwardX11?: boolean;
 }
 
 export function sessionSettings(resolved: ResolvedTarget): SessionSettings {
@@ -108,6 +112,7 @@ export function sessionSettings(resolved: ResolvedTarget): SessionSettings {
     env: sessionEnvironment(resolved),
     remoteCommand: resolved.remoteCommand,
     requestTty: resolved.requestTty,
+    forwardX11: resolved.forwardX11,
   };
 }
 
@@ -141,6 +146,8 @@ export interface ManagedConnection {
   superseded?: boolean;
   /** Current passive keepalive health of the transport. */
   health(): SshTransportHealth;
+  /** Whether the server answered an x11-req on this transport with failure. */
+  x11Refused(): boolean;
   /** Session defaults come from the dialed target when none are passed. */
   shell(cols: number, rows: number, term: string, session?: SessionSettings): Promise<ClientChannel>;
   sftp(): Promise<SFTPWrapper>;
@@ -292,6 +299,7 @@ export class SshConnectionManager {
   private readonly consoleCompatibilityForProfile: ((id: string) => boolean) | undefined;
   private readonly agentOperationTimeoutMs: number;
   private readonly agentWaitStatusMs: number;
+  private readonly x11: LocalX11 | undefined;
   readonly knownHosts: KnownHostsStore;
 
   constructor(
@@ -318,6 +326,8 @@ export class SshConnectionManager {
       agentOperationTimeoutMs?: number;
       /** Test seam; production uses the exported responsive-agent defaults. */
       agentWaitStatusMs?: number;
+      /** Local X server for X11 forwarding; absent disables it. */
+      x11?: LocalX11;
     } = {},
   ) {
     this.knownHosts = options.knownHosts ?? new KnownHostsStore();
@@ -334,6 +344,7 @@ export class SshConnectionManager {
       options.agentOperationTimeoutMs ?? DEFAULT_AGENT_OPERATION_TIMEOUT_MS;
     this.agentWaitStatusMs =
       options.agentWaitStatusMs ?? DEFAULT_AGENT_WAIT_STATUS_MS;
+    this.x11 = options.x11;
   }
 
   /** Acquire an independent consumer lease on an existing SSH transport. */
@@ -572,6 +583,7 @@ export class SshConnectionManager {
     const lease = await this.connect(profile, io, 'terminal', opts);
     try {
       const stream = await lease.connection.shell(cols, rows, term, sessionSettings(lease.target.resolved));
+      this.reportX11(lease, io);
       return { lease, stream, transport: lease.reused ? 'shared' : 'new' };
     } catch (err) {
       lease.release();
@@ -587,6 +599,7 @@ export class SshConnectionManager {
       const dedicated = await this.connect(profile, io, 'terminal', { dedicatedTransport: true });
       try {
         const stream = await dedicated.connection.shell(cols, rows, term, sessionSettings(dedicated.target.resolved));
+        this.reportX11(dedicated, io);
         return { lease: dedicated, stream, transport: 'overflow' };
       } catch (retryErr) {
         dedicated.release();
@@ -604,6 +617,23 @@ export class SshConnectionManager {
         }
         throw retryErr;
       }
+    }
+  }
+
+  /**
+   * A host that explicitly sets ForwardX11 yes hears why it did not happen.
+   * The default (on only with the bundled Windows X server) stays silent,
+   * as MobaXterm does on servers without X11 forwarding.
+   */
+  private reportX11(lease: MuxedConnectionLease, io: ConnectIo): void {
+    // With X11 switched off in Settings, hosts' ForwardX11 is ignored silently.
+    if (!this.x11?.enabled() || lease.target.resolved.forwardX11 !== true) return;
+    if (this.x11.status().source === 'none') {
+      io.status(this.x11.missingServerMessage());
+    } else if (lease.connection.x11Refused()) {
+      io.status(
+        'This server refused X11 forwarding. It needs "X11Forwarding yes" in sshd_config and xauth installed.',
+      );
     }
   }
 
@@ -640,6 +670,7 @@ export class SshConnectionManager {
         term,
         sessionSettings(compatible.target.resolved),
       );
+      this.reportX11(compatible, io);
       return { lease: compatible, stream, transport };
     } catch (retryError) {
       compatible.release();
@@ -715,6 +746,7 @@ export class SshConnectionManager {
     const target = chain[chain.length - 1]!;
     const client = clients[clients.length - 1]!;
     const jumpClients = clients.slice(0, -1);
+    const x11: X11Transport | undefined = this.x11?.attach(client);
     const id = nanoid(10);
     const closeListeners = new Set<(reason?: string) => void>();
     const postAuthSettled = Promise.all(postAuth).then(() => undefined);
@@ -755,27 +787,47 @@ export class SshConnectionManager {
       sftpAvailable: !disableSftp,
       health: () => transportHealth,
       configForwards: target.resolved.forwards,
+      x11Refused: () => x11?.refused ?? false,
       shell: async (cols, rows, term, session = sessionSettings(target.resolved)) => {
         const pty = wantsPty(session.requestTty, !!session.remoteCommand)
           ? terminalPtyOptions(cols, rows, term)
           : undefined;
         const env = consoleCompatibility ? undefined : session.env;
-        if (session.remoteCommand) {
-          return openSessionExec(
-            client,
-            session.remoteCommand,
-            pty,
-            env,
-            consoleCompatibility,
-          );
+        const open = (x11Request?: X11Options) => {
+          if (session.remoteCommand) {
+            return openSessionExec(
+              client,
+              session.remoteCommand,
+              pty,
+              env,
+              consoleCompatibility,
+              x11Request,
+            );
+          }
+          if (pty && !disableSftp) {
+            return openRemoteShell(client, getSftp, pty, env, x11Request);
+          }
+          // Console compatibility drops SendEnv/SetEnv: ssh2 can only send env
+          // requests before pty-req, an order some appliances answer with a
+          // protocol-error disconnect, and a serial console has no environment.
+          return openPlainShell(client, pty, env, consoleCompatibility, x11Request);
+        };
+        // For the same reason console hosts only get x11-req when they ask for it.
+        const x11Request =
+          consoleCompatibility && session.forwardX11 !== true
+            ? undefined
+            : x11?.request(session.forwardX11);
+        if (!x11Request) return open();
+        try {
+          return await open(x11Request);
+        } catch (err) {
+          if (!isX11Rejection(err)) throw err;
+          // Like ssh(1), a refused x11-req costs X11, not the session. ssh2
+          // closed that channel, so the retry opens a fresh one.
+          x11!.markRefused();
+          this.log.info({ host: target.resolved.hostname }, 'ssh server refused X11 forwarding');
+          return open();
         }
-        if (pty && !disableSftp) {
-          return openRemoteShell(client, getSftp, pty, env);
-        }
-        // Console compatibility drops SendEnv/SetEnv: ssh2 can only send env
-        // requests before pty-req, an order some appliances answer with a
-        // protocol-error disconnect, and a serial console has no environment.
-        return openPlainShell(client, pty, env, consoleCompatibility);
       },
       // One SFTP channel per connection, shared by every file operation.
       sftp: () =>
@@ -1187,6 +1239,7 @@ export function buildChain(
           identitiesOnly: profile.identitiesOnly ?? base.identitiesOnly,
           identityAgent: profile.identityAgent ?? base.identityAgent,
           forwardAgent: profile.forwardAgent ?? base.forwardAgent,
+          forwardX11: profile.forwardX11 ?? base.forwardX11,
           proxyJump: profile.proxyJump ?? base.proxyJump,
           proxyCommand:
             profile.proxyCommand ??
@@ -2076,12 +2129,13 @@ async function openSessionExec(
   pty: PseudoTtyOptions | undefined,
   env?: Record<string, string>,
   retryWithoutPty = false,
+  x11?: X11Options,
 ): Promise<ClientChannel> {
   try {
-    return await requestSessionExec(client, command, pty, env);
+    return await requestSessionExec(client, command, pty, env, x11);
   } catch (err) {
     if (!retryWithoutPty || !pty || !isPtyRejection(err)) throw err;
-    return requestSessionExec(client, command, undefined, env);
+    return requestSessionExec(client, command, undefined, env, x11);
   }
 }
 
@@ -2090,10 +2144,13 @@ function requestSessionExec(
   command: string,
   pty: PseudoTtyOptions | undefined,
   env?: Record<string, string>,
+  x11?: X11Options,
 ): Promise<ClientChannel> {
   return new Promise((resolve, reject) => {
-    client.exec(command, { ...(pty ? { pty } : {}), ...(env ? { env } : {}) }, (err, stream) =>
-      err ? reject(err) : resolve(stream),
+    client.exec(
+      command,
+      { ...(pty ? { pty } : {}), ...(env ? { env } : {}), ...(x11 ? { x11 } : {}) },
+      (err, stream) => (err ? reject(err) : resolve(stream)),
     );
   });
 }
@@ -2109,12 +2166,13 @@ async function openPlainShell(
   pty: PseudoTtyOptions | undefined,
   env?: Record<string, string>,
   retryWithoutPty = false,
+  x11?: X11Options,
 ): Promise<ClientChannel> {
   try {
-    return await requestShell(client, pty ?? false, env);
+    return await requestShell(client, pty ?? false, env, x11);
   } catch (err) {
     if (!retryWithoutPty || !pty || !isPtyRejection(err)) throw err;
-    return requestShell(client, false, env);
+    return requestShell(client, false, env, x11);
   }
 }
 
@@ -2122,9 +2180,12 @@ function requestShell(
   client: Client,
   pty: PseudoTtyOptions | false,
   env?: Record<string, string>,
+  x11?: X11Options,
 ): Promise<ClientChannel> {
   return new Promise((resolve, reject) => {
-    client.shell(pty, { env }, (err, stream) => (err ? reject(err) : resolve(stream)));
+    client.shell(pty, { env, ...(x11 ? { x11 } : {}) }, (err, stream) =>
+      err ? reject(err) : resolve(stream),
+    );
   });
 }
 

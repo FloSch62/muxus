@@ -219,6 +219,7 @@ describe('managed host identity and clipboard actions', () => {
           identitiesOnly: true,
           identityAgent: 'none',
           forwardAgent: true,
+          forwardX11: true,
           proxyJump: ['bastion', 'ops@jump.example.test:2200'],
           passwordOnly: true,
           forwards: [
@@ -237,7 +238,7 @@ describe('managed host identity and clipboard actions', () => {
     };
     expect(managedHostCopyCommand(routed).text).toBe(
       "ssh -p 2222 -i '~/.ssh/core key' -o CertificateFile=~/.ssh/core-cert.pub " +
-        '-o IdentitiesOnly=yes -o IdentityAgent=none -A ' +
+        '-o IdentitiesOnly=yes -o IdentityAgent=none -A -X ' +
         '-J bastion,ops@jump.example.test:2200 -o PubkeyAuthentication=no ' +
         '-o PreferredAuthentications=keyboard-interactive,password ' +
         '-L 8080:127.0.0.1:80 -tt -o StrictHostKeyChecking=accept-new ' +

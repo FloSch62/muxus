@@ -238,6 +238,7 @@ function savedSshCopyCommand(profile: SshProfile): string {
     args.push('-o', `IdentityAgent=${profile.identityAgent}`);
   }
   if (profile.forwardAgent) args.push('-A');
+  if (profile.forwardX11 !== undefined) args.push(profile.forwardX11 ? '-X' : '-x');
   if (profile.proxyJump?.length) args.push('-J', profile.proxyJump.join(','));
   if (profile.proxyCommand) {
     args.push('-o', `ProxyCommand=${profile.proxyCommand}`);

@@ -21,6 +21,34 @@ export interface AppInfo {
   sshAlgorithms: Record<string, string[]>;
 }
 
+/** Application-wide X11 forwarding switches; unset values follow the platform default. */
+export interface X11Settings {
+  /** Master switch: off never requests X11 and shows no X11 hints. Default off on macOS. */
+  enabled: boolean;
+  /** Whether hosts without a ForwardX11 setting forward X11. Default on with the bundled server. */
+  forwardByDefault: boolean;
+  /** Bridge the bundled Windows X server to the system clipboard (read and write). */
+  clipboard: boolean;
+}
+
+/** Body of PUT /api/x11/settings; omitted switches revert to their platform default. */
+export type X11SettingsUpdate = Partial<Pick<X11Settings, 'enabled' | 'forwardByDefault'>> &
+  Pick<X11Settings, 'clipboard'>;
+
+/**
+ * Where forwarded X11 windows open, plus the effective settings: `bundled`
+ * is the X server the Windows app ships (one display per SSH connection),
+ * `display` the user's own $DISPLAY (XQuartz on macOS), `none` when there is
+ * nothing to forward to.
+ */
+export interface X11Status extends X11Settings {
+  source: 'bundled' | 'display' | 'none';
+  /** The $DISPLAY in use for `display`. */
+  display?: string;
+  /** Platform defaults for the switches a user may leave unset. */
+  defaults: Pick<X11Settings, 'enabled' | 'forwardByDefault'>;
+}
+
 export type AppLogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
 
 /** One diagnostic log record from the in-memory app log buffer. */
@@ -118,6 +146,7 @@ export const DIAL_TIME_KEYWORDS: ReadonlySet<string> = new Set([
   'remotecommand',
   'requesttty',
   'stricthostkeychecking',
+  'forwardx11',
 ]);
 
 export type UpdateCheckResult =
@@ -367,6 +396,8 @@ export interface HostBlockOptions {
   /** Per-host authentication agent: socket path, environment indirection, SSH_AUTH_SOCK, or none. */
   identityAgent?: string;
   forwardAgent?: boolean;
+  /** ForwardX11; absent = the Muxus default (on with the bundled Windows X server). */
+  forwardX11?: boolean;
   /** ProxyJump hops in order ("bastion", "user@host:2222"); absent = none. */
   proxyJump?: string[];
   /** Shell command whose stdin/stdout provide the SSH transport. */
@@ -394,6 +425,8 @@ export interface ResolvedHostSettings {
   /** Effective authentication agent after applying all matching Host blocks. */
   identityAgent?: string;
   forwardAgent: boolean;
+  /** Effective ForwardX11; undefined when no matching block sets it. */
+  forwardX11?: boolean;
   proxyJump: string[];
   /** Raw ProxyCommand after Host-pattern resolution; tokens expand at dial time. */
   proxyCommand?: string;

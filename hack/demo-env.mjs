@@ -621,6 +621,11 @@ export async function startDemoEnv() {
   const hosts = DEMO_HOSTS.map((host, index) => ({ ...host, port: SSH_PORT_BASE + index + 1 }));
   const hostMap = Object.fromEntries(hosts.map((host) => [host.hostname, host.port]));
   await buildHome(hosts, keys);
+  // Screenshots show the Windows app's built-in X server. The placeholder
+  // never runs: demo hosts open no X11 channels.
+  const x11ServerDir = path.join(DEMO_ROOT, 'vcxsrv');
+  await fs.mkdir(x11ServerDir, { recursive: true });
+  await fs.writeFile(path.join(x11ServerDir, 'vcxsrv.exe'), '');
 
   const sshds = await Promise.all(hosts.map((host) => startSshd(host, keys, hostMap)));
 
@@ -637,6 +642,7 @@ export async function startDemoEnv() {
         ZDOTDIR: HOME,
         MUXUS_DEV: '1',
         MUXUS_NO_OPEN: '1',
+        MUXUS_X11_SERVER_DIR: x11ServerDir,
         NODE_ENV: 'development',
       },
       stdio: ['ignore', 'pipe', 'pipe'],

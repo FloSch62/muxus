@@ -68,6 +68,8 @@ export const sshProfileSchema = z.object({
   /** Agent socket path, environment indirection, SSH_AUTH_SOCK, or none. */
   identityAgent: z.string().min(1).max(4096).optional(),
   forwardAgent: z.boolean().optional(),
+  /** Absent = the platform default (on with the bundled Windows X server). */
+  forwardX11: z.boolean().optional(),
   proxyJump: z.array(z.string().min(1).max(500)).max(8).optional(),
   proxyCommand: z.string().min(1).max(32_768).optional(),
   forwards: z

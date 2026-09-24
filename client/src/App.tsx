@@ -9,8 +9,10 @@ import {
 } from 'react';
 import CssBaseline from '@mui/material/CssBaseline';
 import { ThemeProvider } from '@mui/material/styles';
+import { useQueryClient } from '@tanstack/react-query';
 import type { AppWindowLaunch } from '@muxus/shared';
 import { setDebugLogging } from './api/logs.js';
+import { putX11Settings, X11_STATUS_KEY } from './api/x11.js';
 import { applyInterfaceZoom } from './interface-zoom.js';
 import { buildTheme } from './theme.js';
 import { setTitleBarMode } from './titlebar-overlay.js';
@@ -93,6 +95,10 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const themeMode = usePrefsStore((s) => s.themeMode);
   const interfaceZoom = usePrefsStore((s) => s.interfaceZoom);
   const debugMode = usePrefsStore((s) => s.debugMode);
+  const x11Enabled = usePrefsStore((s) => s.x11Enabled);
+  const x11ForwardByDefault = usePrefsStore((s) => s.x11ForwardByDefault);
+  const x11ClipboardSharing = usePrefsStore((s) => s.x11ClipboardSharing);
+  const queryClient = useQueryClient();
   const hostEditorOpen = useUiStore((s) => !!s.hostEditor);
   const hostOrganizerOpen = useUiStore((s) => !!s.hostOrganizer);
   const folderDialogOpen = useUiStore((s) => !!s.folderDialog);
@@ -145,6 +151,16 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
     // and on every toggle. Failures are ignored — the pref re-syncs next time.
     void setDebugLogging(debugMode).catch(() => undefined);
   }, [debugMode]);
+  useEffect(() => {
+    // Same for the X11 settings; unset switches keep the server's platform default.
+    void putX11Settings({
+      ...(x11Enabled === null ? {} : { enabled: x11Enabled }),
+      ...(x11ForwardByDefault === null ? {} : { forwardByDefault: x11ForwardByDefault }),
+      clipboard: x11ClipboardSharing,
+    })
+      .then((status) => queryClient.setQueryData(X11_STATUS_KEY, status))
+      .catch(() => undefined);
+  }, [x11Enabled, x11ForwardByDefault, x11ClipboardSharing, queryClient]);
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const handler = (e: MediaQueryListEvent) => setOsTheme(e.matches ? 'dark' : 'light');
