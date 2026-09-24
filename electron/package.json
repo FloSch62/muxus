@@ -18,7 +18,8 @@
     "start": "electron .",
     "rebuild": "electron-rebuild -f -w node-pty,@serialport/bindings-cpp",
     "pack:dir": "electron-builder --dir",
-    "dist": "electron-builder"
+    "dist": "node scripts/dist.mjs",
+    "dist:store": "node scripts/dist.mjs --win appx --x64"
   },
   "dependencies": {
     "@muxus/shared": "workspace:*",

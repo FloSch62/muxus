@@ -163,7 +163,7 @@ function UpdateControls({ currentVersion }: { currentVersion?: string }) {
         </Alert>
       ) : null}
       {result?.available === false && !result.latestVersion ? (
-        <Alert severity="warning" variant="outlined">
+        <Alert severity={result.reason === 'store' ? 'info' : 'warning'} variant="outlined">
           {updateReasonLabel(result.reason)}
         </Alert>
       ) : null}
@@ -219,6 +219,10 @@ function platformLabel(platform?: string): string {
 
 function updateReasonLabel(reason?: string): string {
   switch (reason) {
+    case 'store':
+      return 'Microsoft Store manages updates for this installation.';
+    case 'store-open-failed':
+      return 'Open Microsoft Store to check for Muxus updates.';
     case 'timeout':
       return 'The update check timed out.';
     case 'network':

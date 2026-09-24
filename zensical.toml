@@ -70,6 +70,8 @@ nav = [
     "community/index.md",
     { "Contributing" = "community/contributing.md" },
     { "Building from source" = "community/development.md" },
+    { "Signing and releases" = "community/releasing.md" },
+    { "Microsoft Store" = "community/microsoft-store.md" },
     { "FAQ" = "community/faq.md" },
   ] },
   { "About" = "about.md" },

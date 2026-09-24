@@ -40,11 +40,13 @@ import { initMainLog, installCrashCapture, mainLog, mainLogPath } from './main-l
 import { readLocalMobaXtermSessions } from './mobaxterm.js';
 import { workspaceOwnershipUpdate } from './workspace-window-state.js';
 import { pointInsideAnyWindow } from './tab-detach.js';
+import { checkStoreUpdate, type DistributionMetadata } from './store-updates.js';
 
 // Name first: userData (and with it the log location) derives from it.
 app.setName('Muxus');
 const installedUserDataPath = app.getPath('userData');
 const isDevelopment = !app.isPackaged;
+const distributionMetadata = JSON.parse(readFileSync(path.join(app.getAppPath(), 'package.json'), 'utf8')) as DistributionMetadata;
 if (isDevelopment) {
   const userDataPath = developmentUserDataPath(installedUserDataPath);
   mkdirSync(userDataPath, { recursive: true, mode: 0o700 });
@@ -239,6 +241,8 @@ function releaseUrl(value: unknown): string | undefined {
 
 async function checkForUpdate(force = false): Promise<UpdateCheckResult> {
   const currentVersion = app.getVersion();
+  const storeResult = await checkStoreUpdate(distributionMetadata, process.windowsStore === true, currentVersion, force, (url) => shell.openExternal(url));
+  if (storeResult) return storeResult;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), UPDATE_CHECK_TIMEOUT_MS);
   try {

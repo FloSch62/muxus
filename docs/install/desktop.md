@@ -26,22 +26,19 @@ Installers are published on the
     1. Run the installer and follow the prompts. The install directory is selectable.
     2. Launch **Muxus** from the Start menu.
 
-    The builds are not code-signed yet, so SmartScreen may report an unrecognised
-    publisher. Choose **More info → Run anyway**.
+    GitHub installers are unsigned by default, so SmartScreen may report an
+    unrecognised publisher. Microsoft Store packages are signed and updated by
+    Microsoft after certification. See the [Store release setup](../community/microsoft-store.md).
 
 === ":material-apple: macOS"
 
     1. Open the `.dmg` and drag **Muxus** into **Applications**.
-    2. The builds are not notarised yet, so the first launch requires one extra step:
+    2. Launch **Muxus** from Applications, Spotlight or the Dock.
 
-        - **Right-click** the app → **Open**, then confirm in the dialog, *or*
-        - clear the quarantine flag from a terminal:
-
-        ```bash
-        xattr -dr com.apple.quarantine /Applications/Muxus.app
-        ```
-
-    Subsequent launches work normally from Spotlight or the Dock.
+    Releases built with the [signing workflow](../community/releasing.md) are
+    Developer ID signed and notarized, with support for both Intel and Apple Silicon.
+    Older releases and unsigned development builds can still trigger Gatekeeper.
+    Replace an older unsigned build with a signed release when available.
 
 === ":material-linux: Linux"
 

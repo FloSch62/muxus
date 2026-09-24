@@ -22,10 +22,20 @@ npmRebuild: true
 # completion handling. Do not replace it with the package's stale ARM64
 # prebuild, which treats its internal baton pointer as an event handle.
 buildDependenciesFromSource: true
+appxManifestCreated: scripts/appx-manifest.cjs
 win:
   target:
     - target: nsis
       arch: [x64, arm64]
+appx:
+  # Reserved identity and publisher are required by scripts/build-config.ts.
+  applicationId: Muxus
+  displayName: Muxus
+  backgroundColor: transparent
+  languages: [en-US]
+  minVersion: 10.0.19041.0
+  setBuildNumber: false
+  capabilities: [runFullTrust]
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

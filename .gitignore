@@ -4,6 +4,8 @@ dist/
 
 electron/build/
 electron/release/
+electron/release-store/
+.local/
 .env
 .DS_Store
 promo/
