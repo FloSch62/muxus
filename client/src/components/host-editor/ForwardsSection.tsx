@@ -8,8 +8,9 @@ import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
-import type { X11Availability } from '@muxus/shared';
+import type { X11Status } from '@muxus/shared';
 import { useAppInfo } from '../../api/queries.js';
+import { useX11Status } from '../../api/x11.js';
 import { FORWARD_FLAG, ForwardRuleForm, describeForward } from '../ForwardRuleForm.js';
 import type { ForwardX11Mode, HostDraft } from './draft.js';
 import { draftAliases } from './draft.js';
@@ -21,7 +22,8 @@ import { draftAliases } from './draft.js';
  */
 export function ForwardsSection({ draft, set }: { draft: HostDraft; set: (patch: Partial<HostDraft>) => void }) {
   const serverLabel = draftAliases(draft)[0] || draft.hostname || 'SSH server';
-  const info = useAppInfo().data;
+  const platform = useAppInfo().data?.platform;
+  const x11 = useX11Status().data;
   const configBacked = draft.storage === 'openssh';
 
   return (
@@ -38,7 +40,7 @@ export function ForwardsSection({ draft, set }: { draft: HostDraft; set: (patch:
           label="X11 forwarding"
           value={draft.forwardX11}
           onChange={(e) => set({ forwardX11: e.target.value as ForwardX11Mode })}
-          helperText={info ? x11Help(draft.forwardX11, info.x11, info.platform, configBacked) : undefined}
+          helperText={x11 ? x11Help(draft.forwardX11, x11, platform, configBacked) : undefined}
           fullWidth
         >
           <MenuItem value="inherit">
@@ -81,10 +83,12 @@ export function ForwardsSection({ draft, set }: { draft: HostDraft; set: (patch:
 
 function x11Help(
   mode: ForwardX11Mode,
-  x11: X11Availability,
-  platform: string,
+  x11: X11Status,
+  platform: string | undefined,
   configBacked: boolean,
 ): string {
+  // Switched off in Settings (the macOS default): a quiet note, no warnings.
+  if (!x11.enabled) return 'X11 forwarding is turned off in Settings.';
   if (mode === 'no') return 'Muxus never requests X11 forwarding for this host.';
   if (x11.source === 'none') {
     return platform === 'darwin'
@@ -98,10 +102,12 @@ function x11Help(
       ? 'Remote windows open through the X server built into Muxus.'
       : `Remote windows open on display ${x11.display ?? ''}. ${trust}`;
   }
-  const fallback = x11.source === 'bundled'
-    ? 'on — Muxus includes its own X server'
-    : 'off — forwarded programs can watch other X11 windows on your desktop';
+  const fallback = !x11.forwardByDefault
+    ? 'off'
+    : x11.source === 'bundled'
+      ? 'on — Muxus includes its own X server'
+      : 'on — forwarded programs can watch other X11 windows on your desktop';
   return configBacked
-    ? `Uses ForwardX11 from matching SSH configuration; otherwise ${fallback}.`
-    : `${fallback.charAt(0).toUpperCase()}${fallback.slice(1)}.`;
+    ? `Uses ForwardX11 from matching SSH configuration; otherwise ${fallback} (Settings).`
+    : `${fallback.charAt(0).toUpperCase()}${fallback.slice(1)} (Settings).`;
 }

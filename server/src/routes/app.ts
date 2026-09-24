@@ -3,13 +3,17 @@ import { readFileSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { isNewerVersion } from '@muxus/shared';
-import type { AppInfo, UpdateCheckResult } from '@muxus/shared';
+import type { AppInfo, UpdateCheckResult, X11Status } from '@muxus/shared';
 import type { AppContext } from '../app.js';
 import { defaultShell } from '../local/pty-manager.js';
 import { supportedAlgorithms } from '../ssh/algorithms.js';
 import { HttpProblem, sendError } from '../util/errors.js';
 
-const x11SettingsSchema = z.object({ clipboard: z.boolean() });
+const x11SettingsSchema = z.object({
+  enabled: z.boolean().optional(),
+  forwardByDefault: z.boolean().optional(),
+  clipboard: z.boolean(),
+});
 
 const UPDATE_MANIFEST_URL = 'https://flosch62.github.io/muxus/latest.json';
 const UPDATE_CHECK_TIMEOUT_MS = 10_000;
@@ -49,7 +53,7 @@ function releaseUrl(value: unknown): string | undefined {
   }
 }
 
-function appInfo(ctx: AppContext): AppInfo {
+function appInfo(): AppInfo {
   return {
     name: 'Muxus',
     version: serverVersion(),
@@ -57,7 +61,6 @@ function appInfo(ctx: AppContext): AppInfo {
     homeDir: os.homedir(),
     defaultShell: defaultShell(),
     sshAlgorithms: supportedAlgorithms(),
-    x11: ctx.x11.availability(),
   };
 }
 
@@ -108,13 +111,17 @@ async function checkForUpdate(force = false): Promise<UpdateCheckResult> {
 }
 
 export function registerAppRoutes(app: FastifyInstance, ctx: AppContext): void {
-  app.get('/api/app/info', async () => appInfo(ctx));
-  // The preference lives client-side and is sent on boot and on every change.
+  app.get('/api/app/info', async () => appInfo());
+  // Live, so installing an X server or changing DISPLAY shows without a restart.
+  app.get('/api/x11', (): X11Status => ctx.x11.status());
+  // The settings live client-side and are sent on boot and on every change.
   app.put('/api/x11/settings', async (req, reply) => {
     const parsed = x11SettingsSchema.safeParse(req.body);
-    if (!parsed.success) return sendError(reply, new HttpProblem(400, 'clipboard must be a boolean'));
-    ctx.x11.setClipboardSharing(parsed.data.clipboard);
-    return { clipboard: parsed.data.clipboard };
+    if (!parsed.success) {
+      return sendError(reply, new HttpProblem(400, parsed.error.issues[0]?.message ?? 'invalid X11 settings'));
+    }
+    ctx.x11.applySettings(parsed.data);
+    return ctx.x11.status();
   });
   app.get<{ Querystring: { force?: string } }>('/api/app/update-check', async (req) => {
     if (req.query.force === 'true') updateCheck = checkForUpdate(true);

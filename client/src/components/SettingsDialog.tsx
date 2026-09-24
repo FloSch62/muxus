@@ -28,6 +28,7 @@ import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import BugReportOutlinedIcon from '@mui/icons-material/BugReportOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
+import DesktopWindowsOutlinedIcon from '@mui/icons-material/DesktopWindowsOutlined';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import HighlightOutlinedIcon from '@mui/icons-material/HighlightOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
@@ -42,7 +43,7 @@ import {
   useSaveSessionHistorySettings,
   useSaveSessionLoggingPolicy,
 } from '../api/session-history.js';
-import { useAppInfo, useSessionHistoryStorage, useSessionLoggingPolicy } from '../api/queries.js';
+import { useSessionHistoryStorage, useSessionLoggingPolicy } from '../api/queries.js';
 import {
   FALLBACK_SESSION_LOGGING_POLICY,
   hostSessionLoggingDraft,
@@ -91,6 +92,7 @@ import { TerminalSchemeSelect } from './TerminalSchemeSelect.js';
 import { DataTransferSection } from './DataTransferSection.js';
 import { MobaXtermImportDialog } from './MobaXtermImportDialog.js';
 import { PasswordVaultSection } from './PasswordVaultSection.js';
+import { X11Section } from './X11Section.js';
 import { SecureCrtImportDialog } from './SecureCrtImportDialog.js';
 
 type Section =
@@ -100,6 +102,7 @@ type Section =
   | 'logging'
   | 'highlighting'
   | 'behavior'
+  | 'x11'
   | 'keyboard'
   | 'passwords'
   | 'data'
@@ -113,6 +116,7 @@ const SECTIONS: Array<{ id: Section; label: string; icon: React.ReactNode }> = [
   { id: 'logging', label: 'Session logging', icon: <HistoryOutlinedIcon fontSize="small" /> },
   { id: 'highlighting', label: 'Highlighting', icon: <HighlightOutlinedIcon fontSize="small" /> },
   { id: 'behavior', label: 'Behavior', icon: <TuneOutlinedIcon fontSize="small" /> },
+  { id: 'x11', label: 'X11 forwarding', icon: <DesktopWindowsOutlinedIcon fontSize="small" /> },
   { id: 'keyboard', label: 'Keyboard', icon: <KeyboardOutlinedIcon fontSize="small" /> },
   { id: 'passwords', label: 'Passwords', icon: <PasswordOutlinedIcon fontSize="small" /> },
   { id: 'data', label: 'Backup & data', icon: <BackupOutlinedIcon fontSize="small" /> },
@@ -202,6 +206,7 @@ export function SettingsDialog() {
             {section === 'logging' && <SessionLoggingSection onDirtyChange={setLoggingDirty} />}
             {section === 'highlighting' && <HighlightProfilesSection />}
             {section === 'behavior' && <BehaviorSection />}
+            {section === 'x11' && <X11Section />}
             {section === 'keyboard' && <KeyboardSection />}
             {section === 'passwords' && <PasswordVaultSection />}
             {section === 'data' && (
@@ -664,8 +669,6 @@ const SSH_KEEPALIVE_CHOICES = [0, 15, DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS, 60
 
 function BehaviorSection() {
   const prefs = usePrefsStore();
-  // Only the X server Muxus runs itself (Windows) has a clipboard bridge to control.
-  const bundledX11 = useAppInfo().data?.x11.source === 'bundled';
 
   return (
     <Stack spacing={3}>
@@ -756,31 +759,6 @@ function BehaviorSection() {
           />
         </Stack>
       </Box>
-      {bundledX11 ? (
-        <Box>
-          <SectionTitle>Graphical apps (X11)</SectionTitle>
-          <FormControlLabel
-            control={
-              <Switch
-                size="small"
-                checked={prefs.x11ClipboardSharing}
-                onChange={(e) => prefs.set({ x11ClipboardSharing: e.target.checked })}
-              />
-            }
-            label={
-              <Box>
-                <Typography variant="body2">Share the clipboard with X11 apps</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Copy and paste between forwarded windows and Windows. Every server you
-                  connect to with X11 forwarding can then read and replace your clipboard, so
-                  turn this on only if you trust all of them. Applies once no forwarded
-                  windows are open.
-                </Typography>
-              </Box>
-            }
-          />
-        </Box>
-      ) : null}
     </Stack>
   );
 }

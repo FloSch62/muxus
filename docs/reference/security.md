@@ -150,9 +150,9 @@ fresh cookie and stops with the connection, so programs from one host cannot cap
 drive another host's windows. No display is bridged to the Windows clipboard unless
 **Share the clipboard with X11 apps** is turned on, since any forwarding server could
 then read and replace the clipboard. With that isolation, forwarding is on by default
-there. On macOS and Linux,
-forwarding reaches your desktop's display and is trusted (like `ssh -Y`), so it is off
-unless a host enables it. See [Graphical apps (X11)](../guide/x11.md).
+there. On macOS and Linux, forwarding reaches your desktop's display and is trusted (like
+`ssh -Y`), so it is off unless a host enables it; on macOS the whole feature also stays
+switched off until enabled in Settings. See [Graphical apps (X11)](../guide/x11.md).
 
 ## Telnet and serial
 

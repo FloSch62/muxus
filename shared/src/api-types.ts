@@ -19,21 +19,34 @@ export interface AppInfo {
    * warns about entries the dialer would have to skip.
    */
   sshAlgorithms: Record<string, string[]>;
-  /** The local X server forwarded X11 connections would reach. */
-  x11: X11Availability;
 }
 
+/** Application-wide X11 forwarding switches; unset values follow the platform default. */
+export interface X11Settings {
+  /** Master switch: off never requests X11 and shows no X11 hints. Default off on macOS. */
+  enabled: boolean;
+  /** Whether hosts without a ForwardX11 setting forward X11. Default on with the bundled server. */
+  forwardByDefault: boolean;
+  /** Bridge the bundled Windows X server to the system clipboard (read and write). */
+  clipboard: boolean;
+}
+
+/** Body of PUT /api/x11/settings; omitted switches revert to their platform default. */
+export type X11SettingsUpdate = Partial<Pick<X11Settings, 'enabled' | 'forwardByDefault'>> &
+  Pick<X11Settings, 'clipboard'>;
+
 /**
- * Local X server for X11 forwarding: `bundled` is the dedicated server the
- * Windows app ships (forwarding on by default), `display` the user's own
- * $DISPLAY (opt-in per host), `none` when there is nothing to forward to.
+ * Where forwarded X11 windows open, plus the effective settings: `bundled`
+ * is the X server the Windows app ships (one display per SSH connection),
+ * `display` the user's own $DISPLAY (XQuartz on macOS), `none` when there is
+ * nothing to forward to.
  */
-export interface X11Availability {
+export interface X11Status extends X11Settings {
   source: 'bundled' | 'display' | 'none';
-  /** Whether hosts without a ForwardX11 setting forward X11. */
-  defaultEnabled: boolean;
   /** The $DISPLAY in use for `display`. */
   display?: string;
+  /** Platform defaults for the switches a user may leave unset. */
+  defaults: Pick<X11Settings, 'enabled' | 'forwardByDefault'>;
 }
 
 export type AppLogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';

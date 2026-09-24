@@ -5,7 +5,7 @@ import type { Socket } from 'node:net';
 import path from 'node:path';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Client, ClientChannel, X11Details, X11Options } from 'ssh2';
-import type { X11Availability } from '@muxus/shared';
+import type { X11SettingsUpdate, X11Status } from '@muxus/shared';
 import { connectX11Endpoint, parseDisplay, xauthTarget, type ParsedDisplay } from './display.js';
 import {
   BundledXServer,
@@ -25,6 +25,9 @@ export interface LocalX11Options {
   /** Test seam for the bundled server. */
   bundled?: BundledXServerOptions;
 }
+
+/** How long a macOS `launchctl getenv DISPLAY` answer is reused. */
+const LAUNCHD_DISPLAY_TTL_MS = 5_000;
 
 type Source =
   | { kind: 'bundled'; directory: string }
@@ -47,7 +50,8 @@ interface BundledDisplay {
  * on by default, like MobaXterm. Elsewhere it is the user's own display from
  * $DISPLAY (XQuartz's launchd socket on macOS); a remote client there can
  * see that whole desktop, so forwarding stays opt-in per host, as with
- * OpenSSH's ForwardX11.
+ * OpenSSH's ForwardX11. On macOS the whole feature starts switched off, since
+ * it needs XQuartz first.
  */
 export class LocalX11 {
   private readonly log: FastifyBaseLogger;
@@ -58,8 +62,9 @@ export class LocalX11 {
   private readonly bundledDisplays = new Map<object, BundledDisplay>();
   /** Display numbers held by this process's bundled servers. */
   private readonly claimedDisplays = new Set<number>();
-  private launchdDisplay?: string | null;
-  private clipboardSharing = false;
+  private launchdDisplay?: { value: string | undefined; checkedAt: number };
+  /** User choices; unset switches follow the platform default. */
+  private settings: X11SettingsUpdate = { clipboard: false };
 
   constructor(options: LocalX11Options) {
     this.log = options.log;
@@ -69,38 +74,55 @@ export class LocalX11 {
     this.bundledOptions = { ...options.bundled, claimedDisplays: this.claimedDisplays };
   }
 
-  availability(): X11Availability {
-    const source = this.source();
-    switch (source.kind) {
-      case 'bundled':
-        return { source: 'bundled', defaultEnabled: true };
-      case 'display':
-        return { source: 'display', defaultEnabled: false, display: source.display };
-      default:
-        return { source: 'none', defaultEnabled: false };
-    }
+  /**
+   * Apply the application's X11 settings. A clipboard change reaches a
+   * running bundled display once it shows no windows, so it never closes them.
+   */
+  applySettings(settings: X11SettingsUpdate): void {
+    this.settings = settings;
   }
 
-  /** Whether a session should ask for X11: the host's ForwardX11, else the platform default. */
+  status(): X11Status {
+    const source = this.source();
+    const defaults = {
+      enabled: this.enabledByDefault(),
+      forwardByDefault: source.kind === 'bundled',
+    };
+    return {
+      source: source.kind,
+      ...(source.kind === 'display' ? { display: source.display } : {}),
+      enabled: this.enabled(),
+      forwardByDefault: this.settings.forwardByDefault ?? defaults.forwardByDefault,
+      clipboard: this.settings.clipboard,
+      defaults,
+    };
+  }
+
+  /** Whether X11 forwarding is switched on at all. */
+  enabled(): boolean {
+    return this.settings.enabled ?? this.enabledByDefault();
+  }
+
+  /**
+   * macOS needs XQuartz installed first, so nothing about X11 appears there
+   * until the user turns it on.
+   */
+  private enabledByDefault(): boolean {
+    return this.platform !== 'darwin';
+  }
+
+  /** Whether a session should ask for X11: the host's ForwardX11, else the app default. */
   wanted(forwardX11: boolean | undefined): boolean {
-    const availability = this.availability();
-    if (availability.source === 'none') return false;
-    return forwardX11 ?? availability.defaultEnabled;
+    if (!this.enabled()) return false;
+    const status = this.status();
+    if (status.source === 'none') return false;
+    return forwardX11 ?? status.forwardByDefault;
   }
 
   /** Screen number sent in x11-req; remote DISPLAY becomes localhost:N.<screen>. */
   screen(): number {
     const source = this.source();
     return source.kind === 'display' ? source.parsed.screen : 0;
-  }
-
-  /**
-   * Whether the bundled X server shares the Windows clipboard. A running
-   * server switches once no forwarded windows are open, so a change never
-   * closes them.
-   */
-  setClipboardSharing(enabled: boolean): void {
-    this.clipboardSharing = enabled;
   }
 
   /**
@@ -132,7 +154,7 @@ export class LocalX11 {
     if (source.kind !== 'bundled') return Promise.reject(new Error('no bundled X server is installed'));
     const bundled = this.bundledDisplay(domain, source.directory);
     // A clipboard change restarts the display only while it shows no windows.
-    return bundled.server.ensureRunning(this.clipboardSharing, bundled.open === 0);
+    return bundled.server.ensureRunning(this.settings.clipboard, bundled.open === 0);
   }
 
   /** Stop the bundled display of an SSH transport that has closed. */
@@ -184,16 +206,19 @@ export class LocalX11 {
   private displayVariable(): string | undefined {
     if (this.env.DISPLAY) return this.env.DISPLAY;
     if (this.platform !== 'darwin') return undefined;
-    // Apps started from Finder may miss XQuartz's DISPLAY, but launchd has it.
-    if (this.launchdDisplay === undefined) {
+    // Apps started from Finder may miss XQuartz's DISPLAY, but launchd has
+    // it. Ask again after a while, so installing XQuartz needs no restart.
+    const now = Date.now();
+    if (!this.launchdDisplay || now - this.launchdDisplay.checkedAt > LAUNCHD_DISPLAY_TTL_MS) {
+      let value: string | undefined;
       try {
-        this.launchdDisplay =
-          execFileSync('launchctl', ['getenv', 'DISPLAY'], { encoding: 'utf8', timeout: 2000 }).trim() || null;
+        value = execFileSync('launchctl', ['getenv', 'DISPLAY'], { encoding: 'utf8', timeout: 2000 }).trim() || undefined;
       } catch {
-        this.launchdDisplay = null;
+        value = undefined;
       }
+      this.launchdDisplay = { value, checkedAt: now };
     }
-    return this.launchdDisplay ?? undefined;
+    return this.launchdDisplay.value;
   }
 
   /** Per-transport state: one fake cookie and the handler for incoming X11 channels. */

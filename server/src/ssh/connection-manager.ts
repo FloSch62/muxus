@@ -626,8 +626,9 @@ export class SshConnectionManager {
    * as MobaXterm does on servers without X11 forwarding.
    */
   private reportX11(lease: MuxedConnectionLease, io: ConnectIo): void {
-    if (!this.x11 || lease.target.resolved.forwardX11 !== true) return;
-    if (this.x11.availability().source === 'none') {
+    // With X11 switched off in Settings, hosts' ForwardX11 is ignored silently.
+    if (!this.x11?.enabled() || lease.target.resolved.forwardX11 !== true) return;
+    if (this.x11.status().source === 'none') {
       io.status(this.x11.missingServerMessage());
     } else if (lease.connection.x11Refused()) {
       io.status(

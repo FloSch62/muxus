@@ -36,7 +36,7 @@ async function handshake(auth) {
 }
 
 try {
-  assert.deepEqual(x11.availability(), { source: 'bundled', defaultEnabled: true });
+  assert.equal(x11.status().source, 'bundled');
   const { auth } = await x11.connect().then(({ socket, auth }) => (socket.destroy(), { auth }));
   assert.ok(auth, 'the bundled server must use a cookie');
 

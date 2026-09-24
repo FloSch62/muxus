@@ -368,20 +368,47 @@ describe('LocalX11', () => {
     const directory = mkdtempSync(path.join(tmp, 'bundled-'));
     writeFileSync(path.join(directory, 'vcxsrv.exe'), '');
     const bundled = new LocalX11({ log, bundledServerDirectory: directory, env: { DISPLAY: ':0' }, platform: 'win32' });
-    expect(bundled.availability()).toEqual({ source: 'bundled', defaultEnabled: true });
+    expect(bundled.status()).toEqual({
+      source: 'bundled',
+      enabled: true,
+      forwardByDefault: true,
+      clipboard: false,
+      defaults: { enabled: true, forwardByDefault: true },
+    });
     expect(bundled.wanted(undefined)).toBe(true);
     expect(bundled.wanted(false)).toBe(false);
 
     const display = new LocalX11({ log, env: { DISPLAY: ':0.1' }, platform: 'linux' });
-    expect(display.availability()).toEqual({ source: 'display', defaultEnabled: false, display: ':0.1' });
+    expect(display.status()).toMatchObject({ source: 'display', display: ':0.1', enabled: true, forwardByDefault: false });
     expect(display.wanted(undefined)).toBe(false);
     expect(display.wanted(true)).toBe(true);
     expect(display.screen()).toBe(1);
 
     const none = new LocalX11({ log, bundledServerDirectory: path.join(tmp, 'missing'), env: {}, platform: 'win32' });
-    expect(none.availability()).toEqual({ source: 'none', defaultEnabled: false });
+    expect(none.status()).toMatchObject({ source: 'none', enabled: true, forwardByDefault: false });
     expect(none.wanted(true)).toBe(false);
     expect(none.missingServerMessage()).toMatch(/no bundled X server/);
+  });
+
+  it('starts switched off on macOS until the user turns X11 on', () => {
+    const mac = new LocalX11({ log, env: { DISPLAY: '/private/tmp/com.apple.launchd.x/org.xquartz:0' }, platform: 'darwin' });
+    expect(mac.status()).toMatchObject({
+      source: 'display',
+      enabled: false,
+      defaults: { enabled: false, forwardByDefault: false },
+    });
+    expect(mac.enabled()).toBe(false);
+    // Even an explicit ForwardX11 yes stays quiet while X11 is off.
+    expect(mac.wanted(true)).toBe(false);
+
+    mac.applySettings({ enabled: true, clipboard: false });
+    expect(mac.wanted(true)).toBe(true);
+    expect(mac.wanted(undefined)).toBe(false);
+    mac.applySettings({ enabled: true, forwardByDefault: true, clipboard: false });
+    expect(mac.wanted(undefined)).toBe(true);
+    // Unset switches return to their platform default.
+    mac.applySettings({ clipboard: false });
+    expect(mac.enabled()).toBe(false);
   });
 
   it('gives every SSH transport its own bundled display', async () => {

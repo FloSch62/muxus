@@ -364,6 +364,17 @@ add('settings', async () => {
   await page.close_();
 });
 
+add('settings-x11', async () => {
+  const page = await open();
+  await page.locator('[aria-label="Settings"]').click();
+  await wait(900);
+  await page.getByRole('button', { name: 'X11 forwarding', exact: true }).click();
+  await wait(900);
+  await scrollDialogTop(page);
+  await shot(page, 'settings-x11');
+  await page.close_();
+});
+
 add('settings-terminal', async () => {
   const page = await open();
   await page.locator('[aria-label="Settings"]').click();

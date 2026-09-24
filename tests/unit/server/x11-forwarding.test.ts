@@ -172,7 +172,7 @@ describe('X11 forwarding over SSH', () => {
     for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
   });
 
-  async function setup(acceptX11: boolean, lines: string[]) {
+  async function setup(acceptX11: boolean, lines: string[], platform: NodeJS.Platform = 'linux') {
     const ssh = await startServer(acceptX11);
     cleanups.push(() => new Promise<void>((resolve) => ssh.server.close(() => resolve())));
     const xServer = await startXServer();
@@ -180,7 +180,7 @@ describe('X11 forwarding over SSH', () => {
     const x11 = new LocalX11({
       log,
       env: { DISPLAY: xServer.display, XAUTHORITY: xServer.xauthority },
-      platform: 'linux',
+      platform,
     });
     const manager = makeManager(ssh.port, lines, x11);
     cleanups.push(() => manager.closeAll());
@@ -213,6 +213,17 @@ describe('X11 forwarding over SSH', () => {
     // The transport's own X display goes away with it.
     manager.closeAll();
     await vi.waitFor(() => expect(release).toHaveBeenCalledTimes(1));
+  });
+
+  it('stays silent while X11 is switched off, as on macOS by default', async () => {
+    const { ssh, manager } = await setup(true, ['  ForwardX11 yes'], 'darwin');
+    const statuses: string[] = [];
+    const shell = await manager.connectShell(profile, makeIo(statuses), 80, 24, 'xterm');
+    expect(await firstData(shell.stream)).toContain('shell ok');
+    expect(ssh.capture.requests).toHaveLength(0);
+    expect(statuses).toEqual([]);
+    shell.stream.close();
+    shell.lease.release();
   });
 
   it('keeps X11 off by default when forwarding would reach the user desktop', async () => {
