@@ -205,6 +205,9 @@ export class DesktopSession {
       case 'connected':
         this.enqueue(() => this.loginSucceeded());
         return;
+      case 'server-key':
+        this.enqueue(() => this.acceptServerKey(message));
+        return;
     }
   }
 
@@ -290,6 +293,7 @@ export class DesktopSession {
     send(this.socket, {
       op: 'ready',
       ticket,
+      profile,
       ...(profile.kind === 'rdp' ? { credentials: this.credentials } : {}),
     });
   }
@@ -545,14 +549,14 @@ export class DesktopSession {
   private async acceptCertificate(certificate: PresentedCertificate): Promise<boolean> {
     const profile = this.profile!;
     const gateway = this.gatewayKey();
-    const pinned = this.ctx.database.trustedDesktopCertificate(profile.host, profile.port, gateway);
+    const pinned = this.ctx.database.trustedDesktopIdentity(profile.host, profile.port, gateway);
     const challenge = certificateChallenge(certificate, profile.host, profile.port, pinned);
     if (!challenge) return true;
     const reply = this.expect('certificate-response');
     send(this.socket, { op: 'certificate', ...challenge });
     const { accept } = await reply;
     if (accept) {
-      this.ctx.database.trustDesktopCertificate({
+      this.ctx.database.trustDesktopIdentity({
         host: profile.host,
         port: profile.port,
         gateway,
@@ -562,6 +566,45 @@ export class DesktopSession {
     }
     return accept;
   }
+
+  /**
+   * A VNC server's RSA-AES key, which noVNC holds the handshake for until the
+   * verdict: before any credentials are sent. VNC keys are almost never
+   * certified, so first contact and changes are the user's call, as for RDP.
+   */
+  private async acceptServerKey(key: ClientReply<'server-key'>): Promise<void> {
+    const profile = this.profile;
+    if (this.closed || profile?.kind !== 'vnc') return;
+    const gateway = this.gatewayKey();
+    const pinned = this.ctx.database.trustedDesktopIdentity(profile.host, profile.port, gateway);
+    let accept = pinned?.fingerprint === key.fingerprint;
+    if (!accept) {
+      const reply = this.expect('certificate-response');
+      send(this.socket, {
+        op: 'certificate',
+        kind: 'rsa-key',
+        host: profile.host,
+        port: profile.port,
+        fingerprint: key.fingerprint,
+        bits: key.bits,
+        signature: key.signature,
+        state: pinned ? 'mismatch' : 'new',
+        previous: pinned?.fingerprint,
+      });
+      ({ accept } = await reply);
+      if (accept) {
+        this.ctx.database.trustDesktopIdentity({
+          host: profile.host,
+          port: profile.port,
+          gateway,
+          fingerprint: key.fingerprint,
+          subject: `RSA ${key.bits}-bit key ${key.signature}`,
+        });
+      }
+    }
+    send(this.socket, { op: 'server-key-verdict', accept });
+  }
+
 
   /** Relay one noVNC socket to the VNC server for as long as both ends stay open. */
   async serveVnc(socket: WebSocket): Promise<void> {

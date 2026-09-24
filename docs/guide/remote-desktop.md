@@ -62,7 +62,7 @@ hosts, they are stored as Muxus's own saved hosts, not in `ssh_config`.
     | VeNCrypt *Plain* (user name and password) | TigerVNC, wayvnc |
     | Apple Remote Desktop | macOS Screen Sharing |
     | MS-Logon II | UltraVNC |
-    | RSA-AES | RealVNC |
+    | RSA-AES | RealVNC, TigerVNC |
 
     VeNCrypt variants that wrap the session in TLS (`X509*`, `TLS*`) are not supported. Allow
     **VncAuth** on the server, or connect through an SSH gateway.
@@ -73,7 +73,7 @@ login succeeds. When a saved password stops working, Muxus asks again and offers
 replace it. If you typed the user name in the same prompt, it is added to the host so the
 saved password is found next time.
 
-## Certificates
+## Certificates and server keys
 
 RDP servers usually present a self-signed certificate, so Muxus treats it like an SSH host
 key. The first connection shows the certificate with its SHA-256 fingerprint; trusting it
@@ -88,6 +88,10 @@ To compare fingerprints on a Windows server:
 Get-ChildItem Cert:\LocalMachine\"Remote Desktop" |
   ForEach-Object { [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($_.RawData)) -replace '-',':' }
 ```
+
+VNC servers that sign in with RSA-AES identify themselves with an RSA key instead. Muxus
+shows a new key with its **signature**, the short form TigerVNC's viewer shows as the
+fingerprint, and pins it the same way; no password is sent until the key is trusted.
 
 ## Through an SSH gateway
 

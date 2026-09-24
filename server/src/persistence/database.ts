@@ -453,6 +453,7 @@ function addRemoteDesktopHosts(db: DatabaseSync): void {
     INSERT INTO connection_tags SELECT * FROM connection_tags_rebuild;
     DROP TABLE connection_tags_rebuild;
 
+    -- Pinned RDP certificates, and VNC RSA-AES keys, per host, port and route.
     CREATE TABLE remote_desktop_certificates (
       host TEXT NOT NULL,
       port INTEGER NOT NULL CHECK(port BETWEEN 1 AND 65535),
@@ -1391,8 +1392,11 @@ export class MuxusDatabase {
     return deleted;
   }
 
-  /** The RDP certificate trusted for a host, keyed by the SSH gateway it is reached through. */
-  trustedDesktopCertificate(
+  /**
+   * The RDP certificate or VNC server key trusted for a host, keyed by the SSH
+   * gateway it is reached through. `subject` describes what was pinned.
+   */
+  trustedDesktopIdentity(
     host: string,
     port: number,
     gateway = '',
@@ -1406,7 +1410,7 @@ export class MuxusDatabase {
     return row ? { fingerprint: String(row.fingerprint), subject: String(row.subject) } : undefined;
   }
 
-  trustDesktopCertificate(input: {
+  trustDesktopIdentity(input: {
     host: string;
     port: number;
     gateway?: string;

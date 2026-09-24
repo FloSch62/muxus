@@ -39,7 +39,8 @@ and history.
 
 The local SQLite database holds folders, colours, display names, sidebar order, workspaces,
 saved tunnels, Muxus-only SSH/Telnet/serial/RDP/VNC hosts, per-host highlighting and logging
-policy, connection timestamps, the fingerprints of trusted RDP certificates, and encrypted
+policy, connection timestamps, the fingerprints of trusted RDP certificates and VNC server
+keys, and encrypted
 passwords when the user opts in. It is created
 `0600` in a `0700` directory.
 
@@ -175,17 +176,25 @@ which on Linux means group membership.
   name. Anything else is shown with its SHA-256 fingerprint and, once trusted, pinned per
   host, port and SSH gateway; a different certificate later produces a warning, like a
   changed SSH host key.
+- **VNC server keys.** A server using RSA-AES (RealVNC, TigerVNC) identifies itself with an
+  RSA key. noVNC holds the handshake until the key is trusted, so no password is sent
+  before that: a new key is shown with its signature and SHA-256 fingerprint and pinned
+  like a certificate, and a changed key produces the same warning.
 - **Credentials** come from the prompt or the password vault and are handed to the
   renderer over the authenticated control socket, because NLA runs in the client. They are
   never written to disk unless **Remember this password** is chosen, and then only after
-  the login succeeds.
+  the login succeeds. A saved password belongs to the protocol, user, host, port, SSH
+  gateway and (for RDP) domain, so the same address behind another gateway, or the same
+  user in another domain, never receives it.
 - **Stream sockets** are authorized with a random, single-use ticket that expires after a
   minute and is bound to the tab that requested it. The backend connects only to the host
   and port stored for that tab, never to a destination the client names.
 - **VNC** usually has no encryption. Outside a trusted network, use an
   [SSH gateway](../guide/remote-desktop.md#through-an-ssh-gateway).
 - **Clipboard sharing** is on by default, as in other RDP clients, and can be turned off
-  per host. While a desktop tab has focus, its server can read text you copied.
+  per host. While a desktop tab has focus, its server can read text you copied. A saved
+  host always connects with its current settings, including this one, even from a tab
+  opened before the host was edited.
 
 ## The desktop shell
 

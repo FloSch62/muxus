@@ -45,11 +45,12 @@ const confirmFor = (protocol: number) =>
 const REFUSAL = Buffer.from('030000130ed000000000000300080005000000', 'hex');
 
 let app: Awaited<ReturnType<typeof buildApp>>['app'];
+let ctx: Awaited<ReturnType<typeof buildApp>>['ctx'];
 let base: string;
 const cleanups: Array<() => void> = [];
 
 beforeEach(async () => {
-  ({ app } = await buildApp(
+  ({ app, ctx } = await buildApp(
     resolveConfig({
       token: TOKEN,
       databasePath: ':memory:',
@@ -229,6 +230,31 @@ describe('/ws/desktop', () => {
     expect(code).toBe(1008);
   });
 
+  it('dials a saved host with its current settings and tells the client which', async () => {
+    const port = await fakeVncServer();
+    const saved = ctx.database.saveSavedHostProfile({
+      name: 'design-vm',
+      profile: { kind: 'vnc', host: '127.0.0.1', port, viewOnly: true, shareClipboard: false },
+    });
+    const control = new Control();
+    await control.opened;
+    // The tab still holds the settings from before the host was edited.
+    control.send({
+      op: 'connect',
+      profile: { kind: 'vnc', profileId: saved.id, host: 'old-name', port: 5900, shareClipboard: true },
+    });
+    const ready = (await control.next()) as Extract<DesktopServerMessage, { op: 'ready' }>;
+    expect(ready.op).toBe('ready');
+    expect(ready.profile).toMatchObject({
+      kind: 'vnc',
+      profileId: saved.id,
+      host: '127.0.0.1',
+      port,
+      viewOnly: true,
+      shareClipboard: false,
+    });
+  });
+
   it('asks for VNC credentials when the server wants them', async () => {
     const control = new Control();
     await control.opened;
@@ -308,6 +334,67 @@ describe('/ws/desktop', () => {
     second.socket.send(rdCleanPathRequest(again.ticket, `127.0.0.1:${server.port}`));
     const secondResponse = await second.next();
     expect(secondResponse.includes(CERTIFICATE_DER)).toBe(true);
+  });
+
+  it('pins a VNC server key, asks again when it changes, and ignores keys for RDP', async () => {
+    const fingerprint = (seed: string) =>
+      createHash('sha256').update(seed).digest('hex').toUpperCase().match(/../g)!.join(':');
+    const key = { op: 'server-key', bits: 2048, fingerprint: fingerprint('a'), signature: '01-23-45-67-89-ab-cd-ef' };
+    const connect = async (port: number) => {
+      const control = new Control();
+      await control.opened;
+      control.send({ op: 'connect', profile: { kind: 'vnc', host: 'VNC.lab', port } });
+      expect(await control.next()).toMatchObject({ op: 'ready' });
+      return control;
+    };
+
+    const first = await connect(5900);
+    first.send(key);
+    expect(await first.next()).toEqual({
+      op: 'certificate',
+      kind: 'rsa-key',
+      host: 'VNC.lab',
+      port: 5900,
+      fingerprint: key.fingerprint,
+      bits: 2048,
+      signature: key.signature,
+      state: 'new',
+    });
+    first.send({ op: 'certificate-response', accept: true });
+    expect(await first.next()).toEqual({ op: 'server-key-verdict', accept: true });
+    expect(ctx.database.trustedDesktopIdentity('vnc.lab', 5900)).toEqual({
+      fingerprint: key.fingerprint,
+      subject: 'RSA 2048-bit key 01-23-45-67-89-ab-cd-ef',
+    });
+
+    // The pinned key passes without a prompt; a different one is a warning.
+    const second = await connect(5900);
+    second.send(key);
+    expect(await second.next()).toEqual({ op: 'server-key-verdict', accept: true });
+    second.send({ ...key, fingerprint: fingerprint('b') });
+    expect(await second.next()).toMatchObject({
+      op: 'certificate',
+      kind: 'rsa-key',
+      state: 'mismatch',
+      previous: key.fingerprint,
+    });
+    second.send({ op: 'certificate-response', accept: false });
+    expect(await second.next()).toEqual({ op: 'server-key-verdict', accept: false });
+    expect(ctx.database.trustedDesktopIdentity('vnc.lab', 5900)?.fingerprint).toBe(key.fingerprint);
+
+    // Another port is another server.
+    const other = await connect(5901);
+    other.send(key);
+    expect(await other.next()).toMatchObject({ op: 'certificate', state: 'new' });
+
+    // RDP never asks about VNC keys; the next message is the logon prompt's answer.
+    const rdp = new Control();
+    await rdp.opened;
+    rdp.send({ op: 'connect', profile: { kind: 'rdp', host: '127.0.0.1', port: 3389, username: 'alice' } });
+    expect(await rdp.next()).toMatchObject({ op: 'auth-prompt' });
+    rdp.send(key);
+    rdp.send({ op: 'auth-response', answers: ['hunter2'] });
+    expect(await rdp.next()).toMatchObject({ op: 'ready' });
   });
 
   it('survives the server dropping the connection while the certificate prompt is open', async () => {

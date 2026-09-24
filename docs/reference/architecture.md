@@ -88,7 +88,7 @@ sequenceDiagram
   participant R as RDP server
   C->>S: /ws/desktop connect (host profile)
   S-->>C: auth-prompt (password, vault)
-  S-->>C: ready (ticket, logon)
+  S-->>C: ready (ticket, logon, the profile it dialed)
   C->>S: /ws/desktop/rdp RDCleanPath request (ticket, X.224)
   S->>R: TCP (or SSH channel), X.224 request
   R-->>S: X.224 confirm
@@ -98,9 +98,14 @@ sequenceDiagram
   C->>R: CredSSP, then the RDP session, relayed through the TLS connection
 ```
 
+`ready` carries the profile the server dialed, so a saved host's current settings (not the
+tab's snapshot) decide the destination, clipboard sharing and VNC options.
+
 VNC is simpler: noVNC opens `/ws/desktop/vnc` offering the ticket as a WebSocket
 subprotocol, and the server relays raw RFB bytes to the VNC server or through an SSH
-channel. The IronRDP client is built from a pinned upstream commit by
+channel. An RSA-AES server's key is only visible to noVNC, so the tab reports it on the
+control socket (`server-key`) and continues once the server has checked it against the
+pinned one or the user has trusted it. The IronRDP client is built from a pinned upstream commit by
 `client/scripts/build-ironrdp.mjs`, because the published package lags fixes that xrdp
 and Windows servers depend on.
 

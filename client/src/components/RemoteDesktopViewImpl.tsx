@@ -108,7 +108,13 @@ export function RemoteDesktopViewImpl({
   const vncRef = useRef<VncConnection | null>(null);
   const activeRef = useRef(active);
   activeRef.current = active;
-  const shareClipboard = profile.shareClipboard !== false;
+  /**
+   * What the backend dialed, from its last `ready`. A saved host connects with
+   * its current settings, which may be newer than the tab's snapshot.
+   */
+  const [dialed, setDialed] = useState<{ from: DesktopProfile; profile: DesktopProfile } | null>(null);
+  const current = dialed?.from === profile ? dialed.profile : profile;
+  const shareClipboardRef = useRef(current.shareClipboard !== false);
 
   useEffect(() => {
     if (reconnectRequest === lastReconnectRequestRef.current) return;
@@ -123,13 +129,13 @@ export function RemoteDesktopViewImpl({
 
   /** Offer the local clipboard to the remote side when the desktop takes focus. */
   const pushClipboard = useCallback(() => {
-    if (!shareClipboard) return;
+    if (!shareClipboardRef.current) return;
     void readFromClipboard().then((text) => {
-      if (text === null) return;
+      if (text === null || !shareClipboardRef.current) return;
       if (rdpRef.current) void rdpRef.current.sendClipboardText(text);
       vncRef.current?.sendClipboardText(text);
     });
-  }, [shareClipboard]);
+  }, []);
 
   const focusDesktop = useCallback(() => {
     if (rdpRef.current) canvasRef.current?.focus({ preventScroll: true });
@@ -143,6 +149,13 @@ export function RemoteDesktopViewImpl({
     let finished = false;
     let exit: Extract<DesktopServerMessage, { op: 'exit' }> | undefined;
     let credentialsWaiter: ((credentials: DesktopCredentials) => void) | undefined;
+    /** noVNC holds an RSA-AES handshake until the backend has checked the key. */
+    let serverKeyWaiter: ((accept: boolean) => void) | undefined;
+    const answerServerKey = (accept: boolean) => {
+      const waiter = serverKeyWaiter;
+      serverKeyWaiter = undefined;
+      waiter?.(accept);
+    };
     let connectedAt = 0;
     let sawAuthPrompt = false;
     userDisconnectRef.current = false;
@@ -159,6 +172,7 @@ export function RemoteDesktopViewImpl({
     };
 
     const teardownStreams = () => {
+      answerServerKey(false);
       rdpRef.current?.shutdown();
       rdpRef.current = null;
       vncRef.current?.disconnect();
@@ -212,7 +226,11 @@ export function RemoteDesktopViewImpl({
       }
     };
 
-    const startRdp = async (ticket: string, credentials: DesktopCredentials) => {
+    const startRdp = async (
+      target: Extract<DesktopProfile, { kind: 'rdp' }>,
+      ticket: string,
+      credentials: DesktopCredentials,
+    ) => {
       const canvas = canvasRef.current;
       const box = viewportRef.current?.getBoundingClientRect();
       if (!canvas) return;
@@ -222,13 +240,13 @@ export function RemoteDesktopViewImpl({
           canvas,
           proxyAddress: wsUrl(DESKTOP_RDP_WS_PATH),
           ticket,
-          destination: `${profile.host}:${profile.port}`,
+          destination: `${target.host}:${target.port}`,
           username: credentials.username ?? '',
           password: credentials.password ?? '',
           domain: credentials.domain,
           width: box && box.width >= 200 ? box.width : 1280,
           height: box && box.height >= 200 ? box.height : 800,
-          shareClipboard,
+          shareClipboard: target.shareClipboard !== false,
           onCursor: setCursor,
           onRemoteClipboard: (text) => {
             void copyToClipboard(text);
@@ -256,9 +274,9 @@ export function RemoteDesktopViewImpl({
       }
     };
 
-    const startVnc = async (ticket: string) => {
+    const startVnc = async (vnc: Extract<DesktopProfile, { kind: 'vnc' }>, ticket: string) => {
       const target = vncTargetRef.current;
-      if (!target || profile.kind !== 'vnc') return;
+      if (!target) return;
       setStatusText('Opening the VNC session …');
       let connected = false;
       /** Only a server that asked for credentials can have rejected them. */
@@ -268,13 +286,19 @@ export function RemoteDesktopViewImpl({
         target,
         url: wsUrl(DESKTOP_VNC_WS_PATH),
         protocols: [...wsProtocols(), `${DESKTOP_TICKET_PROTOCOL_PREFIX}${ticket}`],
-        viewOnly: profile.viewOnly === true,
-        resizeRemote: profile.resizeRemote === true,
-        shareClipboard,
+        viewOnly: vnc.viewOnly === true,
+        resizeRemote: vnc.resizeRemote === true,
+        shareClipboard: vnc.shareClipboard !== false,
         onConnect: () => {
           connected = true;
           if (!disposed) markConnected();
         },
+        onServerKey: (key) =>
+          new Promise<boolean>((resolve) => {
+            answerServerKey(false);
+            serverKeyWaiter = resolve;
+            send({ op: 'server-key', ...key });
+          }),
         onCredentialsRequired: (types) => {
           askedForCredentials = true;
           credentialsWaiter = (credentials) => connection?.sendCredentials(credentials);
@@ -349,14 +373,21 @@ export function RemoteDesktopViewImpl({
           setCertificate(challenge);
           break;
         }
-        case 'ready':
+        case 'ready': {
           teardownStreams();
-          if (profile.kind === 'rdp') void startRdp(message.ticket, message.credentials ?? {});
-          else void startVnc(message.ticket);
+          const dialedProfile = message.profile;
+          shareClipboardRef.current = dialedProfile.shareClipboard !== false;
+          setDialed({ from: profile, profile: dialedProfile });
+          if (dialedProfile.kind === 'rdp') void startRdp(dialedProfile, message.ticket, message.credentials ?? {});
+          else void startVnc(dialedProfile, message.ticket);
           break;
+        }
         case 'credentials':
           credentialsWaiter?.(message.credentials);
           credentialsWaiter = undefined;
+          break;
+        case 'server-key-verdict':
+          answerServerKey(message.accept);
           break;
         case 'exit':
           exit = message;
@@ -470,6 +501,8 @@ export function RemoteDesktopViewImpl({
   };
   const answerCertificate = (accept: boolean) => {
     setCertificate(null);
+    // Declining is the user's decision; redialling would only ask again.
+    if (!accept) userDisconnectRef.current = true;
     sendControl({ op: 'certificate-response', accept });
   };
   const reconnect = () => {
@@ -485,7 +518,7 @@ export function RemoteDesktopViewImpl({
 
   const rdp = profile.kind === 'rdp';
   const canvasBox = fitRect(viewport, desktopSize);
-  const address = `${profile.host}:${profile.port}`;
+  const address = `${current.host}:${current.port}`;
 
   return (
     <Box
@@ -570,7 +603,7 @@ export function RemoteDesktopViewImpl({
             <Typography variant="caption" color="text.secondary" sx={{ px: 1, whiteSpace: 'nowrap' }}>
               {profile.kind.toUpperCase()} · {address}
             </Typography>
-            {!(profile.kind === 'vnc' && profile.viewOnly) && (
+            {!(current.kind === 'vnc' && current.viewOnly) && (
               <Tooltip title="Send Ctrl+Alt+Del">
                 <IconButton
                   size="small"

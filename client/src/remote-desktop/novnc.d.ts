@@ -27,6 +27,8 @@ declare module '@novnc/novnc' {
     compressionLevel: number;
     disconnect(): void;
     sendCredentials(credentials: RfbCredentials): void;
+    /** Continue an RSA-AES handshake held at its `serververification` event. */
+    approveServer(): void;
     sendKey(keysym: number, code: string | null, down?: boolean): void;
     sendCtrlAltDel(): void;
     focus(options?: FocusOptions): void;

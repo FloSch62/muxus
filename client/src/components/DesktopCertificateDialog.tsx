@@ -24,8 +24,9 @@ function Field({ label, value, monospace }: { label: string; value: string; mono
 }
 
 /**
- * Trust-on-first-use for an RDP server's TLS certificate, mirroring the SSH
- * host-key dialog: a certificate that changed gets the warning path.
+ * Trust-on-first-use for an RDP server's TLS certificate or a VNC server's
+ * RSA-AES key, mirroring the SSH host-key dialog: one that changed gets the
+ * warning path.
  */
 export function DesktopCertificateDialog({
   request,
@@ -36,17 +37,26 @@ export function DesktopCertificateDialog({
 }) {
   if (!request) return null;
   const mismatch = request.state === 'mismatch';
+  const key = request.kind === 'rsa-key';
+  const noun = key ? 'server key' : 'certificate';
+  const Noun = key ? 'Server key' : 'Certificate';
   return (
     <Dialog open onClose={() => onAnswer(false)} maxWidth="sm" fullWidth>
-      <DialogTitle>{mismatch ? 'Certificate changed!' : 'Unverified certificate'}</DialogTitle>
+      <DialogTitle>{mismatch ? `${Noun} changed!` : key ? 'Unknown server key' : 'Unverified certificate'}</DialogTitle>
       <DialogContent>
         <Stack spacing={1.5} sx={{ mt: 0.5 }}>
           {mismatch ? (
             <Alert severity="error">
-              The certificate of {request.host}:{request.port} has CHANGED since you last trusted it. This can mean the
-              server was reinstalled or its certificate renewed — or that the connection is being intercepted. Only
-              continue if you can explain the change.
+              The {noun} of {request.host}:{request.port} has CHANGED since you last trusted it. This can mean the
+              server was reinstalled or its {noun} renewed — or that the connection is being intercepted. Only continue
+              if you can explain the change.
             </Alert>
+          ) : key ? (
+            <Typography variant="body2">
+              {request.host}:{request.port} identified itself with an RSA key Muxus has not seen before. Before sending
+              it your password, compare the signature with the server&apos;s (TigerVNC&apos;s viewer calls it the
+              fingerprint).
+            </Typography>
           ) : (
             <Typography variant="body2">
               {request.host}:{request.port} presented a certificate Muxus cannot verify
@@ -54,9 +64,18 @@ export function DesktopCertificateDialog({
               self-signed certificates; compare the fingerprint with the server before trusting it.
             </Typography>
           )}
-          <Field label="Issued to" value={request.subject} />
-          <Field label="Issued by" value={request.issuer} />
-          <Field label="Valid" value={`${request.validFrom} – ${request.validTo}`} />
+          {request.kind === 'rsa-key' ? (
+            <>
+              <Field label="Key" value={`RSA, ${request.bits} bits`} />
+              <Field label="Signature" value={request.signature} monospace />
+            </>
+          ) : (
+            <>
+              <Field label="Issued to" value={request.subject} />
+              <Field label="Issued by" value={request.issuer} />
+              <Field label="Valid" value={`${request.validFrom} – ${request.validTo}`} />
+            </>
+          )}
           <Field label="SHA-256 fingerprint" value={request.fingerprint} monospace />
           {request.previous && <Field label="Previously trusted fingerprint" value={request.previous} monospace />}
         </Stack>
@@ -70,7 +89,7 @@ export function DesktopCertificateDialog({
           autoFocus={!mismatch}
           onClick={() => onAnswer(true)}
         >
-          {mismatch ? 'Trust new certificate' : 'Trust certificate'}
+          {mismatch ? `Trust new ${noun}` : `Trust ${noun}`}
         </Button>
         {/* oxlint-enable jsx-a11y/no-autofocus */}
       </DialogActions>

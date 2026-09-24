@@ -361,6 +361,18 @@ export const desktopClientMessageSchema = z.discriminatedUnion('op', [
   }),
   /** The remote desktop accepted the login; a password marked to remember is saved now. */
   z.object({ op: z.literal('connected') }),
+  /**
+   * The RSA key a VNC server presented in an RSA-AES handshake, which waits
+   * for `server-key-verdict`. Only the client sees the key, so it reports it.
+   */
+  z.object({
+    op: z.literal('server-key'),
+    bits: z.number().int().min(1024).max(8192),
+    /** SHA-256 of the key as the server sent it (length, modulus, exponent). */
+    fingerprint: z.string().regex(/^[0-9A-F]{2}(?::[0-9A-F]{2}){31}$/),
+    /** The first 8 bytes of its SHA-1, which VNC servers and viewers show. */
+    signature: z.string().regex(/^[0-9a-f]{2}(?:-[0-9a-f]{2}){7}$/),
+  }),
 ]);
 export type DesktopClientMessage = z.infer<typeof desktopClientMessageSchema>;
 
@@ -370,22 +382,35 @@ export interface DesktopCredentials {
   domain?: string;
 }
 
-/** TLS certificate an RDP server presented that is not trusted yet. */
-export interface DesktopCertificateChallenge {
+/**
+ * A server identity that is not trusted yet: an RDP server's TLS certificate,
+ * or the RSA key of a VNC server using RSA-AES.
+ */
+export type DesktopCertificateChallenge = {
   host: string;
   port: number;
-  /** SHA256:… fingerprint of the leaf certificate, base64 like OpenSSH. */
+  /** Colon-separated SHA-256 of the certificate or key; the value that is pinned. */
   fingerprint: string;
-  subject: string;
-  issuer: string;
-  validFrom: string;
-  validTo: string;
-  /** Why the certificate could not be verified against trusted authorities. */
-  verificationError?: string;
   /** `new` = first contact (TOFU), `mismatch` = differs from the one trusted before. */
   state: 'new' | 'mismatch';
   previous?: string;
-}
+} & (
+  | {
+      kind: 'certificate';
+      subject: string;
+      issuer: string;
+      validFrom: string;
+      validTo: string;
+      /** Why the certificate could not be verified against trusted authorities. */
+      verificationError?: string;
+    }
+  | {
+      kind: 'rsa-key';
+      bits: number;
+      /** Short form VNC servers and viewers show, to compare against. */
+      signature: string;
+    }
+);
 
 /** Text frames the server sends on /ws/desktop. */
 export type DesktopServerMessage =
@@ -393,10 +418,16 @@ export type DesktopServerMessage =
   | ({ op: 'auth-prompt' } & AuthPromptInfo)
   | Extract<TerminalServerMessage, { op: 'host-key' }>
   | ({ op: 'certificate' } & DesktopCertificateChallenge)
-  /** A ticket for the stream socket, plus the logon for RDP (NLA runs in the client). */
-  | { op: 'ready'; ticket: string; credentials?: DesktopCredentials }
+  /**
+   * A ticket for the stream socket, plus the logon for RDP (NLA runs in the
+   * client). `profile` is what the backend dialed: for a saved host, its
+   * current settings rather than the tab's snapshot.
+   */
+  | { op: 'ready'; ticket: string; profile: DesktopProfile; credentials?: DesktopCredentials }
   /** Answer to `credentials-request`. */
   | { op: 'credentials'; credentials: DesktopCredentials }
+  /** Answer to `server-key`: whether the VNC client may continue with this key. */
+  | { op: 'server-key-verdict'; accept: boolean }
   | {
       op: 'exit';
       message?: string;

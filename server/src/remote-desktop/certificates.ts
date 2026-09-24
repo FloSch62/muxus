@@ -95,6 +95,7 @@ export function certificateChallenge(
   if (!certificate.verificationError) return undefined;
   if (pinned?.fingerprint === certificate.fingerprint) return undefined;
   return {
+    kind: 'certificate',
     host,
     port,
     fingerprint: certificate.fingerprint,

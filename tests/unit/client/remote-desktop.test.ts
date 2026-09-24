@@ -1,3 +1,4 @@
+import { createHash, generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import type { SavedHostProfile } from '@muxus/shared';
 import {
@@ -14,7 +15,7 @@ import {
   rdpLogon,
 } from '../../../client/src/remote-desktop/rdp-client.js';
 import { scancodeForCode } from '../../../client/src/remote-desktop/scancodes.js';
-import { describeVncFailure } from '../../../client/src/remote-desktop/vnc-client.js';
+import { describeVncFailure, vncServerKey } from '../../../client/src/remote-desktop/vnc-client.js';
 import { savedHostAddress } from '../../../client/src/saved-hosts.js';
 import { managedHostCopyCommand } from '../../../client/src/managed-hosts.js';
 import { decodeAppWindowLaunch, encodeAppWindowLaunch } from '../../../client/src/window-management.js';
@@ -161,6 +162,37 @@ describe('VNC failures', () => {
       describeVncFailure('Failed when connecting: Connection closed (code: 1011, reason: The host name could not be resolved.)'),
     ).toBe('The host name could not be resolved.');
     expect(describeVncFailure(undefined)).toBeUndefined();
+  });
+});
+
+describe('VNC server keys', () => {
+  it('fingerprint the key the way it was sent, with the signature VNC servers show', async () => {
+    // RSA-AES sends the key length in bits, then modulus and exponent padded to the key size.
+    const { publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const jwk = publicKey.export({ format: 'jwk' });
+    const n = Buffer.from(jwk.n!, 'base64url');
+    const e = Buffer.alloc(n.length);
+    Buffer.from(jwk.e!, 'base64url').copy(e, n.length - 3);
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(2048);
+    const sent = Buffer.concat([length, n, e]);
+
+    const key = await vncServerKey(new Uint8Array(sent));
+    const sha1 = createHash('sha1').update(sent).digest('hex');
+    expect(key).toEqual({
+      bits: 2048,
+      fingerprint: createHash('sha256').update(sent).digest('hex').toUpperCase().match(/../g)!.join(':'),
+      signature: sha1.slice(0, 16).match(/../g)!.join('-'),
+    });
+    // The same shape the backend accepts.
+    expect(key.fingerprint).toMatch(/^[0-9A-F]{2}(?::[0-9A-F]{2}){31}$/);
+    expect(key.signature).toMatch(/^[0-9a-f]{2}(?:-[0-9a-f]{2}){7}$/);
+  });
+
+  it('read the key length from a view into a larger buffer', async () => {
+    const backing = new Uint8Array(16).fill(0xff);
+    backing.set([0, 0, 4, 0], 4);
+    expect((await vncServerKey(backing.subarray(4, 12))).bits).toBe(1024);
   });
 });
 
