@@ -20,7 +20,11 @@ import {
 } from '@muxus/shared/ws-protocol';
 import type { AppContext } from '../app.js';
 import type { ConnectIo, MuxedConnectionLease } from '../ssh/connection-manager.js';
-import { desktopPasswordAccount, desktopPasswordLabel } from '../security/password-vault.js';
+import {
+  desktopPasswordAccount,
+  desktopPasswordLabel,
+  type DesktopPasswordTarget,
+} from '../security/password-vault.js';
 import { certificateChallenge, type PresentedCertificate } from './certificates.js';
 import { DesktopPasswords, type VaultPasswordRef } from './desktop-passwords.js';
 import { serveRdpCleanPath, type RdpStreamTarget } from './rdp-proxy.js';
@@ -334,8 +338,16 @@ export class DesktopSession {
 
   private passwordRef(username: string): VaultPasswordRef {
     const profile = this.profile!;
-    const input = { protocol: profile.kind, user: username, host: profile.host, port: profile.port };
-    return { account: desktopPasswordAccount(input), label: desktopPasswordLabel(input) };
+    const target: DesktopPasswordTarget = {
+      protocol: profile.kind,
+      user: username,
+      host: profile.host,
+      port: profile.port,
+      gateway: this.gatewayKey(),
+      gatewayLabel: profile.sshGateway?.target,
+      domain: profile.kind === 'rdp' ? (profile.domain ?? '') : '',
+    };
+    return { account: desktopPasswordAccount(target), label: desktopPasswordLabel(target) };
   }
 
   /**
