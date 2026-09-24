@@ -16,7 +16,78 @@ function isWordCharacter(value: string | undefined): boolean {
   return value !== undefined && WORD_CHARACTER.test(value);
 }
 
-/** Find literal keyword matches in rule order, including overlapping rules. */
+function isWholeWord(text: string, start: number, end: number): boolean {
+  return !isWordCharacter(text[start - 1]) && !isWordCharacter(text[end]);
+}
+
+// Rules are replaced, never mutated, when edited, so each object compiles once
+// instead of once per visible line per frame.
+const compiledPatterns = new WeakMap<KeywordHighlightRule, RegExp | null>();
+
+function rulePattern(rule: KeywordHighlightRule): RegExp | null {
+  let pattern = compiledPatterns.get(rule);
+  if (pattern === undefined) {
+    try {
+      pattern = new RegExp(rule.keyword, rule.caseSensitive ? 'g' : 'gi');
+    } catch {
+      pattern = null;
+    }
+    compiledPatterns.set(rule, pattern);
+  }
+  return pattern;
+}
+
+/** The syntax error for a regex rule, so editors can flag it; literals never fail. */
+export function keywordPatternError(
+  rule: Pick<KeywordHighlightRule, 'keyword' | 'regex'>,
+): string | undefined {
+  if (!rule.regex || !rule.keyword) return undefined;
+  try {
+    new RegExp(rule.keyword);
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error.message : 'Invalid regular expression.';
+  }
+}
+
+/** The first reason a host's rules cannot be saved, or null when all are usable. */
+export function keywordHighlightRulesProblem(
+  rules: readonly KeywordHighlightRule[],
+): string | null {
+  for (const rule of rules) {
+    if (!rule.keyword.trim()) return 'Every highlighting rule needs a keyword.';
+    const error = keywordPatternError(rule);
+    if (error) return `Highlighting: ${error}`;
+  }
+  return null;
+}
+
+function findPatternMatches(
+  text: string,
+  rule: KeywordHighlightRule,
+  matches: KeywordMatch[],
+  limit: number,
+): void {
+  // An invalid pattern stays inert while its editor shows the syntax error.
+  const pattern = rulePattern(rule);
+  if (!pattern) return;
+  pattern.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while (matches.length < limit && (match = pattern.exec(text))) {
+    const start = match.index;
+    const end = start + match[0].length;
+    if (end === start) {
+      // Step past an empty match (`^`, `\b`, `x*`) instead of looping on it.
+      pattern.lastIndex++;
+      continue;
+    }
+    if (!rule.wholeWord || isWholeWord(text, start, end)) {
+      matches.push({ start, end, rule });
+    }
+  }
+}
+
+/** Find keyword and pattern matches in rule order, including overlapping rules. */
 export function findKeywordMatches(
   text: string,
   rules: readonly KeywordHighlightRule[],
@@ -26,6 +97,10 @@ export function findKeywordMatches(
   let foldedText: string | undefined;
   for (const rule of rules) {
     if (!rule.keyword || matches.length >= limit) continue;
+    if (rule.regex) {
+      findPatternMatches(text, rule, matches, limit);
+      continue;
+    }
     const needle = rule.caseSensitive ? rule.keyword : rule.keyword.toLocaleLowerCase();
     if (!needle) continue;
     const haystack = rule.caseSensitive
@@ -36,10 +111,7 @@ export function findKeywordMatches(
       const start = haystack.indexOf(needle, from);
       if (start < 0) break;
       const end = start + needle.length;
-      if (
-        !rule.wholeWord ||
-        (!isWordCharacter(text[start - 1]) && !isWordCharacter(text[end]))
-      ) {
+      if (!rule.wholeWord || isWholeWord(text, start, end)) {
         matches.push({ start, end, rule });
       }
       from = start + Math.max(1, needle.length);

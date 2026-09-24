@@ -10,6 +10,7 @@ import {
   blankHostSessionLoggingDraft,
   type HostSessionLoggingDraft,
 } from '../../session-logging-policy.js';
+import { keywordHighlightRulesProblem } from '../../terminal/keyword-highlighting.js';
 import { parseHostTarget } from './native-draft.js';
 
 export type IdentityAgentMode = 'default' | 'environment' | 'custom' | 'none';
@@ -260,10 +261,7 @@ export function draftProblem(draft: HostDraft): string | null {
   for (const e of draft.extras) {
     if (!/^[A-Za-z][A-Za-z0-9]*$/.test(e.keyword)) return `"${e.keyword}" is not a valid option keyword.`;
   }
-  if (draft.keywordHighlights.rules.some((rule) => !rule.keyword.trim())) {
-    return 'Every highlighting rule needs a keyword.';
-  }
-  return null;
+  return keywordHighlightRulesProblem(draft.keywordHighlights.rules);
 }
 
 /** Serialize a database-backed SSH host without involving ssh_config. */

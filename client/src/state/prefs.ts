@@ -3,6 +3,11 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { DEFAULT_SIDEBAR_WIDTH } from '../sidebar-width.js';
 import { DEFAULT_SFTP_PANEL_WIDTH } from '../sftp-panel-width.js';
 import { muxusStateStorage } from './persist-storage.js';
+import {
+  BUILTIN_HIGHLIGHT_PROFILES,
+  withBuiltinHighlightProfiles,
+  withBuiltinRuleNames,
+} from '../builtin-highlight-profiles.js';
 import { isKeywordHighlightProfileArray } from '../highlight-profiles.js';
 import type { KeywordHighlightProfile, KeywordHighlightRule } from '@muxus/shared';
 import { MAX_SSH_KEEPALIVE_INTERVAL_SECONDS } from '@muxus/shared/ws-protocol';
@@ -279,6 +284,18 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   if (!isKeywordHighlightProfileArray(state.keywordHighlightProfiles)) {
     delete state.keywordHighlightProfiles;
   }
+  // Built-in platform profiles arrived in v15. Existing installations get them
+  // once; one deleted afterwards stays deleted. A snapshot without the key
+  // picks them up from the store defaults instead.
+  if (version < 15 && state.keywordHighlightProfiles) {
+    state.keywordHighlightProfiles = withBuiltinHighlightProfiles(
+      state.keywordHighlightProfiles,
+    );
+  }
+  // v16 named the built-in rules; copies seeded by v15 get the names as well.
+  if (version < 16 && state.keywordHighlightProfiles) {
+    state.keywordHighlightProfiles = withBuiltinRuleNames(state.keywordHighlightProfiles);
+  }
   // The sidebar grew in v6 to fit its search box. A stored copy of the old
   // default was never a choice, so it follows; a dragged width is left alone.
   if (version < 6 && state.sidebarWidth === PREVIOUS_DEFAULT_SIDEBAR_WIDTH) {
@@ -383,7 +400,7 @@ export const usePrefsStore = create<PrefsState>()(
       commandButtons: [],
       showCommandBar: true,
       keywordHighlights: [],
-      keywordHighlightProfiles: [],
+      keywordHighlightProfiles: [...BUILTIN_HIGHLIGHT_PROFILES],
       sidebarCollapsed: false,
       sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
       sidebarCollapsedFolders: [],
@@ -396,7 +413,7 @@ export const usePrefsStore = create<PrefsState>()(
     }),
     {
       name: 'muxus-prefs',
-      version: 14,
+      version: 16,
       migrate: migratePrefsState,
       storage: createJSONStorage(() => muxusStateStorage),
     },

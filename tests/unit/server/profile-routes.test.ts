@@ -195,6 +195,15 @@ describe('saved host profile routes', () => {
           caseSensitive: true,
           wholeWord: true,
         },
+        {
+          id: 'rule-2',
+          name: 'Ports',
+          keyword: String.raw`\b\d+/\d+/\d+\b`,
+          foreground: '#3b82f6',
+          caseSensitive: false,
+          wholeWord: false,
+          regex: true,
+        },
       ],
     };
     const highlighted = await app.inject({

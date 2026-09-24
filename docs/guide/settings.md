@@ -83,12 +83,14 @@ keeps. Current usage against the quota is displayed here.
 
 ## Highlighting
 
-Global keyword rules apply to every terminal: keyword, foreground, optional background,
-case sensitivity and whole-word matching. **Reusable profiles** keep named,
-platform-specific rule sets that can be assigned to several SSH, Telnet or serial hosts.
+Global keyword rules apply to every terminal: an optional name, keyword or regular
+expression, foreground, optional background, case sensitivity and whole-word matching. Any
+rule list can also be edited as JSON. **Reusable profiles** keep
+named, platform-specific rule sets that can be assigned to several SSH, Telnet or serial
+hosts; Nokia SR OS and SR Linux profiles are included, and **Built-in** restores them.
 Profiles have stable IDs and can be imported or exported as JSON, so importing an updated
 copy refreshes existing assignments. Hosts can add their own rules and choose whether to
-include the global set.
+include the global set. See [keyword highlighting](terminal.md#keyword-highlighting).
 
 <figure markdown="span">
   ![Keyword highlighting rules](../assets/screenshots/settings-highlighting.png#only-light){ .shadow }

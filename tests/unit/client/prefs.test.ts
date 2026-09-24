@@ -19,6 +19,11 @@ import {
   terminalSchemeIdForMode,
   usePrefsStore,
 } from '../../../client/src/state/prefs.js';
+import {
+  BUILTIN_HIGHLIGHT_PROFILES,
+  NOKIA_SRLINUX_HIGHLIGHT_PROFILE,
+  NOKIA_SROS_HIGHLIGHT_PROFILE,
+} from '../../../client/src/builtin-highlight-profiles.js';
 
 const ubuntuProfile = {
   id: 'ubuntu',
@@ -301,9 +306,33 @@ describe('keyword highlighting profile preferences', () => {
     ],
   };
 
+  // Also covers a built-in profile the user deleted after v15 seeded it.
   it('keeps valid reusable profiles during preference migration', () => {
-    expect(migratePrefsState({ keywordHighlightProfiles: [profile] }, 11)).toEqual({
+    expect(migratePrefsState({ keywordHighlightProfiles: [profile] }, 15)).toEqual({
       keywordHighlightProfiles: [profile],
+    });
+  });
+
+  it('ships the built-in profiles with new installations', () => {
+    expect(usePrefsStore.getState().keywordHighlightProfiles).toEqual(
+      BUILTIN_HIGHLIGHT_PROFILES,
+    );
+  });
+
+  it('names built-in rules that an earlier build seeded without names', () => {
+    const seeded = {
+      ...NOKIA_SROS_HIGHLIGHT_PROFILE,
+      rules: NOKIA_SROS_HIGHLIGHT_PROFILE.rules.map(({ name: _name, ...rule }) => rule),
+    };
+    expect(migratePrefsState({ keywordHighlightProfiles: [seeded] }, 15)).toEqual({
+      keywordHighlightProfiles: [NOKIA_SROS_HIGHLIGHT_PROFILE],
+    });
+  });
+
+  it('adds built-in profiles once to an existing installation, keeping edited copies', () => {
+    const edited = { ...NOKIA_SROS_HIGHLIGHT_PROFILE, name: 'Edge SR OS', rules: [] };
+    expect(migratePrefsState({ keywordHighlightProfiles: [profile, edited] }, 14)).toEqual({
+      keywordHighlightProfiles: [profile, edited, NOKIA_SRLINUX_HIGHLIGHT_PROFILE],
     });
   });
 
