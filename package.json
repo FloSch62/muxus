@@ -29,7 +29,7 @@
   },
   "devDependencies": {
     "oxlint": "^1.85.0",
-    "oxlint-tsgolint": "^7.0.2002",
+    "oxlint-tsgolint": "^7.0.2003",
     "playwright-core": "^1.63.0",
     "typescript": "^7.0.2"
   }
