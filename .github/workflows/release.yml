@@ -320,7 +320,7 @@ jobs:
         with:
           name: muxus-windows-store
           path: store-package
-      - uses: microsoft/microsoft-store-apppublisher@v1.1
+      - uses: microsoft/microsoft-store-apppublisher@v1.4
         with:
           version: v0.4.2
       - name: Configure Microsoft Store credentials
