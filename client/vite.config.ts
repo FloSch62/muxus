@@ -12,9 +12,7 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
-    manifest: true,
-    // Monaco's full contribution layer is a deliberate, editor-only lazy
-    // chunk; the stricter initial/feature budgets live in check-bundle-budget.
+    // Monaco's full contribution layer is a deliberate, editor-only lazy chunk.
     chunkSizeWarningLimit: 2700,
     rolldownOptions: {
       output: {

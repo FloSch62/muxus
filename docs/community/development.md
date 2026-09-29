@@ -48,7 +48,6 @@ hack/       Documentation sandbox and screenshot capture
 | `pnpm test`, `pnpm test:watch` | vitest |
 | `pnpm lint` | oxlint (`--deny-warnings`) |
 | `pnpm typecheck` | Types across the workspace |
-| `pnpm check:bundle` | Build the client and check bundle safety caps |
 
 ## Native modules and Electron
 
