@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { SerialPort } from 'serialport';
+import type { SerialPort } from 'serialport';
 import type { SerialProfile } from '@muxus/shared';
 import type { TerminalTransport } from '../transports/terminal-transport.js';
 
@@ -67,7 +67,10 @@ export class SerialTransport extends EventEmitter implements TerminalTransport {
     }
   }
 
-  private static open(profile: SerialProfile): Promise<SerialTransport> {
+  private static async open(profile: SerialProfile): Promise<SerialTransport> {
+    // Loaded on first use: the native binding would otherwise load (and on
+    // Windows be scanned) on every app start, serial sessions or not.
+    const { SerialPort } = await import('serialport');
     return new Promise((resolve, reject) => {
       const port = new SerialPort(serialOpenOptions(profile));
       port.open((error) => {

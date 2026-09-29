@@ -211,6 +211,31 @@ describe('hybrid session history store', () => {
     expect((await store.sessionHistory({ limit: 10 })).sessions).toEqual([]);
   });
 
+  it('applies retention at open before answering any later request', async () => {
+    root = mkdtempSync(path.join(os.tmpdir(), 'muxus-history-test-'));
+    store = await SessionHistoryStore.open({ root, settings });
+    const policy = { maxPartBytes: 1024 * 1024, maxParts: 2 };
+    const id = store.beginSession(
+      {
+        profileKey: 'ssh:edge',
+        title: 'Expired',
+        kind: 'ssh',
+        host: 'edge',
+        startedAt: '2020-01-01T10:00:00.000Z',
+        captureInput: false,
+      },
+      policy,
+    );
+    store.finishSession(id, 'completed', '2020-01-01T10:01:00.000Z');
+    await store.close();
+
+    // The startup pass runs after `ready` so the server need not wait for its
+    // disk walk, but the worker still finishes it before the next request.
+    store = await SessionHistoryStore.open({ root, settings: { ...settings, maxAgeDays: 1 } });
+    expect((await store.sessionHistory({ limit: 10 })).sessions).toEqual([]);
+    expect(readdirSync(path.join(root, 'sessions'))).toEqual([]);
+  });
+
   it('never evicts an active session and reports quota suspension', async () => {
     root = mkdtempSync(path.join(os.tmpdir(), 'muxus-history-test-'));
     store = await SessionHistoryStore.open({ root, settings });
