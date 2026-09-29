@@ -702,6 +702,7 @@ export function assertSecretFree(value: unknown, location = 'config'): void {
 export class MuxusDatabase {
   private readonly db: DatabaseSync;
   private readonly metadataByAlias: StatementSync;
+  private readonly folderSettingsByKey: StatementSync;
 
   constructor(readonly filename: string) {
     if (filename !== ':memory:') {
@@ -742,6 +743,8 @@ export class MuxusDatabase {
       LEFT JOIN connection_groups AS groups ON groups.id = profiles.group_id
       WHERE profiles.kind = 'openssh' AND profiles.ssh_alias = ?
     `);
+    // Prepared once: the host list looks up every folder of every host.
+    this.folderSettingsByKey = this.db.prepare('SELECT * FROM folder_settings WHERE path_key = ?');
   }
 
   close(): void {
@@ -1912,9 +1915,7 @@ export class MuxusDatabase {
   folderSettingsForPath(path: string): FolderSettingsRow | undefined {
     const key = folderPathKey(path);
     if (!key) return undefined;
-    const row = this.db
-      .prepare('SELECT * FROM folder_settings WHERE path_key = ?')
-      .get(key);
+    const row = this.folderSettingsByKey.get(key);
     return row ? folderSettingsFromRow(row) : undefined;
   }
 

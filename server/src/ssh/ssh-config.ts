@@ -301,6 +301,75 @@ export function isConcreteAlias(pattern: string): boolean {
   return !!pattern && !pattern.startsWith('!') && !WILDCARD_RE.test(pattern);
 }
 
+/**
+ * Which sequence entries can apply to which host. Resolving walks the config
+ * in order, and walking every entry for every alias is quadratic — a config
+ * with a few thousand Host blocks spent seconds listing them. But a block
+ * whose patterns are all concrete names can only ever match those names (a
+ * wildcard-free glob is plain equality), so only wildcard blocks and the
+ * top-level runs have to be tested against every host.
+ */
+interface SequenceIndex {
+  /** Sequence length when built; a longer sequence means it is stale. */
+  size: number;
+  /** Positions tested for every host: unconditional runs and wildcard blocks. */
+  general: number[];
+  /** Positions of blocks whose positive patterns are all concrete, by name. */
+  byName: Map<string, number[]>;
+}
+
+const sequenceIndexes = new WeakMap<readonly SequenceEntry[], SequenceIndex>();
+
+function sequenceIndex(sequence: readonly SequenceEntry[]): SequenceIndex {
+  const cached = sequenceIndexes.get(sequence);
+  if (cached?.size === sequence.length) return cached;
+  const index: SequenceIndex = { size: sequence.length, general: [], byName: new Map() };
+  sequence.forEach((entry, position) => {
+    if (!entry.patterns) {
+      index.general.push(position);
+      return;
+    }
+    // A block with only negations never matches; hostPatternsMatch agrees.
+    const positive = entry.patterns.filter((pattern) => pattern && !pattern.startsWith('!'));
+    if (positive.some((pattern) => WILDCARD_RE.test(pattern))) {
+      index.general.push(position);
+      return;
+    }
+    for (const name of new Set(positive)) {
+      const positions = index.byName.get(name);
+      if (positions) positions.push(position);
+      else index.byName.set(name, [position]);
+    }
+  });
+  sequenceIndexes.set(sequence, index);
+  return index;
+}
+
+/** The entries that can match `host`, in config order. Negations are still for the caller to test. */
+function candidateEntries(sequence: readonly SequenceEntry[], host: string): SequenceEntry[] {
+  const { general, byName } = sequenceIndex(sequence);
+  const named = byName.get(host) ?? [];
+  const entries: SequenceEntry[] = [];
+  let g = 0;
+  let n = 0;
+  while (g < general.length || n < named.length) {
+    const next =
+      n >= named.length || (g < general.length && general[g]! < named[n]!)
+        ? general[g++]!
+        : named[n++]!;
+    entries.push(sequence[next]!);
+  }
+  return entries;
+}
+
+let localUsernameCache: string | undefined;
+
+/** The local account name; os.userInfo() is a system call, and it never changes. */
+function localUsername(): string {
+  localUsernameCache ??= os.userInfo().username;
+  return localUsernameCache;
+}
+
 // ---------------------------------------------------------------------------
 // Resolution (what `ssh <host>` would use)
 // ---------------------------------------------------------------------------
@@ -361,7 +430,8 @@ export function resolveHost(
   const fallbackEntry = fallback?.length
     ? { patterns: null, options: [...fallback] }
     : undefined;
-  const sequence = fallbackEntry ? [...doc.sequence, fallbackEntry] : doc.sequence;
+  const sequence = candidateEntries(doc.sequence, host);
+  if (fallbackEntry) sequence.push(fallbackEntry);
   for (const entry of sequence) {
     if (entry.patterns && !hostPatternsMatch(entry.patterns, host)) continue;
     // IdentityFile is normally cumulative, but folder options are a fallback
@@ -425,7 +495,7 @@ export function resolveHost(
   const user = first.get('user');
   const port = parsePort(first.get('port')) ?? 22;
   const preferred = first.get('preferredauthentications');
-  const remoteUser = user ?? os.userInfo().username;
+  const remoteUser = user ?? localUsername();
   const identityTokens = { h: hostname, r: remoteUser };
   const proxyJump = first.get('proxyjump');
   const knownHostsTokens: KnownHostsPathTokens = {
@@ -621,7 +691,7 @@ export function expandIdentityPath(value: string, tokens: { h: string; r: string
     if (m === '%d') return home;
     if (m === '%h') return tokens.h;
     if (m === '%r') return tokens.r;
-    return os.userInfo().username; // %u
+    return localUsername(); // %u
   });
   return p;
 }
