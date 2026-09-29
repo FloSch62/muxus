@@ -2,24 +2,36 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Divider from '@mui/material/Divider';
 import FormControl from '@mui/material/FormControl';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
 import InputLabel from '@mui/material/InputLabel';
 import MenuItem from '@mui/material/MenuItem';
 import Paper from '@mui/material/Paper';
 import Select from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
+import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
-import { useAppInfo } from '../api/queries.js';
-import { parseLocalShellArgumentText } from '../local-shell-profile.js';
+import TerminalIcon from '@mui/icons-material/Terminal';
+import type { WslDistribution } from '@muxus/shared';
+import { useAppInfo, useWslDistributions } from '../api/queries.js';
+import {
+  opensWslDistribution,
+  parseLocalShellArgumentText,
+  wslShellProfile,
+} from '../local-shell-profile.js';
 import { confirmAction } from '../state/dialogs.js';
 import {
   usePrefsStore,
   type LocalShellProfileConfig,
 } from '../state/prefs.js';
+
+function newProfileId(count: number): string {
+  return `local-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${count}`}`;
+}
 
 export function LocalShellProfilesSection() {
   const profiles = usePrefsStore((state) => state.localShellProfiles);
@@ -41,7 +53,7 @@ export function LocalShellProfilesSection() {
   };
 
   const addProfile = () => {
-    const id = `local-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${profiles.length}`}`;
+    const id = newProfileId(profiles.length);
     const next: LocalShellProfileConfig = {
       id,
       name: `Shell ${profiles.length + 1}`,
@@ -235,6 +247,124 @@ export function LocalShellProfilesSection() {
           </Stack>
         )}
       </Box>
+
+      {info?.platform === 'win32' && (
+        <>
+          <Divider />
+          <WslDistributionsSection />
+        </>
+      )}
     </Stack>
+  );
+}
+
+/** Installed WSL distributions: listed wherever a local terminal can be
+ * launched, and one click away from a saved profile that can be customized
+ * or made the default. */
+function WslDistributionsSection() {
+  const profiles = usePrefsStore((state) => state.localShellProfiles);
+  const showWslDistributions = usePrefsStore((state) => state.showWslDistributions);
+  const setPrefs = usePrefsStore((state) => state.set);
+  const { data, isPending, isError } = useWslDistributions();
+  const distributions = data?.distributions ?? [];
+
+  const saveAsProfile = (distribution: WslDistribution) => {
+    const current = usePrefsStore.getState().localShellProfiles;
+    setPrefs({
+      localShellProfiles: [
+        ...current,
+        { ...wslShellProfile(distribution), id: newProfileId(current.length) },
+      ],
+    });
+  };
+
+  return (
+    <Box>
+      <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>
+        WSL distributions
+      </Typography>
+      <FormControlLabel
+        control={
+          <Switch
+            size="small"
+            checked={showWslDistributions}
+            onChange={(event) => setPrefs({ showWslDistributions: event.target.checked })}
+          />
+        }
+        label={
+          <Box>
+            <Typography variant="body2">List installed distributions</Typography>
+            <Typography variant="caption" color="text.secondary">
+              Each one appears below Local terminal in the sidebar and in the quick launcher,
+              opening in its Linux home directory. Save one as a profile to change how it
+              starts or to make it the default.
+            </Typography>
+          </Box>
+        }
+      />
+      {isPending ? (
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+          Looking for WSL distributions…
+        </Typography>
+      ) : isError ? (
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+          The installed distributions could not be read.
+        </Typography>
+      ) : distributions.length === 0 ? (
+        <Paper variant="outlined" sx={{ p: 2.5, mt: 2, textAlign: 'center' }}>
+          <Typography variant="body2" color="text.secondary">
+            No WSL distributions are installed.
+          </Typography>
+        </Paper>
+      ) : (
+        <Paper variant="outlined" sx={{ mt: 2 }}>
+          {distributions.map((distribution, index) => {
+            const saved = profiles.find((profile) =>
+              opensWslDistribution(profile, distribution.name),
+            );
+            const launch = wslShellProfile(distribution);
+            return (
+              <Stack
+                key={distribution.name}
+                direction="row"
+                spacing={1.5}
+                sx={{
+                  alignItems: 'center',
+                  px: 2,
+                  py: 1.25,
+                  borderTop: index ? 1 : 0,
+                  borderColor: 'divider',
+                }}
+              >
+                <TerminalIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography variant="body2" noWrap>
+                    {distribution.name}
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    noWrap
+                    sx={{ display: 'block' }}
+                  >
+                    {distribution.isDefault ? 'Default distribution · ' : ''}
+                    {[launch.shell, ...launch.args].join(' ')}
+                  </Typography>
+                </Box>
+                {saved ? (
+                  <Typography variant="caption" color="text.secondary" noWrap>
+                    Saved as “{saved.name.trim() || 'Unnamed shell'}”
+                  </Typography>
+                ) : (
+                  <Button size="small" onClick={() => saveAsProfile(distribution)}>
+                    Save as profile
+                  </Button>
+                )}
+              </Stack>
+            );
+          })}
+        </Paper>
+      )}
+    </Box>
   );
 }

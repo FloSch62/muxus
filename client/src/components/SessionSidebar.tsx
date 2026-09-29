@@ -57,6 +57,7 @@ import {
   managedHostRef,
   type ManagedHost,
 } from '../managed-hosts.js';
+import { useWslShellProfiles } from '../local-shell-launchers.js';
 import {
   connectManagedHost,
   connectTarget,
@@ -117,6 +118,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
   const sidebarWidth = usePrefsStore((state) => state.sidebarWidth);
   const sidebarPosition = usePrefsStore((state) => state.sidebarPosition);
   const localShellProfiles = usePrefsStore((state) => state.localShellProfiles);
+  const wslShellProfiles = useWslShellProfiles();
   const setPrefs = usePrefsStore((state) => state.set);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -146,16 +148,17 @@ export const SessionSidebar = memo(function SessionSidebar() {
   const needle = useDeferredValue(normalizedFilter);
   const hosts = config?.hosts ?? EMPTY_HOSTS;
   const profiles = savedData?.profiles ?? EMPTY_PROFILES;
+  // Installed WSL distributions follow the saved profiles, launched the same way.
   const visibleLocalShellProfiles = useMemo(
     () =>
-      localShellProfiles.filter((profile) => {
+      [...localShellProfiles, ...wslShellProfiles].filter((profile) => {
         if (!needle) return true;
         return [profile.name, profile.shell, ...profile.args, profile.cwd]
           .join(' ')
           .toLocaleLowerCase()
           .includes(needle);
       }),
-    [localShellProfiles, needle],
+    [localShellProfiles, wslShellProfiles, needle],
   );
 
   const groups = useMemo(

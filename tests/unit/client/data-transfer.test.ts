@@ -35,6 +35,7 @@ beforeEach(() => {
     terminalFileLinkActivation: 'alt',
     localShellProfiles: [],
     defaultLocalShellProfileId: '',
+    showWslDistributions: true,
     keywordHighlightProfiles: [],
   });
 });
@@ -269,6 +270,7 @@ describe('backing up preferences', () => {
         },
       ],
       defaultLocalShellProfileId: 'ubuntu',
+      showWslDistributions: false,
     });
     mockBackupSnapshot();
 
@@ -276,6 +278,7 @@ describe('backing up preferences', () => {
 
     expect(document.data.preferences.localShellProfiles).toHaveLength(1);
     expect(document.data.preferences.defaultLocalShellProfileId).toBe('ubuntu');
+    expect(document.data.preferences.showWslDistributions).toBe(false);
   });
 
   it('includes reusable keyword highlighting profiles', async () => {
@@ -399,6 +402,15 @@ describe('restoring local shell profiles', () => {
     expect(
       sanitizePreferences(prefs({ localShellProfiles: [{ ...ubuntu, args: '-d Ubuntu' }] }))
         .localShellProfiles,
+    ).toBeUndefined();
+  });
+
+  it('restores whether installed WSL distributions are listed', () => {
+    expect(sanitizePreferences(prefs({ showWslDistributions: false }))).toMatchObject({
+      showWslDistributions: false,
+    });
+    expect(
+      sanitizePreferences(prefs({ showWslDistributions: 'false' })).showWslDistributions,
     ).toBeUndefined();
   });
 });

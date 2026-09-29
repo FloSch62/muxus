@@ -311,6 +311,16 @@ describe('local shell profile preferences', () => {
       ),
     ).toEqual({ monoFontSize: 16 });
   });
+
+  it('lists installed WSL distributions unless turned off', () => {
+    expect(usePrefsStore.getInitialState().showWslDistributions).toBe(true);
+    expect(migratePrefsState({ showWslDistributions: false }, 16)).toEqual({
+      showWslDistributions: false,
+    });
+    expect(migratePrefsState({ showWslDistributions: 'no', monoFontSize: 16 }, 16)).toEqual({
+      monoFontSize: 16,
+    });
+  });
 });
 
 describe('keyword highlighting profile preferences', () => {

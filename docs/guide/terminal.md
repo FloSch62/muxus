@@ -66,7 +66,8 @@ immediately.
 configurations side by side, such as PowerShell, Command Prompt and individual WSL
 distributions. A profile can supply executable arguments, a starting directory and commands
 to run when its interactive shell starts. Saved profiles are launchable from both the hosts
-sidebar and the quick launcher.
+sidebar and the quick launcher. On Windows, installed WSL distributions are listed there
+automatically, next to the saved profiles.
 
 ### Per-tab zoom
 
