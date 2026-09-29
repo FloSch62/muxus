@@ -159,6 +159,12 @@ export class SessionHistoryStore {
     });
   }
 
+  setSessionTitle(sessionId: string, title: string): void {
+    void this.request('title', { sessionId, title }).catch((error) => {
+      this.notifyFailure(sessionId, error.message);
+    });
+  }
+
   finishSession(
     sessionId: string,
     status: 'completed' | 'disconnected' | 'failed',

@@ -226,6 +226,8 @@ function dispatch(op, payload) {
       return setPinned(payload.id, payload.pinned);
     case 'label':
       return setLabel(payload.id, payload.label);
+    case 'title':
+      return setTitle(payload.sessionId, payload.title);
     case 'settings':
       settings = payload;
       enforceRetention(true);
@@ -598,6 +600,14 @@ function setLabel(id, label) {
   const result = db
     .prepare(`UPDATE session_logs SET label = ? WHERE id = ?`)
     .run(label || null, id);
+  return result.changes > 0;
+}
+
+/** Finished records keep the title they were recorded under. */
+function setTitle(sessionId, title) {
+  const result = db
+    .prepare(`UPDATE session_logs SET title = ? WHERE id = ? AND status = 'active'`)
+    .run(title, sessionId);
   return result.changes > 0;
 }
 

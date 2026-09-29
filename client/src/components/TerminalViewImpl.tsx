@@ -536,6 +536,17 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     setGeneration((current) => current + 1);
   }, [reconnectRequest]);
 
+  // A renamed tab renames the session history record it is logging to.
+  const titleRef = useRef(tab.title);
+  useEffect(() => {
+    if (titleRef.current === tab.title) return;
+    titleRef.current = tab.title;
+    const socket = wsRef.current;
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ op: 'set-title', title: tab.title }));
+    }
+  }, [tab.title]);
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -989,11 +1000,15 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
                 op: 'connect',
                 profile,
                 freshTransport: tab.freshTransport,
-                title: tab.title,
+                title: titleRef.current,
                 cols: term.cols,
                 rows: term.rows,
               },
         ));
+        // Catch up on a rename made while no renderer was attached.
+        if (attachTerminalId) {
+          socket.send(JSON.stringify({ op: 'set-title', title: titleRef.current }));
+        }
       };
       socket.onmessage = (ev) => {
         if (ev.data instanceof ArrayBuffer) {
