@@ -40,6 +40,21 @@ export function folderAuthResolver(source: FolderAuthSource): FolderAuthLookup {
   return (alias) => folderAuthForGroup(source, source.groupForAlias(alias));
 }
 
+/**
+ * folderAuthResolver for resolving many aliases at once, as the host list
+ * does: hosts share folders, so each folder chain is read once. It caches, so
+ * make one per listing — folder settings can change between requests.
+ */
+export function batchFolderAuthResolver(source: FolderAuthSource): FolderAuthLookup {
+  const byGroup = new Map<string, FolderAuthDefaults | undefined>();
+  return (alias) => {
+    const group = source.groupForAlias(alias);
+    if (!group) return undefined;
+    if (!byGroup.has(group)) byGroup.set(group, folderAuthForGroup(source, group));
+    return byGroup.get(group);
+  };
+}
+
 /** Folder defaults for a Muxus-owned profile, keyed by its stable database ID. */
 export function savedProfileFolderAuthResolver(
   source: SavedProfileFolderAuthSource,

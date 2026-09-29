@@ -5,6 +5,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import type { FolderAuthSettings } from '@muxus/shared';
 import { buildChain } from '../../../server/src/ssh/connection-manager.js';
 import {
+  batchFolderAuthResolver,
   folderAuthOptionLines,
   folderAuthResolver,
   mergeFolderAuth,
@@ -261,5 +262,26 @@ describe('folderAuthResolver', () => {
       Object.fromEntries(defaults!.optionLines.map((line) => [line.key, line.args[0]])),
     ).toEqual({ user: 'root', port: '2222' });
     expect(savedResolver('missing')).toBeUndefined();
+  });
+
+  it('reads each folder chain once when listing many hosts', () => {
+    const lookups: string[] = [];
+    const source = {
+      groupForAlias: (alias: string) =>
+        alias.startsWith('web') ? 'Prod/EU' : alias.startsWith('db') ? 'Prod' : undefined,
+      folderSettingsForPath: (path: string) => {
+        lookups.push(path);
+        return settings.get(folderPathKey(path));
+      },
+    };
+    const batch = batchFolderAuthResolver(source);
+    const single = folderAuthResolver(source);
+    const aliases = ['web-1', 'web-2', 'db-1', 'web-3', 'db-2', 'bare'];
+    const expected = aliases.map((alias) => single(alias));
+    lookups.length = 0;
+
+    expect(aliases.map((alias) => batch(alias))).toEqual(expected);
+    // Prod/EU walks two folders, Prod one — once each, not once per host.
+    expect(lookups).toEqual(['Prod/EU', 'Prod', 'Prod']);
   });
 });

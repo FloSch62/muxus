@@ -180,6 +180,13 @@ export function managedHostDisplayName(host: ManagedHost): string {
     : savedHostDisplayName(host.entry);
 }
 
+/** Alphabetize a mixed host list by the name shown in the sidebar. */
+export function alphabetizeManagedHosts(hosts: readonly ManagedHost[]): ManagedHost[] {
+  return hosts.toSorted((left, right) =>
+    managedHostDisplayName(left).localeCompare(managedHostDisplayName(right)),
+  );
+}
+
 export function managedHostAddress(host: ManagedHost): string {
   return host.kind === 'ssh' ? hostAddress(host.entry) : savedHostAddress(host.entry);
 }
@@ -211,6 +218,9 @@ export function managedHostCopyCommand(host: ManagedHost): { label: string; text
       text: savedSshCopyCommand(profile),
     };
   }
+  if (profile.kind === 'rdp' || profile.kind === 'vnc') {
+    return { label: 'Copy address', text: `${profile.host}:${profile.port}` };
+  }
   return profile.kind === 'telnet'
     ? { label: 'Copy telnet command', text: `telnet ${profile.host} ${profile.port}` }
     : { label: 'Copy device path', text: profile.path };
@@ -231,6 +241,7 @@ function savedSshCopyCommand(profile: SshProfile): string {
     args.push('-o', `IdentityAgent=${profile.identityAgent}`);
   }
   if (profile.forwardAgent) args.push('-A');
+  if (profile.forwardX11 !== undefined) args.push(profile.forwardX11 ? '-X' : '-x');
   if (profile.proxyJump?.length) args.push('-J', profile.proxyJump.join(','));
   if (profile.proxyCommand) {
     args.push('-o', `ProxyCommand=${profile.proxyCommand}`);

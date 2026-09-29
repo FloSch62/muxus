@@ -576,7 +576,14 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
   }
 
   // --- SSH ---
-  const { lease: terminalLease, stream, transport } = await ctx.connections.connectShell(profile, io, cols, rows, DEFAULT_TERM);
+  const { lease: terminalLease, stream, transport } = await ctx.connections.connectShell(
+    profile,
+    io,
+    cols,
+    rows,
+    DEFAULT_TERM,
+    { freshTransport: connectMsg.freshTransport },
+  );
   const conn = terminalLease.connection;
   // Session forwards belong to the terminal sessions using this transport;
   // stop them when the last terminal/dial lease leaves. Saved/manual tunnels

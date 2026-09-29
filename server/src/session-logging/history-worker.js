@@ -145,12 +145,24 @@ db.exec(`
   VALUES (1, 'hybrid-session-history');
 `);
 
+// Existing recordings keep NULL metadata and use their event time as a fallback.
+if (!db.prepare('PRAGMA table_info(transcript_chunks)').all().some((column) => column.name === 'line_timestamps')) {
+  db.exec('ALTER TABLE transcript_chunks ADD COLUMN line_timestamps TEXT');
+}
+db.exec("INSERT OR IGNORE INTO history_schema_migrations(version, name) VALUES (2, 'transcript-line-timestamps')");
+
 removeTrash();
 if (workerData.legacyDatabasePath && workerData.legacyDatabasePath !== ':memory:') {
   importLegacyHistory(String(workerData.legacyDatabasePath));
 }
 recoverInterruptedSessions();
-enforceRetention(true);
+
+// The first retention pass stats every file under the history root, which is
+// thousands of files on a long-used install — slow on Windows, and the server
+// (with the app window behind it) waits for `ready`. So it runs straight after
+// `ready` is answered instead; this thread handles messages in order, so every
+// later request still sees its result.
+let startupRetentionPending = true;
 
 const maintenanceTimer = setInterval(() => {
   try {
@@ -173,6 +185,14 @@ port.on('message', (message) => {
       ok: false,
       error: error instanceof Error ? error.message : String(error),
     });
+  }
+  if (startupRetentionPending) {
+    startupRetentionPending = false;
+    try {
+      enforceRetention(true);
+    } catch {
+      // A later write/status request will surface persistent storage failures.
+    }
   }
 });
 
@@ -270,8 +290,8 @@ function appendEvents({ sessionId, events, policy }) {
     const insert = db.prepare(`
       INSERT INTO transcript_chunks(
         session_id, part_number, first_sequence, last_sequence,
-        recorded_at, elapsed_ms, direction, normalized_text
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        recorded_at, elapsed_ms, direction, normalized_text, line_timestamps
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const event of retained) {
       if (!event.text) continue;
@@ -284,6 +304,7 @@ function appendEvents({ sessionId, events, policy }) {
         event.elapsedMs,
         event.direction,
         event.text,
+        event.lineTimestamps?.length ? JSON.stringify(event.lineTimestamps) : null,
       );
     }
     db.prepare(`
@@ -455,20 +476,20 @@ function detail({ id, eventLimit, matchQuery }) {
   const rows = db.prepare(
     windowStart !== undefined
       ? `
-        SELECT first_sequence, recorded_at, elapsed_ms, direction, normalized_text
+        SELECT first_sequence, recorded_at, elapsed_ms, direction, normalized_text, line_timestamps
         FROM transcript_chunks WHERE session_id = ? AND first_sequence >= ?
         ORDER BY first_sequence LIMIT ?
       `
       : limited
         ? `
           SELECT * FROM (
-            SELECT first_sequence, recorded_at, elapsed_ms, direction, normalized_text
+            SELECT first_sequence, recorded_at, elapsed_ms, direction, normalized_text, line_timestamps
             FROM transcript_chunks WHERE session_id = ?
             ORDER BY first_sequence DESC LIMIT ?
           ) ORDER BY first_sequence
         `
         : `
-          SELECT first_sequence, recorded_at, elapsed_ms, direction, normalized_text
+          SELECT first_sequence, recorded_at, elapsed_ms, direction, normalized_text, line_timestamps
           FROM transcript_chunks WHERE session_id = ? ORDER BY first_sequence
         `,
   ).all(
@@ -486,6 +507,7 @@ function detail({ id, eventLimit, matchQuery }) {
       elapsedMs: Number(event.elapsed_ms),
       direction: String(event.direction),
       text: String(event.normalized_text),
+      ...(event.line_timestamps ? { lineTimestamps: JSON.parse(event.line_timestamps) } : {}),
     })),
     eventsTruncated: rows.length < totalChunks,
   };
@@ -746,7 +768,7 @@ function enforceRetention(force) {
     db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
     disk = diskStatus();
   }
-  disk = diskStatus();
+  // `disk` is current here: every deletion above re-measured it.
   if (
     disk.usageBytes > Number(settings.maxTotalBytes) ||
     disk.freeBytes < reserve

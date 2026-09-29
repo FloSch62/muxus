@@ -4,6 +4,32 @@ icon: lucide/terminal-square
 
 # Command-line flags
 
+## Desktop launch targets
+
+The desktop executable can open a saved host, a folder of hosts, or a workspace directly:
+
+```bash
+muxus --host edge-router
+muxus --folder "Production/EU"
+muxus --workspace "Night shift"
+```
+
+Names are matched case-insensitively. A host accepts an OpenSSH alias, a saved-host name or
+ID, or an unambiguous display name. A folder accepts its full path, an unambiguous leaf
+name, or an `ssh_config` file-group label or filename. Folder launches use tabs and replace
+the current pane layout, matching the sidebar's default **Launch hosts** action. A workspace
+accepts its name or ID.
+
+Only one launch target may be supplied at a time. If Muxus is already running, the new
+invocation is forwarded to its existing process. A workspace that is not already open uses
+a new window, preserving live sessions in the current one. Windows installations are not
+added to `PATH`; AutoHotkey, Stream Deck, PowerShell, and shortcuts can invoke `muxus.exe`
+by its full installation path.
+
+Flags accept both `--host edge-router` and `--host=edge-router`.
+
+## Server flags
+
 The server is `server/dist/index.js`, started by `pnpm start` or embedded in the desktop
 app. It always binds `127.0.0.1`.
 
@@ -46,7 +72,7 @@ build uses Electron's per-app directory:
 | macOS | `~/Library/Application Support/Muxus/muxus.sqlite3` | `~/Library/Application Support/Muxus/muxus.sqlite3` |
 | Windows | `%APPDATA%\Muxus\muxus.sqlite3` | `%APPDATA%\Muxus\muxus.sqlite3` |
 
-Muxus-only SSH, Telnet and serial connection settings are stored there; OpenSSH-backed
+Muxus-only SSH, Telnet, serial, RDP and VNC connection settings are stored there; OpenSSH-backed
 hosts remain in `~/.ssh/config`. Moving between the two builds is done with
 [backup and restore](../guide/settings.md#backup-data).
 

@@ -59,9 +59,8 @@ export class SystemVaultKeyStore implements VaultKeyStore {
     const replacement = Buffer.alloc(KEY_BYTES);
     try {
       const entry = await this.entry(vaultId);
-      // The binding reports deletion failures as `false` rather than
-      // rejecting. Overwrite first so even a failed delete cannot leave the
-      // usable vault key behind.
+      // Overwrite first so even a rejected delete cannot leave the usable
+      // vault key behind. The binding returns false only for a missing entry.
       await entry.setSecret(replacement);
       const deleted = await entry.deleteCredential();
       if (!deleted) {

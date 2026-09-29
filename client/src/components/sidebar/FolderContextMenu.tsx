@@ -4,13 +4,15 @@ import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import CreateNewFolderOutlinedIcon from '@mui/icons-material/CreateNewFolderOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
+import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
+import SortByAlphaIcon from '@mui/icons-material/SortByAlpha';
 import UnfoldLessIcon from '@mui/icons-material/UnfoldLess';
 import type { FolderNode } from '../../host-tree.js';
-import { loadFolderDialog } from '../../lazy-features.js';
+import { loadFolderDialog, loadHostEditorDialog } from '../../lazy-features.js';
 
 export interface FolderMenuState {
   anchor: HTMLElement;
@@ -21,25 +23,31 @@ export interface FolderMenuState {
 export function FolderContextMenu({
   menu,
   onClose,
+  onNewHost,
   onNewChild,
   onEdit,
   onLaunch,
   onCollapseAll,
   onDelete,
   onMove,
+  onSortHosts,
   canMoveUp,
   canMoveDown,
+  canSortHosts,
 }: {
   menu: FolderMenuState | null;
   onClose: () => void;
+  onNewHost: (node: FolderNode) => void;
   onNewChild: (node: FolderNode) => void;
   onEdit: (node: FolderNode) => void;
   onLaunch: (node: FolderNode) => void;
   onCollapseAll: (node: FolderNode) => void;
   onDelete: (node: FolderNode) => void;
   onMove: (node: FolderNode, delta: -1 | 1) => void;
+  onSortHosts: (node: FolderNode) => void;
   canMoveUp: boolean;
   canMoveDown: boolean;
+  canSortHosts: boolean;
 }) {
   const run = (action: (node: FolderNode) => void) => () => {
     if (menu) action(menu.node);
@@ -74,7 +82,23 @@ export function FolderContextMenu({
         </ListItemIcon>
         Move down
       </MenuItem>
+      <MenuItem disabled={!canSortHosts} onClick={run(onSortHosts)}>
+        <ListItemIcon>
+          <SortByAlphaIcon fontSize="small" />
+        </ListItemIcon>
+        Sort hosts alphabetically
+      </MenuItem>
       <Divider />
+      <MenuItem
+        onMouseEnter={() => void loadHostEditorDialog()}
+        onFocus={() => void loadHostEditorDialog()}
+        onClick={run(onNewHost)}
+      >
+        <ListItemIcon>
+          <DnsOutlinedIcon fontSize="small" />
+        </ListItemIcon>
+        New host…
+      </MenuItem>
       <MenuItem
         onMouseEnter={() => void loadFolderDialog()}
         onFocus={() => void loadFolderDialog()}

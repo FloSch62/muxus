@@ -3,8 +3,14 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { DEFAULT_SIDEBAR_WIDTH } from '../sidebar-width.js';
 import { DEFAULT_SFTP_PANEL_WIDTH } from '../sftp-panel-width.js';
 import { muxusStateStorage } from './persist-storage.js';
+import {
+  BUILTIN_HIGHLIGHT_PROFILES,
+  withBuiltinHighlightProfiles,
+  withBuiltinRuleNames,
+} from '../builtin-highlight-profiles.js';
 import { isKeywordHighlightProfileArray } from '../highlight-profiles.js';
 import type { KeywordHighlightProfile, KeywordHighlightRule } from '@muxus/shared';
+import { MAX_SSH_KEEPALIVE_INTERVAL_SECONDS } from '@muxus/shared/ws-protocol';
 
 export type ThemeMode = 'light' | 'dark' | 'os';
 export type EffectiveThemeMode = Exclude<ThemeMode, 'os'>;
@@ -15,6 +21,19 @@ export type TabNumberVisibility = 'shortcut' | 'always';
 export const DEFAULT_INACTIVE_PANE_DIM_STRENGTH = 0.15;
 export const MIN_INACTIVE_PANE_DIM_STRENGTH = 0.1;
 export const MAX_INACTIVE_PANE_DIM_STRENGTH = 0.6;
+export const DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS = 30;
+
+/**
+ * SSH keepalive fallback as wire fields for a connect or dial message, read
+ * at send time so the current preference applies. Empty when the preference
+ * says the OpenSSH configuration alone decides.
+ */
+export function sshKeepalivePrefField(): { keepaliveIntervalSeconds?: number } {
+  const interval = usePrefsStore.getState().sshKeepaliveIntervalSeconds;
+  // Explicit undefined (dropped by JSON serialization) so a stale field on a
+  // persisted profile can never outvote a disabled preference.
+  return { keepaliveIntervalSeconds: interval > 0 ? interval : undefined };
+}
 
 /** Keep hand-edited or older persisted values from making a pane illegible. */
 export function clampInactivePaneDimStrength(value: number): number {
@@ -94,6 +113,8 @@ export interface PrefsState {
   scrollback: number;
   cursorBlink: boolean;
   cursorStyle: 'block' | 'underline' | 'bar';
+  /** Render terminals on the GPU via WebGL; off keeps the DOM renderer. */
+  webglRenderer: boolean;
   /** Local terminal shell; 'auto' lets the server pick the login shell. */
   localShell: string;
   /** Named alternatives offered wherever a local terminal can be launched. */
@@ -114,6 +135,14 @@ export interface PrefsState {
   confirmCloseConnected: boolean;
   /** Dial remote sessions on workspace restore and retry dropped connections. */
   autoReconnectRemote: boolean;
+  /** SSH keepalive fallback in seconds; zero relies entirely on ssh_config. */
+  sshKeepaliveIntervalSeconds: number;
+  /** X11 forwarding master switch; null follows the platform default (off on macOS). */
+  x11Enabled: boolean | null;
+  /** Forward X11 for hosts without ForwardX11; null follows the platform default. */
+  x11ForwardByDefault: boolean | null;
+  /** Bridge the bundled Windows X server to the system clipboard (read and write). */
+  x11ClipboardSharing: boolean;
   /** Show a notification at startup when a newer release is available. */
   notifyOnNewVersion: boolean;
   /** Persist recent terminal output and replay it on restore and reconnect. */
@@ -201,8 +230,17 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   if (!isTerminalFileLinkActivation(state.terminalFileLinkActivation)) {
     delete state.terminalFileLinkActivation;
   }
+  if (
+    typeof state.sshKeepaliveIntervalSeconds !== 'number' ||
+    !Number.isInteger(state.sshKeepaliveIntervalSeconds) ||
+    state.sshKeepaliveIntervalSeconds < 0 ||
+    state.sshKeepaliveIntervalSeconds > MAX_SSH_KEEPALIVE_INTERVAL_SECONDS
+  ) {
+    delete state.sshKeepaliveIntervalSeconds;
+  }
   if (typeof state.activePaneBorder !== 'boolean') delete state.activePaneBorder;
   if (typeof state.dimInactivePanes !== 'boolean') delete state.dimInactivePanes;
+  if (typeof state.webglRenderer !== 'boolean') delete state.webglRenderer;
   if (
     typeof state.inactivePaneDimStrength !== 'number' ||
     !Number.isFinite(state.inactivePaneDimStrength) ||
@@ -251,6 +289,18 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   }
   if (!isKeywordHighlightProfileArray(state.keywordHighlightProfiles)) {
     delete state.keywordHighlightProfiles;
+  }
+  // Built-in platform profiles arrived in v15. Existing installations get them
+  // once; one deleted afterwards stays deleted. A snapshot without the key
+  // picks them up from the store defaults instead.
+  if (version < 15 && state.keywordHighlightProfiles) {
+    state.keywordHighlightProfiles = withBuiltinHighlightProfiles(
+      state.keywordHighlightProfiles,
+    );
+  }
+  // v16 named the built-in rules; copies seeded by v15 get the names as well.
+  if (version < 16 && state.keywordHighlightProfiles) {
+    state.keywordHighlightProfiles = withBuiltinRuleNames(state.keywordHighlightProfiles);
   }
   // The sidebar grew in v6 to fit its search box. A stored copy of the old
   // default was never a choice, so it follows; a dragged width is left alone.
@@ -332,6 +382,7 @@ export const usePrefsStore = create<PrefsState>()(
       scrollback: 10_000,
       cursorBlink: true,
       cursorStyle: 'block',
+      webglRenderer: false,
       localShell: 'auto',
       localShellProfiles: [],
       defaultLocalShellProfileId: '',
@@ -342,6 +393,10 @@ export const usePrefsStore = create<PrefsState>()(
       pasteWarnMultiline: true,
       confirmCloseConnected: true,
       autoReconnectRemote: true,
+      sshKeepaliveIntervalSeconds: DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
+      x11Enabled: null,
+      x11ForwardByDefault: null,
+      x11ClipboardSharing: false,
       notifyOnNewVersion: true,
       restoreScrollback: true,
       interfaceZoom: 1,
@@ -354,7 +409,7 @@ export const usePrefsStore = create<PrefsState>()(
       commandButtons: [],
       showCommandBar: true,
       keywordHighlights: [],
-      keywordHighlightProfiles: [],
+      keywordHighlightProfiles: [...BUILTIN_HIGHLIGHT_PROFILES],
       sidebarCollapsed: false,
       sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
       sidebarCollapsedFolders: [],
@@ -367,7 +422,7 @@ export const usePrefsStore = create<PrefsState>()(
     }),
     {
       name: 'muxus-prefs',
-      version: 13,
+      version: 16,
       migrate: migratePrefsState,
       storage: createJSONStorage(() => muxusStateStorage),
     },

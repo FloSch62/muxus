@@ -97,6 +97,7 @@ export function measureBundle(dist = defaultDist) {
   const assetFiles = readdirSync(join(dist, 'assets')).filter((file) => file.endsWith('.js'));
   const typeScriptWorker = assetFiles.find((file) => file.startsWith('ts.worker-'));
   if (!typeScriptWorker) throw new Error('Bundle is missing the TypeScript worker');
+  const monacoEntryFile = manifest[manifestKeyForSource('src/components/MonacoTextEditor.tsx')].file;
 
   const oversizedChunks = [];
   for (const file of assetFiles) {
@@ -105,8 +106,11 @@ export function measureBundle(dist = defaultDist) {
       bytes.byteLength > UNAPPROVED_CHUNK_CAP &&
       !file.includes('worker') &&
       !file.startsWith('editor.api-') &&
+      // Vite 8.2 may fold Monaco's full editor-contributions layer into the
+      // lazy feature entry itself. Its aggregate graph has a dedicated cap.
+      `assets/${file}` !== monacoEntryFile &&
       // Rolldown names Monaco's full editor-contributions chunk after its
-      // final CSS-bearing contribution. It belongs to the lazy editor graph.
+      // final CSS-bearing contribution in earlier Vite builds.
       !file.startsWith('toggleHighContrast-')
     ) {
       oversizedChunks.push({ file, raw: bytes.byteLength });

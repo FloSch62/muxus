@@ -4,9 +4,10 @@ icon: lucide/settings
 
 # Settings
 
-Settings are opened with ++ctrl+comma++ or the gear control in the top bar. Changes apply
-immediately to open terminals. Session logging is the exception and saves explicitly,
-because storage policy should not change under a running recorder.
+Settings are opened with ++ctrl+comma++ or the gear control in the top bar. Most changes
+apply immediately to open terminals. SSH keepalive changes apply on the next connection;
+session logging saves explicitly because storage policy should not change under a running
+recorder.
 
 <figure markdown="span">
   ![The settings dialog](../assets/screenshots/settings.png#only-light){ .shadow }
@@ -82,12 +83,14 @@ keeps. Current usage against the quota is displayed here.
 
 ## Highlighting
 
-Global keyword rules apply to every terminal: keyword, foreground, optional background,
-case sensitivity and whole-word matching. **Reusable profiles** keep named,
-platform-specific rule sets that can be assigned to several SSH, Telnet or serial hosts.
+Global keyword rules apply to every terminal: an optional name, keyword or regular
+expression, foreground, optional background, case sensitivity and whole-word matching. Any
+rule list can also be edited as JSON. **Reusable profiles** keep
+named, platform-specific rule sets that can be assigned to several SSH, Telnet or serial
+hosts; Nokia SR OS and SR Linux profiles are included, and **Built-in** restores them.
 Profiles have stable IDs and can be imported or exported as JSON, so importing an updated
 copy refreshes existing assignments. Hosts can add their own rules and choose whether to
-include the global set.
+include the global set. See [keyword highlighting](terminal.md#keyword-highlighting).
 
 <figure markdown="span">
   ![Keyword highlighting rules](../assets/screenshots/settings-highlighting.png#only-light){ .shadow }
@@ -99,11 +102,27 @@ include the global set.
 **Confirm before closing a live session** is on by default because closing a connected tab
 ends its shell.
 
+**SSH keepalive interval** defaults to 30 seconds. It sends a protocol-level probe while an
+SSH connection is idle so firewalls, NATs and VPNs do not silently discard it. An explicit
+`ServerAliveInterval` in the host's OpenSSH configuration takes precedence; choose **SSH
+configuration only** to disable the Muxus fallback. A changed interval applies when a
+connection is dialed fresh; tabs that share an existing transport keep its keepalive until
+it is replaced, for example by **Force reconnect all** in the workspace dialog.
+
 The two restore switches are also on by default. **Automatically reconnect remote
 sessions** dials remote tabs when restoring a workspace and retries a dropped connection a
 few times. Turn it off to restore remote tabs without logging in. **Restore terminal
 history** saves recent output locally every few seconds and replays it above the new
 session after a restore or reconnect.
+
+## X11 forwarding
+
+**Enable X11 forwarding** lets graphical programs started in SSH sessions open their
+windows locally. It is on by default except on macOS, which needs XQuartz first; while it
+is off, Muxus never requests X11 and shows no X11 hints. **Forward X11 by default** covers
+hosts without a `ForwardX11` of their own, and on Windows **Share the clipboard with X11
+apps** connects the built-in X server to the Windows clipboard. See
+[Graphical apps (X11)](x11.md#settings).
 
 ## Keyboard
 

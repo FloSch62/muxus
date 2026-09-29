@@ -80,8 +80,9 @@ The route determines how the connection is dialled.
 
 ## Port forwarding
 
-Forwards declared here are written into the block as `LocalForward`, `RemoteForward` or
-`DynamicForward`, and start with every session to this host.
+The **Forwarding** section holds the host's [X11 forwarding](x11.md) choice and its port
+forwards. Forwards declared here are written into the block as `LocalForward`,
+`RemoteForward` or `DynamicForward`, and start with every session to this host.
 
 <figure markdown="span">
   ![Port forwarding with the live tunnel diagram](../assets/screenshots/host-editor-forwards.png#only-light){ .shadow }
@@ -98,8 +99,9 @@ Two per-host overrides of the global [settings](settings.md):
 
 - **Session logging** inherits the global policy, or forces retention on or off for this
   host, including whether keystrokes are recorded.
-- **Highlighting** adds keyword rules for this host's terminals, either in addition to or
-  instead of the global rules.
+- **Highlighting** assigns a reusable profile, such as the built-in Nokia SR OS or SR Linux
+  profile, and adds keyword or regex rules for this host's terminals, either in addition to
+  or instead of the global rules.
 
 ## Advanced
 

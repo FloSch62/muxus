@@ -60,9 +60,16 @@ export function HostKeyDialog({ request, onAnswer }: { request: HostKeyRequest |
       </DialogContent>
       <DialogActions>
         <Button onClick={() => onAnswer(false)}>Cancel</Button>
-        <Button variant="contained" color={mismatch ? 'error' : 'primary'} onClick={() => onAnswer(true)}>
+        {/* oxlint-disable jsx-a11y/no-autofocus -- New host confirmation is intentionally keyboard-defaulted. */}
+        <Button
+          variant="contained"
+          color={mismatch ? 'error' : 'primary'}
+          autoFocus={!mismatch}
+          onClick={() => onAnswer(true)}
+        >
           {mismatch ? 'Accept new key' : 'Trust host'}
         </Button>
+        {/* oxlint-enable jsx-a11y/no-autofocus */}
       </DialogActions>
     </Dialog>
   );

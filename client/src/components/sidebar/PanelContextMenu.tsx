@@ -1,8 +1,10 @@
+import Divider from '@mui/material/Divider';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import CreateNewFolderOutlinedIcon from '@mui/icons-material/CreateNewFolderOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
+import SortByAlphaIcon from '@mui/icons-material/SortByAlpha';
 import { loadFolderDialog, loadHostEditorDialog } from '../../lazy-features.js';
 
 /**
@@ -15,14 +17,19 @@ export function PanelContextMenu({
   onClose,
   onNewHost,
   onNewFolder,
+  onSortHosts,
   folderEditsEnabled,
+  canSortHosts,
 }: {
   position: { top: number; left: number } | null;
   onClose: () => void;
   onNewHost: () => void;
   onNewFolder: () => void;
+  onSortHosts: () => void;
   /** Folder paths are rewritten across the full list, never a filtered one. */
   folderEditsEnabled: boolean;
+  /** Sorting is only safe against the complete, settled host list. */
+  canSortHosts: boolean;
 }) {
   const run = (action: () => void) => () => {
     action();
@@ -56,6 +63,13 @@ export function PanelContextMenu({
           <CreateNewFolderOutlinedIcon fontSize="small" />
         </ListItemIcon>
         New folder…
+      </MenuItem>
+      <Divider />
+      <MenuItem disabled={!canSortHosts} onClick={run(onSortHosts)}>
+        <ListItemIcon>
+          <SortByAlphaIcon fontSize="small" />
+        </ListItemIcon>
+        Sort all hosts alphabetically
       </MenuItem>
     </Menu>
   );

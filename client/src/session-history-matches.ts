@@ -6,6 +6,7 @@ export interface TranscriptMatch {
 export interface TranscriptChunk {
   text: string;
   offset: number;
+  prefixes?: { offset: number; length: number }[];
 }
 
 interface TranscriptToken extends TranscriptMatch {
@@ -51,12 +52,22 @@ export function findTranscriptMatchesInChunks(
   for (const chunk of chunks) {
     const chunkMatches = findChunkMatches(chunk.text, phrases, limit - matches.length);
     matches.push(...chunkMatches.map((match) => ({
-      start: chunk.offset + match.start,
-      end: chunk.offset + match.end,
+      start: displayOffset(chunk, match.start, true),
+      end: displayOffset(chunk, match.end, false),
     })));
     if (matches.length >= limit) break;
   }
   return matches;
+}
+
+/** Prefixes belong before a match start, but not after its exclusive end. */
+function displayOffset(chunk: TranscriptChunk, offset: number, inclusive: boolean): number {
+  let result = chunk.offset + offset;
+  for (const prefix of chunk.prefixes ?? []) {
+    if (prefix.offset > offset || (!inclusive && prefix.offset === offset)) break;
+    result += prefix.length;
+  }
+  return result;
 }
 
 function findChunkMatches(

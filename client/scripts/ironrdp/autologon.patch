@@ -1,0 +1,39 @@
+diff --git a/crates/ironrdp-web/src/session.rs b/crates/ironrdp-web/src/session.rs
+index a47bd3d0..5da5985a 100644
+--- a/crates/ironrdp-web/src/session.rs
++++ b/crates/ironrdp-web/src/session.rs
+@@ -93,6 +93,7 @@ struct SessionBuilderInner {
+     enable_credssp: bool,
+     enable_server_pointer: bool,
+     legacy_graphics: bool,
++    autologon: bool,
+     outbound_message_size_limit: Option<usize>,
+ }
+ 
+@@ -137,6 +138,7 @@ impl Default for SessionBuilderInner {
+             enable_credssp: true,
+             enable_server_pointer: true,
+             legacy_graphics: false,
++            autologon: false,
+             outbound_message_size_limit: None,
+         }
+     }
+@@ -257,6 +259,7 @@ impl iron_remote_desktop::SessionBuilder for SessionBuilder {
+             |enable_credssp: bool| { self.0.borrow_mut().enable_credssp = enable_credssp };
+             |enable_server_pointer: bool| { self.0.borrow_mut().enable_server_pointer = enable_server_pointer };
+             |legacy_graphics: bool| { self.0.borrow_mut().legacy_graphics = legacy_graphics };
++            |autologon: bool| { self.0.borrow_mut().autologon = autologon };
+             |outbound_message_size_limit: f64| {
+                 let limit = if outbound_message_size_limit >= 0.0 && outbound_message_size_limit <= f64::from(u32::MAX) {
+                     #[expect(clippy::as_conversions, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+@@ -430,6 +433,10 @@ impl iron_remote_desktop::SessionBuilder for SessionBuilder {
+         let enable_server_pointer = self.0.borrow().enable_server_pointer;
+         config.enable_server_pointer = enable_server_pointer;
+ 
++        // Log on with the supplied credentials instead of stopping at the
++        // server's own logon screen (TLS-only servers such as xrdp).
++        config.autologon = self.0.borrow().autologon;
++
+         let (input_events_tx, input_events_rx) = mpsc::unbounded();
+ 
+         let clipboard = remote_clipboard_changed_callback.clone().map(|callback| {

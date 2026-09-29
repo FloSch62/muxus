@@ -3,7 +3,6 @@ import Autocomplete from '@mui/material/Autocomplete';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import CircularProgress from '@mui/material/CircularProgress';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import Divider from '@mui/material/Divider';
@@ -14,7 +13,6 @@ import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
-import Link from '@mui/material/Link';
 import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
 import Slider from '@mui/material/Slider';
@@ -29,8 +27,8 @@ import { useTheme } from '@mui/material/styles';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import BugReportOutlinedIcon from '@mui/icons-material/BugReportOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
-import CachedOutlinedIcon from '@mui/icons-material/CachedOutlined';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
+import DesktopWindowsOutlinedIcon from '@mui/icons-material/DesktopWindowsOutlined';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import HighlightOutlinedIcon from '@mui/icons-material/HighlightOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
@@ -40,18 +38,12 @@ import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import PasswordOutlinedIcon from '@mui/icons-material/PasswordOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
-import type { UpdateCheckResult } from '@muxus/shared';
-import { checkForUpdate } from '../api/app.js';
 import { fetchAppLogs, formatLogEntry } from '../api/logs.js';
 import {
   useSaveSessionHistorySettings,
   useSaveSessionLoggingPolicy,
 } from '../api/session-history.js';
-import {
-  useAppInfo,
-  useSessionHistoryStorage,
-  useSessionLoggingPolicy,
-} from '../api/queries.js';
+import { useSessionHistoryStorage, useSessionLoggingPolicy } from '../api/queries.js';
 import {
   FALLBACK_SESSION_LOGGING_POLICY,
   hostSessionLoggingDraft,
@@ -66,6 +58,7 @@ import {
 import { useChordLabel } from '../keymap/hints.js';
 import { IS_MAC } from '../platform.js';
 import {
+  DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
   MAX_INACTIVE_PANE_DIM_STRENGTH,
   MIN_INACTIVE_PANE_DIM_STRENGTH,
   clampInactivePaneDimStrength,
@@ -90,6 +83,7 @@ import {
   terminalFontFamilies,
   terminalFontIsAvailable,
 } from '../terminal/font-catalog.js';
+import { AboutSection } from './AboutSection.js';
 import { chordSx } from './chord-style.js';
 import { HighlightProfilesSection } from './HighlightProfilesSection.js';
 import { LocalShellProfilesSection } from './LocalShellProfilesSection.js';
@@ -98,6 +92,7 @@ import { TerminalSchemeSelect } from './TerminalSchemeSelect.js';
 import { DataTransferSection } from './DataTransferSection.js';
 import { MobaXtermImportDialog } from './MobaXtermImportDialog.js';
 import { PasswordVaultSection } from './PasswordVaultSection.js';
+import { X11Section } from './X11Section.js';
 import { SecureCrtImportDialog } from './SecureCrtImportDialog.js';
 
 type Section =
@@ -107,6 +102,7 @@ type Section =
   | 'logging'
   | 'highlighting'
   | 'behavior'
+  | 'x11'
   | 'keyboard'
   | 'passwords'
   | 'data'
@@ -120,6 +116,7 @@ const SECTIONS: Array<{ id: Section; label: string; icon: React.ReactNode }> = [
   { id: 'logging', label: 'Session logging', icon: <HistoryOutlinedIcon fontSize="small" /> },
   { id: 'highlighting', label: 'Highlighting', icon: <HighlightOutlinedIcon fontSize="small" /> },
   { id: 'behavior', label: 'Behavior', icon: <TuneOutlinedIcon fontSize="small" /> },
+  { id: 'x11', label: 'X11 forwarding', icon: <DesktopWindowsOutlinedIcon fontSize="small" /> },
   { id: 'keyboard', label: 'Keyboard', icon: <KeyboardOutlinedIcon fontSize="small" /> },
   { id: 'passwords', label: 'Passwords', icon: <PasswordOutlinedIcon fontSize="small" /> },
   { id: 'data', label: 'Backup & data', icon: <BackupOutlinedIcon fontSize="small" /> },
@@ -209,6 +206,7 @@ export function SettingsDialog() {
             {section === 'logging' && <SessionLoggingSection onDirtyChange={setLoggingDirty} />}
             {section === 'highlighting' && <HighlightProfilesSection />}
             {section === 'behavior' && <BehaviorSection />}
+            {section === 'x11' && <X11Section />}
             {section === 'keyboard' && <KeyboardSection />}
             {section === 'passwords' && <PasswordVaultSection />}
             {section === 'data' && (
@@ -640,9 +638,34 @@ function TerminalSection() {
           sx={{ width: 200 }}
         />
       </Box>
+      <Box>
+        <SectionTitle>Renderer</SectionTitle>
+        <FormControlLabel
+          control={
+            <Switch
+              size="small"
+              checked={prefs.webglRenderer}
+              onChange={(e) => prefs.set({ webglRenderer: e.target.checked })}
+            />
+          }
+          label={
+            <Box>
+              <Typography variant="body2">GPU renderer (WebGL)</Typography>
+              <Typography variant="caption" color="text.secondary">
+                Paints terminals on the GPU instead of the DOM — smoother under
+                heavy output, slightly more CPU while idle. Applies to open
+                terminals immediately; where WebGL is unavailable, terminals
+                keep the standard renderer.
+              </Typography>
+            </Box>
+          }
+        />
+      </Box>
     </Stack>
   );
 }
+
+const SSH_KEEPALIVE_CHOICES = [0, 15, DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS, 60, 120];
 
 function BehaviorSection() {
   const prefs = usePrefsStore();
@@ -672,6 +695,31 @@ function BehaviorSection() {
       <Box>
         <SectionTitle>Restore & reconnect</SectionTitle>
         <Stack spacing={1.5}>
+          <TextField
+            select
+            label="SSH keepalive interval"
+            value={prefs.sshKeepaliveIntervalSeconds}
+            onChange={(event) =>
+              prefs.set({ sshKeepaliveIntervalSeconds: Number(event.target.value) })
+            }
+            helperText="Keeps idle SSH connections active. A host's ServerAliveInterval setting takes precedence; changes apply on reconnect."
+            sx={{ width: 280 }}
+          >
+            <MenuItem value={0}>SSH configuration only</MenuItem>
+            <MenuItem value={15}>Every 15 seconds</MenuItem>
+            <MenuItem value={DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS}>
+              Every 30 seconds (recommended)
+            </MenuItem>
+            <MenuItem value={60}>Every minute</MenuItem>
+            <MenuItem value={120}>Every 2 minutes</MenuItem>
+            {SSH_KEEPALIVE_CHOICES.includes(prefs.sshKeepaliveIntervalSeconds) ? null : (
+              // A hand-edited or newer-version value must stay visible and
+              // active instead of rendering the select blank.
+              <MenuItem value={prefs.sshKeepaliveIntervalSeconds}>
+                Every {prefs.sshKeepaliveIntervalSeconds} seconds (custom)
+              </MenuItem>
+            )}
+          </TextField>
           <FormControlLabel
             control={
               <Switch
@@ -684,7 +732,7 @@ function BehaviorSection() {
               <Box>
                 <Typography variant="body2">Automatically reconnect remote sessions</Typography>
                 <Typography variant="caption" color="text.secondary">
-                  Restoring a workspace dials its SSH, Telnet and serial tabs, and a dropped
+                  Restoring a workspace dials its SSH, Telnet, serial and remote desktop tabs, and a dropped
                   connection redials a few times before waiting for a key press. Off: remote
                   tabs wait until asked.
                 </Typography>
@@ -1076,25 +1124,6 @@ function HistoryStorageSettings({ onDirtyChange }: { onDirtyChange: (dirty: bool
   );
 }
 
-function updateReasonLabel(reason?: string): string {
-  switch (reason) {
-    case 'timeout':
-      return 'The update check timed out.';
-    case 'network':
-      return 'The update check could not reach GitHub.';
-    case 'no-release':
-      return 'No published release was found.';
-    case 'missing-version':
-    case 'missing-release-url':
-      return 'The latest release metadata is incomplete.';
-    default:
-      return reason?.startsWith('manifest-')
-        ? `The update manifest returned ${reason.replace('manifest-', '')}.`
-        : 'The update check could not be completed.';
-  }
-}
-
-/** Diagnostic logging: the verbose-capture toggle plus log viewer and export. */
 function DebugSection() {
   const debugMode = usePrefsStore((s) => s.debugMode);
   const set = usePrefsStore((s) => s.set);
@@ -1165,96 +1194,6 @@ function DebugSection() {
           them. If the app fails to launch entirely, the desktop shell also writes
           logs/main.log in its data directory.
         </Typography>
-      </Box>
-    </Stack>
-  );
-}
-
-function AboutSection() {
-  const { data: info } = useAppInfo();
-  const prefs = usePrefsStore();
-  const [checking, setChecking] = useState(false);
-  const [result, setResult] = useState<UpdateCheckResult | null>(null);
-
-  const checkForUpdates = () => {
-    setChecking(true);
-    setResult(null);
-    void checkForUpdate({ force: true })
-      .then(setResult)
-      .catch(() => setResult({ available: false, currentVersion: info?.version ?? '', reason: 'network' }))
-      .finally(() => setChecking(false));
-  };
-
-  const updatesAvailable = result?.available === true;
-
-  return (
-    <Stack spacing={3}>
-      <Box>
-        <SectionTitle>About</SectionTitle>
-        <Stack spacing={1.25}>
-          <Typography variant="body2">
-            Muxus {info?.version ?? ''} · {String(info?.platform ?? '')}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Free, open-source SSH, Telnet, and serial client — kitty graphics, split-pane
-            workspaces, SFTP and terminal-independent port forwarding.
-          </Typography>
-          <Link href="https://github.com/FloSch62/muxus" target="_blank" rel="noreferrer">
-            github.com/FloSch62/muxus
-          </Link>
-        </Stack>
-      </Box>
-      <Box>
-        <SectionTitle>Updates</SectionTitle>
-        <Stack spacing={1.5} sx={{ alignItems: 'flex-start' }}>
-          <FormControlLabel
-            control={
-              <Switch
-                size="small"
-                checked={prefs.notifyOnNewVersion}
-                onChange={(e) => prefs.set({ notifyOnNewVersion: e.target.checked })}
-              />
-            }
-            label={
-              <Box>
-                <Typography variant="body2">Notify me when a new version is available</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Off: no notification at startup — checking here still works.
-                </Typography>
-              </Box>
-            }
-          />
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-            <Button
-              variant="contained"
-              startIcon={checking ? <CircularProgress color="inherit" size={16} /> : <CachedOutlinedIcon />}
-              disabled={checking}
-              onClick={checkForUpdates}
-            >
-              Check for updates
-            </Button>
-            {updatesAvailable ? (
-              <Button startIcon={<DownloadOutlinedIcon />} href={result.releaseUrl} target="_blank" rel="noreferrer">
-                Download
-              </Button>
-            ) : null}
-          </Stack>
-          {result?.available === false && result.latestVersion ? (
-            <Alert severity="success" variant="outlined">
-              Muxus is up to date. Latest release: {result.latestVersion}.
-            </Alert>
-          ) : null}
-          {result?.available === false && !result.latestVersion ? (
-            <Alert severity="warning" variant="outlined">
-              {updateReasonLabel(result.reason)}
-            </Alert>
-          ) : null}
-          {updatesAvailable ? (
-            <Alert severity="info" variant="outlined">
-              Muxus {result.latestVersion} is available. You are running {result.currentVersion}.
-            </Alert>
-          ) : null}
-        </Stack>
       </Box>
     </Stack>
   );

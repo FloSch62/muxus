@@ -20,7 +20,7 @@ import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import { alpha } from '@mui/material/styles';
 import { useChordLabel } from '../keymap/hints.js';
 import { useMultiExecStore } from '../state/multi-exec.js';
-import { useTabsStore } from '../state/tabs.js';
+import { isMultiExecTarget, useTabsStore } from '../state/tabs.js';
 import { visibleTabIds } from '../state/workspace-layout.js';
 import { withChord } from './ChordHint.js';
 
@@ -42,10 +42,7 @@ export function MultiExecControl() {
   const [groupName, setGroupName] = useState('');
   const toggleChord = useChordLabel('terminal.multi-exec');
 
-  const connectedTabs = useMemo(
-    () => tabs.filter((tab) => tab.profile && tab.status === 'connected'),
-    [tabs],
-  );
+  const connectedTabs = useMemo(() => tabs.filter(isMultiExecTarget), [tabs]);
   // Any tab change (a title, a status) rebuilds the array, so key the id list
   // on its contents: reconciling then runs only when the ids really change.
   const connectedKey = connectedTabs.map((tab) => tab.id).join(',');

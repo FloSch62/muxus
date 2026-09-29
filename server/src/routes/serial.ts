@@ -1,5 +1,4 @@
 import type { FastifyInstance } from 'fastify';
-import { SerialPort } from 'serialport';
 import type { SerialPortsResponse } from '@muxus/shared';
 
 interface ListedSerialPort {
@@ -31,6 +30,8 @@ export function serialPortsResponse(ports: readonly ListedSerialPort[]): SerialP
 /** Enumerate OS serial devices for the saved-host editor. */
 export function registerSerialRoutes(app: FastifyInstance): void {
   app.get('/api/serial/ports', async (): Promise<SerialPortsResponse> => {
+    // Loaded on use: the native binding costs every app start otherwise.
+    const { SerialPort } = await import('serialport');
     return serialPortsResponse(await SerialPort.list());
   });
 }

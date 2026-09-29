@@ -44,10 +44,12 @@ import OpenInFullOutlinedIcon from '@mui/icons-material/OpenInFullOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutlineOutlined';
 import ReplayOutlinedIcon from '@mui/icons-material/ReplayOutlined';
+import RestartAltOutlinedIcon from '@mui/icons-material/RestartAltOutlined';
 import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined';
 import PodcastsOutlinedIcon from '@mui/icons-material/PodcastsOutlined';
+import { isDesktopProfile } from '@muxus/shared/ws-protocol';
 import { useChordLabel } from '../keymap/hints.js';
 import { ChordHint, withChord } from './ChordHint.js';
 import {
@@ -58,10 +60,12 @@ import {
   openTabInNewWindow,
   requestClosePane,
   requestCloseTabs,
+  requestForceReconnect,
   splitActivePane,
 } from '../session-actions.js';
 import {
   closableTabIdsToRight,
+  isRemoteSessionTab,
   useTabsStore,
   type PaneDirection,
   type TabStatus,
@@ -343,6 +347,16 @@ export function TabStrip({
   const canSplitMenuTab = !!menuTab && allTabs.some(
     (tab) => tab.paneId === menuTab.paneId && tab.id !== menuTab.id,
   );
+  // Offered only where it differs from plain Reconnect: a live session has no
+  // other way to replace its connection, and a closed SSH tab would otherwise
+  // multiplex back onto the possibly dead shared transport.
+  const canForceReconnectMenuTab =
+    !!menuTab &&
+    isRemoteSessionTab(menuTab) &&
+    (menuTab.status !== 'closed' || menuTab.profile.kind === 'ssh');
+  const menuTabReconnectable = !!menuTab?.profile && menuTab.status === 'closed';
+  // Multi-execution and session logging act on terminal input and output.
+  const menuTabIsDesktop = !!menuTab?.profile && isDesktopProfile(menuTab.profile);
 
   const commitRename = () => {
     if (renaming && renameValue.trim()) update(renaming.id, { title: renameValue.trim() });
@@ -1202,9 +1216,9 @@ export function TabStrip({
           </ListItemIcon>
           <ListItemText>Move tab to split down</ListItemText>
         </MenuItem>
+        {menuTabReconnectable || canForceReconnectMenuTab ? <Divider /> : null}
         {menuTab?.profile && menuTab.status === 'closed' ? (
           <>
-            <Divider />
             <MenuItem
               onClick={() => {
                 reconnect([menuTab.id]);
@@ -1243,6 +1257,19 @@ export function TabStrip({
               </>
             ) : null}
           </>
+        ) : null}
+        {canForceReconnectMenuTab ? (
+          <MenuItem
+            onClick={() => {
+              if (menuTab) void requestForceReconnect(menuTab.id);
+              setMenu(null);
+            }}
+          >
+            <ListItemIcon>
+              <RestartAltOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Force reconnect (new connection)</ListItemText>
+          </MenuItem>
         ) : null}
         <Divider />
         <Box sx={{ px: 2, py: 0.5 }}>
@@ -1290,48 +1317,52 @@ export function TabStrip({
             </Tooltip>
           </Stack>
         </Box>
-        <Divider />
-        <MenuItem
-          disabled={menuTab?.status !== 'connected'}
-          onClick={() => {
-            if (menuTab) toggleMultiExecTarget(menuTab.id);
-            setMenu(null);
-          }}
-        >
-          <ListItemIcon>
-            <PodcastsOutlinedIcon fontSize="small" color={menuTab && multiExecSelected.has(menuTab.id) ? 'warning' : 'inherit'} />
-          </ListItemIcon>
-          <ListItemText>
-            {menuTab && multiExecSelected.has(menuTab.id) ? 'Remove from multi-execution' : 'Add to multi-execution'}
-          </ListItemText>
-        </MenuItem>
-        <MenuItem
-          disabled={
-            menuTab?.status !== 'connected' ||
-            menuTab.loggingEnabled === undefined
-          }
-          onClick={() => {
-            if (menuTab) {
-              terminalHandle(menuTab.id)?.setLogging({
-                enabled: !menuTab.loggingEnabled,
-              });
+        {menuTabIsDesktop ? null : <Divider />}
+        {menuTabIsDesktop ? null : (
+          <MenuItem
+            disabled={menuTab?.status !== 'connected'}
+            onClick={() => {
+              if (menuTab) toggleMultiExecTarget(menuTab.id);
+              setMenu(null);
+            }}
+          >
+            <ListItemIcon>
+              <PodcastsOutlinedIcon fontSize="small" color={menuTab && multiExecSelected.has(menuTab.id) ? 'warning' : 'inherit'} />
+            </ListItemIcon>
+            <ListItemText>
+              {menuTab && multiExecSelected.has(menuTab.id) ? 'Remove from multi-execution' : 'Add to multi-execution'}
+            </ListItemText>
+          </MenuItem>
+        )}
+        {menuTabIsDesktop ? null : (
+          <MenuItem
+            disabled={
+              menuTab?.status !== 'connected' ||
+              menuTab.loggingEnabled === undefined
             }
-            setMenu(null);
-          }}
-        >
-          <ListItemIcon>
-            {menuTab?.loggingEnabled ? (
-              <StopCircleOutlinedIcon fontSize="small" />
-            ) : (
-              <PlayCircleOutlineIcon fontSize="small" />
-            )}
-          </ListItemIcon>
-          <ListItemText>
-            {menuTab?.loggingEnabled
-              ? 'Stop session logging'
-              : 'Start session logging'}
-          </ListItemText>
-        </MenuItem>
+            onClick={() => {
+              if (menuTab) {
+                terminalHandle(menuTab.id)?.setLogging({
+                  enabled: !menuTab.loggingEnabled,
+                });
+              }
+              setMenu(null);
+            }}
+          >
+            <ListItemIcon>
+              {menuTab?.loggingEnabled ? (
+                <StopCircleOutlinedIcon fontSize="small" />
+              ) : (
+                <PlayCircleOutlineIcon fontSize="small" />
+              )}
+            </ListItemIcon>
+            <ListItemText>
+              {menuTab?.loggingEnabled
+                ? 'Stop session logging'
+                : 'Start session logging'}
+            </ListItemText>
+          </MenuItem>
+        )}
         <Divider />
         <MenuItem
           onClick={() => {

@@ -24,7 +24,9 @@ export default defineConfig({
           groups: [
             { name: 'preload-helper', test: /vite[\\/]preload-helper/ },
             { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
-            { name: 'xterm', test: /node_modules[\\/]@xterm[\\/]/ },
+            // addon-webgl stays out: it is lazy-loaded by the terminal so it
+            // must land in its own async chunk, not the eager xterm chunk.
+            { name: 'xterm', test: /node_modules[\\/]@xterm[\\/](?!addon-webgl)/ },
           ],
         },
       },

@@ -14,6 +14,7 @@ import ssh2, {
   type Prompt,
   type PseudoTtyOptions,
   type SFTPWrapper,
+  type X11Options,
 } from 'ssh2';
 import { nanoid } from 'nanoid';
 import type { FastifyBaseLogger } from 'fastify';
@@ -62,7 +63,7 @@ import {
 import { VaultKeyStoreUnavailableError } from '../security/vault-key-store.js';
 import {
   expandIdentityPath,
-  listHosts,
+  isConcreteAlias,
   loadConfigDocument,
   parseHostSpec,
   resolveHost,
@@ -71,6 +72,7 @@ import {
   type ResolvedTarget,
 } from './ssh-config.js';
 import type { FolderAuthLookup, FolderPasswordRef } from './folder-auth.js';
+import { isX11Rejection, type LocalX11, type X11Transport } from '../x11/local-x11.js';
 
 export interface HostKeyChallenge {
   host: string;
@@ -101,6 +103,8 @@ export interface SessionSettings {
   env?: Record<string, string>;
   remoteCommand?: string;
   requestTty?: ResolvedTarget['requestTty'];
+  /** ForwardX11; undefined follows the local X server's default. */
+  forwardX11?: boolean;
 }
 
 export function sessionSettings(resolved: ResolvedTarget): SessionSettings {
@@ -108,6 +112,7 @@ export function sessionSettings(resolved: ResolvedTarget): SessionSettings {
     env: sessionEnvironment(resolved),
     remoteCommand: resolved.remoteCommand,
     requestTty: resolved.requestTty,
+    forwardX11: resolved.forwardX11,
   };
 }
 
@@ -133,8 +138,16 @@ export interface ManagedConnection {
   sftpAvailable: boolean;
   /** *Forward lines resolved from ssh config — auto-started once the session is up. */
   configForwards: ConfigForward[];
+  /** Force-reconnect group that dialed this transport, so sibling requests
+   *  from the same gesture share the one replacement connection. */
+  replacementToken?: string;
+  /** Replaced by a forced fresh transport: never handed out for sharing again;
+   *  existing leases (tunnels, transfers) keep it alive until they release. */
+  superseded?: boolean;
   /** Current passive keepalive health of the transport. */
   health(): SshTransportHealth;
+  /** Whether the server answered an x11-req on this transport with failure. */
+  x11Refused(): boolean;
   /** Session defaults come from the dialed target when none are passed. */
   shell(cols: number, rows: number, term: string, session?: SessionSettings): Promise<ClientChannel>;
   sftp(): Promise<SFTPWrapper>;
@@ -263,8 +276,16 @@ export class SshConnectionManager {
   private readonly connections = new ConnectionLeaseRegistry<ManagedConnection>();
   private readonly closeReasons = new WeakMap<Client, string>();
   private readonly postAuth = new WeakMap<Client, Promise<void>>();
-  /** In-flight dials by mux key, so simultaneous sessions share one TCP connection and one auth round-trip. */
-  private readonly pendingDials = new Map<string, Promise<ManagedConnection>>();
+  /**
+   * In-flight dials by mux key, so simultaneous sessions share one TCP
+   * connection and one auth round-trip. A list, not a single slot: overlapping
+   * force-reconnect gestures each keep their own dial joinable until it
+   * settles, so a straggler always finds the dial of its own gesture.
+   */
+  private readonly pendingDials = new Map<
+    string,
+    Array<{ promise: Promise<ManagedConnection>; freshToken?: string }>
+  >();
   /** Dial plans whose optional integration setup killed the remote transport; reset on app restart. */
   private readonly automaticPlainShellKeys = new Set<string>();
   private readonly loadConfig: () => ConfigDocument;
@@ -278,6 +299,7 @@ export class SshConnectionManager {
   private readonly consoleCompatibilityForProfile: ((id: string) => boolean) | undefined;
   private readonly agentOperationTimeoutMs: number;
   private readonly agentWaitStatusMs: number;
+  private readonly x11: LocalX11 | undefined;
   readonly knownHosts: KnownHostsStore;
 
   constructor(
@@ -304,6 +326,8 @@ export class SshConnectionManager {
       agentOperationTimeoutMs?: number;
       /** Test seam; production uses the exported responsive-agent defaults. */
       agentWaitStatusMs?: number;
+      /** Local X server for X11 forwarding; absent disables it. */
+      x11?: LocalX11;
     } = {},
   ) {
     this.knownHosts = options.knownHosts ?? new KnownHostsStore();
@@ -320,6 +344,7 @@ export class SshConnectionManager {
       options.agentOperationTimeoutMs ?? DEFAULT_AGENT_OPERATION_TIMEOUT_MS;
     this.agentWaitStatusMs =
       options.agentWaitStatusMs ?? DEFAULT_AGENT_WAIT_STATUS_MS;
+    this.x11 = options.x11;
   }
 
   /** Acquire an independent consumer lease on an existing SSH transport. */
@@ -334,7 +359,12 @@ export class SshConnectionManager {
 
   /** Live transports (forwarding panel, connection reuse when starting tunnels). */
   list(): ConnectionInfo[] {
-    return this.connections.list().map((conn) => ({
+    // A superseded transport still carries its existing tunnels, but new
+    // consumers must land on the replacement, not the corpse-to-be.
+    return this.connections
+      .list()
+      .filter((conn) => !conn.superseded)
+      .map((conn) => ({
       id: conn.id,
       target: conn.profile.target,
       host: conn.host,
@@ -358,7 +388,15 @@ export class SshConnectionManager {
     profile: SshProfile,
     io: ConnectIo,
     owner: ConnectionLeaseOwner = 'terminal',
-    opts: { freshTransport?: boolean; forcePlainShell?: boolean } = {},
+    opts: {
+      /** Force-reconnect group token: skip transports established before this
+       *  request; requests sharing a token share one replacement connection. */
+      freshTransport?: string;
+      /** Internal fallbacks (MaxSessions overflow, plain-console retry): dial
+       *  an own transport without joining or retiring anyone else's. */
+      dedicatedTransport?: boolean;
+      forcePlainShell?: boolean;
+    } = {},
   ): Promise<MuxedConnectionLease> {
     profile = this.resolveProfile(profile);
     const doc = this.loadConfig();
@@ -393,8 +431,11 @@ export class SshConnectionManager {
       'ssh connect requested',
     );
 
-    if (!opts.freshTransport) {
-      const shared = this.acquireShared(key, owner, target);
+    const freshToken = opts.dedicatedTransport ? undefined : opts.freshTransport;
+    if (!opts.dedicatedTransport) {
+      // A force-reconnect request skips every pre-existing transport but may
+      // still share the replacement its own gesture already established.
+      const shared = this.acquireShared(key, owner, target, freshToken);
       if (shared) {
         shared.connection.configForwards = mergeConfigForwards(
           shared.connection.configForwards,
@@ -404,12 +445,18 @@ export class SshConnectionManager {
         io.status(`Reusing the SSH connection to ${label} (multiplexed).`, { transient: true });
         return shared;
       }
-      const pending = this.pendingDials.get(key);
+      const pendingList = this.pendingDials.get(key) ?? [];
+      // A failed dial fails every session waiting on it — auth prompts and
+      // errors surface on the session that started the dial. A fresh request
+      // never waits on the dial it is trying to escape: it joins an in-flight
+      // dial only when that dial belongs to its own force-reconnect group.
+      // Regular requests join the newest dial.
+      const pending = freshToken
+        ? pendingList.find((entry) => entry.freshToken === freshToken)
+        : pendingList.at(-1);
       if (pending) {
         io.status(`Waiting for the SSH connection to ${label} …`, { transient: true });
-        // A failed dial fails every session waiting on it — auth prompts and
-        // errors surface on the session that started the dial.
-        const conn = await pending;
+        const conn = await pending.promise;
         const lease = this.connections.acquire(conn.id, owner);
         if (lease) {
           conn.configForwards = mergeConfigForwards(conn.configForwards, configForwards);
@@ -428,15 +475,32 @@ export class SshConnectionManager {
       metadataAlias,
       disableSftp,
       consoleCompatibility,
-    );
+    ).then((lease) => {
+      if (freshToken) {
+        // Tag before waiters observe the connection, and retire the replaced
+        // transports so no later session multiplexes onto them.
+        lease.connection.replacementToken = freshToken;
+        this.retireReplacedTransports(key, lease.connection.id);
+      }
+      return lease;
+    });
     const tracked = dial.then((lease) => lease.connection);
     tracked.catch(() => undefined); // waiters observe the rejection through their own await
-    this.pendingDials.set(key, tracked);
+    if (!opts.dedicatedTransport) {
+      const list = this.pendingDials.get(key);
+      if (list) list.push({ promise: tracked, freshToken });
+      else this.pendingDials.set(key, [{ promise: tracked, freshToken }]);
+    }
     try {
       const lease = await dial;
       return { ...lease, reused: false, target };
     } finally {
-      if (this.pendingDials.get(key) === tracked) this.pendingDials.delete(key);
+      const list = this.pendingDials.get(key);
+      if (list) {
+        const index = list.findIndex((entry) => entry.promise === tracked);
+        if (index >= 0) list.splice(index, 1);
+        if (list.length === 0) this.pendingDials.delete(key);
+      }
     }
   }
 
@@ -451,24 +515,54 @@ export class SshConnectionManager {
     if (!saved || saved.profileId !== profile.profileId || saved.useConfig !== false) {
       throw new Error(`saved SSH profile "${profile.profileId}" was not found`);
     }
-    return saved;
+    // Connection fields come from the database. The keepalive fallback is an
+    // application preference supplied by the current renderer, so the wire
+    // value always wins — including its absence (preference set to
+    // configuration-only), which must clear anything a client stored.
+    return { ...saved, keepaliveIntervalSeconds: profile.keepaliveIntervalSeconds };
   }
 
-  /** Least-busy live, healthy transport with the same dial plan, if any. */
+  /**
+   * Least-busy live, healthy transport with the same dial plan, if any.
+   * A superseded transport is never handed out again; a force-reconnect
+   * request reuses only the replacement its own gesture established.
+   */
   private acquireShared(
     key: string,
     owner: ConnectionLeaseOwner,
     target: ChainHop,
+    freshToken?: string,
   ): MuxedConnectionLease | undefined {
     const candidates = this.connections
       .list()
-      .filter((conn) => conn.muxKey === key && conn.health() === 'healthy')
+      .filter(
+        (conn) =>
+          conn.muxKey === key &&
+          conn.health() === 'healthy' &&
+          (freshToken ? conn.replacementToken === freshToken : !conn.superseded),
+      )
       .sort((a, b) => this.connections.leaseCount(a.id) - this.connections.leaseCount(b.id));
     for (const conn of candidates) {
       const lease = this.connections.acquire(conn.id, owner);
       if (lease) return { ...lease, reused: true, target };
     }
     return undefined;
+  }
+
+  /**
+   * A live replacement makes every older same-plan transport ineligible for
+   * new consumers. Their existing leases (tunnels, transfers) stay valid, and
+   * the transport still closes only after the last of them releases.
+   */
+  private retireReplacedTransports(key: string, replacementId: string): void {
+    for (const conn of this.connections.list()) {
+      if (conn.id === replacementId || conn.muxKey !== key || conn.superseded) continue;
+      conn.superseded = true;
+      this.log.info(
+        { connId: conn.id, host: conn.host },
+        'ssh transport superseded by a forced replacement',
+      );
+    }
   }
 
   /**
@@ -484,10 +578,12 @@ export class SshConnectionManager {
     cols: number,
     rows: number,
     term: string,
+    opts: { freshTransport?: string } = {},
   ): Promise<TerminalShell> {
-    const lease = await this.connect(profile, io);
+    const lease = await this.connect(profile, io, 'terminal', opts);
     try {
       const stream = await lease.connection.shell(cols, rows, term, sessionSettings(lease.target.resolved));
+      this.reportX11(lease, io);
       return { lease, stream, transport: lease.reused ? 'shared' : 'new' };
     } catch (err) {
       lease.release();
@@ -500,9 +596,10 @@ export class SshConnectionManager {
         'shared ssh transport refused a session; dialing a dedicated connection',
       );
       io.status('The shared SSH connection refused another session — opening a dedicated one …', { transient: true });
-      const dedicated = await this.connect(profile, io, 'terminal', { freshTransport: true });
+      const dedicated = await this.connect(profile, io, 'terminal', { dedicatedTransport: true });
       try {
         const stream = await dedicated.connection.shell(cols, rows, term, sessionSettings(dedicated.target.resolved));
+        this.reportX11(dedicated, io);
         return { lease: dedicated, stream, transport: 'overflow' };
       } catch (retryErr) {
         dedicated.release();
@@ -520,6 +617,23 @@ export class SshConnectionManager {
         }
         throw retryErr;
       }
+    }
+  }
+
+  /**
+   * A host that explicitly sets ForwardX11 yes hears why it did not happen.
+   * The default (on only with the bundled Windows X server) stays silent,
+   * as MobaXterm does on servers without X11 forwarding.
+   */
+  private reportX11(lease: MuxedConnectionLease, io: ConnectIo): void {
+    // With X11 switched off in Settings, hosts' ForwardX11 is ignored silently.
+    if (!this.x11?.enabled() || lease.target.resolved.forwardX11 !== true) return;
+    if (this.x11.status().source === 'none') {
+      io.status(this.x11.missingServerMessage());
+    } else if (lease.connection.x11Refused()) {
+      io.status(
+        'This server refused X11 forwarding. It needs "X11Forwarding yes" in sshd_config and xauth installed.',
+      );
     }
   }
 
@@ -546,7 +660,7 @@ export class SshConnectionManager {
       { transient: true },
     );
     const compatible = await this.connect(profile, io, 'terminal', {
-      freshTransport: true,
+      dedicatedTransport: true,
       forcePlainShell: true,
     });
     try {
@@ -556,6 +670,7 @@ export class SshConnectionManager {
         term,
         sessionSettings(compatible.target.resolved),
       );
+      this.reportX11(compatible, io);
       return { lease: compatible, stream, transport };
     } catch (retryError) {
       compatible.release();
@@ -631,6 +746,7 @@ export class SshConnectionManager {
     const target = chain[chain.length - 1]!;
     const client = clients[clients.length - 1]!;
     const jumpClients = clients.slice(0, -1);
+    const x11: X11Transport | undefined = this.x11?.attach(client);
     const id = nanoid(10);
     const closeListeners = new Set<(reason?: string) => void>();
     const postAuthSettled = Promise.all(postAuth).then(() => undefined);
@@ -671,27 +787,47 @@ export class SshConnectionManager {
       sftpAvailable: !disableSftp,
       health: () => transportHealth,
       configForwards: target.resolved.forwards,
+      x11Refused: () => x11?.refused ?? false,
       shell: async (cols, rows, term, session = sessionSettings(target.resolved)) => {
         const pty = wantsPty(session.requestTty, !!session.remoteCommand)
           ? terminalPtyOptions(cols, rows, term)
           : undefined;
         const env = consoleCompatibility ? undefined : session.env;
-        if (session.remoteCommand) {
-          return openSessionExec(
-            client,
-            session.remoteCommand,
-            pty,
-            env,
-            consoleCompatibility,
-          );
+        const open = (x11Request?: X11Options) => {
+          if (session.remoteCommand) {
+            return openSessionExec(
+              client,
+              session.remoteCommand,
+              pty,
+              env,
+              consoleCompatibility,
+              x11Request,
+            );
+          }
+          if (pty && !disableSftp) {
+            return openRemoteShell(client, getSftp, pty, env, x11Request);
+          }
+          // Console compatibility drops SendEnv/SetEnv: ssh2 can only send env
+          // requests before pty-req, an order some appliances answer with a
+          // protocol-error disconnect, and a serial console has no environment.
+          return openPlainShell(client, pty, env, consoleCompatibility, x11Request);
+        };
+        // For the same reason console hosts only get x11-req when they ask for it.
+        const x11Request =
+          consoleCompatibility && session.forwardX11 !== true
+            ? undefined
+            : x11?.request(session.forwardX11);
+        if (!x11Request) return open();
+        try {
+          return await open(x11Request);
+        } catch (err) {
+          if (!isX11Rejection(err)) throw err;
+          // Like ssh(1), a refused x11-req costs X11, not the session. ssh2
+          // closed that channel, so the retry opens a fresh one.
+          x11!.markRefused();
+          this.log.info({ host: target.resolved.hostname }, 'ssh server refused X11 forwarding');
+          return open();
         }
-        if (pty && !disableSftp) {
-          return openRemoteShell(client, getSftp, pty, env);
-        }
-        // Console compatibility drops SendEnv/SetEnv: ssh2 can only send env
-        // requests before pty-req, an order some appliances answer with a
-        // protocol-error disconnect, and a serial console has no environment.
-        return openPlainShell(client, pty, env, consoleCompatibility);
       },
       // One SFTP channel per connection, shared by every file operation.
       sftp: () =>
@@ -1002,9 +1138,10 @@ export class SshConnectionManager {
 /**
  * Identity of a dial plan for connection sharing: the resolved hop sequence
  * (user@hostname:port and agent-forwarding policy for each hop) plus the
- * expanded ProxyCommand transport when one applies. Other auth settings are
- * deliberately absent — they matter while establishing a transport, not for
- * attaching to an established one.
+ * expanded ProxyCommand transport when one applies. Settings that matter only
+ * while establishing a transport — auth and keepalive policy alike — are
+ * deliberately absent: a keepalive preference change must not fork sharing
+ * (and demand a second login) while the established transport still works.
  */
 export function muxKey(
   chain: ChainHop[],
@@ -1070,11 +1207,19 @@ export function buildChain(
       : final && profile.profileId
         ? profileFolderAuthFor?.(profile.profileId)
         : undefined;
-    const base = fromConfig
+    const configuredBase = fromConfig
       ? resolveHost(doc, spec.host, folder?.optionLines)
       : folder
         ? resolveHost(EMPTY_CONFIG_DOCUMENT, spec.host, folder.optionLines)
         : directSettings(spec.host);
+    // The application preference is a fallback, not an override: aliases with
+    // an explicit ServerAliveInterval (including 0) keep their own policy.
+    // Apply it to jump hops as well so every TCP leg stays alive while idle.
+    const base = {
+      ...configuredBase,
+      serverAliveInterval:
+        configuredBase.serverAliveInterval ?? profile.keepaliveIntervalSeconds,
+    };
     const user = (final ? profile.user : undefined) ?? spec.user ?? base.user ?? os.userInfo().username;
     const resolved: ResolvedTarget = final
       ? {
@@ -1094,6 +1239,7 @@ export function buildChain(
           identitiesOnly: profile.identitiesOnly ?? base.identitiesOnly,
           identityAgent: profile.identityAgent ?? base.identityAgent,
           forwardAgent: profile.forwardAgent ?? base.forwardAgent,
+          forwardX11: profile.forwardX11 ?? base.forwardX11,
           proxyJump: profile.proxyJump ?? base.proxyJump,
           proxyCommand:
             profile.proxyCommand ??
@@ -1215,9 +1361,15 @@ function openProxyCommand(command: string): Duplex {
   return stream;
 }
 
-/** Ad-hoc targets never masquerade as OpenSSH-backed database profiles. */
+/**
+ * Ad-hoc targets never masquerade as OpenSSH-backed database profiles. Same
+ * answer as looking the target up in listHosts(), without resolving every
+ * host in the config on each connect.
+ */
 export function findMetadataAlias(doc: ConfigDocument, requestedHost: string): string | undefined {
-  return listHosts(doc).some((entry) => entry.aliases.includes(requestedHost))
+  return doc.blocks.some((block) =>
+    block.patterns.some((pattern) => pattern === requestedHost && isConcreteAlias(pattern)),
+  )
     ? requestedHost
     : undefined;
 }
@@ -1983,12 +2135,13 @@ async function openSessionExec(
   pty: PseudoTtyOptions | undefined,
   env?: Record<string, string>,
   retryWithoutPty = false,
+  x11?: X11Options,
 ): Promise<ClientChannel> {
   try {
-    return await requestSessionExec(client, command, pty, env);
+    return await requestSessionExec(client, command, pty, env, x11);
   } catch (err) {
     if (!retryWithoutPty || !pty || !isPtyRejection(err)) throw err;
-    return requestSessionExec(client, command, undefined, env);
+    return requestSessionExec(client, command, undefined, env, x11);
   }
 }
 
@@ -1997,10 +2150,13 @@ function requestSessionExec(
   command: string,
   pty: PseudoTtyOptions | undefined,
   env?: Record<string, string>,
+  x11?: X11Options,
 ): Promise<ClientChannel> {
   return new Promise((resolve, reject) => {
-    client.exec(command, { ...(pty ? { pty } : {}), ...(env ? { env } : {}) }, (err, stream) =>
-      err ? reject(err) : resolve(stream),
+    client.exec(
+      command,
+      { ...(pty ? { pty } : {}), ...(env ? { env } : {}), ...(x11 ? { x11 } : {}) },
+      (err, stream) => (err ? reject(err) : resolve(stream)),
     );
   });
 }
@@ -2016,12 +2172,13 @@ async function openPlainShell(
   pty: PseudoTtyOptions | undefined,
   env?: Record<string, string>,
   retryWithoutPty = false,
+  x11?: X11Options,
 ): Promise<ClientChannel> {
   try {
-    return await requestShell(client, pty ?? false, env);
+    return await requestShell(client, pty ?? false, env, x11);
   } catch (err) {
     if (!retryWithoutPty || !pty || !isPtyRejection(err)) throw err;
-    return requestShell(client, false, env);
+    return requestShell(client, false, env, x11);
   }
 }
 
@@ -2029,9 +2186,12 @@ function requestShell(
   client: Client,
   pty: PseudoTtyOptions | false,
   env?: Record<string, string>,
+  x11?: X11Options,
 ): Promise<ClientChannel> {
   return new Promise((resolve, reject) => {
-    client.shell(pty, { env }, (err, stream) => (err ? reject(err) : resolve(stream)));
+    client.shell(pty, { env, ...(x11 ? { x11 } : {}) }, (err, stream) =>
+      err ? reject(err) : resolve(stream),
+    );
   });
 }
 

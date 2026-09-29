@@ -1,3 +1,4 @@
+import { isDesktopProfile } from '@muxus/shared/ws-protocol';
 import { confirmDiscardRemoteEditors } from './editor/remote-editor-registry.js';
 import {
   insertIntoPane,
@@ -111,7 +112,8 @@ async function prepareTabTransfer(tabId: string): Promise<boolean> {
       !tab ||
       !tab.profile ||
       tab.status === 'closed' ||
-      !!tab.terminalId
+      !!tab.terminalId ||
+      isDesktopProfile(tab.profile)
     );
   };
   if (transferable()) {
@@ -145,7 +147,12 @@ export function registerTabTransferSource(transferId: string, tabId: string): vo
     prepare: () => prepareTabTransfer(tabId),
     snapshot: () => {
       const tab = useTabsStore.getState().tabs.find((candidate) => candidate.id === tabId);
-      if (!tab || (tab.profile && tab.status !== 'closed' && !tab.terminalId)) return undefined;
+      if (
+        !tab ||
+        (tab.profile && tab.status !== 'closed' && !tab.terminalId && !isDesktopProfile(tab.profile))
+      ) {
+        return undefined;
+      }
       const { paneId: _paneId, ...snapshot } = tab;
       return snapshot;
     },
@@ -243,11 +250,15 @@ export async function receiveTabTransfer(
     return;
   }
   const live = offered.profile !== null && !!offered.terminalId;
+  // A remote desktop cannot be handed over live (its client state is in the
+  // source renderer); it reconnects here, and RDP servers resume the session.
+  const reconnectDesktop =
+    offered.profile !== null && isDesktopProfile(offered.profile) && offered.status !== 'closed';
   const incoming: TransferableTab = offered.profile
     ? {
         ...offered,
         restored: true,
-        connectOnMount: live,
+        connectOnMount: live || reconnectDesktop,
         transferId: live ? transferId : undefined,
       }
     : { ...offered, transferId: undefined };

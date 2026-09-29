@@ -120,17 +120,28 @@ Each consumer holds its own lease on the transport:
 
 ## Connection loss
 
-Muxus adds no probe traffic of its own. It observes the keepalives the configuration
-already requests:
+Muxus sends an SSH keepalive after 30 idle seconds by default. Settings → Behavior changes
+that fallback interval, while an explicit `ServerAliveInterval` in the matching OpenSSH
+configuration takes precedence:
 
 | Tab icon | Meaning |
 | --- | --- |
 | :material-circle:{ style="color:#e7b341" } amber | Existing keepalives are unanswered |
 | :material-circle:{ style="color:#f87171" } red | SSH declared the transport lost; the reason is printed in the terminal |
 
-Reconnection is never automatic. Press any key in the tab, or use **Reconnect** from the
-tab menu. SSH tabs additionally offer **Reconnect + tmux** and **Reconnect + screen**, which
+With **Automatically reconnect remote sessions** enabled, a dropped connection is retried
+a few times before waiting for a key press. You can also use **Reconnect** from the tab
+menu. SSH tabs additionally offer **Reconnect + tmux** and **Reconnect + screen**, which
 dial a fresh transport and then reattach the existing multiplexer session.
 
-A restored [workspace](workspaces.md) reconnects selected sessions, or all of them, from
-its dialog.
+**Force reconnect (new connection)** in the tab menu replaces one tab's connection, even
+while the session is live. It never multiplexes onto an established transport, so it also
+recovers an ended SSH tab whose shared connection went dead while other tabs still hold
+it. Once the replacement is up, new sessions to that host use it instead of the old
+transport.
+
+The [workspace](workspaces.md) dialog reconnects selected ended sessions, all ended
+sessions, or force-reconnects every remote tab. Force reconnect ends live shells; use tmux
+or screen when remote programs must survive. Saved tunnels keep their existing
+connections: the replaced transport carries them until they stop, while new sessions and
+new tunnels use the replacement.

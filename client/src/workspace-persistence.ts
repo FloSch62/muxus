@@ -31,7 +31,8 @@ interface WorkspaceSnapshot {
 export type WorkspaceInitialSelection =
   | { kind: 'blank' }
   | { kind: 'new'; id: string; name: string }
-  | { kind: 'open'; id: string };
+  | { kind: 'open'; id: string }
+  | { kind: 'open-name'; name: string };
 
 function currentSnapshot(): WorkspaceSnapshot {
   const { root, tabs, activePaneId } = useTabsStore.getState();
@@ -127,6 +128,24 @@ export class WorkspaceRuntime {
             `/api/workspaces/${encodeURIComponent(this.initialSelection.id)}`,
           ),
         ]);
+      } else if (this.initialSelection?.kind === 'open-name') {
+        catalog = await catalogRequest;
+        const target = this.initialSelection.name.trim().toLocaleLowerCase();
+        const idMatches = catalog.workspaces.filter(
+          (candidate) => candidate.id.toLocaleLowerCase() === target,
+        );
+        const matches =
+          idMatches.length > 0
+            ? idMatches
+            : catalog.workspaces.filter(
+                (candidate) => candidate.name.trim().toLocaleLowerCase() === target,
+              );
+        workspace =
+          matches.length === 1
+            ? await apiFetch<WorkspaceRecord>(
+                `/api/workspaces/${encodeURIComponent(matches[0]!.id)}`,
+              )
+            : null;
       } else if (this.initialSelection?.kind === 'blank') {
         catalog = await catalogRequest;
         workspace = null;
@@ -675,8 +694,13 @@ export function useWorkspacePersistence(
   initialSelection?: WorkspaceInitialSelection,
 ): void {
   const initialKind = initialSelection?.kind;
-  const initialId = initialSelection?.kind === 'blank' ? undefined : initialSelection?.id;
+  const initialId =
+    initialSelection?.kind === 'open' || initialSelection?.kind === 'new'
+      ? initialSelection.id
+      : undefined;
   const initialName = initialSelection?.kind === 'new' ? initialSelection.name : undefined;
+  const initialLookupName =
+    initialSelection?.kind === 'open-name' ? initialSelection.name : undefined;
   useEffect(() => {
     if (!enabled) return;
     const selection: WorkspaceInitialSelection | undefined = initialKind
@@ -684,6 +708,8 @@ export function useWorkspacePersistence(
         ? { kind: 'open', id: initialId! }
         : initialKind === 'new'
           ? { kind: 'new', id: initialId!, name: initialName! }
+          : initialKind === 'open-name'
+            ? { kind: 'open-name', name: initialLookupName! }
           : { kind: 'blank' }
       : undefined;
     const runtime = new WorkspaceRuntime(selection);
@@ -698,5 +724,5 @@ export function useWorkspacePersistence(
       runtime.stop();
       if (activeRuntime === runtime) activeRuntime = undefined;
     };
-  }, [enabled, initialId, initialKind, initialName]);
+  }, [enabled, initialId, initialKind, initialLookupName, initialName]);
 }

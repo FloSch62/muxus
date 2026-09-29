@@ -218,7 +218,7 @@ add('host-editor-forwards', async () => {
   await page.locator('[role="treeitem"][aria-label*="db-primary"]').first().click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Edit host' }).first().click();
   await wait(600);
-  await page.getByRole('tab', { name: 'Port forwarding' }).click();
+  await page.getByRole('tab', { name: 'Forwarding' }).click();
   await wait(600);
   await shot(page, 'host-editor-forwards');
   await page.close_();
@@ -253,6 +253,33 @@ add('telnet-editor', async () => {
   await page.getByRole('menuitem', { name: 'Edit host' }).first().click();
   await wait(900);
   await shot(page, 'telnet-editor');
+  await page.close_();
+});
+
+add('rdp-editor', async () => {
+  const page = await open();
+  await page.locator('[role="treeitem"][aria-label="win-build"]').first().click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Edit host' }).first().click();
+  await wait(700);
+  await page.getByRole('tab', { name: /Connection route/ }).click();
+  await wait(700);
+  await shot(page, 'rdp-editor');
+  await page.close_();
+});
+
+add('remote-desktop', async () => {
+  const page = await open();
+  await connect(page, 'web-01');
+  await run(page, 'status', 600);
+  // The demo VNC server (hack/demo-vnc.mjs) draws an invented desktop.
+  await page.locator('[role="treeitem"][aria-label="design-vm"]').first().click();
+  await page.waitForFunction(() => {
+    const view = [...document.querySelectorAll('[data-desktop-kind]')].find((element) => element.offsetParent);
+    const canvas = view?.querySelector('canvas');
+    return !!canvas && getComputedStyle(view.firstElementChild).visibility !== 'hidden' && canvas.width > 0;
+  }, undefined, { timeout: 20_000 });
+  await wait(1500);
+  await shot(page, 'remote-desktop');
   await page.close_();
 });
 
@@ -361,6 +388,17 @@ add('settings', async () => {
   await wait(1200);
   await scrollDialogTop(page);
   await shot(page, 'settings');
+  await page.close_();
+});
+
+add('settings-x11', async () => {
+  const page = await open();
+  await page.locator('[aria-label="Settings"]').click();
+  await wait(900);
+  await page.getByRole('button', { name: 'X11 forwarding', exact: true }).click();
+  await wait(900);
+  await scrollDialogTop(page);
+  await shot(page, 'settings-x11');
   await page.close_();
 });
 

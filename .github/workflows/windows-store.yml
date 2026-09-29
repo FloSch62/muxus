@@ -1,0 +1,35 @@
+name: Windows Store package
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Build Store submission (AppX)
+        run: pnpm --filter @muxus/electron dist:store
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          MICROSOFT_STORE_PRODUCT_ID: ${{ vars.MICROSOFT_STORE_PRODUCT_ID }}
+          MICROSOFT_STORE_IDENTITY_NAME: ${{ vars.MICROSOFT_STORE_IDENTITY_NAME }}
+          MICROSOFT_STORE_PUBLISHER: ${{ vars.MICROSOFT_STORE_PUBLISHER }}
+          MICROSOFT_STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.MICROSOFT_STORE_PUBLISHER_DISPLAY_NAME }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: muxus-windows-store
+          path: electron/release-store/*.appx
+          if-no-files-found: error
+          retention-days: 14

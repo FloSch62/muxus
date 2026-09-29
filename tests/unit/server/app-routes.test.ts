@@ -27,9 +27,9 @@ describe('app routes', () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       new Response(
         JSON.stringify({
-          version: 'v0.7.0',
-          releaseName: 'Muxus 0.7',
-          releaseUrl: 'https://github.com/FloSch62/muxus/releases/tag/v0.7.0',
+          version: 'v0.9.0',
+          releaseName: 'Muxus 0.9',
+          releaseUrl: 'https://github.com/FloSch62/muxus/releases/tag/v0.9.0',
           publishedAt: '2026-07-26T08:00:00Z',
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },
@@ -46,17 +46,17 @@ describe('app routes', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       available: true,
-      currentVersion: '0.6.3',
-      latestVersion: '0.7.0',
-      releaseName: 'Muxus 0.7',
-      releaseUrl: 'https://github.com/FloSch62/muxus/releases/tag/v0.7.0',
+      currentVersion: '0.8.0',
+      latestVersion: '0.9.0',
+      releaseName: 'Muxus 0.9',
+      releaseUrl: 'https://github.com/FloSch62/muxus/releases/tag/v0.9.0',
       publishedAt: '2026-07-26T08:00:00Z',
     });
     expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(
       /^https:\/\/flosch62\.github\.io\/muxus\/latest\.json\?t=\d+$/,
     );
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
-      headers: { Accept: 'application/json', 'User-Agent': 'Muxus/0.6.3' },
+      headers: { Accept: 'application/json', 'User-Agent': 'Muxus/0.8.0' },
     });
   });
 
@@ -66,8 +66,8 @@ describe('app routes', () => {
       vi.fn().mockResolvedValueOnce(
         new Response(
           JSON.stringify({
-            version: '0.7.0',
-            releaseUrl: 'https://attacker.example/FloSch62/muxus/releases/tag/v0.7.0',
+            version: '0.9.0',
+            releaseUrl: 'https://attacker.example/FloSch62/muxus/releases/tag/v0.9.0',
           }),
           { status: 200, headers: { 'content-type': 'application/json' } },
         ),
@@ -83,9 +83,43 @@ describe('app routes', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       available: false,
-      currentVersion: '0.6.3',
-      latestVersion: '0.7.0',
+      currentVersion: '0.8.0',
+      latestVersion: '0.9.0',
       reason: 'missing-release-url',
     });
+  });
+
+  it('reports X11 status and applies settings over the platform defaults', async () => {
+    const headers = { authorization: `Bearer ${TOKEN}` };
+    const initial = await app.inject({ method: 'GET', url: '/api/x11', headers });
+    expect(initial.statusCode).toBe(200);
+    expect(initial.json()).toMatchObject({ clipboard: false, defaults: expect.any(Object) });
+
+    const accepted = await app.inject({
+      method: 'PUT',
+      url: '/api/x11/settings',
+      headers,
+      payload: { enabled: false, forwardByDefault: true, clipboard: true },
+    });
+    expect(accepted.statusCode).toBe(200);
+    expect(accepted.json()).toMatchObject({ enabled: false, forwardByDefault: true, clipboard: true });
+
+    const reverted = await app.inject({
+      method: 'PUT',
+      url: '/api/x11/settings',
+      headers,
+      payload: { clipboard: false },
+    });
+    const status = reverted.json();
+    expect(status.enabled).toBe(status.defaults.enabled);
+    expect(status.forwardByDefault).toBe(status.defaults.forwardByDefault);
+
+    const rejected = await app.inject({
+      method: 'PUT',
+      url: '/api/x11/settings',
+      headers,
+      payload: { clipboard: 'yes' },
+    });
+    expect(rejected.statusCode).toBe(400);
   });
 });

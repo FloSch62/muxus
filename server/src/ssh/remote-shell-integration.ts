@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import type { Client, ClientChannel, PseudoTtyOptions, SFTPWrapper, Stats } from 'ssh2';
+import type { Client, ClientChannel, PseudoTtyOptions, SFTPWrapper, Stats, X11Options } from 'ssh2';
 import { SHELL_CWD_REPORT, ZSHENV, ZSHRC } from '../local/shell-integration.js';
 
 const SHELL_PROBE = `command printf '\\n__MUXUS_SHELL__=%s\\n__MUXUS_ZDOTDIR__=%s\\n__MUXUS_HOME__=%s\\n' "\${SHELL-}" "\${ZDOTDIR-}" "\${HOME-}"`;
@@ -83,6 +83,7 @@ export async function openRemoteShell(
   getSftp: () => Promise<SFTPWrapper>,
   pty: PseudoTtyOptions,
   env?: Record<string, string>,
+  x11?: X11Options,
 ): Promise<ClientChannel> {
   let transportLost = false;
   let transportError: Error | undefined;
@@ -97,12 +98,12 @@ export async function openRemoteShell(
   client.once('close', onTransportClose);
   client.once('end', onTransportClose);
   try {
-    const integrated = await tryOpenIntegratedRemoteShell(client, getSftp, pty, env);
+    const integrated = await tryOpenIntegratedRemoteShell(client, getSftp, pty, env, x11);
     if (integrated) return integrated;
     if (transportLost) throw new RemoteShellTransportLostError(transportError);
 
     try {
-      return await openShell(client, pty, env);
+      return await openShell(client, pty, env, x11);
     } catch (error) {
       if (transportLost || isDisconnectedError(error)) {
         throw new RemoteShellTransportLostError(
@@ -123,6 +124,7 @@ async function tryOpenIntegratedRemoteShell(
   getSftp: () => Promise<SFTPWrapper>,
   pty: PseudoTtyOptions,
   env?: Record<string, string>,
+  x11?: X11Options,
 ): Promise<ClientChannel | undefined> {
   try {
     // Do not speculatively open SFTP against console appliances. Many expose
@@ -132,7 +134,11 @@ async function tryOpenIntegratedRemoteShell(
     if (!shell) return undefined;
     const sftp = await getSftp();
     const root = await installIntegration(sftp, shell);
-    return await openExec(client, remoteShellCommand(shell, root), { pty, ...(env ? { env } : {}) });
+    return await openExec(client, remoteShellCommand(shell, root), {
+      pty,
+      ...(env ? { env } : {}),
+      ...(x11 ? { x11 } : {}),
+    });
   } catch {
     return undefined;
   }
@@ -250,7 +256,7 @@ function writeFile(sftp: SFTPWrapper, remotePath: string, content: string): Prom
 function openExec(
   client: Client,
   command: string,
-  options?: { pty: PseudoTtyOptions; env?: Record<string, string> },
+  options?: { pty: PseudoTtyOptions; env?: Record<string, string>; x11?: X11Options },
 ): Promise<ClientChannel> {
   return new Promise((resolve, reject) => {
     const callback = (error: Error | undefined, channel: ClientChannel) =>
@@ -264,9 +270,10 @@ function openShell(
   client: Client,
   pty: PseudoTtyOptions,
   env?: Record<string, string>,
+  x11?: X11Options,
 ): Promise<ClientChannel> {
   return new Promise((resolve, reject) => {
-    client.shell(pty, { env }, (error, channel) =>
+    client.shell(pty, { env, ...(x11 ? { x11 } : {}) }, (error, channel) =>
       error ? reject(error) : resolve(channel),
     );
   });

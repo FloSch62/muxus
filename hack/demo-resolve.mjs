@@ -13,6 +13,15 @@ net.Socket.prototype.connect = function connect(...args) {
   if (first && typeof first === 'object' && MAP[first.host]) {
     return original.call(this, { ...first, host: '127.0.0.1', port: MAP[first.host] }, ...args.slice(1));
   }
+  // net.connect(options) passes the socket its normalized [options, cb] array,
+  // tagged with an internal symbol that has to survive the rewrite.
+  if (Array.isArray(first) && first[0] && typeof first[0] === 'object' && MAP[first[0].host]) {
+    const normalized = first.map((arg, index) =>
+      index === 0 ? { ...arg, host: '127.0.0.1', port: MAP[arg.host] } : arg,
+    );
+    for (const symbol of Object.getOwnPropertySymbols(first)) normalized[symbol] = first[symbol];
+    return original.call(this, normalized, ...args.slice(1));
+  }
   // net.connect(port, host, cb)
   if (typeof first === 'number' && typeof args[1] === 'string' && MAP[args[1]]) {
     return original.call(this, MAP[args[1]], '127.0.0.1', ...args.slice(2));

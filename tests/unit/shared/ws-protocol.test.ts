@@ -57,11 +57,36 @@ describe('sessionProfileSchema', () => {
       port: 2222,
       user: 'alice',
       useConfig: false,
+      keepaliveIntervalSeconds: 30,
       identityFiles: ['~/.ssh/work_ed25519'],
       identitiesOnly: true,
       proxyJump: ['bastion', 'ops@relay:2200'],
     });
     expect(parsed.success).toBe(true);
+  });
+
+  it('bounds the Muxus SSH keepalive fallback', () => {
+    expect(
+      sessionProfileSchema.safeParse({
+        kind: 'ssh',
+        target: 'web',
+        keepaliveIntervalSeconds: 30,
+      }).success,
+    ).toBe(true);
+    expect(
+      sessionProfileSchema.safeParse({
+        kind: 'ssh',
+        target: 'web',
+        keepaliveIntervalSeconds: 0,
+      }).success,
+    ).toBe(false);
+    expect(
+      sessionProfileSchema.safeParse({
+        kind: 'ssh',
+        target: 'web',
+        keepaliveIntervalSeconds: 3601,
+      }).success,
+    ).toBe(false);
   });
 
   it('accepts Telnet profiles and supplies the standard port', () => {
@@ -152,6 +177,7 @@ describe('terminalClientMessageSchema', () => {
     const parsed = terminalClientMessageSchema.safeParse({
       op: 'connect',
       profile: { kind: 'ssh', target: 'example.com' },
+      freshTransport: 'fresh-1a2b',
       title: 'Production',
       cols: 80,
       rows: 24,

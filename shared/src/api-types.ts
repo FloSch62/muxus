@@ -21,6 +21,34 @@ export interface AppInfo {
   sshAlgorithms: Record<string, string[]>;
 }
 
+/** Application-wide X11 forwarding switches; unset values follow the platform default. */
+export interface X11Settings {
+  /** Master switch: off never requests X11 and shows no X11 hints. Default off on macOS. */
+  enabled: boolean;
+  /** Whether hosts without a ForwardX11 setting forward X11. Default on with the bundled server. */
+  forwardByDefault: boolean;
+  /** Bridge the bundled Windows X server to the system clipboard (read and write). */
+  clipboard: boolean;
+}
+
+/** Body of PUT /api/x11/settings; omitted switches revert to their platform default. */
+export type X11SettingsUpdate = Partial<Pick<X11Settings, 'enabled' | 'forwardByDefault'>> &
+  Pick<X11Settings, 'clipboard'>;
+
+/**
+ * Where forwarded X11 windows open, plus the effective settings: `bundled`
+ * is the X server the Windows app ships (one display per SSH connection),
+ * `display` the user's own $DISPLAY (XQuartz on macOS), `none` when there is
+ * nothing to forward to.
+ */
+export interface X11Status extends X11Settings {
+  source: 'bundled' | 'display' | 'none';
+  /** The $DISPLAY in use for `display`. */
+  display?: string;
+  /** Platform defaults for the switches a user may leave unset. */
+  defaults: Pick<X11Settings, 'enabled' | 'forwardByDefault'>;
+}
+
 export type AppLogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal';
 
 /** One diagnostic log record from the in-memory app log buffer. */
@@ -118,6 +146,7 @@ export const DIAL_TIME_KEYWORDS: ReadonlySet<string> = new Set([
   'remotecommand',
   'requesttty',
   'stricthostkeychecking',
+  'forwardx11',
 ]);
 
 export type UpdateCheckResult =
@@ -195,6 +224,12 @@ export interface SessionLogSummary {
 export const SNIPPET_MATCH_START = '\u0001';
 export const SNIPPET_MATCH_END = '\u0002';
 
+/** UTF-16 offset of a normalized line and the time its visible content last changed. */
+export interface SessionLineTimestamp {
+  offset: number;
+  recordedAt: string;
+}
+
 /** One timestamped, normalized replay event. Raw bytes remain server-side. */
 export interface SessionLogEvent {
   sequence: number;
@@ -202,6 +237,8 @@ export interface SessionLogEvent {
   elapsedMs: number;
   direction: SessionLogDirection;
   text: string;
+  /** Absent on older recordings, whose event timestamps are approximate. */
+  lineTimestamps?: SessionLineTimestamp[];
 }
 
 export interface SessionLogDetail extends SessionLogSummary {
@@ -266,9 +303,11 @@ export interface SerialPortsResponse {
 export type SavedHostSessionProfile =
   | import('./ws-protocol.js').SshProfile
   | import('./ws-protocol.js').TelnetProfile
-  | import('./ws-protocol.js').SerialProfile;
+  | import('./ws-protocol.js').SerialProfile
+  | import('./ws-protocol.js').RdpProfile
+  | import('./ws-protocol.js').VncProfile;
 
-/** SSH/Telnet/serial host stored natively by Muxus rather than in ssh_config. */
+/** SSH/Telnet/serial/RDP/VNC host stored natively by Muxus rather than in ssh_config. */
 export interface SavedHostProfile {
   id: string;
   kind: SavedHostSessionProfile['kind'];
@@ -299,6 +338,16 @@ export type ManagedHostRef =
 export interface HostOrderRequest {
   hosts: ManagedHostRef[];
 }
+
+/**
+ * One target supplied when the desktop executable is launched from a command
+ * line. Names stay unresolved until the renderer has loaded the same host and
+ * workspace catalogs used by the rest of the UI.
+ */
+export type CommandLineLaunch =
+  | { kind: 'host'; name: string }
+  | { kind: 'folder'; name: string }
+  | { kind: 'workspace'; name: string };
 
 /**
  * One extra application window requested by the renderer. Workspace windows
@@ -357,6 +406,8 @@ export interface HostBlockOptions {
   /** Per-host authentication agent: socket path, environment indirection, SSH_AUTH_SOCK, or none. */
   identityAgent?: string;
   forwardAgent?: boolean;
+  /** ForwardX11; absent = the Muxus default (on with the bundled Windows X server). */
+  forwardX11?: boolean;
   /** ProxyJump hops in order ("bastion", "user@host:2222"); absent = none. */
   proxyJump?: string[];
   /** Shell command whose stdin/stdout provide the SSH transport. */
@@ -384,6 +435,8 @@ export interface ResolvedHostSettings {
   /** Effective authentication agent after applying all matching Host blocks. */
   identityAgent?: string;
   forwardAgent: boolean;
+  /** Effective ForwardX11; undefined when no matching block sets it. */
+  forwardX11?: boolean;
   proxyJump: string[];
   /** Raw ProxyCommand after Host-pattern resolution; tokens expand at dial time. */
   proxyCommand?: string;
@@ -409,16 +462,21 @@ export interface SshHostEntry {
   metadata?: OpenSshProfileMetadata;
 }
 
-/** One literal terminal keyword and the colors used to render every match. */
+/** One terminal keyword or pattern and the colors used to render every match. */
 export interface KeywordHighlightRule {
   /** Stable client-generated id used while editing and reordering rules. */
   id: string;
+  /** Optional label saying what the rule is for, e.g. "IPv4 addresses". */
+  name?: string;
+  /** Literal text, or a JavaScript regular expression source when `regex` is set. */
   keyword: string;
   /** xterm decorations require an opaque #RRGGBB color. */
   foreground: string;
   background?: string;
   caseSensitive: boolean;
   wholeWord: boolean;
+  /** Absent in rules saved before regex support; treated as a literal keyword. */
+  regex?: boolean;
 }
 
 /** A named, reusable rule set that can be assigned to any saved host. */

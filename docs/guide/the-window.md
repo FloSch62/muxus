@@ -50,7 +50,8 @@ to dial a target that is not saved.
 ## Pane canvas
 
 The centre of the window is a canvas of resizable panes. Each pane owns a **tab strip**,
-and each tab is one session: a local shell, SSH, Telnet, serial, or a remote editor.
+and each tab is one session: a local shell, SSH, Telnet, serial, a remote desktop, or a
+remote editor.
 
 - Drag the divider between panes, double-click it to even them out, or move it with the
   keyboard once it has focus.

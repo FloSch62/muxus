@@ -1,4 +1,4 @@
-export type ConnectionLeaseOwner = 'terminal' | 'sftp' | 'forward' | 'editor' | 'dial';
+export type ConnectionLeaseOwner = 'terminal' | 'sftp' | 'forward' | 'editor' | 'dial' | 'desktop';
 
 export interface LeaseableConnection {
   readonly id: string;

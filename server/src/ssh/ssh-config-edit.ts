@@ -180,6 +180,7 @@ export function renderHostBlock(req: HostUpsertRequest, indent: string, extraPat
   if (o.proxyJump !== undefined) opt('ProxyJump', o.proxyJump.length ? o.proxyJump.join(',') : 'none');
   opt('ProxyCommand', o.proxyCommand?.trim());
   if (o.forwardAgent !== undefined) opt('ForwardAgent', o.forwardAgent ? 'yes' : 'no');
+  if (o.forwardX11 !== undefined) opt('ForwardX11', o.forwardX11 ? 'yes' : 'no');
   if (o.passwordOnly) {
     opt('PubkeyAuthentication', 'no');
     opt('PreferredAuthentications', 'keyboard-interactive,password');

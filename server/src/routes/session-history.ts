@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import path from 'node:path';
+import { sessionTranscript } from '@muxus/shared';
 import { z } from 'zod';
 import type {
   SessionHistoryResponse,
@@ -178,7 +179,8 @@ export function registerSessionHistoryRoutes(
       await reply.code(404).send({ message: 'session log not found' });
       return;
     }
-    const transcript = session.events.map((event) => event.text).join('');
+    const { timestamps } = z.object({ timestamps: z.enum(['true', 'false']).optional() }).parse(req.query);
+    const transcript = sessionTranscript(session.events, timestamps === 'true').text;
     return reply
       .type('text/plain; charset=utf-8')
       .header(

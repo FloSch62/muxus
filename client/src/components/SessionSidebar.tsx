@@ -1,5 +1,6 @@
 import {
   lazy,
+  memo,
   Suspense,
   useCallback,
   useDeferredValue,
@@ -48,6 +49,7 @@ import {
   type VisibleNode,
 } from '../host-tree.js';
 import {
+  alphabetizeManagedHosts,
   bestManagedHostMatch,
   groupManagedHosts,
   managedHostDisplayName,
@@ -81,7 +83,7 @@ import { treeLabelSx, treeRowSx } from './sidebar/tree-row-style.js';
 import { deleteFolderPlan, folderRewritePlan } from './sidebar/folder-mutations.js';
 import type { FolderMenuState } from './sidebar/FolderContextMenu.js';
 import type { HostMenuState } from './sidebar/HostContextMenu.js';
-import { HostTree } from './sidebar/HostTree.js';
+import { HostTree, type HostTreeHandle } from './sidebar/HostTree.js';
 import type { LaunchTarget } from './sidebar/LaunchGroupDialog.js';
 import { useAllManagedHosts } from './sidebar/useAllManagedHosts.js';
 import { useFolderPrefs } from './sidebar/useFolderPrefs.js';
@@ -99,10 +101,17 @@ const EMPTY_KEYS: ReadonlySet<string> = new Set();
 /** The fixed rows above the tree share the tree rows' exact geometry. */
 const fixedRowSx = [treeRowSx(0, undefined), { gap: 0.75 }] as const;
 
-/** Saved Telnet/serial profiles and live OpenSSH hosts in one host manager. */
-export function SessionSidebar() {
-  const { data: config } = useSshConfig();
-  const { data: savedData } = useSavedHostProfiles();
+/**
+ * Saved Telnet/serial/RDP/VNC profiles and live OpenSSH hosts in one host manager.
+ *
+ * Memoized: it takes no props, and the app shell re-renders on every tab
+ * update — each session steps through several states while it connects, and a
+ * restored workspace connects many at once. The sidebar only follows the
+ * stores it reads itself.
+ */
+export const SessionSidebar = memo(function SessionSidebar() {
+  const { data: config, isSuccess: sshConfigReady } = useSshConfig();
+  const { data: savedData, isSuccess: savedProfilesReady } = useSavedHostProfiles();
   const setHostEditor = useUiStore((s) => s.setHostEditor);
   const setFolderDialog = useUiStore((s) => s.setFolderDialog);
   const sidebarWidth = usePrefsStore((state) => state.sidebarWidth);
@@ -110,6 +119,8 @@ export function SessionSidebar() {
   const setPrefs = usePrefsStore((state) => state.set);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const treeRef = useRef<HostTreeHandle>(null);
   const [filter, setFilter] = useState('');
   const [menu, setMenu] = useState<HostMenuState | null>(null);
   const [folderMenu, setFolderMenu] = useState<FolderMenuState | null>(null);
@@ -177,13 +188,16 @@ export function SessionSidebar() {
     updateProfileMetadata.isPending ||
     applyFolderMoves.isPending;
   const filtering = !!needle;
-  const reorderEnabled = !filtering && !mutating;
+  // Both catalogs must be complete before an order can be persisted: writing
+  // a partial list would leave the omitted source carrying conflicting ranks.
+  const hostCatalogsReady = sshConfigReady && savedProfilesReady;
+  const reorderEnabled = hostCatalogsReady && !filtering && !mutating;
   useEffect(() => {
     setSearchCollapsed(EMPTY_KEYS);
   }, [needle]);
   // Folder edits rewrite paths across hosts the filter may be hiding, so they
   // are only offered against the full list.
-  const folderEditsEnabled = !filtering && !mutating;
+  const folderEditsEnabled = hostCatalogsReady && !filtering && !mutating;
 
   const commitOrder = useCallback(
     (keys: readonly string[]) =>
@@ -194,6 +208,14 @@ export function SessionSidebar() {
         }),
       ),
     [reorder, hostByKey],
+  );
+
+  const alphabetizeHosts = useCallback(
+    (items: readonly ManagedHost[]) => {
+      if (!reorderEnabled || items.length < 2) return;
+      commitOrder(alphabetizeManagedHosts(items).map(managedHostKey));
+    },
+    [commitOrder, reorderEnabled],
   );
 
   /** Reorder a host among its siblings — folders are always alphabetical. */
@@ -445,6 +467,9 @@ export function SessionSidebar() {
       ? { index: siblings.keys.indexOf(folderMenu!.node.key), total: siblings.keys.length }
       : { index: -1, total: 0 };
   }, [folderMenu, tree]);
+  const folderMenuHostCount = folderMenu
+    ? siblingHostKeys(folderMenu.node).length
+    : 0;
 
   const empty = hosts.length === 0 && profiles.length === 0;
 
@@ -498,7 +523,7 @@ export function SessionSidebar() {
             if (e.key === 'ArrowDown') {
               // Hand off to the tree rather than moving the text cursor.
               e.preventDefault();
-              sidebarRef.current?.querySelector<HTMLElement>('[role="treeitem"]')?.focus();
+              treeRef.current?.focusFirst();
             }
           }}
           slotProps={{
@@ -528,6 +553,7 @@ export function SessionSidebar() {
       </Stack>
 
       <Box
+        ref={scrollRef}
         sx={{ flex: 1, overflowY: 'auto', pb: 1 }}
         // Rows stop this from reaching the panel, so anything that gets here is
         // empty space: the one place a root-level folder can be asked for.
@@ -595,7 +621,9 @@ export function SessionSidebar() {
         )}
 
         <HostTree
+          ref={treeRef}
           tree={tree}
+          scrollContainer={scrollRef}
           matchKey={matchKey}
           isExpanded={isExpanded}
           setExpanded={setExpanded}
@@ -679,24 +707,34 @@ export function SessionSidebar() {
             folder={{
               menu: folderMenu,
               onClose: () => setFolderMenu(null),
+              onNewHost: (node) => setHostEditor({ mode: 'new', group: node.path }),
               onNewChild: (node) => setFolderDialog({ mode: 'new', parentPath: node.path }),
               onEdit: (node) => setFolderDialog({ mode: 'edit', path: node.path }),
               onLaunch: launchNode,
               onCollapseAll: collapseSubtree,
               onDelete: deleteFolder,
               onMove: (node, delta) => moveFolderByKey(node.key, delta),
+              onSortHosts: (node) =>
+                alphabetizeHosts(
+                  node.children.flatMap((child) =>
+                    child.kind === 'host' ? [child.host] : [],
+                  ),
+                ),
               canMoveUp: reorderEnabled && folderMenuPosition.index > 0,
               canMoveDown:
                 reorderEnabled &&
                 folderMenuPosition.index >= 0 &&
                 folderMenuPosition.index < folderMenuPosition.total - 1,
+              canSortHosts: reorderEnabled && folderMenuHostCount > 1,
             }}
             panel={{
               position: panelMenu,
               onClose: () => setPanelMenu(null),
               onNewHost: () => setHostEditor({ mode: 'new' }),
               onNewFolder: () => setFolderDialog({ mode: 'new' }),
+              onSortHosts: () => alphabetizeHosts(allHosts),
               folderEditsEnabled,
+              canSortHosts: reorderEnabled && allHosts.length > 1,
             }}
             launch={{ target: launchTarget, onClose: () => setLaunchTarget(null) }}
           />
@@ -704,7 +742,7 @@ export function SessionSidebar() {
       )}
     </Box>
   );
-}
+});
 
 /** Depth-first walk of every container, so sibling lookups can scan once. */
 function* allContainers(nodes: readonly ContainerNode[]): Generator<ContainerNode> {

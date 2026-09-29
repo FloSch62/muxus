@@ -762,6 +762,46 @@ export function folderPasswordLabel(path: string): string {
   return `Folder ${path}`;
 }
 
+/**
+ * Identifies one RDP or VNC login. The protocol leads the JSON array, so it
+ * can never collide with an SSH [user, host, port] triple or a folder password.
+ * `localhost:5900` behind two gateways is two machines, and an RDP user name
+ * means a different account in each domain, so both are part of the key.
+ */
+export interface DesktopPasswordTarget {
+  protocol: 'rdp' | 'vnc';
+  user: string;
+  host: string;
+  port: number;
+  /** Stable gateway identity ('' for a direct connection), as certificates are pinned. */
+  gateway: string;
+  /** How the gateway is shown to people; only the label uses it. */
+  gatewayLabel?: string;
+  /** RDP logon domain; '' when none is set. */
+  domain: string;
+}
+
+export function desktopPasswordAccount(input: DesktopPasswordTarget): string {
+  return Buffer.from(
+    JSON.stringify([
+      input.protocol,
+      input.user,
+      input.host.toLowerCase(),
+      input.port,
+      input.gateway,
+      input.domain.toLowerCase(),
+    ]),
+    'utf8',
+  ).toString('base64url');
+}
+
+export function desktopPasswordLabel(input: DesktopPasswordTarget): string {
+  const user = input.domain && input.user ? `${input.domain}\\${input.user}` : input.user;
+  const name = user ? `${user}@${input.host}` : input.host;
+  const route = input.gateway ? ` via ${input.gatewayLabel || input.gateway}` : '';
+  return `${input.protocol.toUpperCase()} ${name}:${input.port}${route}`;
+}
+
 export function validateMasterPassword(password: string): void {
   validateMasterPasswordLength(password, MASTER_PASSWORD_MIN_LENGTH);
 }

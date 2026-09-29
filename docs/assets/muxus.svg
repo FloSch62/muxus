@@ -1,18 +1,244 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 99">
-<!-- SVG created with Arrow, by QuiverAI (https://quiver.ai) -->
-  <style type="text/css">.cls-0 {fill:#111F2E;}
-.cls-1 {fill:#14BDE3;}
-.cls-2 {fill:#FAFAFB;}
-.cls-3 {fill:#273A4C;}
-.cls-4 {fill:#00DCE8;}
-.cls-5 {fill:#12202F;}</style>
-  <path class="cls-0" d="m72.6 3.7h-44.6c-4.6 0-7.7 0.2-11.2 1.7-5.7 2.4-11.6 8.6-11.9 18.1v51.8c0.2 7.3 3.1 18.3 16.3 20.4 2.3 0.4 4.8 0.4 6.8 0.4l44.2-0.1c3.3 0 6.5-0.1 9.4-1 6.3-1.8 13.1-7.1 13.5-17.8v-52.6c0-5.6-1.8-11.5-6.5-15.5-4.4-4-9.4-5.5-16-5.4z"/>
-  <path class="cls-1" d="m76.8 19.8-26 19.3-27.4-19.4c-1-0.7-2.7-0.4-2.9 1.4v13.3l29.2 21.5c0.4 0.3 0.7 0.3 1 0.1l29.1-21.8v-13.1c-0.1-1.4-1.5-2.4-3-1.3z"/>
-  <path class="cls-2" d="m41.5 53.6-20.4-14.9c-0.4-0.3-1 0.1-1 0.6v37.3c0 1.1 0.8 1.9 1.9 2l18.5-0.1c1 0 1.9-0.8 1.9-1.9v-21.2c-0.1-0.8-0.4-1.4-0.9-1.8z"/>
-  <path class="cls-3" d="m60 52.6c-0.5 0.4-1 1.1-1 1.9v6.1c0 0.4 0.3 0.7 0.7 0.7h19.3c0.4 0 0.8-0.3 0.8-0.7v-21.5c0-0.4-0.5-0.7-0.9-0.4l-18.9 13.9z"/>
-  <path class="cls-3" d="m59 64.1v12.5c0 1 0.8 1.9 1.8 1.9h17.1c1.5 0 1.9-1 1.9-1.9v-12.5c0-0.5-0.3-0.9-0.8-0.9h-19.1c-0.6 0-0.9 0.4-0.9 0.9z"/>
-  <path class="cls-4" d="m67.9 53.6h-4c-0.7 0-1-1.4-0.1-1.4h4.1c1 0 1.1 1.4 0 1.4z"/>
-  <path class="cls-4" d="m67.9 67.4h-4.1c-0.9 0-1.1-1.3-0.1-1.3h4.2c1.1-0.1 1.1 1.3 0 1.3z"/>
-  <path class="cls-5" d="m25.5 70.6c-0.9 0-1.5-1.2-0.7-1.9l3.8-3.2-3.7-3c-0.8-0.7-0.2-2.2 0.9-1.9l5.2 4c0.6 0.5 0.5 1.4 0 1.7l-5 4.1c-0.2 0.1-0.3 0.2-0.5 0.2z"/>
-  <path class="cls-5" d="m37.3 73.3h-5.1c-1.2 0-1.4-2 0.1-2h5c1.2 0 1.6 1.9 0 2z"/>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1254" height="1254" viewBox="0 0 1254 1254" fill="none" role="img" aria-labelledby="muxus-title muxus-description">
+  <title id="muxus-title">Muxus</title>
+  <desc id="muxus-description">A dimensional M folded from a cyan, blue, and violet ribbon, with a white terminal prompt on its left leg and two cyan server indicators on its right leg.</desc>
+  <defs>
+    <!-- Shared geometry: diagonal slope 2/3, reflection x -> 1267-x, bevel depth 28. -->
+    <!-- Both panel faces span y=495 to y=1045.5. Roof crests are at y=177. -->
+    <path id="terminal-face" d="M168 495L168 860C168 877 184 883.8023 210 901.1356L412 1035.8023C446 1058.469 470 1040 470 995L470 747C470 726 456 716 432 700L198 544C179 531.3333 168 516 168 495Z"/>
+    <path id="server-face" d="M1099 495L1099 860C1099 877 1083 883.8023 1057 901.1356L855 1035.8023C821 1058.469 797 1040 797 995L797 747C797 726 811 716 835 700L1069 544C1088 531.3333 1099 516 1099 495Z"/>
+    <path id="terminal-frame" d="M168 457.6667L168 860C168 877 212 865.1356 238 882.469L440 1017.1356C474 1039.8023 498 1021.3333 498 976.3333L498 728.3333C498 707.3333 484 697.3333 460 681.3333L198 506.6667C179 494 168 478.6667 168 457.6667Z"/>
+    <path id="server-frame" d="M1099 457.6667L1099 860C1099 877 1055 865.1356 1029 882.469L827 1017.1356C793 1039.8023 769 1021.3333 769 976.3333L769 728.3333C769 707.3333 783 697.3333 807 681.3333L1069 506.6667C1088 494 1099 478.6667 1099 457.6667Z"/>
+    <path id="terminal-fold-edge" d="M204 280C188 275 176 292 176 326L176 485C176 508 190 520 207 531.3333L443 688.6667C466 704 478 726 478 747L478 995C478 1031 462 1051.8023 435 1039.8023"/>
+    <path id="server-fold-edge" d="M1063 280C1079 275 1091 292 1091 326L1091 485C1091 508 1077 520 1060 531.3333L824 688.6667C801 704 789 726 789 747L789 995C789 1031 805 1051.8023 832 1039.8023"/>
+    <path id="left-roof" d="M195 277L333 185C349 174.3333 367 174.3333 383 185L660 369.6667L665 377L481 463.6667L225 293C211 283.6667 201 274 195 277Z"/>
+    <path id="right-roof" d="M473.5 458.6667L884 185C900 174.3333 918 174.3333 934 185L1072 277C1090 289 1100 306 1100 326C1094 286 1074 271.6667 1052 286.3333L633.5 565.3333Z"/>
+    <path id="left-roof-bevel" d="M179 293C188 276 205 273.6667 225 287L633.5 559.3333L633.5 565.3333L225 293C205 279.6667 190 277 179 293Z"/>
+    <path id="right-roof-bevel" d="M1088 293C1079 276 1062 273.6667 1042 287L633.5 559.3333L633.5 565.3333L1042 293C1062 279.6667 1077 277 1088 293Z"/>
+    <path id="left-crest-glint" d="M195 277L333 185C349 174.3333 367 174.3333 383 185L378 190C366 182 354 184 342 192L207 282C203 279 199 277 195 277Z"/>
+    <path id="left-shell" d="M195 277C177 289 167 306 167 326L167 485C167 516 180 536 205 552.6667L474 732L474 459L225 293C211 283.6667 201 274 195 277Z"/>
+    <path id="left-return-face" d="M203 280C186 277 178 293 178 326L178 485C178 509 190 528.6667 207 540L474 718L474 459L225 293C213 285 205 280 203 280Z"/>
+    <path id="violet-fold" d="M769 475L1052 286.3333C1074 271.6667 1094 286 1100 326L1100 485C1100 516 1087 536 1062 552.6667L769 748Z"/>
+    <path id="upper-server" d="M1099 495L1099 666.5678C1099 679.5678 1089 693.2345 1075 702.5678L819 873.2345C806 881.9012 797 874.2345 797 859.2345L797 747C797 726 811 716 835 700L1069 544C1088 531.3333 1099 516 1099 495Z"/>
+    <path id="lower-server" d="M1086 701.2345C1095 701.5678 1099 712.5678 1099 726.5678L1099 860C1099 877 1083 883.8023 1057 901.1356L855 1035.8023C821 1058.469 797 1040 797 995L797 930.5678C797 915.5678 804 907.2345 817 898.5678L1076 725.9012C1090 716.5678 1095 712.2345 1086 701.2345Z"/>
+    <path id="server-lip-edge" d="M797 930.5678C797 915.5678 804 907.2345 817 898.5678L1076 725.9012C1090 716.5678 1095 712.2345 1086 701.2345"/>
+    <path id="prompt" d="M236.1935 696.7174L277.1097 770.9813L236.1935 790.6904"/>
+    <path id="cursor" d="M297.5677 831.6065L353.0968 868.6259"/>
+    <path id="status-light" d="M878 752.6172L936 713.9506"/>
+    <path id="status-glint" d="M875 747.6172L931 710.2839"/>
+
+    <linearGradient id="left-roof-color" x1="254" y1="300" x2="651" y2="335" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#27eaf1"/>
+      <stop offset="0.27" stop-color="#21caf3"/>
+      <stop offset="0.59" stop-color="#079cff"/>
+      <stop offset="1" stop-color="#0754f5"/>
+    </linearGradient>
+    <linearGradient id="left-roof-glint" x1="254" y1="222" x2="276" y2="254" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7ffff8" stop-opacity="0.16"/>
+      <stop offset="0.65" stop-color="#73ffff" stop-opacity="0.46"/>
+      <stop offset="1" stop-color="#73ffff" stop-opacity="0.04"/>
+    </linearGradient>
+    <linearGradient id="left-return" x1="178" y1="341" x2="470" y2="489" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#007bff"/>
+      <stop offset="0.42" stop-color="#034ac0"/>
+      <stop offset="1" stop-color="#07329c"/>
+    </linearGradient>
+    <linearGradient id="terminal-color" x1="220" y1="495" x2="423" y2="1047" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#10cfee"/>
+      <stop offset="0.24" stop-color="#078bff"/>
+      <stop offset="0.61" stop-color="#004ef1"/>
+      <stop offset="1" stop-color="#002dcc"/>
+    </linearGradient>
+    <linearGradient id="terminal-edge" x1="473" y1="681" x2="478" y2="1047" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#18cafa"/>
+      <stop offset="0.36" stop-color="#2798ff"/>
+      <stop offset="1" stop-color="#3e60ff"/>
+    </linearGradient>
+    <linearGradient id="terminal-rim" x1="177" y1="279" x2="177" y2="1020" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#96f3ff" stop-opacity="0"/>
+      <stop offset="0.045" stop-color="#96f3ff" stop-opacity="0.72"/>
+      <stop offset="0.16" stop-color="#96f3ff" stop-opacity="0.94"/>
+      <stop offset="0.45" stop-color="#71d9ff" stop-opacity="0.66"/>
+      <stop offset="0.75" stop-color="#73caff" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#9ba8ff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="right-roof-color" x1="552" y1="533" x2="991" y2="210.61" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#188bff"/>
+      <stop offset="0.43" stop-color="#199bfa"/>
+      <stop offset="0.8" stop-color="#19c0f4"/>
+      <stop offset="1" stop-color="#0ddcf0"/>
+    </linearGradient>
+    <linearGradient id="roof-rim" x1="622" y1="602" x2="1092" y2="280.61" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#55c5ff" stop-opacity="0.33"/>
+      <stop offset="0.62" stop-color="#71d7ff" stop-opacity="0.81"/>
+      <stop offset="0.92" stop-color="#b0fcff"/>
+      <stop offset="1" stop-color="#82ecff" stop-opacity="0.5"/>
+    </linearGradient>
+    <linearGradient id="fold-color" x1="749" y1="498" x2="1100" y2="535" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0733bc"/>
+      <stop offset="0.34" stop-color="#2925d8"/>
+      <stop offset="0.67" stop-color="#662aef"/>
+      <stop offset="1" stop-color="#c752f8"/>
+    </linearGradient>
+    <linearGradient id="fold-edge" x1="1034" y1="440" x2="760" y2="995" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c55cf8"/>
+      <stop offset="0.26" stop-color="#c470ff"/>
+      <stop offset="0.56" stop-color="#ac4fff"/>
+      <stop offset="0.82" stop-color="#763bff"/>
+      <stop offset="1" stop-color="#6440fb"/>
+    </linearGradient>
+    <linearGradient id="fold-rim" x1="1090" y1="371.61" x2="783" y2="1020" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#edb4ff" stop-opacity="0.53"/>
+      <stop offset="0.19" stop-color="#f8caff" stop-opacity="0.96"/>
+      <stop offset="0.46" stop-color="#dbbbff" stop-opacity="0.82"/>
+      <stop offset="0.75" stop-color="#9f90ff" stop-opacity="0.36"/>
+      <stop offset="1" stop-color="#8d80ff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="server-recess" x1="815" y1="858" x2="1093" y2="738" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#141891"/>
+      <stop offset="0.54" stop-color="#131894"/>
+      <stop offset="1" stop-color="#3312b9"/>
+    </linearGradient>
+    <linearGradient id="upper-server-color" x1="836" y1="670" x2="1048" y2="803" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#143a9c"/>
+      <stop offset="0.43" stop-color="#2142b6"/>
+      <stop offset="1" stop-color="#4937ec"/>
+    </linearGradient>
+    <linearGradient id="lower-server-color" x1="811" y1="887" x2="1096" y2="967" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2132ab"/>
+      <stop offset="0.36" stop-color="#3830d7"/>
+      <stop offset="0.68" stop-color="#743af1"/>
+      <stop offset="1" stop-color="#bd4ff5"/>
+    </linearGradient>
+    <linearGradient id="server-lip" x1="805" y1="887" x2="1101" y2="718" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8d4bff"/>
+      <stop offset="0.43" stop-color="#8555fb"/>
+      <stop offset="1" stop-color="#ad50fa"/>
+    </linearGradient>
+    <linearGradient id="prompt-color" x1="221" y1="722" x2="316" y2="795" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e9e4ff"/>
+      <stop offset="0.47" stop-color="#ededff"/>
+      <stop offset="1" stop-color="#e1e6ff"/>
+    </linearGradient>
+    <linearGradient id="cursor-color" x1="321" y1="870" x2="335" y2="848" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e1e4ff"/>
+      <stop offset="1" stop-color="#f2eeff"/>
+    </linearGradient>
+    <linearGradient id="status-color" x1="872" y1="730" x2="941" y2="711" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00edff"/>
+      <stop offset="0.55" stop-color="#00f5f4"/>
+      <stop offset="1" stop-color="#00e5fc"/>
+    </linearGradient>
+    <radialGradient id="terminal-blue" cx="177" cy="854" r="365" gradientUnits="userSpaceOnUse" gradientTransform="translate(0 -170.8) scale(1 1.2)">
+      <stop offset="0" stop-color="#002bff" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#003cff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="right-roof-light" cx="1074" cy="281.61" r="320" gradientUnits="userSpaceOnUse" gradientTransform="translate(0 56.322) scale(1 .8)">
+      <stop offset="0" stop-color="#a3eaff" stop-opacity="0.47"/>
+      <stop offset="1" stop-color="#a3eaff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="fold-violet" cx="1076" cy="299.61" r="205" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4313da" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#4313da" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="upper-server-light" cx="1100" cy="520" r="276" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2567e9" stop-opacity="0.58"/>
+      <stop offset="1" stop-color="#2567e9" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="lower-server-light" cx="1112" cy="824" r="301" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#bc4cfc" stop-opacity="0.66"/>
+      <stop offset="1" stop-color="#bc4cfc" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="left-roof-light" cx="281" cy="238" r="282" gradientUnits="userSpaceOnUse" gradientTransform="translate(0 35.7) scale(1 .85)">
+      <stop offset="0" stop-color="#68ffff" stop-opacity=".23"/>
+      <stop offset="1" stop-color="#68ffff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="roof-reflection" cx="445" cy="521" r="293" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00edff" stop-opacity=".31"/>
+      <stop offset="1" stop-color="#00bcff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="fold-reflection" cx="1079" cy="523" r="261" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ec72ff" stop-opacity=".3"/>
+      <stop offset="1" stop-color="#dd5cff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="terminal-reflection" cx="459" cy="712" r="236" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1db8ff" stop-opacity=".27"/>
+      <stop offset="1" stop-color="#1db8ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="bend-reflection" cx="776" cy="697" r="203" gradientUnits="userSpaceOnUse" gradientTransform="translate(0 -209.1) scale(1 1.3)">
+      <stop offset="0" stop-color="#f084ff" stop-opacity=".43"/>
+      <stop offset="1" stop-color="#d76dff" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="left-roof-clip"><use xlink:href="#left-roof"/></clipPath>
+    <clipPath id="right-roof-clip"><use xlink:href="#right-roof"/></clipPath>
+    <clipPath id="server-face-clip"><use xlink:href="#server-face"/></clipPath>
+    <filter id="porcelain-glow" x="-.15" y="-.15" width="1.3" height="1.3" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="2.4"/>
+    </filter>
+  </defs>
+
+  <!-- Geometry is mirrored about x=633.5, then centered on the 1254px canvas. -->
+  <g id="logo-mark" transform="translate(-6.5 0)">
+    <!-- Back ribbon and its continuous return. -->
+    <use xlink:href="#left-shell" fill="url(#terminal-edge)"/>
+    <use xlink:href="#left-return-face" fill="url(#left-return)"/>
+    <use xlink:href="#left-roof" fill="url(#left-roof-color)"/>
+    <use xlink:href="#left-roof" fill="url(#left-roof-light)"/>
+    <use xlink:href="#left-crest-glint" fill="url(#left-roof-glint)" clip-path="url(#left-roof-clip)"/>
+    <use xlink:href="#left-roof-bevel" fill="#79f6fc" fill-opacity=".86"/>
+
+    <!-- Identical mirrored panel outlines and equal bevel thickness. -->
+    <use xlink:href="#terminal-frame" fill="url(#terminal-edge)"/>
+    <use xlink:href="#terminal-face" fill="url(#terminal-color)"/>
+    <use xlink:href="#terminal-face" fill="url(#terminal-blue)"/>
+    <use xlink:href="#terminal-face" fill="url(#terminal-reflection)"/>
+    <use xlink:href="#terminal-fold-edge" stroke="url(#terminal-rim)" stroke-width="2.8" stroke-linecap="round"/>
+    <use xlink:href="#terminal-face" stroke="#60caff" stroke-opacity=".16" stroke-width="1.2"/>
+
+    <!-- The foreground return overlaps the back ribbon. -->
+    <use xlink:href="#violet-fold" fill="url(#fold-color)"/>
+    <use xlink:href="#violet-fold" fill="url(#fold-violet)"/>
+    <use xlink:href="#violet-fold" fill="url(#fold-reflection)"/>
+    <use xlink:href="#server-frame" fill="url(#fold-edge)"/>
+    <use xlink:href="#server-frame" fill="url(#bend-reflection)"/>
+    <g clip-path="url(#server-face-clip)">
+    <use xlink:href="#server-face" fill="url(#server-recess)"/>
+    <use xlink:href="#lower-server" fill="url(#lower-server-color)"/>
+    <use xlink:href="#lower-server" fill="url(#lower-server-light)"/>
+    <use xlink:href="#server-lip-edge" stroke="url(#server-lip)" stroke-width="3.2" stroke-linecap="round"/>
+    <use xlink:href="#upper-server" fill="url(#upper-server-color)"/>
+    <use xlink:href="#upper-server" fill="url(#upper-server-light)"/>
+    </g>
+    <use xlink:href="#server-fold-edge" stroke="url(#fold-rim)" stroke-width="2.8" stroke-linecap="round"/>
+    <use xlink:href="#server-face" stroke="#7573ff" stroke-opacity=".2" stroke-width="1.2"/>
+
+    <!-- The roof and its bevel share the same diagonal as both panels. -->
+    <use xlink:href="#right-roof" fill="url(#right-roof-color)"/>
+    <use xlink:href="#right-roof" fill="url(#right-roof-light)"/>
+    <use xlink:href="#right-roof" fill="url(#roof-reflection)"/>
+    <use xlink:href="#right-roof-bevel" fill="url(#roof-rim)" clip-path="url(#right-roof-clip)"/>
+
+    <!-- Uniform porcelain strokes in panel coordinates. -->
+    <g id="terminal-glyphs" stroke-linecap="round" stroke-linejoin="round">
+      <g filter="url(#porcelain-glow)" opacity=".16" stroke="#d2dbff" stroke-width="30">
+    <use xlink:href="#prompt"/>
+    <use xlink:href="#cursor"/>
+      </g>
+      <g stroke="#f7f5ff" stroke-width="29.2" opacity=".7">
+    <use xlink:href="#prompt"/>
+    <use xlink:href="#cursor"/>
+      </g>
+    <use xlink:href="#prompt" stroke="url(#prompt-color)" stroke-width="28"/>
+    <use xlink:href="#cursor" stroke="url(#cursor-color)" stroke-width="28"/>
+    </g>
+
+    <!-- The two indicator axes are parallel to the server divider. -->
+    <g stroke-linecap="round">
+    <use xlink:href="#status-light" stroke="url(#status-color)" stroke-width="22"/>
+    <use xlink:href="#status-glint" stroke="#78ffff" stroke-opacity=".4" stroke-width="1.6"/>
+      <g transform="translate(0 186.5678)">
+    <use xlink:href="#status-light" stroke="url(#status-color)" stroke-width="22"/>
+    <use xlink:href="#status-glint" stroke="#78ffff" stroke-opacity=".4" stroke-width="1.6"/>
+      </g>
+    </g>
+  </g>
 </svg>

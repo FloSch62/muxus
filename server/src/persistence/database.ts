@@ -403,7 +403,69 @@ const MIGRATIONS = [
         ADD COLUMN terminal_background_color TEXT;
     `,
   },
+  {
+    version: 22,
+    name: 'remote-desktop-hosts',
+    run: addRemoteDesktopHosts,
+  },
 ] as const;
+
+/** Kinds stored as Muxus-owned saved hosts (everything but OpenSSH metadata rows). */
+const SAVED_HOST_KINDS = ['ssh', 'serial', 'telnet', 'rdp', 'vnc'] as const;
+const SAVED_HOST_KINDS_SQL = `(${SAVED_HOST_KINDS.map((kind) => `'${kind}'`).join(', ')})`;
+
+/**
+ * RDP and VNC hosts need their kinds admitted by the connection_profiles
+ * CHECK constraint, which SQLite can only change by rebuilding the table.
+ * The rebuild reuses the table's own stored definition so every column added
+ * by earlier migrations carries over unchanged.
+ */
+function addRemoteDesktopHosts(db: DatabaseSync): void {
+  const table = db
+    .prepare(`SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'connection_profiles'`)
+    .get();
+  const definition = String(table?.sql ?? '');
+  const previousKinds = `kind IN ('openssh', 'ssh', 'local', 'serial', 'telnet')`;
+  if (!definition.includes(previousKinds)) {
+    throw new Error('connection_profiles has an unexpected definition; cannot add RDP and VNC hosts');
+  }
+  const rebuilt = definition
+    .replace(previousKinds, `kind IN ('openssh', 'ssh', 'local', 'serial', 'telnet', 'rdp', 'vnc')`)
+    .replace(/^CREATE TABLE\s+"?connection_profiles"?/, 'CREATE TABLE connection_profiles_rebuilt');
+  const indexes = db
+    .prepare(`
+      SELECT sql FROM sqlite_schema
+      WHERE type = 'index' AND tbl_name = 'connection_profiles' AND sql IS NOT NULL
+    `)
+    .all()
+    .map((row) => String(row.sql));
+  // Foreign keys stay on inside the migration transaction, so dropping the
+  // old table cascades into connection_tags; keep those rows aside.
+  db.exec(`
+    CREATE TEMP TABLE connection_tags_rebuild AS SELECT * FROM connection_tags;
+    ${rebuilt};
+    INSERT INTO connection_profiles_rebuilt SELECT * FROM connection_profiles;
+    DROP TABLE connection_profiles;
+    ALTER TABLE connection_profiles_rebuilt RENAME TO connection_profiles;
+  `);
+  for (const index of indexes) db.exec(index);
+  db.exec(`
+    INSERT INTO connection_tags SELECT * FROM connection_tags_rebuild;
+    DROP TABLE connection_tags_rebuild;
+
+    -- Pinned RDP certificates, and VNC RSA-AES keys, per host, port and route.
+    CREATE TABLE remote_desktop_certificates (
+      host TEXT NOT NULL,
+      port INTEGER NOT NULL CHECK(port BETWEEN 1 AND 65535),
+      gateway TEXT NOT NULL DEFAULT '',
+      fingerprint TEXT NOT NULL,
+      subject TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(host, port, gateway)
+    ) STRICT;
+  `);
+}
 
 function migrateDraftPasswordVault(db: DatabaseSync): void {
   const columns = new Set(
@@ -502,7 +564,7 @@ export interface FolderSettingsRow {
 }
 
 export interface NativeConnectionInput {
-  kind: 'ssh' | 'local' | 'serial' | 'telnet';
+  kind: 'ssh' | 'local' | 'serial' | 'telnet' | 'rdp' | 'vnc';
   name: string;
   config: Record<string, unknown>;
   credentialRefId?: string;
@@ -640,6 +702,7 @@ export function assertSecretFree(value: unknown, location = 'config'): void {
 export class MuxusDatabase {
   private readonly db: DatabaseSync;
   private readonly metadataByAlias: StatementSync;
+  private readonly folderSettingsByKey: StatementSync;
 
   constructor(readonly filename: string) {
     if (filename !== ':memory:') {
@@ -680,6 +743,8 @@ export class MuxusDatabase {
       LEFT JOIN connection_groups AS groups ON groups.id = profiles.group_id
       WHERE profiles.kind = 'openssh' AND profiles.ssh_alias = ?
     `);
+    // Prepared once: the host list looks up every folder of every host.
+    this.folderSettingsByKey = this.db.prepare('SELECT * FROM folder_settings WHERE path_key = ?');
   }
 
   close(): void {
@@ -830,7 +895,7 @@ export class MuxusDatabase {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const savedExists = this.db.prepare(
-        `SELECT id FROM connection_profiles WHERE id = ? AND kind IN ('ssh', 'serial', 'telnet')`,
+        `SELECT id FROM connection_profiles WHERE id = ? AND kind IN ${SAVED_HOST_KINDS_SQL}`,
       );
       const update = this.db.prepare(`
         UPDATE connection_profiles
@@ -1188,7 +1253,7 @@ export class MuxusDatabase {
         SELECT profiles.*, groups.name AS group_name
         FROM connection_profiles AS profiles
         LEFT JOIN connection_groups AS groups ON groups.id = profiles.group_id
-        WHERE profiles.kind IN ('ssh', 'serial', 'telnet')
+        WHERE profiles.kind IN ${SAVED_HOST_KINDS_SQL}
         ORDER BY profiles.sort_order, profiles.name COLLATE NOCASE
       `)
       .all()
@@ -1208,7 +1273,7 @@ export class MuxusDatabase {
       .prepare(`SELECT kind FROM connection_profiles WHERE id = ?`)
       .get(id) as { kind?: unknown } | undefined;
     if (current) {
-      if (current.kind !== 'ssh' && current.kind !== 'serial' && current.kind !== 'telnet') {
+      if (!(SAVED_HOST_KINDS as readonly unknown[]).includes(current.kind)) {
         throw new Error('profile ID belongs to a different connection type');
       }
       this.db
@@ -1235,7 +1300,7 @@ export class MuxusDatabase {
         SELECT profiles.*, groups.name AS group_name
         FROM connection_profiles AS profiles
         LEFT JOIN connection_groups AS groups ON groups.id = profiles.group_id
-        WHERE profiles.id = ? AND profiles.kind IN ('ssh', 'serial', 'telnet')
+        WHERE profiles.id = ? AND profiles.kind IN ${SAVED_HOST_KINDS_SQL}
       `)
       .get(id);
     return row ? savedHostFromRow(row) : undefined;
@@ -1247,7 +1312,7 @@ export class MuxusDatabase {
         SELECT profiles.*, groups.name AS group_name
         FROM connection_profiles AS profiles
         LEFT JOIN connection_groups AS groups ON groups.id = profiles.group_id
-        WHERE profiles.id = ? AND profiles.kind IN ('ssh', 'serial', 'telnet')
+        WHERE profiles.id = ? AND profiles.kind IN ${SAVED_HOST_KINDS_SQL}
       `)
       .get(id);
     if (!current) throw new Error('saved host not found');
@@ -1312,7 +1377,7 @@ export class MuxusDatabase {
         SET last_connected_at = CURRENT_TIMESTAMP,
             connect_count = connect_count + 1,
             updated_at = CURRENT_TIMESTAMP
-        WHERE id = ? AND kind IN ('ssh', 'serial', 'telnet')
+        WHERE id = ? AND kind IN ${SAVED_HOST_KINDS_SQL}
       `)
       .run(id);
   }
@@ -1320,7 +1385,7 @@ export class MuxusDatabase {
   deleteSavedHostProfile(id: string): boolean {
     const deleted =
       this.db
-        .prepare(`DELETE FROM connection_profiles WHERE id = ? AND kind IN ('ssh', 'serial', 'telnet')`)
+        .prepare(`DELETE FROM connection_profiles WHERE id = ? AND kind IN ${SAVED_HOST_KINDS_SQL}`)
         .run(id).changes > 0;
     if (deleted) {
       this.db
@@ -1328,6 +1393,45 @@ export class MuxusDatabase {
         .run(`profile:${id}`);
     }
     return deleted;
+  }
+
+  /**
+   * The RDP certificate or VNC server key trusted for a host, keyed by the SSH
+   * gateway it is reached through. `subject` describes what was pinned.
+   */
+  trustedDesktopIdentity(
+    host: string,
+    port: number,
+    gateway = '',
+  ): { fingerprint: string; subject: string } | undefined {
+    const row = this.db
+      .prepare(`
+        SELECT fingerprint, subject FROM remote_desktop_certificates
+        WHERE host = ? AND port = ? AND gateway = ?
+      `)
+      .get(host.toLowerCase(), port, gateway);
+    return row ? { fingerprint: String(row.fingerprint), subject: String(row.subject) } : undefined;
+  }
+
+  trustDesktopIdentity(input: {
+    host: string;
+    port: number;
+    gateway?: string;
+    fingerprint: string;
+    subject: string;
+  }): void {
+    requireNonEmpty(input.host, 'host');
+    requireNonEmpty(input.fingerprint, 'fingerprint');
+    this.db
+      .prepare(`
+        INSERT INTO remote_desktop_certificates(host, port, gateway, fingerprint, subject)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(host, port, gateway) DO UPDATE SET
+          fingerprint = excluded.fingerprint,
+          subject = excluded.subject,
+          updated_at = CURRENT_TIMESTAMP
+      `)
+      .run(input.host.toLowerCase(), input.port, input.gateway ?? '', input.fingerprint, input.subject);
   }
 
   saveWorkspace(
@@ -1811,9 +1915,7 @@ export class MuxusDatabase {
   folderSettingsForPath(path: string): FolderSettingsRow | undefined {
     const key = folderPathKey(path);
     if (!key) return undefined;
-    const row = this.db
-      .prepare('SELECT * FROM folder_settings WHERE path_key = ?')
-      .get(key);
+    const row = this.folderSettingsByKey.get(key);
     return row ? folderSettingsFromRow(row) : undefined;
   }
 

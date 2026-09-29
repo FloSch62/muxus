@@ -1,10 +1,15 @@
 import { create } from 'zustand';
 import type { SavedHostProfile, SshHostEntry } from '@muxus/shared';
 
-/** Unified editor state for OpenSSH entries and Muxus-owned Telnet/serial hosts. */
+/** Unified editor state for OpenSSH entries and Muxus-owned Telnet/serial/RDP/VNC hosts. */
 export type HostEditorState =
   | false
-  | { mode: 'new'; prefillTarget?: string; kind?: 'ssh' | 'telnet' | 'serial' }
+  | {
+      mode: 'new';
+      prefillTarget?: string;
+      group?: string;
+      kind?: SavedHostProfile['kind'];
+    }
   | { mode: 'duplicate'; entry: SshHostEntry }
   | { mode: 'edit'; entry: SshHostEntry }
   | { mode: 'duplicate-profile'; entry: SavedHostProfile }

@@ -30,6 +30,29 @@ afterEach(async () => {
 });
 
 describe('hybrid session history store', () => {
+  it('upgrades an existing transcript database and retains line times after reopening', async () => {
+    root = mkdtempSync(path.join(os.tmpdir(), 'muxus-history-test-'));
+    store = await SessionHistoryStore.open({ root, settings });
+    const policy = { maxPartBytes: 64 * 1024, maxParts: 2 };
+    const time = '2026-09-24T10:00:00.000Z';
+    const id = store.beginSession({ profileKey: 'local', title: 'Local', kind: 'local', host: 'local', startedAt: time, captureInput: false }, policy);
+    store.append(id, [{ sequence: 1, recordedAt: time, elapsedMs: 0, direction: 'output', raw: Buffer.from('old\n'), text: 'old\n' }], policy);
+    await store.close();
+    const database = new DatabaseSync(path.join(root, 'session-history.sqlite'));
+    database.exec('ALTER TABLE transcript_chunks DROP COLUMN line_timestamps; DELETE FROM history_schema_migrations WHERE version = 2');
+    database.close();
+    store = await SessionHistoryStore.open({ root, settings });
+    expect((await store.sessionLog(id))?.events[0]?.text).toBe('old\n');
+    expect((await store.sessionLog(id))?.events[0]?.lineTimestamps).toBeUndefined();
+    const next = store.beginSession({ profileKey: 'local', title: 'New', kind: 'local', host: 'local', startedAt: time, captureInput: false }, policy);
+    const lineTimestamps = [{ offset: 0, recordedAt: time }];
+    store.append(next, [{ sequence: 1, recordedAt: time, elapsedMs: 0, direction: 'output', raw: Buffer.from('new\n'), text: 'new\n', lineTimestamps }], policy);
+    store.finishSession(next, 'completed', time);
+    await store.close();
+    store = await SessionHistoryStore.open({ root, settings });
+    expect((await store.sessionLog(next))?.events[0]?.lineTimestamps).toEqual(lineTimestamps);
+  });
+
   it('rotates compressed raw segments and searches normalized chunks', async () => {
     root = mkdtempSync(path.join(os.tmpdir(), 'muxus-history-test-'));
     store = await SessionHistoryStore.open({ root, settings });
@@ -186,6 +209,31 @@ describe('hybrid session history store', () => {
       .toEqual([expect.objectContaining({ id: ids[0], pinned: true })]);
     expect(await store.setPinned(ids[0]!, false)).toBe(true);
     expect((await store.sessionHistory({ limit: 10 })).sessions).toEqual([]);
+  });
+
+  it('applies retention at open before answering any later request', async () => {
+    root = mkdtempSync(path.join(os.tmpdir(), 'muxus-history-test-'));
+    store = await SessionHistoryStore.open({ root, settings });
+    const policy = { maxPartBytes: 1024 * 1024, maxParts: 2 };
+    const id = store.beginSession(
+      {
+        profileKey: 'ssh:edge',
+        title: 'Expired',
+        kind: 'ssh',
+        host: 'edge',
+        startedAt: '2020-01-01T10:00:00.000Z',
+        captureInput: false,
+      },
+      policy,
+    );
+    store.finishSession(id, 'completed', '2020-01-01T10:01:00.000Z');
+    await store.close();
+
+    // The startup pass runs after `ready` so the server need not wait for its
+    // disk walk, but the worker still finishes it before the next request.
+    store = await SessionHistoryStore.open({ root, settings: { ...settings, maxAgeDays: 1 } });
+    expect((await store.sessionHistory({ limit: 10 })).sessions).toEqual([]);
+    expect(readdirSync(path.join(root, 'sessions'))).toEqual([]);
   });
 
   it('never evicts an active session and reports quota suspension', async () => {

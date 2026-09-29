@@ -42,6 +42,16 @@ type** (SSH, local, serial, Telnet) and **date range**.
 Opening a session displays its transcript, and allows copying the complete clean log,
 pinning the session so it is never evicted, or deleting it.
 
+Enable **Show timestamps (UTC)** to prefix each line with an ISO 8601 timestamp,
+including milliseconds. The toggle also applies to **Clean log** downloads and copying
+the complete clean log. It starts off when opening the dialog.
+
+For new recordings, each timestamp is when Muxus received the last change to that
+line, including command echoes and terminal redraws. It is not the remote shell's
+exact command execution time. Older recordings fall back to approximate event times;
+the dialog indicates when this applies. Raw logs and HTML replay keep their existing
+formats.
+
 ## Exports
 
 | Button | What you get |

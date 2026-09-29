@@ -56,6 +56,28 @@ describe('buildChain', () => {
     expect(chain[1]!.hopLabel).toBeUndefined();
   });
 
+  it('uses the Muxus keepalive fallback without overriding SSH configuration', () => {
+    const doc = docOf(
+      [
+        'Host app',
+        '  ProxyJump bastion',
+        '  ServerAliveInterval 90',
+        '',
+        'Host bastion',
+        '  HostName bastion.example.com',
+      ].join('\n'),
+    );
+
+    const chain = buildChain(doc, {
+      target: 'app',
+      keepaliveIntervalSeconds: 30,
+    });
+
+    expect(chain).toHaveLength(2);
+    expect(chain[0]!.resolved.serverAliveInterval).toBe(30);
+    expect(chain[1]!.resolved.serverAliveInterval).toBe(90);
+  });
+
   it('expands nested and comma-listed jumps in dial order', () => {
     const doc = docOf(
       ['Host app', '  ProxyJump j1,ops@j2:2202', '', 'Host j1', '  HostName j1.example.com', '  ProxyJump j0', '', 'Host j0', '  HostName j0.example.com'].join(
@@ -174,6 +196,8 @@ describe('saved SSH profile resolution', () => {
               target: 'current.example.test',
               useConfig: false,
               user: 'current-user',
+              // Not writable from the app; simulates an API-written profile.
+              keepaliveIntervalSeconds: 120,
             }
           : undefined,
     });
@@ -185,11 +209,23 @@ describe('saved SSH profile resolution', () => {
         target: 'stale.example.test',
         useConfig: false,
         user: 'stale-user',
+        keepaliveIntervalSeconds: 30,
       }),
     ).toMatchObject({
       target: 'current.example.test',
       user: 'current-user',
+      keepaliveIntervalSeconds: 30,
     });
+    // The keepalive preference travels with each connect; a stored value must
+    // not resurface when the renderer's preference says configuration-only.
+    expect(
+      manager.resolveProfile({
+        kind: 'ssh',
+        profileId: 'saved-1',
+        target: 'stale.example.test',
+        useConfig: false,
+      }).keepaliveIntervalSeconds,
+    ).toBeUndefined();
     expect(() =>
       manager.resolveProfile({
         kind: 'ssh',
@@ -291,6 +327,19 @@ describe('passive SSH transport health', () => {
 });
 
 describe('muxKey', () => {
+  it('shares transports across keepalive policies', () => {
+    // Keepalive matters while establishing a transport, not for attaching to
+    // an established one — a preference change must not fork sharing (and
+    // demand a second login) while the existing transport still works.
+    const doc = docOf('');
+    const withoutKeepalive = muxKey(buildChain(doc, { target: 'web' }));
+    const withKeepalive = muxKey(
+      buildChain(doc, { target: 'web', keepaliveIntervalSeconds: 30 }),
+    );
+
+    expect(withKeepalive).toBe(withoutKeepalive);
+  });
+
   it('matches when different targets resolve to the same dial plan', () => {
     const doc = docOf(
       [

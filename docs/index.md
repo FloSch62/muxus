@@ -1,23 +1,10 @@
 ---
 icon: lucide/house
+hero: true
 hide:
   - navigation
   - toc
 ---
-
-<div class="muxus-hero" markdown>
-
-# ![](assets/muxus.svg){ .muxus-hero-logo } Muxus
-
-<p class="tagline">
-A free, open-source SSH, Telnet and serial client. Split panes, saved workspaces, SFTP,
-a remote editor, saved tunnels, and images in the terminal.
-</p>
-
-[Get started :material-arrow-right:](install/index.md){ .md-button .md-button--primary }
-[Download :simple-github:](https://github.com/FloSch62/muxus/releases){ .md-button }
-
-</div>
 
 <div class="muxus-tour">
   <video class="only-light" poster="assets/screenshots/tour-poster.png"
@@ -98,6 +85,15 @@ use the same local database.
 
     [:octicons-arrow-right-24: File browser](guide/files.md)
 
+-   :material-monitor: **RDP and VNC**
+
+    ---
+
+    Remote desktops open as tabs beside your terminals, with NLA, certificate pinning,
+    clipboard sharing and SSH gateways. Nothing extra to install.
+
+    [:octicons-arrow-right-24: Remote desktop](guide/remote-desktop.md)
+
 -   :material-swap-horizontal: **Persistent tunnels**
 
     ---
@@ -111,8 +107,8 @@ use the same local database.
 
     ---
 
-    Save a whole layout of local shells, SSH, Telnet and serial sessions in resizable panes
-    with tabs. Reopen it, reconnect it, or set it as your startup workspace.
+    Save a whole layout of local shells, SSH, Telnet, serial and remote desktop sessions in
+    resizable panes with tabs. Reopen it, reconnect it, or set it as your startup workspace.
 
     [:octicons-arrow-right-24: Workspaces](guide/workspaces.md)
 
@@ -148,3 +144,11 @@ use the same local database.
     [:octicons-arrow-right-24: Quickstart](quickstart.md)
 
 </div>
+
+## Made by
+
+Muxus is built by me (FloSch), in the open and in my spare time. It is free and stays free.
+If it saves you time, a coffee keeps the releases coming. [More about me](about.md).
+
+[:simple-buymeacoffee: Buy me a coffee](https://www.buymeacoffee.com/FloSch62){ .md-button .md-button--primary }
+[:material-star-outline: Star on GitHub](https://github.com/FloSch62/muxus){ .md-button }

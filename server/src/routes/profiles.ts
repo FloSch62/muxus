@@ -7,9 +7,11 @@ import type {
   SavedHostProfilesResponse,
 } from '@muxus/shared';
 import {
+  rdpProfileSchema,
   serialProfileSchema,
   sshProfileSchema,
   telnetProfileSchema,
+  vncProfileSchema,
 } from '@muxus/shared/ws-protocol';
 import type { AppContext } from '../app.js';
 import { sendError } from '../util/errors.js';
@@ -19,13 +21,17 @@ const savedProfileSchema = z.object({
   id: z.string().min(1).max(200).optional(),
   name: z.string().trim().min(1).max(200),
   profile: z.discriminatedUnion('kind', [
-    sshProfileSchema,
+    // The keepalive fallback is an application preference each connect sends
+    // for itself — never a stored connection field that could outvote it.
+    sshProfileSchema.omit({ keepaliveIntervalSeconds: true }),
     telnetProfileSchema,
     serialProfileSchema,
+    rdpProfileSchema,
+    vncProfileSchema,
   ]),
 });
 
-/** Muxus-owned SSH, Telnet, and serial hosts. */
+/** Muxus-owned SSH, Telnet, serial, RDP, and VNC hosts. */
 export function registerProfileRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/profiles', (): SavedHostProfilesResponse => ({
     profiles: ctx.database.listSavedHostProfiles(),

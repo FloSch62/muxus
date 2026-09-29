@@ -9,6 +9,7 @@ import {
 import { DEFAULT_SIDEBAR_WIDTH } from '../../../client/src/sidebar-width.js';
 import {
   DEFAULT_INACTIVE_PANE_DIM_STRENGTH,
+  DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
   MONO_FONT_FALLBACK,
   clampInactivePaneDimStrength,
   isLocalShellProfileArray,
@@ -18,6 +19,11 @@ import {
   terminalSchemeIdForMode,
   usePrefsStore,
 } from '../../../client/src/state/prefs.js';
+import {
+  BUILTIN_HIGHLIGHT_PROFILES,
+  NOKIA_SRLINUX_HIGHLIGHT_PROFILE,
+  NOKIA_SROS_HIGHLIGHT_PROFILE,
+} from '../../../client/src/builtin-highlight-profiles.js';
 
 const ubuntuProfile = {
   id: 'ubuntu',
@@ -27,6 +33,23 @@ const ubuntuProfile = {
   cwd: 'C:\\work',
   startupCommand: 'cd project',
 };
+
+describe('SSH keepalive preference', () => {
+  it('defaults to a 30-second fallback', () => {
+    expect(usePrefsStore.getInitialState().sshKeepaliveIntervalSeconds).toBe(
+      DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
+    );
+  });
+
+  it('keeps valid values and drops malformed persisted values', () => {
+    expect(migratePrefsState({ sshKeepaliveIntervalSeconds: 60 }, 13)).toEqual({
+      sshKeepaliveIntervalSeconds: 60,
+    });
+    expect(
+      migratePrefsState({ sshKeepaliveIntervalSeconds: -1, monoFontSize: 16 }, 13),
+    ).toEqual({ monoFontSize: 16 });
+  });
+});
 
 describe('appearance preference', () => {
   it('defaults new installations to the system appearance', () => {
@@ -97,6 +120,19 @@ describe('split pane focus preferences', () => {
     expect(paneFocusOpacity(false, true, 0.4)).toBe(0.6);
     expect(clampInactivePaneDimStrength(Number.NaN)).toBe(DEFAULT_INACTIVE_PANE_DIM_STRENGTH);
     expect(paneFocusOpacity(false, true, 1)).toBe(0.4);
+  });
+});
+
+describe('GPU renderer preference', () => {
+  it('defaults to the DOM renderer', () => {
+    expect(usePrefsStore.getInitialState().webglRenderer).toBe(false);
+  });
+
+  it('keeps a boolean choice and drops malformed persisted values', () => {
+    expect(migratePrefsState({ webglRenderer: true }, 12)).toEqual({ webglRenderer: true });
+    expect(migratePrefsState({ webglRenderer: 'off', monoFontSize: 16 }, 12)).toEqual({
+      monoFontSize: 16,
+    });
   });
 });
 
@@ -270,9 +306,33 @@ describe('keyword highlighting profile preferences', () => {
     ],
   };
 
+  // Also covers a built-in profile the user deleted after v15 seeded it.
   it('keeps valid reusable profiles during preference migration', () => {
-    expect(migratePrefsState({ keywordHighlightProfiles: [profile] }, 11)).toEqual({
+    expect(migratePrefsState({ keywordHighlightProfiles: [profile] }, 15)).toEqual({
       keywordHighlightProfiles: [profile],
+    });
+  });
+
+  it('ships the built-in profiles with new installations', () => {
+    expect(usePrefsStore.getState().keywordHighlightProfiles).toEqual(
+      BUILTIN_HIGHLIGHT_PROFILES,
+    );
+  });
+
+  it('names built-in rules that an earlier build seeded without names', () => {
+    const seeded = {
+      ...NOKIA_SROS_HIGHLIGHT_PROFILE,
+      rules: NOKIA_SROS_HIGHLIGHT_PROFILE.rules.map(({ name: _name, ...rule }) => rule),
+    };
+    expect(migratePrefsState({ keywordHighlightProfiles: [seeded] }, 15)).toEqual({
+      keywordHighlightProfiles: [NOKIA_SROS_HIGHLIGHT_PROFILE],
+    });
+  });
+
+  it('adds built-in profiles once to an existing installation, keeping edited copies', () => {
+    const edited = { ...NOKIA_SROS_HIGHLIGHT_PROFILE, name: 'Edge SR OS', rules: [] };
+    expect(migratePrefsState({ keywordHighlightProfiles: [profile, edited] }, 14)).toEqual({
+      keywordHighlightProfiles: [profile, edited, NOKIA_SRLINUX_HIGHLIGHT_PROFILE],
     });
   });
 

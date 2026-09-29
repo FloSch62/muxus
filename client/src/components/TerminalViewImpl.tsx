@@ -30,6 +30,9 @@ import { SearchAddon, type ISearchOptions } from '@xterm/addon-search';
 import { SerializeAddon } from '@xterm/addon-serialize';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+// Type-only: the addon stays lazily imported at runtime so it lands in its
+// own async chunk instead of the eager xterm bundle.
+import type { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import type { AppInfo, TerminalServerMessage } from '@muxus/shared';
 import {
@@ -50,6 +53,7 @@ import { showToast } from '../state/toast.js';
 import { broadcastTerminalInput } from '../state/multi-exec.js';
 import {
   TERMINAL_SYMBOL_FONT,
+  sshKeepalivePrefField,
   terminalFontStack,
   terminalSchemeIdForMode,
   usePrefsStore,
@@ -236,6 +240,9 @@ interface PendingPaste {
   resolve: () => void;
 }
 
+/** One warning per page load: the failure is machine-wide, not per-terminal. */
+let webglUnavailableWarned = false;
+
 export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; active: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -245,6 +252,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const terminalInputReadyRef = useRef(false);
   const serializeRef = useRef<SerializeAddon | null>(null);
   const imageRef = useRef<ImageAddon | null>(null);
+  const webglAddonRef = useRef<WebglAddon | null>(null);
   const keywordHighlighterRef = useRef<KeywordHighlighter | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   /** xterm's native default is enabled on macOS and disabled elsewhere. */
@@ -301,6 +309,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const cursorBlink = usePrefsStore((s) => s.cursorBlink);
   const cursorStyle = usePrefsStore((s) => s.cursorStyle);
   const scrollback = usePrefsStore((s) => s.scrollback);
+  const webglRenderer = usePrefsStore((s) => s.webglRenderer);
   const applicationSchemeId = usePrefsStore((prefs) =>
     terminalSchemeIdForMode(prefs, theme.palette.mode),
   );
@@ -395,6 +404,15 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     if (!shouldFitTerminal(containerRef.current)) return false;
     fitRef.current?.fit();
     return true;
+  };
+
+  /** Return to the DOM renderer — the pref-off path and context loss share it. */
+  const dropWebglAddon = () => {
+    const webgl = webglAddonRef.current;
+    if (!webgl) return;
+    webglAddonRef.current = null;
+    webgl.dispose();
+    fitTerminal();
   };
 
   const applyZoom = (action: 'in' | 'out' | 'reset') => {
@@ -626,6 +644,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     ])
       .then(() => {
         if (termRef.current !== term) return;
+        // The WebGL atlas caches glyphs rasterized with the fallback face;
+        // refresh alone would repaint those same bitmaps.
+        webglAddonRef.current?.clearTextureAtlas();
         term.refresh(0, term.rows - 1);
         fitTerminal();
       })
@@ -944,6 +965,12 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         // it was not when the terminal mounted. Measure now so the remote PTY
         // starts at the size on screen instead of being resized a beat later.
         if (!fitted) fitted = fitTerminal();
+        // Read the preference at send time, the way dialConnection does, so a
+        // change made while this socket was opening still applies.
+        const profile =
+          tab.profile.kind === 'ssh'
+            ? { ...tab.profile, ...sshKeepalivePrefField() }
+            : tab.profile;
         socket.send(JSON.stringify(
           attachTerminalId
             ? {
@@ -954,7 +981,8 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
               }
             : {
                 op: 'connect',
-                profile: tab.profile,
+                profile,
+                freshTransport: tab.freshTransport,
                 title: tab.title,
                 cols: term.cols,
                 rows: term.rows,
@@ -1083,6 +1111,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
               : shouldWaitForTerminalOutput(tab.profile.kind, receivedTerminalOutput);
             const sftpAvailable =
               tab.profile.kind === 'ssh' ? ctl.sftpAvailable !== false : undefined;
+            // Clear only the token this connect carried: a ready outracing the
+            // effect teardown must not erase a newer gesture's token.
+            const tokenUnchanged =
+              useTabsStore
+                .getState()
+                .tabs.find((candidate) => candidate.id === tab.id)
+                ?.freshTransport === tab.freshTransport;
             updateTab(tab.id, {
               status: transportSuspect
                 ? 'interrupted'
@@ -1096,6 +1131,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
               sftpAvailable,
               ...(sftpAvailable === false ? { sftpOpen: false } : {}),
               transferId: undefined,
+              // The replacement connection is live; retries from here on may
+              // multiplex normally again.
+              ...(tokenUnchanged ? { freshTransport: undefined } : {}),
             });
             if (pendingTransferId) {
               completeTabTransfer(pendingTransferId);
@@ -1387,6 +1425,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       searchRef.current = null;
       serializeRef.current = null;
       imageRef.current = null;
+      webglAddonRef.current = null;
       keywordHighlighterRef.current = null;
       termRef.current = null;
       terminalInputReadyRef.current = false;
@@ -1422,11 +1461,59 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         ) {
           return;
         }
+        webglAddonRef.current?.clearTextureAtlas();
         term.refresh(0, term.rows - 1);
         fitTerminal();
       })
       .catch(() => undefined);
   }, [monoFontSize, fontFamily, lineHeight, cursorBlink, cursorStyle, scrollback, terminalTheme, generation]);
+
+  // The GPU renderer is a live preference: loading the addon hands painting
+  // over to WebGL, disposing it drops back to the DOM renderer — no session
+  // reopen either way. The import stays lazy so the chunk lands outside the
+  // eager bundle, and a context loss (backgrounded tab, GPU driver reset)
+  // disposes the addon, which also returns to the DOM renderer.
+  //
+  // The renderers disagree on cell width: DOM keeps the fractional measured
+  // width (14px JetBrains Mono = 8.4px) while WebGL floors it to whole device
+  // pixels (8.0). Swapping without a refit leaves the grid sized for the other
+  // renderer — dead space beside the pane and a visibly different pitch — so
+  // every swap refits.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    if (!webglRenderer) {
+      dropWebglAddon();
+      return;
+    }
+    if (webglAddonRef.current) return;
+    let cancelled = false;
+    void import('@xterm/addon-webgl')
+      .then(({ WebglAddon }) => {
+        if (cancelled || termRef.current !== term || webglAddonRef.current) return;
+        const webgl = new WebglAddon();
+        webgl.onContextLoss(() => dropWebglAddon());
+        try {
+          term.loadAddon(webgl);
+        } catch (err) {
+          webgl.dispose();
+          throw err;
+        }
+        // Only a live addon may reach the ref: a failed activation must not
+        // suppress retries or make toggle-off dispose a renderer that never ran.
+        webglAddonRef.current = webgl;
+        fitTerminal();
+      })
+      .catch(() => {
+        // Chunk fetch failed or WebGL2 is unusable — the DOM renderer stays.
+        if (webglUnavailableWarned) return;
+        webglUnavailableWarned = true;
+        showToast('warning', 'GPU rendering is unavailable here — terminals keep the standard renderer.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [webglRenderer, generation]);
 
   useEffect(() => {
     keywordHighlighterRef.current?.setRules(keywordHighlights);

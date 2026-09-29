@@ -46,7 +46,7 @@ the arrows. **Even out panes** in the pane menu balances the whole layout.
 ## Tabs
 
 Each pane has a browser-style tab strip. A tab is one session: local shell, SSH, Telnet,
-serial, or a remote editor.
+serial, a remote desktop, or a remote editor.
 
 <figure markdown="span">
   ![The tab context menu](../assets/screenshots/tab-menu.png#only-light){ .shadow }

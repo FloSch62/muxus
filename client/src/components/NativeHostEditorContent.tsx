@@ -173,7 +173,7 @@ export function NativeHostEditorContent({
       typeKind={state.mode === 'new' ? kind : undefined}
       onTypeChange={
         state.mode === 'new'
-          ? (next) => setState({ mode: 'new', kind: next, prefillTarget: state.prefillTarget })
+          ? (next) => setState({ ...state, kind: next })
           : undefined
       }
       sections={sections}

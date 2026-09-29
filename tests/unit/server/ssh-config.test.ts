@@ -115,6 +115,29 @@ describe('listHosts', () => {
     ]);
   });
 
+  it('keeps ForwardX11 unset unless a matching block sets it', () => {
+    const hosts = hostsOf(
+      [
+        'Host gui',
+        '  ForwardX11 yes',
+        'Host plain',
+        '  HostName plain.example.test',
+        'Host console',
+        '  ForwardX11 no',
+        '  ForwardX11 yes',
+      ].join('\n'),
+    );
+    const [gui, plain, console] = hosts;
+    expect(gui!.options.forwardX11).toBe(true);
+    expect(gui!.resolved.forwardX11).toBe(true);
+    expect(plain!.options.forwardX11).toBeUndefined();
+    expect(plain!.resolved.forwardX11).toBeUndefined();
+    // First obtained value wins; the repeat is preserved as an extra.
+    expect(console!.options.forwardX11).toBe(false);
+    expect(console!.options.extras).toEqual([{ keyword: 'ForwardX11', value: 'yes' }]);
+    expect(console!.resolved.forwardX11).toBe(false);
+  });
+
   it('resolves a single-quoted Windows identity path with spaces', () => {
     const windowsKey = String.raw`C:\Users\toweber\OneDrive - Nokia\NPI\SSH Key\keypair\securecrt_created\toweber`;
     const app = hostsOf(['Host windows', `  IdentityFile '${windowsKey}'`].join('\n'))[0]!;
@@ -489,5 +512,71 @@ describe('pattern + spec helpers', () => {
     expect(parseProxyJumpList('a, b@c:22 ,d')).toEqual(['a', 'b@c:22', 'd']);
     expect(parseProxyJumpList('none')).toEqual([]);
     expect(parseProxyJumpList(undefined)).toEqual([]);
+  });
+});
+
+describe('host resolution at scale', () => {
+  it('keeps config order across named, wildcard, negated and top-level entries', () => {
+    const doc = loadConfigDocument(write(`User top
+Host web-1
+  User alice
+Host web-*
+  User bob
+  Port 2201
+  IdentityFile /keys/web
+Host web-1 !web-2
+  Port 2202
+Host !web-1
+  User nobody
+Host *
+  IdentityFile /keys/all
+Host web-2 db
+  IdentityFile /keys/named
+Host other
+  User carol
+`));
+    const web1 = resolveHost(doc, 'web-1');
+    // The top-level User comes first and wins; later blocks only fill gaps.
+    expect(web1).toMatchObject({ user: 'top', port: 2201 });
+    expect(web1.identityFiles).toEqual(['/keys/web', '/keys/all']);
+    const web2 = resolveHost(doc, 'web-2');
+    expect(web2).toMatchObject({ user: 'top', port: 2201 });
+    // Named blocks interleave with wildcard blocks in file order.
+    expect(web2.identityFiles).toEqual(['/keys/web', '/keys/all', '/keys/named']);
+    expect(resolveHost(doc, 'db').identityFiles).toEqual(['/keys/all', '/keys/named']);
+    // A negation-only block never matches, and neither does another host's block.
+    expect(resolveHost(doc, 'unknown')).toMatchObject({ user: 'top', port: 22 });
+  });
+
+  it('matches concrete names exactly, like the glob they are', () => {
+    const doc = loadConfigDocument(write(`Host web.internal
+  User dotted
+Host WEB
+  User upper
+`));
+    expect(resolveHost(doc, 'web.internal').user).toBe('dotted');
+    expect(resolveHost(doc, 'webxinternal').user).toBeUndefined();
+    expect(resolveHost(doc, 'web').user).toBeUndefined();
+    expect(resolveHost(doc, 'WEB').user).toBe('upper');
+  });
+
+  it('lists thousands of hosts without walking the config once per host', () => {
+    const count = 4000;
+    const blocks = Array.from(
+      { length: count },
+      (_, i) => `Host node-${i}\n  HostName 10.0.${Math.floor(i / 256)}.${i % 256}\n`,
+    );
+    const doc = loadConfigDocument(
+      write(`${blocks.join('')}Host node-1*\n  Port 2222\nHost *\n  User ops\n`),
+    );
+    const started = performance.now();
+    const hosts = listHosts(doc);
+    const elapsed = performance.now() - started;
+    expect(hosts).toHaveLength(count);
+    expect(hosts[12]?.resolved).toMatchObject({ hostname: '10.0.0.12', port: 2222, user: 'ops' });
+    expect(hosts[20]?.resolved).toMatchObject({ hostname: '10.0.0.20', port: 22, user: 'ops' });
+    // Linear work is a few tens of ms; the per-host walk it replaces took
+    // seconds at this size.
+    expect(elapsed).toBeLessThan(1_000);
   });
 });

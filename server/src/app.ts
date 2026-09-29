@@ -5,9 +5,10 @@ import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
 import pino from 'pino';
 import fastifyWebsocket from '@fastify/websocket';
 import fastifyStatic from '@fastify/static';
-import { TERMINAL_WS_PROTOCOL } from '@muxus/shared/ws-protocol';
+import { DESKTOP_RDP_WS_PATH, TERMINAL_WS_PROTOCOL } from '@muxus/shared/ws-protocol';
 import type { ServerConfig } from './config.js';
 import { SshConnectionManager } from './ssh/connection-manager.js';
+import { LocalX11 } from './x11/local-x11.js';
 import {
   folderAuthResolver,
   savedProfileFolderAuthResolver,
@@ -20,6 +21,7 @@ import { registerForwardRoutes } from './routes/forwards.js';
 import { registerTunnelRoutes } from './routes/tunnels.js';
 import { registerTerminalSocket } from './ws/terminal-socket.js';
 import { registerSftpLeaseSocket } from './ws/sftp-lease-socket.js';
+import { registerDesktopSockets } from './remote-desktop/desktop-socket.js';
 import { websocketHeaderHasToken } from './auth.js';
 import { MuxusDatabase } from './persistence/database.js';
 import { registerWorkspaceRoutes } from './routes/workspaces.js';
@@ -46,6 +48,7 @@ export interface AppContext {
   database: MuxusDatabase;
   history: SessionHistoryStore;
   vault: PasswordVault;
+  x11: LocalX11;
 }
 
 // Not named __dirname: the Electron esbuild bundle defines that identifier
@@ -94,8 +97,10 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   const database = new MuxusDatabase(config.databasePath);
   const vault = new PasswordVault(database);
   await vault.initialize();
+  const x11 = new LocalX11({ log: app.log, bundledServerDirectory: config.x11ServerDirectory });
   const connections = new SshConnectionManager(app.log, {
     vault,
+    x11,
     savedSshProfile: (id) => {
       const profile = database.savedHostProfile(id)?.profile;
       return profile?.kind === 'ssh' ? profile : undefined;
@@ -130,6 +135,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
     database,
     history,
     vault,
+    x11,
   };
   database.pruneTerminalSnapshots();
 
@@ -152,6 +158,9 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
             return false;
           }
         }
+        // IronRDP opens this socket itself and cannot offer the token
+        // subprotocol; its first PDU carries a single-use ticket instead.
+        if (new URL(info.req.url ?? '/', 'http://localhost').pathname === DESKTOP_RDP_WS_PATH) return true;
         return websocketHeaderHasToken(info.req.headers['sec-websocket-protocol'], config.token);
       },
     },
@@ -200,6 +209,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   registerLocalFileRoutes(app);
   registerTerminalSocket(app, ctx);
   registerSftpLeaseSocket(app, ctx);
+  registerDesktopSockets(app, ctx);
 
   // Serve the built client in production (same-origin, no CORS needed).
   const clientDist = config.staticRoot ?? path.resolve(moduleDir, '../../client/dist');
@@ -217,6 +227,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   app.addHook('onClose', async () => {
     forwards.stopAll();
     connections.closeAll();
+    x11.close();
     vault.dispose();
     await history.close();
     database.close();

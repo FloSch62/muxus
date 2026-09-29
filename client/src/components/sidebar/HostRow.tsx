@@ -1,4 +1,4 @@
-import type { DragEvent } from 'react';
+import { memo, type DragEvent } from 'react';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import ListItemButton from '@mui/material/ListItemButton';
@@ -25,13 +25,13 @@ export interface HostRowProps {
   focused: boolean;
   /** The row the search box's Enter would connect. */
   match?: boolean;
-  onConnect: () => void;
+  onConnect: (host: ManagedHost) => void;
   onMenu: (host: ManagedHost, anchor: HTMLElement, position?: { top: number; left: number }) => void;
-  onMove: (delta: -1 | 1) => void;
+  onMove: (row: VisibleNode, delta: -1 | 1) => void;
   reorderEnabled: boolean;
   registerRef: (element: HTMLElement | null) => void;
   draggable?: boolean;
-  onDragStart?: (event: DragEvent<HTMLElement>) => void;
+  onDragStart?: (event: DragEvent<HTMLElement>, row: VisibleNode) => void;
   onDragEnd?: () => void;
   dragging?: boolean;
   dropEdge?: 'before' | 'after';
@@ -41,8 +41,12 @@ export interface HostRowProps {
  * One line per host. The address, jump chain, key and forwards are reference
  * material you read rather than act on, so they all live in the hover card and
  * the row spends its width on the name.
+ *
+ * Memoized, and every callback takes the row or host it acts on, so the tree
+ * can pass the same functions to every row and an unrelated update (a tab
+ * connecting, the focus moving) re-renders only the rows it touches.
  */
-export function HostRow({
+export const HostRow = memo(function HostRow({
   row,
   host,
   live,
@@ -105,17 +109,17 @@ export function HostRow({
         tabIndex={focused ? 0 : -1}
         aria-keyshortcuts={reorderEnabled ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
         draggable={draggable}
-        onDragStart={onDragStart}
+        onDragStart={onDragStart ? (event) => onDragStart(event, row) : undefined}
         onDragEnd={onDragEnd}
         onMouseEnter={() => void loadTerminalViewImpl()}
         onFocus={() => void loadTerminalViewImpl()}
-        onClick={onConnect}
+        onClick={() => onConnect(host)}
         onKeyDown={(event) => {
           if (!reorderEnabled || !event.altKey) return;
           if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
           event.preventDefault();
           event.stopPropagation();
-          onMove(event.key === 'ArrowUp' ? -1 : 1);
+          onMove(row, event.key === 'ArrowUp' ? -1 : 1);
         }}
         onContextMenu={(event) => {
           event.preventDefault();
@@ -212,4 +216,4 @@ export function HostRow({
       </ListItemButton>
     </Tooltip>
   );
-}
+});

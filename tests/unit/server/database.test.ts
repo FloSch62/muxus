@@ -46,7 +46,114 @@ describe('MuxusDatabase migrations', () => {
       { version: 19, name: 'host-disable-sftp' },
       { version: 20, name: 'host-console-compatibility' },
       { version: 21, name: 'host-terminal-appearance' },
+      { version: 22, name: 'remote-desktop-hosts' },
     ]);
+  });
+
+  it('rebuilds version 21 connection profiles to admit RDP and VNC hosts', () => {
+    temporaryDirectory = mkdtempSync(path.join(os.tmpdir(), 'muxus-v21-migration-'));
+    const filename = path.join(temporaryDirectory, 'muxus.sqlite3');
+    database = new MuxusDatabase(filename);
+    const telnet = database.saveSavedHostProfile({
+      name: 'Core switch',
+      profile: { kind: 'telnet', host: 'switch.lab', port: 23 },
+    });
+    database.updateSavedHostMetadata(telnet.id, { group: 'Lab', color: '#ff0000' });
+    database.recordSavedHostConnection(telnet.id);
+    database.updateOpenSshMetadata('bastion', { displayName: 'Bastion', disableSftp: true });
+    database.close();
+    database = undefined;
+
+    // Restore the version 21 shape: the old kind CHECK and no certificate store.
+    const legacy = new DatabaseSync(filename);
+    try {
+      const current = legacy
+        .prepare(`SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'connection_profiles'`)
+        .get() as { sql: string };
+      const indexes = legacy
+        .prepare(`SELECT sql FROM sqlite_schema WHERE type = 'index' AND tbl_name = 'connection_profiles' AND sql IS NOT NULL`)
+        .all() as Array<{ sql: string }>;
+      legacy.exec('PRAGMA foreign_keys = OFF');
+      legacy.exec(`
+        ${current.sql
+          .replace(`'telnet', 'rdp', 'vnc')`, `'telnet')`)
+          .replace(/^CREATE TABLE "?connection_profiles"?/, 'CREATE TABLE connection_profiles_v21')};
+        INSERT INTO connection_profiles_v21 SELECT * FROM connection_profiles;
+        DROP TABLE connection_profiles;
+        ALTER TABLE connection_profiles_v21 RENAME TO connection_profiles;
+        DROP TABLE remote_desktop_certificates;
+        DELETE FROM schema_migrations WHERE version = 22;
+        PRAGMA user_version = 21;
+      `);
+      for (const index of indexes) legacy.exec(index.sql);
+      legacy.exec(`
+        INSERT INTO tags(id, name) VALUES ('tag-1', 'core');
+        INSERT INTO connection_tags(connection_id, tag_id) VALUES ('${telnet.id}', 'tag-1');
+      `);
+      expect(() =>
+        legacy.exec(`
+          INSERT INTO connection_profiles(id, kind, name, native_config_json)
+          VALUES ('too-early', 'rdp', 'x', '{}')
+        `),
+      ).toThrow(/CHECK/);
+    } finally {
+      legacy.close();
+    }
+
+    database = new MuxusDatabase(filename);
+    expect(database.appliedMigrations().at(-1)).toEqual({ version: 22, name: 'remote-desktop-hosts' });
+    expect(database.savedHostProfile(telnet.id)).toMatchObject({
+      name: 'Core switch',
+      profile: { kind: 'telnet', host: 'switch.lab', port: 23 },
+      metadata: { group: 'Lab', color: '#ff0000', connectCount: 1 },
+    });
+    expect(database.openSshMetadata(['bastion']).get('bastion')).toMatchObject({
+      displayName: 'Bastion',
+      disableSftp: true,
+    });
+    const rdp = database.saveSavedHostProfile({
+      name: 'Build server',
+      profile: {
+        kind: 'rdp',
+        host: 'win-build',
+        port: 3389,
+        username: 'ci',
+        sshGateway: { target: 'bastion' },
+      },
+    });
+    const vnc = database.saveSavedHostProfile({
+      name: 'Lab console',
+      profile: { kind: 'vnc', host: 'lab-vm', port: 5901, viewOnly: true },
+    });
+    expect(database.listSavedHostProfiles().map((profile) => profile.kind).sort()).toEqual([
+      'rdp',
+      'telnet',
+      'vnc',
+    ]);
+    expect(database.savedHostProfile(rdp.id)?.profile).toMatchObject({
+      kind: 'rdp',
+      sshGateway: { target: 'bastion' },
+      profileId: rdp.id,
+    });
+    expect(database.deleteSavedHostProfile(vnc.id)).toBe(true);
+    database.close();
+    database = undefined;
+
+    const check = new DatabaseSync(filename);
+    try {
+      expect(check.prepare('SELECT connection_id, tag_id FROM connection_tags').all()).toEqual([
+        { connection_id: telnet.id, tag_id: 'tag-1' },
+      ]);
+      expect(check.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+      const indexNames = (check
+        .prepare(`SELECT name FROM sqlite_schema WHERE type = 'index' AND tbl_name = 'connection_profiles'`)
+        .all() as Array<{ name: string }>).map((row) => row.name);
+      expect(indexNames).toEqual(
+        expect.arrayContaining(['connection_profiles_recent', 'connection_profiles_group']),
+      );
+    } finally {
+      check.close();
+    }
   });
 
   it('preserves version 19 disable-SFTP records when adding console compatibility', () => {
@@ -152,8 +259,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 21,
-      name: 'host-terminal-appearance',
+      version: 22,
+      name: 'remote-desktop-hosts',
     });
     expect(database.passwordVaultConfig()).toMatchObject({
       formatVersion: 2,

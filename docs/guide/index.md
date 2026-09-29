@@ -61,6 +61,7 @@ behaviour. The pages are independent and can be read in any order.
 
 -   :material-playlist-edit: **[Adding & editing hosts](adding-hosts.md)**: the session editor that writes real `Host` blocks
 -   :material-serial-port: **[Telnet & serial](telnet-serial.md)**: non-SSH consoles in the same list
+-   :material-monitor: **[Remote desktop](remote-desktop.md)**: RDP and VNC sessions as tabs, directly or through SSH
 -   :material-transit-connection-variant: **[Connecting](connecting.md)**: auth order, host keys, jump chains, recovery
 
 </div>

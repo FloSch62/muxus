@@ -18,6 +18,7 @@ repo_url = "https://github.com/FloSch62/muxus"
 edit_uri = "edit/main/docs/"
 
 extra_css = ["assets/stylesheets/extra.css"]
+extra_javascript = ["assets/javascripts/hero.js"]
 
 # Explicit navigation mirrors the docs/ tree but gives us full control of
 # order and titles. Top-level entries become tabs (navigation.tabs is on below).
@@ -35,6 +36,7 @@ nav = [
     { "Your hosts" = "guide/hosts.md" },
     { "Adding & editing hosts" = "guide/adding-hosts.md" },
     { "Telnet & serial" = "guide/telnet-serial.md" },
+    { "Remote desktop (RDP & VNC)" = "guide/remote-desktop.md" },
     { "Connecting" = "guide/connecting.md" },
     { "Tabs & panes" = "guide/tabs-and-panes.md" },
     { "The terminal" = "guide/terminal.md" },
@@ -44,6 +46,7 @@ nav = [
     { "File browser (SFTP)" = "guide/files.md" },
     { "Remote editor" = "guide/editor.md" },
     { "Tunnels & port forwarding" = "guide/tunnels.md" },
+    { "Graphical apps (X11)" = "guide/x11.md" },
     { "Command buttons & multi-exec" = "guide/commands.md" },
     { "Session history" = "guide/session-history.md" },
     { "Settings" = "guide/settings.md" },
@@ -57,6 +60,8 @@ nav = [
     { "Security model" = "reference/security.md" },
   ] },
   { "Release notes" = [
+    { "0.8" = "release-notes/0.8.md" },
+    { "0.7" = "release-notes/0.7.md" },
     { "0.6" = "release-notes/0.6.md" },
     { "0.5" = "release-notes/0.5.md" },
     { "0.4" = "release-notes/0.4.md" },
@@ -68,13 +73,17 @@ nav = [
     "community/index.md",
     { "Contributing" = "community/contributing.md" },
     { "Building from source" = "community/development.md" },
+    { "Signing and releases" = "community/releasing.md" },
+    { "Microsoft Store" = "community/microsoft-store.md" },
     { "FAQ" = "community/faq.md" },
   ] },
+  { "About" = "about.md" },
 ]
 
 # ----------------------------------------------------------------------------
 [project.theme]
 language = "en"
+custom_dir = "overrides"
 logo = "assets/muxus.svg"
 favicon = "assets/muxus.svg"
 
@@ -126,6 +135,16 @@ code = "JetBrains Mono"
 [[project.extra.social]]
 icon = "fontawesome/brands/github"
 link = "https://github.com/FloSch62/muxus"
+
+[[project.extra.social]]
+icon = "simple/buymeacoffee"
+link = "https://www.buymeacoffee.com/FloSch62"
+name = "Buy me a coffee"
+
+[[project.extra.social]]
+icon = "material/web"
+link = "https://flosch.me/"
+name = "flosch.me"
 
 # ----------------------------------------------------------------------------
 # Markdown extensions use the same stack as Material-based sites.

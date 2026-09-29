@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { SavedHostProfile, SshHostEntry } from '@muxus/shared';
 import {
+  alphabetizeManagedHosts,
   editableManagedHostForProfile,
   groupManagedHosts,
   managedHostCopyCommand,
+  managedHostDisplayName,
   managedHostKey,
   managedHostRef,
 } from '../../../client/src/managed-hosts.js';
@@ -217,6 +219,7 @@ describe('managed host identity and clipboard actions', () => {
           identitiesOnly: true,
           identityAgent: 'none',
           forwardAgent: true,
+          forwardX11: true,
           proxyJump: ['bastion', 'ops@jump.example.test:2200'],
           passwordOnly: true,
           forwards: [
@@ -235,7 +238,7 @@ describe('managed host identity and clipboard actions', () => {
     };
     expect(managedHostCopyCommand(routed).text).toBe(
       "ssh -p 2222 -i '~/.ssh/core key' -o CertificateFile=~/.ssh/core-cert.pub " +
-        '-o IdentitiesOnly=yes -o IdentityAgent=none -A ' +
+        '-o IdentitiesOnly=yes -o IdentityAgent=none -A -X ' +
         '-J bastion,ops@jump.example.test:2200 -o PubkeyAuthentication=no ' +
         '-o PreferredAuthentications=keyboard-interactive,password ' +
         '-L 8080:127.0.0.1:80 -tt -o StrictHostKeyChecking=accept-new ' +
@@ -288,5 +291,26 @@ describe('managed host identity and clipboard actions', () => {
     ).toBe(false);
     expect(managedHostSupportsSftp(telnet)).toBe(false);
     expect(managedHostSupportsSftp(serial)).toBe(false);
+  });
+});
+
+describe('managed host alphabetization', () => {
+  it('sorts mixed host kinds by their sidebar display name without changing the input', () => {
+    const router = { kind: 'ssh' as const, entry: sshHost('router') };
+    const console = { kind: 'profile' as const, entry: telnetHost('Console') };
+    const database = { kind: 'ssh' as const, entry: sshHost('db-primary') };
+    database.entry.metadata = {
+      profileId: 'ssh-db-primary',
+      displayName: 'Primary database',
+      connectCount: 0,
+    };
+    const hosts = [router, database, console];
+
+    expect(alphabetizeManagedHosts(hosts).map(managedHostDisplayName)).toEqual([
+      'Console',
+      'Primary database',
+      'router',
+    ]);
+    expect(hosts).toEqual([router, database, console]);
   });
 });

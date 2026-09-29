@@ -18,6 +18,8 @@ export interface ServerConfig {
   historyPath?: string;
   /** Use the pino-pretty worker transport (unusable inside a bundled main process). */
   prettyLogs: boolean;
+  /** Directory of the X server bundled with the Windows app (vcxsrv.exe), for X11 forwarding. */
+  x11ServerDirectory?: string;
 }
 
 export function defaultDatabasePath(): string {
@@ -84,5 +86,6 @@ export function loadConfig(): ServerConfig {
     devToken,
     openBrowser: !dev && args.get('no-open') !== 'true' && process.env.MUXUS_NO_OPEN !== '1',
     historyPath: args.get('history-path') ?? process.env.MUXUS_HISTORY_PATH,
+    x11ServerDirectory: process.env.MUXUS_X11_SERVER_DIR,
   });
 }

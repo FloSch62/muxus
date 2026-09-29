@@ -2,6 +2,8 @@ import { useRef, useState, type ChangeEvent } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Divider from '@mui/material/Divider';
+import ListItemText from '@mui/material/ListItemText';
+import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
@@ -9,8 +11,10 @@ import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
+import LibraryAddOutlinedIcon from '@mui/icons-material/LibraryAddOutlined';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import type { KeywordHighlightProfile } from '@muxus/shared';
+import { BUILTIN_HIGHLIGHT_PROFILES } from '../builtin-highlight-profiles.js';
 import { newPreferenceId } from '../command-buttons.js';
 import {
   MAX_HIGHLIGHT_PROFILE_FILE_BYTES,
@@ -31,6 +35,7 @@ export function HighlightProfilesSection() {
   const setPrefs = usePrefsStore((state) => state.set);
   const importInput = useRef<HTMLInputElement>(null);
   const [selectedId, setSelectedId] = useState('');
+  const [builtinMenuAnchor, setBuiltinMenuAnchor] = useState<HTMLElement | null>(null);
   const selectedProfile =
     profiles.find((profile) => profile.id === selectedId) ?? profiles[0];
 
@@ -81,15 +86,49 @@ export function HighlightProfilesSection() {
     });
   };
 
-  const exportProfile = (profile: KeywordHighlightProfile) => {
+  // Merging by ID adds a missing built-in, or resets an installed one in place
+  // so hosts assigned to it keep following it.
+  const installBuiltinProfile = (builtin: KeywordHighlightProfile) => {
+    setBuiltinMenuAnchor(null);
+    const install = () => {
+      try {
+        const current = usePrefsStore.getState().keywordHighlightProfiles;
+        usePrefsStore.getState().set({
+          keywordHighlightProfiles: mergeHighlightProfiles(current, [builtin]),
+        });
+        setSelectedId(builtin.id);
+      } catch (error) {
+        showErrorToast(error);
+      }
+    };
+    if (!profiles.some((profile) => profile.id === builtin.id)) {
+      install();
+      return;
+    }
+    void confirmAction({
+      title: `Reset ${builtin.name}?`,
+      description:
+        'Its name and rules are replaced with the defaults shipped with Muxus. Hosts assigned to it keep the assignment.',
+      confirmLabel: 'Reset profile',
+      destructive: true,
+    }).then((confirmed) => {
+      if (confirmed) install();
+    });
+  };
+
+  const exportProfiles = (
+    selection: KeywordHighlightProfile[],
+    filenameTitle: string,
+    message: string,
+  ) => {
     try {
-      const document = createHighlightProfileDocument([profile]);
+      const document = createHighlightProfileDocument(selection);
       saveTextFile(
-        exportFilename(`${profile.name} highlighting profile`, 'muxus-highlight.json'),
+        exportFilename(filenameTitle, 'muxus-highlight.json'),
         `${JSON.stringify(document, null, 2)}\n`,
         'application/json',
       );
-      showToast('success', `Exported ${profile.name}.`);
+      showToast('success', message);
     } catch (error) {
       showErrorToast(error);
     }
@@ -129,9 +168,9 @@ export function HighlightProfilesSection() {
           Global keyword highlighting
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          These literal keywords are highlighted in every terminal. A host can include
-          these rules and add its assigned profile and own rules, or replace the global
-          set entirely.
+          These keywords and regular expressions are highlighted in every terminal. A
+          host can include these rules and add its assigned profile and own rules, or
+          replace the global set entirely.
         </Typography>
         <KeywordHighlightRulesEditor
           rules={globalRules}
@@ -147,7 +186,9 @@ export function HighlightProfilesSection() {
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
           Define a platform-specific rule set once, assign it in any host editor, and
-          export it to share with another Muxus installation.
+          export it to share with another Muxus installation. Muxus includes profiles
+          for Nokia SR OS and SR Linux output; edit them freely, or reset them from
+          Built-in.
         </Typography>
         <Stack
           direction={{ xs: 'column', sm: 'row' }}
@@ -180,6 +221,31 @@ export function HighlightProfilesSection() {
           >
             New
           </Button>
+          <Button
+            startIcon={<LibraryAddOutlinedIcon />}
+            aria-haspopup="menu"
+            onClick={(event) => setBuiltinMenuAnchor(event.currentTarget)}
+          >
+            Built-in
+          </Button>
+          <Menu
+            open={!!builtinMenuAnchor}
+            anchorEl={builtinMenuAnchor}
+            onClose={() => setBuiltinMenuAnchor(null)}
+          >
+            {BUILTIN_HIGHLIGHT_PROFILES.map((builtin) => (
+              <MenuItem key={builtin.id} onClick={() => installBuiltinProfile(builtin)}>
+                <ListItemText
+                  primary={builtin.name}
+                  secondary={
+                    profiles.some((profile) => profile.id === builtin.id)
+                      ? 'Reset to the shipped rules'
+                      : 'Add to your profiles'
+                  }
+                />
+              </MenuItem>
+            ))}
+          </Menu>
           <Button startIcon={<UploadFileOutlinedIcon />} onClick={() => importInput.current?.click()}>
             Import
           </Button>
@@ -209,7 +275,9 @@ export function HighlightProfilesSection() {
             }}
             slotProps={{ htmlInput: { maxLength: 200 } }}
           />
+          {/* Keyed so unapplied JSON never carries over to another profile. */}
           <KeywordHighlightRulesEditor
+            key={selectedProfile.id}
             rules={selectedProfile.rules}
             onChange={(rules) => updateProfile(selectedProfile.id, { rules })}
             emptyMessage="No rules in this profile yet."
@@ -219,10 +287,30 @@ export function HighlightProfilesSection() {
               variant="outlined"
               startIcon={<DownloadOutlinedIcon />}
               disabled={!selectedProfile.name.trim()}
-              onClick={() => exportProfile(selectedProfile)}
+              onClick={() =>
+                exportProfiles(
+                  [selectedProfile],
+                  `${selectedProfile.name} highlighting profile`,
+                  `Exported ${selectedProfile.name}.`,
+                )
+              }
             >
               Export profile
             </Button>
+            {profiles.length > 1 ? (
+              <Button
+                startIcon={<DownloadOutlinedIcon />}
+                onClick={() =>
+                  exportProfiles(
+                    profiles,
+                    'highlighting profiles',
+                    `Exported ${profiles.length} highlighting profiles.`,
+                  )
+                }
+              >
+                Export all
+              </Button>
+            ) : null}
             <Button
               color="error"
               startIcon={<DeleteOutlineIcon />}

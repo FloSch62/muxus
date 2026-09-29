@@ -10,12 +10,15 @@ import {
   blankHostSessionLoggingDraft,
   type HostSessionLoggingDraft,
 } from '../../session-logging-policy.js';
+import { keywordHighlightRulesProblem } from '../../terminal/keyword-matching.js';
 import { parseHostTarget } from './native-draft.js';
 
 export type IdentityAgentMode = 'default' | 'environment' | 'custom' | 'none';
 export type RemoteCommandMode = 'inherit' | 'shell' | 'command';
 export type RequestTtyMode = 'inherit' | 'no' | 'yes' | 'force' | 'auto';
 export type StrictHostKeyCheckingMode = 'inherit' | 'yes' | 'no' | 'accept-new' | 'ask';
+/** ForwardX11: 'inherit' follows ssh_config, else the Muxus platform default. */
+export type ForwardX11Mode = 'inherit' | 'yes' | 'no';
 
 /** Everything the editor form holds, in form-friendly shapes (ports as text). */
 export interface HostDraft {
@@ -49,6 +52,7 @@ export interface HostDraft {
   /** Custom agent socket path or environment indirection. */
   identityAgent: string;
   forwardAgent: boolean;
+  forwardX11: ForwardX11Mode;
   routeMode: 'direct' | 'jump' | 'command';
   proxyJump: string[];
   proxyCommand: string;
@@ -62,7 +66,7 @@ export interface HostDraft {
   sessionLogging: HostSessionLoggingDraft;
 }
 
-export function blankDraft(prefillTarget = ''): HostDraft {
+export function blankDraft(prefillTarget = '', group = ''): HostDraft {
   // A quick-connect target already carries the fields the form asks for; a bare
   // name the sidebar could not find is just the alias.
   const target = prefillTarget.trim();
@@ -72,7 +76,7 @@ export function blankDraft(prefillTarget = ''): HostDraft {
     aliasText: parsed?.host ?? target,
     description: '',
     displayName: '',
-    group: '',
+    group,
     color: undefined,
     terminalScheme: undefined,
     terminalFontColor: undefined,
@@ -92,6 +96,7 @@ export function blankDraft(prefillTarget = ''): HostDraft {
     identityAgentMode: 'default',
     identityAgent: '',
     forwardAgent: false,
+    forwardX11: 'inherit',
     routeMode: 'direct',
     proxyJump: [],
     proxyCommand: '',
@@ -139,6 +144,7 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
     identityAgentMode: identityAgent.mode,
     identityAgent: identityAgent.value,
     forwardAgent: o.forwardAgent ?? false,
+    forwardX11: forwardX11Draft(o.forwardX11),
     routeMode: o.proxyCommand
       ? 'command'
       : o.proxyJump?.length
@@ -199,6 +205,7 @@ export function draftFromSavedSshProfile(
     identityAgentMode: identityAgent.mode,
     identityAgent: identityAgent.value,
     forwardAgent: profile.forwardAgent ?? false,
+    forwardX11: forwardX11Draft(profile.forwardX11),
     routeMode: profile.proxyCommand
       ? 'command'
       : profile.proxyJump?.length
@@ -260,10 +267,7 @@ export function draftProblem(draft: HostDraft): string | null {
   for (const e of draft.extras) {
     if (!/^[A-Za-z][A-Za-z0-9]*$/.test(e.keyword)) return `"${e.keyword}" is not a valid option keyword.`;
   }
-  if (draft.keywordHighlights.rules.some((rule) => !rule.keyword.trim())) {
-    return 'Every highlighting rule needs a keyword.';
-  }
-  return null;
+  return keywordHighlightRulesProblem(draft.keywordHighlights.rules);
 }
 
 /** Serialize a database-backed SSH host without involving ssh_config. */
@@ -299,6 +303,7 @@ export function draftToSavedSshInput(
               ? text(draft.identityAgent)
               : undefined,
       forwardAgent: draft.forwardAgent || undefined,
+      forwardX11: forwardX11Option(draft.forwardX11),
       proxyJump:
         draft.routeMode === 'jump' && draft.proxyJump.length > 0
           ? draft.proxyJump
@@ -354,6 +359,7 @@ export function draftToRequest(draft: HostDraft, previousAlias?: string): HostUp
               ? text(draft.identityAgent)
               : undefined,
       forwardAgent: draft.forwardAgent ? true : undefined,
+      forwardX11: forwardX11Option(draft.forwardX11),
       proxyJump:
         draft.routeMode === 'jump' && draft.proxyJump.length
           ? draft.proxyJump
@@ -404,6 +410,14 @@ function identityAgentDraft(value: string | undefined): {
   if (value === 'SSH_AUTH_SOCK') return { mode: 'environment', value: '' };
   if (value.toLowerCase() === 'none') return { mode: 'none', value: '' };
   return { mode: 'custom', value };
+}
+
+function forwardX11Draft(value: boolean | undefined): ForwardX11Mode {
+  return value === undefined ? 'inherit' : value ? 'yes' : 'no';
+}
+
+function forwardX11Option(mode: ForwardX11Mode): boolean | undefined {
+  return mode === 'inherit' ? undefined : mode === 'yes';
 }
 
 function remoteCommandDraft(value: string | undefined): {

@@ -59,6 +59,7 @@ const PREFERENCE_KEYS = [
   'scrollback',
   'cursorBlink',
   'cursorStyle',
+  'webglRenderer',
   'localShell',
   'localShellProfiles',
   'defaultLocalShellProfileId',
@@ -312,6 +313,7 @@ function portableSavedSshOptions(
     identitiesOnly: saved.identitiesOnly ?? inherited.identitiesOnly,
     identityAgent: saved.identityAgent ?? inherited.identityAgent,
     forwardAgent: saved.forwardAgent ?? inherited.forwardAgent,
+    forwardX11: saved.forwardX11,
     proxyJump: saved.proxyJump,
     proxyCommand: saved.proxyCommand,
     forwards: saved.forwards,
@@ -597,6 +599,7 @@ function portableSshOptions(host: SshHostEntry): HostBlockOptions {
         : undefined,
     identitiesOnly: resolved.identitiesOnly,
     forwardAgent: resolved.forwardAgent,
+    forwardX11: resolved.forwardX11,
     proxyJump: resolved.proxyJump.length > 0 ? resolved.proxyJump : undefined,
     proxyCommand: resolved.proxyCommand,
     forwards: resolved.forwards.length > 0 ? resolved.forwards : undefined,
@@ -804,6 +807,7 @@ export function sanitizePreferences(
   if (['block', 'underline', 'bar'].includes(input.cursorStyle)) {
     output.cursorStyle = input.cursorStyle;
   }
+  if (typeof input.webglRenderer === 'boolean') output.webglRenderer = input.webglRenderer;
   if (typeof input.localShell === 'string' && input.localShell.length <= 4096) {
     output.localShell = input.localShell;
   }
@@ -953,7 +957,10 @@ function validateConnections(
         isRecord(host.profile) &&
         (host.profile.kind === 'telnet' ||
           host.profile.kind === 'serial' ||
-          (version >= 2 && host.profile.kind === 'ssh')) &&
+          (version >= 2 &&
+            (host.profile.kind === 'ssh' ||
+              host.profile.kind === 'rdp' ||
+              host.profile.kind === 'vnc'))) &&
         isRecord(host.metadata),
     ) ||
     !data.hostOrder.every(
@@ -1076,13 +1083,16 @@ function validKeywordHighlight(value: unknown): boolean {
   return (
     isRecord(value) &&
     nonEmptyString(value.id) &&
+    (value.name === undefined ||
+      (typeof value.name === 'string' && value.name.length > 0 && value.name.length <= 100)) &&
     typeof value.keyword === 'string' &&
     value.keyword.length > 0 &&
     value.keyword.length <= 500 &&
     validHexColor(value.foreground) &&
     (value.background === undefined || validHexColor(value.background)) &&
     typeof value.caseSensitive === 'boolean' &&
-    typeof value.wholeWord === 'boolean'
+    typeof value.wholeWord === 'boolean' &&
+    (value.regex === undefined || typeof value.regex === 'boolean')
   );
 }
 

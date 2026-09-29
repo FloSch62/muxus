@@ -15,6 +15,12 @@ export function savedHostAddress(profile: SavedHostProfile): string {
       ? `${target}:${connection.port}`
       : target;
   }
+  if (connection.kind === 'rdp' || connection.kind === 'vnc') {
+    const address = connection.username
+      ? `${connection.username}@${connection.host}:${connection.port}`
+      : `${connection.host}:${connection.port}`;
+    return connection.sshGateway ? `${address} via ${connection.sshGateway.target}` : address;
+  }
   return connection.kind === 'telnet'
     ? `${connection.host}:${connection.port}`
     : `${connection.path} · ${connection.baudRate} baud`;
