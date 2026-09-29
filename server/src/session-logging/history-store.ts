@@ -209,6 +209,11 @@ export class SessionHistoryStore {
     return this.request('pin', { id, pinned });
   }
 
+  /** An empty label clears the name and shows the recorded title again. */
+  setLabel(id: string, label: string): Promise<boolean> {
+    return this.request('label', { id, label });
+  }
+
   async updateSettings(settings: SessionHistorySettings): Promise<void> {
     this.settings = settings;
     await this.request('settings', settings);

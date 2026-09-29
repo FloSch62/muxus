@@ -151,6 +151,12 @@ if (!db.prepare('PRAGMA table_info(transcript_chunks)').all().some((column) => c
 }
 db.exec("INSERT OR IGNORE INTO history_schema_migrations(version, name) VALUES (2, 'transcript-line-timestamps')");
 
+// A user-chosen name shown instead of the recorded title; NULL keeps the title.
+if (!db.prepare('PRAGMA table_info(session_logs)').all().some((column) => column.name === 'label')) {
+  db.exec('ALTER TABLE session_logs ADD COLUMN label TEXT');
+}
+db.exec("INSERT OR IGNORE INTO history_schema_migrations(version, name) VALUES (3, 'session-labels')");
+
 removeTrash();
 if (workerData.legacyDatabasePath && workerData.legacyDatabasePath !== ':memory:') {
   importLegacyHistory(String(workerData.legacyDatabasePath));
@@ -218,6 +224,8 @@ function dispatch(op, payload) {
       return deleteSession(payload.id, false);
     case 'pin':
       return setPinned(payload.id, payload.pinned);
+    case 'label':
+      return setLabel(payload.id, payload.label);
     case 'settings':
       settings = payload;
       enforceRetention(true);
@@ -404,9 +412,10 @@ function search(input) {
     filters.push(`(
       event_matches.session_id IS NOT NULL
       OR logs.title LIKE ? ESCAPE '\\' COLLATE NOCASE
+      OR logs.label LIKE ? ESCAPE '\\' COLLATE NOCASE
       OR logs.host LIKE ? ESCAPE '\\' COLLATE NOCASE
     )`);
-    args.push(metadata, metadata);
+    args.push(metadata, metadata, metadata);
   }
   if (input.profileKey) {
     filters.push('logs.profile_key = ?');
@@ -582,6 +591,13 @@ function setPinned(id, pinned) {
     .prepare(`UPDATE session_logs SET pinned = ? WHERE id = ?`)
     .run(pinned ? 1 : 0, id);
   if (!pinned) enforceRetention(true);
+  return result.changes > 0;
+}
+
+function setLabel(id, label) {
+  const result = db
+    .prepare(`UPDATE session_logs SET label = ? WHERE id = ?`)
+    .run(label || null, id);
   return result.changes > 0;
 }
 
@@ -1058,6 +1074,7 @@ function summaryFromRow(row) {
     id: String(row.id),
     profileKey: String(row.profile_key),
     title: String(row.title),
+    label: row.label ? String(row.label) : undefined,
     kind: String(row.kind),
     host: String(row.host),
     startedAt: String(row.started_at),

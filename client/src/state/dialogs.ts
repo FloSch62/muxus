@@ -32,6 +32,8 @@ export interface PromptOptions {
   initialValue?: string;
   placeholder?: string;
   confirmLabel?: string;
+  /** Lets an empty value be submitted, e.g. to clear an optional name. */
+  allowEmpty?: boolean;
   /** Returns a message to block submission, or null when the value is usable. */
   validate?: (value: string) => string | null;
 }

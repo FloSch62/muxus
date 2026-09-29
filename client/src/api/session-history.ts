@@ -83,3 +83,19 @@ export function useSetSessionPinned() {
     onError: showErrorToast,
   });
 }
+
+export function useSetSessionLabel() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, label }: { id: string; label: string }) =>
+      apiFetch<{ updated: boolean }>(`/api/session-history/${id}/label`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ label }),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['session-history'] });
+    },
+    onError: showErrorToast,
+  });
+}

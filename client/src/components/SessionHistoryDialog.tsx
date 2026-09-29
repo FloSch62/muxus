@@ -35,12 +35,14 @@ import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
+import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import PushPinIcon from '@mui/icons-material/PushPin';
 import PushPinOutlinedIcon from '@mui/icons-material/PushPinOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import {
+  sessionLogName,
   sessionTranscript,
   SNIPPET_MATCH_END,
   SNIPPET_MATCH_START,
@@ -50,10 +52,10 @@ import {
   useSessionHistory,
   useSessionLog,
 } from '../api/queries.js';
-import { useSetSessionPinned } from '../api/session-history.js';
+import { useSetSessionLabel, useSetSessionPinned } from '../api/session-history.js';
 import { apiFetch, apiFetchRaw } from '../api/http.js';
 import { copyToClipboard } from '../clipboard.js';
-import { confirmAction } from '../state/dialogs.js';
+import { confirmAction, promptForText } from '../state/dialogs.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { findTranscriptMatchesInChunks } from '../session-history-matches.js';
 import { showToast } from '../state/toast.js';
@@ -306,9 +308,12 @@ export function SessionHistoryDialog() {
               <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
                 <Box sx={{ minWidth: 0 }}>
                   <Typography variant="h6" noWrap>
-                    {selected.title}
+                    {sessionLogName(selected)}
                   </Typography>
                   <Typography variant="body2" color="text.secondary" noWrap>
+                    {selected.label && selected.title !== selected.host
+                      ? `${selected.title} · `
+                      : null}
                     {selected.host} · {formatDate(selected.startedAt)} ·{' '}
                     {formatBytes(selected.rawBytes)} raw
                   </Typography>
@@ -354,6 +359,7 @@ export function SessionHistoryDialog() {
                     <ContentCopyOutlinedIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
+                <RenameSessionButton session={selected} />
                 <PinSessionButton session={selected} />
                 <DeleteSessionButton session={selected} />
               </Stack>
@@ -475,9 +481,10 @@ function HistoryListItem({
       sx={{ alignItems: 'flex-start', contentVisibility: 'auto' }}
     >
       <ListItemText
-        primary={session.title}
+        primary={sessionLogName(session)}
         secondary={
           <>
+            {session.label ? `${session.title} · ` : null}
             {formatDate(session.startedAt)} · {formatBytes(session.rawBytes)}
             {session.matchCount
               ? ` · ${session.matchCount.toLocaleString()} ${
@@ -518,7 +525,7 @@ function DeleteSessionButton({ session }: { session: SessionLogSummary }) {
           aria-label="Delete retained session"
           onClick={() => {
             void confirmAction({
-              title: `Delete the retained log for “${session.title}”?`,
+              title: `Delete the retained log for “${sessionLogName(session)}”?`,
               description:
                 'The recorded output and its transcript are removed from the history database. This cannot be undone.',
               confirmLabel: 'Delete',
@@ -535,6 +542,41 @@ function DeleteSessionButton({ session }: { session: SessionLogSummary }) {
           }}
         >
           <DeleteOutlinedIcon fontSize="small" />
+        </IconButton>
+      </span>
+    </Tooltip>
+  );
+}
+
+function RenameSessionButton({ session }: { session: SessionLogSummary }) {
+  const setLabel = useSetSessionLabel();
+  return (
+    <Tooltip title="Rename retained session">
+      <span>
+        <IconButton
+          size="small"
+          aria-label="Rename retained session"
+          disabled={setLabel.isPending}
+          onClick={() => {
+            void promptForText({
+              title: 'Rename retained session',
+              description: `Leave empty to show the recorded title “${session.title}” again. The recorded title stays searchable.`,
+              label: 'Name',
+              initialValue: sessionLogName(session),
+              placeholder: session.title,
+              confirmLabel: 'Rename',
+              allowEmpty: true,
+              validate: (value) =>
+                value.length > 200 ? 'Use at most 200 characters.' : null,
+            }).then((value) => {
+              if (value === null) return;
+              const label = value === session.title ? '' : value;
+              if (label === (session.label ?? '')) return;
+              setLabel.mutate({ id: session.id, label });
+            });
+          }}
+        >
+          <DriveFileRenameOutlineIcon fontSize="small" />
         </IconButton>
       </span>
     </Tooltip>
@@ -595,7 +637,7 @@ async function download(
           ? 'text/html'
           : 'text/plain';
     saveTextFile(
-      exportFilename(session.title, extension),
+      exportFilename(sessionLogName(session), extension),
       text,
       mime,
     );

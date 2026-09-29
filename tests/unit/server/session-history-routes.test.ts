@@ -267,4 +267,60 @@ describe('session history routes', () => {
       sessions: [expect.objectContaining({ id, pinned: true })],
     });
   });
+
+  it('names sessions and exports them under that name', async () => {
+    const id = seedSession();
+    const named = await built.app.inject({
+      method: 'PUT',
+      url: `/api/session-history/${id}/label`,
+      headers: { ...auth(), 'content-type': 'application/json' },
+      payload: { label: '  Pre-change config  ' },
+    });
+    expect(named.statusCode).toBe(200);
+    expect(named.json()).toEqual({ updated: true });
+
+    const found = await built.app.inject({
+      method: 'GET',
+      url: '/api/session-history?query=pre-change',
+      headers: auth(),
+    });
+    expect(found.json()).toMatchObject({
+      sessions: [expect.objectContaining({ id, title: 'Production', label: 'Pre-change config' })],
+    });
+
+    const clean = await built.app.inject({
+      method: 'GET',
+      url: `/api/session-history/${id}/clean`,
+      headers: auth(),
+    });
+    expect(clean.headers['content-disposition']).toContain('pre-change-config-clean.txt');
+    const replay = await built.app.inject({
+      method: 'GET',
+      url: `/api/session-history/${id}/replay.html`,
+      headers: auth(),
+    });
+    expect(replay.body).toContain('<title>Pre-change config — Muxus replay</title>');
+
+    const tooLong = await built.app.inject({
+      method: 'PUT',
+      url: `/api/session-history/${id}/label`,
+      headers: { ...auth(), 'content-type': 'application/json' },
+      payload: { label: 'x'.repeat(201) },
+    });
+    expect(tooLong.statusCode).toBe(400);
+
+    const cleared = await built.app.inject({
+      method: 'PUT',
+      url: `/api/session-history/${id}/label`,
+      headers: { ...auth(), 'content-type': 'application/json' },
+      payload: { label: '' },
+    });
+    expect(cleared.json()).toEqual({ updated: true });
+    const detail = await built.app.inject({
+      method: 'GET',
+      url: `/api/session-history/${id}`,
+      headers: auth(),
+    });
+    expect(detail.json()).not.toHaveProperty('label');
+  });
 });

@@ -211,6 +211,34 @@ describe('hybrid session history store', () => {
     expect((await store.sessionHistory({ limit: 10 })).sessions).toEqual([]);
   });
 
+  it('names sessions, searches by name, and upgrades databases without names', async () => {
+    root = mkdtempSync(path.join(os.tmpdir(), 'muxus-history-test-'));
+    store = await SessionHistoryStore.open({ root, settings });
+    const policy = { maxPartBytes: 64 * 1024, maxParts: 2 };
+    const time = '2026-09-24T10:00:00.000Z';
+    const id = store.beginSession({ profileKey: 'ssh:core', title: 'Core router', kind: 'ssh', host: 'core', startedAt: time, captureInput: false }, policy);
+    store.finishSession(id, 'completed', time);
+    await store.close();
+    const database = new DatabaseSync(path.join(root, 'session-history.sqlite'));
+    database.exec('ALTER TABLE session_logs DROP COLUMN label; DELETE FROM history_schema_migrations WHERE version = 3');
+    database.close();
+
+    store = await SessionHistoryStore.open({ root, settings });
+    expect(await store.sessionLog(id)).toMatchObject({ title: 'Core router', label: undefined });
+    expect(await store.setLabel(id, 'Pre-change config')).toBe(true);
+    expect(await store.setLabel('missing', 'Nothing')).toBe(false);
+    await store.close();
+
+    store = await SessionHistoryStore.open({ root, settings });
+    expect((await store.sessionHistory({ query: 'pre-change', limit: 20 })).sessions)
+      .toEqual([expect.objectContaining({ id, title: 'Core router', label: 'Pre-change config' })]);
+    expect((await store.sessionHistory({ query: 'core router', limit: 20 })).sessions)
+      .toEqual([expect.objectContaining({ id })]);
+    expect(await store.setLabel(id, '')).toBe(true);
+    expect(await store.sessionLog(id)).toMatchObject({ label: undefined });
+    expect((await store.sessionHistory({ query: 'pre-change', limit: 20 })).sessions).toEqual([]);
+  });
+
   it('applies retention at open before answering any later request', async () => {
     root = mkdtempSync(path.join(os.tmpdir(), 'muxus-history-test-'));
     store = await SessionHistoryStore.open({ root, settings });
