@@ -10,15 +10,23 @@ import Paper from '@mui/material/Paper';
 import Stack from '@mui/material/Stack';
 import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
+import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
+import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop';
 import { newPreferenceId } from '../command-buttons.js';
 import { confirmAction } from '../state/dialogs.js';
-import { usePrefsStore, type CommandButton } from '../state/prefs.js';
+import {
+  usePrefsStore,
+  type CommandBarPosition,
+  type CommandButton,
+} from '../state/prefs.js';
 import { useUiStore } from '../state/ui.js';
 
 export function CommandButtonsDialog() {
@@ -26,6 +34,7 @@ export function CommandButtonsDialog() {
   const setOpen = useUiStore((state) => state.setCommandButtonsOpen);
   const buttons = usePrefsStore((state) => state.commandButtons);
   const showCommandBar = usePrefsStore((state) => state.showCommandBar);
+  const commandBarPosition = usePrefsStore((state) => state.commandBarPosition);
   const setPrefs = usePrefsStore((state) => state.set);
   const setButtons = (commandButtons: CommandButton[]) => setPrefs({ commandButtons });
 
@@ -46,12 +55,15 @@ export function CommandButtonsDialog() {
       <DialogContent>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Save commands you use often. Open them with Ctrl+Space or keep the optional
-          one-click bar above the active terminal. Commands stay in the order shown here.
+          one-click bar above or below the terminals. Commands stay in the order shown here.
         </Typography>
         <Stack spacing={1.25}>
-          <Paper variant="outlined" sx={{ p: 1.25 }}>
+          <Paper
+            variant="outlined"
+            sx={{ p: 1.25, display: 'flex', alignItems: 'center', gap: 2 }}
+          >
             <FormControlLabel
-              sx={{ m: 0 }}
+              sx={{ m: 0, flex: 1 }}
               control={
                 <Switch
                   size="small"
@@ -63,12 +75,32 @@ export function CommandButtonsDialog() {
                 <Box>
                   <Typography variant="body2">Show command bar</Typography>
                   <Typography variant="caption" color="text.secondary">
-                    Display saved commands above the terminal. The Ctrl+Space menu always
-                    remains available.
+                    Display saved commands {commandBarPosition === 'bottom' ? 'below' : 'above'}{' '}
+                    the terminals. The Ctrl+Space menu always remains available.
                   </Typography>
                 </Box>
               }
             />
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              aria-label="Command bar position"
+              disabled={!showCommandBar}
+              value={commandBarPosition}
+              onChange={(_event, value: CommandBarPosition | null) => {
+                if (value) setPrefs({ commandBarPosition: value });
+              }}
+              sx={{ flexShrink: 0 }}
+            >
+              <ToggleButton value="top" sx={{ px: 1.25, gap: 0.5 }}>
+                <VerticalAlignTopIcon fontSize="small" />
+                Top
+              </ToggleButton>
+              <ToggleButton value="bottom" sx={{ px: 1.25, gap: 0.5 }}>
+                <VerticalAlignBottomIcon fontSize="small" />
+                Bottom
+              </ToggleButton>
+            </ToggleButtonGroup>
           </Paper>
           {buttons.length === 0 ? (
             <Paper variant="outlined" sx={{ p: 3, textAlign: 'center' }}>

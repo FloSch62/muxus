@@ -24,6 +24,8 @@ beforeEach(() => {
   usePrefsStore.setState({
     notifyOnNewVersion: true,
     showCommandBar: true,
+    commandBarPosition: 'top',
+    sidebarPosition: 'left',
     backgroundColor: '',
     lightTerminalScheme: 'vscode-light',
     darkTerminalScheme: 'vscode-dark',
@@ -227,6 +229,8 @@ describe('backing up preferences', () => {
     usePrefsStore.setState({
       notifyOnNewVersion: false,
       showCommandBar: false,
+      commandBarPosition: 'bottom',
+      sidebarPosition: 'right',
       backgroundColor: '#102030',
       lightTerminalScheme: 'paper',
       darkTerminalScheme: 'dracula',
@@ -242,6 +246,8 @@ describe('backing up preferences', () => {
     expect(document.data.preferences.notifyOnNewVersion).toBe(false);
     expect(document.data.preferences.backgroundColor).toBe('#102030');
     expect(document.data.preferences.showCommandBar).toBe(false);
+    expect(document.data.preferences.commandBarPosition).toBe('bottom');
+    expect(document.data.preferences.sidebarPosition).toBe('right');
     expect(document.data.preferences.lightTerminalScheme).toBe('paper');
     expect(document.data.preferences.darkTerminalScheme).toBe('dracula');
     expect(document.data.preferences.activePaneBorder).toBe(false);
@@ -853,6 +859,24 @@ describe('restoring the command bar preference', () => {
     expect(
       sanitizePreferences(prefs({ showCommandBar: 'hidden' })).showCommandBar,
     ).toBeUndefined();
+  });
+});
+
+describe('restoring the layout preferences', () => {
+  const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
+
+  it('restores the sidebar side and the command bar position', () => {
+    expect(
+      sanitizePreferences(prefs({ sidebarPosition: 'right', commandBarPosition: 'bottom' })),
+    ).toMatchObject({ sidebarPosition: 'right', commandBarPosition: 'bottom' });
+  });
+
+  it('drops positions it does not know', () => {
+    const restored = sanitizePreferences(
+      prefs({ sidebarPosition: 'top', commandBarPosition: 'left' }),
+    );
+    expect(restored.sidebarPosition).toBeUndefined();
+    expect(restored.commandBarPosition).toBeUndefined();
   });
 });
 

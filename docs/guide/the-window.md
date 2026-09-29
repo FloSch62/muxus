@@ -33,7 +33,8 @@ window controls sit inside it. From left to right:
 | :material-cog: | [Settings](settings.md) |
 
 Below it, an optional **action bar** appears once [command buttons](commands.md) have been
-saved and the bar is enabled. Each button sends its command to the focused terminal.
+saved and the bar is enabled. Each button sends its command to the focused terminal. The
+bar can also sit at the bottom of the window, below the panes.
 
 ## Hosts sidebar
 
@@ -44,6 +45,10 @@ forwards.
 
 The box at the top both filters and connects. Type an alias to filter, or `user@host:port`
 to dial a target that is not saved.
+
+The sidebar docks on the left by default. To dock it on the right, right-click empty space
+in the sidebar and choose **Move sidebar to the right**, or use **Settings → Appearance →
+Layout**. The width and collapsed state carry over, and ++ctrl+b++ toggles it on either side.
 
 [More on hosts :octicons-arrow-right-24:](hosts.md)
 
@@ -76,7 +81,8 @@ moving a tab toward a direction with no pane splits one off.
 - The **file browser** opens inside the active SSH tab, to the right of the terminal, and
   can be popped out into its own window.
 - The **forwarding panel** docks on the right of the window and lists saved tunnels plus
-  the forwards running on each live connection.
+  the forwards running on each live connection. With the hosts sidebar on the right, the
+  panel opens between the panes and the sidebar.
 
 Both are loaded lazily. Their code is fetched the first time the button is used.
 

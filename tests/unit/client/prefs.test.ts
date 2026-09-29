@@ -70,6 +70,29 @@ describe('appearance preference', () => {
   });
 });
 
+describe('layout preferences', () => {
+  it('docks the sidebar on the left and the command bar on top by default', () => {
+    const initial = usePrefsStore.getInitialState();
+    expect(initial.sidebarPosition).toBe('left');
+    expect(initial.commandBarPosition).toBe('top');
+  });
+
+  it('keeps valid positions during migration', () => {
+    expect(
+      migratePrefsState({ sidebarPosition: 'right', commandBarPosition: 'bottom' }, 16),
+    ).toEqual({ sidebarPosition: 'right', commandBarPosition: 'bottom' });
+  });
+
+  it('falls back to the defaults when a persisted position is invalid', () => {
+    expect(
+      migratePrefsState(
+        { sidebarPosition: 'bottom', commandBarPosition: 'left', monoFontSize: 16 },
+        16,
+      ),
+    ).toEqual({ monoFontSize: 16 });
+  });
+});
+
 describe('terminal file link activation preference', () => {
   it('defaults to Alt + left click so normal terminal selection remains available', () => {
     expect(usePrefsStore.getInitialState().terminalFileLinkActivation).toBe('alt');

@@ -66,6 +66,8 @@ export interface HostTreeProps {
   onMoveHost: (row: VisibleNode, delta: -1 | 1) => void;
   onMoveFolder: (row: VisibleNode, delta: -1 | 1) => void;
   onEscape?: () => void;
+  /** Side hover cards open on: toward the panes, away from the window edge. */
+  hoverPlacement: 'left' | 'right';
   /** Drag & drop wiring; absent until the tree is interactive. */
   dnd?: TreeDndBinding;
 }
@@ -125,6 +127,7 @@ export function HostTree({
   onMoveHost,
   onMoveFolder,
   onEscape,
+  hoverPlacement,
   dnd,
 }: HostTreeProps) {
   const [focusedKey, setFocusedKey] = useState<string | undefined>();
@@ -345,6 +348,7 @@ export function HostTree({
           onMenu={onHostMenu}
           onMove={onMoveHost}
           reorderEnabled={reorderEnabled}
+          hoverPlacement={hoverPlacement}
           registerRef={registerRef(row.key)}
           draggable={dnd?.draggable}
           onDragStart={dnd?.onDragStart}
@@ -363,6 +367,7 @@ export function HostTree({
         row={row}
         label={node.label}
         tooltip={isFolder ? undefined : node.tooltip}
+        tooltipPlacement={hoverPlacement}
         count={node.descendantHostCount}
         color={isFolder ? folderColor(row.key) : undefined}
         iconId={isFolder ? folderIconId(row.key) : 'server'}

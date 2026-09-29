@@ -17,6 +17,10 @@ export type EffectiveThemeMode = Exclude<ThemeMode, 'os'>;
 export type RightClickAction = 'copy-paste' | 'paste' | 'menu';
 export type TerminalFileLinkActivation = 'direct' | 'alt' | 'ctrl' | 'meta';
 export type TabNumberVisibility = 'shortcut' | 'always';
+/** Window edge the hosts sidebar docks against. */
+export type SidebarPosition = 'left' | 'right';
+/** Where the saved-command bar sits relative to the pane canvas. */
+export type CommandBarPosition = 'top' | 'bottom';
 
 export const DEFAULT_INACTIVE_PANE_DIM_STRENGTH = 0.15;
 export const MIN_INACTIVE_PANE_DIM_STRENGTH = 0.1;
@@ -166,8 +170,10 @@ export interface PrefsState {
   keybindings: Record<string, string[]>;
   /** One-click commands shown in the action bar. */
   commandButtons: CommandButton[];
-  /** Show saved commands as buttons above the terminal in addition to the keyboard menu. */
+  /** Show saved commands as buttons beside the terminals in addition to the keyboard menu. */
   showCommandBar: boolean;
+  /** Dock the command bar above or below the pane canvas. */
+  commandBarPosition: CommandBarPosition;
   /** Rules applied to every terminal; hosts may add to or replace these. */
   keywordHighlights: KeywordHighlightRule[];
   /** Named rule sets referenced by saved-host highlighting metadata. */
@@ -175,6 +181,8 @@ export interface PrefsState {
   /** Whether the whole hosts sidebar is hidden — not to be confused with
    *  sidebarCollapsedFolders, which collapses individual folders inside it. */
   sidebarCollapsed: boolean;
+  /** Which side of the window the hosts sidebar docks on. */
+  sidebarPosition: SidebarPosition;
   /** Width of the sessions and hosts sidebar. */
   sidebarWidth: number;
   /** Folder keys the user collapsed. Absent means expanded, so a new folder
@@ -204,6 +212,14 @@ function isTabNumberVisibility(value: unknown): value is TabNumberVisibility {
   return value === 'shortcut' || value === 'always';
 }
 
+export function isSidebarPosition(value: unknown): value is SidebarPosition {
+  return value === 'left' || value === 'right';
+}
+
+export function isCommandBarPosition(value: unknown): value is CommandBarPosition {
+  return value === 'top' || value === 'bottom';
+}
+
 export function isTerminalFileLinkActivation(
   value: unknown,
 ): value is TerminalFileLinkActivation {
@@ -227,6 +243,8 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   // A missing or invalid value falls through to the store's System default.
   if (!isThemeMode(state.themeMode)) delete state.themeMode;
   if (!isTabNumberVisibility(state.tabNumberVisibility)) delete state.tabNumberVisibility;
+  if (!isSidebarPosition(state.sidebarPosition)) delete state.sidebarPosition;
+  if (!isCommandBarPosition(state.commandBarPosition)) delete state.commandBarPosition;
   if (!isTerminalFileLinkActivation(state.terminalFileLinkActivation)) {
     delete state.terminalFileLinkActivation;
   }
@@ -408,9 +426,11 @@ export const usePrefsStore = create<PrefsState>()(
       keybindings: {},
       commandButtons: [],
       showCommandBar: true,
+      commandBarPosition: 'top',
       keywordHighlights: [],
       keywordHighlightProfiles: [...BUILTIN_HIGHLIGHT_PROFILES],
       sidebarCollapsed: false,
+      sidebarPosition: 'left',
       sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
       sidebarCollapsedFolders: [],
       sidebarFolderStyles: {},

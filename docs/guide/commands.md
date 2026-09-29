@@ -10,7 +10,9 @@ into several sessions at once.
 ## Command buttons
 
 By default, saved commands appear in a bar above the terminal. One click sends the command
-to the focused session.
+to the focused session. To keep the buttons next to the prompt instead, move the bar to the
+bottom of the window: right-click the bar and choose **Move bar to the bottom**, or pick
+**Bottom** in the command-button manager or under **Settings → Appearance → Layout**.
 
 <figure markdown="span">
   ![The command button bar above a session](../assets/screenshots/command-buttons.png#only-light){ .shadow }

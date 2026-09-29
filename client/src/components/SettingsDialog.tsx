@@ -38,6 +38,9 @@ import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import PasswordOutlinedIcon from '@mui/icons-material/PasswordOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
+import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
+import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop';
+import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import { fetchAppLogs, formatLogEntry } from '../api/logs.js';
 import {
   useSaveSessionHistorySettings,
@@ -64,7 +67,9 @@ import {
   clampInactivePaneDimStrength,
   terminalSchemeIdForMode,
   usePrefsStore,
+  type CommandBarPosition,
   type RightClickAction,
+  type SidebarPosition,
   type TabNumberVisibility,
   type TerminalFileLinkActivation,
   type ThemeMode,
@@ -86,6 +91,7 @@ import {
 import { AboutSection } from './AboutSection.js';
 import { chordSx } from './chord-style.js';
 import { HighlightProfilesSection } from './HighlightProfilesSection.js';
+import { LayoutPreview } from './LayoutPreview.js';
 import { LocalShellProfilesSection } from './LocalShellProfilesSection.js';
 import { SessionLoggingPolicyFields } from './SessionLoggingPolicyFields.js';
 import { TerminalSchemeSelect } from './TerminalSchemeSelect.js';
@@ -331,6 +337,7 @@ function AppearanceSection() {
           which this does not touch.
         </Typography>
       </Box>
+      <LayoutSettings />
       <Box>
         <SectionTitle>Terminal color schemes</SectionTitle>
         <Stack spacing={2} sx={{ width: '100%', maxWidth: 420 }}>
@@ -522,6 +529,89 @@ function AppearanceSection() {
         </Stack>
       </Box>
     </Stack>
+  );
+}
+
+/** The layout toggles share one width so the two groups line up. */
+const layoutToggleSx = { px: 1.5, gap: 0.75, minWidth: 96 } as const;
+
+/** Where the hosts sidebar and the command bar dock, beside a live miniature. */
+function LayoutSettings() {
+  const sidebarPosition = usePrefsStore((s) => s.sidebarPosition);
+  const commandBarPosition = usePrefsStore((s) => s.commandBarPosition);
+  const showCommandBar = usePrefsStore((s) => s.showCommandBar);
+  const hasCommandButtons = usePrefsStore((s) => s.commandButtons.length > 0);
+  const set = usePrefsStore((s) => s.set);
+  const commandBarNote = !showCommandBar
+    ? 'The command bar is turned off. Switch it back on from the saved command buttons control in the top bar.'
+    : !hasCommandButtons
+      ? 'The command bar appears once a command button has been saved.'
+      : undefined;
+
+  return (
+    <Box>
+      <SectionTitle>Layout</SectionTitle>
+      <Stack direction="row" spacing={3} sx={{ alignItems: 'center' }}>
+        <LayoutPreview
+          sidebarPosition={sidebarPosition}
+          commandBarPosition={commandBarPosition}
+        />
+        <Stack spacing={2}>
+          <Box>
+            <Typography id="sidebar-position-label" variant="body2" color="text.secondary" gutterBottom>
+              Hosts sidebar
+            </Typography>
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              aria-labelledby="sidebar-position-label"
+              value={sidebarPosition}
+              onChange={(_e, value: SidebarPosition | null) => {
+                if (value) set({ sidebarPosition: value });
+              }}
+            >
+              <ToggleButton value="left" sx={layoutToggleSx}>
+                {/* The glyph draws its panel on the right; mirrored, it shows the left. */}
+                <ViewSidebarOutlinedIcon fontSize="small" sx={{ transform: 'scaleX(-1)' }} />
+                Left
+              </ToggleButton>
+              <ToggleButton value="right" sx={layoutToggleSx}>
+                <ViewSidebarOutlinedIcon fontSize="small" />
+                Right
+              </ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
+          <Box>
+            <Typography id="command-bar-position-label" variant="body2" color="text.secondary" gutterBottom>
+              Command bar
+            </Typography>
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              aria-labelledby="command-bar-position-label"
+              value={commandBarPosition}
+              onChange={(_e, value: CommandBarPosition | null) => {
+                if (value) set({ commandBarPosition: value });
+              }}
+            >
+              <ToggleButton value="top" sx={layoutToggleSx}>
+                <VerticalAlignTopIcon fontSize="small" />
+                Top
+              </ToggleButton>
+              <ToggleButton value="bottom" sx={layoutToggleSx}>
+                <VerticalAlignBottomIcon fontSize="small" />
+                Bottom
+              </ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
+        </Stack>
+      </Stack>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5, maxWidth: 520 }}>
+        {commandBarNote ? `${commandBarNote} ` : ''}
+        Right-click empty space in the sidebar, or the command bar itself, to move either one
+        without opening Settings.
+      </Typography>
+    </Box>
   );
 }
 

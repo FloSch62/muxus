@@ -115,6 +115,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
   const setHostEditor = useUiStore((s) => s.setHostEditor);
   const setFolderDialog = useUiStore((s) => s.setFolderDialog);
   const sidebarWidth = usePrefsStore((state) => state.sidebarWidth);
+  const sidebarPosition = usePrefsStore((state) => state.sidebarPosition);
   const localShellProfiles = usePrefsStore((state) => state.localShellProfiles);
   const setPrefs = usePrefsStore((state) => state.set);
   const sidebarRef = useRef<HTMLDivElement>(null);
@@ -472,6 +473,10 @@ export const SessionSidebar = memo(function SessionSidebar() {
     : 0;
 
   const empty = hosts.length === 0 && profiles.length === 0;
+  // Everything side-specific mirrors when the sidebar docks on the right: the
+  // divider and resize grip face the panes, and hover cards open toward them.
+  const onRight = sidebarPosition === 'right';
+  const hoverPlacement = onRight ? 'left' : 'right';
 
   return (
     <Box
@@ -488,14 +493,14 @@ export const SessionSidebar = memo(function SessionSidebar() {
         display: 'flex',
         flexDirection: 'column',
         bgcolor: 'sidebar',
-        borderRight: 1,
+        [onRight ? 'borderLeft' : 'borderRight']: 1,
         borderColor: 'divider',
         position: 'relative',
       }}
     >
       <PanelResizeHandle
         panelRef={sidebarRef}
-        edge="right"
+        edge={onRight ? 'left' : 'right'}
         width={sidebarWidth}
         defaultWidth={DEFAULT_SIDEBAR_WIDTH}
         minWidth={MIN_SIDEBAR_WIDTH}
@@ -579,7 +584,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
             <Tooltip
               key={profile.id}
               title={[profile.shell || 'Automatic shell', ...profile.args].join(' ')}
-              placement="right"
+              placement={hoverPlacement}
             >
               <ListItemButton
                 component="li"
@@ -638,6 +643,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
           onMoveHost={moveHost}
           onMoveFolder={moveFolder}
           onEscape={() => searchRef.current?.focus()}
+          hoverPlacement={hoverPlacement}
           dnd={dnd.binding}
         />
 
@@ -735,6 +741,9 @@ export const SessionSidebar = memo(function SessionSidebar() {
               onSortHosts: () => alphabetizeHosts(allHosts),
               folderEditsEnabled,
               canSortHosts: reorderEnabled && allHosts.length > 1,
+              sidebarPosition,
+              onMoveSidebar: () =>
+                setPrefs({ sidebarPosition: onRight ? 'left' : 'right' }),
             }}
             launch={{ target: launchTarget, onClose: () => setLaunchTarget(null) }}
           />
