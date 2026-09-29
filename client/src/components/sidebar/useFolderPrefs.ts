@@ -141,18 +141,43 @@ export function useFolderPrefs(): FolderPrefs {
     [set],
   );
 
-  return {
-    collapsedKeys,
-    isExpanded: useCallback((key: string) => !collapsedKeys.has(key), [collapsedKeys]),
-    toggleFolder,
-    setCollapsed,
-    folderStyle: useCallback((key: string) => folderStyles[key], [folderStyles]),
-    setFolderStyle,
-    folderOrder: useCallback((parentKey: string) => folderOrders[parentKey], [folderOrders]),
-    setFolderOrder,
-    emptyFolders,
-    addEmptyFolder,
-    removeEmptyFolder,
-    renameFolderPrefs,
-  };
+  const isExpanded = useCallback((key: string) => !collapsedKeys.has(key), [collapsedKeys]);
+  const folderStyle = useCallback((key: string) => folderStyles[key], [folderStyles]);
+  const folderOrder = useCallback(
+    (parentKey: string) => folderOrders[parentKey],
+    [folderOrders],
+  );
+
+  // One object per prefs change, not per render: the sidebar's tree callbacks
+  // depend on it, and a fresh object would re-flatten the tree every render.
+  return useMemo(
+    () => ({
+      collapsedKeys,
+      isExpanded,
+      toggleFolder,
+      setCollapsed,
+      folderStyle,
+      setFolderStyle,
+      folderOrder,
+      setFolderOrder,
+      emptyFolders,
+      addEmptyFolder,
+      removeEmptyFolder,
+      renameFolderPrefs,
+    }),
+    [
+      collapsedKeys,
+      isExpanded,
+      toggleFolder,
+      setCollapsed,
+      folderStyle,
+      setFolderStyle,
+      folderOrder,
+      setFolderOrder,
+      emptyFolders,
+      addEmptyFolder,
+      removeEmptyFolder,
+      renameFolderPrefs,
+    ],
+  );
 }

@@ -44,16 +44,21 @@ export function HostPickerPopover({
   const [filter, setFilter] = useState('');
   const deferredFilter = useDeferredValue(filter);
   const searchInput = useRef<HTMLInputElement>(null);
+  const open = !!anchorEl;
+  // Every empty pane mounts a closed picker; only an open one sorts the hosts.
   const groups = useMemo(
     () =>
-      groupManagedHosts(
-        config?.hosts ?? [],
-        savedData?.profiles ?? [],
-        config?.files ?? [],
-        config?.path,
-        deferredFilter,
-      ),
+      open
+        ? groupManagedHosts(
+            config?.hosts ?? [],
+            savedData?.profiles ?? [],
+            config?.files ?? [],
+            config?.path,
+            deferredFilter,
+          )
+        : [],
     [
+      open,
       config?.hosts,
       savedData?.profiles,
       config?.files,
@@ -91,7 +96,7 @@ export function HostPickerPopover({
 
   return (
     <Popover
-      open={!!anchorEl}
+      open={open}
       anchorEl={anchorEl}
       onClose={onClose}
       anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}

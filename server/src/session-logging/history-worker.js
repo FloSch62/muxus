@@ -156,7 +156,13 @@ if (workerData.legacyDatabasePath && workerData.legacyDatabasePath !== ':memory:
   importLegacyHistory(String(workerData.legacyDatabasePath));
 }
 recoverInterruptedSessions();
-enforceRetention(true);
+
+// The first retention pass stats every file under the history root, which is
+// thousands of files on a long-used install — slow on Windows, and the server
+// (with the app window behind it) waits for `ready`. So it runs straight after
+// `ready` is answered instead; this thread handles messages in order, so every
+// later request still sees its result.
+let startupRetentionPending = true;
 
 const maintenanceTimer = setInterval(() => {
   try {
@@ -179,6 +185,14 @@ port.on('message', (message) => {
       ok: false,
       error: error instanceof Error ? error.message : String(error),
     });
+  }
+  if (startupRetentionPending) {
+    startupRetentionPending = false;
+    try {
+      enforceRetention(true);
+    } catch {
+      // A later write/status request will surface persistent storage failures.
+    }
   }
 });
 
@@ -754,7 +768,7 @@ function enforceRetention(force) {
     db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
     disk = diskStatus();
   }
-  disk = diskStatus();
+  // `disk` is current here: every deletion above re-measured it.
   if (
     disk.usageBytes > Number(settings.maxTotalBytes) ||
     disk.freeBytes < reserve

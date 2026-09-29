@@ -1,5 +1,6 @@
 import {
   lazy,
+  memo,
   Suspense,
   useCallback,
   useDeferredValue,
@@ -82,7 +83,7 @@ import { treeLabelSx, treeRowSx } from './sidebar/tree-row-style.js';
 import { deleteFolderPlan, folderRewritePlan } from './sidebar/folder-mutations.js';
 import type { FolderMenuState } from './sidebar/FolderContextMenu.js';
 import type { HostMenuState } from './sidebar/HostContextMenu.js';
-import { HostTree } from './sidebar/HostTree.js';
+import { HostTree, type HostTreeHandle } from './sidebar/HostTree.js';
 import type { LaunchTarget } from './sidebar/LaunchGroupDialog.js';
 import { useAllManagedHosts } from './sidebar/useAllManagedHosts.js';
 import { useFolderPrefs } from './sidebar/useFolderPrefs.js';
@@ -100,8 +101,15 @@ const EMPTY_KEYS: ReadonlySet<string> = new Set();
 /** The fixed rows above the tree share the tree rows' exact geometry. */
 const fixedRowSx = [treeRowSx(0, undefined), { gap: 0.75 }] as const;
 
-/** Saved Telnet/serial/RDP/VNC profiles and live OpenSSH hosts in one host manager. */
-export function SessionSidebar() {
+/**
+ * Saved Telnet/serial/RDP/VNC profiles and live OpenSSH hosts in one host manager.
+ *
+ * Memoized: it takes no props, and the app shell re-renders on every tab
+ * update — each session steps through several states while it connects, and a
+ * restored workspace connects many at once. The sidebar only follows the
+ * stores it reads itself.
+ */
+export const SessionSidebar = memo(function SessionSidebar() {
   const { data: config, isSuccess: sshConfigReady } = useSshConfig();
   const { data: savedData, isSuccess: savedProfilesReady } = useSavedHostProfiles();
   const setHostEditor = useUiStore((s) => s.setHostEditor);
@@ -111,6 +119,8 @@ export function SessionSidebar() {
   const setPrefs = usePrefsStore((state) => state.set);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const treeRef = useRef<HostTreeHandle>(null);
   const [filter, setFilter] = useState('');
   const [menu, setMenu] = useState<HostMenuState | null>(null);
   const [folderMenu, setFolderMenu] = useState<FolderMenuState | null>(null);
@@ -513,7 +523,7 @@ export function SessionSidebar() {
             if (e.key === 'ArrowDown') {
               // Hand off to the tree rather than moving the text cursor.
               e.preventDefault();
-              sidebarRef.current?.querySelector<HTMLElement>('[role="treeitem"]')?.focus();
+              treeRef.current?.focusFirst();
             }
           }}
           slotProps={{
@@ -543,6 +553,7 @@ export function SessionSidebar() {
       </Stack>
 
       <Box
+        ref={scrollRef}
         sx={{ flex: 1, overflowY: 'auto', pb: 1 }}
         // Rows stop this from reaching the panel, so anything that gets here is
         // empty space: the one place a root-level folder can be asked for.
@@ -610,7 +621,9 @@ export function SessionSidebar() {
         )}
 
         <HostTree
+          ref={treeRef}
           tree={tree}
+          scrollContainer={scrollRef}
           matchKey={matchKey}
           isExpanded={isExpanded}
           setExpanded={setExpanded}
@@ -729,7 +742,7 @@ export function SessionSidebar() {
       )}
     </Box>
   );
-}
+});
 
 /** Depth-first walk of every container, so sibling lookups can scan once. */
 function* allContainers(nodes: readonly ContainerNode[]): Generator<ContainerNode> {

@@ -1,4 +1,4 @@
-import type { DragEvent, MouseEvent, ReactNode } from 'react';
+import { memo, type DragEvent, type MouseEvent, type ReactNode } from 'react';
 import Box from '@mui/material/Box';
 import IconButton from '@mui/material/IconButton';
 import ListItemButton from '@mui/material/ListItemButton';
@@ -24,14 +24,18 @@ export interface FolderRowProps {
   dropInto?: boolean;
   /** Draw the insertion line above or below, for a "place beside" drop. */
   dropEdge?: 'before' | 'after';
-  onToggle: () => void;
+  onToggle: (row: VisibleNode) => void;
   /** Alt+Arrow reorder, the keyboard equivalent of dragging this folder. */
-  onMove?: (delta: -1 | 1) => void;
-  onLaunch: () => void;
-  onMenu?: (anchor: HTMLElement, position?: { top: number; left: number }) => void;
+  onMove?: (row: VisibleNode, delta: -1 | 1) => void;
+  onLaunch: (row: VisibleNode) => void;
+  onMenu?: (
+    row: VisibleNode,
+    anchor: HTMLElement,
+    position?: { top: number; left: number },
+  ) => void;
   registerRef: (element: HTMLElement | null) => void;
   draggable?: boolean;
-  onDragStart?: (event: DragEvent<HTMLElement>) => void;
+  onDragStart?: (event: DragEvent<HTMLElement>, row: VisibleNode) => void;
   onDragEnd?: () => void;
   dragging?: boolean;
 }
@@ -40,8 +44,10 @@ export interface FolderRowProps {
  * A folder is a treeitem, not a list subheader: it has to be focusable, carry
  * aria-expanded, and take drops. The uppercase subheader treatment goes with
  * it — at four levels deep, letter-spaced caps stop being readable.
+ *
+ * Memoized like HostRow: callbacks take the row, so they are shared by all rows.
  */
-export function FolderRow({
+export const FolderRow = memo(function FolderRow({
   row,
   label,
   tooltip,
@@ -82,16 +88,16 @@ export function FolderRow({
       aria-selected={focused}
       tabIndex={focused ? 0 : -1}
       draggable={draggable}
-      onDragStart={onDragStart}
+      onDragStart={onDragStart ? (event) => onDragStart(event, row) : undefined}
       onDragEnd={onDragEnd}
-      onClick={onToggle}
+      onClick={() => onToggle(row)}
       aria-keyshortcuts={onMove ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
       onKeyDown={(event) => {
         if (!onMove || !event.altKey) return;
         if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
         event.preventDefault();
         event.stopPropagation();
-        onMove(event.key === 'ArrowUp' ? -1 : 1);
+        onMove(row, event.key === 'ArrowUp' ? -1 : 1);
       }}
       onContextMenu={(event) => {
         // A config-file group is not a Muxus folder and has nothing to offer, so
@@ -99,7 +105,7 @@ export function FolderRow({
         if (!onMenu) return;
         event.preventDefault();
         event.stopPropagation();
-        onMenu(event.currentTarget, { top: event.clientY, left: event.clientX });
+        onMenu(row, event.currentTarget, { top: event.clientY, left: event.clientX });
       }}
       sx={[
         treeRowSx(row.depth, row.railColor),
@@ -146,7 +152,9 @@ export function FolderRow({
         {label}
       </Box>
       <Tooltip title={count > 0 ? `Launch all ${count} hosts…` : ''} disableInteractive>
-        <span>
+        {/* Flex, not inline: an inline wrapper takes the body line height and
+            makes folder rows taller than host rows. */}
+        <span style={{ display: 'flex' }}>
           <IconButton
             className="folder-action"
             size="small"
@@ -156,7 +164,7 @@ export function FolderRow({
             onMouseDown={swallow}
             onClick={(event) => {
               swallow(event);
-              onLaunch();
+              onLaunch(row);
             }}
             sx={{ p: 0.125, opacity: { xs: 1, md: 0 }, transition: 'opacity 120ms ease' }}
           >
@@ -173,7 +181,7 @@ export function FolderRow({
           onMouseDown={swallow}
           onClick={(event) => {
             swallow(event);
-            onMenu(event.currentTarget);
+            onMenu(row, event.currentTarget);
           }}
           sx={{ p: 0.125, opacity: { xs: 1, md: 0 }, transition: 'opacity 120ms ease' }}
         >
@@ -196,4 +204,4 @@ export function FolderRow({
   ) : (
     content
   );
-}
+});

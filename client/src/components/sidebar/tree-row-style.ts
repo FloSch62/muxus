@@ -6,6 +6,14 @@ type SxEntry = Exclude<SxProps<Theme>, readonly unknown[]>;
 
 /** One line of text, tight enough that nesting still leaves rows on screen. */
 export const TREE_ROW_HEIGHT = 26;
+/** Vertical margin on each row; adjacent margins collapse into one gap. */
+export const TREE_ROW_GAP = 1;
+/**
+ * Distance from one row's top to the next. Every tree row has exactly this
+ * geometry: the host tree only mounts the rows near the viewport and sizes the
+ * spacers for the rest from it.
+ */
+export const TREE_ROW_PITCH = TREE_ROW_HEIGHT + TREE_ROW_GAP;
 export const TREE_INDENT_STEP = 14;
 export const TREE_BASE_INSET = 8;
 
@@ -79,7 +87,8 @@ export function indentGuides(
  */
 export function treeRowSx(depth: number, railColor: string | undefined): SxEntry {
   return (theme) => ({
-    minHeight: TREE_ROW_HEIGHT,
+    height: TREE_ROW_HEIGHT,
+    my: `${TREE_ROW_GAP}px`,
     py: 0.25,
     pr: 0.5,
     pl: `${indentPx(depth)}px`,

@@ -63,7 +63,7 @@ import {
 import { VaultKeyStoreUnavailableError } from '../security/vault-key-store.js';
 import {
   expandIdentityPath,
-  listHosts,
+  isConcreteAlias,
   loadConfigDocument,
   parseHostSpec,
   resolveHost,
@@ -1361,9 +1361,15 @@ function openProxyCommand(command: string): Duplex {
   return stream;
 }
 
-/** Ad-hoc targets never masquerade as OpenSSH-backed database profiles. */
+/**
+ * Ad-hoc targets never masquerade as OpenSSH-backed database profiles. Same
+ * answer as looking the target up in listHosts(), without resolving every
+ * host in the config on each connect.
+ */
 export function findMetadataAlias(doc: ConfigDocument, requestedHost: string): string | undefined {
-  return listHosts(doc).some((entry) => entry.aliases.includes(requestedHost))
+  return doc.blocks.some((block) =>
+    block.patterns.some((pattern) => pattern === requestedHost && isConcreteAlias(pattern)),
+  )
     ? requestedHost
     : undefined;
 }

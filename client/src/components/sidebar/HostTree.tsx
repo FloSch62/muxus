@@ -1,4 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FocusEvent,
+  type Ref,
+  type RefObject,
+} from 'react';
 import Box from '@mui/material/Box';
 import {
   flattenVisibleTree,
@@ -10,11 +21,28 @@ import { managedHostDisplayName, type ManagedHost } from '../../managed-hosts.js
 import { FolderRow } from './FolderRow.js';
 import { HostRow } from './HostRow.js';
 import { focusAfterChange } from './tree-navigation.js';
+import { TREE_ROW_GAP, TREE_ROW_HEIGHT, TREE_ROW_PITCH } from './tree-row-style.js';
+import {
+  TREE_OVERSCAN,
+  nextRowWindow,
+  renderedRowIndices,
+  rowSegments,
+  visibleRowSpan,
+  type RowWindow,
+} from './tree-window.js';
 import { useTreeKeyboard } from './useTreeKeyboard.js';
 import type { LiveCounts } from './useLiveHostCounts.js';
 
+export interface HostTreeHandle {
+  /** Move focus to the first row, scrolling it into view. */
+  focusFirst: () => void;
+}
+
 export interface HostTreeProps {
   tree: HostTreeModel;
+  /** The element that scrolls the tree; rows far outside its viewport are not mounted. */
+  scrollContainer: RefObject<HTMLElement | null>;
+  ref?: Ref<HostTreeHandle>;
   /** Host the search box would connect on Enter, marked so it can be seen. */
   matchKey?: string;
   isExpanded: (key: string) => boolean;
@@ -62,13 +90,27 @@ export interface TreeDndBinding {
   dragging: boolean;
 }
 
+/** Enough rows for a tall window before the viewport has been measured. */
+function initialRowWindow(): RowWindow {
+  const height = typeof window === 'undefined' ? 1080 : window.innerHeight;
+  return { start: 0, end: Math.ceil(height / TREE_ROW_PITCH) + TREE_OVERSCAN };
+}
+
 /**
  * The whole host list as a single flat `role="tree"`. One flattened array backs
  * rendering, arrow keys, type-ahead and drop hit-testing, so they can never
  * disagree about what is on screen.
+ *
+ * Only the rows near the viewport are mounted — every row is a handful of MUI
+ * components, and a few hundred hosts rendered in full made every sidebar
+ * update cost seconds. Rows have a fixed pitch, so spacers stand in for the
+ * rest and the scrollbar still spans the whole list. aria-setsize/posinset
+ * keep the full size of each level visible to assistive technology.
  */
 export function HostTree({
   tree,
+  scrollContainer,
+  ref,
   matchKey,
   isExpanded,
   setExpanded,
@@ -86,7 +128,12 @@ export function HostTree({
   dnd,
 }: HostTreeProps) {
   const [focusedKey, setFocusedKey] = useState<string | undefined>();
+  const [rowWindow, setRowWindow] = useState(initialRowWindow);
+  const listRef = useRef<HTMLUListElement>(null);
   const refs = useRef(new Map<string, HTMLElement>());
+  const refCallbacks = useRef(new Map<string, (element: HTMLElement | null) => void>());
+  /** A row focused before it was mounted; focused once it renders. */
+  const pendingFocus = useRef<string | undefined>(undefined);
   const lastIndex = useRef(0);
 
   // Depend on the callback, not on the binding object: an inline `dnd` prop
@@ -101,6 +148,8 @@ export function HostTree({
     () => flattenVisibleTree(tree, expandedFor, folderColor),
     [tree, expandedFor, folderColor],
   );
+  const nodesRef = useRef(nodes);
+  nodesRef.current = nodes;
   const labels = useMemo(
     () =>
       nodes.map((row) =>
@@ -112,11 +161,61 @@ export function HostTree({
   const focusedIndex = nodes.findIndex((row) => row.key === focusedKey);
   // The first row is the tab stop until something has been focused, so the
   // tree is always reachable with a single Tab.
-  const activeKey = focusedIndex >= 0 ? focusedKey : nodes[0]?.key;
+  const activeIndex = focusedIndex >= 0 ? focusedIndex : nodes.length > 0 ? 0 : -1;
+  const activeKey = nodes[activeIndex]?.key;
 
   useEffect(() => {
     if (focusedIndex >= 0) lastIndex.current = focusedIndex;
   }, [focusedIndex]);
+
+  /** Re-measure which rows the viewport shows; a no-op while the window still covers them. */
+  const syncWindow = useCallback(() => {
+    const list = listRef.current;
+    const scroller = scrollContainer.current;
+    if (!list || !scroller) return;
+    const scrolledPast = scroller.getBoundingClientRect().top - list.getBoundingClientRect().top;
+    const visible = visibleRowSpan(
+      scrolledPast,
+      scroller.clientHeight,
+      TREE_ROW_PITCH,
+      nodesRef.current.length,
+    );
+    setRowWindow((current) => nextRowWindow(current, visible));
+  }, [scrollContainer]);
+
+  // After every commit: rows above the tree (a quick-connect row, an alert)
+  // can move it without any scroll event.
+  useLayoutEffect(syncWindow);
+
+  useEffect(() => {
+    const scroller = scrollContainer.current;
+    if (!scroller) return;
+    scroller.addEventListener('scroll', syncWindow, { passive: true });
+    const resize = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(syncWindow);
+    resize?.observe(scroller);
+    return () => {
+      scroller.removeEventListener('scroll', syncWindow);
+      resize?.disconnect();
+    };
+  }, [scrollContainer, syncWindow]);
+
+  /** Scroll the container just enough to show a row, mounted or not. */
+  const scrollToIndex = useCallback(
+    (index: number) => {
+      const list = listRef.current;
+      const scroller = scrollContainer.current;
+      if (!list || !scroller) return;
+      const top =
+        list.getBoundingClientRect().top -
+        scroller.getBoundingClientRect().top +
+        index * TREE_ROW_PITCH;
+      if (top < 0) scroller.scrollBy({ top, behavior: 'instant' });
+      else if (top + TREE_ROW_HEIGHT > scroller.clientHeight) {
+        scroller.scrollBy({ top: top + TREE_ROW_HEIGHT - scroller.clientHeight, behavior: 'instant' });
+      }
+    },
+    [scrollContainer],
+  );
 
   // Drop hit-testing resolves a row key back to its node, so it has to read the
   // same flattened array this component is rendering.
@@ -136,15 +235,51 @@ export function HostTree({
   // the winner is scored a keystroke before the filtered tree catches up, so
   // the row to scroll to often does not exist yet on the first run.
   useEffect(() => {
-    if (matchKey) refs.current.get(matchKey)?.scrollIntoView({ block: 'nearest' });
-  }, [matchKey, nodes]);
+    if (!matchKey) return;
+    const index = nodes.findIndex((row) => row.key === matchKey);
+    if (index >= 0) scrollToIndex(index);
+  }, [matchKey, nodes, scrollToIndex]);
 
-  const focusKey = useCallback((key: string) => {
-    setFocusedKey(key);
+  const focusKey = useCallback(
+    (key: string) => {
+      const index = nodesRef.current.findIndex((row) => row.key === key);
+      if (index >= 0) scrollToIndex(index);
+      setFocusedKey(key);
+      // A row outside the window mounts on the next commit as the tab stop.
+      const element = refs.current.get(key);
+      if (element) element.focus({ preventScroll: true });
+      else pendingFocus.current = key;
+    },
+    [scrollToIndex],
+  );
+
+  useLayoutEffect(() => {
+    const key = pendingFocus.current;
+    if (!key) return;
     const element = refs.current.get(key);
-    element?.focus();
-    element?.scrollIntoView({ block: 'nearest' });
+    if (!element) return;
+    pendingFocus.current = undefined;
+    element.focus({ preventScroll: true });
+  });
+
+  // A row focused with the mouse becomes the tab stop as well, so it stays
+  // mounted — and keeps focus — when the list scrolls it out of the window.
+  const followFocus = useCallback((event: FocusEvent<HTMLElement>) => {
+    const key = (event.target as HTMLElement).closest<HTMLElement>('[data-node-key]')?.dataset
+      .nodeKey;
+    if (key) setFocusedKey(key);
   }, []);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      focusFirst: () => {
+        const first = nodesRef.current[0];
+        if (first) focusKey(first.key);
+      },
+    }),
+    [focusKey],
+  );
 
   const activate = useCallback(
     (row: VisibleNode) => {
@@ -164,16 +299,98 @@ export function HostTree({
     onEscape,
   });
 
-  const registerRef = useCallback(
-    (key: string) => (element: HTMLElement | null) => {
-      if (element) refs.current.set(key, element);
-      else refs.current.delete(key);
+  // One callback per key for the lifetime of the tree: a fresh ref callback on
+  // every render would defeat the row memo and re-attach every row's ref.
+  const registerRef = useCallback((key: string) => {
+    let callback = refCallbacks.current.get(key);
+    if (!callback) {
+      callback = (element: HTMLElement | null) => {
+        if (element) refs.current.set(key, element);
+        else refs.current.delete(key);
+      };
+      refCallbacks.current.set(key, callback);
+    }
+    return callback;
+  }, []);
+
+  const toggleFolder = useCallback(
+    (row: VisibleNode) => setExpanded(row.key, !expandedFor(row.key)),
+    [setExpanded, expandedFor],
+  );
+  const launchFolder = useCallback(
+    (row: VisibleNode) => {
+      if (row.node.kind !== 'host') onLaunch(row.node);
     },
-    [],
+    [onLaunch],
+  );
+  const openFolderMenu = useCallback(
+    (row: VisibleNode, anchor: HTMLElement, position?: { top: number; left: number }) => {
+      if (row.node.kind !== 'host') onFolderMenu(row.node, anchor, position);
+    },
+    [onFolderMenu],
+  );
+
+  const renderRow = (row: VisibleNode) => {
+    const focused = row.key === activeKey;
+    if (row.node.kind === 'host') {
+      return (
+        <HostRow
+          key={row.key}
+          row={row}
+          host={row.node.host}
+          live={liveByKey.get(row.key)}
+          focused={focused}
+          match={row.key === matchKey}
+          onConnect={onConnect}
+          onMenu={onHostMenu}
+          onMove={onMoveHost}
+          reorderEnabled={reorderEnabled}
+          registerRef={registerRef(row.key)}
+          draggable={dnd?.draggable}
+          onDragStart={dnd?.onDragStart}
+          onDragEnd={dnd?.onDragEnd}
+          dragging={dnd?.isDragging(row.key)}
+          dropEdge={dnd?.dropEdgeFor(row.key)}
+        />
+      );
+    }
+
+    const node = row.node;
+    const isFolder = node.kind === 'folder';
+    return (
+      <FolderRow
+        key={row.key}
+        row={row}
+        label={node.label}
+        tooltip={isFolder ? undefined : node.tooltip}
+        count={node.descendantHostCount}
+        color={isFolder ? folderColor(row.key) : undefined}
+        iconId={isFolder ? folderIconId(row.key) : 'server'}
+        focused={focused}
+        dropInto={dnd?.dropIntoKey === row.key}
+        dropEdge={isFolder ? dnd?.dropEdgeFor(row.key) : undefined}
+        onToggle={toggleFolder}
+        onMove={isFolder && reorderEnabled ? onMoveFolder : undefined}
+        onLaunch={launchFolder}
+        onMenu={isFolder ? openFolderMenu : undefined}
+        registerRef={registerRef(row.key)}
+        // ssh_config file groups are defined by the config, not by drags.
+        draggable={isFolder && (dnd?.draggable ?? false)}
+        onDragStart={isFolder ? dnd?.onDragStart : undefined}
+        onDragEnd={dnd?.onDragEnd}
+        dragging={dnd?.isDragging(row.key)}
+      />
+    );
+  };
+
+  const segments = rowSegments(
+    renderedRowIndices(rowWindow, nodes.length, activeIndex),
+    nodes.length,
   );
 
   return (
     <Box
+      ref={listRef}
       component="ul"
       role="tree"
       aria-label="Hosts"
@@ -181,70 +398,26 @@ export function HostTree({
       // programmatically, never by tabbing.
       tabIndex={-1}
       onKeyDown={onKeyDown}
+      onFocus={followFocus}
       {...dnd?.containerProps}
       sx={{ m: 0, p: 0, listStyle: 'none' }}
     >
-      {nodes.map((row) => {
-        const focused = row.key === activeKey;
-        if (row.node.kind === 'host') {
-          const host = row.node.host;
-          return (
-            <HostRow
-              key={row.key}
-              row={row}
-              host={host}
-              live={liveByKey.get(row.key)}
-              focused={focused}
-              match={row.key === matchKey}
-              onConnect={() => onConnect(host)}
-              onMenu={onHostMenu}
-              onMove={(delta) => onMoveHost(row, delta)}
-              reorderEnabled={reorderEnabled}
-              registerRef={registerRef(row.key)}
-              draggable={dnd?.draggable}
-              onDragStart={dnd ? (event) => dnd.onDragStart(event, row) : undefined}
-              onDragEnd={dnd?.onDragEnd}
-              dragging={dnd?.isDragging(row.key)}
-              dropEdge={dnd?.dropEdgeFor(row.key)}
-            />
-          );
-        }
-
-        const node = row.node;
-        const isFolder = node.kind === 'folder';
-        return (
-          <FolderRow
-            key={row.key}
-            row={row}
-            label={node.label}
-            tooltip={isFolder ? undefined : node.tooltip}
-            count={node.descendantHostCount}
-            color={isFolder ? folderColor(row.key) : undefined}
-            iconId={isFolder ? folderIconId(row.key) : 'server'}
-            focused={focused}
-            dropInto={dnd?.dropIntoKey === row.key}
-            dropEdge={isFolder ? dnd?.dropEdgeFor(row.key) : undefined}
-            onToggle={() => setExpanded(row.key, !expandedFor(row.key))}
-            onMove={
-              isFolder && reorderEnabled ? (delta) => onMoveFolder(row, delta) : undefined
-            }
-            onLaunch={() => onLaunch(node)}
-            onMenu={
-              isFolder
-                ? (anchor, position) => onFolderMenu(node, anchor, position)
-                : undefined
-            }
-            registerRef={registerRef(row.key)}
-            // ssh_config file groups are defined by the config, not by drags.
-            draggable={isFolder && (dnd?.draggable ?? false)}
-            onDragStart={
-              isFolder && dnd ? (event) => dnd.onDragStart(event, row) : undefined
-            }
-            onDragEnd={dnd?.onDragEnd}
-            dragging={dnd?.isDragging(row.key)}
+      {segments.map((segment, index) =>
+        segment.kind === 'row' ? (
+          renderRow(nodes[segment.index]!)
+        ) : (
+          // A spacer carries a row's margins too, so they collapse exactly as
+          // the rows it stands in for would and nothing shifts as rows mount.
+          <li
+            key={`gap-${index}`}
+            aria-hidden
+            style={{
+              height: segment.rows * TREE_ROW_PITCH - TREE_ROW_GAP,
+              margin: `${TREE_ROW_GAP}px 0`,
+            }}
           />
-        );
-      })}
+        ),
+      )}
       {dnd?.dragging && (
         <Box
           component="li"
