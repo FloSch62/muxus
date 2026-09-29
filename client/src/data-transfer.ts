@@ -29,7 +29,9 @@ import { MIN_SFTP_PANEL_WIDTH } from './sftp-panel-width.js';
 import {
   MAX_INACTIVE_PANE_DIM_STRENGTH,
   MIN_INACTIVE_PANE_DIM_STRENGTH,
+  isCommandBarPosition,
   isLocalShellProfileArray,
+  isSidebarPosition,
   isTerminalFileLinkActivation,
   usePrefsStore,
   type FolderStyle,
@@ -72,9 +74,11 @@ const PREFERENCE_KEYS = [
   'notifyOnNewVersion',
   'commandButtons',
   'showCommandBar',
+  'commandBarPosition',
   'keywordHighlights',
   'keywordHighlightProfiles',
   'sidebarCollapsed',
+  'sidebarPosition',
   'sidebarWidth',
   'sidebarCollapsedFolders',
   'sidebarFolderStyles',
@@ -853,6 +857,9 @@ export function sanitizePreferences(
   if (typeof input.showCommandBar === 'boolean') {
     output.showCommandBar = input.showCommandBar;
   }
+  if (isCommandBarPosition(input.commandBarPosition)) {
+    output.commandBarPosition = input.commandBarPosition;
+  }
   if (
     Array.isArray(input.keywordHighlights) &&
     input.keywordHighlights.length <= 100 &&
@@ -865,6 +872,9 @@ export function sanitizePreferences(
   }
   if (typeof input.sidebarCollapsed === 'boolean') {
     output.sidebarCollapsed = input.sidebarCollapsed;
+  }
+  if (isSidebarPosition(input.sidebarPosition)) {
+    output.sidebarPosition = input.sidebarPosition;
   }
   if (
     finiteRange(

@@ -16,6 +16,8 @@ export interface FolderRowProps {
   /** Label to draw; folders show their last segment, file groups their name. */
   label: string;
   tooltip?: string;
+  /** Side the tooltip opens on, toward the panes. */
+  tooltipPlacement?: 'left' | 'right';
   count: number;
   color?: string;
   iconId?: string;
@@ -51,6 +53,7 @@ export const FolderRow = memo(function FolderRow({
   row,
   label,
   tooltip,
+  tooltipPlacement = 'right',
   count,
   color,
   iconId,
@@ -198,7 +201,7 @@ export const FolderRow = memo(function FolderRow({
   );
 
   return tooltip ? (
-    <Tooltip title={tooltip} placement="right" enterDelay={600} disableInteractive>
+    <Tooltip title={tooltip} placement={tooltipPlacement} enterDelay={600} disableInteractive>
       {content}
     </Tooltip>
   ) : (

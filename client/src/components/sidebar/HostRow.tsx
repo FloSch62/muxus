@@ -29,6 +29,8 @@ export interface HostRowProps {
   onMenu: (host: ManagedHost, anchor: HTMLElement, position?: { top: number; left: number }) => void;
   onMove: (row: VisibleNode, delta: -1 | 1) => void;
   reorderEnabled: boolean;
+  /** Side the hover card opens on, toward the panes. */
+  hoverPlacement: 'left' | 'right';
   registerRef: (element: HTMLElement | null) => void;
   draggable?: boolean;
   onDragStart?: (event: DragEvent<HTMLElement>, row: VisibleNode) => void;
@@ -56,6 +58,7 @@ export const HostRow = memo(function HostRow({
   onMenu,
   onMove,
   reorderEnabled,
+  hoverPlacement,
   registerRef,
   draggable,
   onDragStart,
@@ -74,7 +77,7 @@ export const HostRow = memo(function HostRow({
 
   return (
     <Tooltip
-      placement="right"
+      placement={hoverPlacement}
       enterDelay={400}
       enterNextDelay={200}
       disableInteractive

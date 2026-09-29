@@ -69,6 +69,8 @@ export function AppShell({
 }) {
   useWorkspacePersistence(persistWorkspace, initialWorkspace);
   const sidebarCollapsed = usePrefsStore((state) => state.sidebarCollapsed);
+  const sidebarOnRight = usePrefsStore((state) => state.sidebarPosition === 'right');
+  const commandBarAtBottom = usePrefsStore((state) => state.commandBarPosition === 'bottom');
   const tabs = useTabsStore((state) => state.tabs);
   const root = useTabsStore((state) => state.root);
   const activePaneId = useTabsStore((state) => state.activePaneId);
@@ -76,6 +78,7 @@ export function AppShell({
   const focusMode = useUiStore((state) => state.focusMode);
   const forwardingOpen = useUiStore((state) => state.forwardingOpen);
   const setHostEditor = useUiStore((state) => state.setHostEditor);
+  const showSidebar = !focusMode && !sidebarCollapsed;
 
   return (
     <Box
@@ -84,9 +87,9 @@ export function AppShell({
     >
       <CommandLineLaunchHandler />
       <TopBar />
-      {focusMode ? null : <ActionBar />}
+      {focusMode || commandBarAtBottom ? null : <ActionBar position="top" />}
       <Box sx={{ flex: 1, display: 'flex', minHeight: 0 }}>
-        {focusMode || sidebarCollapsed ? null : <SessionSidebar />}
+        {showSidebar && !sidebarOnRight ? <SessionSidebar /> : null}
         <Box sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>
           <PaneCanvas
             root={root}
@@ -104,7 +107,11 @@ export function AppShell({
             </Suspense>
           </ErrorBoundary>
         ) : null}
+        {/* Docked on the right, the sidebar keeps the window edge and the
+            forwarding panel opens between it and the panes. */}
+        {showSidebar && sidebarOnRight ? <SessionSidebar /> : null}
       </Box>
+      {focusMode || !commandBarAtBottom ? null : <ActionBar position="bottom" />}
     </Box>
   );
 }
