@@ -43,22 +43,64 @@ describe('terminal clipboard paste', () => {
   });
 
   it('accepts an input-ready SSH target before its display status settles', () => {
+    const stored = { kind: 'ssh', connectionId: 'connection-1' } as const;
     expect(
       isCurrentTerminalImagePasteTarget({
+        stored,
+        kind: 'ssh',
         connectionId: 'connection-1',
-        expectedConnectionId: 'connection-1',
         inputReady: true,
         socketOpen: true,
-        ssh: true,
       }),
     ).toBe(true);
     expect(
       isCurrentTerminalImagePasteTarget({
+        stored,
+        kind: 'ssh',
         connectionId: 'connection-1',
-        expectedConnectionId: 'connection-1',
         inputReady: false,
         socketOpen: true,
-        ssh: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('only pastes a remote image path into the connection that received it', () => {
+    expect(
+      isCurrentTerminalImagePasteTarget({
+        stored: { kind: 'ssh', connectionId: 'connection-1' },
+        kind: 'ssh',
+        connectionId: 'connection-2',
+        inputReady: true,
+        socketOpen: true,
+      }),
+    ).toBe(false);
+  });
+
+  it('pastes a local image path into any live local session', () => {
+    const stored = { kind: 'local' } as const;
+    expect(
+      isCurrentTerminalImagePasteTarget({
+        stored,
+        kind: 'local',
+        inputReady: true,
+        socketOpen: true,
+      }),
+    ).toBe(true);
+    expect(
+      isCurrentTerminalImagePasteTarget({
+        stored,
+        kind: 'local',
+        inputReady: true,
+        socketOpen: false,
+      }),
+    ).toBe(false);
+    expect(
+      isCurrentTerminalImagePasteTarget({
+        stored,
+        kind: 'ssh',
+        connectionId: 'connection-1',
+        inputReady: true,
+        socketOpen: true,
       }),
     ).toBe(false);
   });

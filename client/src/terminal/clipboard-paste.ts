@@ -17,28 +17,32 @@ interface PasteTerminalClipboardOptions {
   pasteImagePath: (path: string) => void | Promise<void>;
 }
 
+/** Where a pasted image was stored: on one SSH connection's host, or on this machine. */
+export type TerminalImageLocation =
+  | { kind: 'ssh'; connectionId: string }
+  | { kind: 'local' };
+
 interface TerminalImagePasteTarget {
+  stored: TerminalImageLocation | undefined;
+  /** The tab's session kind and connection at paste time. */
+  kind: string | undefined;
   connectionId?: string;
-  expectedConnectionId?: string;
   inputReady: boolean;
   socketOpen: boolean;
-  ssh: boolean;
 }
 
 export function isCurrentTerminalImagePasteTarget({
+  stored,
+  kind,
   connectionId,
-  expectedConnectionId,
   inputReady,
   socketOpen,
-  ssh,
 }: TerminalImagePasteTarget): boolean {
-  return (
-    ssh &&
-    inputReady &&
-    socketOpen &&
-    expectedConnectionId !== undefined &&
-    connectionId === expectedConnectionId
-  );
+  if (!stored || !inputReady || !socketOpen) return false;
+  // A local file is readable from any local session; a remote one only
+  // through the connection it was uploaded over.
+  if (stored.kind === 'local') return kind === 'local';
+  return kind === 'ssh' && connectionId === stored.connectionId;
 }
 
 interface TerminalClipboardPasteQueueLimits {
@@ -145,7 +149,21 @@ export async function uploadTerminalClipboardImage(
   return response.path;
 }
 
-/** Paste captured text or upload a captured image and paste its remote path. */
+/** Store an image on the machine that runs local terminals and return its path. */
+export async function storeLocalTerminalClipboardImage(
+  png: Uint8Array<ArrayBuffer>,
+  signal?: AbortSignal,
+): Promise<string> {
+  const response = await apiFetch<{ path: string }>('/api/local-files/clipboard-image', {
+    method: 'POST',
+    headers: { 'content-type': 'application/octet-stream' },
+    body: png,
+    signal,
+  });
+  return response.path;
+}
+
+/** Paste captured text, or store a captured image and paste its path. */
 export async function pasteTerminalClipboard(
   payload: TerminalClipboardPayload,
   { uploadImage, pasteText, pasteImagePath }: PasteTerminalClipboardOptions,
@@ -158,7 +176,7 @@ export async function pasteTerminalClipboard(
     return { status: 'skipped', reason: payload.kind };
   }
 
-  const remotePath = await uploadImage(payload.png);
-  await pasteImagePath(remotePath);
+  const imagePath = await uploadImage(payload.png);
+  await pasteImagePath(imagePath);
   return { status: 'pasted', kind: 'image-path' };
 }

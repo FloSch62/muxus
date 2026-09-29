@@ -36,7 +36,7 @@ export interface TerminalHandle {
   /** Current zoom as a percentage (100 = preference font size). */
   zoomPercent(): number;
   paste(text: string): void;
-  /** Read and paste the current clipboard, including SSH image uploads. */
+  /** Read and paste the current clipboard, including images in SSH and local terminals. */
   pasteClipboard(): void;
   /** Start/stop/pause persistence or change input capture for this live session. */
   setLogging(patch: {

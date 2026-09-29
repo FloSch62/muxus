@@ -94,8 +94,10 @@ import {
 import {
   isCurrentTerminalImagePasteTarget,
   pasteTerminalClipboard,
+  storeLocalTerminalClipboardImage,
   type TerminalClipboardPayload,
   TerminalClipboardPasteQueue,
+  type TerminalImageLocation,
   uploadTerminalClipboardImage,
 } from '../terminal/clipboard-paste.js';
 import {
@@ -434,14 +436,18 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       readClipboardContent(),
   ) => {
     const operation = clipboardPasteQueue.enqueue(capture, (clipboard, signal) => {
-      let uploadedConnectionId: string | undefined;
+      let stored: TerminalImageLocation | undefined;
       return pasteTerminalClipboard(clipboard, {
         uploadImage: async (png) => {
           const current = useTabsStore
             .getState()
             .tabs.find((candidate) => candidate.id === tab.id);
+          if (current?.profile?.kind === 'local') {
+            stored = { kind: 'local' };
+            return storeLocalTerminalClipboardImage(png, signal);
+          }
           if (current?.profile?.kind !== 'ssh') {
-            throw new Error('Image paste is available in SSH terminals.');
+            throw new Error('Image paste is available in SSH and local terminals.');
           }
           if (current.sftpAvailable === false) {
             throw new Error('Image paste requires SFTP, which is disabled for this host.');
@@ -449,7 +455,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           if (!current.connId) {
             throw new Error('Reconnect the SSH session before pasting an image.');
           }
-          uploadedConnectionId = current.connId;
+          stored = { kind: 'ssh', connectionId: current.connId };
           return uploadTerminalClipboardImage(current.connId, png, signal);
         },
         pasteText,
@@ -460,14 +466,14 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             .tabs.find((candidate) => candidate.id === tab.id);
           if (
             !isCurrentTerminalImagePasteTarget({
+              stored,
+              kind: current?.profile?.kind,
               connectionId: current?.connId,
-              expectedConnectionId: uploadedConnectionId,
               inputReady: terminalInputReadyRef.current,
               socketOpen: wsRef.current?.readyState === WebSocket.OPEN,
-              ssh: current?.profile?.kind === 'ssh',
             })
           ) {
-            throw new Error('The SSH session disconnected before the image path was pasted.');
+            throw new Error('The session disconnected before the image path was pasted.');
           }
           await pasteText(path, false);
         },
