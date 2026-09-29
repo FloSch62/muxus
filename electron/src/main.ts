@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   app,
+  clipboard,
   BrowserWindow,
   dialog,
   type IpcMainEvent,
@@ -78,6 +79,8 @@ const EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 const TITLEBAR_HEIGHT = 52;
 const UPDATE_MANIFEST_URL = 'https://flosch62.github.io/muxus/latest.json';
 const UPDATE_CHECK_TIMEOUT_MS = 10_000;
+const CLIPBOARD_IMAGE_MAX_BYTES = 18 * 1024 * 1024;
+const CLIPBOARD_IMAGE_MAX_PIXELS = 32 * 1024 * 1024;
 
 let primaryWindow: BrowserWindow | undefined;
 let appUrl: string | undefined;
@@ -102,6 +105,11 @@ interface AppInfo {
   name: string;
   version: string;
 }
+
+type DesktopClipboardContent =
+  | { kind: 'text'; text: string }
+  | { kind: 'image'; png: Uint8Array<ArrayBuffer> }
+  | { kind: 'empty' };
 
 interface UpdateManifest {
   version?: unknown;
@@ -615,6 +623,51 @@ ipcMain.handle('muxus:check-for-update', async (event, options?: { force?: unkno
   updateCheck ??= checkForUpdate();
   return updateCheck;
 });
+
+/** Width and height from a PNG's IHDR chunk, read without decoding the pixels. */
+function pngDimensions(png: Uint8Array): { width: number; height: number } | undefined {
+  // 8-byte signature, then the IHDR chunk: length, type, width, height.
+  if (png.byteLength < 24) return undefined;
+  const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
+  if (view.getUint32(0) !== 0x89504e47 || view.getUint32(4) !== 0x0d0a1a0a) return undefined;
+  if (view.getUint32(12) !== 0x49484452) return undefined;
+  return { width: view.getUint32(16), height: view.getUint32(20) };
+}
+
+ipcMain.handle(
+  'muxus:read-clipboard-content',
+  async (event): Promise<DesktopClipboardContent | undefined> => {
+    if (!isManagedWindowSender(event)) return undefined;
+    const text = await clipboard.readText();
+    if (text) return { kind: 'text', text };
+
+    const item = (await clipboard.read()).find((candidate) => candidate.types.includes('image/png'));
+    if (!item) return { kind: 'empty' };
+    // Every type but the bookmark one resolves to a Blob.
+    const blob = (await item.getType('image/png')) as Blob;
+    if (blob.size > CLIPBOARD_IMAGE_MAX_BYTES) {
+      throw new Error('The clipboard image is too large to paste.');
+    }
+
+    // Check the header before anything decodes it: a small PNG can still
+    // declare dimensions that would need gigabytes once expanded.
+    const png = new Uint8Array(await blob.arrayBuffer());
+    const size = pngDimensions(png);
+    if (!size) throw new Error('The clipboard image could not be read.');
+    const { width, height } = size;
+    const pixels = width * height;
+    if (
+      width <= 0 ||
+      height <= 0 ||
+      !Number.isFinite(pixels) ||
+      pixels > CLIPBOARD_IMAGE_MAX_PIXELS ||
+      png.byteLength > CLIPBOARD_IMAGE_MAX_BYTES
+    ) {
+      throw new Error('The clipboard image is too large to paste.');
+    }
+    return { kind: 'image', png };
+  },
+);
 
 ipcMain.handle('muxus:select-private-key', async (event): Promise<string | undefined> => {
   const win = senderWindow(event);

@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, open, rename, stat, unlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type {
@@ -11,6 +12,8 @@ import type {
 import { HttpProblem, sendError } from '../util/errors.js';
 
 const MAX_EDITOR_BYTES = 8 * 1024 * 1024;
+const CLIPBOARD_IMAGE_MAX_BYTES = 18 * 1024 * 1024;
+const CLIPBOARD_IMAGE_MODE = 0o600;
 
 /** Authenticated text editing for files visible to a local terminal session. */
 export function registerLocalFileRoutes(app: FastifyInstance): void {
@@ -69,6 +72,47 @@ export function registerLocalFileRoutes(app: FastifyInstance): void {
       }
     },
   );
+
+  /** Keep a pasted clipboard image where local shells can read it, owner-only. */
+  app.post('/api/local-files/clipboard-image', async (req, reply) => {
+    try {
+      const body = req.body;
+      if (!body || typeof (body as NodeJS.ReadableStream).pipe !== 'function') {
+        throw new HttpProblem(400, 'expected an application/octet-stream body');
+      }
+      const file = path.join(
+        tmpdir(),
+        `muxus-paste-${Date.now()}-${randomBytes(16).toString('hex')}.png`,
+      );
+      await writeClipboardImage(file, body as AsyncIterable<Buffer>);
+      return { path: file };
+    } catch (error) {
+      return sendError(reply, localFileError(error));
+    }
+  });
+}
+
+async function writeClipboardImage(file: string, body: AsyncIterable<Buffer>): Promise<void> {
+  // wx refuses an existing name, so a planted file or symlink is never reused.
+  const handle = await open(file, 'wx', CLIPBOARD_IMAGE_MODE);
+  let written = 0;
+  try {
+    for await (const chunk of body) {
+      written += chunk.length;
+      if (written > CLIPBOARD_IMAGE_MAX_BYTES) {
+        throw new HttpProblem(
+          413,
+          `clipboard images larger than ${formatBytes(CLIPBOARD_IMAGE_MAX_BYTES)} cannot be pasted`,
+        );
+      }
+      await handle.write(chunk);
+    }
+    await handle.close();
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    await unlink(file).catch(() => undefined);
+    throw error;
+  }
 }
 
 async function readLocalTextFile(file: string): Promise<EditorFileResponse> {

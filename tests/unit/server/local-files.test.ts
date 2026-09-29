@@ -1,25 +1,31 @@
 import { chmod, mkdtemp, readFile, readdir, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../../../server/src/app.js';
 import { resolveConfig } from '../../../server/src/config.js';
 import { registerLocalFileRoutes } from '../../../server/src/routes/local-files.js';
 
 let root: string;
+const TEMP_ENV = ['TMPDIR', 'TMP', 'TEMP'] as const;
+let savedTempEnv: Partial<Record<(typeof TEMP_ENV)[number], string>>;
 type RouteHandler = (request: unknown, reply: unknown) => Promise<unknown>;
 
-function captureHandlers(): { read: RouteHandler; save: RouteHandler } {
+function captureHandlers(): { read: RouteHandler; save: RouteHandler; clipboardImage: RouteHandler } {
   const gets = new Map<string, RouteHandler>();
   const puts = new Map<string, RouteHandler>();
+  const posts = new Map<string, RouteHandler>();
   const app = {
     get: (route: string, handler: RouteHandler) => gets.set(route, handler),
     put: (route: string, _options: unknown, handler: RouteHandler) => puts.set(route, handler),
+    post: (route: string, handler: RouteHandler) => posts.set(route, handler),
   };
   registerLocalFileRoutes(app as never);
   return {
     read: gets.get('/api/local-files/file')!,
     save: puts.get('/api/local-files/file')!,
+    clipboardImage: posts.get('/api/local-files/clipboard-image')!,
   };
 }
 
@@ -44,9 +50,20 @@ async function invoke(
 
 beforeEach(async () => {
   root = await mkdtemp(path.join(os.tmpdir(), 'muxus-local-editor-test-'));
+  // Pasted images land in os.tmpdir(); point it at the test directory.
+  savedTempEnv = {};
+  for (const name of TEMP_ENV) {
+    savedTempEnv[name] = process.env[name];
+    process.env[name] = root;
+  }
 });
 
 afterEach(async () => {
+  for (const name of TEMP_ENV) {
+    const value = savedTempEnv[name];
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
   await rm(root, { recursive: true, force: true });
 });
 
@@ -135,6 +152,35 @@ describe('local file editor routes', () => {
     expect(binaryResponse.status).toBe(415);
     expect(directoryResponse.status).toBe(400);
     expect(relativeResponse.status).toBe(400);
+  });
+
+  it('stores a pasted clipboard image as an owner-only temporary file', async () => {
+    const { clipboardImage } = captureHandlers();
+
+    const response = await invoke(clipboardImage, {
+      path: '',
+      body: Readable.from([Buffer.from([0x89, 0x50]), Buffer.from([0x4e, 0x47])]),
+    });
+
+    expect(response.status).toBe(200);
+    const stored = (response.body as { path: string }).path;
+    expect(path.dirname(stored)).toBe(root);
+    expect(path.basename(stored)).toMatch(/^muxus-paste-\d+-[a-f0-9]+\.png$/);
+    expect([...(await readFile(stored))]).toEqual([0x89, 0x50, 0x4e, 0x47]);
+    if (process.platform !== 'win32') expect((await stat(stored)).mode & 0o7777).toBe(0o600);
+  });
+
+  it('rejects an oversized clipboard image without leaving a file behind', async () => {
+    const { clipboardImage } = captureHandlers();
+    const chunk = Buffer.alloc(1024 * 1024);
+
+    const response = await invoke(clipboardImage, {
+      path: '',
+      body: Readable.from(Array.from({ length: 19 }, () => chunk)),
+    });
+
+    expect(response.status).toBe(413);
+    expect(await readdir(root)).toEqual([]);
   });
 
   it.skipIf(process.platform === 'win32')('refuses to follow a symbolic link', async () => {

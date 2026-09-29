@@ -7,13 +7,16 @@ type RouteHandler = (request: unknown, reply: unknown) => Promise<unknown>;
 
 interface FakeSftp {
   lstat(path: string, callback: (error: Error | null, attrs?: unknown) => void): void;
-  createWriteStream(path: string, options: { flags: string }): Writable;
+  createWriteStream(path: string, options: { flags: string; mode?: number }): Writable;
   rename?(from: string, to: string, callback: (error?: Error | null) => void): void;
   ext_openssh_rename?(from: string, to: string, callback: (error?: Error | null) => void): void;
   unlink?(path: string, callback: (error?: Error | null) => void): void;
 }
 
-function captureUploadHandler(sftp: FakeSftp): RouteHandler {
+function captureUploadHandler(
+  sftp: FakeSftp,
+  route = '/api/sftp/:connId/upload',
+): RouteHandler {
   const posts = new Map<string, RouteHandler>();
   const app = {
     get: vi.fn(),
@@ -30,7 +33,7 @@ function captureUploadHandler(sftp: FakeSftp): RouteHandler {
     },
   };
   registerSftpRoutes(app as never, ctx as never);
-  return posts.get('/api/sftp/:connId/upload')!;
+  return posts.get(route)!;
 }
 
 function captureDownloadHandler(stream: PassThrough): {
@@ -166,6 +169,51 @@ describe('SFTP upload overwrite policy', () => {
     expect(rename).toHaveBeenCalledWith(
       expect.stringMatching(/^\/remote\/report\.txt\.muxus-[a-f0-9]+\.upload$/),
       '/remote/report.txt',
+      expect.any(Function),
+    );
+  });
+
+  it('creates clipboard images with owner-only permissions', async () => {
+    const createWriteStream = vi.fn(
+      (_path: string, _options: { flags: string; mode?: number }) =>
+        new Writable({ write: (_chunk, _encoding, callback) => callback() }),
+    );
+    const rename = vi.fn(
+      (_from: string, _to: string, callback: (error?: Error | null) => void) =>
+        callback(null),
+    );
+    const handler = captureUploadHandler(
+      {
+        lstat: (_path, callback) =>
+          callback(Object.assign(new Error('not found'), { code: 2 })),
+        createWriteStream,
+        rename,
+        unlink: vi.fn(),
+      },
+      '/api/sftp/:connId/clipboard-image',
+    );
+
+    const response = await invoke(handler, {});
+
+    expect(response.result).toEqual({
+      path: expect.stringMatching(/^\/tmp\/muxus-paste-\d+-[a-f0-9]+\.png$/),
+    });
+    if (
+      !response.result ||
+      typeof response.result !== 'object' ||
+      !('path' in response.result) ||
+      typeof response.result.path !== 'string'
+    ) {
+      throw new Error('clipboard image route did not return a path');
+    }
+    const remotePath = response.result.path;
+    expect(createWriteStream.mock.calls[0]?.[0]).toMatch(
+      new RegExp(`^${remotePath.replaceAll('.', '\\.')}\\.muxus-[a-f0-9]+\\.upload$`),
+    );
+    expect(createWriteStream.mock.calls[0]?.[1]).toEqual({ flags: 'wx', mode: 0o600 });
+    expect(rename).toHaveBeenCalledWith(
+      expect.stringMatching(/\.muxus-[a-f0-9]+\.upload$/),
+      remotePath,
       expect.any(Function),
     );
   });
