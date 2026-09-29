@@ -118,5 +118,5 @@ pnpm lint       # oxlint
 pnpm typecheck
 ```
 
-CI runs typecheck, lint, tests and bundle budgets, then builds unpacked desktop packages on
+CI runs typecheck, lint and tests, then builds unpacked desktop packages on
 Linux, macOS and Windows.

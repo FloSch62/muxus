@@ -11,7 +11,6 @@
   "scripts": {
     "dev": "pnpm -r --parallel --stream dev",
     "build": "pnpm -r build",
-    "check:bundle": "pnpm --filter @muxus/client build && pnpm --filter @muxus/client check:bundle",
     "start": "node server/dist/index.js",
     "electron": "pnpm build && pnpm --filter @muxus/electron start",
     "dist": "pnpm build && pnpm --filter @muxus/electron dist",
@@ -29,7 +28,7 @@
   },
   "devDependencies": {
     "oxlint": "^1.85.0",
-    "oxlint-tsgolint": "^7.0.2002",
+    "oxlint-tsgolint": "^7.0.2003",
     "playwright-core": "^1.63.0",
     "typescript": "^7.0.2"
   }
