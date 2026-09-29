@@ -36,6 +36,7 @@ import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 import WorkspacesOutlinedIcon from '@mui/icons-material/WorkspacesOutlined';
 import {
+  sessionLogName,
   SNIPPET_MATCH_END,
   SNIPPET_MATCH_START,
   type ForwardInfo,
@@ -951,8 +952,8 @@ function buildQueryResults({
       kind: 'history',
       session,
       historyQuery,
-      label: session.title,
-      detail: `${session.host} · ${formatTimestamp(session.startedAt)}${session.snippet ? ` · ${stripMarkup(session.snippet)}` : ''}`,
+      label: sessionLogName(session),
+      detail: `${session.label && session.title !== session.host ? `${session.title} · ` : ''}${session.host} · ${formatTimestamp(session.startedAt)}${session.snippet ? ` · ${stripMarkup(session.snippet)}` : ''}`,
       keywords: ['history', 'session log', session.kind, session.host, session.snippet ?? ''],
       priority: session.status === 'active' ? 180 : 40,
       showWhenEmpty: false,

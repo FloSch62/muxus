@@ -253,6 +253,12 @@ describe('terminalClientMessageSchema', () => {
     ).toBe(false);
   });
 
+  it('accepts tab renames with a non-blank title', () => {
+    expect(terminalClientMessageSchema.safeParse({ op: 'set-title', title: 'Pre-change' }).success).toBe(true);
+    expect(terminalClientMessageSchema.safeParse({ op: 'set-title', title: '   ' }).success).toBe(false);
+    expect(terminalClientMessageSchema.safeParse({ op: 'set-title', title: 'x'.repeat(501) }).success).toBe(false);
+  });
+
   it('accepts a shell-less dial for ssh targets only', () => {
     expect(terminalClientMessageSchema.safeParse({ op: 'dial', profile: { kind: 'ssh', target: 'web' } }).success).toBe(true);
     expect(terminalClientMessageSchema.safeParse({ op: 'dial', profile: { kind: 'local' } }).success).toBe(false);

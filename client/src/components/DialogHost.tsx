@@ -118,7 +118,7 @@ function PromptBody({
   }, []);
 
   const problem = value.trim() ? (request.validate?.(value.trim()) ?? null) : null;
-  const submittable = !!value.trim() && !problem;
+  const submittable = (request.allowEmpty || !!value.trim()) && !problem;
   const submit = () => {
     if (submittable) onResolve(value.trim());
   };

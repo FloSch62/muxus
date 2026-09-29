@@ -229,6 +229,19 @@ export class SessionRecorder {
     return { ...this.state };
   }
 
+  /**
+   * Follow a tab rename: the active record and any record started later in
+   * this terminal take the new title; finished records keep theirs.
+   */
+  setTitle(title: string): void {
+    const next = title.trim() || this.sessionTemplate.host;
+    if (next === this.sessionTemplate.title) return;
+    this.sessionTemplate.title = next;
+    if (this.state.enabled && this.state.sessionId) {
+      this.history.setSessionTitle(this.state.sessionId, next);
+    }
+  }
+
   end(status: Exclude<SessionLogStatus, 'active'>): void {
     if (this.terminalEnded) return;
     this.finishLogging(status, `Session logging ended (${status}).`);

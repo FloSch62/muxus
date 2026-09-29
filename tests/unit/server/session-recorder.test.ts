@@ -118,6 +118,38 @@ describe('SessionRecorder', () => {
     expect(secondTranscript).not.toContain('between recordings');
   });
 
+  it('renames the active record when the tab is renamed', async () => {
+    database = new MuxusDatabase(':memory:');
+    history = await openHistory(database);
+    const recorder = SessionRecorder.start(
+      database,
+      history,
+      { warn: vi.fn() } as never,
+      { kind: 'ssh', target: 'production' },
+      'Production',
+    );
+
+    recorder.setState({ enabled: true });
+    const firstSessionId = recorder.state.sessionId!;
+    recorder.setTitle('Pre-change');
+    expect((await history.sessionLog(firstSessionId))?.title).toBe('Pre-change');
+
+    // A stopped record keeps its title; the next one starts with the new one.
+    recorder.setState({ enabled: false });
+    recorder.setTitle('Post-change');
+    recorder.setState({ enabled: true });
+    const secondSessionId = recorder.state.sessionId!;
+    expect((await history.sessionLog(firstSessionId))?.title).toBe('Pre-change');
+    expect((await history.sessionLog(secondSessionId))?.title).toBe('Post-change');
+
+    // A blank title falls back to the host, and nothing changes after the end.
+    recorder.setTitle('   ');
+    expect((await history.sessionLog(secondSessionId))?.title).toBe('production');
+    recorder.end('completed');
+    recorder.setTitle('After the session');
+    expect((await history.sessionLog(secondSessionId))?.title).toBe('production');
+  });
+
   it('suppresses input by default and honors pause/resume at runtime', async () => {
     database = new MuxusDatabase(':memory:');
     history = await openHistory(database);

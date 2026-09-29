@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import path from 'node:path';
-import { sessionTranscript } from '@muxus/shared';
+import { sessionLogName, sessionTranscript } from '@muxus/shared';
 import { z } from 'zod';
 import type {
   SessionHistoryResponse,
@@ -63,6 +63,8 @@ const historySettingsSchema = z.object({
 });
 
 const pinSchema = z.object({ pinned: z.boolean() });
+
+const labelSchema = z.object({ label: z.string().trim().max(200) });
 
 const detailQuerySchema = z.object({
   query: z.string().trim().max(500).optional(),
@@ -167,7 +169,7 @@ export function registerSessionHistoryRoutes(
       .type('application/x-ndjson')
       .header(
         'content-disposition',
-        `attachment; filename="${exportSlug(session.title)}.muxlog"`,
+        `attachment; filename="${exportSlug(sessionLogName(session))}.muxlog"`,
       )
       .send(body ? `${body}\n` : '');
   });
@@ -185,7 +187,7 @@ export function registerSessionHistoryRoutes(
       .type('text/plain; charset=utf-8')
       .header(
         'content-disposition',
-        `attachment; filename="${exportSlug(session.title)}-clean.txt"`,
+        `attachment; filename="${exportSlug(sessionLogName(session))}-clean.txt"`,
       )
       .send(transcript);
   });
@@ -204,6 +206,12 @@ export function registerSessionHistoryRoutes(
     const { id } = req.params as { id: string };
     const { pinned } = pinSchema.parse(req.body);
     return { updated: await ctx.history.setPinned(id, pinned) };
+  });
+
+  app.put('/api/session-history/:id/label', async (req): Promise<{ updated: boolean }> => {
+    const { id } = req.params as { id: string };
+    const { label } = labelSchema.parse(req.body);
+    return { updated: await ctx.history.setLabel(id, label) };
   });
 
   app.delete('/api/session-history/:id', async (req): Promise<{ deleted: boolean }> => {
@@ -233,7 +241,7 @@ function sendReplay(reply: FastifyReply, session: SessionLogDetail) {
     .replaceAll('<', '\\u003c')
     .replaceAll('\u2028', '\\u2028')
     .replaceAll('\u2029', '\\u2029');
-  const title = escapeHtml(session.title);
+  const title = escapeHtml(sessionLogName(session));
   const host = escapeHtml(session.host);
   const started = escapeHtml(session.startedAt);
   const html = `<!doctype html>
@@ -283,7 +291,7 @@ seek.oninput=()=>render(Number(seek.value));render(0);
     .type('text/html')
     .header(
       'content-disposition',
-      `attachment; filename="${exportSlug(session.title)}-replay.html"`,
+      `attachment; filename="${exportSlug(sessionLogName(session))}-replay.html"`,
     )
     .send(html);
 }

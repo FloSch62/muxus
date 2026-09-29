@@ -476,6 +476,10 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
     sendControl(socket, { op: 'logging-state', ...state });
   recorder.onStateChange(sendLoggingState);
   const handleLoggingControl = (msg: TerminalClientMessage): boolean => {
+    if (msg.op === 'set-title') {
+      recorder!.setTitle(msg.title);
+      return true;
+    }
     if (msg.op !== 'set-logging') return false;
     sendLoggingState(
       recorder!.setState({

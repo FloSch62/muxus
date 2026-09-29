@@ -276,6 +276,8 @@ export const terminalClientMessageSchema = z.discriminatedUnion('op', [
       value.paused !== undefined ||
       value.captureInput !== undefined,
   ),
+  /** The tab was renamed; the active history record takes the new title. */
+  z.object({ op: z.literal('set-title'), title: z.string().trim().min(1).max(500) }),
 ]);
 export type TerminalClientMessage = z.infer<typeof terminalClientMessageSchema>;
 

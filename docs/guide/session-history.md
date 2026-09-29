@@ -40,7 +40,15 @@ sequences removed, using debounced cursor-paged queries. Filters are **host**, *
 type** (SSH, local, serial, Telnet) and **date range**.
 
 Opening a session displays its transcript, and allows copying the complete clean log,
-pinning the session so it is never evicted, or deleting it.
+renaming the session, pinning the session so it is never evicted, or deleting it.
+
+A session is recorded under the title of its tab. Renaming the tab while the session is
+recording renames the session too; sessions that already ended keep their title.
+
+**Rename** gives a session a name of your own, such as `pre-change config`, which the
+history list, the quick launcher and exported filenames use instead of the recorded title.
+Both the name and the recorded title are searchable. Clear the name to show the recorded
+title again.
 
 Enable **Show timestamps (UTC)** to prefix each line with an ISO 8601 timestamp,
 including milliseconds. The toggle also applies to **Clean log** downloads and copying

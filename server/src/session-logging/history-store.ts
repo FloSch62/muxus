@@ -159,6 +159,12 @@ export class SessionHistoryStore {
     });
   }
 
+  setSessionTitle(sessionId: string, title: string): void {
+    void this.request('title', { sessionId, title }).catch((error) => {
+      this.notifyFailure(sessionId, error.message);
+    });
+  }
+
   finishSession(
     sessionId: string,
     status: 'completed' | 'disconnected' | 'failed',
@@ -207,6 +213,11 @@ export class SessionHistoryStore {
 
   setPinned(id: string, pinned: boolean): Promise<boolean> {
     return this.request('pin', { id, pinned });
+  }
+
+  /** An empty label clears the name and shows the recorded title again. */
+  setLabel(id: string, label: string): Promise<boolean> {
+    return this.request('label', { id, label });
   }
 
   async updateSettings(settings: SessionHistorySettings): Promise<void> {

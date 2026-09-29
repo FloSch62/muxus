@@ -197,6 +197,8 @@ export interface SessionLogSummary {
   id: string;
   profileKey: string;
   title: string;
+  /** User-chosen name shown instead of the recorded title. */
+  label?: string;
   kind: import('./ws-protocol.js').SessionProfile['kind'];
   host: string;
   startedAt: string;
@@ -218,6 +220,11 @@ export interface SessionLogSummary {
   snippet?: string;
   /** Number of matching transcript chunks, present only for full-text matches. */
   matchCount?: number;
+}
+
+/** The name a retained session is listed and exported under. */
+export function sessionLogName(session: Pick<SessionLogSummary, 'title' | 'label'>): string {
+  return session.label ?? session.title;
 }
 
 /** Control characters delimiting highlighted ranges inside a search snippet. */
