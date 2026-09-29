@@ -18,7 +18,7 @@ export async function readFromClipboard(): Promise<string | null> {
   }
 }
 
-/** Capture one clipboard snapshot; the packaged app reads text and image synchronously. */
+/** Capture one clipboard snapshot; the packaged app reads text and image in the main process. */
 export async function readClipboardContent(): Promise<ClipboardContent> {
   if (window.muxusDesktop?.readClipboardContent) {
     return (await window.muxusDesktop.readClipboardContent()) ?? { kind: 'unavailable' };
