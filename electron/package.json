@@ -46,7 +46,7 @@
     "@muxus/server": "workspace:*",
     "@types/node": "^24.13.6",
     "electron": "44.4.5",
-    "electron-builder": "^26.16.1",
+    "electron-builder": "^26.17.0",
     "esbuild": "^0.28.2",
     "sharp": "^0.35.4",
     "shell-env": "^4.0.3",
