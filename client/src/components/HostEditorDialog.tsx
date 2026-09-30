@@ -9,7 +9,12 @@ import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import type { SavedHostProfile } from '@muxus/shared';
-import { useSessionLoggingPolicy, useSshConfig, useSshKeys } from '../api/queries.js';
+import {
+  useSavedHostProfiles,
+  useSessionLoggingPolicy,
+  useSshConfig,
+  useSshKeys,
+} from '../api/queries.js';
 import { useSaveSessionLoggingPolicy } from '../api/session-history.js';
 import {
   useDeleteHostProfile,
@@ -233,6 +238,7 @@ function SshHostEditorContent({
 }) {
   const setState = useUiStore((s) => s.setHostEditor);
   const { data: config } = useSshConfig();
+  const { data: savedData } = useSavedHostProfiles();
   const editingProfile =
     (state.mode === 'edit-profile' || state.mode === 'duplicate-profile') &&
     state.entry.profile.kind === 'ssh'
@@ -505,7 +511,17 @@ function SshHostEditorContent({
       {section === 'appearance' && (
         <TerminalAppearanceSection value={draft} onChange={set} />
       )}
-      {section === 'route' && <RouteSection draft={draft} set={set} config={config} />}
+      {section === 'route' && (
+        <RouteSection
+          draft={draft}
+          set={set}
+          config={config}
+          savedHosts={savedData?.profiles}
+          selfProfileId={
+            state.mode === 'edit-profile' ? editingProfile?.id : savedProfile.current?.id
+          }
+        />
+      )}
       {section === 'forwards' && <ForwardsSection draft={draft} set={set} />}
       {section === 'logging' && (
         <LoggingSection

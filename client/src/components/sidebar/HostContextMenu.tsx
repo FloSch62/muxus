@@ -13,6 +13,7 @@ import LibraryAddOutlinedIcon from '@mui/icons-material/LibraryAddOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
+import { useSavedHostProfiles } from '../../api/queries.js';
 import { copyToClipboard } from '../../clipboard.js';
 import {
   managedHostCopyCommand,
@@ -61,7 +62,10 @@ export function HostContextMenu({
 }) {
   const setHostEditor = useUiStore((s) => s.setHostEditor);
   const setHostOrganizer = useUiStore((s) => s.setHostOrganizer);
-  const copyAction = menu ? managedHostCopyCommand(menu.host) : undefined;
+  const { data: savedData } = useSavedHostProfiles();
+  const copyAction = menu
+    ? managedHostCopyCommand(menu.host, savedData?.profiles)
+    : undefined;
 
   /** Every item closes the menu, so each handler is wrapped once here. */
   const run = (action: (host: ManagedHost) => void) => () => {

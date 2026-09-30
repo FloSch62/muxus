@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ConfigForward, HostUpsertRequest } from '@muxus/shared';
+import { savedHostHopId, type ConfigForward, type HostUpsertRequest } from '@muxus/shared';
 import { HttpProblem } from '../util/errors.js';
 import {
   defaultSshConfigPath,
@@ -116,6 +116,8 @@ function validateUpsert(req: HostUpsertRequest): void {
   if (o.port !== undefined && !(Number.isInteger(o.port) && o.port > 0 && o.port < 65536)) bad('port must be 1–65535');
   for (const hop of o.proxyJump ?? []) {
     if (!hop.trim() || /[\s,]/.test(hop)) bad(`invalid jump host "${hop}"`);
+    // OpenSSH can't resolve a Muxus-owned host, so it never goes into ssh_config.
+    if (savedHostHopId(hop) !== undefined) bad('a host stored in Muxus can only be a jump host for other Muxus hosts');
   }
   if (o.proxyCommand !== undefined && (!o.proxyCommand.trim() || /[\r\n]/.test(o.proxyCommand))) {
     bad('ProxyCommand must be non-empty single-line text');

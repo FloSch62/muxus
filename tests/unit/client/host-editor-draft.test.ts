@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SavedHostProfile, SshHostEntry } from '@muxus/shared';
+import { savedHostHop, type SavedHostProfile, type SshHostEntry } from '@muxus/shared';
 import {
   blankDraft,
   draftFromEntry,
@@ -97,6 +97,21 @@ describe('SSH host editor draft', () => {
         proxyJump: ['bastion'],
       },
     });
+  });
+
+  it('keeps saved Muxus jump hosts out of ssh_config storage', () => {
+    const draft = {
+      ...blankDraft(),
+      aliasText: 'router',
+      hostname: 'router.example.test',
+      routeMode: 'jump' as const,
+      proxyJump: [savedHostHop('muxus-bastion')],
+    };
+
+    expect(draftProblem({ ...draft, storage: 'muxus' })).toBeNull();
+    expect(draftProblem({ ...draft, storage: 'openssh' })).toMatch(
+      /Muxus app data storage/,
+    );
   });
 
   it('loads and saves modeled connection options as first-class fields', () => {

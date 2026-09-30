@@ -15,6 +15,7 @@ import {
 import { matchScore, searchTokens } from './host-search.js';
 import {
   filterSavedHosts,
+  openSshJumpHops,
   savedHostAddress,
   savedHostDisplayName,
   savedHostSearchText,
@@ -206,8 +207,14 @@ export function managedHostKey(host: ManagedHost): string {
   return managedHostRefKey(managedHostRef(host));
 }
 
-/** The per-kind clipboard action offered in the host context menu. */
-export function managedHostCopyCommand(host: ManagedHost): { label: string; text: string } {
+/**
+ * The per-kind clipboard action offered in the host context menu. Saved hosts
+ * it jumps through are spelled out from `savedProfiles`.
+ */
+export function managedHostCopyCommand(
+  host: ManagedHost,
+  savedProfiles: readonly SavedHostProfile[] = [],
+): { label: string; text: string } {
   if (host.kind === 'ssh') {
     return { label: 'Copy ssh command', text: `ssh ${host.entry.alias}` };
   }
@@ -215,7 +222,7 @@ export function managedHostCopyCommand(host: ManagedHost): { label: string; text
   if (profile.kind === 'ssh') {
     return {
       label: 'Copy ssh command',
-      text: savedSshCopyCommand(profile),
+      text: savedSshCopyCommand(profile, savedProfiles),
     };
   }
   if (profile.kind === 'rdp' || profile.kind === 'vnc') {
@@ -227,7 +234,10 @@ export function managedHostCopyCommand(host: ManagedHost): { label: string; text
 }
 
 /** Render a self-contained profile as a pasteable OpenSSH command. */
-function savedSshCopyCommand(profile: SshProfile): string {
+function savedSshCopyCommand(
+  profile: SshProfile,
+  savedProfiles: readonly SavedHostProfile[],
+): string {
   const args = ['ssh'];
   if (profile.port) args.push('-p', String(profile.port));
   for (const file of profile.identityFiles ?? []) args.push('-i', file);
@@ -242,7 +252,8 @@ function savedSshCopyCommand(profile: SshProfile): string {
   }
   if (profile.forwardAgent) args.push('-A');
   if (profile.forwardX11 !== undefined) args.push(profile.forwardX11 ? '-X' : '-x');
-  if (profile.proxyJump?.length) args.push('-J', profile.proxyJump.join(','));
+  const jumps = openSshJumpHops(profile.proxyJump ?? [], savedProfiles);
+  if (jumps.length) args.push('-J', jumps.join(','));
   if (profile.proxyCommand) {
     args.push('-o', `ProxyCommand=${profile.proxyCommand}`);
   }

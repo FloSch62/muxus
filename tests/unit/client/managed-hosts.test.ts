@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SavedHostProfile, SshHostEntry } from '@muxus/shared';
+import { savedHostHop, type SavedHostProfile, type SshHostEntry } from '@muxus/shared';
 import {
   alphabetizeManagedHosts,
   editableManagedHostForProfile,
@@ -9,6 +9,7 @@ import {
   managedHostKey,
   managedHostRef,
 } from '../../../client/src/managed-hosts.js';
+import { hostDetailLines } from '../../../client/src/components/sidebar/host-details.js';
 import { managedHostSupportsSftp } from '../../../client/src/components/sidebar/host-sftp-action.js';
 
 const ROOT = '/home/test/.ssh/config';
@@ -258,6 +259,48 @@ describe('managed host identity and clipboard actions', () => {
     expect(managedHostCopyCommand(proxied).text).toBe(
       "ssh -p 2222 -o 'ProxyCommand=cloudflared access ssh --hostname %h' " +
         'admin@core.example.test',
+    );
+  });
+
+  it('spells saved Muxus jump hosts out in the copied ssh command', () => {
+    const bastion = nativeSshHost('bastion');
+    const relay = nativeSshHost('relay');
+    if (bastion.profile.kind !== 'ssh' || relay.profile.kind !== 'ssh') throw new Error('fixture');
+    bastion.profile = { ...bastion.profile, user: 'jump', port: undefined };
+    relay.profile = { ...relay.profile, proxyJump: [savedHostHop(bastion.id)] };
+    const routed = {
+      ...nativeSsh,
+      entry: {
+        ...nativeSsh.entry,
+        profile: {
+          ...nativeSsh.entry.profile,
+          proxyJump: [savedHostHop(relay.id), 'ops@edge.example.test', savedHostHop('deleted')],
+        },
+      },
+    };
+
+    expect(managedHostCopyCommand(routed, [bastion, relay]).text).toBe(
+      'ssh -p 2222 -J jump@bastion.example.test,admin@relay.example.test:2222,ops@edge.example.test ' +
+        'admin@core.example.test',
+    );
+  });
+
+  it('names saved Muxus jump hosts in the hover card', () => {
+    const bastion = nativeSshHost('bastion');
+    bastion.metadata = { ...bastion.metadata, displayName: 'Bastion EU' };
+    const routed = {
+      ...nativeSsh,
+      entry: {
+        ...nativeSsh.entry,
+        profile: {
+          ...nativeSsh.entry.profile,
+          proxyJump: [savedHostHop(bastion.id), 'edge', savedHostHop('deleted')],
+        },
+      },
+    };
+
+    expect(hostDetailLines(routed, [bastion])[0]).toBe(
+      'via Bastion EU → edge → Deleted Muxus host',
     );
   });
 
