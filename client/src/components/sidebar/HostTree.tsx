@@ -19,7 +19,7 @@ import {
 } from '../../host-tree.js';
 import { managedHostDisplayName, type ManagedHost } from '../../managed-hosts.js';
 import { FolderRow } from './FolderRow.js';
-import { HostRow } from './HostRow.js';
+import { HostRow, type HostActivation } from './HostRow.js';
 import { focusAfterChange } from './tree-navigation.js';
 import { TREE_ROW_GAP, TREE_ROW_HEIGHT, TREE_ROW_PITCH } from './tree-row-style.js';
 import {
@@ -45,13 +45,19 @@ export interface HostTreeProps {
   ref?: Ref<HostTreeHandle>;
   /** Host the search box would connect on Enter, marked so it can be seen. */
   matchKey?: string;
+  /** Host whose open-sessions menu is showing. */
+  sessionsMenuKey?: string;
   isExpanded: (key: string) => boolean;
   setExpanded: (key: string, expanded: boolean) => void;
   folderColor: (key: string) => string | undefined;
   folderIconId: (key: string) => string | undefined;
   liveByKey: Map<string, LiveCounts>;
   reorderEnabled: boolean;
-  onConnect: (host: ManagedHost) => void;
+  onActivate: (
+    host: ManagedHost,
+    anchor: HTMLElement | undefined,
+    gesture: HostActivation,
+  ) => void;
   onHostMenu: (
     host: ManagedHost,
     anchor: HTMLElement,
@@ -114,13 +120,14 @@ export function HostTree({
   scrollContainer,
   ref,
   matchKey,
+  sessionsMenuKey,
   isExpanded,
   setExpanded,
   folderColor,
   folderIconId,
   liveByKey,
   reorderEnabled,
-  onConnect,
+  onActivate,
   onHostMenu,
   onFolderMenu,
   onLaunch,
@@ -286,10 +293,13 @@ export function HostTree({
 
   const activate = useCallback(
     (row: VisibleNode) => {
-      if (row.node.kind === 'host') onConnect(row.node.host);
-      else setExpanded(row.key, !expandedFor(row.key));
+      if (row.node.kind === 'host') {
+        onActivate(row.node.host, refs.current.get(row.key), { newSession: false, repeat: false });
+      } else {
+        setExpanded(row.key, !expandedFor(row.key));
+      }
     },
-    [onConnect, setExpanded, expandedFor],
+    [onActivate, setExpanded, expandedFor],
   );
 
   const onKeyDown = useTreeKeyboard({
@@ -344,7 +354,8 @@ export function HostTree({
           live={liveByKey.get(row.key)}
           focused={focused}
           match={row.key === matchKey}
-          onConnect={onConnect}
+          sessionsOpen={row.key === sessionsMenuKey}
+          onActivate={onActivate}
           onMenu={onHostMenu}
           onMove={onMoveHost}
           reorderEnabled={reorderEnabled}

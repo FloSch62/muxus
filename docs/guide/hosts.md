@@ -62,9 +62,17 @@ The hover card carries the connection details:
 - **password authentication** when the block forces it,
 - the number of **port forwards** started with the connection.
 
-Click a row to connect. The right-click menu has **Connect**, **Open in new window**,
+Click a row to connect. If the host already has tabs in the window, the click lists them
+instead, the way a taskbar button lists an app's open windows. Each entry shows the tab's
+title and number, its state, the remote working directory and the last lines of output, so
+sessions with the same name can be told apart. Pick one to jump to it (an ended session
+reconnects in place), or choose **New session**. ++shift++ + click or middle-click
+skips the list and opens another session straight away.
+
+The right-click menu has **Connect**, **Open in new window**,
 **Move up/down**, **Move to folder…**, **Organize & color…**, **Edit host**,
-**Duplicate**, **Copy `ssh …` command** and **Delete host**.
+**Duplicate**, **Copy `ssh …` command** and **Delete host**. **Connect** always opens a
+new session.
 
 ## Folders
 

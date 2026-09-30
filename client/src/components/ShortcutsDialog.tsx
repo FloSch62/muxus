@@ -55,6 +55,7 @@ const EXTRAS: Array<[string, string]> = [
   ['Resize a split / reset it to half', 'Drag the divider · double-click'],
   ['Pane actions (split, zoom, close)', 'Right-click the tab strip'],
   ['Rename a tab / close a tab', 'Double-click it · middle-click it'],
+  ['New session to a host with one open', `${IS_MAC ? '⇧ ' : 'Shift+'}Click · middle-click`],
   ['Search next / previous match', `Enter / ${formatChordString('Shift+Enter')}`],
 ];
 

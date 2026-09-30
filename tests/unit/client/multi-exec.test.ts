@@ -22,6 +22,7 @@ function handle(sendInput: TerminalHandle['sendInput']): TerminalHandle {
     hasSelection: () => false,
     getSelection: () => '',
     bufferText: () => '',
+    recentLines: () => [],
     bufferHtml: () => '',
     zoomIn: vi.fn(),
     zoomOut: vi.fn(),

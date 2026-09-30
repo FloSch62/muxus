@@ -161,6 +161,22 @@ function bufferText(term: Terminal): string {
   return lines.length ? `${lines.join('\n')}\n` : '';
 }
 
+/**
+ * The last non-blank lines at or above the cursor — usually the prompt and
+ * the output just before it. The scan stops one screen up, so a freshly
+ * cleared terminal reads as empty instead of walking the whole scrollback.
+ */
+function recentLines(term: Terminal, count: number): string[] {
+  const buffer = term.buffer.active;
+  const cursorLine = buffer.baseY + buffer.cursorY;
+  const lines: string[] = [];
+  for (let y = cursorLine; y >= 0 && y > cursorLine - term.rows && lines.length < count; y--) {
+    const text = buffer.getLine(y)?.translateToString(true) ?? '';
+    if (text.trim()) lines.unshift(text);
+  }
+  return lines;
+}
+
 async function openLinkedTerminalFile(tabId: string, candidate: string): Promise<void> {
   let current = useTabsStore.getState().tabs.find((tab) => tab.id === tabId);
   if (!current?.profile) return;
@@ -742,6 +758,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       hasSelection: () => term.hasSelection(),
       getSelection: () => terminalSelectionText(term),
       bufferText: () => bufferText(term),
+      recentLines: (count) => recentLines(term, count),
       bufferHtml: () => serialize.serializeAsHTML({ includeGlobalBackground: true }),
       persistSnapshot: async () => {
         if (!usePrefsStore.getState().restoreScrollback) return;

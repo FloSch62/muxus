@@ -18,6 +18,14 @@ import { hostDetailLines } from './host-details.js';
 import { TREE_BASE_INSET, indentPx, treeLabelSx, treeRowSx } from './tree-row-style.js';
 import type { LiveCounts } from './useLiveHostCounts.js';
 
+/** How a host row was activated. */
+export interface HostActivation {
+  /** Shift-click or middle-click: open another session, never list the open ones. */
+  newSession: boolean;
+  /** The second click of a double-click. */
+  repeat: boolean;
+}
+
 export interface HostRowProps {
   row: VisibleNode;
   host: ManagedHost;
@@ -25,7 +33,10 @@ export interface HostRowProps {
   focused: boolean;
   /** The row the search box's Enter would connect. */
   match?: boolean;
-  onConnect: (host: ManagedHost) => void;
+  /** Its open-sessions menu is showing. */
+  sessionsOpen?: boolean;
+  /** Click or Enter: jump to one of the host's sessions, or open a new one. */
+  onActivate: (host: ManagedHost, anchor: HTMLElement | undefined, gesture: HostActivation) => void;
   onMenu: (host: ManagedHost, anchor: HTMLElement, position?: { top: number; left: number }) => void;
   onMove: (row: VisibleNode, delta: -1 | 1) => void;
   reorderEnabled: boolean;
@@ -54,7 +65,8 @@ export const HostRow = memo(function HostRow({
   live,
   focused,
   match,
-  onConnect,
+  sessionsOpen,
+  onActivate,
   onMenu,
   onMove,
   reorderEnabled,
@@ -74,6 +86,22 @@ export const HostRow = memo(function HostRow({
   const connected = live?.connected ?? 0;
   const connecting = live?.connecting ?? 0;
   const folderPath = folderSegments(host.entry.metadata?.group);
+  const hoverCard = (
+    <Stack spacing={0.25} sx={{ py: 0.25 }}>
+      {folderPath.length > 0 && (
+        <Box sx={{ opacity: 0.6, fontSize: 11 }}>{folderPath.join(' / ')}</Box>
+      )}
+      <Box sx={{ fontWeight: 600 }}>{title}</Box>
+      {address !== title && <Box sx={{ opacity: 0.7 }}>{address}</Box>}
+      {details.length > 0 && (
+        <Stack spacing={0.25} sx={{ pt: 0.5, opacity: 0.7 }}>
+          {details.map((line) => (
+            <Box key={line}>{line}</Box>
+          ))}
+        </Stack>
+      )}
+    </Stack>
+  );
 
   return (
     <Tooltip
@@ -81,22 +109,8 @@ export const HostRow = memo(function HostRow({
       enterDelay={400}
       enterNextDelay={200}
       disableInteractive
-      title={
-        <Stack spacing={0.25} sx={{ py: 0.25 }}>
-          {folderPath.length > 0 && (
-            <Box sx={{ opacity: 0.6, fontSize: 11 }}>{folderPath.join(' / ')}</Box>
-          )}
-          <Box sx={{ fontWeight: 600 }}>{title}</Box>
-          {address !== title && <Box sx={{ opacity: 0.7 }}>{address}</Box>}
-          {details.length > 0 && (
-            <Stack spacing={0.25} sx={{ pt: 0.5, opacity: 0.7 }}>
-              {details.map((line) => (
-                <Box key={line}>{line}</Box>
-              ))}
-            </Stack>
-          )}
-        </Stack>
-      }
+      // The sessions menu opens on the same side and the card would cover it.
+      title={sessionsOpen ? '' : hoverCard}
     >
       <ListItemButton
         component="li"
@@ -116,7 +130,21 @@ export const HostRow = memo(function HostRow({
         onDragEnd={onDragEnd}
         onMouseEnter={() => void loadTerminalViewImpl()}
         onFocus={() => void loadTerminalViewImpl()}
-        onClick={() => onConnect(host)}
+        onClick={(event) =>
+          onActivate(host, event.currentTarget, {
+            newSession: event.shiftKey,
+            repeat: event.detail > 1,
+          })
+        }
+        onMouseDown={(event) => {
+          // Middle-click opens a session; it must not start autoscroll first.
+          if (event.button === 1) event.preventDefault();
+        }}
+        onAuxClick={(event) => {
+          if (event.button !== 1) return;
+          event.preventDefault();
+          onActivate(host, event.currentTarget, { newSession: true, repeat: false });
+        }}
         onKeyDown={(event) => {
           if (!reorderEnabled || !event.altKey) return;
           if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
@@ -136,7 +164,7 @@ export const HostRow = memo(function HostRow({
             gap: 0.75,
             opacity: dragging ? 0.45 : 1,
             cursor: draggable ? 'grab' : 'pointer',
-            ...(match && { bgcolor: 'action.selected' }),
+            ...((match || sessionsOpen) && { bgcolor: 'action.selected' }),
             '&:hover .host-row-menu, & .host-row-menu:focus-visible': { opacity: 1 },
             ...(dropEdge && {
               [`&::${dropEdge === 'before' ? 'before' : 'after'}`]: {
