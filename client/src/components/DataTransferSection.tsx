@@ -18,14 +18,12 @@ import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
-import Paper from '@mui/material/Paper';
 import Radio from '@mui/material/Radio';
 import RadioGroup from '@mui/material/RadioGroup';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { alpha } from '@mui/material/styles';
 import AltRouteOutlinedIcon from '@mui/icons-material/AltRouteOutlined';
-import BackupOutlinedIcon from '@mui/icons-material/BackupOutlined';
 import CloudDoneOutlinedIcon from '@mui/icons-material/CloudDoneOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
@@ -53,6 +51,7 @@ import {
 import { saveTextFile } from '../save-file.js';
 import { muxusStateStorage } from '../state/persist-storage.js';
 import { errorDetails, showToast } from '../state/toast.js';
+import { SettingRow, SettingsGroup, SettingsPage } from './SettingsLayout.js';
 
 const LAST_BACKUP_KEY = 'muxus-last-backup-at';
 
@@ -193,66 +192,21 @@ export function DataTransferSection({
       : 'Settings, connections, tunnels and logging policies';
 
   return (
-    <Stack spacing={2.5}>
-      <Box>
-        <Typography variant="h6" sx={{ fontSize: 18, fontWeight: 700 }}>
-          Backup & restore
-        </Typography>
-        <Typography
-          variant="body2"
-          color="text.secondary"
-          sx={{ mt: 0.5, maxWidth: 620 }}
-        >
-          Keep one portable copy of your Muxus setup, then restore everything
-          or only the parts you need.
-        </Typography>
-      </Box>
-
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' },
-          gap: 1.5,
-        }}
-      >
-        <Paper
-          variant="outlined"
-          sx={(theme) => ({
-            p: 2.25,
-            minHeight: 210,
-            display: 'flex',
-            flexDirection: 'column',
-            borderColor: alpha(theme.palette.primary.main, 0.28),
-            background: `linear-gradient(145deg, ${alpha(theme.palette.primary.main, 0.1)}, ${alpha(theme.palette.background.paper, 0.2)} 65%)`,
-          })}
-        >
-          <Stack
-            direction="row"
-            sx={{ alignItems: 'flex-start', justifyContent: 'space-between' }}
-          >
-            <IconTile icon={BackupOutlinedIcon} tone="primary" />
-            <Chip
-              size="small"
-              color="primary"
-              variant="outlined"
-              label="Recommended"
-            />
-          </Stack>
-          <Typography variant="subtitle1" sx={{ mt: 1.5, fontWeight: 700 }}>
-            Back up your setup
-          </Typography>
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ mt: 0.5, flex: 1 }}
-          >
-            {statLine}. One portable file, ready for another Muxus install.
-          </Typography>
-          <Stack
-            direction="row"
-            spacing={1.5}
-            sx={{ alignItems: 'center', mt: 1.75 }}
-          >
+    <SettingsPage
+      title="Backup & data"
+      description="Keep one portable copy of your Muxus setup and restore everything or only the parts you need, or bring sessions over from another client."
+    >
+      <SettingsGroup title="Backup & restore">
+        <SettingRow
+          label="Back up your setup"
+          description={
+            <>
+              {statLine}. One portable file, ready for another Muxus install.
+              <br />
+              {lastBackup ? `Last backup: ${friendlyDate(lastBackup)}.` : 'No backup yet.'}
+            </>
+          }
+          control={
             <Button
               variant="contained"
               startIcon={
@@ -267,16 +221,10 @@ export function DataTransferSection({
             >
               {busy === 'backup' ? 'Creating…' : 'Create backup'}
             </Button>
-            <Typography variant="caption" color="text.secondary">
-              {lastBackup
-                ? `Last: ${friendlyDate(lastBackup)}`
-                : 'No backup yet'}
-            </Typography>
-          </Stack>
-        </Paper>
-
-        <Paper
-          variant="outlined"
+          }
+        />
+        <Box
+          className="settings-row"
           onDragEnter={(event) => {
             event.preventDefault();
             setDragActive(true);
@@ -289,51 +237,25 @@ export function DataTransferSection({
           }}
           onDrop={handleDrop}
           sx={(theme) => ({
-            p: 2.25,
-            minHeight: 210,
-            display: 'flex',
-            flexDirection: 'column',
-            borderStyle: dragActive ? 'dashed' : 'solid',
-            borderWidth: dragActive ? 2 : 1,
-            borderColor:
-              dragActive
-                ? theme.palette.primary.main
-                : theme.palette.divider,
-            bgcolor:
-              dragActive
-                ? alpha(theme.palette.primary.main, 0.07)
-                : 'background.paper',
+            outline: dragActive ? `2px dashed ${theme.palette.primary.main}` : 'none',
+            outlineOffset: -4,
+            bgcolor: dragActive ? alpha(theme.palette.primary.main, 0.07) : undefined,
           })}
         >
-          <IconTile icon={CloudDoneOutlinedIcon} tone="success" />
-          <Typography variant="subtitle1" sx={{ mt: 1.5, fontWeight: 700 }}>
-            Restore a backup
-          </Typography>
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{ mt: 0.5, flex: 1 }}
-          >
-            Review what is inside and restore everything—or select only the
-            categories you need.
-          </Typography>
-          <Stack
-            direction="row"
-            spacing={1.25}
-            sx={{ alignItems: 'center', mt: 1.75 }}
-          >
-            <Button
-              variant="outlined"
-              startIcon={<UploadFileOutlinedIcon />}
-              disabled={busy !== null}
-              onClick={() => restoreInput.current?.click()}
-            >
-              Choose backup
-            </Button>
-            <Typography variant="caption" color="text.secondary">
-              or drop it here
-            </Typography>
-          </Stack>
+          <SettingRow
+            label="Restore a backup"
+            description="Review what is inside, then restore everything or only the categories you need. You can also drop a backup file here."
+            control={
+              <Button
+                variant="outlined"
+                startIcon={<UploadFileOutlinedIcon />}
+                disabled={busy !== null}
+                onClick={() => restoreInput.current?.click()}
+              >
+                Choose backup
+              </Button>
+            }
+          />
           <input
             ref={restoreInput}
             hidden
@@ -345,108 +267,68 @@ export function DataTransferSection({
               event.target.value = '';
             }}
           />
-        </Paper>
-      </Box>
+        </Box>
+      </SettingsGroup>
 
-      <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={2}
-          sx={{ alignItems: { sm: 'center' }, p: 2.25 }}
-        >
-          <IconTile icon={DnsOutlinedIcon} tone="secondary" />
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-              OpenSSH export
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-              Export SSH hosts as a standard config for other SSH clients.
-              Muxus-specific settings remain in the backup above.
-            </Typography>
-          </Box>
-          <Button
-            variant="outlined"
-            startIcon={
-              busy === 'openssh' ? (
-                <CircularProgress size={14} color="inherit" />
-              ) : (
-                <DownloadOutlinedIcon />
-              )
-            }
-            disabled={busy !== null}
-            onClick={() => void exportOpenSsh()}
-          >
-            {busy === 'openssh' ? 'Exporting…' : 'Export OpenSSH'}
-          </Button>
-        </Stack>
-        <Divider />
-        <Stack
-          direction="row"
-          spacing={1}
-          sx={{ alignItems: 'center', px: 2.25, py: 1.25 }}
-        >
-          <LockOutlinedIcon
-            sx={{ fontSize: 16, color: 'text.secondary' }}
-          />
-          <Typography variant="caption" color="text.secondary">
-            Private key files, passwords and recorded session history are never
-            embedded. Key file paths are retained so profiles still know where
-            to look.
-          </Typography>
-        </Stack>
-      </Paper>
+      <SettingsGroup title="Export">
+        <SettingRow
+          label="OpenSSH config"
+          description="SSH hosts as a standard ssh_config for other SSH clients. Muxus-specific settings stay in the backup."
+          control={
+            <Button
+              variant="outlined"
+              startIcon={
+                busy === 'openssh' ? (
+                  <CircularProgress size={14} color="inherit" />
+                ) : (
+                  <DnsOutlinedIcon />
+                )
+              }
+              disabled={busy !== null}
+              onClick={() => void exportOpenSsh()}
+            >
+              {busy === 'openssh' ? 'Exporting…' : 'Export OpenSSH'}
+            </Button>
+          }
+        />
+      </SettingsGroup>
 
-      <Paper variant="outlined">
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={2}
-          sx={{ alignItems: { sm: 'center' }, p: 2.25 }}
-        >
-          <IconTile icon={LaptopWindowsOutlinedIcon} tone="primary" />
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-              MobaXterm import
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-              Review and import SSH sessions from a local Windows installation
-              or a MobaXterm session file.
-            </Typography>
-          </Box>
-          <Button
-            variant="outlined"
-            startIcon={<LaptopWindowsOutlinedIcon />}
-            onClick={onImportMobaXterm}
-          >
-            Import sessions
-          </Button>
-        </Stack>
-      </Paper>
+      <SettingsGroup title="Import from other clients">
+        <SettingRow
+          label="MobaXterm"
+          description="Review and import sessions from a local Windows installation or a MobaXterm session file."
+          control={
+            <Button
+              variant="outlined"
+              startIcon={<LaptopWindowsOutlinedIcon />}
+              onClick={onImportMobaXterm}
+            >
+              Import sessions
+            </Button>
+          }
+        />
+        <SettingRow
+          label="SecureCRT"
+          description="Review and import SSH and serial sessions from a SecureCRT XML settings export."
+          control={
+            <Button
+              variant="outlined"
+              startIcon={<TerminalOutlinedIcon />}
+              onClick={onImportSecureCrt}
+            >
+              Import sessions
+            </Button>
+          }
+        />
+      </SettingsGroup>
 
-      <Paper variant="outlined">
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={2}
-          sx={{ alignItems: { sm: 'center' }, p: 2.25 }}
-        >
-          <IconTile icon={TerminalOutlinedIcon} tone="secondary" />
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-              SecureCRT import
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
-              Review and import SSH and serial sessions from a SecureCRT XML
-              settings export.
-            </Typography>
-          </Box>
-          <Button
-            variant="outlined"
-            startIcon={<TerminalOutlinedIcon />}
-            onClick={onImportSecureCrt}
-          >
-            Import sessions
-          </Button>
-        </Stack>
-      </Paper>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', mt: -1.5 }}>
+        <LockOutlinedIcon sx={{ fontSize: 15, mt: '2px', color: 'text.secondary' }} />
+        <Typography variant="caption" color="textSecondary">
+          Backups never include private key files, passwords or recorded session history. Key
+          file paths are kept so profiles still know where to look.
+        </Typography>
+      </Stack>
 
       {pending ? (
         <RestoreReviewDialog
@@ -456,7 +338,7 @@ export function DataTransferSection({
           onRestored={invalidateRestoredData}
         />
       ) : null}
-    </Stack>
+    </SettingsPage>
   );
 }
 
@@ -571,7 +453,7 @@ function RestoreReviewDialog({
             <Typography variant="h6" sx={{ fontWeight: 700 }}>
               Restore this backup?
             </Typography>
-            <Typography variant="caption" color="text.secondary" noWrap>
+            <Typography variant="caption" color="textSecondary" noWrap>
               {pending.filename} · {friendlyDate(pending.document.createdAt)}
               {pending.document.appVersion
                 ? ` · Muxus ${pending.document.appVersion}`
@@ -645,7 +527,7 @@ function RestoreReviewDialog({
               label={
                 <Box>
                   <Typography variant="body2">Keep the current item</Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography variant="caption" color="textSecondary">
                     Safest. Only missing items are added.
                   </Typography>
                 </Box>
@@ -659,7 +541,7 @@ function RestoreReviewDialog({
                   <Typography variant="body2">
                     Replace it with the file’s version
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography variant="caption" color="textSecondary">
                     Matches by SSH alias or Muxus item ID.
                   </Typography>
                 </Box>
@@ -669,7 +551,7 @@ function RestoreReviewDialog({
           {selection.preferences || selection.logging ? (
             <Typography
               variant="caption"
-              color="text.secondary"
+              color="textSecondary"
               sx={{ mt: 0.5 }}
             >
               App and logging settings are replaced when selected; the choice

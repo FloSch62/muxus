@@ -2,17 +2,14 @@ import { useState } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import CircularProgress from '@mui/material/CircularProgress';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
-import List from '@mui/material/List';
-import ListItem from '@mui/material/ListItem';
-import ListItemText from '@mui/material/ListItemText';
 import MenuItem from '@mui/material/MenuItem';
+import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
@@ -43,6 +40,13 @@ import {
 import { usePasswordVaultStatus } from '../api/password-vault-queries.js';
 import { confirmAction } from '../state/dialogs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
+import {
+  SettingRow,
+  SettingsGroup,
+  SettingsPage,
+  StatusText,
+  type StatusTone,
+} from './SettingsLayout.js';
 
 type MasterDialogMode =
   | 'create'
@@ -102,163 +106,158 @@ export function PasswordVaultSection() {
 
   if (result.isError) {
     return (
-      <Alert severity="error">
-        {result.error instanceof Error
-          ? result.error.message
-          : 'Could not read password-vault status.'}
-      </Alert>
+      <SettingsPage title="Passwords" description={DESCRIPTION}>
+        <Alert severity="error" variant="outlined">
+          {result.error instanceof Error
+            ? result.error.message
+            : 'Could not read password-vault status.'}
+        </Alert>
+      </SettingsPage>
     );
   }
 
   if (result.isLoading || !status) {
     return (
-      <Stack
-        sx={{ minHeight: 180, alignItems: 'center', justifyContent: 'center' }}
-      >
-        <CircularProgress size={24} />
-      </Stack>
+      <SettingsPage title="Passwords" description={DESCRIPTION}>
+        <Skeleton variant="rounded" height={72} />
+        <Skeleton variant="rounded" height={120} />
+      </SettingsPage>
     );
   }
 
-  return (
-    <Stack spacing={3}>
-      <Box>
-        <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>
-          Password vault
-        </Typography>
-        {!status.configured ? (
-          <Alert severity="info" sx={{ mb: 2 }}>
-            Password saving is off. Create a master password to protect viewing
-            and editing saved SSH passwords.
-          </Alert>
-        ) : status.unlockPolicy === 'credential' ? (
-          <Alert severity="info" sx={{ mb: 2 }}>
-            Muxus will ask for the master password whenever a saved credential
-            is needed.
-          </Alert>
-        ) : !status.locked ? (
-          <Alert severity="success" sx={{ mb: 2 }}>
-            {status.unlockPolicy === 'never'
-              ? 'OS credential-store access is ready. Saved passwords can be used without a master-password prompt.'
-              : 'The vault is unlocked for this app session.'}
-          </Alert>
-        ) : (
-          <Alert
-            severity={status.unlockPolicy === 'never' ? 'error' : 'warning'}
-            sx={{ mb: 2 }}
-          >
-            {status.unlockPolicy === 'never'
-              ? 'The OS credential-store key is unavailable. Enter the master password to restore it.'
-              : 'The vault needs the master password for this app session.'}
-          </Alert>
-        )}
+  const vaultState = vaultStatus(status);
 
-        <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
-          {!status.configured ? (
-            <Button
-              variant="contained"
-              startIcon={<PasswordOutlinedIcon />}
-              onClick={() => setDialogMode('create')}
-            >
-              Create password vault
-            </Button>
-          ) : (
-            <>
-              {status.locked && status.unlockPolicy === 'never' ? (
-                <Button
-                  variant="contained"
-                  onClick={() => setDialogMode('repair')}
-                >
-                  Restore OS access
+  return (
+    <SettingsPage title="Passwords" description={DESCRIPTION}>
+      <SettingsGroup title="Vault">
+        <SettingRow
+          label="Password vault"
+          description={<StatusText tone={vaultState.tone}>{vaultState.text}</StatusText>}
+          control={
+            !status.configured ? (
+              <Button
+                variant="contained"
+                startIcon={<PasswordOutlinedIcon />}
+                onClick={() => setDialogMode('create')}
+              >
+                Create password vault
+              </Button>
+            ) : status.locked && status.unlockPolicy === 'never' ? (
+              <Button variant="contained" onClick={() => setDialogMode('repair')}>
+                Restore OS access
+              </Button>
+            ) : status.locked && status.unlockPolicy === 'startup' ? (
+              <Button variant="contained" onClick={() => setDialogMode('unlock')}>
+                Unlock now
+              </Button>
+            ) : undefined
+          }
+        />
+        {status.configured ? (
+          <>
+            <SettingRow
+              label="Ask for the master password"
+              description={
+                UNLOCK_POLICY_LABELS[status.unlockPolicy ?? DEFAULT_PASSWORD_VAULT_UNLOCK_POLICY]
+              }
+              control={
+                <Button variant="outlined" onClick={() => setDialogMode('policy')}>
+                  Change prompt policy
                 </Button>
-              ) : null}
-              {status.locked && status.unlockPolicy === 'startup' ? (
-                <Button
-                  variant="contained"
-                  onClick={() => setDialogMode('unlock')}
-                >
-                  Unlock now
+              }
+            />
+            <SettingRow
+              label="Master password"
+              description="Always required to view or edit saved values. It cannot be recovered."
+              control={
+                <Button variant="outlined" onClick={() => setDialogMode('change')}>
+                  Change master password
                 </Button>
-              ) : null}
-              <Button
-                variant="outlined"
-                onClick={() => setDialogMode('policy')}
-              >
-                Change prompt policy
-              </Button>
-              <Button
-                variant="outlined"
-                onClick={() => setDialogMode('change')}
-              >
-                Change master password
-              </Button>
-              <Button
-                color="error"
-                disabled={busy}
-                onClick={() => void removeVault()}
-              >
-                Delete vault
-              </Button>
-            </>
-          )}
-        </Stack>
-      </Box>
+              }
+            />
+            <SettingRow
+              label="Delete the vault"
+              description="Forgets every saved password; hosts, keys and other settings stay. Needs no master password, so a forgotten one can still be removed."
+              control={
+                <Button
+                  variant="outlined"
+                  color="error"
+                  disabled={busy}
+                  onClick={() => void removeVault()}
+                >
+                  Delete vault
+                </Button>
+              }
+            />
+          </>
+        ) : null}
+      </SettingsGroup>
 
       {status.configured ? (
-        <Box>
-          <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
-            Saved SSH passwords
-          </Typography>
+        <SettingsGroup
+          title={
+            status.credentials.length
+              ? `Saved SSH passwords · ${status.credentials.length}`
+              : 'Saved SSH passwords'
+          }
+          flush
+        >
           {status.credentials.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">
-              None yet. Select “Remember this password” the next time SSH asks
-              for one.
+            <Typography
+              variant="body2"
+              color="textSecondary"
+              sx={{ px: 2, py: 2.5, textAlign: 'center' }}
+            >
+              None yet. Select “Remember this password” the next time SSH asks for one.
             </Typography>
           ) : (
-            <List disablePadding>
-              {status.credentials.map((credential) => (
-                <ListItem
-                  key={credential.id}
-                  divider
-                  disableGutters
-                  secondaryAction={
-                    <Stack direction="row">
-                      <Tooltip title="View or edit password">
-                        <IconButton
-                          edge="end"
-                          aria-label={`View or edit password for ${credential.label}`}
-                          onClick={() => setEditing(credential)}
-                        >
-                          <EditOutlinedIcon />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Forget password">
-                        <IconButton
-                          edge="end"
-                          aria-label={`Forget password for ${credential.label}`}
-                          onClick={() =>
-                            void forget(credential.id, credential.label)
-                          }
-                        >
-                          <DeleteOutlineIcon />
-                        </IconButton>
-                      </Tooltip>
-                    </Stack>
-                  }
-                >
-                  <ListItemText
-                    primary={credential.label}
-                    secondary={`Updated ${new Date(credential.updatedAt).toLocaleString()}`}
-                  />
-                </ListItem>
-              ))}
-            </List>
+            status.credentials.map((credential) => (
+              <Box
+                key={credential.id}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1.5,
+                  px: 2,
+                  py: 1.1,
+                  '& + &': { borderTop: 1, borderColor: 'divider' },
+                }}
+              >
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography variant="body2" noWrap sx={{ fontWeight: 550 }} title={credential.label}>
+                    {credential.label}
+                  </Typography>
+                  <Typography variant="caption" color="textSecondary" component="div">
+                    Updated {new Date(credential.updatedAt).toLocaleString()}
+                  </Typography>
+                </Box>
+                <Stack direction="row" spacing={0.25} sx={{ flexShrink: 0 }}>
+                  <Tooltip title="View or edit password">
+                    <IconButton
+                      size="small"
+                      aria-label={`View or edit password for ${credential.label}`}
+                      onClick={() => setEditing(credential)}
+                    >
+                      <EditOutlinedIcon sx={{ fontSize: 18 }} />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Forget password">
+                    <IconButton
+                      size="small"
+                      aria-label={`Forget password for ${credential.label}`}
+                      onClick={() => void forget(credential.id, credential.label)}
+                    >
+                      <DeleteOutlineIcon color="error" sx={{ fontSize: 18 }} />
+                    </IconButton>
+                  </Tooltip>
+                </Stack>
+              </Box>
+            ))
           )}
-        </Box>
+        </SettingsGroup>
       ) : null}
 
-      <Typography variant="caption" color="text.secondary">
-        Your master password is always required to view or edit saved values.
+      <Typography variant="caption" color="textSecondary" sx={{ mt: -1.5 }}>
         “Never” stores the vault key in the operating-system credential store;
         the other policies keep no usable vault key on disk. Two-factor codes
         and private-key passphrases are never remembered.
@@ -300,8 +299,48 @@ export function PasswordVaultSection() {
           }}
         />
       ) : null}
-    </Stack>
+    </SettingsPage>
   );
+}
+
+const DESCRIPTION =
+  'An optional vault for SSH passwords, protected by a master password. Saved passwords stay on this machine and are never part of a backup.';
+
+const UNLOCK_POLICY_LABELS: Record<PasswordVaultUnlockPolicy, string> = {
+  never: 'Never for saved credentials: the vault key lives in the OS credential store.',
+  startup: 'When Muxus starts: the vault is unlocked into memory once per app session.',
+  credential: 'Whenever a saved credential is needed.',
+};
+
+/** What the vault can do right now, in the words and tone of its row. */
+function vaultStatus(status: PasswordVaultStatus): { tone: StatusTone; text: string } {
+  if (!status.configured) {
+    return {
+      tone: 'info',
+      text: 'Password saving is off. Create a master password to protect viewing and editing saved SSH passwords.',
+    };
+  }
+  if (status.unlockPolicy === 'credential') {
+    return {
+      tone: 'info',
+      text: 'Muxus asks for the master password whenever a saved credential is needed.',
+    };
+  }
+  if (!status.locked) {
+    return {
+      tone: 'success',
+      text:
+        status.unlockPolicy === 'never'
+          ? 'OS credential-store access is ready. Saved passwords are used without a master-password prompt.'
+          : 'Unlocked for this app session.',
+    };
+  }
+  return status.unlockPolicy === 'never'
+    ? {
+        tone: 'error',
+        text: 'The OS credential-store key is unavailable. Enter the master password to restore it.',
+      }
+    : { tone: 'warning', text: 'Needs the master password for this app session.' };
 }
 
 function MasterPasswordDialog({
@@ -392,19 +431,19 @@ function MasterPasswordDialog({
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 0.5 }}>
           {creating ? (
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" color="textSecondary">
               Use at least 8 characters. This password is always required to
               view or edit saved values.
             </Typography>
           ) : null}
           {mode === 'repair' ? (
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" color="textSecondary">
               Enter the master password to restore the vault key in the
               operating-system credential store.
             </Typography>
           ) : null}
           {mode === 'unlock' ? (
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" color="textSecondary">
               The decrypted vault key remains in memory until Muxus exits.
             </Typography>
           ) : null}
@@ -571,7 +610,7 @@ function EditSavedPasswordDialog({
       <DialogTitle>View or edit saved password</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 0.5 }}>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" color="textSecondary">
             {credential.label}
           </Typography>
           {error ? <Alert severity="error">{error}</Alert> : null}

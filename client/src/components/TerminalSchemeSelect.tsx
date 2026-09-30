@@ -25,23 +25,29 @@ export function TerminalSchemeSelect({
   label,
   value,
   inheritLabel,
+  hideLabel = false,
   onChange,
 }: {
   id: string;
   label: string;
   value: string;
   inheritLabel?: string;
+  /** No floating label: a settings row labels the picker; `label` stays its accessible name. */
+  hideLabel?: boolean;
   onChange: (value: string) => void;
 }) {
   const labelId = `${id}-label`;
   return (
     <FormControl fullWidth>
-      <InputLabel id={labelId} shrink={inheritLabel ? true : undefined}>{label}</InputLabel>
+      {hideLabel ? null : (
+        <InputLabel id={labelId} shrink={inheritLabel ? true : undefined}>{label}</InputLabel>
+      )}
       <Select
         id={id}
-        labelId={labelId}
+        labelId={hideLabel ? undefined : labelId}
         value={value}
-        label={label}
+        label={hideLabel ? undefined : label}
+        inputProps={hideLabel ? { 'aria-label': label } : undefined}
         displayEmpty={Boolean(inheritLabel)}
         onChange={(event) => onChange(event.target.value)}
         renderValue={(schemeId) =>

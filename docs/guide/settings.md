@@ -4,15 +4,20 @@ icon: lucide/settings
 
 # Settings
 
-Settings are opened with ++ctrl+comma++ or the gear control in the top bar. Most changes
-apply immediately to open terminals. SSH keepalive changes apply on the next connection;
-session logging saves explicitly because storage policy should not change under a running
-recorder.
+Settings are opened with ++ctrl+comma++ or the gear control in the top bar. The sections
+are listed on the left. Each one is a list of settings with a short explanation on the left
+and the control on the right, grouped under small headings. In a narrow window the section
+list becomes a picker at the top. Close the dialog with the **:material-close: close**
+button or ++esc++.
+
+Most changes apply immediately to open terminals. SSH keepalive changes apply on the next
+connection; session logging saves explicitly because storage policy should not change under
+a running recorder.
 
 <figure markdown="span">
   ![The settings dialog](../assets/screenshots/settings.png#only-light){ .shadow }
   ![The settings dialog](../assets/screenshots/settings-dark.png#only-dark){ .shadow }
-  <figcaption>Eleven sections, listed on the left. The footer states when changes apply.</figcaption>
+  <figcaption>Twelve sections, listed on the left.</figcaption>
 </figure>
 
 ## Appearance
@@ -23,14 +28,15 @@ recorder.
 - **Layout**: dock the hosts sidebar on the left (default) or right, and place the
   [command bar](commands.md) at the top (default) or bottom. A miniature of the window
   previews the arrangement.
-- **Split pane focus**: dim inactive panes or add a thin theme-aware outline. Both are off by
-  default; dimming starts at 15% and is adjustable. Multi-exec panes stay emphasized. These
+- **Split panes**: **Dim inactive panes** or **Outline the focused pane** with a thin
+  theme-aware accent. Both are off by default; dimming starts at 15% and is adjustable. Multi-exec panes stay emphasized. These
   effects are presentation-only and do not alter terminal colours or output.
-- **Light terminal theme** and **Dark terminal theme**: separate colour schemes that
-  follow the effective application appearance, including system appearance changes.
-  Fifteen schemes are grouped into light and dark sets, with optional shared text and
-  background colour overrides.
-- **Font**: family, size and line height. The desktop selector includes JetBrains Mono,
+- **Terminal colors**: a **Light terminal theme** and a **Dark terminal theme**, separate
+  colour schemes that follow the effective application appearance, including system
+  appearance changes. Fifteen schemes are grouped into light and dark sets. **Text color**
+  and **Background color** optionally replace the scheme's own for every terminal; **Use
+  scheme color** goes back.
+- **Terminal font**: family, size and line height. The desktop selector includes JetBrains Mono,
   which is bundled, plus the font families installed for the current operating-system
   user. Nerd Font symbols remain an automatic bundled fallback.
 
@@ -90,6 +96,11 @@ Off by default. This section enables retention globally, controls whether input 
 captured, and sets the storage policy: **location**, **maximum total size**, **minimum free
 space** (absolute and percentage), **maximum age**, and the number of parts each session
 keeps. Current usage against the quota is displayed here.
+
+Unlike the rest of Settings, these changes apply once saved. The default policy, the local
+terminal override and the storage limits each end in their own **Save** button, which says
+**Unsaved changes** beside it while there are edits. Leaving the section or closing the
+dialog with unsaved edits asks first.
 
 <figure markdown="span">
   ![Session logging settings](../assets/screenshots/settings-logging.png#only-light){ .shadow }
@@ -195,6 +206,9 @@ client. Non-secret shared folder defaults are copied into each affected host blo
 export remains usable outside Muxus. Folder and host passwords are omitted; other
 Muxus-only settings remain in the backup.
 
+**Import from other clients** reviews and imports sessions from **MobaXterm** (a local
+Windows installation or a session file) and **SecureCRT** (an XML settings export).
+
 !!! info "What a backup excludes"
 
     Private key files, passwords and recorded session history are never part of a backup.
@@ -224,6 +238,16 @@ exported.
 
 ## About
 
-Version and platform information, a link to the source repository, and a manual update
-check. When a newer release exists, Muxus links to its GitHub release so the appropriate
-installer can be downloaded.
+Shows the version you are running, with buttons to the documentation, the release notes of
+this version, the GitHub repository and a new issue. Below that:
+
+- **Updates** turns the startup notification about new versions on or off and checks for a
+  newer release on request. When one exists, **Download** opens its GitHub release so the
+  appropriate installer can be downloaded. Microsoft Store installations are updated by the
+  Store.
+- **This installation** lists the facts a bug report needs: version, whether you run the
+  desktop app or the web app, the operating system, the Electron and Chromium versions (or
+  your browser), and in the web app the server address and its platform. **Copy
+  diagnostics** copies them as text. It never includes your API token, home directory or
+  hosts.
+- **Made by** has links to the author and ways to support the project.

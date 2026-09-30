@@ -1,7 +1,6 @@
 import { useRef, useState, type ChangeEvent } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import Divider from '@mui/material/Divider';
 import ListItemText from '@mui/material/ListItemText';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
@@ -28,6 +27,7 @@ import { confirmAction } from '../state/dialogs.js';
 import { usePrefsStore } from '../state/prefs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { KeywordHighlightRulesEditor } from './KeywordHighlightRulesEditor.js';
+import { RowSelect, SettingRow, SettingsGroup, SettingsPage } from './SettingsLayout.js';
 
 export function HighlightProfilesSection() {
   const globalRules = usePrefsStore((state) => state.keywordHighlights);
@@ -162,170 +162,179 @@ export function HighlightProfilesSection() {
   };
 
   return (
-    <Stack spacing={3}>
-      <Box>
-        <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1.5 }}>
-          Global keyword highlighting
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          These keywords and regular expressions are highlighted in every terminal. A
-          host can include these rules and add its assigned profile and own rules, or
-          replace the global set entirely.
-        </Typography>
-        <KeywordHighlightRulesEditor
-          rules={globalRules}
-          onChange={(keywordHighlights) => setPrefs({ keywordHighlights })}
-        />
-      </Box>
-
-      <Divider />
-
-      <Box>
-        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-          Reusable profiles
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
-          Define a platform-specific rule set once, assign it in any host editor, and
-          export it to share with another Muxus installation. Muxus includes profiles
-          for Nokia SR OS and SR Linux output; edit them freely, or reset them from
-          Built-in.
-        </Typography>
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={1}
-          sx={{ alignItems: { sm: 'center' } }}
-        >
-          <TextField
-            select
-            size="small"
-            label="Profile"
-            value={selectedProfile?.id ?? ''}
-            onChange={(event) => setSelectedId(event.target.value)}
-            sx={{ minWidth: 240, flex: 1 }}
-          >
-            {profiles.length === 0 ? (
-              <MenuItem value="" disabled>
-                No profiles yet
-              </MenuItem>
-            ) : null}
-            {profiles.map((profile) => (
-              <MenuItem key={profile.id} value={profile.id}>
-                {profile.name} ({profile.rules.length})
-              </MenuItem>
-            ))}
-          </TextField>
-          <Button
-            startIcon={<AddIcon />}
-            disabled={profiles.length >= MAX_KEYWORD_HIGHLIGHT_PROFILES}
-            onClick={addProfile}
-          >
-            New
-          </Button>
-          <Button
-            startIcon={<LibraryAddOutlinedIcon />}
-            aria-haspopup="menu"
-            onClick={(event) => setBuiltinMenuAnchor(event.currentTarget)}
-          >
-            Built-in
-          </Button>
-          <Menu
-            open={!!builtinMenuAnchor}
-            anchorEl={builtinMenuAnchor}
-            onClose={() => setBuiltinMenuAnchor(null)}
-          >
-            {BUILTIN_HIGHLIGHT_PROFILES.map((builtin) => (
-              <MenuItem key={builtin.id} onClick={() => installBuiltinProfile(builtin)}>
-                <ListItemText
-                  primary={builtin.name}
-                  secondary={
-                    profiles.some((profile) => profile.id === builtin.id)
-                      ? 'Reset to the shipped rules'
-                      : 'Add to your profiles'
-                  }
-                />
-              </MenuItem>
-            ))}
-          </Menu>
-          <Button startIcon={<UploadFileOutlinedIcon />} onClick={() => importInput.current?.click()}>
-            Import
-          </Button>
-          <input
-            ref={importInput}
-            hidden
-            type="file"
-            accept=".muxus-highlight,.json,.muxus-highlight.json,application/json"
-            onChange={chooseImport}
-          />
-        </Stack>
-      </Box>
-
-      {selectedProfile ? (
-        <Stack spacing={2}>
-          <TextField
-            fullWidth
-            label="Profile name"
-            value={selectedProfile.name}
-            onChange={(event) =>
-              updateProfile(selectedProfile.id, { name: event.target.value })
-            }
-            onBlur={() => {
-              if (!selectedProfile.name.trim()) {
-                updateProfile(selectedProfile.id, { name: 'Untitled profile' });
-              }
-            }}
-            slotProps={{ htmlInput: { maxLength: 200 } }}
-          />
-          {/* Keyed so unapplied JSON never carries over to another profile. */}
+    <SettingsPage
+      title="Highlighting"
+      description="Keywords and regular expressions to color in terminal output."
+    >
+      <SettingsGroup
+        title="Global rules"
+        description="Highlighted in every terminal. A host can include these rules and add its assigned profile and own rules, or replace the global set entirely."
+        flush
+      >
+        <Box sx={{ p: 2 }}>
           <KeywordHighlightRulesEditor
-            key={selectedProfile.id}
-            rules={selectedProfile.rules}
-            onChange={(rules) => updateProfile(selectedProfile.id, { rules })}
-            emptyMessage="No rules in this profile yet."
+            rules={globalRules}
+            onChange={(keywordHighlights) => setPrefs({ keywordHighlights })}
           />
-          <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
+        </Box>
+      </SettingsGroup>
+
+      <SettingsGroup
+        title={profiles.length ? `Reusable profiles · ${profiles.length}` : 'Reusable profiles'}
+        description="Define a platform-specific rule set once, assign it in any host editor, and export it to share with another Muxus installation. Profiles for Nokia SR OS and SR Linux output are included; edit them freely, or reset them from Built-in."
+        action={
+          <>
             <Button
-              variant="outlined"
-              startIcon={<DownloadOutlinedIcon />}
-              disabled={!selectedProfile.name.trim()}
-              onClick={() =>
-                exportProfiles(
-                  [selectedProfile],
-                  `${selectedProfile.name} highlighting profile`,
-                  `Exported ${selectedProfile.name}.`,
-                )
-              }
+              size="small"
+              startIcon={<AddIcon />}
+              disabled={profiles.length >= MAX_KEYWORD_HIGHLIGHT_PROFILES}
+              onClick={addProfile}
             >
-              Export profile
+              New
             </Button>
-            {profiles.length > 1 ? (
+            <Button
+              size="small"
+              startIcon={<LibraryAddOutlinedIcon />}
+              aria-haspopup="menu"
+              onClick={(event) => setBuiltinMenuAnchor(event.currentTarget)}
+            >
+              Built-in
+            </Button>
+            <Button
+              size="small"
+              startIcon={<UploadFileOutlinedIcon />}
+              onClick={() => importInput.current?.click()}
+            >
+              Import
+            </Button>
+          </>
+        }
+      >
+        <Menu
+          open={!!builtinMenuAnchor}
+          anchorEl={builtinMenuAnchor}
+          onClose={() => setBuiltinMenuAnchor(null)}
+        >
+          {BUILTIN_HIGHLIGHT_PROFILES.map((builtin) => (
+            <MenuItem key={builtin.id} onClick={() => installBuiltinProfile(builtin)}>
+              <ListItemText
+                primary={builtin.name}
+                secondary={
+                  profiles.some((profile) => profile.id === builtin.id)
+                    ? 'Reset to the shipped rules'
+                    : 'Add to your profiles'
+                }
+              />
+            </MenuItem>
+          ))}
+        </Menu>
+        <input
+          ref={importInput}
+          hidden
+          type="file"
+          accept=".muxus-highlight,.json,.muxus-highlight.json,application/json"
+          onChange={chooseImport}
+        />
+        {selectedProfile ? (
+          <>
+            <SettingRow
+              label="Profile"
+              description="The profile to edit below."
+              control={
+                <RowSelect
+                  id="settings-highlight-profile"
+                  label="Profile"
+                  width={260}
+                  value={selectedProfile.id}
+                  onChange={setSelectedId}
+                  options={profiles.map(
+                    (profile) => [profile.id, `${profile.name} (${profile.rules.length})`] as const,
+                  )}
+                />
+              }
+            />
+            <SettingRow
+              label="Name"
+              labelFor="settings-highlight-profile-name"
+              control={
+                <TextField
+                  id="settings-highlight-profile-name"
+                  value={selectedProfile.name}
+                  onChange={(event) =>
+                    updateProfile(selectedProfile.id, { name: event.target.value })
+                  }
+                  onBlur={() => {
+                    if (!selectedProfile.name.trim()) {
+                      updateProfile(selectedProfile.id, { name: 'Untitled profile' });
+                    }
+                  }}
+                  slotProps={{ htmlInput: { maxLength: 200 } }}
+                  sx={{ width: 260 }}
+                />
+              }
+            />
+            <Box className="settings-row" sx={{ p: 2 }}>
+              {/* Keyed so unapplied JSON never carries over to another profile. */}
+              <KeywordHighlightRulesEditor
+                key={selectedProfile.id}
+                rules={selectedProfile.rules}
+                onChange={(rules) => updateProfile(selectedProfile.id, { rules })}
+                emptyMessage="No rules in this profile yet."
+              />
+            </Box>
+            <Stack
+              className="settings-row"
+              direction="row"
+              spacing={1}
+              useFlexGap
+              sx={{ flexWrap: 'wrap', px: 2, py: 1.25 }}
+            >
               <Button
+                variant="outlined"
                 startIcon={<DownloadOutlinedIcon />}
+                disabled={!selectedProfile.name.trim()}
                 onClick={() =>
                   exportProfiles(
-                    profiles,
-                    'highlighting profiles',
-                    `Exported ${profiles.length} highlighting profiles.`,
+                    [selectedProfile],
+                    `${selectedProfile.name} highlighting profile`,
+                    `Exported ${selectedProfile.name}.`,
                   )
                 }
               >
-                Export all
+                Export profile
               </Button>
-            ) : null}
-            <Button
-              color="error"
-              startIcon={<DeleteOutlineIcon />}
-              onClick={() => deleteProfile(selectedProfile)}
-            >
-              Delete profile
-            </Button>
-          </Stack>
-        </Stack>
-      ) : (
-        <Typography variant="body2" color="text.secondary">
-          Create or import a profile to reuse highlighting rules across hosts.
-        </Typography>
-      )}
-    </Stack>
+              {profiles.length > 1 ? (
+                <Button
+                  startIcon={<DownloadOutlinedIcon />}
+                  onClick={() =>
+                    exportProfiles(
+                      profiles,
+                      'highlighting profiles',
+                      `Exported ${profiles.length} highlighting profiles.`,
+                    )
+                  }
+                >
+                  Export all
+                </Button>
+              ) : null}
+              <Button
+                color="error"
+                startIcon={<DeleteOutlineIcon />}
+                onClick={() => deleteProfile(selectedProfile)}
+                sx={{ ml: 'auto' }}
+              >
+                Delete profile
+              </Button>
+            </Stack>
+          </>
+        ) : (
+          <Typography variant="body2" color="textSecondary" sx={{ px: 2, py: 2.5, textAlign: 'center' }}>
+            No profiles yet. Create, import or add a built-in profile to reuse highlighting rules
+            across hosts.
+          </Typography>
+        )}
+      </SettingsGroup>
+    </SettingsPage>
   );
 }
 

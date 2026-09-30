@@ -1,16 +1,17 @@
 import Alert from '@mui/material/Alert';
-import Box from '@mui/material/Box';
-import FormControlLabel from '@mui/material/FormControlLabel';
 import Link from '@mui/material/Link';
-import Stack from '@mui/material/Stack';
+import Skeleton from '@mui/material/Skeleton';
 import Switch from '@mui/material/Switch';
-import Typography from '@mui/material/Typography';
 import type { X11Status } from '@muxus/shared';
 import { useAppInfo } from '../api/queries.js';
 import { useX11Status } from '../api/x11.js';
 import { usePrefsStore } from '../state/prefs.js';
+import { SettingRow, SettingsGroup, SettingsPage } from './SettingsLayout.js';
 
 const XQUARTZ_URL = 'https://www.xquartz.org';
+
+const DESCRIPTION =
+  'Graphical programs started in SSH sessions open their windows on this computer.';
 
 /**
  * Application-wide X11 forwarding: the master switch (off by default on
@@ -27,98 +28,80 @@ export function X11Section() {
 
   if (!status) {
     return (
-      <Typography variant="body2" color="text.secondary">
-        Checking for an X server…
-      </Typography>
+      <SettingsPage title="X11 forwarding" description={DESCRIPTION}>
+        <Skeleton variant="rounded" height={88} />
+        <Skeleton variant="rounded" height={72} />
+      </SettingsPage>
     );
   }
   const enabled = x11Enabled ?? status.defaults.enabled;
   const forwardByDefault = x11ForwardByDefault ?? status.defaults.forwardByDefault;
 
   return (
-    <Stack spacing={3}>
-      <Box>
-        <SectionTitle>X11 forwarding</SectionTitle>
-        <Stack spacing={1.5}>
-          <FormControlLabel
-            control={
-              <Switch
-                size="small"
-                checked={enabled}
-                onChange={(e) => set({ x11Enabled: e.target.checked })}
-              />
-            }
-            label={
-              <Box>
-                <Typography variant="body2">Enable X11 forwarding</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Graphical programs started in SSH sessions open their windows on this
-                  computer. Off: Muxus never requests X11, whatever a host&apos;s ForwardX11
-                  says, and shows no X11 hints.
-                </Typography>
-              </Box>
-            }
-          />
-          {enabled ? <ServerStatus status={status} platform={platform} /> : null}
-        </Stack>
-      </Box>
-      <Box>
-        <SectionTitle>Hosts without their own setting</SectionTitle>
-        <FormControlLabel
-          disabled={!enabled}
+    <SettingsPage title="X11 forwarding" description={DESCRIPTION}>
+      <SettingsGroup>
+        <SettingRow
+          label="Enable X11 forwarding"
+          labelFor="settings-x11-enabled"
+          description="Off: Muxus never requests X11, whatever a host's ForwardX11 says, and shows no X11 hints."
           control={
             <Switch
+              id="settings-x11-enabled"
               size="small"
+              checked={enabled}
+              onChange={(e) => set({ x11Enabled: e.target.checked })}
+            />
+          }
+        >
+          {enabled ? <ServerStatus status={status} platform={platform} /> : null}
+        </SettingRow>
+      </SettingsGroup>
+      <SettingsGroup title="Defaults">
+        <SettingRow
+          label="Forward X11 by default"
+          labelFor="settings-x11-default"
+          disabled={!enabled}
+          description={
+            status.source === 'bundled'
+              ? 'Hosts whose ForwardX11 is unset forward X11 to the built-in X server, where each connection gets its own display. A host’s own setting always wins.'
+              : 'Hosts whose ForwardX11 is unset forward X11 to your display. Forwarded programs can watch your other X11 windows, so turning X11 on per host is safer. A host’s own setting always wins.'
+          }
+          control={
+            <Switch
+              id="settings-x11-default"
+              size="small"
+              disabled={!enabled}
               checked={forwardByDefault}
               onChange={(e) => set({ x11ForwardByDefault: e.target.checked })}
             />
           }
-          label={
-            <Box>
-              <Typography variant="body2">Forward X11 by default</Typography>
-              <Typography variant="caption" color="text.secondary">
-                {status.source === 'bundled'
-                  ? 'Hosts whose ForwardX11 is unset forward X11 to the built-in X server, where each connection gets its own display. A host’s own setting always wins.'
-                  : 'Hosts whose ForwardX11 is unset forward X11 to your display. Forwarded programs can watch your other X11 windows, so turning X11 on per host is safer. A host’s own setting always wins.'}
-              </Typography>
-            </Box>
-          }
         />
-      </Box>
-      {status.source === 'bundled' ? (
-        <Box>
-          <SectionTitle>Clipboard</SectionTitle>
-          <FormControlLabel
+        {status.source === 'bundled' ? (
+          <SettingRow
+            label="Share the clipboard with X11 apps"
+            labelFor="settings-x11-clipboard"
             disabled={!enabled}
+            description="Copy and paste between forwarded windows and Windows. Every server you connect to with X11 forwarding can then read and replace your clipboard, so turn this on only if you trust all of them. Applies to a connection once it has no forwarded windows open."
             control={
               <Switch
+                id="settings-x11-clipboard"
                 size="small"
+                disabled={!enabled}
                 checked={x11ClipboardSharing}
                 onChange={(e) => set({ x11ClipboardSharing: e.target.checked })}
               />
             }
-            label={
-              <Box>
-                <Typography variant="body2">Share the clipboard with X11 apps</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Copy and paste between forwarded windows and Windows. Every server you
-                  connect to with X11 forwarding can then read and replace your clipboard, so
-                  turn this on only if you trust all of them. Applies to a connection once it
-                  has no forwarded windows open.
-                </Typography>
-              </Box>
-            }
           />
-        </Box>
-      ) : null}
-    </Stack>
+        ) : null}
+      </SettingsGroup>
+    </SettingsPage>
   );
 }
 
 function ServerStatus({ status, platform }: { status: X11Status; platform?: string }) {
   if (status.source === 'bundled') {
     return (
-      <Alert severity="success" variant="outlined">
+      <Alert severity="success" variant="outlined" sx={{ mt: 1.25 }}>
         Built-in X server. Each SSH connection gets its own display, started when a program
         opens its first window.
       </Alert>
@@ -126,14 +109,14 @@ function ServerStatus({ status, platform }: { status: X11Status; platform?: stri
   }
   if (status.source === 'display') {
     return (
-      <Alert severity="success" variant="outlined">
+      <Alert severity="success" variant="outlined" sx={{ mt: 1.25 }}>
         {platform === 'darwin' ? 'XQuartz' : 'Your X server'} on display{' '}
         <code>{status.display}</code>.
       </Alert>
     );
   }
   return (
-    <Alert severity="warning" variant="outlined">
+    <Alert severity="warning" variant="outlined" sx={{ mt: 1.25 }}>
       {platform === 'darwin' ? (
         <>
           No X server found. Install{' '}
@@ -148,13 +131,5 @@ function ServerStatus({ status, platform }: { status: X11Status; platform?: stri
         'No X server found. Start Muxus from a graphical session so that DISPLAY is set.'
       )}
     </Alert>
-  );
-}
-
-function SectionTitle({ children }: { children: string }) {
-  return (
-    <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1.5 }}>
-      {children}
-    </Typography>
   );
 }

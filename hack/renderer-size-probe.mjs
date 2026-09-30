@@ -93,19 +93,16 @@ const toggle = async () => {
   await page.click('[aria-label="Settings"]');
   // The dialog container intercepts pointer events during the paper
   // transition, so click through the DOM instead of coordinates.
-  await page.waitForSelector('.MuiDialog-paper [role="button"]:has-text("Terminal")');
+  await page.waitForSelector('.MuiDialog-paper [role="tab"]:has-text("Terminal")');
   await page.waitForTimeout(600);
   await page.evaluate(() =>
-    [...document.querySelectorAll('.MuiDialog-paper [role="button"]')]
+    [...document.querySelectorAll('.MuiDialog-paper [role="tab"]')]
       .find((b) => b.textContent.trim() === 'Terminal')
       .click(),
   );
   await page.waitForSelector('.MuiDialog-paper >> text=GPU renderer (WebGL)');
   await page.evaluate(() =>
-    [...document.querySelectorAll('.MuiDialog-paper .MuiFormControlLabel-root')]
-      .find((l) => l.textContent.includes('GPU renderer'))
-      .querySelector('input[type="checkbox"]')
-      .click(),
+    document.querySelector('#settings-webgl').click(),
   );
   await page.keyboard.press('Escape');
   await page.waitForTimeout(1500); // swap + lazy import
