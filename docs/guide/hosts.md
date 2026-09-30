@@ -12,19 +12,28 @@ back to the same file in place.
 
 ## Import from MobaXterm
 
-Open **Settings → Backup & data → Import sessions** to bring MobaXterm SSH bookmarks into
-Muxus. On Windows, **Find sessions** reads bookmarks from the current user's local
+Open **Settings → Backup & data → Import sessions** to bring MobaXterm SSH, RDP and VNC
+bookmarks into Muxus. On Windows, **Find sessions** reads bookmarks from the current user's local
 MobaXterm installation. On every platform, you can choose `MobaXterm.ini`, `.mxtsessions`,
 `.mobaconf` or a text export instead.
 
-The review lists every detected SSH session. Choose whether SSH hosts should stay in Muxus
+The review lists every detected session. Choose whether SSH hosts should stay in Muxus
 app data only or be written as OpenSSH `Host` blocks, then select which sessions to include
 and whether matching hosts should be kept or replaced. Muxus
-preserves the display name, host, port, username, password-vs-key authentication intent and
-the `SubRep` folder hierarchy.
+preserves the display name, host, port, username, private key, SSH gateway (jump host),
+execute command and the `SubRep` folder hierarchy. Sessions without a private key ask for a
+password. An execute command becomes the host's startup command in a terminal; with **Do not
+exit after command ends**, your login shell takes over when it finishes. The command is
+imported exactly as written, including anything typed into it.
 
-Passwords and private key files are not copied. Muxus
-uses your SSH agent or asks for credentials when you connect.
+Each distinct SSH gateway becomes one jump host in a **MobaXterm jump hosts** folder, with
+its own user, port and key; multi-hop gateways chain those jump hosts in order. SSH sessions
+jump through it, and RDP and VNC sessions use it as their SSH gateway. MobaXterm's
+`_ProfileDir_`, `_MyDocuments_` and `_CurrentDrive_` key paths become `~`, `~/Documents` and
+`C:`.
+
+Passwords are not copied, and private keys are referenced where they are rather than copied.
+Muxus asks for credentials when you connect.
 
 ## Import from SecureCRT
 
