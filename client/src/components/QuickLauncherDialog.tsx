@@ -65,6 +65,8 @@ import {
   type KeyCommand,
 } from '../keymap/commands.js';
 import { chordLabels } from '../keymap/hints.js';
+import { useWslShellProfiles } from '../local-shell-launchers.js';
+import { LocalShellIcon } from './LocalShellIcon.js';
 import { HOTKEY_MOD_LABEL } from '../platform.js';
 import {
   selectQuickLauncherItems,
@@ -138,6 +140,7 @@ export function QuickLauncherDialog() {
   const activeId = useTabsStore((state) => state.activeId);
   const commands = usePrefsStore((state) => state.commandButtons);
   const localShellProfiles = usePrefsStore((state) => state.localShellProfiles);
+  const wslShellProfiles = useWslShellProfiles();
   const keybindings = usePrefsStore((state) => state.keybindings);
   const workspaces = useWorkspacesStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspacesStore((state) => state.activeId);
@@ -203,6 +206,7 @@ export function QuickLauncherDialog() {
         openWorkspaceWindowCounts,
         commands,
         localShellProfiles,
+        wslShellProfiles,
         tunnels,
         forwards,
         activeConnected: !!activeConnected,
@@ -220,6 +224,7 @@ export function QuickLauncherDialog() {
       tabs,
       tunnels,
       workspaces,
+      wslShellProfiles,
     ],
   );
   const queryResults = useMemo(
@@ -746,6 +751,7 @@ function buildCatalogResults({
   openWorkspaceWindowCounts,
   commands,
   localShellProfiles,
+  wslShellProfiles,
   tunnels,
   forwards,
   activeConnected,
@@ -759,6 +765,7 @@ function buildCatalogResults({
   openWorkspaceWindowCounts: Readonly<Record<string, number>>;
   commands: readonly CommandButton[];
   localShellProfiles: readonly LocalShellProfileConfig[];
+  wslShellProfiles: readonly LocalShellProfileConfig[];
   tunnels: readonly TunnelRecord[];
   forwards: readonly ForwardInfo[];
   activeConnected: boolean;
@@ -883,7 +890,11 @@ function buildCatalogResults({
     });
   }
 
-  for (const [index, profile] of localShellProfiles.entries()) {
+  const shellProfiles = [
+    ...localShellProfiles.map((profile) => ({ profile, wsl: false })),
+    ...wslShellProfiles.map((profile) => ({ profile, wsl: true })),
+  ];
+  for (const [index, { profile, wsl }] of shellProfiles.entries()) {
     const commandLine = [profile.shell || 'automatic shell', ...profile.args]
       .filter(Boolean)
       .join(' ');
@@ -892,11 +903,12 @@ function buildCatalogResults({
       kind: 'local-shell',
       profile,
       label: profile.name.trim() || 'Unnamed shell',
-      detail: `Local shell · ${commandLine}`,
+      detail: `${wsl ? 'WSL distribution' : 'Local shell'} · ${commandLine}`,
       keywords: [
         'local',
         'terminal',
         'shell',
+        ...(wsl ? ['wsl', 'linux'] : []),
         profile.shell,
         ...profile.args,
         profile.cwd,
@@ -1119,7 +1131,13 @@ function ResultIcon({ result }: { result: LauncherResult }) {
   }
   if (result.kind === 'history') return <HistoryOutlinedIcon {...props} />;
   if (result.kind === 'local-shell') {
-    return <TerminalOutlinedIcon {...props} color="primary" />;
+    return (
+      <LocalShellIcon
+        launch={result.profile}
+        size={20}
+        fallback={<TerminalOutlinedIcon {...props} color="primary" />}
+      />
+    );
   }
   if (result.kind === 'keymap') return <KeyboardOutlinedIcon {...props} />;
   if (result.action === 'settings') return <SettingsOutlinedIcon {...props} />;

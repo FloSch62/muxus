@@ -3,6 +3,7 @@ import { FolderContextMenu } from './FolderContextMenu.js';
 import { HostContextMenu } from './HostContextMenu.js';
 import { HostSessionsMenu } from './HostSessionsMenu.js';
 import { LaunchGroupDialog } from './LaunchGroupDialog.js';
+import { LocalShellContextMenu } from './LocalShellContextMenu.js';
 import { PanelContextMenu } from './PanelContextMenu.js';
 
 /**
@@ -18,12 +19,14 @@ export function SidebarMenus({
   sessions,
   folder,
   panel,
+  shell,
   launch,
 }: {
   host: ComponentProps<typeof HostContextMenu>;
   sessions: ComponentProps<typeof HostSessionsMenu>;
   folder: ComponentProps<typeof FolderContextMenu>;
   panel: ComponentProps<typeof PanelContextMenu>;
+  shell: ComponentProps<typeof LocalShellContextMenu>;
   launch: ComponentProps<typeof LaunchGroupDialog>;
 }) {
   return (
@@ -32,6 +35,7 @@ export function SidebarMenus({
       <HostSessionsMenu {...sessions} />
       <FolderContextMenu {...folder} />
       <PanelContextMenu {...panel} />
+      <LocalShellContextMenu {...shell} />
       <LaunchGroupDialog {...launch} />
     </>
   );

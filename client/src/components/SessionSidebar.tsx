@@ -58,6 +58,7 @@ import {
   managedHostRef,
   type ManagedHost,
 } from '../managed-hosts.js';
+import { useWslShellProfiles } from '../local-shell-launchers.js';
 import {
   connectManagedHost,
   connectTarget,
@@ -87,6 +88,8 @@ import type { FolderMenuState } from './sidebar/FolderContextMenu.js';
 import type { HostMenuState } from './sidebar/HostContextMenu.js';
 import type { HostActivation } from './sidebar/HostRow.js';
 import type { HostSessionsMenuState } from './sidebar/HostSessionsMenu.js';
+import type { LocalShellMenuState } from './sidebar/LocalShellContextMenu.js';
+import { LocalShellIcon } from './LocalShellIcon.js';
 import { HostTree, type HostTreeHandle } from './sidebar/HostTree.js';
 import type { LaunchTarget } from './sidebar/LaunchGroupDialog.js';
 import { useAllManagedHosts } from './sidebar/useAllManagedHosts.js';
@@ -121,6 +124,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
   const sidebarWidth = usePrefsStore((state) => state.sidebarWidth);
   const sidebarPosition = usePrefsStore((state) => state.sidebarPosition);
   const localShellProfiles = usePrefsStore((state) => state.localShellProfiles);
+  const wslShellProfiles = useWslShellProfiles();
   const setPrefs = usePrefsStore((state) => state.set);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -131,6 +135,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
   const [sessionsMenu, setSessionsMenu] = useState<HostSessionsMenuState | null>(null);
   const [folderMenu, setFolderMenu] = useState<FolderMenuState | null>(null);
   const [panelMenu, setPanelMenu] = useState<{ top: number; left: number } | null>(null);
+  const [shellMenu, setShellMenu] = useState<LocalShellMenuState | null>(null);
   const [launchTarget, setLaunchTarget] = useState<LaunchTarget | null>(null);
   /** Folders collapsed during a search; discarded when the query changes. */
   const [searchCollapsed, setSearchCollapsed] = useState<ReadonlySet<string>>(EMPTY_KEYS);
@@ -151,16 +156,17 @@ export const SessionSidebar = memo(function SessionSidebar() {
   const needle = useDeferredValue(normalizedFilter);
   const hosts = config?.hosts ?? EMPTY_HOSTS;
   const profiles = savedData?.profiles ?? EMPTY_PROFILES;
+  // Installed WSL distributions follow the saved profiles, launched the same way.
   const visibleLocalShellProfiles = useMemo(
     () =>
-      localShellProfiles.filter((profile) => {
+      [...localShellProfiles, ...wslShellProfiles].filter((profile) => {
         if (!needle) return true;
         return [profile.name, profile.shell, ...profile.args, profile.cwd]
           .join(' ')
           .toLocaleLowerCase()
           .includes(needle);
       }),
-    [localShellProfiles, needle],
+    [localShellProfiles, wslShellProfiles, needle],
   );
 
   const groups = useMemo(
@@ -600,6 +606,15 @@ export const SessionSidebar = memo(function SessionSidebar() {
             onMouseEnter={() => void loadTerminalViewImpl()}
             onFocus={() => void loadTerminalViewImpl()}
             onClick={() => openLocalTerminal()}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setShellMenu({
+                position: { top: event.clientY, left: event.clientX },
+                profile: null,
+                wsl: false,
+              });
+            }}
           >
             <TerminalIcon sx={{ fontSize: 16, flexShrink: 0, color: 'text.secondary' }} />
             <Box component="span" sx={{ ...treeLabelSx, minWidth: 0 }}>
@@ -618,8 +633,23 @@ export const SessionSidebar = memo(function SessionSidebar() {
                 onMouseEnter={() => void loadTerminalViewImpl()}
                 onFocus={() => void loadTerminalViewImpl()}
                 onClick={() => openLocalShellProfile(profile)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setShellMenu({
+                    position: { top: event.clientY, left: event.clientX },
+                    profile,
+                    wsl: wslShellProfiles.includes(profile),
+                  });
+                }}
               >
-                <TerminalIcon sx={{ fontSize: 15, flexShrink: 0, color: 'text.secondary' }} />
+                <LocalShellIcon
+                  launch={profile}
+                  size={15}
+                  fallback={
+                    <TerminalIcon sx={{ fontSize: 15, flexShrink: 0, color: 'text.secondary' }} />
+                  }
+                />
                 <Box component="span" sx={{ ...treeLabelSx, minWidth: 0 }}>
                   {profile.name.trim() || 'Unnamed shell'}
                 </Box>
@@ -714,7 +744,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
         ) : null}
       </Box>
 
-      {(menu || sessionsMenu || folderMenu || panelMenu || launchTarget) && (
+      {(menu || sessionsMenu || folderMenu || panelMenu || shellMenu || launchTarget) && (
         <Suspense fallback={null}>
           <SidebarMenus
             host={{
@@ -777,6 +807,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
               onMoveSidebar: () =>
                 setPrefs({ sidebarPosition: onRight ? 'left' : 'right' }),
             }}
+            shell={{ menu: shellMenu, onClose: () => setShellMenu(null) }}
             launch={{ target: launchTarget, onClose: () => setLaunchTarget(null) }}
           />
         </Suspense>

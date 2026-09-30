@@ -77,7 +77,7 @@ import {
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { confirmAction } from '../state/dialogs.js';
-import { useUiStore } from '../state/ui.js';
+import { useUiStore, type SettingsSection } from '../state/ui.js';
 import { terminalScheme } from '../terminal/palette.js';
 import {
   terminalFileLinkActivationForPlatform,
@@ -101,21 +101,7 @@ import { PasswordVaultSection } from './PasswordVaultSection.js';
 import { X11Section } from './X11Section.js';
 import { SecureCrtImportDialog } from './SecureCrtImportDialog.js';
 
-type Section =
-  | 'appearance'
-  | 'terminal'
-  | 'local-shells'
-  | 'logging'
-  | 'highlighting'
-  | 'behavior'
-  | 'x11'
-  | 'keyboard'
-  | 'passwords'
-  | 'data'
-  | 'debug'
-  | 'about';
-
-const SECTIONS: Array<{ id: Section; label: string; icon: React.ReactNode }> = [
+const SECTIONS: Array<{ id: SettingsSection; label: string; icon: React.ReactNode }> = [
   { id: 'appearance', label: 'Appearance', icon: <PaletteOutlinedIcon fontSize="small" /> },
   { id: 'terminal', label: 'Terminal', icon: <TerminalIcon fontSize="small" /> },
   { id: 'local-shells', label: 'Local shells', icon: <CodeOutlinedIcon fontSize="small" /> },
@@ -141,7 +127,10 @@ const TERMINAL_FILE_LINK_ACTIVATION_OPTIONS = terminalFileLinkActivationOptions(
 export function SettingsDialog() {
   const open = useUiStore((s) => s.settingsOpen);
   const setOpen = useUiStore((s) => s.setSettingsOpen);
-  const [section, setSection] = useState<Section>('appearance');
+  const [target] = useState(() => useUiStore.getState().settingsTarget);
+  const [section, setSection] = useState<SettingsSection>(target?.section ?? 'appearance');
+  /** The entry the dialog was opened for, highlighted until another section is picked. */
+  const [focusItem, setFocusItem] = useState(target?.item);
   const [loggingDirty, setLoggingDirty] = useState(false);
   const [sessionImportOpen, setSessionImportOpen] = useState<'mobaxterm' | 'securecrt' | null>(null);
 
@@ -188,7 +177,12 @@ export function SettingsDialog() {
             <ListItemButton
               key={s.id}
               selected={section === s.id}
-              onClick={() => leaveSection(() => setSection(s.id))}
+              onClick={() =>
+                leaveSection(() => {
+                  setSection(s.id);
+                  setFocusItem(undefined);
+                })
+              }
               sx={{ borderRadius: 1, mx: 1 }}
             >
               <ListItemIcon sx={{ minWidth: 32 }}>{s.icon}</ListItemIcon>
@@ -208,7 +202,7 @@ export function SettingsDialog() {
           <Box sx={{ flex: 1, overflowY: 'auto', p: 3, pt: 2.5 }}>
             {section === 'appearance' && <AppearanceSection />}
             {section === 'terminal' && <TerminalSection />}
-            {section === 'local-shells' && <LocalShellProfilesSection />}
+            {section === 'local-shells' && <LocalShellProfilesSection focusItem={focusItem} />}
             {section === 'logging' && <SessionLoggingSection onDirtyChange={setLoggingDirty} />}
             {section === 'highlighting' && <HighlightProfilesSection />}
             {section === 'behavior' && <BehaviorSection />}

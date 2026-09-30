@@ -122,4 +122,14 @@ describe('app routes', () => {
     });
     expect(rejected.statusCode).toBe(400);
   });
+
+  it('lists no WSL distributions off Windows', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/local-shells/wsl',
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ distributions: [] });
+  });
 });
