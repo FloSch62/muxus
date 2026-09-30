@@ -1,6 +1,10 @@
 import { useMemo } from 'react';
 import { useAppInfo, useWslDistributions } from './api/queries.js';
-import { wslShellProfiles } from './local-shell-profile.js';
+import {
+  newLocalShellProfileId,
+  opensWslDistribution,
+  wslShellProfiles,
+} from './local-shell-profile.js';
 import { usePrefsStore, type LocalShellProfileConfig } from './state/prefs.js';
 
 const NO_PROFILES: LocalShellProfileConfig[] = [];
@@ -18,4 +22,29 @@ export function useWslShellProfiles(): LocalShellProfileConfig[] {
       enabled && distributions?.length ? wslShellProfiles(distributions, saved) : NO_PROFILES,
     [distributions, enabled, saved],
   );
+}
+
+/** The icon of the WSL distribution a shell launch starts, when that
+ * distribution ships one; saved profiles and open tabs match by name. */
+export function useWslDistributionIcon(launch: {
+  shell?: string;
+  args?: readonly string[];
+}): string | undefined {
+  const platform = useAppInfo().data?.platform;
+  const { data } = useWslDistributions(platform === 'win32');
+  return data?.distributions.find(
+    (distribution) => distribution.icon && opensWslDistribution(launch, distribution.name),
+  )?.icon;
+}
+
+/** Copy an automatically listed distribution into the saved profiles, where
+ * it can be customized; the automatic entry then stops being listed. */
+export function saveWslShellProfile(profile: LocalShellProfileConfig): void {
+  const { localShellProfiles, set } = usePrefsStore.getState();
+  set({
+    localShellProfiles: [
+      ...localShellProfiles,
+      { ...profile, id: newLocalShellProfileId(localShellProfiles.length) },
+    ],
+  });
 }

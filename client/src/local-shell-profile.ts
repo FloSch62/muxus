@@ -2,6 +2,10 @@ import type { WslDistribution } from '@muxus/shared';
 import type { LocalShellProfileConfig } from './state/prefs.js';
 
 const MAX_LOCAL_SHELL_ARGUMENTS = 64;
+
+export function newLocalShellProfileId(count: number): string {
+  return `local-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${count}`}`;
+}
 const MAX_LOCAL_SHELL_ARGUMENT_LENGTH = 4096;
 
 /** Preserve blank rows while the controlled arguments field is being edited. */
@@ -34,18 +38,20 @@ export function wslShellProfile(
   };
 }
 
-/** Whether a saved profile already starts the named distribution. */
+/** Whether a shell launch — a saved profile or an open tab's — starts the
+ * named distribution. */
 export function opensWslDistribution(
-  profile: Pick<LocalShellProfileConfig, 'shell' | 'args'>,
+  launch: { shell?: string; args?: readonly string[] },
   name: string,
 ): boolean {
-  const executable = profile.shell.trim().split(/[\\/]/).at(-1)?.toLowerCase();
+  const executable = launch.shell?.trim().split(/[\\/]/).at(-1)?.toLowerCase();
   if (executable !== 'wsl' && executable !== 'wsl.exe') return false;
+  const args = launch.args ?? [];
   const wanted = name.toLowerCase();
-  return profile.args.some(
+  return args.some(
     (argument, index) =>
       (argument === '-d' || argument === '--distribution') &&
-      profile.args[index + 1]?.toLowerCase() === wanted,
+      args[index + 1]?.toLowerCase() === wanted,
   );
 }
 

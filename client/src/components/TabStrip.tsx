@@ -80,6 +80,7 @@ import { editableManagedHostForProfile } from '../managed-hosts.js';
 import { useUiStore } from '../state/ui.js';
 import { loadHostEditorDialog } from '../lazy-features.js';
 import { hostKindIcon } from './host-kind-icon.js';
+import { LocalShellIcon } from './LocalShellIcon.js';
 import {
   activeTabTransfer,
   beginTabDrag,
@@ -665,16 +666,24 @@ export function TabStrip({
                 component="span"
                 sx={{ position: 'relative', display: 'flex', width: 18, flexShrink: 0 }}
               >
-                <TabIcon
+                {/* A WSL tab shows its distribution's own icon, as Windows Terminal does. */}
+                <LocalShellIcon
+                  launch={tab.profile?.kind === 'local' ? tab.profile : {}}
+                  size={15}
                   className="muxus-tab-icon"
-                  sx={{
-                    fontSize: 15,
-                    color: hasUnreadOutput
-                      ? 'info.main'
-                      : active && focused
-                        ? 'primary.main'
-                        : 'text.secondary',
-                  }}
+                  fallback={
+                    <TabIcon
+                      className="muxus-tab-icon"
+                      sx={{
+                        fontSize: 15,
+                        color: hasUnreadOutput
+                          ? 'info.main'
+                          : active && focused
+                            ? 'primary.main'
+                            : 'text.secondary',
+                      }}
+                    />
+                  }
                 />
                 {tabNumber !== undefined ? (
                   <Box
@@ -969,9 +978,15 @@ export function TabStrip({
               sx={{ gap: 1 }}
             >
               <ListItemIcon sx={{ minWidth: 30 }}>
-                <TabIcon
-                  fontSize="small"
-                  color={hasUnreadOutput ? 'info' : active ? 'primary' : 'inherit'}
+                <LocalShellIcon
+                  launch={tab.profile?.kind === 'local' ? tab.profile : {}}
+                  size={20}
+                  fallback={
+                    <TabIcon
+                      fontSize="small"
+                      color={hasUnreadOutput ? 'info' : active ? 'primary' : 'inherit'}
+                    />
+                  }
                 />
               </ListItemIcon>
               <ListItemText

@@ -66,6 +66,7 @@ import {
 } from '../keymap/commands.js';
 import { chordLabels } from '../keymap/hints.js';
 import { useWslShellProfiles } from '../local-shell-launchers.js';
+import { LocalShellIcon } from './LocalShellIcon.js';
 import { HOTKEY_MOD_LABEL } from '../platform.js';
 import {
   selectQuickLauncherItems,
@@ -1130,7 +1131,13 @@ function ResultIcon({ result }: { result: LauncherResult }) {
   }
   if (result.kind === 'history') return <HistoryOutlinedIcon {...props} />;
   if (result.kind === 'local-shell') {
-    return <TerminalOutlinedIcon {...props} color="primary" />;
+    return (
+      <LocalShellIcon
+        launch={result.profile}
+        size={20}
+        fallback={<TerminalOutlinedIcon {...props} color="primary" />}
+      />
+    );
   }
   if (result.kind === 'keymap') return <KeyboardOutlinedIcon {...props} />;
   if (result.action === 'settings') return <SettingsOutlinedIcon {...props} />;

@@ -56,6 +56,14 @@ describe('installed WSL distributions', () => {
     expect(opensWslDistribution(saved('pwsh.exe', ['-d', 'Ubuntu']), 'Ubuntu')).toBe(false);
   });
 
+  it('recognises the distribution an open tab started', () => {
+    expect(opensWslDistribution({ shell: 'wsl.exe', args: ['-d', 'Ubuntu'] }, 'Ubuntu')).toBe(
+      true,
+    );
+    expect(opensWslDistribution({ shell: 'wsl.exe' }, 'Ubuntu')).toBe(false);
+    expect(opensWslDistribution({ args: ['-d', 'Ubuntu'] }, 'Ubuntu')).toBe(false);
+  });
+
   it('offers only the distributions no saved profile covers', () => {
     expect(
       wslShellProfiles(

@@ -16,9 +16,11 @@ import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
-import type { WslDistribution } from '@muxus/shared';
+import { useCallback, useEffect, useState } from 'react';
 import { useAppInfo, useWslDistributions } from '../api/queries.js';
+import { saveWslShellProfile } from '../local-shell-launchers.js';
 import {
+  newLocalShellProfileId,
   opensWslDistribution,
   parseLocalShellArgumentText,
   wslShellProfile,
@@ -28,12 +30,35 @@ import {
   usePrefsStore,
   type LocalShellProfileConfig,
 } from '../state/prefs.js';
+import { LocalShellIcon } from './LocalShellIcon.js';
 
-function newProfileId(count: number): string {
-  return `local-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${count}`}`;
+/** How long the entry the section was opened for stays outlined. */
+const HIGHLIGHT_MS = 2500;
+const HIGHLIGHT_SX = { outline: 2, outlineColor: 'primary.main', outlineOffset: -2 };
+
+/**
+ * The entry the section was opened for, from a sidebar row's menu: scrolled
+ * into view once it renders, and outlined for a moment so it is easy to spot.
+ */
+function useFocusedEntry(focusItem: string | undefined) {
+  const [highlighted, setHighlighted] = useState(focusItem);
+  useEffect(() => {
+    setHighlighted(focusItem);
+    if (!focusItem) return;
+    const timer = window.setTimeout(() => setHighlighted(undefined), HIGHLIGHT_MS);
+    return () => window.clearTimeout(timer);
+  }, [focusItem]);
+  const reveal = useCallback((element: HTMLElement | null) => {
+    element?.scrollIntoView({ block: 'center' });
+  }, []);
+  return (id: string) => ({
+    ref: id === focusItem ? reveal : undefined,
+    sx: id === highlighted ? HIGHLIGHT_SX : {},
+  });
 }
 
-export function LocalShellProfilesSection() {
+export function LocalShellProfilesSection({ focusItem }: { focusItem?: string }) {
+  const focus = useFocusedEntry(focusItem);
   const profiles = usePrefsStore((state) => state.localShellProfiles);
   const defaultProfileId = usePrefsStore((state) => state.defaultLocalShellProfileId);
   const localShell = usePrefsStore((state) => state.localShell);
@@ -53,7 +78,7 @@ export function LocalShellProfilesSection() {
   };
 
   const addProfile = () => {
-    const id = newProfileId(profiles.length);
+    const id = newLocalShellProfileId(profiles.length);
     const next: LocalShellProfileConfig = {
       id,
       name: `Shell ${profiles.length + 1}`,
@@ -160,90 +185,98 @@ export function LocalShellProfilesSection() {
           </Paper>
         ) : (
           <Stack spacing={2} sx={{ mt: 2 }}>
-            {profiles.map((profile) => (
-              <Paper key={profile.id} variant="outlined" sx={{ p: 2 }}>
-                <Stack spacing={2}>
-                  <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+            {profiles.map((profile) => {
+              const entry = focus(profile.id);
+              return (
+                <Paper
+                  key={profile.id}
+                  ref={entry.ref}
+                  variant="outlined"
+                  sx={{ p: 2, ...entry.sx }}
+                >
+                  <Stack spacing={2}>
+                    <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+                      <TextField
+                        label="Profile name"
+                        value={profile.name}
+                        onChange={(event) =>
+                          updateProfile(profile.id, { name: event.target.value.slice(0, 200) })
+                        }
+                        error={!profile.name.trim()}
+                        helperText={!profile.name.trim() ? 'Enter a name.' : 'Shown in launch menus'}
+                        fullWidth
+                      />
+                      <Tooltip title="Delete profile">
+                        <IconButton
+                          aria-label={`Delete ${profile.name || 'shell profile'}`}
+                          color="error"
+                          onClick={() => removeProfile(profile)}
+                          sx={{ mt: 0.75 }}
+                        >
+                          <DeleteOutlineIcon />
+                        </IconButton>
+                      </Tooltip>
+                    </Stack>
                     <TextField
-                      label="Profile name"
-                      value={profile.name}
+                      label="Executable"
+                      value={profile.shell}
                       onChange={(event) =>
-                        updateProfile(profile.id, { name: event.target.value.slice(0, 200) })
+                        updateProfile(profile.id, { shell: event.target.value.slice(0, 4096) })
                       }
-                      error={!profile.name.trim()}
-                      helperText={!profile.name.trim() ? 'Enter a name.' : 'Shown in launch menus'}
+                      placeholder={info?.platform === 'win32' ? 'wsl.exe' : '/bin/zsh'}
+                      helperText="Executable name or absolute path; blank uses the system default"
                       fullWidth
                     />
-                    <Tooltip title="Delete profile">
-                      <IconButton
-                        aria-label={`Delete ${profile.name || 'shell profile'}`}
-                        color="error"
-                        onClick={() => removeProfile(profile)}
-                        sx={{ mt: 0.75 }}
-                      >
-                        <DeleteOutlineIcon />
-                      </IconButton>
-                    </Tooltip>
-                  </Stack>
-                  <TextField
-                    label="Executable"
-                    value={profile.shell}
-                    onChange={(event) =>
-                      updateProfile(profile.id, { shell: event.target.value.slice(0, 4096) })
-                    }
-                    placeholder={info?.platform === 'win32' ? 'wsl.exe' : '/bin/zsh'}
-                    helperText="Executable name or absolute path; blank uses the system default"
-                    fullWidth
-                  />
-                  <Box
-                    sx={{
-                      display: 'grid',
-                      gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
-                      gap: 2,
-                    }}
-                  >
+                    <Box
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                        gap: 2,
+                      }}
+                    >
+                      <TextField
+                        label="Arguments"
+                        value={profile.args.join('\n')}
+                        onChange={(event) =>
+                          updateProfile(profile.id, {
+                            args: parseLocalShellArgumentText(event.target.value),
+                          })
+                        }
+                        placeholder={info?.platform === 'win32' ? '-d\nUbuntu' : '--login'}
+                        helperText="One argument per line; spaces stay inside that argument"
+                        minRows={2}
+                        multiline
+                        fullWidth
+                      />
+                      <TextField
+                        label="Starting directory"
+                        value={profile.cwd}
+                        onChange={(event) =>
+                          updateProfile(profile.id, { cwd: event.target.value.slice(0, 4096) })
+                        }
+                        placeholder={info?.homeDir}
+                        helperText="Blank starts in your home directory"
+                        fullWidth
+                      />
+                    </Box>
                     <TextField
-                      label="Arguments"
-                      value={profile.args.join('\n')}
+                      label="Startup commands"
+                      value={profile.startupCommand}
                       onChange={(event) =>
                         updateProfile(profile.id, {
-                          args: parseLocalShellArgumentText(event.target.value),
+                          startupCommand: event.target.value.slice(0, 32_768),
                         })
                       }
-                      placeholder={info?.platform === 'win32' ? '-d\nUbuntu' : '--login'}
-                      helperText="One argument per line; spaces stay inside that argument"
+                      placeholder="cd project"
+                      helperText="Entered automatically after the interactive shell starts; one command per line"
                       minRows={2}
                       multiline
                       fullWidth
                     />
-                    <TextField
-                      label="Starting directory"
-                      value={profile.cwd}
-                      onChange={(event) =>
-                        updateProfile(profile.id, { cwd: event.target.value.slice(0, 4096) })
-                      }
-                      placeholder={info?.homeDir}
-                      helperText="Blank starts in your home directory"
-                      fullWidth
-                    />
-                  </Box>
-                  <TextField
-                    label="Startup commands"
-                    value={profile.startupCommand}
-                    onChange={(event) =>
-                      updateProfile(profile.id, {
-                        startupCommand: event.target.value.slice(0, 32_768),
-                      })
-                    }
-                    placeholder="cd project"
-                    helperText="Entered automatically after the interactive shell starts; one command per line"
-                    minRows={2}
-                    multiline
-                    fullWidth
-                  />
-                </Stack>
-              </Paper>
-            ))}
+                  </Stack>
+                </Paper>
+              );
+            })}
           </Stack>
         )}
       </Box>
@@ -251,7 +284,7 @@ export function LocalShellProfilesSection() {
       {info?.platform === 'win32' && (
         <>
           <Divider />
-          <WslDistributionsSection />
+          <WslDistributionsSection focus={focus} />
         </>
       )}
     </Stack>
@@ -261,22 +294,16 @@ export function LocalShellProfilesSection() {
 /** Installed WSL distributions: listed wherever a local terminal can be
  * launched, and one click away from a saved profile that can be customized
  * or made the default. */
-function WslDistributionsSection() {
+function WslDistributionsSection({
+  focus,
+}: {
+  focus: ReturnType<typeof useFocusedEntry>;
+}) {
   const profiles = usePrefsStore((state) => state.localShellProfiles);
   const showWslDistributions = usePrefsStore((state) => state.showWslDistributions);
   const setPrefs = usePrefsStore((state) => state.set);
   const { data, isPending, isError } = useWslDistributions();
   const distributions = data?.distributions ?? [];
-
-  const saveAsProfile = (distribution: WslDistribution) => {
-    const current = usePrefsStore.getState().localShellProfiles;
-    setPrefs({
-      localShellProfiles: [
-        ...current,
-        { ...wslShellProfile(distribution), id: newProfileId(current.length) },
-      ],
-    });
-  };
 
   return (
     <Box>
@@ -323,9 +350,11 @@ function WslDistributionsSection() {
               opensWslDistribution(profile, distribution.name),
             );
             const launch = wslShellProfile(distribution);
+            const entry = focus(launch.id);
             return (
               <Stack
                 key={distribution.name}
+                ref={entry.ref}
                 direction="row"
                 spacing={1.5}
                 sx={{
@@ -334,9 +363,14 @@ function WslDistributionsSection() {
                   py: 1.25,
                   borderTop: index ? 1 : 0,
                   borderColor: 'divider',
+                  ...entry.sx,
                 }}
               >
-                <TerminalIcon fontSize="small" sx={{ color: 'text.secondary' }} />
+                <LocalShellIcon
+                  launch={launch}
+                  size={20}
+                  fallback={<TerminalIcon fontSize="small" sx={{ color: 'text.secondary' }} />}
+                />
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Typography variant="body2" noWrap>
                     {distribution.name}
@@ -356,7 +390,7 @@ function WslDistributionsSection() {
                     Saved as “{saved.name.trim() || 'Unnamed shell'}”
                   </Typography>
                 ) : (
-                  <Button size="small" onClick={() => saveAsProfile(distribution)}>
+                  <Button size="small" onClick={() => saveWslShellProfile(launch)}>
                     Save as profile
                   </Button>
                 )}

@@ -313,6 +313,9 @@ export interface WslDistribution {
   name: string;
   /** The distribution plain `wsl.exe` starts. */
   isDefault: boolean;
+  /** The distribution's own icon as a `data:` URL, when it ships one — the
+   * icon its Start menu shortcut and Windows Terminal profile show. */
+  icon?: string;
 }
 
 /** Installed WSL distributions, default first; empty off Windows or without WSL. */

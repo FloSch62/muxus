@@ -74,10 +74,15 @@ appears below **Local terminal** and in the quick launcher, and opens with
 `wsl.exe -d <name> --cd ~`, in its Linux home directory. The list is read from the same
 registry entries Windows Terminal uses, so a distribution installed while Muxus runs appears
 once the window is focused again, and the engine distributions of Docker Desktop and
-Rancher Desktop are left out. **Save as profile** copies a distribution into the saved
-profiles, where its arguments, starting directory and startup commands can be changed and
-it can be made the default; a distribution a saved profile already opens is listed only
-once. **List installed distributions** turns the automatic entries off.
+Rancher Desktop are left out. A distribution that ships its own icon, as recent releases
+installed with `wsl --install` do, shows it in the sidebar, the quick launcher and its tabs:
+the same icon its Start menu shortcut and Windows Terminal profile use.
+**Save as profile** copies a distribution into the saved profiles, where its arguments,
+starting directory and startup commands can be changed and it can be made the default; a
+distribution a saved profile already opens is listed only once. **List installed
+distributions** turns the automatic entries off. Right-clicking a local shell row in the
+sidebar and choosing **WSL settings…** or **Local shell settings…** opens this section with
+that entry highlighted.
 
 ## Session logging
 
