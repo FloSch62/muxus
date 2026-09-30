@@ -18,26 +18,48 @@ import ComputerOutlinedIcon from '@mui/icons-material/ComputerOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
-import type { SshConfigResponse } from '@muxus/shared';
+import {
+  savedHostHop,
+  savedHostHopId,
+  type SavedHostProfile,
+  type SshConfigResponse,
+} from '@muxus/shared';
+import { jumpHopLabel, savedHostDisplayName } from '../../saved-hosts.js';
 import type { HostDraft } from './draft.js';
 import { draftAliases } from './draft.js';
 
 /**
  * Select direct, ProxyJump, or ProxyCommand routing. The jump route includes a
- * visual path and ordered editable hop list.
+ * visual path and ordered editable hop list. A host stored in Muxus may also
+ * jump through other saved Muxus SSH hosts; ssh_config has no way to name one.
  */
 export function RouteSection({
   draft,
   set,
   config,
+  savedHosts,
+  selfProfileId,
 }: {
   draft: HostDraft;
   set: (patch: Partial<HostDraft>) => void;
   config: SshConfigResponse | undefined;
+  savedHosts?: readonly SavedHostProfile[];
+  /** The saved host being edited, which cannot be its own jump host. */
+  selfProfileId?: string;
 }) {
   const [pending, setPending] = useState('');
   const self = new Set(draftAliases(draft));
   const aliasOptions = (config?.hosts ?? []).map((h) => h.alias).filter((a) => !self.has(a) && !draft.proxyJump.includes(a));
+  const savedOptions =
+    draft.storage === 'muxus'
+      ? (savedHosts ?? [])
+          .filter((host) => host.profile.kind === 'ssh' && host.id !== selfProfileId)
+          .sort((a, b) => savedHostDisplayName(a).localeCompare(savedHostDisplayName(b)))
+          .map((host) => savedHostHop(host.id))
+          .filter((hop) => !draft.proxyJump.includes(hop))
+      : [];
+  const hopName = (hop: string) => jumpHopLabel(hop, savedHosts);
+  const isSavedHop = (hop: string) => savedHostHopId(hop) !== undefined;
   const target = draftAliases(draft)[0] || draft.hostname || 'target';
 
   const move = (i: number, dir: -1 | 1) => {
@@ -105,8 +127,16 @@ export function RouteSection({
         {draft.routeMode === 'jump'
           ? draft.proxyJump.map((hop) => (
               <Stack key={hop} direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
-                <Tooltip title={knownAlias(hop) ? 'Jump host from your config' : 'Ad-hoc jump host'}>
-                  <Chip size="small" icon={<DnsOutlinedIcon />} label={hop} color="primary" variant="outlined" />
+                <Tooltip
+                  title={
+                    isSavedHop(hop)
+                      ? 'Jump host saved in Muxus'
+                      : knownAlias(hop)
+                        ? 'Jump host from your config'
+                        : 'Ad-hoc jump host'
+                  }
+                >
+                  <Chip size="small" icon={<DnsOutlinedIcon />} label={hopName(hop)} color="primary" variant="outlined" />
                 </Tooltip>
                 <ArrowForwardIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
               </Stack>
@@ -133,14 +163,22 @@ export function RouteSection({
           {draft.proxyJump.map((hop, i) => (
             <Stack key={`${hop}-${i}`} direction="row" spacing={1} sx={{ alignItems: 'center' }}>
               <Typography sx={{ width: 20, textAlign: 'right', fontSize: 12, color: 'text.disabled' }}>{i + 1}.</Typography>
-              <Typography sx={{ flex: 1, fontFamily: '"JetBrains Mono", monospace', fontSize: 13 }}>{hop}</Typography>
-              <IconButton size="small" aria-label={`Move ${hop} earlier`} disabled={i === 0} onClick={() => move(i, -1)}>
+              <Typography
+                sx={{
+                  flex: 1,
+                  fontSize: 13,
+                  ...(isSavedHop(hop) ? {} : { fontFamily: '"JetBrains Mono", monospace' }),
+                }}
+              >
+                {hopName(hop)}
+              </Typography>
+              <IconButton size="small" aria-label={`Move ${hopName(hop)} earlier`} disabled={i === 0} onClick={() => move(i, -1)}>
                 <ArrowUpwardIcon sx={{ fontSize: 16 }} />
               </IconButton>
-              <IconButton size="small" aria-label={`Move ${hop} later`} disabled={i === draft.proxyJump.length - 1} onClick={() => move(i, 1)}>
+              <IconButton size="small" aria-label={`Move ${hopName(hop)} later`} disabled={i === draft.proxyJump.length - 1} onClick={() => move(i, 1)}>
                 <ArrowDownwardIcon sx={{ fontSize: 16 }} />
               </IconButton>
-              <IconButton size="small" aria-label={`Remove ${hop}`} onClick={() => set({ proxyJump: draft.proxyJump.filter((_, j) => j !== i) })}>
+              <IconButton size="small" aria-label={`Remove ${hopName(hop)}`} onClick={() => set({ proxyJump: draft.proxyJump.filter((_, j) => j !== i) })}>
                 <DeleteOutlineIcon fontSize="small" />
               </IconButton>
             </Stack>
@@ -149,7 +187,16 @@ export function RouteSection({
             <Autocomplete
               freeSolo
               fullWidth
-              options={aliasOptions}
+              // Stays empty after a pick, so the input never refills with the
+              // picked host's name and a second Enter can't add it as ad-hoc.
+              value={null}
+              options={[...aliasOptions, ...savedOptions]}
+              getOptionLabel={hopName}
+              groupBy={
+                savedOptions.length
+                  ? (hop) => (isSavedHop(hop) ? 'Saved in Muxus' : 'From your SSH config')
+                  : undefined
+              }
               inputValue={pending}
               onInputChange={(_e, v) => setPending(v)}
               onChange={(_e, v) => {
@@ -159,7 +206,11 @@ export function RouteSection({
                 <TextField
                   {...params}
                   label="Add jump host"
-                  placeholder="alias from config, or user@host:port"
+                  placeholder={
+                    draft.storage === 'muxus'
+                      ? 'Muxus host, alias from config, or user@host:port'
+                      : 'alias from config, or user@host:port'
+                  }
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && pending.trim()) {
                       e.preventDefault();
@@ -176,7 +227,9 @@ export function RouteSection({
             </Box>
           </Stack>
           <Typography variant="caption" color="text.secondary">
-            Each hop is authenticated and host-key verified using its own SSH config.
+            {draft.storage === 'muxus'
+              ? 'Each hop is authenticated and host-key verified with its own settings: a Muxus host with what it saved, any other hop through your SSH config.'
+              : 'Each hop is authenticated and host-key verified using its own SSH config.'}
           </Typography>
         </Stack>
       ) : null}

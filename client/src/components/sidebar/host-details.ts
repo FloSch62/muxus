@@ -1,11 +1,16 @@
+import type { SavedHostProfile } from '@muxus/shared';
 import type { ManagedHost } from '../../managed-hosts.js';
+import { jumpHopLabel } from '../../saved-hosts.js';
 
 /**
  * What a row deliberately does not draw. Jump chain, key, auth mode and
  * forwards are reference material, not things you act on from the list, so
  * they live in the row's hover card instead of as a row of grey glyphs.
  */
-export function hostDetailLines(host: ManagedHost): string[] {
+export function hostDetailLines(
+  host: ManagedHost,
+  savedProfiles?: readonly SavedHostProfile[],
+): string[] {
   const lines: string[] = [];
   if (host.kind === 'profile') {
     const profile = host.entry.profile;
@@ -17,7 +22,11 @@ export function hostDetailLines(host: ManagedHost): string[] {
       return lines;
     }
     if (profile.kind !== 'ssh') return lines;
-    if (profile.proxyJump?.length) lines.push(`via ${profile.proxyJump.join(' → ')}`);
+    if (profile.proxyJump?.length) {
+      lines.push(
+        `via ${profile.proxyJump.map((hop) => jumpHopLabel(hop, savedProfiles)).join(' → ')}`,
+      );
+    }
     if (profile.identityFiles?.length) {
       lines.push(
         `Key ${profile.identityFiles.map((file) => file.split(/[\\/]/).pop()).join(', ')}`,

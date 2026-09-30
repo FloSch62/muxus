@@ -6,6 +6,7 @@ import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
+import { useSavedHostProfiles } from '../../api/queries.js';
 import { folderSegments, type VisibleNode } from '../../host-tree.js';
 import {
   managedHostAddress,
@@ -82,7 +83,9 @@ export const HostRow = memo(function HostRow({
   const address = managedHostAddress(host);
   const color = host.entry.metadata?.color;
   const Icon = hostKindIcon(host.kind === 'ssh' ? 'ssh' : host.entry.kind);
-  const details = hostDetailLines(host);
+  // Saved jump hosts read by name in the hover card.
+  const { data: savedData } = useSavedHostProfiles();
+  const details = hostDetailLines(host, savedData?.profiles);
   const connected = live?.connected ?? 0;
   const connecting = live?.connecting ?? 0;
   const folderPath = folderSegments(host.entry.metadata?.group);

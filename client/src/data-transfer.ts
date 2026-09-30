@@ -21,6 +21,7 @@ import { apiFetch } from './api/http.js';
 import { fetchHostPreview } from './api/ssh-config.js';
 import { isKeywordHighlightProfileArray } from './highlight-profiles.js';
 import { saveTextFile } from './save-file.js';
+import { openSshJumpHops } from './saved-hosts.js';
 import {
   MAX_SIDEBAR_WIDTH,
   MIN_SIDEBAR_WIDTH,
@@ -255,24 +256,36 @@ export async function createOpenSshExport(): Promise<string> {
     apiFetch<FolderSettingsResponse>('/api/folders/settings'),
   ]);
   const usedAliases = new Set(hosts.flatMap((host) => host.aliases));
-  const nativeSshHosts = saved.profiles.flatMap((profile) => {
-    if (profile.profile.kind !== 'ssh') return [];
-    const inherited = savedProfileFolderDefaults(
-      profile.metadata.group,
-      folderSettings.folders,
-    );
+  // Allocate every alias first: a saved host can jump through one exported
+  // after it, and its ProxyJump must name that host's block.
+  const exportedAliases = new Map<string, string>();
+  for (const profile of saved.profiles) {
+    if (profile.profile.kind !== 'ssh') continue;
     const base = openSshExportAlias(profile.name, profile.profile.target);
     let alias = base;
     let suffix = 2;
     while (usedAliases.has(alias)) alias = `${base}-${suffix++}`;
     usedAliases.add(alias);
+    exportedAliases.set(profile.id, alias);
+  }
+  const nativeSshHosts = saved.profiles.flatMap((profile) => {
+    const alias = exportedAliases.get(profile.id);
+    if (alias === undefined) return [];
+    const inherited = savedProfileFolderDefaults(
+      profile.metadata.group,
+      folderSettings.folders,
+    );
+    const options = portableSavedSshOptions(profile, inherited.auth);
+    const proxyJump = openSshJumpHops(options.proxyJump ?? [], saved.profiles, (id) =>
+      exportedAliases.get(id),
+    );
     return [
       {
         aliases: [alias],
         description: inherited.hasPassword
           ? 'Exported from Muxus app data. Shared folder password omitted.'
           : 'Exported from Muxus app data.',
-        options: portableSavedSshOptions(profile, inherited.auth),
+        options: { ...options, proxyJump: proxyJump.length ? proxyJump : undefined },
       },
     ];
   });

@@ -414,6 +414,26 @@ export interface ConfigForward {
 }
 
 /**
+ * Prefix of a ProxyJump hop that names a saved Muxus SSH host instead of an
+ * ssh_config alias or `user@host:port`. The colon keeps it out of OpenSSH's
+ * hop grammar (a port is numeric; "muxus-host" is not an IPv6 address), so
+ * it only ever appears in Muxus-owned profiles, never in ssh_config.
+ */
+const SAVED_HOST_HOP_PREFIX = 'muxus-host:';
+
+/** ProxyJump hop that reaches the next host through a saved Muxus SSH host. */
+export function savedHostHop(profileId: string): string {
+  return `${SAVED_HOST_HOP_PREFIX}${profileId}`;
+}
+
+/** Saved Muxus SSH host a ProxyJump hop names, or undefined for ssh hops. */
+export function savedHostHopId(hop: string): string | undefined {
+  return hop.startsWith(SAVED_HOST_HOP_PREFIX)
+    ? hop.slice(SAVED_HOST_HOP_PREFIX.length) || undefined
+    : undefined;
+}
+
+/**
  * Options written in one Host block — exactly what the editor round-trips.
  * Anything Muxus doesn't model stays verbatim in `extras`, so editing a block
  * never drops hand-written options.

@@ -172,6 +172,13 @@ describe('upsertHost', () => {
     ).toThrowError(/mutually exclusive/);
   });
 
+  it('refuses jump hosts stored in Muxus, which OpenSSH cannot resolve', () => {
+    const root = seed('');
+    expect(() =>
+      upsertHost(req({ options: { proxyJump: ['bastion', 'muxus-host:saved-1'] } }), root),
+    ).toThrowError(/stored in Muxus/);
+  });
+
   it('keeps a .muxus.bak of the previous content', () => {
     const root = seed(['Host web', '  User old', ''].join('\n'));
     upsertHost(req({ previousAlias: 'web' }), root);

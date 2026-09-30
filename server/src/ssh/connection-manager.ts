@@ -25,6 +25,7 @@ import {
   type ConfigForward,
   type ConnectionInfo,
   type SshProfile,
+  savedHostHopId,
 } from '@muxus/shared';
 import {
   certificateAlgorithms,
@@ -405,6 +406,7 @@ export class SshConnectionManager {
       profile,
       this.folderAuth,
       this.profileFolderAuth,
+      this.savedSshProfile,
     );
     const target = chain[chain.length - 1]!;
     const metadataAlias =
@@ -1186,26 +1188,44 @@ function mergeConfigForwards(
  * hop (each recursively resolved through the config, like the `ssh -W`
  * processes OpenSSH would spawn) and the final target last. Each hop that is
  * a saved alias picks up its own folder's defaults as the lowest-priority
- * config layer.
+ * config layer. A hop naming a saved Muxus SSH host dials with that host's
+ * own settings, exactly as connecting to it directly would.
  */
 export function buildChain(
   doc: ConfigDocument,
   profile: Omit<SshProfile, 'kind'>,
   folderAuthFor?: FolderAuthLookup,
   profileFolderAuthFor?: FolderAuthLookup,
+  savedProfileFor?: (id: string) => SshProfile | undefined,
 ): ChainHop[] {
   const chain: ChainHop[] = [];
   const visited = new Set<string>();
 
-  const walk = (spec: { host: string; user?: string; port?: number }, final: boolean, depth: number): void => {
+  /**
+   * `owner` is the Muxus-side profile whose fields win over the resolved
+   * base: the requested profile for the final target, or the saved host a
+   * jump hop names. Plain jump hops have none and resolve through the config.
+   */
+  const walk = (
+    spec: { host: string; user?: string; port?: number },
+    owner: Omit<SshProfile, 'kind'> | undefined,
+    final: boolean,
+    depth: number,
+  ): void => {
     if (depth > MAX_JUMP_DEPTH) throw new Error('ProxyJump chain too deep');
-    if (visited.has(spec.host)) throw new Error(`ProxyJump cycle detected at "${spec.host}"`);
-    visited.add(spec.host);
-    const fromConfig = !final || profile.useConfig !== false;
+    const visitKeys = [
+      ...(!final && owner?.profileId ? [] : [spec.host]),
+      ...(owner?.profileId ? [`profile:${owner.profileId}`] : []),
+    ];
+    if (visitKeys.some((key) => visited.has(key))) {
+      throw new Error(`ProxyJump cycle detected at "${spec.host}"`);
+    }
+    for (const key of visitKeys) visited.add(key);
+    const fromConfig = owner?.useConfig !== false;
     const folder = fromConfig
       ? folderAuthFor?.(spec.host)
-      : final && profile.profileId
-        ? profileFolderAuthFor?.(profile.profileId)
+      : owner?.profileId
+        ? profileFolderAuthFor?.(owner.profileId)
         : undefined;
     const configuredBase = fromConfig
       ? resolveHost(doc, spec.host, folder?.optionLines)
@@ -1220,51 +1240,69 @@ export function buildChain(
       serverAliveInterval:
         configuredBase.serverAliveInterval ?? profile.keepaliveIntervalSeconds,
     };
-    const user = (final ? profile.user : undefined) ?? spec.user ?? base.user ?? os.userInfo().username;
-    const resolved: ResolvedTarget = final
-      ? {
-          ...base,
-          identityFiles:
-            profile.identityFiles === undefined
-              ? base.identityFiles
-              : profile.identityFiles.map((file) =>
-                  expandIdentityPath(file, { h: base.hostname, r: user }),
-                ),
-          certificateFiles:
-            profile.certificateFiles === undefined
-              ? base.certificateFiles
-              : profile.certificateFiles.map((file) =>
-                  expandIdentityPath(file, { h: base.hostname, r: user }),
-                ),
-          identitiesOnly: profile.identitiesOnly ?? base.identitiesOnly,
-          identityAgent: profile.identityAgent ?? base.identityAgent,
-          forwardAgent: profile.forwardAgent ?? base.forwardAgent,
-          forwardX11: profile.forwardX11 ?? base.forwardX11,
-          proxyJump: profile.proxyJump ?? base.proxyJump,
-          proxyCommand:
-            profile.proxyCommand ??
-            (profile.proxyJump === undefined ? base.proxyCommand : undefined),
-          forwards: profile.forwards ?? base.forwards,
-          passwordOnly: profile.passwordOnly ?? base.passwordOnly,
-          remoteCommand: profile.remoteCommand ?? base.remoteCommand,
-          requestTty: profile.requestTty ?? base.requestTty,
-          strictHostKeyChecking:
-            profile.strictHostKeyChecking ?? base.strictHostKeyChecking,
-        }
-      : base;
-    for (const hopSpec of resolved.proxyJump) walk(parseHostSpec(hopSpec), false, depth + 1);
+    const user = owner?.user ?? spec.user ?? base.user ?? os.userInfo().username;
+    const resolved = owner ? overlayProfile(base, owner, user) : base;
+    for (const hopSpec of resolved.proxyJump) {
+      const savedId = savedHostHopId(hopSpec);
+      if (savedId === undefined) {
+        walk(parseHostSpec(hopSpec), undefined, false, depth + 1);
+        continue;
+      }
+      const saved = savedProfileFor?.(savedId);
+      if (!saved || saved.useConfig !== false) {
+        throw new Error(`saved SSH host "${savedId}" used as a jump host was not found`);
+      }
+      walk(parseHostSpec(saved.target), { ...saved, profileId: savedId }, false, depth + 1);
+    }
     chain.push({
       spec,
       resolved,
       user,
-      port: (final ? profile.port : undefined) ?? spec.port ?? resolved.port,
+      port: owner?.port ?? spec.port ?? resolved.port,
       hopLabel: final ? undefined : spec.host,
       folderPasswords: folder?.passwords,
     });
   };
 
-  walk(parseHostSpec(profile.target), true, 0);
+  walk(parseHostSpec(profile.target), profile, true, 0);
   return chain;
+}
+
+/** Layer a profile's own connection fields over the settings it resolved to. */
+function overlayProfile(
+  base: ResolvedTarget,
+  profile: Omit<SshProfile, 'kind'>,
+  user: string,
+): ResolvedTarget {
+  return {
+    ...base,
+    identityFiles:
+      profile.identityFiles === undefined
+        ? base.identityFiles
+        : profile.identityFiles.map((file) =>
+            expandIdentityPath(file, { h: base.hostname, r: user }),
+          ),
+    certificateFiles:
+      profile.certificateFiles === undefined
+        ? base.certificateFiles
+        : profile.certificateFiles.map((file) =>
+            expandIdentityPath(file, { h: base.hostname, r: user }),
+          ),
+    identitiesOnly: profile.identitiesOnly ?? base.identitiesOnly,
+    identityAgent: profile.identityAgent ?? base.identityAgent,
+    forwardAgent: profile.forwardAgent ?? base.forwardAgent,
+    forwardX11: profile.forwardX11 ?? base.forwardX11,
+    proxyJump: profile.proxyJump ?? base.proxyJump,
+    proxyCommand:
+      profile.proxyCommand ??
+      (profile.proxyJump === undefined ? base.proxyCommand : undefined),
+    forwards: profile.forwards ?? base.forwards,
+    passwordOnly: profile.passwordOnly ?? base.passwordOnly,
+    remoteCommand: profile.remoteCommand ?? base.remoteCommand,
+    requestTty: profile.requestTty ?? base.requestTty,
+    strictHostKeyChecking:
+      profile.strictHostKeyChecking ?? base.strictHostKeyChecking,
+  };
 }
 
 /** Empty base used to apply only Muxus folder defaults to a DB-backed host. */

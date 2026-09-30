@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiFetch } from '../../../client/src/api/http.js';
-import type { HostUpsertRequest } from '@muxus/shared';
+import { savedHostHop, type HostUpsertRequest, type SavedHostProfile } from '@muxus/shared';
 import {
   BACKUP_FORMAT,
   TRANSFER_VERSION,
@@ -570,6 +570,62 @@ describe('exporting Muxus-only SSH hosts to OpenSSH', () => {
           identityAgent: 'SSH_AUTH_SOCK',
         }),
       }),
+    ]);
+  });
+});
+
+describe('exporting Muxus jump hosts to OpenSSH', () => {
+  function savedSsh(
+    id: string,
+    name: string,
+    profile: Omit<Extract<SavedHostProfile['profile'], { kind: 'ssh' }>, 'kind' | 'useConfig'>,
+  ): SavedHostProfile {
+    return {
+      id,
+      kind: 'ssh',
+      name,
+      profile: { kind: 'ssh', useConfig: false, profileId: id, ...profile },
+      metadata: { profileId: id, connectCount: 0 },
+      createdAt: '2026-08-07T00:00:00.000Z',
+      updatedAt: '2026-08-07T00:00:00.000Z',
+    };
+  }
+
+  it('points ProxyJump at the exported block of a saved jump host', async () => {
+    const previews: HostUpsertRequest[] = [];
+    apiFetchMock.mockImplementation(async (url, options) => {
+      if (url === '/api/ssh/config') return { hosts: [] } as never;
+      if (url === '/api/profiles') {
+        return {
+          profiles: [
+            // Listed before the jump host it names, whose alias it still needs.
+            savedSsh('app', 'App', {
+              target: 'app.internal',
+              proxyJump: [savedHostHop('bastion'), 'edge', savedHostHop('deleted')],
+            }),
+            savedSsh('bastion', 'Bastion EU', {
+              target: 'bastion.example.test',
+              user: 'jump',
+              identityFiles: ['~/.ssh/bastion'],
+            }),
+          ],
+        } as never;
+      }
+      if (url === '/api/folders/settings') return { folders: [] } as never;
+      if (url === '/api/ssh/config/preview') {
+        if (typeof options?.body !== 'string') throw new Error('preview body was not JSON');
+        const request = JSON.parse(options.body) as HostUpsertRequest;
+        previews.push(request);
+        return { text: `Host ${request.aliases[0]}` } as never;
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+
+    await createOpenSshExport();
+
+    expect(previews.map((request) => [request.aliases, request.options.proxyJump])).toEqual([
+      [['App'], ['Bastion-EU', 'edge']],
+      [['Bastion-EU'], undefined],
     ]);
   });
 });

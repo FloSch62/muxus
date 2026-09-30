@@ -29,7 +29,6 @@ import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import SearchOutlinedIcon from '@mui/icons-material/SearchOutlined';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
-import UsbOutlinedIcon from '@mui/icons-material/UsbOutlined';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
 import {
   restoreImportedConnections,
@@ -43,6 +42,7 @@ import type {
   SkippedImportedSession,
 } from '../session-import.js';
 import { errorDetails, showToast } from '../state/toast.js';
+import { hostKindIcon } from './host-kind-icon.js';
 
 export interface SessionImportSource {
   source: string;
@@ -136,8 +136,11 @@ export function SessionImportDialog<T extends ImportedSession>({
       searchableSessionValues(session).some((value) => value?.toLowerCase().includes(needle)),
     );
   }, [pending, search]);
-  const hasSshSessions =
-    pending?.parsed.sessions.some((session) => session.kind === 'ssh') ?? false;
+  // Jump hosts of RDP/VNC sessions are SSH hosts too, so they follow this choice.
+  const hasSshHosts =
+    pending?.parsed.sessions.some(
+      (session) => session.kind === 'ssh' || (session.kind !== 'serial' && session.jumpHost),
+    ) ?? false;
 
   const review = (content: string, source: string) => {
     const parsed = parse(content);
@@ -272,7 +275,7 @@ export function SessionImportDialog<T extends ImportedSession>({
               </Alert>
             ) : null}
 
-            {hasSshSessions ? (
+            {hasSshHosts ? (
               <FormControl>
                 <FormLabel>Store imported SSH hosts in</FormLabel>
                 <RadioGroup
@@ -368,8 +371,8 @@ export function SessionImportDialog<T extends ImportedSession>({
                               <Typography component="span" variant="body2" sx={{ fontWeight: 650 }}>
                                 {session.name}
                               </Typography>
-                              {session.kind === 'serial' ? (
-                                <Chip size="small" variant="outlined" icon={<UsbOutlinedIcon />} label="Serial" />
+                              {session.kind !== 'ssh' ? (
+                                <SessionKindChip kind={session.kind} />
                               ) : null}
                               {session.folder ? (
                                 <Chip
@@ -516,9 +519,26 @@ export function SessionImportDialog<T extends ImportedSession>({
 }
 
 function searchableSessionValues(session: ImportedSession): Array<string | undefined> {
-  return session.kind === 'ssh'
-    ? [session.name, session.alias, session.host, session.username, session.folder]
-    : [session.name, session.path, String(session.baudRate), session.folder];
+  if (session.kind === 'serial') {
+    return [session.name, session.path, String(session.baudRate), session.folder];
+  }
+  return [
+    session.name,
+    session.kind === 'ssh' ? session.alias : session.kind.toUpperCase(),
+    session.host,
+    session.username,
+    session.folder,
+    session.jumpHost?.name,
+  ];
+}
+
+const SESSION_KIND_LABELS = { serial: 'Serial', rdp: 'RDP', vnc: 'VNC' } as const;
+
+function SessionKindChip({ kind }: { kind: keyof typeof SESSION_KIND_LABELS }) {
+  const Icon = hostKindIcon(kind);
+  return (
+    <Chip size="small" variant="outlined" icon={<Icon />} label={SESSION_KIND_LABELS[kind]} />
+  );
 }
 
 function skippedSessionName(session: SkippedImportedSession): string {
@@ -590,8 +610,20 @@ function SkippedSessionList({ sessions }: { sessions: readonly SkippedImportedSe
 }
 
 function sessionDetails(session: ImportedSession): string {
-  if (session.kind === 'ssh') {
-    return `${session.username ? `${session.username}@` : ''}${session.host}:${session.port} · ${session.authMode === 'password' ? 'password prompt' : 'SSH key / agent'}`;
+  if (session.kind !== 'serial') {
+    const parts = [`${session.username ? `${session.username}@` : ''}${session.host}:${session.port}`];
+    if (session.kind === 'ssh') {
+      parts.push(
+        session.identityFile
+          ? `key ${session.identityFile.split('/').pop()}`
+          : session.authMode === 'password'
+            ? 'password prompt'
+            : 'SSH key / agent',
+      );
+    }
+    if (session.jumpHost) parts.push(`via ${session.jumpHost.name}`);
+    if (session.kind === 'ssh' && session.remoteCommand) parts.push(`runs ${session.remoteCommand}`);
+    return parts.join(' · ');
   }
   const parity = { none: 'N', even: 'E', odd: 'O', mark: 'M', space: 'S' }[
     session.parity

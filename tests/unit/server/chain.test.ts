@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
+import { savedHostHop, type SshProfile } from '@muxus/shared';
 import {
   buildChain,
   expandProxyCommand,
@@ -13,6 +14,7 @@ import {
   sshKeepaliveOptions,
   terminalPtyOptions,
 } from '../../../server/src/ssh/connection-manager.js';
+import { folderAuthOptionLines } from '../../../server/src/ssh/folder-auth.js';
 import { loadConfigDocument } from '../../../server/src/ssh/ssh-config.js';
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'muxus-chain-'));
@@ -182,6 +184,173 @@ describe('buildChain', () => {
     const jumped = buildChain(doc, { target: 'app', proxyJump: ['bastion'] });
     expect(jumped.map((hop) => hop.spec.host)).toEqual(['bastion', 'app']);
     expect(jumped[1]!.resolved.proxyCommand).toBeUndefined();
+  });
+});
+
+describe('buildChain with saved Muxus jump hosts', () => {
+  const savedHosts: Record<string, SshProfile> = {
+    bastion: {
+      kind: 'ssh',
+      profileId: 'bastion',
+      target: 'bastion.example.com',
+      useConfig: false,
+      user: 'jumpuser',
+      port: 2200,
+      identityFiles: ['~/.ssh/bastion_ed25519'],
+      passwordOnly: false,
+    },
+    inner: {
+      kind: 'ssh',
+      profileId: 'inner',
+      target: 'inner.example.com',
+      useConfig: false,
+      user: 'relay',
+      proxyJump: [savedHostHop('bastion')],
+    },
+    edge: {
+      kind: 'ssh',
+      profileId: 'edge',
+      target: 'edge.example.com',
+      useConfig: false,
+      proxyJump: ['configured-jump'],
+    },
+    loopA: {
+      kind: 'ssh',
+      profileId: 'loopA',
+      target: 'a.example.com',
+      useConfig: false,
+      proxyJump: [savedHostHop('loopB')],
+    },
+    loopB: {
+      kind: 'ssh',
+      profileId: 'loopB',
+      target: 'b.example.com',
+      useConfig: false,
+      proxyJump: [savedHostHop('loopA')],
+    },
+  };
+  const savedFor = (id: string) => savedHosts[id];
+
+  it('dials a saved jump host with its own user, port and key', () => {
+    const chain = buildChain(
+      docOf('Host bastion.example.com\n  User config-user\n  IdentityFile ~/.ssh/wrong'),
+      {
+        target: 'app.internal',
+        useConfig: false,
+        user: 'deploy',
+        port: 2022,
+        identityFiles: ['~/.ssh/app_ed25519'],
+        passwordOnly: true,
+        proxyJump: [savedHostHop('bastion')],
+      },
+      undefined,
+      undefined,
+      savedFor,
+    );
+
+    expect(chain.map((hop) => hop.resolved.hostname)).toEqual([
+      'bastion.example.com',
+      'app.internal',
+    ]);
+    // The saved host is self-contained, and the target's own overrides stay on
+    // the target instead of leaking into the hop.
+    expect(chain[0]).toMatchObject({
+      user: 'jumpuser',
+      port: 2200,
+      hopLabel: 'bastion.example.com',
+    });
+    expect(chain[0]!.resolved.passwordOnly).toBe(false);
+    expect(chain[0]!.resolved.identityFiles).toHaveLength(1);
+    expect(chain[0]!.resolved.identityFiles[0]).toMatch(/[\\/]\.ssh[\\/]bastion_ed25519$/);
+    expect(chain[1]).toMatchObject({ user: 'deploy', port: 2022 });
+    expect(chain[1]!.resolved.passwordOnly).toBe(true);
+    expect(chain[1]!.resolved.identityFiles[0]).toMatch(/[\\/]\.ssh[\\/]app_ed25519$/);
+  });
+
+  it('follows a saved jump host through its own saved jump host', () => {
+    const chain = buildChain(
+      docOf(''),
+      { target: 'app.internal', useConfig: false, proxyJump: [savedHostHop('inner')] },
+      undefined,
+      undefined,
+      savedFor,
+    );
+
+    expect(chain.map((hop) => [hop.user, hop.resolved.hostname, hop.port])).toEqual([
+      ['jumpuser', 'bastion.example.com', 2200],
+      ['relay', 'inner.example.com', 22],
+      [expect.any(String), 'app.internal', 22],
+    ]);
+  });
+
+  it('resolves a saved jump host that jumps through an ssh_config alias', () => {
+    const chain = buildChain(
+      docOf(['Host configured-jump', '  HostName jump.example.com', '  User cfg'].join('\n')),
+      { target: 'app.internal', useConfig: false, proxyJump: [savedHostHop('edge')] },
+      undefined,
+      undefined,
+      savedFor,
+    );
+
+    expect(chain.map((hop) => hop.spec.host)).toEqual([
+      'configured-jump',
+      'edge.example.com',
+      'app.internal',
+    ]);
+    expect(chain[0]).toMatchObject({ user: 'cfg', hopLabel: 'configured-jump' });
+  });
+
+  it('applies the saved jump host folder defaults, not its config block', () => {
+    const chain = buildChain(
+      docOf('Host edge.example.com\n  User config-user'),
+      { target: 'app.internal', useConfig: false, proxyJump: [savedHostHop('edge')] },
+      undefined,
+      (id) =>
+        id === 'edge'
+          ? {
+              optionLines: folderAuthOptionLines({ user: 'folder-user' }),
+              passwords: [{ account: 'acct', label: 'Folder' }],
+            }
+          : undefined,
+      (id) => (id === 'edge' ? { ...savedHosts.edge!, proxyJump: undefined } : undefined),
+    );
+
+    expect(chain[0]).toMatchObject({ user: 'folder-user' });
+    expect(chain[0]!.folderPasswords).toEqual([{ account: 'acct', label: 'Folder' }]);
+  });
+
+  it('names a missing saved jump host', () => {
+    expect(() =>
+      buildChain(
+        docOf(''),
+        { target: 'app.internal', proxyJump: [savedHostHop('deleted')] },
+        undefined,
+        undefined,
+        savedFor,
+      ),
+    ).toThrowError(/saved SSH host "deleted" used as a jump host was not found/);
+  });
+
+  it('detects cycles between saved jump hosts', () => {
+    expect(() =>
+      buildChain(
+        docOf(''),
+        { target: 'app.internal', useConfig: false, proxyJump: [savedHostHop('loopA')] },
+        undefined,
+        undefined,
+        savedFor,
+      ),
+    ).toThrowError(/cycle/);
+    // A saved host that jumps through itself is a cycle too.
+    expect(() =>
+      buildChain(
+        docOf(''),
+        { ...savedHosts.loopA!, proxyJump: [savedHostHop('loopA')] },
+        undefined,
+        undefined,
+        savedFor,
+      ),
+    ).toThrowError(/cycle/);
   });
 });
 

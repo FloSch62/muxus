@@ -1,10 +1,11 @@
-import type {
-  ConfigForward,
-  HostKeywordHighlightConfig,
-  HostUpsertRequest,
-  SavedHostProfile,
-  SavedHostProfileInput,
-  SshHostEntry,
+import {
+  savedHostHopId,
+  type ConfigForward,
+  type HostKeywordHighlightConfig,
+  type HostUpsertRequest,
+  type SavedHostProfile,
+  type SavedHostProfileInput,
+  type SshHostEntry,
 } from '@muxus/shared';
 import {
   blankHostSessionLoggingDraft,
@@ -256,6 +257,13 @@ export function draftProblem(draft: HostDraft): string | null {
   }
   if (draft.routeMode === 'command' && !draft.proxyCommand.trim()) {
     return 'Proxy command is required when ProxyCommand routing is selected.';
+  }
+  if (
+    draft.storage === 'openssh' &&
+    draft.routeMode === 'jump' &&
+    draft.proxyJump.some((hop) => savedHostHopId(hop) !== undefined)
+  ) {
+    return 'Jump hosts saved in Muxus need Muxus app data storage; ssh_config cannot reach them.';
   }
   if (draft.remoteCommandMode === 'command' && !draft.remoteCommand.trim()) {
     return 'Enter a startup command or choose a login shell.';
