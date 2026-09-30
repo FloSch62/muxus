@@ -65,6 +65,7 @@ const PREFERENCE_KEYS = [
   'localShell',
   'localShellProfiles',
   'defaultLocalShellProfileId',
+  'showWslDistributions',
   'copyOnSelect',
   'allowOsc52ClipboardWrite',
   'rightClickAction',
@@ -827,6 +828,9 @@ export function sanitizePreferences(
       ))
   ) {
     output.defaultLocalShellProfileId = input.defaultLocalShellProfileId;
+  }
+  if (typeof input.showWslDistributions === 'boolean') {
+    output.showWslDistributions = input.showWslDistributions;
   }
   if (typeof input.copyOnSelect === 'boolean') output.copyOnSelect = input.copyOnSelect;
   if (typeof input.allowOsc52ClipboardWrite === 'boolean') {

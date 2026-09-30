@@ -28,10 +28,33 @@ export type FolderDialogState =
   /** Pick the folder one host should live in. */
   | { mode: 'move-host'; hostKey: string; hostName: string; currentPath: string };
 
+export type SettingsSection =
+  | 'appearance'
+  | 'terminal'
+  | 'local-shells'
+  | 'logging'
+  | 'highlighting'
+  | 'behavior'
+  | 'x11'
+  | 'keyboard'
+  | 'passwords'
+  | 'data'
+  | 'debug'
+  | 'about';
+
+/** Where the settings dialog opens, and the entry in that section to bring
+ * into view, such as one local shell profile. */
+export interface SettingsTarget {
+  section: SettingsSection;
+  item?: string;
+}
+
 interface UiState {
   /** Temporary distraction-free presentation; saved visibility preferences stay untouched. */
   focusMode: boolean;
   settingsOpen: boolean;
+  /** Read when the dialog opens; null opens its first section. */
+  settingsTarget: SettingsTarget | null;
   commandButtonMenuOpen: boolean;
   commandButtonsOpen: boolean;
   shortcutsOpen: boolean;
@@ -51,6 +74,7 @@ interface UiState {
   logViewerOpen: boolean;
   setFocusMode: (active: boolean) => void;
   setSettingsOpen: (open: boolean) => void;
+  openSettings: (target: SettingsTarget) => void;
   setCommandButtonMenuOpen: (open: boolean) => void;
   setCommandButtonsOpen: (open: boolean) => void;
   setShortcutsOpen: (open: boolean) => void;
@@ -68,6 +92,7 @@ interface UiState {
 export const useUiStore = create<UiState>()((set) => ({
   focusMode: false,
   settingsOpen: false,
+  settingsTarget: null,
   commandButtonMenuOpen: false,
   commandButtonsOpen: false,
   shortcutsOpen: false,
@@ -81,7 +106,8 @@ export const useUiStore = create<UiState>()((set) => ({
   forwardingOpen: false,
   logViewerOpen: false,
   setFocusMode: (focusMode) => set({ focusMode }),
-  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  setSettingsOpen: (settingsOpen) => set({ settingsOpen, settingsTarget: null }),
+  openSettings: (settingsTarget) => set({ settingsOpen: true, settingsTarget }),
   setCommandButtonMenuOpen: (commandButtonMenuOpen) => set({ commandButtonMenuOpen }),
   setCommandButtonsOpen: (commandButtonsOpen) => set({ commandButtonsOpen }),
   setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),

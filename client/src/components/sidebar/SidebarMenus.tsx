@@ -2,6 +2,7 @@ import type { ComponentProps } from 'react';
 import { FolderContextMenu } from './FolderContextMenu.js';
 import { HostContextMenu } from './HostContextMenu.js';
 import { LaunchGroupDialog } from './LaunchGroupDialog.js';
+import { LocalShellContextMenu } from './LocalShellContextMenu.js';
 import { PanelContextMenu } from './PanelContextMenu.js';
 
 /**
@@ -16,11 +17,13 @@ export function SidebarMenus({
   host,
   folder,
   panel,
+  shell,
   launch,
 }: {
   host: ComponentProps<typeof HostContextMenu>;
   folder: ComponentProps<typeof FolderContextMenu>;
   panel: ComponentProps<typeof PanelContextMenu>;
+  shell: ComponentProps<typeof LocalShellContextMenu>;
   launch: ComponentProps<typeof LaunchGroupDialog>;
 }) {
   return (
@@ -28,6 +31,7 @@ export function SidebarMenus({
       <HostContextMenu {...host} />
       <FolderContextMenu {...folder} />
       <PanelContextMenu {...panel} />
+      <LocalShellContextMenu {...shell} />
       <LaunchGroupDialog {...launch} />
     </>
   );

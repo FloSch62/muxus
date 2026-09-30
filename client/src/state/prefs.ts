@@ -125,6 +125,8 @@ export interface PrefsState {
   localShellProfiles: LocalShellProfileConfig[];
   /** Empty selects the legacy automatic/custom localShell preference. */
   defaultLocalShellProfileId: string;
+  /** Offer installed WSL distributions next to the saved profiles (Windows). */
+  showWslDistributions: boolean;
   /** Copy the selection to the clipboard as soon as it is made. */
   copyOnSelect: boolean;
   /** Let terminal applications replace the system clipboard via OSC 52. */
@@ -259,6 +261,7 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   if (typeof state.activePaneBorder !== 'boolean') delete state.activePaneBorder;
   if (typeof state.dimInactivePanes !== 'boolean') delete state.dimInactivePanes;
   if (typeof state.webglRenderer !== 'boolean') delete state.webglRenderer;
+  if (typeof state.showWslDistributions !== 'boolean') delete state.showWslDistributions;
   if (
     typeof state.inactivePaneDimStrength !== 'number' ||
     !Number.isFinite(state.inactivePaneDimStrength) ||
@@ -404,6 +407,7 @@ export const usePrefsStore = create<PrefsState>()(
       localShell: 'auto',
       localShellProfiles: [],
       defaultLocalShellProfileId: '',
+      showWslDistributions: true,
       copyOnSelect: false,
       allowOsc52ClipboardWrite: true,
       rightClickAction: 'copy-paste',

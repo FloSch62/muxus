@@ -14,6 +14,7 @@ import type {
   SshConfigResponse,
   SshKeysResponse,
   TunnelsResponse,
+  WslDistributionsResponse,
 } from '@muxus/shared';
 import { apiFetch } from './http.js';
 
@@ -22,6 +23,18 @@ export function useAppInfo() {
     queryKey: ['app-info'],
     queryFn: () => apiFetch<AppInfo>('/api/app/info'),
     staleTime: Infinity,
+  });
+}
+
+export function useWslDistributions(enabled = true) {
+  return useQuery({
+    queryKey: ['wsl-distributions'],
+    queryFn: () => apiFetch<WslDistributionsResponse>('/api/local-shells/wsl'),
+    enabled,
+    // A distribution installed while Muxus runs appears once the window is
+    // focused again.
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
   });
 }
 
