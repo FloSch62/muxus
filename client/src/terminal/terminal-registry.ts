@@ -22,6 +22,8 @@ export interface TerminalHandle {
   getSelection(): string;
   /** Plain-text scrollback + screen contents. */
   bufferText(): string;
+  /** Up to `count` of the latest non-blank lines, ending at the cursor. */
+  recentLines(count: number): string[];
   /** Standalone HTML document of the buffer with colors preserved. */
   bufferHtml(): string;
   /** Persist the latest screen + scrollback before handing this tab to another window. */

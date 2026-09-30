@@ -78,6 +78,7 @@ resetting them.
 | Resize a split, reset it to half | Drag the divider, double-click it |
 | Pane actions (split, zoom, close) | Right-click the tab strip |
 | Rename a tab, close a tab | Double-click it, middle-click it |
+| New session to a host that already has one open | ++shift++ + click or middle-click it in the sidebar |
 | Search next / previous match | ++enter++, ++shift+enter++ |
 
 ## File editor

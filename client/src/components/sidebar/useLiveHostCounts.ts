@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { tabHostKey } from '../../host-sessions.js';
 import { useTabsStore, type TerminalTab } from '../../state/tabs.js';
 
 export interface LiveCounts {
@@ -25,14 +26,7 @@ export function liveCountsSignature(tabs: readonly TerminalTab[]): string {
   for (const tab of tabs) {
     if (!tab.profile) continue;
     if (tab.status !== 'connected' && tab.status !== 'connecting') continue;
-    const key =
-      tab.profile.kind === 'ssh'
-        ? tab.profile.profileId
-          ? `profile:${tab.profile.profileId}`
-          : `ssh:${tab.profile.target}`
-        : tab.profile.kind !== 'local'
-          ? tab.profile.profileId && `profile:${tab.profile.profileId}`
-          : undefined;
+    const key = tabHostKey(tab);
     if (!key) continue;
     const entry = counts.get(key) ?? { connected: 0, connecting: 0 };
     if (tab.status === 'connected') entry.connected++;

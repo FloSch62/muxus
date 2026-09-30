@@ -38,6 +38,7 @@ import { useDeleteHostProfile, useUpdateHostProfileMetadata } from '../api/profi
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
 import { useDeleteHost, useUpdateSshMetadata } from '../api/ssh-config.js';
 import { confirmDeleteHost } from '../host-actions.js';
+import { tabHostKey } from '../host-sessions.js';
 import { hostOrderAfterDrop } from '../host-organization.js';
 import {
   buildHostTree,
@@ -78,12 +79,15 @@ import {
 } from '../sidebar-width.js';
 import { confirmAction } from '../state/dialogs.js';
 import { usePrefsStore } from '../state/prefs.js';
+import { useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
 import { PanelResizeHandle } from './PanelResizeHandle.js';
 import { treeLabelSx, treeRowSx } from './sidebar/tree-row-style.js';
 import { deleteFolderPlan, folderRewritePlan } from './sidebar/folder-mutations.js';
 import type { FolderMenuState } from './sidebar/FolderContextMenu.js';
 import type { HostMenuState } from './sidebar/HostContextMenu.js';
+import type { HostActivation } from './sidebar/HostRow.js';
+import type { HostSessionsMenuState } from './sidebar/HostSessionsMenu.js';
 import type { LocalShellMenuState } from './sidebar/LocalShellContextMenu.js';
 import { LocalShellIcon } from './LocalShellIcon.js';
 import { HostTree, type HostTreeHandle } from './sidebar/HostTree.js';
@@ -128,6 +132,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
   const treeRef = useRef<HostTreeHandle>(null);
   const [filter, setFilter] = useState('');
   const [menu, setMenu] = useState<HostMenuState | null>(null);
+  const [sessionsMenu, setSessionsMenu] = useState<HostSessionsMenuState | null>(null);
   const [folderMenu, setFolderMenu] = useState<FolderMenuState | null>(null);
   const [panelMenu, setPanelMenu] = useState<{ top: number; left: number } | null>(null);
   const [shellMenu, setShellMenu] = useState<LocalShellMenuState | null>(null);
@@ -346,6 +351,27 @@ export const SessionSidebar = memo(function SessionSidebar() {
   const openMenu = useCallback(
     (host: ManagedHost, anchor: HTMLElement, position?: { top: number; left: number }) =>
       setMenu({ anchor, position, host }),
+    [],
+  );
+
+  /**
+   * A host that already has tabs in this window lists them first, so a click
+   * lands on the session you had instead of stacking up duplicates. Shift- or
+   * middle-click, and any host with nothing open, connect straight away.
+   */
+  const activateHost = useCallback(
+    (host: ManagedHost, anchor: HTMLElement | undefined, gesture: HostActivation) => {
+      const key = managedHostKey(host);
+      const hasSessions = useTabsStore.getState().tabs.some((tab) => tabHostKey(tab) === key);
+      // The second click of a double-click on a host that had nothing open
+      // finds the tab the first click just made; connecting again lets the
+      // launch guard swallow it rather than answering with a menu.
+      if (!anchor || !hasSessions || gesture.newSession || gesture.repeat) {
+        connectManagedHost(host);
+        return;
+      }
+      setSessionsMenu({ anchor, host, openedAt: performance.now() });
+    },
     [],
   );
 
@@ -660,13 +686,14 @@ export const SessionSidebar = memo(function SessionSidebar() {
           tree={tree}
           scrollContainer={scrollRef}
           matchKey={matchKey}
+          sessionsMenuKey={sessionsMenu ? managedHostKey(sessionsMenu.host) : undefined}
           isExpanded={isExpanded}
           setExpanded={setExpanded}
           folderColor={folderColor}
           folderIconId={folderIconId}
           liveByKey={liveByKey}
           reorderEnabled={reorderEnabled}
-          onConnect={connectManagedHost}
+          onActivate={activateHost}
           onHostMenu={openMenu}
           onFolderMenu={openFolderMenu}
           onLaunch={launchNode}
@@ -717,7 +744,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
         ) : null}
       </Box>
 
-      {(menu || folderMenu || panelMenu || shellMenu || launchTarget) && (
+      {(menu || sessionsMenu || folderMenu || panelMenu || shellMenu || launchTarget) && (
         <Suspense fallback={null}>
           <SidebarMenus
             host={{
@@ -739,6 +766,11 @@ export const SessionSidebar = memo(function SessionSidebar() {
                   hostName: managedHostDisplayName(host),
                   currentPath: host.entry.metadata?.group ?? '',
                 }),
+            }}
+            sessions={{
+              menu: sessionsMenu,
+              placement: hoverPlacement,
+              onClose: () => setSessionsMenu(null),
             }}
             folder={{
               menu: folderMenu,

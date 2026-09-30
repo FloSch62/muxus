@@ -63,6 +63,10 @@ export function useTreeKeyboard({
       }
 
       if (event.key === 'Enter' || event.key === ' ') {
+        // Rows are buttons that click themselves (Enter now, Space on key-up)
+        // and claim the key while doing it; a second activation from here
+        // would open a host's session menu right after connecting it.
+        if (event.defaultPrevented) return;
         if (!current || event.altKey || event.ctrlKey || event.metaKey) return;
         event.preventDefault();
         activate(current);
