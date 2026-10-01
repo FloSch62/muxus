@@ -9,7 +9,7 @@ import { chordSx } from './chord-style.js';
 export function ChordHint({ chord }: { chord?: string }) {
   if (!chord) return null;
   return (
-    <Typography variant="caption" color="text.secondary" sx={{ ml: 3, ...chordSx() }}>
+    <Typography variant="caption" color="textSecondary" sx={{ ml: 3, ...chordSx() }}>
       {chord}
     </Typography>
   );

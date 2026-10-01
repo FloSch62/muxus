@@ -696,7 +696,7 @@ export function QuickLauncherDialog() {
             {results.length === 0 && !loading ? (
               <Stack sx={{ py: 5, px: 3, alignItems: 'center', textAlign: 'center' }}>
                 <SearchIcon sx={{ color: 'text.disabled', fontSize: 34, mb: 1 }} />
-                <Typography variant="body2" color="text.secondary">
+                <Typography variant="body2" color="textSecondary">
                   No launcher results match “{deferredQuery.trim()}”.
                 </Typography>
               </Stack>
@@ -1160,7 +1160,7 @@ function ResultKindLabel({
   if (busy) return <CircularProgress size={16} sx={{ ml: 1 }} />;
   if (result.kind === 'keymap') {
     return result.chord ? (
-      <Typography variant="caption" color="text.secondary" sx={{ ml: 1.5, ...chordSx() }}>
+      <Typography variant="caption" color="textSecondary" sx={{ ml: 1.5, ...chordSx() }}>
         {result.chord}
       </Typography>
     ) : null;
@@ -1176,7 +1176,7 @@ function ResultKindLabel({
   return (
     <Typography
       variant="caption"
-      color="text.disabled"
+      color="textDisabled"
       sx={{ ml: 1.5, fontSize: 9.5, letterSpacing: 0.5 }}
     >
       {label}

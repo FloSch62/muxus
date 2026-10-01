@@ -118,7 +118,7 @@ export function LogViewerDialog() {
             sx={{ flex: 1, maxWidth: 360 }}
           />
           <Box sx={{ flex: 1 }} />
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" color="textSecondary">
             {entries.length} of {data?.entries.length ?? 0} entries
           </Typography>
         </Stack>
@@ -149,7 +149,7 @@ export function LogViewerDialog() {
           }}
         >
           {entries.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" color="textSecondary">
               Nothing captured yet. Connection attempts, warnings and errors show up
               here as they happen.
             </Typography>

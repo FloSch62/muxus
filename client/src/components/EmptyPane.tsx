@@ -26,7 +26,7 @@ export function EmptyPane({
         <Typography variant="h6" sx={{ fontWeight: 650, mb: 0.5 }}>
           Start a session
         </Typography>
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" color="textSecondary">
           Open a shell, connect over SSH, Telnet or serial, or open a remote desktop.
         </Typography>
       </Box>

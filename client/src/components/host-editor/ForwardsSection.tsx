@@ -31,7 +31,7 @@ export function ForwardsSection({ draft, set }: { draft: HostDraft; set: (patch:
       <Stack spacing={1.5}>
         <Box>
           <Typography variant="subtitle2">Graphical applications (X11)</Typography>
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" color="textSecondary">
             Show the windows of remote GUI programs on this computer.
           </Typography>
         </Box>
@@ -55,7 +55,7 @@ export function ForwardsSection({ draft, set }: { draft: HostDraft; set: (patch:
       <ForwardRuleForm serverLabel={serverLabel} onAdd={(rule) => set({ forwards: [...draft.forwards, rule] })} />
       <Divider />
       {draft.forwards.length === 0 ? (
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" color="textSecondary">
           {configBacked
             ? 'No forwards configured. Rules added here are written to the Host block and start with every connection.'
             : 'No forwards configured. Rules added here are stored in Muxus and start with every connection.'}

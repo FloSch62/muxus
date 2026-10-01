@@ -127,7 +127,7 @@ export function AuthSection({
                   <KeyOutlinedIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
                   <Box sx={{ flex: 1, minWidth: 0 }}>
                     <Typography variant="body2">{o.name}</Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <Typography variant="caption" color="textSecondary" sx={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {[o.type, o.comment].filter(Boolean).join(' · ') || o.path}
                     </Typography>
                   </Box>
@@ -152,7 +152,7 @@ export function AuthSection({
           />
           {window.muxusDesktop && (
             <Stack direction="row" spacing={1} sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" color="textSecondary">
                 Key stored elsewhere?
               </Typography>
               <Button
@@ -171,7 +171,7 @@ export function AuthSection({
           <Stack spacing={1} sx={{ pt: 1 }}>
             <Box>
               <Typography variant="body2">User certificates</Typography>
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" color="textSecondary">
                 {draft.storage === 'openssh'
                   ? 'Writes CertificateFile. '
                   : 'Each saved certificate is used with this Muxus connection. '}
@@ -217,7 +217,7 @@ export function AuthSection({
               </IconButton>
             </Stack>
           </Stack>
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" color="textSecondary">
             Only these key files are offered for login (IdentitiesOnly yes). The
             agent can still be forwarded after connecting.
           </Typography>
@@ -229,7 +229,7 @@ export function AuthSection({
       <Stack spacing={1.5}>
         <Box>
           <Typography variant="subtitle2">SSH agent</Typography>
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" color="textSecondary">
             {draft.authMode === 'key'
               ? 'Specific-key login does not use the agent. This source is still available for forwarding.'
               : 'Choose which local agent supplies keys for this host.'}
@@ -278,7 +278,7 @@ export function AuthSection({
           label={<Labeled title="Forward agent" sub="Lets the remote host use your selected local SSH agent" />}
         />
 
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant="caption" color="textSecondary">
           {agentDetectionStatus(draft, keys)}
         </Typography>
       </Stack>
@@ -288,7 +288,7 @@ export function AuthSection({
       <Stack spacing={1.5}>
         <Box>
           <Typography variant="subtitle2">Host-key security</Typography>
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" color="textSecondary">
             Control what happens when a server has not been seen before.
           </Typography>
         </Box>
@@ -373,7 +373,7 @@ function Labeled({ title, sub }: { title: string; sub: string }) {
   return (
     <Box sx={{ py: 0.25 }}>
       <Typography variant="body2">{title}</Typography>
-      <Typography variant="caption" color="text.secondary">
+      <Typography variant="caption" color="textSecondary">
         {sub}
       </Typography>
     </Box>

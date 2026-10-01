@@ -13,7 +13,7 @@ const mono = { fontFamily: '"JetBrains Mono", monospace', fontSize: 12, overflow
 function Field({ label, value, monospace }: { label: string; value: string; monospace?: boolean }) {
   return (
     <Stack spacing={0.25}>
-      <Typography variant="body2" color="text.secondary">
+      <Typography variant="body2" color="textSecondary">
         {label}
       </Typography>
       <Typography variant="body2" sx={monospace ? mono : { overflowWrap: 'anywhere' }}>

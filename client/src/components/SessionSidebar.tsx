@@ -707,7 +707,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
         {empty && (
           <Stack spacing={1.5} sx={{ alignItems: 'center', p: 3, textAlign: 'center' }}>
             <DnsOutlinedIcon sx={{ fontSize: 36, color: 'text.disabled' }} />
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" color="textSecondary">
               No saved hosts yet.
             </Typography>
             <Button
@@ -726,7 +726,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
           // Nothing matched is the moment you are most likely to want the host
           // you just typed, so offer to save it rather than only saying no.
           <Stack spacing={1.5} sx={{ alignItems: 'center', p: 2, textAlign: 'center' }}>
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" color="textSecondary">
               No hosts match.
             </Typography>
             <Button

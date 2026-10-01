@@ -81,7 +81,7 @@ export function AuthPromptDialog({
       <DialogTitle>
         {request.name || 'Authentication'}
         {request.host && (
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+          <Typography variant="caption" color="textSecondary" sx={{ display: 'block' }}>
             {request.host}
           </Typography>
         )}
@@ -89,7 +89,7 @@ export function AuthPromptDialog({
       <DialogContent>
         <Stack spacing={1.5} sx={{ mt: 0.5 }}>
           {request.instructions && (
-            <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-wrap' }}>
+            <Typography variant="body2" color="textSecondary" sx={{ whiteSpace: 'pre-wrap' }}>
               {request.instructions}
             </Typography>
           )}
@@ -124,7 +124,7 @@ export function AuthPromptDialog({
                       ? 'Update the saved password'
                       : 'Remember this password'}
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography variant="caption" color="textSecondary">
                     Encrypted locally under your password-vault policy.
                   </Typography>
                 </Stack>

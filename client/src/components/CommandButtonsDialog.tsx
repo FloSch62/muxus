@@ -53,7 +53,7 @@ export function CommandButtonsDialog() {
     <Dialog open={open} onClose={() => setOpen(false)} maxWidth="md" fullWidth>
       <DialogTitle>Command buttons</DialogTitle>
       <DialogContent>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
           Save commands you use often. Open them with Ctrl+Space or keep the optional
           one-click bar above or below the terminals. Commands stay in the order shown here.
         </Typography>
@@ -74,7 +74,7 @@ export function CommandButtonsDialog() {
               label={
                 <Box>
                   <Typography variant="body2">Show command bar</Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography variant="caption" color="textSecondary">
                     Display saved commands {commandBarPosition === 'bottom' ? 'below' : 'above'}{' '}
                     the terminals. The Ctrl+Space menu always remains available.
                   </Typography>
@@ -104,7 +104,7 @@ export function CommandButtonsDialog() {
           </Paper>
           {buttons.length === 0 ? (
             <Paper variant="outlined" sx={{ p: 3, textAlign: 'center' }}>
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" color="textSecondary">
                 No command buttons yet.
               </Typography>
             </Paper>
@@ -190,7 +190,7 @@ export function CommandButtonsDialog() {
                   label={
                     <Box>
                       <Typography variant="body2">Run immediately</Typography>
-                      <Typography variant="caption" color="text.secondary">
+                      <Typography variant="caption" color="textSecondary">
                         Send Enter after the command. Turn off to insert it for review first.
                       </Typography>
                     </Box>

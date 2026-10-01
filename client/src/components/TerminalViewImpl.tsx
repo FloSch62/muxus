@@ -1676,7 +1676,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
                 ),
                 endAdornment: searchQuery ? (
                   <InputAdornment position="end">
-                    <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
+                    <Typography variant="caption" color="textSecondary" sx={{ whiteSpace: 'nowrap' }}>
                       {searchResult.resultCount > 0
                         ? `${searchResult.resultIndex + 1}/${searchResult.resultCount}`
                         : 'No matches'}
@@ -1779,7 +1779,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             <ContentCopyIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>Copy</ListItemText>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 3 }}>
+          <Typography variant="caption" color="textSecondary" sx={{ ml: 3 }}>
             Ctrl+Shift+C
           </Typography>
         </MenuItem>
@@ -1793,7 +1793,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             <ContentPasteIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>Paste</ListItemText>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 3 }}>
+          <Typography variant="caption" color="textSecondary" sx={{ ml: 3 }}>
             Ctrl+Shift+V
           </Typography>
         </MenuItem>
@@ -1856,7 +1856,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             <DeleteSweepOutlinedIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>Clear scrollback</ListItemText>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 3 }}>
+          <Typography variant="caption" color="textSecondary" sx={{ ml: 3 }}>
             Ctrl+Shift+K
           </Typography>
         </MenuItem>

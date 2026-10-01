@@ -366,14 +366,14 @@ export function RemoteEditorWorkspace({
           <FileTypeIcon name={baseName(activePath)} />
           <Typography
             variant="caption"
-            color="text.secondary"
+            color="textSecondary"
             noWrap
             title={activePath}
             sx={{ flex: 1, minWidth: 0, fontFamily: '"JetBrains Mono", monospace' }}
           >
             {activePath}
           </Typography>
-          <Typography variant="caption" color="text.disabled" sx={{ mr: 0.5 }}>
+          <Typography variant="caption" color="textDisabled" sx={{ mr: 0.5 }}>
             {language === GENERAL_TEXT_LANGUAGE_ID ? 'General text' : language}
           </Typography>
           <Tooltip title={local ? 'Reload from disk' : 'Reload from remote'}>

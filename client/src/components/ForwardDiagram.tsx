@@ -74,7 +74,7 @@ export function ForwardDiagram({
           </Stack>
         ))}
       </Stack>
-      <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5, textAlign: 'center' }}>
+      <Typography variant="body2" color="textSecondary" sx={{ mt: 1.5, textAlign: 'center' }}>
         {summary}
       </Typography>
     </Box>

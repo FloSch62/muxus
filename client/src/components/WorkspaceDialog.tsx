@@ -352,7 +352,7 @@ export function WorkspaceDialog() {
           }}
         >
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" color="textSecondary">
               Current workspace
             </Typography>
             <Typography variant="subtitle1" noWrap>
@@ -536,10 +536,10 @@ export function WorkspaceDialog() {
           direction="row"
           sx={{ px: 2, pb: 0.75, alignItems: 'baseline', justifyContent: 'space-between' }}
         >
-          <Typography variant="overline" color="text.secondary">
+          <Typography variant="overline" color="textSecondary">
             Saved workspaces
           </Typography>
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" color="textSecondary">
             {resultLabel}
           </Typography>
         </Stack>
@@ -692,7 +692,7 @@ export function WorkspaceDialog() {
           {!ready ? (
             <Typography
               variant="body2"
-              color="text.secondary"
+              color="textSecondary"
               sx={{ px: 2, py: 3, textAlign: 'center' }}
             >
               Loading workspaces…
@@ -701,7 +701,7 @@ export function WorkspaceDialog() {
           {ready && workspaces.length === 0 ? (
             <Typography
               variant="body2"
-              color="text.secondary"
+              color="textSecondary"
               sx={{ px: 2, py: 3, textAlign: 'center' }}
             >
               Save the current layout to create your first named workspace.
@@ -709,7 +709,7 @@ export function WorkspaceDialog() {
           ) : null}
           {ready && workspaces.length > 0 && visibleWorkspaces.length === 0 ? (
             <Box sx={{ px: 2, py: 3, textAlign: 'center' }}>
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" color="textSecondary">
                 No workspaces match “{query.trim()}”.
               </Typography>
               <Button size="small" sx={{ mt: 0.5 }} onClick={() => setQuery('')}>
@@ -750,7 +750,7 @@ export function WorkspaceDialog() {
             <Divider sx={{ mt: 1.5 }} />
             <Typography
               variant="overline"
-              color="text.secondary"
+              color="textSecondary"
               sx={{ px: 2, pt: 1.25, display: 'block' }}
             >
               Reconnect sessions

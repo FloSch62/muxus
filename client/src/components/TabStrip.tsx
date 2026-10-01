@@ -1288,7 +1288,7 @@ export function TabStrip({
         ) : null}
         <Divider />
         <Box sx={{ px: 2, py: 0.5 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+          <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mb: 0.5 }}>
             Flag
           </Typography>
           <Stack direction="row" spacing={0.5}>

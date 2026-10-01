@@ -69,7 +69,7 @@ export function PasswordVaultStartupUnlock({
       <DialogTitle>Unlock password vault</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 0.5 }}>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" color="textSecondary">
             Enter the master password once to use saved SSH passwords until
             Muxus exits.
           </Typography>

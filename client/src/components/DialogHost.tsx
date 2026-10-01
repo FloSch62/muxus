@@ -66,7 +66,7 @@ function ConfirmBody({
       {request.description || request.checkbox ? (
         <DialogContent>
           {typeof request.description === 'string' ? (
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" color="textSecondary">
               {request.description}
             </Typography>
           ) : (
@@ -128,7 +128,7 @@ function PromptBody({
       <DialogTitle>{request.title}</DialogTitle>
       <DialogContent>
         {request.description ? (
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 1.5 }}>
             {request.description}
           </Typography>
         ) : null}

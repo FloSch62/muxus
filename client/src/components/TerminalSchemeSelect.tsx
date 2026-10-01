@@ -52,7 +52,7 @@ export function TerminalSchemeSelect({
         onChange={(event) => onChange(event.target.value)}
         renderValue={(schemeId) =>
           !schemeId && inheritLabel ? (
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" color="textSecondary">
               {inheritLabel}
             </Typography>
           ) : (
@@ -107,7 +107,7 @@ function SchemeLabel({ scheme, showMode = false }: { scheme: TerminalScheme; sho
         {scheme.name}
       </Typography>
       {showMode ? (
-        <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto !important', pr: 0.5 }}>
+        <Typography variant="caption" color="textSecondary" sx={{ ml: 'auto !important', pr: 0.5 }}>
           {scheme.light ? 'Light' : 'Dark'}
         </Typography>
       ) : null}

@@ -56,7 +56,7 @@ export function AdvancedSection({
           }
           label="Enable console compatibility mode"
         />
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" color="textSecondary">
           Skips SFTP, shell integration, and SendEnv/SetEnv requests. TTY settings still apply.
         </Typography>
         <FormControlLabel
@@ -68,7 +68,7 @@ export function AdvancedSection({
           }
           label="Disable SFTP and shell integration only"
         />
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" color="textSecondary">
           Keeps SendEnv/SetEnv and normal TTY behavior. Console mode already disables SFTP and
           shell integration, regardless of this setting.
         </Typography>
@@ -76,7 +76,7 @@ export function AdvancedSection({
 
       {configBacked ? (
         <Stack spacing={1}>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" color="textSecondary">
             Additional ssh_config options. Applied options are used by Muxus; others are
             preserved for OpenSSH.
           </Typography>
@@ -149,7 +149,7 @@ export function AdvancedSection({
 
       {configBacked ? (
         <Stack spacing={0.75}>
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" color="textSecondary">
             This is written to the config:
           </Typography>
           <Box
@@ -173,7 +173,7 @@ export function AdvancedSection({
           </Box>
         </Stack>
       ) : (
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" color="textSecondary">
           Raw ssh_config options are only available when a host is stored in OpenSSH
           config. The connection settings in the other sections are stored directly by
           Muxus.

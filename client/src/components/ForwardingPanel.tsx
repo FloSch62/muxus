@@ -224,7 +224,7 @@ export function ForwardingPanel() {
       <Box sx={{ flex: 1, overflowY: 'auto', py: 1 }}>
         <SectionLabel>Persistent tunnels</SectionLabel>
         {tunnels.length === 0 && (
-          <Typography variant="body2" color="text.secondary" sx={{ px: 1.5, pb: 1 }}>
+          <Typography variant="body2" color="textSecondary" sx={{ px: 1.5, pb: 1 }}>
             Saved tunnels start and stop port forwarding without opening a terminal — closing terminals never
             takes a running tunnel down.
           </Typography>
@@ -256,10 +256,10 @@ export function ForwardingPanel() {
                 <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
                   {tunnel.name || tunnel.target}
                 </Typography>
-                <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block', ...MONO, fontSize: 11 }}>
+                <Typography variant="caption" color="textSecondary" noWrap sx={{ display: 'block', ...MONO, fontSize: 11 }}>
                   {busy ?? `${FORWARD_FLAG[tunnel.type]} ${describeForward(tunnel)}`}
                 </Typography>
-                <Typography variant="caption" color="text.disabled" noWrap sx={{ display: 'block', fontSize: 11 }}>
+                <Typography variant="caption" color="textDisabled" noWrap sx={{ display: 'block', fontSize: 11 }}>
                   {describeTunnelConnection(tunnel)}
                 </Typography>
                 {running?.error && (
@@ -307,7 +307,7 @@ export function ForwardingPanel() {
         <Divider sx={{ my: 1 }} />
         <SectionLabel>Connections</SectionLabel>
         {connections.length === 0 && (
-          <Typography variant="body2" color="text.secondary" sx={{ px: 1.5, pb: 1 }}>
+          <Typography variant="body2" color="textSecondary" sx={{ px: 1.5, pb: 1 }}>
             No live SSH connections. Forwards on open sessions appear here.
           </Typography>
         )}
@@ -368,7 +368,7 @@ export function ForwardingPanel() {
       <Dialog open={!!adhocConn} onClose={() => setAdhocConn(null)} maxWidth="sm" fullWidth>
         <DialogTitle>
           Forward on {adhocConn?.target}
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+        <Typography variant="caption" color="textSecondary" sx={{ display: 'block' }}>
             Belongs to this terminal session; save it as a tunnel to keep it after the terminal closes.
           </Typography>
         </DialogTitle>
@@ -468,7 +468,7 @@ function ConnectionGroup({
         <Box sx={(theme) => ({ width: 7, height: 7, borderRadius: '50%', bgcolor: statusTextColor('success')(theme), flexShrink: 0 })} />
         <Typography variant="body2" noWrap sx={{ fontWeight: 600, flex: 1, minWidth: 0 }}>
           {conn.target}
-          <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.75 }}>
+          <Typography component="span" variant="caption" color="textSecondary" sx={{ ml: 0.75 }}>
             {conn.user}@{conn.host}
             {conn.port !== 22 ? `:${conn.port}` : ''}
           </Typography>
@@ -521,7 +521,7 @@ function ConnectionGroup({
         </Stack>
       ))}
       {forwards.length === 0 && (
-        <Typography variant="caption" color="text.secondary" sx={{ pl: 3, display: 'block' }}>
+        <Typography variant="caption" color="textSecondary" sx={{ pl: 3, display: 'block' }}>
           No session forwards.
         </Typography>
       )}

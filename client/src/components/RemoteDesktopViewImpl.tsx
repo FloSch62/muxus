@@ -600,7 +600,7 @@ export function RemoteDesktopViewImpl({
               gap: 0.25,
             }}
           >
-            <Typography variant="caption" color="text.secondary" sx={{ px: 1, whiteSpace: 'nowrap' }}>
+            <Typography variant="caption" color="textSecondary" sx={{ px: 1, whiteSpace: 'nowrap' }}>
               {profile.kind.toUpperCase()} · {address}
             </Typography>
             {!(current.kind === 'vnc' && current.viewOnly) && (

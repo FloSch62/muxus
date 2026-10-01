@@ -154,7 +154,7 @@ function TunnelEditorForm({
         {editing ? 'Edit persistent tunnel' : 'New persistent tunnel'}
         <Typography
           variant="caption"
-          color="text.secondary"
+          color="textSecondary"
           sx={{ display: 'block', mt: 0.25 }}
         >
           Saved locally. Start or stop it without opening a terminal.
@@ -276,7 +276,7 @@ function TunnelEditorForm({
                     config={config}
                   />
                 </ProfileAccordion>
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" color="textSecondary">
                   Muxus asks when the tunnel starts. SSH password prompts can
                   save an accepted password in the password vault; key
                   passphrases and 2FA answers remain transient.
@@ -502,7 +502,7 @@ function SectionHeading({
       </Box>
       <Box>
         <Typography variant="subtitle2">{title}</Typography>
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant="caption" color="textSecondary">
           {detail}
         </Typography>
       </Box>
@@ -544,7 +544,7 @@ function ProfileAccordion({
           <Typography variant="body2" sx={{ fontWeight: 600 }}>
             {title}
           </Typography>
-          <Typography variant="caption" color="text.secondary" noWrap>
+          <Typography variant="caption" color="textSecondary" noWrap>
             · {summary}
           </Typography>
         </Stack>

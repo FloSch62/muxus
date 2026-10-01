@@ -75,7 +75,7 @@ export function EditorShell<S extends string>({
     <>
       <DialogTitle sx={{ pb: 1 }}>
         {title}
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+        <Typography variant="caption" color="textSecondary" sx={{ display: 'block' }}>
           {storage}
         </Typography>
       </DialogTitle>
@@ -143,11 +143,11 @@ export function EditorShell<S extends string>({
         {/* Validation is the user's problem to fix; a pending load is ours, so
             they read as different things even though both hold Save back. */}
         {problem ? (
-          <Typography variant="caption" color="warning.main" sx={{ ml: 1, mr: 'auto' }}>
+          <Typography variant="caption" color="warning" sx={{ ml: 1, mr: 'auto' }}>
             {problem}
           </Typography>
         ) : loading ? (
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 1, mr: 'auto' }}>
+          <Typography variant="caption" color="textSecondary" sx={{ ml: 1, mr: 'auto' }}>
             {loading}
           </Typography>
         ) : null}

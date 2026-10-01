@@ -67,7 +67,7 @@ export function HostOrganizationDialog() {
       >
         <DialogTitle sx={{ pb: 0.75 }}>Organize {managedHostName(entry)}</DialogTitle>
         <DialogContent>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 2.5 }}>
             Display name, folder, and color are local to Muxus. Connection settings
             stay unchanged.
           </Typography>
@@ -107,7 +107,7 @@ export function HostOrganizationDialog() {
                 <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
                   {name}
                 </Typography>
-                <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
+                <Typography variant="caption" color="textSecondary" noWrap sx={{ display: 'block' }}>
                   {folderSegments(group).length > 0
                     ? `${folderSegments(group).join(' / ')} · `
                     : ''}

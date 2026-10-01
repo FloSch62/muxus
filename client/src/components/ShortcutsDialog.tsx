@@ -231,7 +231,7 @@ export function ShortcutsDialog() {
             <Box key={category} sx={{ mb: 2.5 }}>
               <Typography
                 variant="overline"
-                color="text.secondary"
+                color="textSecondary"
                 sx={{ display: 'block', letterSpacing: 0.8 }}
               >
                 {COMMAND_CATEGORY_LABELS[category]}
@@ -266,7 +266,7 @@ export function ShortcutsDialog() {
         })}
 
         {matchCount === 0 ? (
-          <Typography variant="body2" color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>
+          <Typography variant="body2" color="textSecondary" sx={{ py: 3, textAlign: 'center' }}>
             No command matches “{query.trim()}”.
           </Typography>
         ) : null}
@@ -358,7 +358,7 @@ function CommandRow({
           />
         ))}
         {chords.length === 0 && !recording && (
-          <Typography variant="caption" color="text.disabled">
+          <Typography variant="caption" color="textDisabled">
             Unbound
           </Typography>
         )}
@@ -401,7 +401,7 @@ function CommandRow({
 function StaticSection({ title, rows }: { title: string; rows: Array<[string, string]> }) {
   return (
     <Box sx={{ mb: 2 }}>
-      <Typography variant="overline" color="text.secondary" sx={{ display: 'block', letterSpacing: 0.8 }}>
+      <Typography variant="overline" color="textSecondary" sx={{ display: 'block', letterSpacing: 0.8 }}>
         {title}
       </Typography>
       {rows.map(([label, keys]) => (
@@ -409,7 +409,7 @@ function StaticSection({ title, rows }: { title: string; rows: Array<[string, st
           <Typography variant="body2" sx={{ flex: 1 }}>
             {label}
           </Typography>
-          <Typography variant="caption" color="text.secondary" sx={chordSx()}>
+          <Typography variant="caption" color="textSecondary" sx={chordSx()}>
             {keys}
           </Typography>
         </Stack>

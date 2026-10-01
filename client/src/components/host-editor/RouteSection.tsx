@@ -152,7 +152,7 @@ export function RouteSection({
       </Stack>
 
       {draft.routeMode === 'direct' ? (
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" color="textSecondary">
           Muxus opens the TCP connection to {target} itself.
         </Typography>
       ) : null}
@@ -226,7 +226,7 @@ export function RouteSection({
               </IconButton>
             </Box>
           </Stack>
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" color="textSecondary">
             {draft.storage === 'muxus'
               ? 'Each hop is authenticated and host-key verified with its own settings: a Muxus host with what it saved, any other hop through your SSH config.'
               : 'Each hop is authenticated and host-key verified using its own SSH config.'}
@@ -252,7 +252,7 @@ function Labeled({ title, sub }: { title: string; sub: string }) {
   return (
     <Box sx={{ py: 0.25 }}>
       <Typography variant="body2">{title}</Typography>
-      <Typography variant="caption" color="text.secondary">
+      <Typography variant="caption" color="textSecondary">
         {sub}
       </Typography>
     </Box>

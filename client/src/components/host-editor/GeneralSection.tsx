@@ -146,7 +146,7 @@ export function GeneralSection({
                 placeholder="work"
                 fullWidth
               />
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" color="textSecondary">
                 Creates {shortenPath(draft.file || `${sshDir}config.d/…`)} and adds
                 an Include to your config — the sidebar groups hosts by file.
               </Typography>
@@ -159,7 +159,7 @@ export function GeneralSection({
       <Stack spacing={1.5}>
         <Box>
           <Typography variant="subtitle2">Startup behavior</Typography>
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" color="textSecondary">
             Choose what opens after authentication and whether the server should allocate a terminal.
           </Typography>
         </Box>
@@ -210,7 +210,7 @@ export function GeneralSection({
       </Stack>
 
       <Divider />
-      <Typography variant="caption" color="text.secondary">
+      <Typography variant="caption" color="textSecondary">
         {configBacked
           ? 'Display name, group and color are local to Muxus — they never touch your ssh config.'
           : 'Group and color are stored with this connection in Muxus app data.'}
