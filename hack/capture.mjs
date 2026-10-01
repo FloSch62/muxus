@@ -395,7 +395,7 @@ add('settings-x11', async () => {
   const page = await open();
   await page.locator('[aria-label="Settings"]').click();
   await wait(900);
-  await page.getByRole('button', { name: 'X11 forwarding', exact: true }).click();
+  await page.getByRole('tab', { name: 'X11 forwarding', exact: true }).click();
   await wait(900);
   await scrollDialogTop(page);
   await shot(page, 'settings-x11');
@@ -406,7 +406,7 @@ add('settings-terminal', async () => {
   const page = await open();
   await page.locator('[aria-label="Settings"]').click();
   await wait(900);
-  await page.getByRole('button', { name: 'Terminal', exact: true }).click();
+  await page.getByRole('tab', { name: 'Terminal', exact: true }).click();
   await wait(900);
   await scrollDialogTop(page);
   await shot(page, 'settings-terminal');
@@ -423,7 +423,7 @@ add('settings-highlighting', async () => {
   });
   await page.locator('[aria-label="Settings"]').click();
   await wait(900);
-  await page.getByRole('button', { name: 'Highlighting', exact: true }).click();
+  await page.getByRole('tab', { name: 'Highlighting', exact: true }).click();
   await wait(900);
   await scrollDialogTop(page);
   await shot(page, 'settings-highlighting');
@@ -434,7 +434,7 @@ add('settings-logging', async () => {
   const page = await open();
   await page.locator('[aria-label="Settings"]').click();
   await wait(900);
-  await page.getByRole('button', { name: 'Session logging', exact: true }).click();
+  await page.getByRole('tab', { name: 'Session logging', exact: true }).click();
   await wait(1200);
   await scrollDialogTop(page);
   await shot(page, 'settings-logging');
