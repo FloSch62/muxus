@@ -76,7 +76,7 @@ export function SftpWindow({ launch }: { launch: SftpLaunch }) {
             <Typography variant="subtitle1" noWrap sx={{ fontWeight: 700 }}>
               {launch.title}
             </Typography>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" color="textSecondary">
               SFTP
             </Typography>
           </Stack>

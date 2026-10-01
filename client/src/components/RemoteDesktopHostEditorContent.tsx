@@ -218,7 +218,7 @@ function LogonSection({ kind, draft, set }: SectionProps) {
           onChange={(event) => set({ domain: event.target.value })}
         />
       )}
-      <Typography variant="body2" color="text.secondary">
+      <Typography variant="body2" color="textSecondary">
         Muxus asks for the password when it connects. Tick “Remember this password” there to keep it in the
         encrypted password vault.
       </Typography>
@@ -267,7 +267,7 @@ function RouteSection({ kind, draft, set }: SectionProps) {
         <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
           SSH gateway
         </Typography>
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" color="textSecondary">
           Reach the {kind === 'rdp' ? 'Remote Desktop' : 'VNC'} server through an SSH host, like{' '}
           <code>ssh -L</code>: the host and port above are resolved and connected on the gateway's side. Useful for
           servers behind a bastion or listening only on localhost.
@@ -285,7 +285,7 @@ function RouteSection({ kind, draft, set }: SectionProps) {
             <Box component="li" key={key} {...optionProps}>
               <Box sx={{ minWidth: 0 }}>
                 <Typography variant="body2">{option.label}</Typography>
-                <Typography variant="caption" color="text.secondary" noWrap>
+                <Typography variant="caption" color="textSecondary" noWrap>
                   {option.detail}
                 </Typography>
               </Box>
@@ -310,7 +310,7 @@ function OptionsSection({ kind, draft, set }: SectionProps) {
         label={
           <Stack spacing={0}>
             <Typography variant="body2">Share the clipboard</Typography>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" color="textSecondary">
               Copy and paste text between this computer and the remote desktop. The server can read what you copy
               while its tab has focus.
             </Typography>
@@ -326,7 +326,7 @@ function OptionsSection({ kind, draft, set }: SectionProps) {
             label={
               <Stack spacing={0}>
                 <Typography variant="body2">Resize the remote desktop to fit</Typography>
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" color="textSecondary">
                   Ask the server to change its resolution to match the pane instead of scaling the picture. Servers
                   such as TigerVNC support this; shared physical screens usually do not.
                 </Typography>
@@ -338,7 +338,7 @@ function OptionsSection({ kind, draft, set }: SectionProps) {
             label={
               <Stack spacing={0}>
                 <Typography variant="body2">View only</Typography>
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" color="textSecondary">
                   Watch the screen without sending keyboard or mouse input.
                 </Typography>
               </Stack>
@@ -347,7 +347,7 @@ function OptionsSection({ kind, draft, set }: SectionProps) {
         </>
       )}
       {kind === 'rdp' && (
-        <Typography variant="body2" color="text.secondary" sx={{ pt: 1 }}>
+        <Typography variant="body2" color="textSecondary" sx={{ pt: 1 }}>
           The remote desktop follows the size of its pane when the server supports resizing (Windows 8.1 / Server
           2012 R2 and later, xrdp); otherwise the picture is scaled to fit.
         </Typography>

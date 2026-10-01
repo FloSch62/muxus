@@ -52,7 +52,7 @@ export function LaunchGroupDialog({
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
       <DialogTitle>Launch “{target?.label}”</DialogTitle>
       <DialogContent>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
           Start all {target?.hosts.length ?? 0} hosts and replace the current pane layout.
         </Typography>
         <ToggleButtonGroup

@@ -48,7 +48,7 @@ export class ErrorBoundary extends Component<Props, State> {
         <Typography variant="h6">{this.props.label ?? 'This view'} ran into an error</Typography>
         <Typography
           variant="body2"
-          color="text.secondary"
+          color="textSecondary"
           sx={{ maxWidth: 560, textAlign: 'center', fontFamily: 'monospace', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}
         >
           {error.message}

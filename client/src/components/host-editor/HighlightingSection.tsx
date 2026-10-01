@@ -30,7 +30,7 @@ export function HighlightingSection({
         <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
           Keyword highlighting
         </Typography>
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" color="textSecondary">
           {description}
         </Typography>
       </Box>
@@ -82,7 +82,7 @@ export function HighlightingSection({
         label={
           <Box>
             <Typography variant="body2">Include global highlighting rules</Typography>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" color="textSecondary">
               Turn this off when this host should use only its profile and host rules.
             </Typography>
           </Box>

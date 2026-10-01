@@ -260,7 +260,7 @@ export function FolderDialog() {
       >
         <DialogTitle sx={{ pb: 0.75 }}>{title}</DialogTitle>
         <DialogContent>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 2.5 }}>
             Folders are local to Muxus. They never change your ssh config.
           </Typography>
 
@@ -350,7 +350,7 @@ export function FolderDialog() {
                     {parentPreview && (
                       <Typography
                         variant="caption"
-                        color="text.secondary"
+                        color="textSecondary"
                         noWrap
                         sx={{ display: 'block' }}
                       >
@@ -365,7 +365,7 @@ export function FolderDialog() {
                   <Typography variant="body2" sx={{ fontWeight: 600 }}>
                     Shared SSH credentials
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography variant="caption" color="textSecondary">
                     Hosts in this folder use these unless they set their own.
                     Anything in your ssh config still wins, and the nearest
                     folder beats its parents.
@@ -404,7 +404,7 @@ export function FolderDialog() {
                           <Typography variant="body2">{option.name}</Typography>
                           <Typography
                             variant="caption"
-                            color="text.secondary"
+                            color="textSecondary"
                             noWrap
                             sx={{ display: 'block' }}
                           >
@@ -507,7 +507,7 @@ export function FolderDialog() {
             )}
 
             {renaming && affected.length > 0 && (
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" color="textSecondary">
                 {merging
                   ? `Merges into the existing “${folderLabel(target)}” and moves ${affected.length} host${affected.length === 1 ? '' : 's'}.`
                   : `Moves ${affected.length} host${affected.length === 1 ? '' : 's'}.`}

@@ -111,7 +111,7 @@ export function MultiExecControl() {
         <Stack direction="row" sx={{ px: 2, py: 1.5, alignItems: 'center', gap: 1 }}>
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography variant="subtitle2">Multi-execution</Typography>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" color="textSecondary">
               Typing in any selected terminal mirrors to all selected terminals.
             </Typography>
           </Box>
@@ -120,7 +120,7 @@ export function MultiExecControl() {
         <Divider />
         {groups.length > 0 ? (
           <>
-            <Typography variant="overline" color="text.secondary" sx={{ px: 2, pt: 0.75 }}>
+            <Typography variant="overline" color="textSecondary" sx={{ px: 2, pt: 0.75 }}>
               Workspace groups
             </Typography>
             <List dense disablePadding sx={{ maxHeight: 140, overflowY: 'auto', pb: 0.5 }}>
@@ -215,7 +215,7 @@ export function MultiExecControl() {
             </ListItemButton>
           ))}
           {connectedTabs.length === 0 && (
-            <Typography variant="body2" color="text.secondary" sx={{ px: 2, py: 3, textAlign: 'center' }}>
+            <Typography variant="body2" color="textSecondary" sx={{ px: 2, py: 3, textAlign: 'center' }}>
               Connect at least two sessions to start mirroring input.
             </Typography>
           )}
@@ -248,7 +248,7 @@ export function MultiExecControl() {
           </Stack>
         ) : null}
         {selectedIds.length === 1 && (
-          <Typography variant="caption" color="warning.main" sx={{ display: 'block', px: 2, py: 1 }}>
+          <Typography variant="caption" color="warning" sx={{ display: 'block', px: 2, py: 1 }}>
             Select one more terminal to enable multi-execution.
           </Typography>
         )}
@@ -257,7 +257,7 @@ export function MultiExecControl() {
             direction="row"
             sx={{ px: 2, py: 1, alignItems: 'center', borderTop: 1, borderColor: 'divider' }}
           >
-            <Typography variant="caption" color="warning.main" sx={{ flex: 1 }}>
+            <Typography variant="caption" color="warning" sx={{ flex: 1 }}>
               Input is mirrored automatically.
             </Typography>
             <Button color="inherit" onClick={() => setSelection([])}>

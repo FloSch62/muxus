@@ -252,7 +252,7 @@ export function SessionImportDialog<T extends ImportedSession>({
             <Typography variant="h6" sx={{ fontWeight: 700 }}>
               Import from {vendorName}
             </Typography>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" color="textSecondary">
               {pending
                 ? `${pending.parsed.sessions.length} supported sessions from ${pending.source}`
                 : idleSubtitle}
@@ -296,7 +296,7 @@ export function SessionImportDialog<T extends ImportedSession>({
                     label="OpenSSH config"
                   />
                 </RadioGroup>
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" color="textSecondary">
                   {sshStorage === 'muxus'
                     ? 'SSH connection settings stay in the Muxus database; ssh_config is not changed.'
                     : 'Creates standard Host blocks that also work with ssh in any terminal.'}
@@ -392,7 +392,7 @@ export function SessionImportDialog<T extends ImportedSession>({
                 })}
               </List>
               {filteredSessions.length === 0 ? (
-                <Typography variant="body2" color="text.secondary" sx={{ p: 3, textAlign: 'center' }}>
+                <Typography variant="body2" color="textSecondary" sx={{ p: 3, textAlign: 'center' }}>
                   No sessions match that filter.
                 </Typography>
               ) : null}
@@ -418,7 +418,7 @@ export function SessionImportDialog<T extends ImportedSession>({
           </Stack>
         ) : (
           <Stack spacing={2}>
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" color="textSecondary">
               {sourceIntro}
             </Typography>
             <Box
@@ -654,7 +654,7 @@ function SourceCard({
       <Typography variant="subtitle1" sx={{ mt: 1.5, fontWeight: 700 }}>
         {title}
       </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2, flex: 1 }}>
+      <Typography variant="body2" color="textSecondary" sx={{ mt: 0.5, mb: 2, flex: 1 }}>
         {description}
       </Typography>
       <Box>{action}</Box>

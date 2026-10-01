@@ -279,12 +279,12 @@ export function SessionHistoryDialog() {
             ) : null}
           </List>
           {isLoading ? (
-            <Typography sx={{ p: 2 }} color="text.secondary">
+            <Typography sx={{ p: 2 }} color="textSecondary">
               Loading history…
             </Typography>
           ) : null}
           {!isLoading && !data?.sessions.length ? (
-            <Typography sx={{ p: 2 }} color="text.secondary">
+            <Typography sx={{ p: 2 }} color="textSecondary">
               {debouncedQuery
                 ? 'No retained sessions match this search.'
                 : 'Logs will appear here after a logging-enabled terminal starts.'}
@@ -310,7 +310,7 @@ export function SessionHistoryDialog() {
                   <Typography variant="h6" noWrap>
                     {sessionLogName(selected)}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" noWrap>
+                  <Typography variant="body2" color="textSecondary" noWrap>
                     {selected.label && selected.title !== selected.host
                       ? `${selected.title} · `
                       : null}
@@ -365,7 +365,7 @@ export function SessionHistoryDialog() {
               </Stack>
               {debouncedQuery && !detailLoading ? (
                 <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography variant="caption" color="textSecondary">
                     {matches.length
                       ? `Match ${activeMatch + 1} of ${
                           matches.length >= MAX_PREVIEW_MATCHES
@@ -410,7 +410,7 @@ export function SessionHistoryDialog() {
                   label="Show timestamps (UTC)"
                 />
                 {showTimestamps ? (
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  <Typography variant="caption" color="textSecondary" sx={{ display: 'block' }}>
                     Time each line last changed in Muxus. Applies to clean exports and copies.
                     {detail?.events.some((event) => event.direction !== 'system' && event.text && !event.lineTimestamps?.length)
                       ? ' Older recordings use approximate event times.' : ''}
@@ -441,7 +441,7 @@ export function SessionHistoryDialog() {
                   : previewContent || 'No normalized terminal output was retained.'}
               </Paper>
               {detail?.eventsTruncated ? (
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" color="textSecondary">
                   Previewing {detail.events.length.toLocaleString()} of the
                   retained events
                   {debouncedQuery ? ' around the first match' : ' (newest first)'}.
@@ -450,7 +450,7 @@ export function SessionHistoryDialog() {
               ) : null}
             </>
           ) : (
-            <Typography color="text.secondary">
+            <Typography color="textSecondary">
               Choose a session to inspect its transcript.
             </Typography>
           )}

@@ -44,13 +44,13 @@ export function HostKeyDialog({ request, onAnswer }: { request: HostKeyRequest |
               First connection to {request.host}:{request.port}. Verify the fingerprint before trusting it.
             </Typography>
           )}
-          <Typography variant="body2" color="text.secondary">
+          <Typography variant="body2" color="textSecondary">
             {request.keyType} key fingerprint:
           </Typography>
           <Typography sx={mono}>{request.fingerprint}</Typography>
           {request.previous && (
             <>
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" color="textSecondary">
                 Previously recorded fingerprint:
               </Typography>
               <Typography sx={mono}>{request.previous}</Typography>

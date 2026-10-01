@@ -33,7 +33,7 @@ export function SessionLoggingPolicyFields({
           label={
             <Box>
               <Typography variant="body2">Use default session logging settings</Typography>
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" color="textSecondary">
                 {value.inherit
                   ? `Inherited: logging ${value.enabled ? 'enabled' : 'disabled'}.`
                   : 'This host has its own logging and retention policy.'}
@@ -54,7 +54,7 @@ export function SessionLoggingPolicyFields({
         label={
           <Box>
             <Typography variant="body2">Log terminal sessions</Typography>
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" color="textSecondary">
               Store timestamped raw activity and a searchable normalized transcript.
             </Typography>
           </Box>
@@ -73,7 +73,7 @@ export function SessionLoggingPolicyFields({
           label={
             <Box>
               <Typography variant="body2">Record terminal input</Typography>
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" color="textSecondary">
                 Off is safer: typed commands may contain passwords or tokens.
               </Typography>
             </Box>
@@ -95,7 +95,7 @@ export function SessionLoggingPolicyFields({
           }
           slotProps={{
             htmlInput: { min: 1, max: 1024 },
-            input: { endAdornment: <Typography color="text.secondary">MiB</Typography> },
+            input: { endAdornment: <Typography color="textSecondary">MiB</Typography> },
           }}
           sx={{ width: { sm: 190 } }}
         />
@@ -115,7 +115,7 @@ export function SessionLoggingPolicyFields({
       </Stack>
 
       {value.enabled && !disabled ? (
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant="caption" color="textSecondary">
           Maximum retained raw data per session: approximately{' '}
           {formatRetention(value)}.
         </Typography>

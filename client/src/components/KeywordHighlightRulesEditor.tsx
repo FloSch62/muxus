@@ -82,7 +82,7 @@ export function KeywordHighlightRulesEditor({
   return (
     <Stack spacing={0.75}>
       {rules.length === 0 ? (
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" color="textSecondary">
           {emptyMessage}
         </Typography>
       ) : null}
@@ -406,7 +406,7 @@ function RulesJsonEditor({
           {error}
         </Alert>
       ) : (
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant="caption" color="textSecondary">
           An array of rules. Each needs a keyword and a foreground color; name, background,
           regex, caseSensitive and wholeWord are optional. Backslashes in a regex are
           written twice in JSON, as in \\d+.
@@ -433,7 +433,7 @@ function ColorInput({
 }) {
   return (
     <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
-      <Typography variant="body2" color="text.secondary" sx={{ minWidth: 32 }}>
+      <Typography variant="body2" color="textSecondary" sx={{ minWidth: 32 }}>
         {label}
       </Typography>
       <Box

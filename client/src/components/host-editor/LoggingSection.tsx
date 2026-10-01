@@ -17,7 +17,7 @@ export function LoggingSection({
         <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
           Session logging
         </Typography>
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" color="textSecondary">
           Choose whether new sessions for this host inherit the application default or use a
           dedicated retention and input-privacy policy.
         </Typography>

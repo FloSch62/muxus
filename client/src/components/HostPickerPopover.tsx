@@ -166,7 +166,7 @@ export function HostPickerPopover({
         {visible.length === 0 && (
           <Stack spacing={0.75} sx={{ px: 2, py: 3, alignItems: 'center', textAlign: 'center' }}>
             <DnsOutlinedIcon sx={{ fontSize: 30, color: 'text.disabled' }} />
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" color="textSecondary">
               {(config?.hosts.length ?? 0) + (savedData?.profiles.length ?? 0) === 0
                 ? 'No saved hosts yet.'
                 : 'No hosts match your search.'}

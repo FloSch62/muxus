@@ -313,7 +313,7 @@ function SerialPortField({
                 <Box sx={{ minWidth: 0 }}>
                   <Typography variant="body2">{option.path}</Typography>
                   {(option.manufacturer || option.serialNumber) && (
-                    <Typography variant="caption" color="text.secondary" noWrap>
+                    <Typography variant="caption" color="textSecondary" noWrap>
                       {[option.manufacturer, option.serialNumber]
                         .filter(Boolean)
                         .join(' · ')}
@@ -377,7 +377,7 @@ function LineSettingsSection({
         <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
           Line settings
         </Typography>
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" color="textSecondary">
           The defaults (8-N-1, no flow control) match most consoles.
         </Typography>
       </Box>

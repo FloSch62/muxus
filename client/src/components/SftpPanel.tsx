@@ -291,7 +291,7 @@ const SftpEntryTable = memo(function SftpEntryTable({
             <TableCell colSpan={3} sx={{ color: 'text.secondary', textAlign: 'center', border: 0, py: 3 }}>
               <Stack spacing={0.5} sx={{ alignItems: 'center' }}>
                 <FolderOffOutlinedIcon sx={{ fontSize: 26, color: 'text.disabled' }} />
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" color="textSecondary">
                   Empty directory
                 </Typography>
               </Stack>
@@ -744,7 +744,7 @@ export function SftpPanel({
         <Typography variant="subtitle2" sx={{ flex: 1 }}>
           File browser
         </Typography>
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant="caption" color="textSecondary">
           SFTP
         </Typography>
         {onOpenInNewWindow && (
@@ -852,7 +852,7 @@ export function SftpPanel({
           </span>
         </Tooltip>
         <Box sx={{ flex: 1 }} />
-        <Typography variant="caption" color="text.disabled">
+        <Typography variant="caption" color="textDisabled">
           Drag in to upload · drag out to download
         </Typography>
       </Stack>
@@ -888,7 +888,7 @@ export function SftpPanel({
                     ? `Preparing ${transfer.name}…`
                   : `${transfer.direction === 'upload' ? 'Uploading' : 'Downloading'} ${transfer.name}`}
             </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+            <Typography variant="caption" color="textSecondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>
               {transferPercent === undefined ? '—' : `${Math.round(transferPercent)}%`}
             </Typography>
             {transfer.phase !== 'complete' &&
@@ -914,13 +914,13 @@ export function SftpPanel({
             value={transferPercent ?? 0}
           />
           <Stack direction="row" sx={{ mt: 0.55, justifyContent: 'space-between', gap: 1 }}>
-            <Typography variant="caption" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+            <Typography variant="caption" color="textSecondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>
               {formatSize(transfer.loaded)}
               {transfer.total !== undefined ? ` / ${formatSize(transfer.total)}` : ''}
               {transfer.phase === 'transferring' ? ` · ${formatSpeed(transfer.bytesPerSecond)}` : ''}
             </Typography>
             {transfer.fileCount > 1 && (
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" color="textSecondary">
                 File {transfer.fileIndex} of {transfer.fileCount}
               </Typography>
             )}
@@ -986,7 +986,7 @@ export function SftpPanel({
           <Stack spacing={0.75} sx={{ alignItems: 'center', textAlign: 'center', px: 3 }}>
             <UploadFileOutlinedIcon color="primary" sx={{ fontSize: 38 }} />
             <Typography variant="subtitle2">Upload files and folders</Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ wordBreak: 'break-all' }}>
+            <Typography variant="caption" color="textSecondary" sx={{ wordBreak: 'break-all' }}>
               Drop into {currentPath}
             </Typography>
           </Stack>

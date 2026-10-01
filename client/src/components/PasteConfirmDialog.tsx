@@ -81,7 +81,7 @@ export function PasteConfirmDialog({
         {lineCount === 0 ? 'Nothing to paste' : `Paste ${lineCount} lines into the terminal?`}
       </DialogTitle>
       <DialogContent>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+        <Typography variant="body2" color="textSecondary" sx={{ mb: 1.5 }}>
           Multiple lines may run several commands immediately. Review or edit the content before sending it.
         </Typography>
         <Box sx={{ position: 'relative' }}>
@@ -171,7 +171,7 @@ export function PasteConfirmDialog({
             }}
           />
         </Box>
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+        <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 1 }}>
           Enter adds a new line while editing. Press Ctrl+Enter or ⌘Enter to paste.
         </Typography>
       </DialogContent>

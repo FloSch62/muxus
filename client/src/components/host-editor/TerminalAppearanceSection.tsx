@@ -49,7 +49,7 @@ export function TerminalAppearanceSection({
         <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
           Terminal appearance
         </Typography>
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" color="textSecondary">
           Distinguish this host in focus mode. Unset values follow the application settings.
         </Typography>
       </Box>
@@ -89,7 +89,7 @@ function ColorOverride({
 }) {
   return (
     <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
-      <Typography variant="body2" color="text.secondary" sx={{ minWidth: 118 }}>
+      <Typography variant="body2" color="textSecondary" sx={{ minWidth: 118 }}>
         {label}
       </Typography>
       <Box
@@ -114,7 +114,7 @@ function ColorOverride({
           Use application default
         </Button>
       ) : (
-        <Typography variant="caption" color="text.secondary">
+        <Typography variant="caption" color="textSecondary">
           Following application default
         </Typography>
       )}
