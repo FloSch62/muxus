@@ -15,9 +15,13 @@ Installers are published on the
 
 | Platform | File |
 | --- | --- |
-| :material-microsoft-windows: Windows | `muxus-<version>-win-x64.exe` |
+| :material-microsoft-windows: Windows | `muxus-<version>-win-x64.exe` or `muxus-<version>-win-arm64.exe` |
 | :material-apple: macOS (universal) | `muxus-<version>-mac-universal.dmg` |
 | :material-linux: Linux | `muxus-<version>-linux-x86_64.AppImage` or `muxus-<version>-linux-amd64.deb` |
+
+On Windows, Muxus is also available from the
+**[Microsoft Store](https://apps.microsoft.com/detail/9PCGP101LFPL)**, which installs and
+updates it for you.
 
 ## Install & launch
 
@@ -27,8 +31,9 @@ Installers are published on the
     2. Launch **Muxus** from the Start menu.
 
     GitHub installers are unsigned by default, so SmartScreen may report an
-    unrecognised publisher. Microsoft Store packages are signed and updated by
-    Microsoft after certification. See the [Store release setup](../community/microsoft-store.md).
+    unrecognised publisher. The
+    [Microsoft Store version](https://apps.microsoft.com/detail/9PCGP101LFPL) is signed
+    by Microsoft and avoids that warning.
 
 === ":material-apple: macOS"
 
