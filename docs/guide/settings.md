@@ -241,10 +241,12 @@ exported.
 Shows the version you are running, with buttons to the documentation, the release notes of
 this version, the GitHub repository and a new issue. Below that:
 
-- **Updates** turns the startup notification about new versions on or off and checks for a
-  newer release on request. When one exists, **Download** opens its GitHub release so the
-  appropriate installer can be downloaded. Microsoft Store installations are updated by the
-  Store.
+- **Updates** turns notifications about new versions on or off and checks on request.
+  The desktop app downloads and installs updates itself: **Download update** fetches the
+  new version in the background, and **Restart to update** installs it. In the Microsoft
+  Store version, **Update now** asks the Store to install it. The web app and Linux `.deb`
+  installs instead show **Download**, which opens the GitHub release. See
+  [Updating Muxus](../install/desktop.md#updating-muxus).
 - **This installation** lists the facts a bug report needs: version, whether you run the
   desktop app or the web app, the operating system, the Electron and Chromium versions (or
   your browser), and in the web app the server address and its platform. **Copy

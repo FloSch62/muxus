@@ -80,6 +80,30 @@ Installers are published on the
         key committed in the
         [Muxus source repository](https://github.com/FloSch62/muxus/blob/main/.github/release-keys/linux-signing-key.asc).
 
+## Updating Muxus
+
+Muxus checks for a new version at startup and every four hours, and tells you when one
+is available. Nothing downloads until you choose **Download update**, and nothing installs
+until you choose **Restart to update**. Quitting Muxus normally never installs an update.
+The same controls are in **Settings → About**.
+
+| Installation | How it updates |
+| --- | --- |
+| :material-microsoft-windows: Windows installer | In the app; the matching x64 or ARM64 installer is downloaded |
+| :material-microsoft-windows: Microsoft Store | Through the Store: **Update now** asks Windows to install it |
+| :material-apple: macOS | In the app, for both Intel and Apple Silicon |
+| :material-linux: Linux AppImage | In the app; the AppImage file is replaced |
+| :material-linux: Linux `.deb` | With your package manager; Muxus links to the new release |
+
+Every download is checked against the SHA-512 checksum published with the release, and
+macOS also checks Apple's code signature before installing. To stop the background
+checks, turn off **Notify me when a new version is available** in
+[Settings → About](../guide/settings.md#about); **Check for updates** still works.
+
+Versions before 0.8 cannot update themselves: download 0.8 once from
+[the releases page](https://github.com/FloSch62/muxus/releases), and later versions can
+be installed from inside Muxus.
+
 ## What the desktop build adds
 
 - **A frameless window.** The top bar is the titlebar: it is a drag region, and the native

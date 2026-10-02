@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type {
   AppWindowLaunch,
   CommandLineLaunch,
+  DesktopUpdateState,
   MobaXtermSessionSource,
 } from '@muxus/shared';
 
@@ -144,6 +145,29 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   },
   checkForUpdate(options?: { force?: boolean }) {
     return ipcRenderer.invoke('muxus:check-for-update', options);
+  },
+  getUpdateState(): Promise<DesktopUpdateState | undefined> {
+    return ipcRenderer.invoke('muxus:update:state');
+  },
+  checkForUpdates(): Promise<DesktopUpdateState | undefined> {
+    return ipcRenderer.invoke('muxus:update:check');
+  },
+  openStore(): Promise<void> {
+    return ipcRenderer.invoke('muxus:update:open-store');
+  },
+  downloadUpdate(): Promise<DesktopUpdateState | undefined> {
+    return ipcRenderer.invoke('muxus:update:download');
+  },
+  installUpdate(): Promise<boolean> {
+    return ipcRenderer.invoke('muxus:update:install');
+  },
+  setAutomaticUpdateChecks(enabled: boolean): void {
+    ipcRenderer.send('muxus:update:automatic-checks', enabled);
+  },
+  onUpdateState(callback: (state: DesktopUpdateState) => void): () => void {
+    const listener = (_event: unknown, state: DesktopUpdateState): void => callback(state);
+    ipcRenderer.on('muxus:update:changed', listener);
+    return () => ipcRenderer.removeListener('muxus:update:changed', listener);
   },
   /** Capture OS clipboard text or a validated PNG in one main-process snapshot. */
   readClipboardContent(): Promise<DesktopClipboardContent | undefined> {

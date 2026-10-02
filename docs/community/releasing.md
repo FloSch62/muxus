@@ -82,6 +82,41 @@ name. Signing runs inside electron-builder, and the release verifies both the ap
 and installer signatures. A custom hook must await signing of each file it receives.
 Store submission credentials (`AZURE_AD_*`) are separate from Azure signing credentials.
 
+## In-app updates
+
+Installed desktop releases update themselves with
+[electron-updater](https://www.electron.build/auto-update), as in Kubus. Each release
+therefore carries update feeds and payloads besides the installers:
+
+| Platform | Feed | Payload |
+| --- | --- | --- |
+| Windows | `latest.yml`, listing both the x64 and ARM64 installer | `.exe` and `.exe.blockmap` |
+| macOS | `latest-mac.yml` | the universal `.zip` (Squirrel.Mac) and its blockmap |
+| Linux | `latest-linux.yml` | the `.AppImage` |
+
+The x64 and ARM64 Windows installers are built in separate jobs. Each job exports its
+`latest.yml` as `latest-win-<arch>.json`, and the publish job merges them with
+`hack/update-feeds.mjs`; electron-updater then picks the installer whose name contains
+the running CPU architecture. The publish job uploads every payload before any feed, so
+clients never see a feed pointing at a missing file.
+
+Updates are checked at startup and every four hours while **Notify me when a new
+version is available** is on, but download and install only on explicit request.
+Downloads must match the feed's SHA-512. macOS also validates the Developer ID signature
+before installing; the Windows NSIS installers stay unsigned by default, so on Windows
+the checksum from the HTTPS GitHub release is the integrity check. `.deb` installs,
+development builds and the web app keep using the `latest.json` manifest and link to
+the GitHub release.
+
+The Linux release job runs `pnpm --filter @muxus/electron test:updater` under `xvfb-run`.
+It packages the current and next patch version as AppImages, serves a feed from
+localhost, and checks notification, a rejected corrupt download, the download,
+cancelling, and **Restart to update** relaunching the new version with its state
+preserved. Run it locally after `pnpm build` with
+`xvfb-run --auto-servernum pnpm --filter @muxus/electron test:updater`.
+
+Releases before 0.8 have no in-app updater; their users install 0.8 manually once.
+
 ## Publish a release
 
 1. Merge this setup and configure the Apple secrets before making the next release.
@@ -91,7 +126,8 @@ Store submission credentials (`AZURE_AD_*`) are separate from Azure signing cred
 3. Publish the GitHub release. The existing **Release** workflow runs on the
    `release: published` event. To rebuild, dispatch it with the existing release **tag**.
 4. The workflow verifies the version and release, builds and verifies all installers,
-   signs the Linux checksums, uploads public assets, and refreshes the update manifest.
+   tests the AppImage updater, signs the Linux checksums, uploads the installers and
+   then the merged update feeds, and refreshes the `latest.json` manifest.
    The assets include `vcxsrv-<version>-source.tar.gz`, the GPL source of the X server
    bundled with the Windows installers.
 5. If Store identity variables are configured, the Windows x64 job also uploads the

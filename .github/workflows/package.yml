@@ -41,9 +41,11 @@ jobs:
 
           - name: macOS universal
             os: macos-latest
-            build_args: --mac dmg --universal
+            build_args: --mac dmg zip --universal
             artifact_name: macos-dmg-universal
-            artifact_path: electron/release/*.dmg
+            artifact_path: |
+              electron/release/*.dmg
+              electron/release/*.zip
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90

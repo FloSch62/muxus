@@ -60,7 +60,8 @@ The Store package version is `<major + 1>.<minor>.<patch>.0`: Muxus `0.7.0` beco
 the fourth component zero, as required by the Store. Keep the mapping and bump the
 application version for updates. The app's displayed version remains unchanged.
 
-Local packaging requires Windows and the repository's Node.js/pnpm versions:
+Local packaging requires Windows, the repository's Node.js/pnpm versions, and Visual
+Studio C++ Build Tools with a Windows 10/11 SDK for the Store update helper:
 
 ```powershell
 # Set the four MICROSOFT_STORE_* identity environment variables above first.
@@ -85,13 +86,38 @@ unsigned original for Store submission. See Microsoft's
 - Test serial/COM access and Telnet where available.
 - Read an existing SSH config and key file, and save/retrieve a test password.
 - Test optional session history and a user-selected storage directory.
-- In **Settings → About**, **Check for updates** must open the Muxus Store page.
-  Background checks must stay quiet and never offer a GitHub installer.
+- In **Settings → About**, **Check for updates** must ask the Store and report either no
+  update or **Update now**; **Open Microsoft Store** must open the Muxus page. Checks never
+  offer a GitHub installer.
 - Install a newer Store version and verify settings and the password vault survive.
 
 Store installations can redirect application data into the package's per-user
 storage. Do not promise automatic migration from an existing NSIS installation;
 test data and credential access before recommending a switch.
+
+## In-app Store updates
+
+The Store package includes `muxusUpdateMode: store` and no GitHub update feed. Muxus checks
+Microsoft Store after startup and every four hours while update notifications are on, and
+**Check for updates** runs the same check. When an update is available, the notification
+and **Settings → About** offer **Update now**. After the user confirms that their work is
+saved, Windows asks for consent, then downloads and installs the update; Windows may close
+Muxus to do so. **Open Microsoft Store** remains as a fallback. Store checks never use GitHub.
+
+The Store build compiles `electron/native/store-updater.cpp` with Visual Studio C++ Build
+Tools and a Windows 10/11 SDK (`electron/scripts/build-store-updater.ps1`) and bundles the
+helper in the AppX; GitHub's Windows runners already have both. The helper inherits the
+package identity, refuses to run outside `FloSch.me.Muxus`, and uses `StoreContext` on an
+STA thread with a message loop and a Muxus window handle for the Windows dialogs. It calls
+`GetAppAndOptionalStorePackageUpdatesAsync` for checks and
+`RequestDownloadAndInstallStorePackageUpdatesAsync` only after an explicit request.
+Availability is shown without a target version, because `StorePackageUpdate.Package`
+describes the installed package.
+
+Validate real delivery with a Store-installed older build and a newer package available to
+the same account (a package flight works): no update, available, consent cancelled,
+offline, progress, and installation. A local unsigned AppX or a unit test cannot exercise
+Store licensing, rollout or Windows replacing the running package.
 
 ## Enable subsequent release submissions
 

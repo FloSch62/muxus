@@ -25,6 +25,10 @@ describe('release signing policy', () => {
       extraMetadata: { muxusUpdateMode: 'store', muxusStoreProductId: store.MICROSOFT_STORE_PRODUCT_ID },
       appx: { identityName: 'Example.Muxus', publisher: 'CN=publisher' },
     });
+    expect(distributionConfig(store, 'win32').extraResources).toContainEqual({
+      from: 'build/store-updater/muxus-store-updater.exe',
+      to: 'store-updater/muxus-store-updater.exe',
+    });
   });
 
   it('rejects incomplete or unknown Windows signing modes', () => {
@@ -38,6 +42,7 @@ describe('release signing policy', () => {
 describe('distribution target selection', () => {
   it.each([
     [['--mac', 'dmg', '--universal'], { mac: ['dmg'], universal: true }],
+    [['--mac', 'dmg', 'zip', '--universal'], { mac: ['dmg', 'zip'], universal: true }],
     [['--win', 'nsis', '--arm64'], { win: ['nsis'], arm64: true }],
     [['--win', 'appx', '--x64'], { win: ['appx'], x64: true }],
     [['--linux', 'AppImage', 'deb', '--x64'], { linux: ['AppImage', 'deb'], x64: true }],

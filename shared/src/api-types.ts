@@ -165,6 +165,20 @@ export type UpdateCheckResult =
       reason?: string;
     };
 
+/**
+ * In-app update state owned by the desktop main process. `disabled` builds
+ * (development, Linux packages) keep using {@link UpdateCheckResult}.
+ */
+export interface DesktopUpdateState {
+  status: 'disabled' | 'idle' | 'checking' | 'up-to-date' | 'available' | 'downloading' | 'ready' | 'installing' | 'updated' | 'error';
+  currentVersion: string;
+  source?: 'store';
+  version?: string;
+  percent?: number;
+  reason?: 'development' | 'store' | 'package-manager';
+  error?: string;
+}
+
 /** Effective retention and privacy policy for one host (or "*" for defaults). */
 export interface SessionLoggingPolicy {
   profileKey: string;

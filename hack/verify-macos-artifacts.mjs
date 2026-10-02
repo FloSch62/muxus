@@ -6,17 +6,21 @@ import path from 'node:path';
 
 const run = (command, args) => execFileSync(command, args, { stdio: 'inherit' });
 const directory = path.resolve('electron/release');
-const names = readdirSync(directory).filter(name => name.endsWith('.dmg'));
-assert.equal(names.length, 1, 'Expected one DMG artifact');
-assert.match(names[0], /-mac-universal\.dmg$/, 'macOS releases must remain universal');
+const names = readdirSync(directory);
+const artifact = (extension) => {
+  const matches = names.filter(name => name.endsWith(extension));
+  assert.equal(matches.length, 1, `Expected one ${extension} artifact`);
+  assert.match(matches[0], new RegExp(`-mac-universal\\${extension}$`), 'macOS releases must remain universal');
+  return path.join(directory, matches[0]);
+};
+const dmg = artifact('.dmg');
+// In-app updates download the app from this archive (Squirrel.Mac).
+const archive = artifact('.zip');
+assert.ok(names.includes('latest-mac.yml'), 'Expected the latest-mac.yml update feed');
 const scratch = mkdtempSync(path.join(tmpdir(), 'muxus-signatures-'));
 const mount = path.join(scratch, 'dmg');
 mkdirSync(mount);
-let mounted = false;
-try {
-  run('hdiutil', ['attach', '-readonly', '-nobrowse', '-mountpoint', mount, path.join(directory, names[0])]);
-  mounted = true;
-  const app = path.join(mount, 'Muxus.app');
+const verifyApp = (app) => {
   run('codesign', ['--verify', '--deep', '--strict', '--verbose=4', app]);
   const requirement = 'anchor apple generic and certificate leaf[subject.OU] = "DJY795VD98" and certificate leaf[field.1.2.840.113635.100.6.1.13] exists';
   run('codesign', ['--verify', '-R', `=${requirement}`, app]);
@@ -25,7 +29,16 @@ try {
   const executable = execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleExecutable', path.join(app, 'Contents/Info.plist')], { encoding: 'utf8' }).trim();
   const architectures = execFileSync('lipo', ['-archs', path.join(app, 'Contents/MacOS', executable)], { encoding: 'utf8' }).trim().split(/\s+/).sort();
   assert.deepEqual(architectures, ['arm64', 'x86_64']);
-  console.log('Verified universal architecture, Developer ID signatures and notarization in the release DMG.');
+};
+let mounted = false;
+try {
+  run('hdiutil', ['attach', '-readonly', '-nobrowse', '-mountpoint', mount, dmg]);
+  mounted = true;
+  verifyApp(path.join(mount, 'Muxus.app'));
+  const expanded = path.join(scratch, 'expanded');
+  run('ditto', ['-x', '-k', archive, expanded]);
+  verifyApp(path.join(expanded, 'Muxus.app'));
+  console.log('Verified universal architecture, Developer ID signatures and notarization in the release DMG and updater ZIP.');
 } finally {
   // Never recursively remove a mount if detach fails.
   if (mounted) run('hdiutil', ['detach', mount]);
