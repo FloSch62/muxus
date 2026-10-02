@@ -53,4 +53,13 @@ together.
 
     [:octicons-arrow-right-24: Security](security.md)
 
+-   :material-incognito: **Privacy policy**
+
+    ---
+
+    What stays on your computer, the one request Muxus makes on its own, and what it
+    never collects.
+
+    [:octicons-arrow-right-24: Privacy](../privacy.md)
+
 </div>

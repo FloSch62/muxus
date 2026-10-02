@@ -58,6 +58,7 @@ nav = [
     { "ssh_config support" = "reference/ssh-config.md" },
     { "Architecture" = "reference/architecture.md" },
     { "Security model" = "reference/security.md" },
+    { "Privacy policy" = "privacy.md" },
   ] },
   { "Release notes" = [
     { "0.8" = "release-notes/0.8.md" },
