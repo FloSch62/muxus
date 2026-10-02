@@ -59,6 +59,9 @@ mac:
   target:
     - target: dmg
       arch: [universal]
+    # Squirrel.Mac downloads the signed app from this archive.
+    - target: zip
+      arch: [universal]
 dmg:
   sign: false
 linux:

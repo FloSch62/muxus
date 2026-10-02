@@ -28,6 +28,8 @@ import {
 import { copyToClipboard } from '../clipboard.js';
 import { usePrefsStore } from '../state/prefs.js';
 import { showToast } from '../state/toast.js';
+import { isInAppUpdater } from '../update-notice.js';
+import { DesktopUpdateRow, useDesktopUpdate } from './DesktopUpdateControls.js';
 import { SettingRow, SettingsGroup, StatusText } from './SettingsLayout.js';
 
 const LINKS = {
@@ -255,6 +257,9 @@ function AboutHero({ version, loading }: { version?: string; loading: boolean })
 function UpdateControls({ currentVersion }: { currentVersion?: string }) {
   const notifyOnNewVersion = usePrefsStore((s) => s.notifyOnNewVersion);
   const setPrefs = usePrefsStore((s) => s.set);
+  const desktopUpdate = useDesktopUpdate();
+  const inAppState = isInAppUpdater(desktopUpdate.state) ? desktopUpdate.state : undefined;
+  const inApp = inAppState !== undefined;
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<UpdateCheckResult | null>(null);
 
@@ -289,7 +294,11 @@ function UpdateControls({ currentVersion }: { currentVersion?: string }) {
       <SettingRow
         label="Notify me when a new version is available"
         labelFor="settings-notify-new-version"
-        description="Checks once at startup. Off: no notification, and checking here still works."
+        description={
+          inApp
+            ? 'Checks at startup and every four hours. Off: no background checks or notifications; checking here still works.'
+            : 'Checks once at startup. Off: no notification, and checking here still works.'
+        }
         control={
           <Switch
             id="settings-notify-new-version"
@@ -299,35 +308,39 @@ function UpdateControls({ currentVersion }: { currentVersion?: string }) {
           />
         }
       />
-      <SettingRow
-        label="Update check"
-        description={status}
-        control={
-          <>
-            {updatesAvailable ? (
+      {inAppState ? (
+        <DesktopUpdateRow state={inAppState} />
+      ) : (
+        <SettingRow
+          label="Update check"
+          description={status}
+          control={
+            <>
+              {updatesAvailable ? (
+                <Button
+                  variant="contained"
+                  size="small"
+                  startIcon={<DownloadOutlinedIcon />}
+                  href={result.releaseUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Download
+                </Button>
+              ) : null}
               <Button
-                variant="contained"
+                variant={updatesAvailable ? 'outlined' : 'contained'}
                 size="small"
-                startIcon={<DownloadOutlinedIcon />}
-                href={result.releaseUrl}
-                target="_blank"
-                rel="noreferrer"
+                startIcon={checking ? <CircularProgress color="inherit" size={14} /> : <CachedOutlinedIcon />}
+                disabled={checking}
+                onClick={checkForUpdates}
               >
-                Download
+                Check for updates
               </Button>
-            ) : null}
-            <Button
-              variant={updatesAvailable ? 'outlined' : 'contained'}
-              size="small"
-              startIcon={checking ? <CircularProgress color="inherit" size={14} /> : <CachedOutlinedIcon />}
-              disabled={checking}
-              onClick={checkForUpdates}
-            >
-              Check for updates
-            </Button>
-          </>
-        }
-      />
+            </>
+          }
+        />
+      )}
     </>
   );
 }

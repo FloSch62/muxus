@@ -15,6 +15,7 @@ import {
   shell,
   type MenuItemConstructorOptions,
 } from 'electron';
+import electronUpdater from 'electron-updater';
 import {
   startServer,
   SystemVaultKeyStore,
@@ -24,6 +25,7 @@ import { isNewerVersion } from '@muxus/shared';
 import type {
   AppWindowLaunch,
   CommandLineLaunch,
+  DesktopUpdateState,
   MobaXtermSessionSource,
   UpdateCheckResult,
 } from '@muxus/shared';
@@ -41,7 +43,10 @@ import { initMainLog, installCrashCapture, mainLog, mainLogPath } from './main-l
 import { readLocalMobaXtermSessions } from './mobaxterm.js';
 import { workspaceOwnershipUpdate } from './workspace-window-state.js';
 import { pointInsideAnyWindow } from './tab-detach.js';
-import { checkStoreUpdate, type DistributionMetadata } from './store-updates.js';
+import { checkStoreUpdate, isStoreDistribution, storePageUrl, type DistributionMetadata } from './store-updates.js';
+import { DesktopUpdater, updateDisabledReason } from './updater.js';
+import { StoreUpdater } from './store-updater.js';
+import { createStoreBridge } from './store-bridge.js';
 
 // Name first: userData (and with it the log location) derives from it.
 app.setName('Muxus');
@@ -92,6 +97,8 @@ const activeWorkspaceByWebContents = new Map<number, string>();
 let server: RunningServer | undefined;
 let closing: Promise<void> | undefined;
 let updateCheck: Promise<UpdateCheckResult> | undefined;
+let desktopUpdater: DesktopUpdater | StoreUpdater | undefined;
+let quittingForUpdate = false;
 
 interface WindowState {
   width: number;
@@ -624,6 +631,29 @@ ipcMain.handle('muxus:check-for-update', async (event, options?: { force?: unkno
   return updateCheck;
 });
 
+// In-app updates (electron-updater, or Microsoft Store for Store packages).
+ipcMain.handle('muxus:update:state', (event) =>
+  isManagedWindowSender(event) ? desktopUpdater?.getState() : undefined,
+);
+ipcMain.handle('muxus:update:check', (event) =>
+  isManagedWindowSender(event) ? desktopUpdater?.check() : undefined,
+);
+ipcMain.handle('muxus:update:open-store', async (event) => {
+  if (isManagedWindowSender(event) && desktopUpdater instanceof StoreUpdater) {
+    await shell.openExternal(storePageUrl(distributionMetadata));
+  }
+});
+ipcMain.handle('muxus:update:download', (event) =>
+  isManagedWindowSender(event) && desktopUpdater instanceof DesktopUpdater ? desktopUpdater.download() : undefined,
+);
+ipcMain.handle('muxus:update:install', (event) =>
+  isManagedWindowSender(event) && desktopUpdater?.requestInstall() === true,
+);
+// Background checks follow the renderer's "Notify me" preference.
+ipcMain.on('muxus:update:automatic-checks', (event, enabled: unknown) => {
+  if (isManagedWindowSender(event) && typeof enabled === 'boolean') desktopUpdater?.setAutomaticChecks(enabled);
+});
+
 /** Width and height from a PNG's IHDR chunk, read without decoding the pixels. */
 function pngDimensions(png: Uint8Array): { width: number; height: number } | undefined {
   // 8-byte signature, then the IHDR chunk: length, type, width, height.
@@ -894,6 +924,7 @@ if (!app.requestSingleInstanceLock(initialCommandLineLaunch ?? {})) {
     const url = server.url;
     appUrl = url;
     const win = createWindow(url, undefined, initialCommandLineLaunch);
+    desktopUpdater = createDesktopUpdater();
     if (deferredCommandLineLaunches.length > 0) {
       const launches = deferredCommandLineLaunches.splice(0);
       win.webContents.once('did-finish-load', () => {
@@ -912,6 +943,7 @@ if (!app.requestSingleInstanceLock(initialCommandLineLaunch ?? {})) {
   });
 
   app.on('before-quit', (event) => {
+    desktopUpdater?.stop();
     flushClientState();
     if (!server) return;
     if (!closing) {
@@ -919,9 +951,62 @@ if (!app.requestSingleInstanceLock(initialCommandLineLaunch ?? {})) {
       closing = done;
       void done.then(() => {
         server = undefined;
+        // An accepted update installs only after the server and its sessions
+        // have closed; the installer then quits and relaunches Muxus.
+        if (quittingForUpdate) {
+          quittingForUpdate = false;
+          if (desktopUpdater instanceof DesktopUpdater && desktopUpdater.finishInstall()) return;
+        }
         app.quit();
       });
     }
     event.preventDefault();
+  });
+}
+
+function createDesktopUpdater(): DesktopUpdater | StoreUpdater {
+  const store = isStoreDistribution(distributionMetadata, process.windowsStore === true);
+  const reason = updateDisabledReason({
+    packaged: app.isPackaged,
+    platform: process.platform,
+    store,
+    appImage: !!process.env.APPIMAGE,
+  });
+  const broadcast = (state: DesktopUpdateState) => {
+    for (const win of managedWindows) {
+      if (!win.isDestroyed()) win.webContents.send('muxus:update:changed', state);
+    }
+  };
+  if (reason === 'store' && process.platform === 'win32') {
+    return new StoreUpdater({
+      version: app.getVersion(),
+      broadcast,
+      bridge: createStoreBridge(path.join(process.resourcesPath, 'store-updater', 'muxus-store-updater.exe'), () => {
+        const focused = BrowserWindow.getFocusedWindow();
+        const owner = focused && managedWindows.has(focused) ? focused : primaryWindow;
+        if (!owner || owner.isDestroyed()) throw new Error('A Muxus window is required to contact Microsoft Store.');
+        return owner.getNativeWindowHandle();
+      }),
+      beforeInstall: () => {
+        // Windows can terminate the package during installation. Persist the
+        // current state before handing control to its update/consent UI.
+        flushClientState();
+        if (primaryWindow && !primaryWindow.isDestroyed()) saveWindowState(primaryWindow);
+      },
+    });
+  }
+  return new DesktopUpdater({
+    version: app.getVersion(),
+    reason,
+    broadcast,
+    updater: reason ? undefined : electronUpdater.autoUpdater,
+    prepareInstall: () => {
+      quittingForUpdate = true;
+      app.quit();
+    },
+    recoverInstall: () => {
+      app.relaunch();
+      app.exit(0);
+    },
   });
 }

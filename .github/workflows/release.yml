@@ -72,21 +72,35 @@ jobs:
             artifact_path: |
               electron/release/*.AppImage
               electron/release/*.deb
+              electron/release/latest-linux.yml
           - name: Windows x64
             os: windows-latest
             build_args: --win nsis --x64
+            update_arch: x64
             artifact_name: windows-x64
-            artifact_path: electron/release/*.exe
+            artifact_path: |
+              electron/release/*.exe
+              electron/release/*.exe.blockmap
+              electron/release/latest-win-x64.json
           - name: Windows ARM64
             os: windows-11-arm
             build_args: --win nsis --arm64
+            update_arch: arm64
             artifact_name: windows-arm64
-            artifact_path: electron/release/*.exe
+            artifact_path: |
+              electron/release/*.exe
+              electron/release/*.exe.blockmap
+              electron/release/latest-win-arm64.json
           - name: macOS universal
             os: macos-latest
-            build_args: --mac dmg --universal
+            # The ZIP is what in-app updates download on macOS.
+            build_args: --mac dmg zip --universal
             artifact_name: macos-universal
-            artifact_path: electron/release/*.dmg
+            artifact_path: |
+              electron/release/*.dmg
+              electron/release/*.zip
+              electron/release/*.blockmap
+              electron/release/latest-mac.yml
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     steps:
@@ -135,6 +149,20 @@ jobs:
       - name: Verify macOS signatures and notarization
         if: runner.os == 'macOS'
         run: node hack/verify-macos-artifacts.mjs
+
+      - name: Verify Linux update feed
+        if: runner.os == 'Linux'
+        run: test -f electron/release/latest-linux.yml
+
+      # Installs a real AppImage update served from localhost; nothing is published.
+      - name: Test packaged updater against localhost
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum pnpm --filter @muxus/electron test:updater
+
+      # Both Windows jobs write latest.yml; the publish job merges them.
+      - name: Export Windows update feed
+        if: runner.os == 'Windows'
+        run: node hack/update-feeds.mjs export ${{ matrix.update_arch }}
 
       - name: Verify Windows signatures
         if: runner.os == 'Windows'
@@ -269,7 +297,9 @@ jobs:
         with:
           ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
-          sparse-checkout: electron/scripts/vcxsrv.mjs
+          sparse-checkout: |
+            electron/scripts/vcxsrv.mjs
+            hack/update-feeds.mjs
           sparse-checkout-cone-mode: false
           path: release-source
 
@@ -283,13 +313,23 @@ jobs:
       - name: Attach VcXsrv source
         run: node release-source/electron/scripts/vcxsrv.mjs --source release-assets
 
+      # electron-updater picks the Windows installer for its CPU from one feed.
+      - name: Merge Windows update feeds
+        run: node release-source/hack/update-feeds.mjs merge release-assets "$RELEASE_TAG"
+
+      # In-app updates read the latest*.yml feeds, so upload them only after
+      # every installer and blockmap they point to is in place.
       - name: Upload installers to GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$RELEASE_TAG" release-assets/* --clobber --repo "$GITHUB_REPOSITORY"
+        run: |
+          shopt -s extglob
+          gh release upload "$RELEASE_TAG" release-assets/!(latest*.yml) --clobber --repo "$GITHUB_REPOSITORY"
+          gh release upload "$RELEASE_TAG" release-assets/latest*.yml --clobber --repo "$GITHUB_REPOSITORY"
 
       # The docs deploy writes site/latest.json from the latest GitHub release,
-      # which powers the in-app update check for all installed versions.
+      # which powers the update check for browsers, Linux packages and
+      # versions from before in-app updates.
       - name: Refresh Pages update manifest
         env:
           GH_TOKEN: ${{ github.token }}

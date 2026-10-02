@@ -204,10 +204,14 @@ the window loads is served from the local server.
 
 ## What Muxus does not do
 
-- It does not collect telemetry. Its only background request is a version check against
-  the static `latest.json` on the Muxus documentation site; the request contains the
-  installed version in its user agent and can only direct downloads to the Muxus GitHub
-  releases page.
+- It does not collect telemetry. Its only background request is a version check, which
+  stops when update notifications are turned off. The desktop app reads the release feed
+  of the Muxus GitHub repository; the web app, development builds and `.deb` installs
+  read the static `latest.json` on the Muxus documentation site. The request contains no
+  personal information. Updates download only from the Muxus GitHub releases
+  (or, for Store installs, from Microsoft Store), only when you choose to, and must match
+  the release's SHA-512 checksum; macOS additionally requires Muxus's Developer ID
+  signature.
 - It does not proxy traffic through anything.
 - It does not store a password unless the user explicitly selects **Remember this
   password**. A master password protects viewing and editing, and the configured prompt

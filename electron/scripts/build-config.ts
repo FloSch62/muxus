@@ -21,6 +21,8 @@ export function distributionConfig(env: NodeJS.ProcessEnv, platform: string): Co
     if (!/^[A-Z0-9]{12}$/.test(productId)) throw new Error('Invalid MICROSOFT_STORE_PRODUCT_ID');
     config.extraMetadata = { muxusUpdateMode: 'store', muxusStoreProductId: productId };
     config.publish = null;
+    // Prepared by scripts/build-store-updater.ps1; see electron/native/store-updater.cpp.
+    config.extraResources = [{ from: 'build/store-updater/muxus-store-updater.exe', to: 'store-updater/muxus-store-updater.exe' }];
     // Builder 26 emits AppX, accepted by the Store alongside MSIX. The Store
     // signs this package after certification; its identity comes from Partner Center.
     // A scalar replaces the base NSIS target; builder concatenates target arrays.

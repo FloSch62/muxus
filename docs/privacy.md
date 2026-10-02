@@ -38,16 +38,18 @@ devices, tunnels and X11 displays you open. That traffic goes directly between y
 computer and those systems, never through a Muxus server.
 
 The one request Muxus makes on its own is an update check. Installers downloaded from
-GitHub fetch a small static file, `latest.json`, from the Muxus documentation site hosted
-by GitHub Pages, once at startup. The request carries the installed Muxus version and
-nothing else. Turning off **Notify me when a new version is available** under
-**Settings → About** stops it. As with any website, GitHub may
-record the request's IP address under the
+GitHub read the latest release information from the Muxus repository on GitHub at
+startup and every four hours. Linux `.deb` installs instead read a small `latest.json`
+file from the Muxus documentation site, also hosted by GitHub, once at startup. The
+request contains no personal information, and an update is downloaded from GitHub only
+when you choose to. Turning off **Notify me when a new version is available** under
+**Settings → About** stops the background checks. As with any website, GitHub may record
+the request's IP address under the
 [GitHub privacy statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement).
 
-The Microsoft Store version makes no update request of its own. Updates are handled by
-the Microsoft Store under
-[Microsoft's privacy statement](https://privacy.microsoft.com/privacystatement).
+The Microsoft Store version asks the Microsoft Store whether an update is available, and
+the Store downloads and installs it when you choose **Update now**. This is handled by
+Windows under [Microsoft's privacy statement](https://privacy.microsoft.com/privacystatement).
 
 ## What Muxus does not do
 

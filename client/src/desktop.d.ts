@@ -2,6 +2,7 @@ import type {
   AppInfo,
   AppWindowLaunch,
   CommandLineLaunch,
+  DesktopUpdateState,
   MobaXtermSessionSource,
   UpdateCheckResult,
 } from '@muxus/shared';
@@ -33,6 +34,17 @@ declare global {
       setZoomFactor(factor: number): void;
       getAppInfo(): Promise<AppInfo | undefined>;
       checkForUpdate(options?: { force?: boolean }): Promise<UpdateCheckResult>;
+      /** In-app update state; `disabled` builds fall back to checkForUpdate. */
+      getUpdateState(): Promise<DesktopUpdateState | undefined>;
+      checkForUpdates(): Promise<DesktopUpdateState | undefined>;
+      /** Store installations only: open the Muxus page in Microsoft Store. */
+      openStore(): Promise<void>;
+      downloadUpdate(): Promise<DesktopUpdateState | undefined>;
+      /** Restart into a downloaded update, or start a Store update. */
+      installUpdate(): Promise<boolean>;
+      /** Turn background update checks on or off (the "Notify me" preference). */
+      setAutomaticUpdateChecks(enabled: boolean): void;
+      onUpdateState(callback: (state: DesktopUpdateState) => void): () => void;
       /** Capture OS clipboard text or a validated PNG in one main-process snapshot. */
       readClipboardContent(): Promise<DesktopClipboardContent | undefined>;
       /** Choose an SSH private key with the operating system's file picker. */

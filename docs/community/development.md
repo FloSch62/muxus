@@ -78,8 +78,9 @@ runners already have it. `dist` prepares the X server itself; run
 
 Publishing a GitHub release runs the installer workflow. After the installers are
 attached, that workflow redeploys the documentation site with a `latest.json` generated
-from the newest release. The desktop app and browser-hosted UI use that manifest for
-their update checks.
+from the newest release. The browser-hosted UI, development builds and `.deb` installs
+use that manifest for their update checks; installed desktop releases update in the app
+from the release's `latest*.yml` feeds (see [Signing and releases](releasing.md#in-app-updates)).
 
 ## The RDP client (IronRDP)
 

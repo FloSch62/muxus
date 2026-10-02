@@ -19,7 +19,8 @@
     "rebuild": "electron-rebuild -f -w node-pty,@serialport/bindings-cpp",
     "pack:dir": "electron-builder --dir",
     "dist": "node scripts/dist.mjs",
-    "dist:store": "node scripts/dist.mjs --win appx --x64"
+    "dist:store": "node scripts/dist.mjs --win appx --x64",
+    "test:updater": "node scripts/test-updater.mjs"
   },
   "dependencies": {
     "@muxus/shared": "workspace:*",
@@ -47,6 +48,7 @@
     "@types/node": "^24.13.6",
     "electron": "44.4.5",
     "electron-builder": "^26.17.0",
+    "electron-updater": "^6.8.9",
     "esbuild": "^0.28.2",
     "sharp": "^0.35.4",
     "shell-env": "^4.0.3",
