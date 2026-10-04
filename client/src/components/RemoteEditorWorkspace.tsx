@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -8,12 +8,13 @@ import LinearProgress from '@mui/material/LinearProgress';
 import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
-import { alpha, useTheme } from '@mui/material/styles';
+import { alpha, useTheme, type Theme } from '@mui/material/styles';
 import CloseIcon from '@mui/icons-material/Close';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SaveAsOutlinedIcon from '@mui/icons-material/SaveAsOutlined';
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
+import TerminalIcon from '@mui/icons-material/Terminal';
 import type {
   EditorFileResponse,
   EditorFileSaveResponse,
@@ -24,9 +25,11 @@ import {
   languageForPath,
 } from '../editor/language-detection.js';
 import { registerRemoteEditor } from '../editor/remote-editor-registry.js';
+import { useChordLabel } from '../keymap/hints.js';
 import { confirmAction } from '../state/dialogs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { loadMonacoTextEditor } from '../lazy-features.js';
+import { withChord } from './ChordHint.js';
 import { FileTypeIcon } from './FileTypeIcon.js';
 
 const MonacoTextEditor = lazy(loadMonacoTextEditor);
@@ -61,25 +64,51 @@ function editorFileUrl(sourceKind: EditorSourceKind, connId: string | undefined,
   return `${root}/file?path=${encodeURIComponent(path)}`;
 }
 
-/** VS Code-like, multi-file Monaco workspace attached to one terminal session. */
+const stripTabSx = (active: boolean) => (theme: Theme) => ({
+  minWidth: 120,
+  maxWidth: 220,
+  px: 1.25,
+  gap: 0.75,
+  alignItems: 'center',
+  cursor: 'pointer',
+  borderRight: 1,
+  borderColor: 'divider',
+  bgcolor: active ? 'background.default' : 'transparent',
+  boxShadow: active ? `inset 0 2px ${theme.palette.primary.main}` : 'none',
+});
+
+/**
+ * VS Code-like, multi-file Monaco workspace attached to one terminal session.
+ * With `onShowTerminal`, the file strip leads with that session's terminal and
+ * stays above it while `terminalShown`; the files remain mounted behind it so
+ * their undo history and view state survive the switch.
+ */
 export function RemoteEditorWorkspace({
   tabId,
   sourceKind,
   connId,
   paths,
   activePath,
+  active = false,
+  terminalShown = false,
   onActivate,
   onClose,
+  onShowTerminal,
 }: {
   tabId: string;
   sourceKind: EditorSourceKind;
   connId?: string;
   paths: string[];
   activePath?: string;
+  /** The editor is in front of the focused pane, so it should take focus. */
+  active?: boolean;
+  terminalShown?: boolean;
   onActivate: (path: string) => void;
   onClose: (path: string) => void;
+  onShowTerminal?: () => void;
 }) {
   const theme = useTheme();
+  const toggleTerminalChord = useChordLabel('terminal.toggle-editor');
   const available = sourceKind === 'local' || !!connId;
   const local = sourceKind === 'local';
   const [documents, setDocuments] = useState<Record<string, EditorDocument>>({});
@@ -247,9 +276,11 @@ export function RemoteEditorWorkspace({
     });
     onClose(path);
   };
-  const closeActiveRef = useRef<() => void>(() => undefined);
+  const closeActiveRef = useRef<() => boolean>(() => false);
   closeActiveRef.current = () => {
-    if (activePath) void close(activePath);
+    if (!activePath || terminalShown) return false;
+    void close(activePath);
+    return true;
   };
 
   useEffect(
@@ -274,15 +305,67 @@ export function RemoteEditorWorkspace({
     onActivate(paths[nextIndex]!);
   };
 
+  // The strip's arrow keys also reach the terminal entry ahead of the files.
+  const stripEntries: (string | null)[] = onShowTerminal ? [null, ...paths] : paths;
+  const selectedEntry = terminalShown ? null : activePath;
+  const activateEntry = (entry: string | null | undefined) => {
+    if (entry === null) onShowTerminal?.();
+    else if (entry !== undefined) onActivate(entry);
+  };
+  const stripKeyDown = (event: KeyboardEvent) => {
+    const currentIndex = stripEntries.indexOf(selectedEntry ?? null);
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault();
+      if (stripEntries.length < 2) return;
+      const offset = event.key === 'ArrowLeft' ? -1 : 1;
+      activateEntry(stripEntries[(currentIndex + offset + stripEntries.length) % stripEntries.length]);
+    } else if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      activateEntry(stripEntries[event.key === 'Home' ? 0 : stripEntries.length - 1]);
+    }
+  };
+
   return (
-    <Box sx={{ height: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
+    <Box
+      sx={{
+        height: terminalShown ? 'auto' : '100%',
+        minWidth: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        bgcolor: 'background.default',
+      }}
+    >
       <Stack
         direction="row"
         role="tablist"
         sx={{ height: 36, flexShrink: 0, bgcolor: 'sidebar', borderBottom: 1, borderColor: 'divider', overflowX: 'auto' }}
       >
+        {onShowTerminal ? (
+          <Stack
+            direction="row"
+            role="tab"
+            aria-selected={terminalShown}
+            tabIndex={terminalShown ? 0 : -1}
+            title={withChord('Terminal', toggleTerminalChord)}
+            onClick={onShowTerminal}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onShowTerminal();
+              } else {
+                stripKeyDown(event);
+              }
+            }}
+            sx={stripTabSx(terminalShown)}
+          >
+            <TerminalIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+            <Typography variant="body2" noWrap sx={{ flex: 1, fontSize: 12.5 }}>
+              Terminal
+            </Typography>
+          </Stack>
+        ) : null}
         {paths.map((path) => {
-          const active = path === activePath;
+          const active = path === selectedEntry;
           const dirty = dirtyPaths.has(path);
           return (
             <Stack
@@ -300,26 +383,11 @@ export function RemoteEditorWorkspace({
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
                   onActivate(path);
-                } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-                  event.preventDefault();
-                  activateRelative(event.key === 'ArrowLeft' ? -1 : 1);
-                } else if (event.key === 'Home' || event.key === 'End') {
-                  event.preventDefault();
-                  onActivate(paths[event.key === 'Home' ? 0 : paths.length - 1]!);
+                } else {
+                  stripKeyDown(event);
                 }
               }}
-              sx={(currentTheme) => ({
-                minWidth: 120,
-                maxWidth: 220,
-                px: 1.25,
-                gap: 0.75,
-                alignItems: 'center',
-                cursor: 'pointer',
-                borderRight: 1,
-                borderColor: 'divider',
-                bgcolor: active ? 'background.default' : 'transparent',
-                boxShadow: active ? `inset 0 2px ${currentTheme.palette.primary.main}` : 'none',
-              })}
+              sx={stripTabSx(active)}
             >
               <FileTypeIcon name={baseName(path)} />
               <Typography variant="body2" noWrap sx={{ flex: 1, fontSize: 12.5 }}>
@@ -358,7 +426,7 @@ export function RemoteEditorWorkspace({
           );
         })}
       </Stack>
-      {activePath && (
+      {activePath && !terminalShown && (
         <Stack
           direction="row"
           sx={{ minHeight: 38, px: 1.25, gap: 0.5, alignItems: 'center', borderBottom: 1, borderColor: 'divider' }}
@@ -454,7 +522,7 @@ export function RemoteEditorWorkspace({
           </IconButton>
         </Stack>
       )}
-      {document?.conflict && activePath && (
+      {document?.conflict && activePath && !terminalShown && (
         <Alert
           severity="warning"
           sx={{ borderRadius: 0, py: 0.25 }}
@@ -486,8 +554,10 @@ export function RemoteEditorWorkspace({
             : 'The remote file changed after you opened it.'}
         </Alert>
       )}
-      {document?.loading && <LinearProgress />}
-      <Box sx={{ flex: 1, minHeight: 0, position: 'relative' }}>
+      {document?.loading && !terminalShown && <LinearProgress />}
+      {/* Hidden rather than unmounted behind the terminal: unmounting Monaco
+          disposes every open file's model, and with it the undo history. */}
+      <Box sx={{ flex: 1, minHeight: 0, position: 'relative', display: terminalShown ? 'none' : 'block' }}>
         {document?.error ? (
           <Stack sx={{ height: '100%', alignItems: 'center', justifyContent: 'center', p: 3 }} spacing={1.5}>
             <Typography variant="body2" color="error">
@@ -503,6 +573,7 @@ export function RemoteEditorWorkspace({
               workspaceId={tabId}
               openPaths={paths}
               path={activePath}
+              active={active && !terminalShown}
               language={language}
               value={document.content}
               dark={theme.palette.mode === 'dark'}

@@ -6,7 +6,7 @@ import {
 
 describe('remote editor registry', () => {
   it('routes a close request to the registered editor and cleans up safely', () => {
-    const closeActive = vi.fn();
+    const closeActive = vi.fn(() => true);
     const unregister = registerRemoteEditor('tab-1', {
       closeActive,
       hasDirty: () => false,
@@ -21,10 +21,10 @@ describe('remote editor registry', () => {
 
   it('does not let an older cleanup remove a replacement handle', () => {
     const unregisterOld = registerRemoteEditor('tab-1', {
-      closeActive: vi.fn(),
+      closeActive: vi.fn(() => true),
       hasDirty: () => false,
     });
-    const replacementClose = vi.fn();
+    const replacementClose = vi.fn(() => true);
     const unregisterReplacement = registerRemoteEditor('tab-1', {
       closeActive: replacementClose,
       hasDirty: () => false,
@@ -34,5 +34,15 @@ describe('remote editor registry', () => {
     expect(requestCloseRemoteEditor('tab-1')).toBe(true);
     expect(replacementClose).toHaveBeenCalledOnce();
     unregisterReplacement();
+  });
+
+  it('lets the close request through to the tab while its terminal is in front', () => {
+    const unregister = registerRemoteEditor('tab-1', {
+      closeActive: () => false,
+      hasDirty: () => false,
+    });
+
+    expect(requestCloseRemoteEditor('tab-1')).toBe(false);
+    unregister();
   });
 });

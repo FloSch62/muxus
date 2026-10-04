@@ -28,6 +28,8 @@ export interface KeyCommand {
   keywords?: string[];
   /** Commands too numerous or too situational to list in the palette. */
   palette?: boolean;
+  /** Also answers while the file editor has focus, where other bindings stay quiet. */
+  inEditor?: boolean;
   /**
    * Runs the command. Returning `false` means "not applicable right now" and
    * leaves the key to whatever would have received it — the terminal keeps
@@ -303,6 +305,24 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
     keywords: ['command buttons', 'commands', 'macros', 'MobaXterm'],
     run: () => {
       useUiStore.getState().setCommandButtonMenuOpen(true);
+      return true;
+    },
+  },
+  {
+    id: 'terminal.toggle-editor',
+    title: 'Switch between terminal and open files',
+    category: 'terminal',
+    // VS Code's terminal toggle. It only claims the key while the session has
+    // files open, so the shell keeps it otherwise.
+    defaultChords: ['Ctrl+Backquote'],
+    keywords: ['editor', 'monaco', 'files', 'show terminal'],
+    inEditor: true,
+    run: () => {
+      const state = tabs();
+      const tab = state.tabs.find((candidate) => candidate.id === state.activeId);
+      if (!tab?.activeEditorPath) return false;
+      if (tab.terminalShown) state.activateEditor(tab.id, tab.activeEditorPath);
+      else state.showTerminal(tab.id);
       return true;
     },
   },

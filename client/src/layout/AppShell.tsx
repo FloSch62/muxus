@@ -147,6 +147,7 @@ function PaneCanvas({
   const openEditor = useTabsStore((state) => state.openEditor);
   const activateEditor = useTabsStore((state) => state.activateEditor);
   const closeEditor = useTabsStore((state) => state.closeEditor);
+  const showTerminal = useTabsStore((state) => state.showTerminal);
   const updateTab = useTabsStore((state) => state.update);
   const tabNumberVisibility = usePrefsStore((state) => state.tabNumberVisibility);
   const activePaneBorder = usePrefsStore((state) => state.activePaneBorder);
@@ -237,6 +238,7 @@ function PaneCanvas({
         const pane = paneById.get(tab.paneId);
         if (!pane) return null;
         const visible = pane.activeTabId === tab.id;
+        const editorShown = !!tab.activeEditorPath && !tab.terminalShown;
         return (
           <Box
             key={tab.id}
@@ -270,27 +272,34 @@ function PaneCanvas({
                 </ErrorBoundary>
               ) : tab.profile ? (
                 <ErrorBoundary label="This terminal">
-                  <Box sx={{ height: '100%', display: tab.activeEditorPath ? 'none' : 'block' }}>
-                    <TerminalView
-                      tab={tab}
-                      active={visible && pane.id === activePaneId && !tab.activeEditorPath}
-                    />
-                  </Box>
-                  {tab.editorPaths.length > 0 && (
-                    <Box sx={{ height: '100%', display: tab.activeEditorPath ? 'block' : 'none' }}>
-                      <Suspense fallback={null}>
-                        <RemoteEditorWorkspace
-                          tabId={tab.id}
-                          sourceKind={tab.profile.kind === 'local' ? 'local' : 'sftp'}
-                          connId={tab.connId}
-                          paths={tab.editorPaths}
-                          activePath={tab.activeEditorPath}
-                          onActivate={(path) => activateEditor(tab.id, path)}
-                          onClose={(path) => closeEditor(tab.id, path)}
-                        />
-                      </Suspense>
+                  <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                    {/* Open files keep their strip above the terminal. The slot
+                        is stable, so opening one never remounts the terminal. */}
+                    {tab.editorPaths.length > 0 && (
+                      <Box sx={{ flex: editorShown ? 1 : 'none', minHeight: 0 }}>
+                        <Suspense fallback={null}>
+                          <RemoteEditorWorkspace
+                            tabId={tab.id}
+                            sourceKind={tab.profile.kind === 'local' ? 'local' : 'sftp'}
+                            connId={tab.connId}
+                            paths={tab.editorPaths}
+                            activePath={tab.activeEditorPath}
+                            active={visible && pane.id === activePaneId && editorShown}
+                            terminalShown={!editorShown}
+                            onActivate={(path) => activateEditor(tab.id, path)}
+                            onClose={(path) => closeEditor(tab.id, path)}
+                            onShowTerminal={() => showTerminal(tab.id)}
+                          />
+                        </Suspense>
+                      </Box>
+                    )}
+                    <Box sx={{ flex: 1, minHeight: 0, display: editorShown ? 'none' : 'block' }}>
+                      <TerminalView
+                        tab={tab}
+                        active={visible && pane.id === activePaneId && !editorShown}
+                      />
                     </Box>
-                  )}
+                  </Box>
                 </ErrorBoundary>
               ) : (
                 <EmptyPane onAddHost={onAddHost} replaceTabId={tab.id} />

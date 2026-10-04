@@ -19,6 +19,7 @@ import {
   parseChord,
 } from '../../../client/src/keymap/chords.js';
 import { KEY_COMMANDS, keyCommand } from '../../../client/src/keymap/commands.js';
+import { useTabsStore } from '../../../client/src/state/tabs.js';
 import { useUiStore } from '../../../client/src/state/ui.js';
 
 const keyEvent = (
@@ -133,6 +134,32 @@ describe('default bindings', () => {
     expect(useUiStore.getState().commandButtonMenuOpen).toBe(true);
 
     useUiStore.getState().setCommandButtonMenuOpen(false);
+  });
+
+  it('switches between the terminal and open files with Control+`', () => {
+    useTabsStore.setState({
+      tabs: [],
+      unreadOutputIds: new Set(),
+      root: { id: 'pane-keymap', type: 'pane', activeTabId: null },
+      activePaneId: 'pane-keymap',
+      activeId: null,
+      zoomedPaneId: null,
+    });
+    const id = useTabsStore.getState().open({ kind: 'local' }, 'Local');
+    const commands = commandsForChord('Ctrl+Backquote');
+    const toggle = commands[0]!;
+    const tab = () => useTabsStore.getState().tabs[0]!;
+
+    expect(commands.map((command) => command.id)).toEqual(['terminal.toggle-editor']);
+    expect(toggle.inEditor).toBe(true);
+    // Without open files the key stays with the shell.
+    expect(toggle.run()).toBe(false);
+
+    useTabsStore.getState().openEditor(id, '/etc/hosts');
+    expect(toggle.run()).toBe(true);
+    expect(tab()).toMatchObject({ activeEditorPath: '/etc/hosts', terminalShown: true });
+    expect(toggle.run()).toBe(true);
+    expect(tab()).toMatchObject({ activeEditorPath: '/etc/hosts', terminalShown: false });
   });
 
   it('toggles focus mode with its default chord', () => {

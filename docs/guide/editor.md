@@ -30,7 +30,11 @@ Double-clicking a file in the [file browser](files.md) opens the same editor.
 - Language mode, indentation and end-of-line sequence are switchable from the status bar.
 - **Save** (++ctrl+s++) and **Save all**. Unsaved files are marked in the file list.
 
-Several files stay open at once inside the tab, alongside the terminal.
+Several files stay open at once inside the tab, alongside the terminal. The **Terminal**
+entry at the start of the file strip brings the session back to the front, and the strip
+stays above it so any file is one click away. ++ctrl+grave++ switches between the terminal
+and the last file from either side. Open files keep their unsaved changes, undo history
+and scroll position while the terminal is in front.
 
 ## Conflict protection
 
