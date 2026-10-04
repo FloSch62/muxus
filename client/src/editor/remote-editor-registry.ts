@@ -2,7 +2,8 @@ import { confirmAction } from '../state/dialogs.js';
 
 interface RemoteEditorHandle {
   hasDirty(): boolean;
-  closeActive(): void;
+  /** Close the file in front; false when the terminal is in front instead. */
+  closeActive(): boolean;
 }
 
 const handles = new Map<string, RemoteEditorHandle>();
@@ -30,8 +31,5 @@ export async function confirmDiscardRemoteEditors(tabIds: string[]): Promise<boo
 /** Route the desktop close-file chord to the active Monaco tab before the
  * containing terminal or SFTP window is considered for closing. */
 export function requestCloseRemoteEditor(tabId: string): boolean {
-  const handle = handles.get(tabId);
-  if (!handle) return false;
-  handle.closeActive();
-  return true;
+  return handles.get(tabId)?.closeActive() ?? false;
 }

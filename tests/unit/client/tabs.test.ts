@@ -689,6 +689,71 @@ describe('remote editor tabs', () => {
       activeEditorPath: undefined,
     });
   });
+
+  it('brings the terminal in front of open files and back without closing them', () => {
+    const store = useTabsStore.getState();
+    const id = store.open({ kind: 'ssh', target: 'edge-router' }, 'Edge router');
+    store.openEditor(id, '/etc/hosts');
+    store.openEditor(id, '/etc/motd');
+
+    store.showTerminal(id);
+    expect(useTabsStore.getState().tabs[0]).toMatchObject({
+      editorPaths: ['/etc/hosts', '/etc/motd'],
+      activeEditorPath: '/etc/motd',
+      terminalShown: true,
+    });
+
+    // Closing a file from the strip leaves the terminal in front.
+    store.closeEditor(id, '/etc/motd');
+    expect(useTabsStore.getState().tabs[0]).toMatchObject({
+      editorPaths: ['/etc/hosts'],
+      activeEditorPath: '/etc/hosts',
+      terminalShown: true,
+    });
+
+    store.activateEditor(id, '/etc/hosts');
+    expect(useTabsStore.getState().tabs[0]?.terminalShown).toBe(false);
+
+    store.showTerminal(id);
+    store.openEditor(id, '/etc/resolv.conf');
+    expect(useTabsStore.getState().tabs[0]).toMatchObject({
+      activeEditorPath: '/etc/resolv.conf',
+      terminalShown: false,
+    });
+
+    store.showTerminal(id);
+    store.closeEditor(id, '/etc/hosts');
+    store.closeEditor(id, '/etc/resolv.conf');
+    expect(useTabsStore.getState().tabs[0]).toMatchObject({
+      editorPaths: [],
+      terminalShown: false,
+    });
+  });
+
+  it('ignores a terminal request when no file is in front', () => {
+    const store = useTabsStore.getState();
+    const id = store.open({ kind: 'local' }, 'Local');
+    const before = useTabsStore.getState();
+
+    store.showTerminal(id);
+
+    expect(useTabsStore.getState()).toBe(before);
+  });
+
+  it('marks terminal output unread behind a file and clears it once the terminal is shown', () => {
+    const store = useTabsStore.getState();
+    const id = store.open({ kind: 'local' }, 'Local');
+    store.openEditor(id, '/tmp/notes.txt');
+
+    useTabsStore.getState().notifyOutput(id);
+    expect(useTabsStore.getState().unreadOutputIds).toEqual(new Set([id]));
+
+    useTabsStore.getState().showTerminal(id);
+    expect(useTabsStore.getState().unreadOutputIds).toEqual(new Set());
+
+    useTabsStore.getState().notifyOutput(id);
+    expect(useTabsStore.getState().unreadOutputIds).toEqual(new Set());
+  });
 });
 
 describe('pane closing', () => {

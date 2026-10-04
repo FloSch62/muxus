@@ -50,6 +50,8 @@ interface TabBase {
   /** Files open in the Monaco workspace attached to this session. */
   editorPaths: string[];
   activeEditorPath?: string;
+  /** The terminal is in front of its open files, which stay loaded behind it. */
+  terminalShown?: boolean;
   /** Durable server-side history state for this live tab. */
   loggingEnabled?: boolean;
   sessionLogId?: string;
@@ -178,6 +180,8 @@ interface TabsState {
   openEditor: (tabId: string, path: string) => void;
   activateEditor: (tabId: string, path: string) => void;
   closeEditor: (tabId: string, path: string) => void;
+  /** Bring a session's terminal in front of its open files without closing them. */
+  showTerminal: (tabId: string) => void;
   restore: (layout: WorkspaceLayoutV1, options?: RestoreWorkspaceOptions) => void;
   /** Replace the pane canvas with a freshly connected, arranged session set. */
   launchSet: (entries: readonly SessionSetEntry[], layout: SessionSetLayout) => string[];
@@ -279,7 +283,7 @@ function terminalIsVisible(
   zoomedPaneId: string | null,
 ): boolean {
   return (
-    !tab.activeEditorPath &&
+    (!tab.activeEditorPath || !!tab.terminalShown) &&
     (!zoomedPaneId || zoomedPaneId === tab.paneId) &&
     findPane(root, tab.paneId)?.activeTabId === tab.id
   );
@@ -458,6 +462,7 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
           searchRequest: 0,
           editorPaths: [],
           activeEditorPath: undefined,
+          terminalShown: undefined,
           loggingEnabled: undefined,
           sessionLogId: undefined,
           loggingWarning: undefined,
@@ -771,6 +776,7 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
               ...tab,
               editorPaths: tab.editorPaths.includes(path) ? tab.editorPaths : [...tab.editorPaths, path],
               activeEditorPath: path,
+              terminalShown: false,
             }
           : tab,
       ),
@@ -779,7 +785,7 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
     set((state) => ({
       tabs: state.tabs.map((tab) =>
         tab.id === tabId && tab.editorPaths.includes(path)
-          ? { ...tab, activeEditorPath: path }
+          ? { ...tab, activeEditorPath: path, terminalShown: false }
           : tab,
       ),
     })),
@@ -793,8 +799,31 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
           tab.activeEditorPath === path
             ? editorPaths[Math.min(index, editorPaths.length - 1)]
             : tab.activeEditorPath;
-        return { ...tab, editorPaths, activeEditorPath };
+        return {
+          ...tab,
+          editorPaths,
+          activeEditorPath,
+          terminalShown: editorPaths.length > 0 && tab.terminalShown,
+        };
       });
+      return {
+        tabs,
+        unreadOutputIds: clearVisibleOutput(
+          state.unreadOutputIds,
+          tabs,
+          state.root,
+          state.zoomedPaneId,
+        ),
+      };
+    }),
+  showTerminal: (tabId) =>
+    set((state) => {
+      if (!state.tabs.some((tab) => tab.id === tabId && tab.activeEditorPath && !tab.terminalShown)) {
+        return state;
+      }
+      const tabs = state.tabs.map((tab) =>
+        tab.id === tabId ? { ...tab, terminalShown: true } : tab,
+      );
       return {
         tabs,
         unreadOutputIds: clearVisibleOutput(
@@ -834,6 +863,7 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
           searchRequest: 0,
           editorPaths: [],
           activeEditorPath: undefined,
+          terminalShown: undefined,
           loggingEnabled: undefined,
           sessionLogId: undefined,
           loggingWarning: undefined,

@@ -16,16 +16,18 @@ export function setChordCaptureActive(active: boolean): void {
 }
 
 /**
- * Text entry always wins: bindings never fire inside inputs, Monaco, or any
- * editable element. The terminal is the exception — its helper textarea is
- * where terminal chords are supposed to work.
+ * Text entry always wins: bindings never fire inside inputs or any editable
+ * element. The terminal is the exception — its helper textarea is where
+ * terminal chords are supposed to work — and Monaco only passes the commands
+ * marked `inEditor`.
  */
-function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof Element)) return false;
-  if (target.closest('.xterm')) return false;
-  return !!target.closest(
-    'input, textarea, select, [contenteditable=""], [contenteditable="true"], .monaco-editor',
-  );
+function typingTarget(target: EventTarget | null): 'text' | 'editor' | undefined {
+  if (!(target instanceof Element)) return undefined;
+  if (target.closest('.xterm')) return undefined;
+  if (target.closest('.monaco-editor')) return 'editor';
+  return target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]')
+    ? 'text'
+    : undefined;
 }
 
 /**
@@ -48,8 +50,11 @@ export function installShortcuts(): () => void {
   const onKeyDown = (event: KeyboardEvent) => {
     updateTabNumberReveal(event);
     if (capturing || event.defaultPrevented || event.isComposing) return;
-    if (isModifierCode(event.code) || isTypingTarget(event.target)) return;
+    if (isModifierCode(event.code)) return;
+    const typing = typingTarget(event.target);
+    if (typing === 'text') return;
     for (const command of commandsForEvent(event, usePrefsStore.getState().keybindings)) {
+      if (typing === 'editor' && !command.inEditor) continue;
       if (!command.run()) continue;
       event.preventDefault();
       event.stopImmediatePropagation();

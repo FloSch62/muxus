@@ -53,6 +53,7 @@ resetting them.
 | Copy selection | ++ctrl+shift+c++ |
 | Paste | ++ctrl+shift+v++ |
 | Show [saved command menu](../guide/commands.md#keyboard-menu) | ++ctrl+space++ |
+| Switch between terminal and [open files](../guide/editor.md) | ++ctrl+grave++ (Control on macOS too) |
 | Find in terminal | ++ctrl+shift+f++ |
 | Select all output | ++ctrl+shift+a++ |
 | Clear scrollback | ++ctrl+shift+k++ |
@@ -88,6 +89,7 @@ Monaco's own bindings apply inside the [file editor](../guide/editor.md):
 | Action | Chord |
 | --- | --- |
 | Save file, save all | ++ctrl+s++, ++ctrl+k++ then ++s++ |
+| Back to the session's terminal | ++ctrl+grave++ |
 | Find, replace | ++ctrl+f++, ++ctrl+h++ |
 | Command palette | ++f1++, ++ctrl+shift+p++ |
 | Go to line | ++ctrl+g++ |

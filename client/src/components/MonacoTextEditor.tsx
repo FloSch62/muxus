@@ -268,6 +268,7 @@ export default function MonacoTextEditor({
   workspaceId,
   openPaths,
   path,
+  active = false,
   language,
   value,
   dark,
@@ -283,6 +284,8 @@ export default function MonacoTextEditor({
   workspaceId: string;
   openPaths: string[];
   path: string;
+  /** Take focus whenever the editor comes back in front, as the terminal does. */
+  active?: boolean;
   language: string;
   value: string;
   dark: boolean;
@@ -423,6 +426,12 @@ export default function MonacoTextEditor({
     mountedDisposablesRef.current = disposables;
     editor.focus();
   }, []);
+
+  useEffect(() => {
+    if (!active) return;
+    const frame = requestAnimationFrame(() => editorRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [active]);
 
   const handleChange = useCallback((next: string | undefined) => {
     callbacksRef.current.onChange(next ?? '');
