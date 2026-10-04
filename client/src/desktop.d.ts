@@ -49,6 +49,10 @@ declare global {
       readClipboardContent(): Promise<DesktopClipboardContent | undefined>;
       /** Choose an SSH private key with the operating system's file picker. */
       selectPrivateKey(): Promise<string | undefined>;
+      /** Choose where a session log file goes, starting from `defaultPath`. */
+      selectLogFile(defaultPath: string): Promise<string | undefined>;
+      /** Reveal a file in the operating system's file manager. */
+      showItemInFolder(file: string): void;
       /** Read bookmark-only sessions from the current Windows user's MobaXterm install. */
       readMobaXtermSessions(): Promise<MobaXtermSessionSource | undefined>;
       /** List font families installed for the current operating-system user. */

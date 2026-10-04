@@ -10,6 +10,8 @@ import type {
   SavedHostProfilesResponse,
   SessionHistorySettings,
   SessionHistoryStorageStatus,
+  SessionLogFileSettings,
+  SessionLogFileStatus,
   SessionLoggingPolicy,
   SessionLoggingPolicyInput,
   SshConfigResponse,
@@ -137,11 +139,16 @@ export type PortableHistorySettings = Omit<
   'storageLocation'
 >;
 
+/** The log folder is a path on this machine, so like the history location it stays behind. */
+export type PortableLogFileSettings = Omit<SessionLogFileSettings, 'directory'>;
+
 export interface MuxusBackupData extends PortableConnections {
   preferences: BackupPreferences;
   tunnels: TunnelRecord[];
   loggingPolicies: BackupLoggingPolicy[];
   historySettings: PortableHistorySettings;
+  /** Absent in backups from before log files existed. */
+  logFileSettings?: PortableLogFileSettings;
   /** Absent in backups from before folder credentials existed. */
   folderSettings?: PortableFolderSettings[];
 }
@@ -215,7 +222,7 @@ export async function createBackupDocument(
     ...snapshot.sshConfig.hosts.map((host) => `ssh:${host.alias}`),
     ...snapshot.savedHosts.map((profile) => `profile:${profile.id}`),
   ];
-  const [policies, storage, folderSettings] = await Promise.all([
+  const [policies, storage, logFiles, folderSettings] = await Promise.all([
     Promise.all(
       profileKeys.map((profileKey) =>
         apiFetch<SessionLoggingPolicy>(
@@ -224,10 +231,12 @@ export async function createBackupDocument(
       ),
     ),
     apiFetch<SessionHistoryStorageStatus>('/api/session-history/storage'),
+    apiFetch<SessionLogFileStatus>('/api/session-history/log-files'),
     apiFetch<FolderSettingsResponse>('/api/folders/settings'),
   ]);
   const { storageLocation: _storageLocation, ...historySettings } =
     storage.settings;
+  const { directory: _directory, ...logFileSettings } = logFiles.settings;
   return {
     format: BACKUP_FORMAT,
     version: TRANSFER_VERSION,
@@ -239,11 +248,12 @@ export async function createBackupDocument(
       tunnels: snapshot.tunnels,
       loggingPolicies: policies
         .filter((policy) => policy.overridden)
-        .map(({ profileKey, enabled, captureInput, maxPartBytes, maxParts }) => ({
+        .map(({ profileKey, enabled, captureInput, maxPartBytes, maxParts, logToFile }) => ({
           profileKey,
-          policy: { enabled, captureInput, maxPartBytes, maxParts },
+          policy: { enabled, captureInput, maxPartBytes, maxParts, logToFile },
         })),
       historySettings,
+      logFileSettings,
       folderSettings: folderSettings.folders
         .filter((folder) => Object.keys(folder.auth).length > 0)
         .map(({ path, auth }) => ({ path, auth })),
@@ -479,9 +489,11 @@ export async function restoreTransferDocument(
   }
 
   if (selection.logging) {
-    const storage = await apiFetch<SessionHistoryStorageStatus>(
-      '/api/session-history/storage',
-    );
+    const [storage, logFiles] = await Promise.all([
+      apiFetch<SessionHistoryStorageStatus>('/api/session-history/storage'),
+      apiFetch<SessionLogFileStatus>('/api/session-history/log-files'),
+    ]);
+    const { logFileSettings } = document.data;
     await Promise.all([
       ...document.data.loggingPolicies.map(({ profileKey, policy }) =>
         apiFetch<SessionLoggingPolicy>(
@@ -501,8 +513,20 @@ export async function restoreTransferDocument(
           storageLocation: storage.settings.storageLocation,
         }),
       }),
+      ...(logFileSettings
+        ? [
+            apiFetch<SessionLogFileStatus>('/api/session-history/log-files', {
+              method: 'PUT',
+              headers: JSON_HEADERS,
+              body: JSON.stringify({
+                ...logFileSettings,
+                directory: logFiles.settings.directory,
+              }),
+            }),
+          ]
+        : []),
     ]);
-    result.updated += document.data.loggingPolicies.length + 1;
+    result.updated += document.data.loggingPolicies.length + (logFileSettings ? 2 : 1);
   }
 
   if (selection.preferences) {
@@ -1052,11 +1076,17 @@ function validateBackupData(data: Record<string, unknown>): void {
         typeof entry.policy.enabled === 'boolean' &&
         typeof entry.policy.captureInput === 'boolean' &&
         Number.isInteger(entry.policy.maxPartBytes) &&
-        Number.isInteger(entry.policy.maxParts),
+        Number.isInteger(entry.policy.maxParts) &&
+        (entry.policy.logToFile === undefined || typeof entry.policy.logToFile === 'boolean'),
     ) ||
     !finiteNumber(data.historySettings.maxTotalBytes) ||
     !finiteNumber(data.historySettings.minFreeBytes) ||
     !finiteNumber(data.historySettings.minFreePercent) ||
+    (data.logFileSettings !== undefined &&
+      (!isRecord(data.logFileSettings) ||
+        !nonEmptyString(data.logFileSettings.filenamePattern) ||
+        data.logFileSettings.filenamePattern.length > 200 ||
+        typeof data.logFileSettings.timestamps !== 'boolean')) ||
     (data.folderSettings !== undefined &&
       (!boundedArray(data.folderSettings, 500) ||
         !data.folderSettings.every(

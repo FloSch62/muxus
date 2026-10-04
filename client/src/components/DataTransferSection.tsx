@@ -177,6 +177,7 @@ export function DataTransferSection({
     void queryClient.invalidateQueries({
       queryKey: ['session-history-storage'],
     });
+    void queryClient.invalidateQueries({ queryKey: ['session-log-files'] });
     void queryClient.invalidateQueries({
       queryKey: ['data-transfer-summary'],
     });

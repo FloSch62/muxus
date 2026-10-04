@@ -9,6 +9,7 @@ import type {
   SessionHistoryResponse,
   SessionHistoryStorageStatus,
   SessionLogDetail,
+  SessionLogFileStatus,
   SessionLoggingPolicy,
   SftpListResponse,
   SshConfigResponse,
@@ -195,5 +196,12 @@ export function useSessionHistoryStorage() {
     queryFn: () =>
       apiFetch<SessionHistoryStorageStatus>('/api/session-history/storage'),
     refetchInterval: 15_000,
+  });
+}
+
+export function useSessionLogFiles() {
+  return useQuery({
+    queryKey: ['session-log-files'],
+    queryFn: () => apiFetch<SessionLogFileStatus>('/api/session-history/log-files'),
   });
 }

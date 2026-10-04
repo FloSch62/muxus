@@ -3,18 +3,19 @@ import type {
   SessionLoggingPolicyInput,
 } from '@muxus/shared';
 
-export interface HostSessionLoggingDraft extends SessionLoggingPolicyInput {
+export interface HostSessionLoggingDraft extends Required<SessionLoggingPolicyInput> {
   /** Inherit the application default instead of storing a host override. */
   inherit: boolean;
   /** Prevent saving before the effective server policy has been loaded. */
   loaded: boolean;
 }
 
-export const FALLBACK_SESSION_LOGGING_POLICY: SessionLoggingPolicyInput = {
+export const FALLBACK_SESSION_LOGGING_POLICY: Required<SessionLoggingPolicyInput> = {
   enabled: false,
   captureInput: false,
   maxPartBytes: 5 * 1024 * 1024,
   maxParts: 10,
+  logToFile: false,
 };
 
 export function blankHostSessionLoggingDraft(): HostSessionLoggingDraft {
@@ -34,6 +35,7 @@ export function hostSessionLoggingDraft(
     captureInput: policy.captureInput,
     maxPartBytes: policy.maxPartBytes,
     maxParts: policy.maxParts,
+    logToFile: policy.logToFile,
     inherit,
     loaded: true,
   };
@@ -47,5 +49,6 @@ export function sessionLoggingPolicyInput(
     captureInput: draft.captureInput,
     maxPartBytes: draft.maxPartBytes,
     maxParts: draft.maxParts,
+    logToFile: draft.logToFile,
   };
 }

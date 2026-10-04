@@ -486,6 +486,8 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
         enabled: msg.enabled,
         paused: msg.paused,
         captureInput: msg.captureInput,
+        logToFile: msg.logToFile,
+        logFilePath: msg.logFilePath,
       }),
     );
     return true;

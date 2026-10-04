@@ -100,10 +100,14 @@ captured, and sets the storage policy: **location**, **maximum total size**, **m
 space** (absolute and percentage), **maximum age**, and the number of parts each session
 keeps. Current usage against the quota is displayed here.
 
+**Write log files** in a policy starts a plain-text [log file](session-history.md#log-files)
+for every new session. **Log files** sets their folder, their file name pattern and whether
+each line carries a timestamp.
+
 Unlike the rest of Settings, these changes apply once saved. The default policy, the local
-terminal override and the storage limits each end in their own **Save** button, which says
-**Unsaved changes** beside it while there are edits. Leaving the section or closing the
-dialog with unsaved edits asks first.
+terminal override, the log file settings and the storage limits each end in their own
+**Save** button, which says **Unsaved changes** beside it while there are edits. Leaving the
+section or closing the dialog with unsaved edits asks first.
 
 <figure markdown="span">
   ![Session logging settings](../assets/screenshots/settings-logging.png#only-light){ .shadow }

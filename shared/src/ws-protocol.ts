@@ -270,11 +270,16 @@ export const terminalClientMessageSchema = z.discriminatedUnion('op', [
     enabled: z.boolean().optional(),
     paused: z.boolean().optional(),
     captureInput: z.boolean().optional(),
+    /** Start or stop writing this session to a plain-text log file. */
+    logToFile: z.boolean().optional(),
+    /** Absolute file to append to; absent names a new file from the log file settings. */
+    logFilePath: z.string().trim().min(1).max(4096).optional(),
   }).refine(
     (value) =>
       value.enabled !== undefined ||
       value.paused !== undefined ||
-      value.captureInput !== undefined,
+      value.captureInput !== undefined ||
+      value.logToFile !== undefined,
   ),
   /** The tab was renamed; the active history record takes the new title. */
   z.object({ op: z.literal('set-title'), title: z.string().trim().min(1).max(500) }),
@@ -318,6 +323,8 @@ export type TerminalServerMessage =
       captureInput: boolean;
       /** Present when storage/backpressure suspended logging for this session. */
       warning?: string;
+      /** Plain-text log file this session is being written to, if any. */
+      filePath?: string;
     }
   | {
       op: 'exit';

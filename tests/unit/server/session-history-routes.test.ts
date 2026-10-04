@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildApp } from '../../../server/src/app.js';
 import { resolveConfig } from '../../../server/src/config.js';
@@ -155,8 +158,23 @@ describe('session history routes', () => {
       profileKey: 'ssh:production',
       captureInput: true,
       maxParts: 6,
+      logToFile: false,
       overridden: true,
     });
+
+    const withLogFiles = await built.app.inject({
+      method: 'PUT',
+      url,
+      headers: { ...auth(), 'content-type': 'application/json' },
+      payload: {
+        enabled: false,
+        captureInput: false,
+        maxPartBytes: 2 * 1024 * 1024,
+        maxParts: 6,
+        logToFile: true,
+      },
+    });
+    expect(withLogFiles.json()).toMatchObject({ enabled: false, logToFile: true });
 
     const invalid = await built.app.inject({
       method: 'PUT',
@@ -322,5 +340,66 @@ describe('session history routes', () => {
       headers: auth(),
     });
     expect(detail.json()).not.toHaveProperty('label');
+  });
+
+  it('saves log file settings and suggests a free file name', async () => {
+    const directory = mkdtempSync(path.join(os.tmpdir(), 'muxus-log-routes-'));
+    try {
+      const current = await built.app.inject({
+        method: 'GET',
+        url: '/api/session-history/log-files',
+        headers: auth(),
+      });
+      expect(current.statusCode).toBe(200);
+      expect(current.json()).toMatchObject({
+        settings: { filenamePattern: '{host}_{date}_{time}.log', timestamps: false },
+        activeDirectory: expect.stringMatching(/Logs$/),
+      });
+
+      const saved = await built.app.inject({
+        method: 'PUT',
+        url: '/api/session-history/log-files',
+        headers: { ...auth(), 'content-type': 'application/json' },
+        payload: { directory, filenamePattern: '{kind}/{title}.log', timestamps: true },
+      });
+      expect(saved.statusCode).toBe(200);
+      expect(saved.json()).toEqual({
+        settings: { directory, filenamePattern: '{kind}/{title}.log', timestamps: true },
+        activeDirectory: directory,
+      });
+
+      for (const payload of [
+        { directory: 'relative', filenamePattern: '{host}.log', timestamps: false },
+        { filenamePattern: '{hostname}.log', timestamps: false },
+      ]) {
+        const invalid = await built.app.inject({
+          method: 'PUT',
+          url: '/api/session-history/log-files',
+          headers: { ...auth(), 'content-type': 'application/json' },
+          payload,
+        });
+        expect(invalid.statusCode).toBe(400);
+      }
+
+      const suggest = () =>
+        built.app.inject({
+          method: 'POST',
+          url: '/api/session-history/log-files/suggest',
+          headers: { ...auth(), 'content-type': 'application/json' },
+          payload: { profile: { kind: 'telnet', host: 'switch', port: 23 }, title: 'Lab/switch' },
+        });
+      const first = await suggest();
+      expect(first.statusCode).toBe(200);
+      const file = path.join(directory, 'telnet', 'Lab_switch.log');
+      expect(first.json()).toEqual({ path: file });
+      expect(existsSync(file)).toBe(false);
+      mkdirSync(path.dirname(file));
+      writeFileSync(file, 'an earlier log');
+      expect((await suggest()).json()).toEqual({
+        path: path.join(directory, 'telnet', 'Lab_switch-1.log'),
+      });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });

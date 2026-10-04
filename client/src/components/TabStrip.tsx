@@ -32,6 +32,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DriveFileMoveOutlinedIcon from '@mui/icons-material/DriveFileMoveOutlined';
 import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
+import EditNoteOutlinedIcon from '@mui/icons-material/EditNoteOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import GridViewOutlinedIcon from '@mui/icons-material/GridViewOutlined';
@@ -61,6 +62,7 @@ import {
   requestClosePane,
   requestCloseTabs,
   requestForceReconnect,
+  requestLogSessionToFile,
   splitActivePane,
 } from '../session-actions.js';
 import {
@@ -1375,6 +1377,33 @@ export function TabStrip({
               {menuTab?.loggingEnabled
                 ? 'Stop session logging'
                 : 'Start session logging'}
+            </ListItemText>
+          </MenuItem>
+        )}
+        {menuTabIsDesktop ? null : (
+          <MenuItem
+            disabled={
+              menuTab?.status !== 'connected' ||
+              menuTab.loggingEnabled === undefined
+            }
+            onClick={() => {
+              if (menuTab?.logFilePath) {
+                terminalHandle(menuTab.id)?.setLogging({ logToFile: false });
+              } else if (menuTab) {
+                void requestLogSessionToFile(menuTab.id);
+              }
+              setMenu(null);
+            }}
+          >
+            <ListItemIcon>
+              {menuTab?.logFilePath ? (
+                <StopCircleOutlinedIcon fontSize="small" />
+              ) : (
+                <EditNoteOutlinedIcon fontSize="small" />
+              )}
+            </ListItemIcon>
+            <ListItemText>
+              {menuTab?.logFilePath ? 'Stop logging to file' : 'Log session to file…'}
             </ListItemText>
           </MenuItem>
         )}

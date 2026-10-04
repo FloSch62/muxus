@@ -712,6 +712,41 @@ ipcMain.handle('muxus:select-private-key', async (event): Promise<string | undef
 });
 
 ipcMain.handle(
+  'muxus:select-log-file',
+  async (event, defaultPath: unknown): Promise<string | undefined> => {
+    const win = senderWindow(event);
+    if (!win) return undefined;
+    const suggested =
+      typeof defaultPath === 'string' && path.isAbsolute(defaultPath) ? defaultPath : undefined;
+    if (suggested) {
+      // The dialog opens in its folder only if it exists; Muxus would create it anyway.
+      try {
+        mkdirSync(path.dirname(suggested), { recursive: true });
+      } catch {
+        // The dialog falls back to its own starting folder.
+      }
+    }
+    const result = await dialog.showSaveDialog(win, {
+      title: 'Log session to file',
+      defaultPath: suggested,
+      buttonLabel: 'Start logging',
+      filters: [
+        { name: 'Log files', extensions: ['log', 'txt'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+      // An existing file is appended to, never replaced.
+      properties: ['createDirectory'],
+    });
+    return result.canceled ? undefined : result.filePath;
+  },
+);
+
+ipcMain.on('muxus:show-item-in-folder', (event, file: unknown) => {
+  if (!isManagedWindowSender(event)) return;
+  if (typeof file === 'string' && path.isAbsolute(file)) shell.showItemInFolder(file);
+});
+
+ipcMain.handle(
   'muxus:read-mobaxterm-sessions',
   async (event): Promise<MobaXtermSessionSource | undefined> => {
     if (!isManagedWindowSender(event)) return undefined;

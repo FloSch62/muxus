@@ -5,7 +5,8 @@ icon: lucide/history
 # Session history
 
 Session history is an opt-in record of terminal output that outlives the session, remains
-searchable, and can be replayed as it was displayed.
+searchable, and can be replayed as it was displayed. For a plain-text file written while the
+session runs, see [log files](#log-files).
 
 <figure markdown="span">
   ![The session history dialog](../assets/screenshots/history.png#only-light){ .shadow }
@@ -69,6 +70,48 @@ formats.
 | **HTML replay** | `<session>-replay.html`, a self-contained, seekable page that replays the session in a browser |
 
 The HTML replay requires only a browser.
+
+## Log files
+
+A log file is a plain-text record of a session, written while it runs and kept apart from
+history. There is nothing to export afterwards: the file is complete when the session ends,
+and readable at any point before that.
+
+**Log session to file…** in the terminal-actions menu or a tab's context menu asks where to
+write, offering a free name in the log folder; the desktop app shows the system save dialog.
+An existing file is added to, never replaced. **Stop logging to file** closes the file, as
+does the end of the session, and in the desktop app **Show log file** opens its folder.
+
+To log every session, turn on **Write log files** in the default policy, the local terminal
+policy or a host's [logging settings](adding-hosts.md#session-logging-highlighting). Each
+session then gets a new file named from the log file settings. A name that is already taken
+gets a number, such as `router1_2026-10-04_09-15-00-1.log`.
+
+The file holds the same text as the **Clean log** export: output without escape sequences,
+connection messages, and a line whenever logging starts, pauses, resumes or stops. Pausing and
+input recording in the terminal-actions menu apply to the log file as well as to history.
+
+!!! note "The bottom rows arrive last"
+
+    Shells redraw their prompt in place, so the last few rows on screen are written once more
+    output pushes them up, or when logging stops. Everything above them is in the file within
+    a fraction of a second.
+
+The log file settings are in [Settings → Session logging](settings.md#session-logging):
+
+| Setting | Default |
+| --- | --- |
+| Log folder | `Documents/Muxus/Logs` in your home folder |
+| File name | `{host}_{date}_{time}.log` |
+| Show timestamps (UTC) | Off; when on, each line starts with the time it last changed |
+
+The file name fills in `{host}`, `{title}` (the tab title), `{kind}` (`ssh`, `local`, `serial`
+or `telnet`), `{date}` and `{time}`, both in local time. A `/` starts a subfolder, so
+`{host}/{date}_{time}.log` keeps one folder per host. Characters that file names cannot hold
+are replaced with `_`.
+
+Log files are ordinary files: history retention and quotas never remove them. On macOS and
+Linux, new log files are readable only by you.
 
 ## Storage, quotas and eviction
 

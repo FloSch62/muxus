@@ -177,6 +177,14 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   selectPrivateKey(): Promise<string | undefined> {
     return ipcRenderer.invoke('muxus:select-private-key');
   },
+  /** Open a native save dialog for a session log file; resolves to the chosen path. */
+  selectLogFile(defaultPath: string): Promise<string | undefined> {
+    return ipcRenderer.invoke('muxus:select-log-file', defaultPath);
+  },
+  /** Reveal a file in the operating system's file manager. */
+  showItemInFolder(file: string): void {
+    ipcRenderer.send('muxus:show-item-in-folder', file);
+  },
   /** Read bookmark-only session data from the current Windows user's MobaXterm install. */
   readMobaXtermSessions(): Promise<MobaXtermSessionSource | undefined> {
     return ipcRenderer.invoke('muxus:read-mobaxterm-sessions');

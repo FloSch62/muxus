@@ -39,12 +39,22 @@ import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
 import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
 import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop';
 import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
+import {
+  DEFAULT_SESSION_LOG_FILE_PATTERN,
+  sessionLogFileName,
+  sessionLogFilePatternError,
+} from '@muxus/shared';
 import { fetchAppLogs, formatLogEntry } from '../api/logs.js';
 import {
   useSaveSessionHistorySettings,
+  useSaveSessionLogFileSettings,
   useSaveSessionLoggingPolicy,
 } from '../api/session-history.js';
-import { useSessionHistoryStorage, useSessionLoggingPolicy } from '../api/queries.js';
+import {
+  useSessionHistoryStorage,
+  useSessionLogFiles,
+  useSessionLoggingPolicy,
+} from '../api/queries.js';
 import {
   FALLBACK_SESSION_LOGGING_POLICY,
   hostSessionLoggingDraft,
@@ -1161,6 +1171,7 @@ function SessionLoggingSection({ onDirtyChange }: { onDirtyChange: (dirty: boole
   const [defaultEdited, setDefaultEdited] = useState(false);
   const [localEdited, setLocalEdited] = useState(false);
   const [historyEdited, setHistoryEdited] = useState(false);
+  const [logFilesEdited, setLogFilesEdited] = useState(false);
   const savePolicy = useSaveSessionLoggingPolicy(() => {
     defaultDirty.current = false;
     setDefaultEdited(false);
@@ -1173,8 +1184,8 @@ function SessionLoggingSection({ onDirtyChange }: { onDirtyChange: (dirty: boole
   });
 
   useEffect(() => {
-    onDirtyChange(defaultEdited || localEdited || historyEdited);
-  }, [defaultEdited, localEdited, historyEdited, onDirtyChange]);
+    onDirtyChange(defaultEdited || localEdited || historyEdited || logFilesEdited);
+  }, [defaultEdited, localEdited, historyEdited, logFilesEdited, onDirtyChange]);
 
   useEffect(() => {
     if (!policy || defaultDirty.current) return;
@@ -1202,7 +1213,7 @@ function SessionLoggingSection({ onDirtyChange }: { onDirtyChange: (dirty: boole
   return (
     <SettingsPage
       title="Session logging"
-      description="Record terminal sessions to search and replay them later. Off by default. Unlike the rest of Settings, changes here apply once saved, and only to sessions opened afterwards."
+      description="Record terminal sessions to search and replay them later, or write them to plain-text log files. Off by default. Unlike the rest of Settings, changes here apply once saved, and only to sessions opened afterwards."
     >
       <SettingsGroup
         title="Default policy"
@@ -1251,8 +1262,116 @@ function SessionLoggingSection({ onDirtyChange }: { onDirtyChange: (dirty: boole
           }
         />
       </SettingsGroup>
+      <LogFileSettings onDirtyChange={setLogFilesEdited} />
       <HistoryStorageSettings onDirtyChange={setHistoryEdited} />
     </SettingsPage>
+  );
+}
+
+interface LogFileDraft {
+  directory: string;
+  filenamePattern: string;
+  timestamps: boolean;
+}
+
+function LogFileSettings({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
+  const { data: status, isLoading } = useSessionLogFiles();
+  const [draft, setDraft] = useState<LogFileDraft>({
+    directory: '',
+    filenamePattern: DEFAULT_SESSION_LOG_FILE_PATTERN,
+    timestamps: false,
+  });
+  const dirty = useRef(false);
+  const [edited, setEdited] = useState(false);
+  useEffect(() => onDirtyChange(edited), [edited, onDirtyChange]);
+  const save = useSaveSessionLogFileSettings(() => {
+    dirty.current = false;
+    setEdited(false);
+    showToast('success', 'Log file settings saved.');
+  });
+
+  useEffect(() => {
+    if (!status || dirty.current) return;
+    setDraft({
+      directory: status.settings.directory ?? '',
+      filenamePattern: status.settings.filenamePattern,
+      timestamps: status.settings.timestamps,
+    });
+  }, [status]);
+
+  const set = (patch: Partial<LogFileDraft>) => {
+    dirty.current = true;
+    setEdited(true);
+    setDraft((current) => ({ ...current, ...patch }));
+  };
+  const patternError = sessionLogFilePatternError(draft.filenamePattern);
+  const example = patternError
+    ? undefined
+    : sessionLogFileName(draft.filenamePattern, {
+        host: 'router1',
+        title: 'Core router',
+        kind: 'ssh',
+        startedAt: new Date(),
+      }).join('/');
+
+  return (
+    <SettingsGroup
+      title="Log files"
+      description="Plain-text logs written while a session runs, started from the terminal menu or for every session by the policies above. They are ordinary files: retention and quotas never remove them."
+      flush
+    >
+      <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <TextField
+          label="Log folder"
+          value={draft.directory}
+          onChange={(event) => set({ directory: event.target.value })}
+          helperText="Leave blank for the default folder."
+          placeholder={status?.activeDirectory}
+          slotProps={{
+            htmlInput: { style: { fontFamily: 'monospace' } },
+            inputLabel: { shrink: true },
+          }}
+          fullWidth
+        />
+        <TextField
+          label="File name"
+          value={draft.filenamePattern}
+          onChange={(event) => set({ filenamePattern: event.target.value })}
+          error={!!patternError}
+          helperText={
+            patternError ??
+            `{host}, {title}, {kind}, {date} and {time} are filled in; / starts a subfolder. Example: ${example}`
+          }
+          slotProps={{ htmlInput: { style: { fontFamily: 'monospace' } } }}
+          fullWidth
+        />
+      </Box>
+      <SettingRow
+        label="Show timestamps (UTC)"
+        labelFor="settings-log-file-timestamps"
+        description="Prefix each line with the time it last changed, as in the clean log."
+        control={
+          <Switch
+            id="settings-log-file-timestamps"
+            size="small"
+            checked={draft.timestamps}
+            onChange={(event) => set({ timestamps: event.target.checked })}
+          />
+        }
+      />
+      <SaveBar
+        dirty={edited}
+        label="Save log file settings"
+        disabled={isLoading || !status || !edited || !!patternError || save.isPending}
+        onSave={() =>
+          save.mutate({
+            directory: draft.directory.trim() || undefined,
+            filenamePattern: draft.filenamePattern.trim(),
+            timestamps: draft.timestamps,
+          })
+        }
+      />
+    </SettingsGroup>
   );
 }
 

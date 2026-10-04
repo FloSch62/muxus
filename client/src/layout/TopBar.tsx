@@ -21,6 +21,8 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
 import DeleteSweepOutlinedIcon from '@mui/icons-material/DeleteSweepOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
+import EditNoteOutlinedIcon from '@mui/icons-material/EditNoteOutlined';
+import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import FullscreenExitOutlinedIcon from '@mui/icons-material/FullscreenExitOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
@@ -46,6 +48,7 @@ import { layout } from '../theme.js';
 import { setTitleBarHeight } from '../titlebar-overlay.js';
 import { useChordLabel } from '../keymap/hints.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
+import { requestLogSessionToFile } from '../session-actions.js';
 import { showToast } from '../state/toast.js';
 import { usePrefsStore, type ThemeMode } from '../state/prefs.js';
 import { useTabsStore } from '../state/tabs.js';
@@ -373,51 +376,78 @@ export const TopBar = memo(function TopBar() {
           <ListItemText>Export as HTML (colors)</ListItemText>
         </MenuItem>
         {activeTab?.loggingEnabled !== undefined ? <Divider /> : null}
-        {activeTab?.loggingEnabled ? (
-          <>
-            <MenuItem
-              onClick={() => {
-                closeMenu();
-                handle()?.setLogging({ enabled: false });
-              }}
-            >
-              <ListItemIcon>
-                <StopCircleOutlinedIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Stop session logging</ListItemText>
-            </MenuItem>
-            <MenuItem
-              onClick={() => {
-                closeMenu();
-                handle()?.setLogging({ paused: !activeTab.loggingPaused });
-              }}
-            >
-              <ListItemIcon>
-                {activeTab.loggingPaused ? (
-                  <PlayCircleOutlineIcon fontSize="small" />
-                ) : (
-                  <PauseCircleOutlineIcon fontSize="small" />
-                )}
-              </ListItemIcon>
-              <ListItemText>
-                {activeTab.loggingPaused ? 'Resume session logging' : 'Pause session logging'}
-              </ListItemText>
-            </MenuItem>
-          </>
-        ) : activeTab?.loggingEnabled === false ? (
+        {activeTab?.loggingEnabled !== undefined ? (
           <MenuItem
             onClick={() => {
               closeMenu();
-              handle()?.setLogging({ enabled: true });
+              handle()?.setLogging({ enabled: !activeTab.loggingEnabled });
             }}
           >
             <ListItemIcon>
-              <PlayCircleOutlineIcon fontSize="small" />
+              {activeTab.loggingEnabled ? (
+                <StopCircleOutlinedIcon fontSize="small" />
+              ) : (
+                <PlayCircleOutlineIcon fontSize="small" />
+              )}
             </ListItemIcon>
-            <ListItemText>Start session logging</ListItemText>
+            <ListItemText>
+              {activeTab.loggingEnabled ? 'Stop session logging' : 'Start session logging'}
+            </ListItemText>
           </MenuItem>
         ) : null}
-        {activeTab?.loggingEnabled ? (
+        {activeTab?.loggingEnabled !== undefined ? (
+          <MenuItem
+            onClick={() => {
+              closeMenu();
+              if (activeTab.logFilePath) handle()?.setLogging({ logToFile: false });
+              else void requestLogSessionToFile(activeTab.id);
+            }}
+          >
+            <ListItemIcon>
+              {activeTab.logFilePath ? (
+                <StopCircleOutlinedIcon fontSize="small" />
+              ) : (
+                <EditNoteOutlinedIcon fontSize="small" />
+              )}
+            </ListItemIcon>
+            <ListItemText>
+              {activeTab.logFilePath ? 'Stop logging to file' : 'Log session to file…'}
+            </ListItemText>
+          </MenuItem>
+        ) : null}
+        {activeTab?.logFilePath && window.muxusDesktop ? (
+          <MenuItem
+            onClick={() => {
+              closeMenu();
+              window.muxusDesktop?.showItemInFolder(activeTab.logFilePath!);
+            }}
+          >
+            <ListItemIcon>
+              <FolderOpenOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Show log file</ListItemText>
+          </MenuItem>
+        ) : null}
+        {activeTab?.loggingEnabled || activeTab?.logFilePath ? (
+          <MenuItem
+            onClick={() => {
+              closeMenu();
+              handle()?.setLogging({ paused: !activeTab.loggingPaused });
+            }}
+          >
+            <ListItemIcon>
+              {activeTab.loggingPaused ? (
+                <PlayCircleOutlineIcon fontSize="small" />
+              ) : (
+                <PauseCircleOutlineIcon fontSize="small" />
+              )}
+            </ListItemIcon>
+            <ListItemText>
+              {activeTab.loggingPaused ? 'Resume session logging' : 'Pause session logging'}
+            </ListItemText>
+          </MenuItem>
+        ) : null}
+        {activeTab?.loggingEnabled || activeTab?.logFilePath ? (
           <MenuItem
             onClick={() => {
               closeMenu();

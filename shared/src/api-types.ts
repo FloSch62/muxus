@@ -192,6 +192,8 @@ export interface SessionLoggingPolicy {
   maxPartBytes: number;
   /** Number of newest rotated parts retained for each session. */
   maxParts: number;
+  /** Start a plain-text log file when a session opens, independent of history. */
+  logToFile: boolean;
   /** True when an exact per-host override exists instead of inherited defaults. */
   overridden: boolean;
 }
@@ -201,6 +203,8 @@ export interface SessionLoggingPolicyInput {
   captureInput: boolean;
   maxPartBytes: number;
   maxParts: number;
+  /** Absent in policies saved before log files existed; treated as off. */
+  logToFile?: boolean;
 }
 
 export type SessionLogStatus = 'active' | 'completed' | 'disconnected' | 'failed';
@@ -303,6 +307,101 @@ export interface SessionHistoryStorageStatus {
   warning?: string;
   /** A changed storage path is picked up on the next Muxus launch. */
   restartRequired: boolean;
+}
+
+/** Where and how plain-text session log files are written. */
+export interface SessionLogFileSettings {
+  /** Configured folder, or undefined when Muxus uses its platform default. */
+  directory?: string;
+  /** File name below the folder; see {@link SESSION_LOG_FILE_PLACEHOLDERS}. */
+  filenamePattern: string;
+  /** Prefix every line with the UTC time it last changed, like the clean log. */
+  timestamps: boolean;
+}
+
+export interface SessionLogFileStatus {
+  settings: SessionLogFileSettings;
+  /** The folder new log files go to, with the default resolved. */
+  activeDirectory: string;
+}
+
+export const DEFAULT_SESSION_LOG_FILE_PATTERN = '{host}_{date}_{time}.log';
+
+/** Placeholders a log file name pattern can use. */
+export const SESSION_LOG_FILE_PLACEHOLDERS = ['host', 'title', 'kind', 'date', 'time'] as const;
+
+export interface SessionLogFileNameValues {
+  host: string;
+  title: string;
+  kind: string;
+  /** Local wall-clock time the log starts at. */
+  startedAt: Date;
+}
+
+// Characters some file system refuses in a name, control characters included.
+// oxlint-disable-next-line no-control-regex
+const LOG_FILE_NAME_UNSAFE = /[<>:"/\\|?*\u0000-\u001f\u007f]/g;
+const LOG_FILE_VALUE_MAX = 80;
+
+/**
+ * Why a file name pattern cannot be used, or null when it can. `/` separates
+ * subfolders; everything else must be portable to Windows, macOS and Linux.
+ */
+export function sessionLogFilePatternError(pattern: string): string | null {
+  const trimmed = pattern.trim();
+  if (!trimmed) return 'Enter a file name pattern.';
+  if (trimmed.length > 200) return 'The pattern is longer than 200 characters.';
+  if (/^([/\\]|[a-zA-Z]:)/.test(trimmed)) {
+    return 'The pattern is relative to the log folder; it cannot be an absolute path.';
+  }
+  for (const [, name] of trimmed.matchAll(/\{([^{}]*)\}/g)) {
+    if (!(SESSION_LOG_FILE_PLACEHOLDERS as readonly string[]).includes(name!)) {
+      return `Unknown placeholder {${name}}.`;
+    }
+  }
+  const literal = trimmed.replace(/\{[^{}]*\}/g, '');
+  if (/[{}]/.test(literal)) return 'A placeholder is missing its { or }.';
+  // oxlint-disable-next-line no-control-regex
+  if (/[<>:"\\|?*\u0000-\u001f\u007f]/.test(literal)) {
+    return 'The pattern contains a character that is not allowed in file names.';
+  }
+  if (trimmed.split('/').some((segment) => segment.trim() === '' || /^\.+$/.test(segment.trim()))) {
+    return 'Every folder and file name in the pattern needs a name.';
+  }
+  return null;
+}
+
+/**
+ * The relative path a pattern names, as folder segments and a file name.
+ * Values are made safe for any file system, so a host or title can never
+ * add folders or leave the log folder.
+ */
+export function sessionLogFileName(
+  pattern: string,
+  values: SessionLogFileNameValues,
+): string[] {
+  const at = values.startedAt;
+  const pad = (value: number) => String(value).padStart(2, '0');
+  const replacements: Record<string, string> = {
+    host: values.host,
+    title: values.title,
+    kind: values.kind,
+    date: `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`,
+    time: `${pad(at.getHours())}-${pad(at.getMinutes())}-${pad(at.getSeconds())}`,
+  };
+  return pattern
+    .trim()
+    .split('/')
+    .map((segment) => {
+      const named = segment.replace(/\{([^{}]*)\}/g, (match, name: string) =>
+        name in replacements
+          ? replacements[name]!.replace(LOG_FILE_NAME_UNSAFE, '_').slice(0, LOG_FILE_VALUE_MAX)
+          : match,
+      );
+      // Windows drops trailing dots and spaces, and dot-only names are not names.
+      const safe = named.replace(LOG_FILE_NAME_UNSAFE, '_').trim().replace(/[. ]+$/, '');
+      return safe && !/^\.+$/.test(safe) ? safe : '_';
+    });
 }
 
 /** One serial device reported by the host OS through node-serialport. */

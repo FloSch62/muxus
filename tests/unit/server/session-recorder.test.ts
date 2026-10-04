@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MuxusDatabase } from '../../../server/src/persistence/database.js';
 import {
   SessionRecorder,
-  TerminalTextNormalizer,
   sessionProfileIdentity,
 } from '../../../server/src/session-logging/session-recorder.js';
+import { TerminalTextNormalizer } from '../../../server/src/session-logging/terminal-text-normalizer.js';
 import { SessionHistoryStore } from '../../../server/src/session-logging/history-store.js';
 
 let database: MuxusDatabase | undefined;
