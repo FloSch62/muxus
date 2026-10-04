@@ -6,16 +6,26 @@ import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
+import { useCustomTerminalSchemes } from '../state/prefs.js';
 import {
   TERMINAL_SCHEMES,
   terminalScheme,
   type TerminalScheme,
 } from '../terminal/palette.js';
 
-const TERMINAL_SCHEME_GROUPS = [
+const BUILTIN_SCHEME_GROUPS = [
   { label: 'Light schemes', schemes: TERMINAL_SCHEMES.filter((scheme) => scheme.light) },
   { label: 'Dark schemes', schemes: TERMINAL_SCHEMES.filter((scheme) => !scheme.light) },
 ] as const;
+
+/** Every scheme on offer, the user's own first. */
+export function terminalSchemeGroups(
+  customSchemes: readonly TerminalScheme[],
+): ReadonlyArray<{ label: string; schemes: readonly TerminalScheme[] }> {
+  return customSchemes.length > 0
+    ? [{ label: 'Custom schemes', schemes: customSchemes }, ...BUILTIN_SCHEME_GROUPS]
+    : BUILTIN_SCHEME_GROUPS;
+}
 
 const SCHEME_SWATCH_COLORS = ['red', 'green', 'yellow', 'blue', 'magenta', 'cyan'] as const;
 
@@ -37,6 +47,7 @@ export function TerminalSchemeSelect({
   onChange: (value: string) => void;
 }) {
   const labelId = `${id}-label`;
+  const customSchemes = useCustomTerminalSchemes();
   return (
     <FormControl fullWidth>
       {hideLabel ? null : (
@@ -56,13 +67,13 @@ export function TerminalSchemeSelect({
               {inheritLabel}
             </Typography>
           ) : (
-            <SchemeLabel scheme={terminalScheme(schemeId)} showMode />
+            <SchemeLabel scheme={terminalScheme(schemeId, customSchemes)} showMode />
           )
         }
         MenuProps={{ slotProps: { paper: { sx: { maxHeight: 390 } } } }}
       >
         {inheritLabel ? <MenuItem value="">{inheritLabel}</MenuItem> : null}
-        {TERMINAL_SCHEME_GROUPS.flatMap((group) => [
+        {terminalSchemeGroups(customSchemes).flatMap((group) => [
           <ListSubheader key={group.label}>{group.label}</ListSubheader>,
           ...group.schemes.map((scheme) => (
             <MenuItem key={scheme.id} value={scheme.id}>
@@ -76,7 +87,13 @@ export function TerminalSchemeSelect({
 }
 
 /** Compact terminal preview used by both the closed selector and its menu. */
-function SchemeLabel({ scheme, showMode = false }: { scheme: TerminalScheme; showMode?: boolean }) {
+export function SchemeLabel({
+  scheme,
+  showMode = false,
+}: {
+  scheme: TerminalScheme;
+  showMode?: boolean;
+}) {
   const theme = scheme.theme;
   return (
     <Stack direction="row" spacing={1.25} sx={{ alignItems: 'center', width: '100%', minWidth: 0 }}>

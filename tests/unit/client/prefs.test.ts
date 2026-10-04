@@ -18,7 +18,10 @@ import {
   terminalFontStack,
   terminalSchemeIdForMode,
   usePrefsStore,
+  withoutCustomTerminalScheme,
 } from '../../../client/src/state/prefs.js';
+import { customSchemeCopyOf } from '../../../client/src/terminal/custom-schemes.js';
+import { terminalScheme } from '../../../client/src/terminal/palette.js';
 import {
   BUILTIN_HIGHLIGHT_PROFILES,
   NOKIA_SRLINUX_HIGHLIGHT_PROFILE,
@@ -207,6 +210,51 @@ describe('terminal color scheme preferences', () => {
       lightTerminalScheme: 'paper',
       darkTerminalScheme: 'dracula',
     });
+  });
+});
+
+describe('custom terminal color scheme preferences', () => {
+  const custom = customSchemeCopyOf(terminalScheme('nord'), []);
+
+  it('starts without custom schemes', () => {
+    expect(usePrefsStore.getInitialState().customTerminalSchemes).toEqual([]);
+  });
+
+  it('keeps valid custom schemes and drops a malformed list during migration', () => {
+    expect(migratePrefsState({ customTerminalSchemes: [custom] }, 16)).toEqual({
+      customTerminalSchemes: [custom],
+    });
+    expect(
+      migratePrefsState(
+        { customTerminalSchemes: [{ ...custom, colors: { background: '#000000' } }] },
+        16,
+      ),
+    ).toEqual({});
+  });
+
+  it('returns a terminal theme to its default when its custom scheme is deleted', () => {
+    const other = customSchemeCopyOf(terminalScheme('paper'), [custom]);
+
+    expect(
+      withoutCustomTerminalScheme(
+        {
+          customTerminalSchemes: [custom, other],
+          lightTerminalScheme: other.id,
+          darkTerminalScheme: custom.id,
+        },
+        custom.id,
+      ),
+    ).toEqual({ customTerminalSchemes: [other], darkTerminalScheme: 'vscode-dark' });
+    expect(
+      withoutCustomTerminalScheme(
+        {
+          customTerminalSchemes: [custom, other],
+          lightTerminalScheme: other.id,
+          darkTerminalScheme: 'dracula',
+        },
+        other.id,
+      ),
+    ).toEqual({ customTerminalSchemes: [custom], lightTerminalScheme: 'vscode-light' });
   });
 });
 

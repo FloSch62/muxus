@@ -64,6 +64,7 @@ import {
   MIN_INACTIVE_PANE_DIM_STRENGTH,
   clampInactivePaneDimStrength,
   terminalSchemeIdForMode,
+  useCustomTerminalSchemes,
   usePrefsStore,
   type CommandBarPosition,
   type RightClickAction,
@@ -89,6 +90,7 @@ import {
 } from '../terminal/font-catalog.js';
 import { AboutSection } from './AboutSection.js';
 import { chordSx } from './chord-style.js';
+import { CustomTerminalSchemeSettings } from './CustomTerminalSchemeSettings.js';
 import { HighlightProfilesSection } from './HighlightProfilesSection.js';
 import { LayoutPreview } from './LayoutPreview.js';
 import { LocalShellProfilesSection } from './LocalShellProfilesSection.js';
@@ -431,8 +433,10 @@ function AppearanceSection() {
   );
   const zoomInChord = useChordLabel('terminal.zoom-in');
   const zoomOutChord = useChordLabel('terminal.zoom-out');
+  const customSchemes = useCustomTerminalSchemes();
   const schemeTheme = terminalScheme(
     terminalSchemeIdForMode(prefs, effectiveThemeMode),
+    customSchemes,
   ).theme;
   const schemeForeground = schemeTheme.foreground ?? '#cccccc';
   const schemeBackground = schemeTheme.background ?? '#1e1e1e';
@@ -568,6 +572,8 @@ function AppearanceSection() {
           }
         />
       </SettingsGroup>
+
+      <CustomTerminalSchemeSettings />
 
       <SettingsGroup title="Terminal font">
         <SettingRow

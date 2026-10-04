@@ -402,27 +402,38 @@ export const TERMINAL_SCHEMES: readonly TerminalScheme[] = [
   { id: 'catppuccin-mocha', name: 'Catppuccin Mocha', theme: catppuccinMocha },
   { id: 'monokai', name: 'Monokai', theme: monokai },
   { id: 'solarized-dark', name: 'Solarized Dark', theme: solarizedDark },
-].map((scheme) => ({
-  ...scheme,
-  // xterm outlines the overview ruler with overviewRulerBorder, which
-  // defaults to the foreground color — a bright line down the right edge.
-  // Marks should float over the terminal with no visible ruler chrome.
-  theme: { ...scheme.theme, overviewRulerBorder: '#00000000' },
-}));
+].map((scheme) => ({ ...scheme, theme: withoutOverviewRulerBorder(scheme.theme) }));
+
+/**
+ * xterm outlines the overview ruler with overviewRulerBorder, which defaults
+ * to the foreground color — a bright line down the right edge. Marks should
+ * float over the terminal with no visible ruler chrome.
+ */
+export function withoutOverviewRulerBorder(theme: ITheme): ITheme {
+  return { ...theme, overviewRulerBorder: '#00000000' };
+}
 
 const SCHEMES_BY_ID = new Map(TERMINAL_SCHEMES.map((scheme) => [scheme.id, scheme]));
 const DEFAULT_SCHEME = SCHEMES_BY_ID.get('vscode-dark')!;
 
-export function isTerminalSchemeId(value: unknown): value is string {
-  return typeof value === 'string' && SCHEMES_BY_ID.has(value);
+/** Whether an id names a built-in scheme or one of the user's custom schemes. */
+export function isTerminalSchemeId(
+  value: unknown,
+  customSchemes: readonly TerminalScheme[] = [],
+): value is string {
+  return (
+    typeof value === 'string' &&
+    (SCHEMES_BY_ID.has(value) || customSchemes.some((scheme) => scheme.id === value))
+  );
 }
 
 /** A stale or future host override must inherit the current app preference. */
 export function terminalSchemeIdForHost(
   applicationSchemeId: string,
   hostSchemeId: string | undefined,
+  customSchemes: readonly TerminalScheme[] = [],
 ): string {
-  return isTerminalSchemeId(hostSchemeId) ? hostSchemeId : applicationSchemeId;
+  return isTerminalSchemeId(hostSchemeId, customSchemes) ? hostSchemeId : applicationSchemeId;
 }
 
 const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
@@ -435,9 +446,20 @@ export function terminalColorForHost(
   return hostColor && HEX_COLOR_RE.test(hostColor) ? hostColor : applicationColor;
 }
 
-/** Resolve a scheme id, falling back to the VS Code dark default. */
-export function terminalScheme(id: string | undefined): TerminalScheme {
-  return (id === undefined ? undefined : SCHEMES_BY_ID.get(id)) ?? DEFAULT_SCHEME;
+/**
+ * Resolve a scheme id among the built-in schemes and the user's custom ones,
+ * falling back to the VS Code dark default.
+ */
+export function terminalScheme(
+  id: string | undefined,
+  customSchemes: readonly TerminalScheme[] = [],
+): TerminalScheme {
+  if (id === undefined) return DEFAULT_SCHEME;
+  return (
+    SCHEMES_BY_ID.get(id) ??
+    customSchemes.find((scheme) => scheme.id === id) ??
+    DEFAULT_SCHEME
+  );
 }
 
 /**

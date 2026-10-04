@@ -56,6 +56,7 @@ import {
   sshKeepalivePrefField,
   terminalFontStack,
   terminalSchemeIdForMode,
+  useCustomTerminalSchemes,
   usePrefsStore,
 } from '../state/prefs.js';
 import { useTabsStore, type SessionTab } from '../state/tabs.js';
@@ -331,6 +332,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const applicationSchemeId = usePrefsStore((prefs) =>
     terminalSchemeIdForMode(prefs, theme.palette.mode),
   );
+  const customSchemes = useCustomTerminalSchemes();
   const fontColor = usePrefsStore((s) => s.fontColor);
   const backgroundColor = usePrefsStore((s) => s.backgroundColor);
   const globalKeywordHighlights = usePrefsStore((s) => s.keywordHighlights);
@@ -355,8 +357,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const schemeId = terminalSchemeIdForHost(
     applicationSchemeId,
     hostMetadata?.terminalScheme,
+    customSchemes,
   );
-  const scheme = terminalScheme(schemeId);
+  const scheme = terminalScheme(schemeId, customSchemes);
   const effectiveFontColor = terminalColorForHost(
     fontColor,
     hostMetadata?.terminalFontColor,
