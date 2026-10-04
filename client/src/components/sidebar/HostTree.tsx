@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type FocusEvent,
+  type KeyboardEvent,
   type Ref,
   type RefObject,
 } from 'react';
@@ -17,10 +18,16 @@ import {
   type HostTree as HostTreeModel,
   type VisibleNode,
 } from '../../host-tree.js';
-import { managedHostDisplayName, type ManagedHost } from '../../managed-hosts.js';
+import { managedHostDisplayName, managedHostKey, type ManagedHost } from '../../managed-hosts.js';
 import { FolderRow } from './FolderRow.js';
 import { HostRow, type HostActivation } from './HostRow.js';
 import { focusAfterChange } from './tree-navigation.js';
+import {
+  rangeSelection,
+  toggleSelection,
+  visibleHostKeys,
+  type TreeSelectionAnchor,
+} from './tree-selection.js';
 import { TREE_ROW_GAP, TREE_ROW_HEIGHT, TREE_ROW_PITCH } from './tree-row-style.js';
 import {
   TREE_OVERSCAN,
@@ -47,6 +54,9 @@ export interface HostTreeProps {
   matchKey?: string;
   /** Host whose open-sessions menu is showing. */
   sessionsMenuKey?: string;
+  /** Hosts picked for bulk actions: Ctrl/Cmd- or Shift-click, Shift+Space/Arrow, Ctrl/Cmd+A. */
+  selectedKeys: ReadonlySet<string>;
+  onSelectionChange: (keys: ReadonlySet<string>) => void;
   isExpanded: (key: string) => boolean;
   setExpanded: (key: string, expanded: boolean) => void;
   folderColor: (key: string) => string | undefined;
@@ -121,6 +131,8 @@ export function HostTree({
   ref,
   matchKey,
   sessionsMenuKey,
+  selectedKeys,
+  onSelectionChange,
   isExpanded,
   setExpanded,
   folderColor,
@@ -167,6 +179,11 @@ export function HostTree({
       ),
     [nodes],
   );
+
+  // Read through refs so the row callbacks stay stable as the selection changes.
+  const selectionRef = useRef(selectedKeys);
+  selectionRef.current = selectedKeys;
+  const anchorRef = useRef<TreeSelectionAnchor | undefined>(undefined);
 
   const focusedIndex = nodes.findIndex((row) => row.key === focusedKey);
   // The first row is the tab stop until something has been focused, so the
@@ -302,7 +319,36 @@ export function HostTree({
     [onActivate, setExpanded, expandedFor],
   );
 
-  const onKeyDown = useTreeKeyboard({
+  /**
+   * Selection gestures never connect: Ctrl/Cmd-click toggles a host, and
+   * Shift-click extends a selection that exists. With nothing selected,
+   * Shift-click keeps opening another session.
+   */
+  const activateHost = useCallback(
+    (host: ManagedHost, anchor: HTMLElement | undefined, gesture: HostActivation) => {
+      const key = managedHostKey(host);
+      if (gesture.toggleSelection) {
+        const toggled = toggleSelection(selectionRef.current, key);
+        anchorRef.current = toggled.anchor;
+        onSelectionChange(toggled.selection);
+        return;
+      }
+      if (gesture.extendSelection && selectionRef.current.size > 0) {
+        anchorRef.current ??= { key, base: selectionRef.current };
+        onSelectionChange(rangeSelection(nodesRef.current, anchorRef.current, key));
+        return;
+      }
+      onActivate(host, anchor, gesture);
+    },
+    [onActivate, onSelectionChange],
+  );
+
+  // Nothing selected means no range to extend, whoever cleared it.
+  useEffect(() => {
+    if (selectedKeys.size === 0) anchorRef.current = undefined;
+  }, [selectedKeys]);
+
+  const treeKeyDown = useTreeKeyboard({
     nodes,
     focusedIndex: focusedIndex >= 0 ? focusedIndex : 0,
     focusKey,
@@ -311,6 +357,33 @@ export function HostTree({
     labels,
     onEscape,
   });
+
+  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    const modifier = event.ctrlKey || event.metaKey;
+    if (modifier && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'a') {
+      event.preventDefault();
+      anchorRef.current = undefined;
+      onSelectionChange(visibleHostKeys(nodes));
+      return;
+    }
+    if (
+      event.shiftKey &&
+      !modifier &&
+      !event.altKey &&
+      (event.key === 'ArrowUp' || event.key === 'ArrowDown')
+    ) {
+      // Shift+Arrow moves like an arrow and drags the range along with it.
+      event.preventDefault();
+      const from = nodes[activeIndex];
+      const to = nodes[activeIndex + (event.key === 'ArrowUp' ? -1 : 1)];
+      if (!from || !to) return;
+      anchorRef.current ??= { key: from.key, base: selectedKeys };
+      onSelectionChange(rangeSelection(nodes, anchorRef.current, to.key));
+      focusKey(to.key);
+      return;
+    }
+    treeKeyDown(event);
+  };
 
   // One callback per key for the lifetime of the tree: a fresh ref callback on
   // every render would defeat the row memo and re-attach every row's ref.
@@ -353,9 +426,10 @@ export function HostTree({
           host={row.node.host}
           live={liveByKey.get(row.key)}
           focused={focused}
+          selected={selectedKeys.has(row.key)}
           match={row.key === matchKey}
           sessionsOpen={row.key === sessionsMenuKey}
-          onActivate={onActivate}
+          onActivate={activateHost}
           onMenu={onHostMenu}
           onMove={onMoveHost}
           reorderEnabled={reorderEnabled}
@@ -410,6 +484,7 @@ export function HostTree({
       component="ul"
       role="tree"
       aria-label="Hosts"
+      aria-multiselectable
       // The rows carry the roving tab stop; the container is only ever focused
       // programmatically, never by tabbing.
       tabIndex={-1}

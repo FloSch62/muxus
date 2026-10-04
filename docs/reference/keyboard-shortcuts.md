@@ -80,6 +80,7 @@ resetting them.
 | Pane actions (split, zoom, close) | Right-click the tab strip |
 | Rename a tab, close a tab | Double-click it, middle-click it |
 | New session to a host that already has one open | ++shift++ + click or middle-click it in the sidebar |
+| Select hosts in the sidebar for [bulk editing](../guide/hosts.md#editing-several-hosts-at-once) | ++ctrl++ + click (++cmd++ + click on macOS), then ++shift++ + click for a range |
 | Search next / previous match | ++enter++, ++shift+enter++ |
 
 ## File editor

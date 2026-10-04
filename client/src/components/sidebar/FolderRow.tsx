@@ -88,7 +88,6 @@ export const FolderRow = memo(function FolderRow({
       aria-setsize={row.setSize}
       aria-posinset={row.posInSet}
       aria-expanded={expanded}
-      aria-selected={focused}
       tabIndex={focused ? 0 : -1}
       draggable={draggable}
       onDragStart={onDragStart ? (event) => onDragStart(event, row) : undefined}

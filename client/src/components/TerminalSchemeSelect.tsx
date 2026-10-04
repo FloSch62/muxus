@@ -29,6 +29,12 @@ export function terminalSchemeGroups(
 
 const SCHEME_SWATCH_COLORS = ['red', 'green', 'yellow', 'blue', 'magenta', 'cyan'] as const;
 
+/**
+ * Selected while hosts disagree. A real, hidden option rather than an empty
+ * value, so picking "inherit" from it is still a change the Select reports.
+ */
+const MIXED_VALUE = '__mixed__';
+
 /** Shared scheme picker for global preferences and per-host overrides. */
 export function TerminalSchemeSelect({
   id,
@@ -36,6 +42,7 @@ export function TerminalSchemeSelect({
   value,
   inheritLabel,
   hideLabel = false,
+  mixed = false,
   onChange,
 }: {
   id: string;
@@ -44,6 +51,8 @@ export function TerminalSchemeSelect({
   inheritLabel?: string;
   /** No floating label: a settings row labels the picker; `label` stays its accessible name. */
   hideLabel?: boolean;
+  /** Several hosts with different schemes: shows "Multiple values" until one is picked. */
+  mixed?: boolean;
   onChange: (value: string) => void;
 }) {
   const labelId = `${id}-label`;
@@ -51,18 +60,22 @@ export function TerminalSchemeSelect({
   return (
     <FormControl fullWidth>
       {hideLabel ? null : (
-        <InputLabel id={labelId} shrink={inheritLabel ? true : undefined}>{label}</InputLabel>
+        <InputLabel id={labelId} shrink={inheritLabel || mixed ? true : undefined}>{label}</InputLabel>
       )}
       <Select
         id={id}
         labelId={hideLabel ? undefined : labelId}
-        value={value}
+        value={mixed ? MIXED_VALUE : value}
         label={hideLabel ? undefined : label}
         inputProps={hideLabel ? { 'aria-label': label } : undefined}
         displayEmpty={Boolean(inheritLabel)}
         onChange={(event) => onChange(event.target.value)}
         renderValue={(schemeId) =>
-          !schemeId && inheritLabel ? (
+          schemeId === MIXED_VALUE ? (
+            <Typography variant="body2" color="textSecondary">
+              Multiple values
+            </Typography>
+          ) : !schemeId && inheritLabel ? (
             <Typography variant="body2" color="textSecondary">
               {inheritLabel}
             </Typography>
@@ -72,6 +85,11 @@ export function TerminalSchemeSelect({
         }
         MenuProps={{ slotProps: { paper: { sx: { maxHeight: 390 } } } }}
       >
+        {mixed ? (
+          <MenuItem value={MIXED_VALUE} sx={{ display: 'none' }}>
+            Multiple values
+          </MenuItem>
+        ) : null}
         {inheritLabel ? <MenuItem value="">{inheritLabel}</MenuItem> : null}
         {terminalSchemeGroups(customSchemes).flatMap((group) => [
           <ListSubheader key={group.label}>{group.label}</ListSubheader>,

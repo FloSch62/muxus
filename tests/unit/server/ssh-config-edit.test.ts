@@ -13,7 +13,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { HostUpsertRequest } from '@muxus/shared';
-import { deleteHost, previewHost, upsertHost } from '../../../server/src/ssh/ssh-config-edit.js';
+import { deleteHost, patchHosts, previewHost, upsertHost } from '../../../server/src/ssh/ssh-config-edit.js';
 import { listHosts, loadConfigDocument } from '../../../server/src/ssh/ssh-config.js';
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'muxus-sshedit-'));
@@ -201,6 +201,126 @@ describe('upsertHost', () => {
     expect(lstatSync(root).isSymbolicLink()).toBe(true);
     expect(readFileSync(target, 'utf8')).toContain('HostName web.example.com');
     expect(readFileSync(`${root}.muxus.bak`, 'utf8')).toContain('User old');
+  });
+});
+
+describe('patchHosts', () => {
+  it('changes only the patched lines, keeping comments, spelling and other options', () => {
+    const root = seed(
+      [
+        '# web box',
+        'Host web',
+        '  HostName web.example.com',
+        '  # the deploy account',
+        '  user=alice',
+        '  Compression yes',
+        '',
+        'Host db',
+        '  HostName db.internal',
+        '',
+        'Host z',
+        '  User zed',
+        '',
+      ].join('\n'),
+    );
+
+    expect(patchHosts(['web', 'db'], { user: 'ops', port: 2222 }, root)).toEqual({ updated: 2 });
+
+    expect(readFileSync(root, 'utf8')).toBe(
+      [
+        '# web box',
+        'Host web',
+        '  HostName web.example.com',
+        '  # the deploy account',
+        '  user ops',
+        '  Compression yes',
+        '  Port 2222',
+        '',
+        'Host db',
+        '  HostName db.internal',
+        '  User ops',
+        '  Port 2222',
+        '',
+        'Host z',
+        '  User zed',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('removes an option set to null, and drops repeats of a set one', () => {
+    const root = seed(
+      ['Host a', '  User first', '  ForwardAgent yes', '  Port 22', '  User second', '  forwardagent no', ''].join('\n'),
+    );
+
+    patchHosts(['a'], { user: 'ops', forwardAgent: null, strictHostKeyChecking: 'accept-new' }, root);
+
+    expect(readFileSync(root, 'utf8')).toBe(
+      ['Host a', '  User ops', '  Port 22', '  StrictHostKeyChecking accept-new', ''].join('\n'),
+    );
+    expect(listHosts(loadConfigDocument(root))[0]!.options).toEqual({
+      user: 'ops',
+      port: 22,
+      strictHostKeyChecking: 'accept-new',
+    });
+  });
+
+  it('writes yes/no flags and quotes a user with spaces', () => {
+    const root = seed(['Host a', '\tHostName a.internal', ''].join('\n'));
+
+    patchHosts(['a'], { user: 'Jane Doe', forwardAgent: false, forwardX11: true }, root);
+
+    expect(readFileSync(root, 'utf8')).toBe(
+      ['Host a', '\tHostName a.internal', '\tUser "Jane Doe"', '\tForwardAgent no', '\tForwardX11 yes', ''].join('\n'),
+    );
+  });
+
+  it('counts aliases that share a block once', () => {
+    const root = seed(['Host db db-alias', '  HostName db.internal', ''].join('\n'));
+
+    expect(patchHosts(['db', 'db-alias'], { port: 2200 }, root)).toEqual({ updated: 1 });
+    expect(readFileSync(root, 'utf8')).toBe(['Host db db-alias', '  HostName db.internal', '  Port 2200', ''].join('\n'));
+  });
+
+  it('patches blocks across included files, writing each file once', () => {
+    const root = seed(['Host web', '  User old', '', 'Host db', '  User old', ''].join('\n'));
+    const groupFile = path.join(path.dirname(root), 'config.d', 'work');
+    upsertHost({ aliases: ['edge'], file: groupFile, options: { user: 'old' } }, root);
+    const before = readFileSync(root, 'utf8');
+
+    expect(patchHosts(['web', 'db', 'edge'], { user: 'new' }, root)).toEqual({ updated: 3 });
+
+    const hosts = listHosts(loadConfigDocument(root));
+    expect(hosts.map((host) => [host.alias, host.options.user])).toEqual(
+      expect.arrayContaining([
+        ['web', 'new'],
+        ['db', 'new'],
+        ['edge', 'new'],
+      ]),
+    );
+    // One write per file: the backup holds the content from before the whole edit.
+    expect(readFileSync(`${root}.muxus.bak`, 'utf8')).toBe(before);
+  });
+
+  it('refuses blocks included from outside the root config directory', () => {
+    const outside = path.join(tmp, `outside-${counter++}`);
+    writeFileSync(outside, ['Host far', '  User old', ''].join('\n'));
+    const root = seed([`Include ${outside}`, '', 'Host near', '  User old', ''].join('\n'));
+
+    expect(() => patchHosts(['near', 'far'], { user: 'new' }, root)).toThrow(/must live under/);
+    expect(readFileSync(outside, 'utf8')).toContain('User old');
+    expect(readFileSync(root, 'utf8')).toContain('User old');
+  });
+
+  it('leaves every file untouched when any alias or value is invalid', () => {
+    const content = ['Host web', '  User old', ''].join('\n');
+    const root = seed(content);
+
+    expect(() => patchHosts(['web', 'missing'], { user: 'new' }, root)).toThrow(/no Host block for "missing"/);
+    expect(() => patchHosts(['web'], { user: 'a"b' }, root)).toThrow(/without quotes/);
+    expect(() => patchHosts(['web'], { port: 70000 }, root)).toThrow(/port/);
+    expect(() => patchHosts(['web'], {}, root)).toThrow(/at least one option/);
+    expect(readFileSync(root, 'utf8')).toBe(content);
   });
 });
 

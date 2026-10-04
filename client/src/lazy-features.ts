@@ -1,6 +1,7 @@
 /** Statically analyzable feature loaders shared by React.lazy and intent preloads. */
 export const loadHostEditorDialog = () => import('./components/HostEditorDialog.js');
 export const loadHostOrganizationDialog = () => import('./components/HostOrganizationDialog.js');
+export const loadHostBulkEditDialog = () => import('./components/HostBulkEditDialog.js');
 export const loadFolderDialog = () => import('./components/sidebar/FolderDialog.js');
 /** Sidebar surfaces that only exist once the user right-clicks or launches. */
 export const loadSidebarMenus = () => import('./components/sidebar/SidebarMenus.js');

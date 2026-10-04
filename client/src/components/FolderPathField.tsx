@@ -18,6 +18,8 @@ export function FolderPathField({
   error,
   /** Paths to hide — a folder can never be moved inside itself. */
   exclude,
+  /** Shown while empty, such as "Multiple values" when hosts disagree. */
+  placeholder,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -25,6 +27,7 @@ export function FolderPathField({
   helperText?: string;
   error?: boolean;
   exclude?: (path: string) => boolean;
+  placeholder?: string;
 }) {
   const { data: config } = useSshConfig();
   const { data: savedData } = useSavedHostProfiles();
@@ -44,7 +47,11 @@ export function FolderPathField({
       freeSolo
       options={options}
       value={value}
-      onInputChange={(_event, next) => onChange(next)}
+      // A reset only echoes a value the parent just set; reporting it back
+      // would undo the parent's change — clearing a field to "no value", say.
+      onInputChange={(_event, next, reason) => {
+        if (reason !== 'reset') onChange(next);
+      }}
       onChange={(_event, next) => onChange(next ?? '')}
       renderOption={(props, option) => {
         const { key, ...rest } = props;
@@ -65,7 +72,12 @@ export function FolderPathField({
           {...params}
           label={label}
           error={error}
-          placeholder="e.g. Production/EU"
+          placeholder={placeholder ?? 'e.g. Production/EU'}
+          slotProps={
+            placeholder
+              ? { ...params.slotProps, inputLabel: { ...params.slotProps.inputLabel, shrink: true } }
+              : params.slotProps
+          }
           helperText={helperText ?? 'Use / to nest, e.g. Production/EU. Leave empty for no folder.'}
         />
       )}

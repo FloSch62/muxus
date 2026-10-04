@@ -46,6 +46,8 @@ export function EditorShell<S extends string>({
   deletePending,
   onClose,
   onSave,
+  saveLabel = 'Save',
+  connectAction = true,
   children,
 }: {
   title: string;
@@ -59,13 +61,16 @@ export function EditorShell<S extends string>({
   onSection: (section: S) => void;
   /** Blocks saving and is shown as a validation warning. */
   problem: string | null | undefined;
-  /** Blocks saving while something the form needs is still in flight. */
+  /** Blocks saving with a neutral note: something still loading, or nothing to save yet. */
   loading?: string | null;
   busy: boolean;
   onDelete?: () => void;
   deletePending?: boolean;
   onClose: () => void;
   onSave: (connect: boolean) => void;
+  saveLabel?: string;
+  /** Offer "Save & connect"; without it the save button is the primary action. */
+  connectAction?: boolean;
   children: ReactNode;
 }) {
   const tabLabel = (label: string, count?: number) =>
@@ -153,16 +158,22 @@ export function EditorShell<S extends string>({
         ) : null}
         <Box sx={{ flex: 1 }} />
         <Button onClick={onClose}>Cancel</Button>
-        <Button disabled={!!problem || !!loading || busy} onClick={() => onSave(false)}>
-          Save
-        </Button>
         <Button
-          variant="contained"
+          variant={connectAction ? undefined : 'contained'}
           disabled={!!problem || !!loading || busy}
-          onClick={() => onSave(true)}
+          onClick={() => onSave(false)}
         >
-          Save & connect
+          {saveLabel}
         </Button>
+        {connectAction ? (
+          <Button
+            variant="contained"
+            disabled={!!problem || !!loading || busy}
+            onClick={() => onSave(true)}
+          >
+            Save & connect
+          </Button>
+        ) : null}
       </DialogActions>
     </>
   );

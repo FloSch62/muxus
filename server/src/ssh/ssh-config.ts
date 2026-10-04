@@ -46,6 +46,8 @@ export interface OptionLine {
   /** Raw value text (quotes stripped only in `args`). */
   value: string;
   args: string[];
+  /** Index in its file; absent for lines that were never read from one. */
+  line?: number;
 }
 
 /** A `Host` block tied to its exact lines in one file. */
@@ -160,7 +162,7 @@ function parseFile(file: string, state: ParseState, depth: number): void {
       }
       continue;
     }
-    const option: OptionLine = { keyword, key, value, args };
+    const option: OptionLine = { keyword, key, value, args, line: i };
 
     if (key === 'host') {
       const commentStart = scanPreludeComments(lines, i);

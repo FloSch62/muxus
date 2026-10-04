@@ -14,13 +14,17 @@ export function HostColorPicker({
   onChange,
   label = 'Color',
   size = 30,
+  mixed = false,
 }: {
   value: string | undefined;
   onChange: (color: string | undefined) => void;
   label?: string;
   size?: number;
+  /** Several hosts with different colors: nothing is checked, not even "No color". */
+  mixed?: boolean;
 }) {
   const glyph = Math.round(size * 0.57);
+  const noColor = !mixed && !value;
   return (
     <div>
       <Typography variant="body2" sx={{ mb: 1, fontWeight: 600 }}>
@@ -36,10 +40,10 @@ export function HostColorPicker({
               height: size,
               borderRadius: '50%',
               border: 1,
-              borderColor: value ? 'divider' : 'text.secondary',
+              borderColor: noColor ? 'text.secondary' : 'divider',
             }}
           >
-            {!value && <CheckIcon sx={{ fontSize: glyph, color: 'text.secondary' }} />}
+            {noColor && <CheckIcon sx={{ fontSize: glyph, color: 'text.secondary' }} />}
           </ButtonBase>
         </Tooltip>
         {HOST_COLORS.map((swatch) => (

@@ -7,9 +7,11 @@ import { SessionLoggingPolicyFields } from '../SessionLoggingPolicyFields.js';
 export function LoggingSection({
   value,
   onChange,
+  description = 'Choose whether new sessions for this host inherit the application default or use a dedicated retention and input-privacy policy.',
 }: {
   value: HostSessionLoggingDraft;
   onChange: (patch: Partial<HostSessionLoggingDraft>) => void;
+  description?: string;
 }) {
   return (
     <Stack spacing={2}>
@@ -18,8 +20,7 @@ export function LoggingSection({
           Session logging
         </Typography>
         <Typography variant="body2" color="textSecondary">
-          Choose whether new sessions for this host inherit the application default or use a
-          dedicated retention and input-privacy policy.
+          {description}
         </Typography>
       </div>
       <SessionLoggingPolicyFields

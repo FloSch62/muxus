@@ -5,6 +5,7 @@ import MenuItem from '@mui/material/MenuItem';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DriveFileMoveOutlinedIcon from '@mui/icons-material/DriveFileMoveOutlined';
+import EditNoteOutlinedIcon from '@mui/icons-material/EditNoteOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
@@ -25,6 +26,7 @@ import {
 } from '../../session-actions.js';
 import {
   loadFolderDialog,
+  loadHostBulkEditDialog,
   loadHostEditorDialog,
   loadHostOrganizationDialog,
   loadSftpPanel,
@@ -51,6 +53,8 @@ export function HostContextMenu({
   onMove,
   onDelete,
   onMoveToFolder,
+  selectedCount,
+  onEditSelected,
 }: {
   menu: HostMenuState | null;
   onClose: () => void;
@@ -59,6 +63,9 @@ export function HostContextMenu({
   onMove: (delta: -1 | 1) => void;
   onDelete: (host: ManagedHost) => void;
   onMoveToFolder: (host: ManagedHost) => void;
+  /** Size of the selection the menu's host belongs to; 0 when it is not selected. */
+  selectedCount: number;
+  onEditSelected: () => void;
 }) {
   const setHostEditor = useUiStore((s) => s.setHostEditor);
   const setHostOrganizer = useUiStore((s) => s.setHostOrganizer);
@@ -170,6 +177,18 @@ export function HostContextMenu({
         </ListItemIcon>
         Edit host
       </MenuItem>
+      {selectedCount > 1 ? (
+        <MenuItem
+          onMouseEnter={() => void loadHostBulkEditDialog()}
+          onFocus={() => void loadHostBulkEditDialog()}
+          onClick={run(onEditSelected)}
+        >
+          <ListItemIcon>
+            <EditNoteOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          Edit {selectedCount} selected hosts…
+        </MenuItem>
+      ) : null}
       <MenuItem
         onMouseEnter={() => void loadHostEditorDialog()}
         onFocus={() => void loadHostEditorDialog()}

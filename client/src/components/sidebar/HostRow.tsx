@@ -25,6 +25,10 @@ export interface HostActivation {
   newSession: boolean;
   /** The second click of a double-click. */
   repeat: boolean;
+  /** Ctrl/Cmd-click: add the host to the selection or take it out instead of connecting. */
+  toggleSelection?: boolean;
+  /** Shift-click: extends a selection when there is one, else opens a new session. */
+  extendSelection?: boolean;
 }
 
 export interface HostRowProps {
@@ -32,6 +36,8 @@ export interface HostRowProps {
   host: ManagedHost;
   live?: LiveCounts;
   focused: boolean;
+  /** Part of the multi-selection that bulk actions apply to. */
+  selected?: boolean;
   /** The row the search box's Enter would connect. */
   match?: boolean;
   /** Its open-sessions menu is showing. */
@@ -65,6 +71,7 @@ export const HostRow = memo(function HostRow({
   host,
   live,
   focused,
+  selected = false,
   match,
   sessionsOpen,
   onActivate,
@@ -125,9 +132,12 @@ export const HostRow = memo(function HostRow({
         aria-level={row.level}
         aria-setsize={row.setSize}
         aria-posinset={row.posInSet}
-        aria-selected={focused}
+        aria-selected={selected}
+        selected={selected}
         tabIndex={focused ? 0 : -1}
-        aria-keyshortcuts={reorderEnabled ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
+        aria-keyshortcuts={
+          reorderEnabled ? 'Shift+Space Alt+ArrowUp Alt+ArrowDown' : 'Shift+Space'
+        }
         draggable={draggable}
         onDragStart={onDragStart ? (event) => onDragStart(event, row) : undefined}
         onDragEnd={onDragEnd}
@@ -137,6 +147,8 @@ export const HostRow = memo(function HostRow({
           onActivate(host, event.currentTarget, {
             newSession: event.shiftKey,
             repeat: event.detail > 1,
+            toggleSelection: event.ctrlKey || event.metaKey,
+            extendSelection: event.shiftKey,
           })
         }
         onMouseDown={(event) => {
@@ -147,6 +159,20 @@ export const HostRow = memo(function HostRow({
           if (event.button !== 1) return;
           event.preventDefault();
           onActivate(host, event.currentTarget, { newSession: true, repeat: false });
+        }}
+        onKeyUp={(event) => {
+          // Shift+Space toggles the selection (Ctrl+Space opens the saved
+          // command menu). The row's own Space click is synthesized without
+          // modifiers and would connect, so claim the key before it fires.
+          if (event.key !== ' ' || !event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) {
+            return;
+          }
+          event.preventDefault();
+          onActivate(host, event.currentTarget, {
+            newSession: false,
+            repeat: false,
+            toggleSelection: true,
+          });
         }}
         onKeyDown={(event) => {
           if (!reorderEnabled || !event.altKey) return;
