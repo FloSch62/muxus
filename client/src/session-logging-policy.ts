@@ -41,6 +41,22 @@ export function hostSessionLoggingDraft(
   };
 }
 
+/** Whether two drafts would save the same policy; fields of an inherited one do not count. */
+export function sameSessionLoggingDraft(
+  a: HostSessionLoggingDraft,
+  b: HostSessionLoggingDraft,
+): boolean {
+  if (a.inherit !== b.inherit) return false;
+  return (
+    a.inherit ||
+    (a.enabled === b.enabled &&
+      a.captureInput === b.captureInput &&
+      a.maxPartBytes === b.maxPartBytes &&
+      a.maxParts === b.maxParts &&
+      a.logToFile === b.logToFile)
+  );
+}
+
 export function sessionLoggingPolicyInput(
   draft: HostSessionLoggingDraft,
 ): SessionLoggingPolicyInput {
