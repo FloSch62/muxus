@@ -172,6 +172,12 @@ which on Linux means group membership.
   the local backend performs the RDP negotiation and TLS handshake on the client's behalf
   (IronRDP's *RDCleanPath* scheme) and relays the session over loopback. The client still
   runs Network Level Authentication itself, bound to the server certificate's public key.
+- **Windows' own certificate.** The self-signed certificate Windows creates for Remote
+  Desktop may encrypt but not sign. The desktop app's TLS library holds it to that and
+  refuses TLS 1.3 and ECDHE handshakes with it, so Muxus dials such a server again with
+  TLS 1.2 and RSA key exchange, the one handshake the certificate allows. That handshake
+  has no forward secrecy; a certificate from your own CA that allows digital signatures
+  avoids it.
 - **Certificates** are verified against the system's trusted authorities and the host
   name. Anything else is shown with its SHA-256 fingerprint and, once trusted, pinned per
   host, port and SSH gateway; a different certificate later produces a warning, like a

@@ -165,9 +165,29 @@ function readConnectionConfirm(stream: Duplex): Promise<Buffer> {
   });
 }
 
-function upgradeToTls(stream: Duplex, host: string): Promise<tls.TLSSocket> {
+/**
+ * TLS 1.2 with RSA key transport: the one handshake in which the server's key
+ * encrypts the session secret instead of signing it.
+ */
+const RSA_KEY_TRANSPORT: tls.ConnectionOptions = {
+  maxVersion: 'TLSv1.2',
+  ciphers: 'AES256-GCM-SHA384:AES128-GCM-SHA256:AES256-SHA:AES128-SHA',
+};
+
+/**
+ * The self-signed certificate Windows makes for Remote Desktop allows key
+ * encipherment but not digital signatures. Schannel and OpenSSL ignore that;
+ * BoringSSL (the desktop app runs on Electron's) refuses every handshake in
+ * which the server signs, which is TLS 1.3 and all ECDHE suites.
+ */
+function signingKeyRefused(err: unknown): boolean {
+  return (err as NodeJS.ErrnoException | undefined)?.code === 'ERR_SSL_KEY_USAGE_BIT_INCORRECT';
+}
+
+function upgradeToTls(stream: Duplex, host: string, options?: tls.ConnectionOptions): Promise<tls.TLSSocket> {
   return new Promise((resolve, reject) => {
     const socket = tls.connect({
+      ...options,
       socket: stream,
       servername: serverName(host),
       // Verification happens in acceptCertificate: RDP certificates are
@@ -259,47 +279,72 @@ export async function serveRdpCleanPath(
       closeAll();
     });
 
-    try {
-      upstream = await settle(target.open(), 'timed out connecting to the RDP server');
-    } catch (err) {
-      throw new HandshakeError(
-        err instanceof Error ? err.message : String(err),
-        encodeRDCleanPathError(connectErrorPdu(err)),
-      );
-    }
-    if (aborted) {
-      upstream.destroy();
-      return;
-    }
-    // Legacy clients put a complete preconnection blob in the request.
-    if (request.preconnectionBlob) upstream.write(Buffer.from(request.preconnectionBlob, 'utf8'));
-    upstream.write(request.x224ConnectionPdu);
-    let confirm: Buffer;
-    try {
-      confirm = await withTimeout(
-        readConnectionConfirm(upstream),
-        HANDSHAKE_TIMEOUT_MS,
-        'timed out waiting for the RDP server',
-      );
-    } catch (err) {
-      throw new HandshakeError(
-        err instanceof Error ? err.message : String(err),
-        encodeRDCleanPathError(connectErrorPdu(err)),
-      );
-    }
-    if (aborted) return;
-    const negotiated = parseConnectionConfirm(confirm);
-    if (negotiated.kind !== 'response' || negotiated.protocol === 0) {
-      // A refusal, or a server that only speaks standard RDP security: the
-      // client decodes the confirm itself and explains which one it was.
-      throw new HandshakeError('the RDP server refused TLS', encodeRDCleanPathNegotiationError(confirm));
-    }
+    /** Dial the server and exchange X.224 for the client; undefined once aborted. */
+    const negotiate = async (): Promise<{ stream: Duplex; confirm: Buffer } | undefined> => {
+      let stream: Duplex;
+      try {
+        stream = await settle(target.open(), 'timed out connecting to the RDP server');
+      } catch (err) {
+        throw new HandshakeError(
+          err instanceof Error ? err.message : String(err),
+          encodeRDCleanPathError(connectErrorPdu(err)),
+        );
+      }
+      upstream = stream;
+      if (aborted) {
+        stream.destroy();
+        return undefined;
+      }
+      // Legacy clients put a complete preconnection blob in the request.
+      if (request.preconnectionBlob) stream.write(Buffer.from(request.preconnectionBlob, 'utf8'));
+      stream.write(request.x224ConnectionPdu);
+      let confirm: Buffer;
+      try {
+        confirm = await withTimeout(
+          readConnectionConfirm(stream),
+          HANDSHAKE_TIMEOUT_MS,
+          'timed out waiting for the RDP server',
+        );
+      } catch (err) {
+        throw new HandshakeError(
+          err instanceof Error ? err.message : String(err),
+          encodeRDCleanPathError(connectErrorPdu(err)),
+        );
+      }
+      if (aborted) return undefined;
+      const negotiated = parseConnectionConfirm(confirm);
+      if (negotiated.kind !== 'response' || negotiated.protocol === 0) {
+        // A refusal, or a server that only speaks standard RDP security: the
+        // client decodes the confirm itself and explains which one it was.
+        throw new HandshakeError('the RDP server refused TLS', encodeRDCleanPathNegotiationError(confirm));
+      }
+      return { stream, confirm };
+    };
 
+    let leg = await negotiate();
+    if (!leg) return;
     try {
-      secure = await settle(upgradeToTls(upstream, target.host), 'TLS handshake timed out');
+      secure = await settle(upgradeToTls(leg.stream, target.host), 'TLS handshake timed out');
     } catch (err) {
-      throw new HandshakeError(err instanceof Error ? err.message : String(err), tlsErrorPdu(err));
+      if (!signingKeyRefused(err)) {
+        throw new HandshakeError(err instanceof Error ? err.message : String(err), tlsErrorPdu(err));
+      }
+      // The failed handshake took the connection with it: dial again and
+      // offer only the handshake that certificate allows.
+      log.info({ host: target.host }, 'rdp certificate cannot sign; retrying with RSA key transport');
+      leg.stream.destroy();
+      leg = await negotiate();
+      if (!leg) return;
+      try {
+        secure = await settle(upgradeToTls(leg.stream, target.host, RSA_KEY_TRANSPORT), 'TLS handshake timed out');
+      } catch (retryErr) {
+        throw new HandshakeError(
+          retryErr instanceof Error ? retryErr.message : String(retryErr),
+          tlsErrorPdu(retryErr),
+        );
+      }
     }
+    const { confirm } = leg;
     if (aborted) {
       closeAll();
       return;
