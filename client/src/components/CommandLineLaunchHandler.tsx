@@ -10,6 +10,7 @@ import {
 import { managedHostDisplayName } from '../managed-hosts.js';
 import {
   connectManagedHost,
+  connectTarget,
   launchManagedHostGroup,
 } from '../session-actions.js';
 import { showToast } from '../state/toast.js';
@@ -76,6 +77,13 @@ export function CommandLineLaunchHandler() {
     void (async () => {
       if (needsHostCatalog && hostCatalogError) {
         showToast('error', 'Could not load the host catalog for the command-line request.');
+        return;
+      }
+
+      if (request.kind === 'connect') {
+        // Dialed like `ssh <target>`, so ssh_config still supplies keys and jumps.
+        connectTarget(request.name);
+        showToast('info', `Connecting to “${request.name}”.`);
         return;
       }
 

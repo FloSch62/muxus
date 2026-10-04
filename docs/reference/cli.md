@@ -28,6 +28,34 @@ by its full installation path.
 
 Flags accept both `--host edge-router` and `--host=edge-router`.
 
+## Ad-hoc SSH connections
+
+`--connect` opens an SSH session to a host that does not need to be in Muxus or
+`~/.ssh/config`, so a network monitoring system, inventory or other tool with its own device
+list can hand a device straight to Muxus:
+
+```bash
+muxus --connect admin@10.10.10.1
+muxus --connect admin@10.10.10.1:2222
+muxus --connect 10.10.10.1 --user admin --port 2222
+muxus --connect "[2001:db8::1]:830"
+```
+
+The target is dialed like `ssh <target>`, the same as typing it into the
+[sidebar search](../guide/hosts.md#search-and-quick-connect), so matching `ssh_config`
+blocks still supply keys, jump hosts and other options. `--user` and `--port` are only
+accepted together with `--connect`, and only when the target does not already name a user
+or port. An IPv6 address with a port is written in brackets; `--port` adds them where they
+are needed. As with the other targets, a running Muxus opens the session as a new tab.
+
+Passwords are never passed on the command line. The session asks for them in the terminal
+as usual and can use the [password vault](security.md#password-vault) for later
+connections to the same account.
+
+Hosts and users are limited to letters, digits and `.`, `_`, `-` (plus `@` and `+` in user
+names, and an IPv6 zone such as `%eth0`), because they can reach a `ProxyCommand` shell. A
+target that does not fit is ignored and Muxus just starts or comes to the front.
+
 ## Server flags
 
 The server is `server/dist/index.js`, started by `pnpm start` or embedded in the desktop
