@@ -289,6 +289,8 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const clipboardPasteQueueRef = useRef<TerminalClipboardPasteQueue | null>(null);
   const clipboardPasteQueue = (clipboardPasteQueueRef.current ??= new TerminalClipboardPasteQueue());
   const pendingPasteResolverRef = useRef<(() => void) | null>(null);
+  /** A log file was asked for here, so its start is worth confirming. */
+  const announceLogFileRef = useRef(false);
   const theme = useTheme();
   const [authPrompt, setAuthPrompt] = useState<AuthPromptRequest | null>(null);
   const [hostKey, setHostKey] = useState<HostKeyRequest | null>(null);
@@ -810,6 +812,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       setLogging: (patch) => {
         const socket = wsRef.current;
         if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+        if (patch.logToFile) announceLogFileRef.current = true;
         socket.send(JSON.stringify({ op: 'set-logging', ...patch }));
         return true;
       },
@@ -1199,8 +1202,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
               loggingWarning: ctl.warning,
               loggingPaused: ctl.paused,
               captureInput: ctl.captureInput,
+              logFilePath: ctl.filePath,
             });
             if (ctl.warning) showToast('warning', ctl.warning);
+            else if (announceLogFileRef.current && ctl.filePath) {
+              showToast('success', `Logging to ${ctl.filePath}`);
+            }
+            announceLogFileRef.current = false;
             break;
           case 'exit':
             exitMessage = ctl;
@@ -1294,6 +1302,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             status: 'closed',
             connId: undefined,
             terminalId: undefined,
+            logFilePath: undefined,
             failureReason: reason,
             disconnectReason: reasonKind,
           });
@@ -1308,6 +1317,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           status: 'interrupted',
           connId: undefined,
           terminalId: undefined,
+          logFilePath: undefined,
           failureReason: reason,
           disconnectReason: reasonKind,
         });

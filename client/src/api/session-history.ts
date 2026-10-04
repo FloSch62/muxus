@@ -2,6 +2,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type {
   SessionHistorySettingsInput,
   SessionHistoryStorageStatus,
+  SessionLogFileSettings,
+  SessionLogFileStatus,
   SessionLoggingPolicy,
   SessionLoggingPolicyInput,
 } from '@muxus/shared';
@@ -62,6 +64,25 @@ export function useSaveSessionHistorySettings(
       }),
     onSuccess: (status) => {
       queryClient.setQueryData(['session-history-storage'], status);
+      onSuccess?.(status);
+    },
+    onError: showErrorToast,
+  });
+}
+
+export function useSaveSessionLogFileSettings(
+  onSuccess?: (status: SessionLogFileStatus) => void,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (settings: SessionLogFileSettings) =>
+      apiFetch<SessionLogFileStatus>('/api/session-history/log-files', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(settings),
+      }),
+    onSuccess: (status) => {
+      queryClient.setQueryData(['session-log-files'], status);
       onSuccess?.(status);
     },
     onError: showErrorToast,

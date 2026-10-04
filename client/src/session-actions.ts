@@ -4,6 +4,7 @@ import type {
   SessionProfile,
   SshHostEntry,
 } from '@muxus/shared';
+import { isDesktopProfile } from '@muxus/shared/ws-protocol';
 import type { ManagedHost } from './managed-hosts.js';
 import { localShellLaunchArguments } from './local-shell-profile.js';
 import { savedHostDisplayName } from './saved-hosts.js';
@@ -14,8 +15,10 @@ import {
 import { useMultiExecStore } from './state/multi-exec.js';
 import { isMultiExecTarget, isRemoteSessionTab, useTabsStore } from './state/tabs.js';
 import type { PaneDirection, SessionSetLayout } from './state/tabs.js';
-import { confirmAction } from './state/dialogs.js';
-import { showToast } from './state/toast.js';
+import { confirmAction, promptForText } from './state/dialogs.js';
+import { showErrorToast, showToast } from './state/toast.js';
+import { apiFetch } from './api/http.js';
+import { terminalHandle } from './terminal/terminal-registry.js';
 import { confirmDiscardRemoteEditors } from './editor/remote-editor-registry.js';
 import { findPane, visibleTabIds } from './state/workspace-layout.js';
 import { openAppWindow } from './window-management.js';
@@ -246,6 +249,53 @@ export async function requestForceReconnect(tabId: string): Promise<boolean> {
   if (!(await confirmDiscardRemoteEditors([tabId]))) return false;
   useTabsStore.getState().forceReconnect(tabId);
   return true;
+}
+
+/**
+ * Ask where to log a live terminal session, offering a free name from the log
+ * file settings, then start writing it there.
+ */
+export async function requestLogSessionToFile(tabId: string): Promise<boolean> {
+  const tab = useTabsStore.getState().tabs.find((candidate) => candidate.id === tabId);
+  if (!tab?.profile || isDesktopProfile(tab.profile)) return false;
+  let suggested: string;
+  try {
+    ({ path: suggested } = await apiFetch<{ path: string }>(
+      '/api/session-history/log-files/suggest',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ profile: tab.profile, title: tab.title }),
+      },
+    ));
+  } catch (err) {
+    showErrorToast(err);
+    return false;
+  }
+  const file = window.muxusDesktop
+    ? await window.muxusDesktop.selectLogFile(suggested)
+    : await promptForText({
+        title: 'Log session to file',
+        description:
+          'The session is written to this file as it runs. An existing file is added to, not replaced.',
+        label: 'Log file',
+        initialValue: suggested,
+        confirmLabel: 'Start logging',
+        validate: (value) =>
+          isAbsolutePath(value.trim())
+            ? null
+            : 'Enter the full path, starting at the root folder or drive.',
+      });
+  if (!file) return false;
+  if (!terminalHandle(tabId)?.setLogging({ logToFile: true, logFilePath: file.trim() })) {
+    showToast('error', 'The session is no longer connected.');
+    return false;
+  }
+  return true;
+}
+
+function isAbsolutePath(value: string): boolean {
+  return /^(\/|\\\\|[a-zA-Z]:[\\/])/.test(value);
 }
 
 /** Duplicate an open tab (same profile, fresh session). */

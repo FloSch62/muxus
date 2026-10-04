@@ -17,12 +17,14 @@ import type {
   SavedHostProfileInput,
   SessionHistorySettings,
   SessionHistorySettingsInput,
+  SessionLogFileSettings,
   SessionLoggingPolicy,
   SessionLoggingPolicyInput,
   TunnelInput,
   TunnelRecord,
   WorkspaceMultiExecGroup,
 } from '@muxus/shared';
+import { sessionLogFilePatternError } from '@muxus/shared';
 import {
   folderPathKey,
   folderPathSegments,
@@ -408,6 +410,26 @@ const MIGRATIONS = [
     name: 'remote-desktop-hosts',
     run: addRemoteDesktopHosts,
   },
+  {
+    version: 23,
+    name: 'session-log-files',
+    sql: `
+      ALTER TABLE session_logging_policies
+        ADD COLUMN log_to_file INTEGER NOT NULL DEFAULT 0
+        CHECK(log_to_file IN (0, 1));
+
+      CREATE TABLE session_log_file_settings (
+        singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+        directory TEXT,
+        filename_pattern TEXT NOT NULL CHECK(length(filename_pattern) BETWEEN 1 AND 200),
+        timestamps INTEGER NOT NULL CHECK(timestamps IN (0, 1)),
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) STRICT;
+
+      INSERT INTO session_log_file_settings(singleton, directory, filename_pattern, timestamps)
+      VALUES (1, NULL, '{host}_{date}_{time}.log', 0);
+    `,
+  },
 ] as const;
 
 /** Kinds stored as Muxus-owned saved hosts (everything but OpenSSH metadata rows). */
@@ -529,11 +551,12 @@ function addPasswordVaultKeyCheck(db: DatabaseSync): void {
   `);
 }
 
-const DEFAULT_SESSION_LOGGING_POLICY: SessionLoggingPolicyInput = {
+const DEFAULT_SESSION_LOGGING_POLICY: Required<SessionLoggingPolicyInput> = {
   enabled: false,
   captureInput: false,
   maxPartBytes: 5 * 1024 * 1024,
   maxParts: 10,
+  logToFile: false,
 };
 
 export interface OpenSshMetadata {
@@ -1729,7 +1752,7 @@ export class MuxusDatabase {
     requireNonEmpty(profileKey, 'profileKey');
     const exact = this.db
       .prepare(`
-        SELECT enabled, capture_input, max_part_bytes, max_parts
+        SELECT enabled, capture_input, max_part_bytes, max_parts, log_to_file
         FROM session_logging_policies WHERE profile_key = ?
       `)
       .get(profileKey);
@@ -1738,7 +1761,7 @@ export class MuxusDatabase {
         ? undefined
         : this.db
             .prepare(`
-              SELECT enabled, capture_input, max_part_bytes, max_parts
+              SELECT enabled, capture_input, max_part_bytes, max_parts, log_to_file
               FROM session_logging_policies WHERE profile_key = '*'
             `)
             .get();
@@ -1753,6 +1776,9 @@ export class MuxusDatabase {
         ? Number(row.max_part_bytes)
         : DEFAULT_SESSION_LOGGING_POLICY.maxPartBytes,
       maxParts: row ? Number(row.max_parts) : DEFAULT_SESSION_LOGGING_POLICY.maxParts,
+      logToFile: row
+        ? Number(row.log_to_file) === 1
+        : DEFAULT_SESSION_LOGGING_POLICY.logToFile,
       overridden: !!exact,
     };
   }
@@ -1766,13 +1792,14 @@ export class MuxusDatabase {
     this.db
       .prepare(`
         INSERT INTO session_logging_policies(
-          profile_key, enabled, capture_input, max_part_bytes, max_parts
-        ) VALUES (?, ?, ?, ?, ?)
+          profile_key, enabled, capture_input, max_part_bytes, max_parts, log_to_file
+        ) VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(profile_key) DO UPDATE SET
           enabled = excluded.enabled,
           capture_input = excluded.capture_input,
           max_part_bytes = excluded.max_part_bytes,
           max_parts = excluded.max_parts,
+          log_to_file = excluded.log_to_file,
           updated_at = CURRENT_TIMESTAMP
       `)
       .run(
@@ -1781,6 +1808,7 @@ export class MuxusDatabase {
         input.captureInput ? 1 : 0,
         input.maxPartBytes,
         input.maxParts,
+        input.logToFile ? 1 : 0,
       );
     return this.sessionLoggingPolicy(profileKey);
   }
@@ -1839,6 +1867,39 @@ export class MuxusDatabase {
     return this.sessionHistorySettings();
   }
 
+  sessionLogFileSettings(): SessionLogFileSettings {
+    const row = this.db
+      .prepare(`
+        SELECT directory, filename_pattern, timestamps
+        FROM session_log_file_settings WHERE singleton = 1
+      `)
+      .get()!;
+    return {
+      directory: optionalString(row.directory),
+      filenamePattern: String(row.filename_pattern),
+      timestamps: Number(row.timestamps) === 1,
+    };
+  }
+
+  saveSessionLogFileSettings(input: SessionLogFileSettings): SessionLogFileSettings {
+    validateSessionLogFileSettings(input);
+    this.db
+      .prepare(`
+        UPDATE session_log_file_settings
+        SET directory = ?,
+            filename_pattern = ?,
+            timestamps = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE singleton = 1
+      `)
+      .run(
+        input.directory?.trim() || null,
+        input.filenamePattern.trim(),
+        input.timestamps ? 1 : 0,
+      );
+    return this.sessionLogFileSettings();
+  }
+
   /**
    * After the worker has imported version-6 history, remove every payload row
    * and history-only table from the application database. A one-time VACUUM
@@ -1873,9 +1934,9 @@ export class MuxusDatabase {
     this.db
       .prepare(`
         INSERT INTO session_logging_policies(
-          profile_key, enabled, capture_input, max_part_bytes, max_parts
+          profile_key, enabled, capture_input, max_part_bytes, max_parts, log_to_file
         )
-        SELECT ?, enabled, capture_input, max_part_bytes, max_parts
+        SELECT ?, enabled, capture_input, max_part_bytes, max_parts, log_to_file
         FROM session_logging_policies
         WHERE profile_key = ?
         ON CONFLICT(profile_key) DO UPDATE SET
@@ -1883,6 +1944,7 @@ export class MuxusDatabase {
           capture_input = excluded.capture_input,
           max_part_bytes = excluded.max_part_bytes,
           max_parts = excluded.max_parts,
+          log_to_file = excluded.log_to_file,
           updated_at = CURRENT_TIMESTAMP
       `)
       .run(nextKey, previousKey);
@@ -2333,4 +2395,13 @@ function validateSessionHistorySettings(input: SessionHistorySettingsInput): voi
   ) {
     throw new Error('maxAgeDays must be a positive integer when enabled');
   }
+}
+
+function validateSessionLogFileSettings(input: SessionLogFileSettings): void {
+  const directory = input.directory?.trim();
+  if (directory && !path.isAbsolute(directory)) {
+    throw new Error('directory must be an absolute path');
+  }
+  const patternError = sessionLogFilePatternError(input.filenamePattern);
+  if (patternError) throw new Error(patternError);
 }

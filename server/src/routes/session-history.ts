@@ -1,15 +1,28 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import path from 'node:path';
-import { sessionLogName, sessionTranscript } from '@muxus/shared';
+import {
+  sessionLogFilePatternError,
+  sessionLogName,
+  sessionTranscript,
+} from '@muxus/shared';
+import { terminalProfileSchema } from '@muxus/shared/ws-protocol';
 import { z } from 'zod';
 import type {
   SessionHistoryResponse,
   SessionHistoryStorageStatus,
   SessionLogDetail,
+  SessionLogFileSettings,
+  SessionLogFileStatus,
   SessionLoggingPolicy,
 } from '@muxus/shared';
 import type { AppContext } from '../app.js';
 import { defaultHistoryRoot } from '../session-logging/history-store.js';
+import {
+  sessionLogDirectory,
+  sessionLogFilePath,
+  unusedSessionLogFilePath,
+} from '../session-logging/session-log-file.js';
+import { sessionProfileIdentity } from '../session-logging/session-recorder.js';
 import { HttpProblem, sendError } from '../util/errors.js';
 
 const TRANSCRIPT_PREVIEW_EVENTS = 5_000;
@@ -34,6 +47,30 @@ const policySchema = z.object({
   captureInput: z.boolean(),
   maxPartBytes: z.number().int().min(64 * 1024).max(1024 * 1024 * 1024),
   maxParts: z.number().int().min(1).max(1000),
+  logToFile: z.boolean().default(false),
+});
+
+const logFileSettingsSchema = z.object({
+  directory: z.string().trim().max(4096).optional(),
+  filenamePattern: z.string().trim().max(200),
+  timestamps: z.boolean(),
+}).superRefine((value, ctx) => {
+  if (value.directory && !path.isAbsolute(value.directory)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['directory'],
+      message: 'The log folder must be an absolute path.',
+    });
+  }
+  const patternError = sessionLogFilePatternError(value.filenamePattern);
+  if (patternError) {
+    ctx.addIssue({ code: 'custom', path: ['filenamePattern'], message: patternError });
+  }
+});
+
+const logFileSuggestionSchema = z.object({
+  profile: terminalProfileSchema,
+  title: z.string().trim().max(500).optional(),
 });
 
 const historySettingsSchema = z.object({
@@ -96,6 +133,47 @@ export function registerSessionHistoryRoutes(
         );
         await ctx.history.updateSettings(settings);
         return ctx.history.storageStatus(configuredStorageLocation(ctx, settings));
+      } catch (err) {
+        return sendError(reply, asRouteError(err));
+      }
+    },
+  );
+
+  app.get('/api/session-history/log-files', (): SessionLogFileStatus =>
+    logFileStatus(ctx.database.sessionLogFileSettings()),
+  );
+
+  app.put(
+    '/api/session-history/log-files',
+    async (req, reply): Promise<SessionLogFileStatus | void> => {
+      try {
+        const input = logFileSettingsSchema.parse(req.body);
+        return logFileStatus(
+          ctx.database.saveSessionLogFileSettings({
+            ...input,
+            directory: input.directory || undefined,
+          }),
+        );
+      } catch (err) {
+        return sendError(reply, asRouteError(err));
+      }
+    },
+  );
+
+  /** A free file name for a log the user is about to start, to offer for editing. */
+  app.post(
+    '/api/session-history/log-files/suggest',
+    async (req, reply): Promise<{ path: string } | void> => {
+      try {
+        const { profile, title } = logFileSuggestionSchema.parse(req.body);
+        const { host } = sessionProfileIdentity(profile);
+        const file = sessionLogFilePath(ctx.database.sessionLogFileSettings(), {
+          host,
+          title: title || host,
+          kind: profile.kind,
+          startedAt: new Date(),
+        });
+        return { path: unusedSessionLogFilePath(file) };
       } catch (err) {
         return sendError(reply, asRouteError(err));
       }
@@ -321,6 +399,10 @@ function asRouteError(err: unknown): unknown {
     400,
     err.issues[0]?.message ?? 'invalid session-history request',
   );
+}
+
+function logFileStatus(settings: SessionLogFileSettings): SessionLogFileStatus {
+  return { settings, activeDirectory: sessionLogDirectory(settings) };
 }
 
 function configuredStorageLocation(

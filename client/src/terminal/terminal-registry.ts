@@ -40,11 +40,16 @@ export interface TerminalHandle {
   paste(text: string): void;
   /** Read and paste the current clipboard, including images in SSH and local terminals. */
   pasteClipboard(): void;
-  /** Start/stop/pause persistence or change input capture for this live session. */
+  /**
+   * Start/stop/pause persistence, change input capture, or start/stop the
+   * log file (`logFilePath` is appended to; absent uses a generated name).
+   */
   setLogging(patch: {
     enabled?: boolean;
     paused?: boolean;
     captureInput?: boolean;
+    logToFile?: boolean;
+    logFilePath?: string;
   }): boolean;
 }
 

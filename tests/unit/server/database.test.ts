@@ -47,7 +47,44 @@ describe('MuxusDatabase migrations', () => {
       { version: 20, name: 'host-console-compatibility' },
       { version: 21, name: 'host-terminal-appearance' },
       { version: 22, name: 'remote-desktop-hosts' },
+      { version: 23, name: 'session-log-files' },
     ]);
+  });
+
+  it('keeps version 22 logging policies when adding log files', () => {
+    temporaryDirectory = mkdtempSync(path.join(os.tmpdir(), 'muxus-v22-migration-'));
+    const filename = path.join(temporaryDirectory, 'muxus.sqlite3');
+    database = new MuxusDatabase(filename);
+    database.close();
+    database = undefined;
+
+    const legacy = new DatabaseSync(filename);
+    try {
+      legacy.exec(`
+        DELETE FROM schema_migrations WHERE version = 23;
+        DROP TABLE session_log_file_settings;
+        ALTER TABLE session_logging_policies DROP COLUMN log_to_file;
+        INSERT INTO session_logging_policies(
+          profile_key, enabled, capture_input, max_part_bytes, max_parts
+        ) VALUES ('ssh:production', 1, 1, 1048576, 3);
+        PRAGMA user_version = 22;
+      `);
+    } finally {
+      legacy.close();
+    }
+
+    database = new MuxusDatabase(filename);
+    expect(database.sessionLoggingPolicy('ssh:production')).toMatchObject({
+      enabled: true,
+      captureInput: true,
+      maxParts: 3,
+      logToFile: false,
+      overridden: true,
+    });
+    expect(database.sessionLogFileSettings()).toEqual({
+      filenamePattern: '{host}_{date}_{time}.log',
+      timestamps: false,
+    });
   });
 
   it('rebuilds version 21 connection profiles to admit RDP and VNC hosts', () => {
@@ -101,7 +138,7 @@ describe('MuxusDatabase migrations', () => {
     }
 
     database = new MuxusDatabase(filename);
-    expect(database.appliedMigrations().at(-1)).toEqual({ version: 22, name: 'remote-desktop-hosts' });
+    expect(database.appliedMigrations().at(-1)).toEqual({ version: 23, name: 'session-log-files' });
     expect(database.savedHostProfile(telnet.id)).toMatchObject({
       name: 'Core switch',
       profile: { kind: 'telnet', host: 'switch.lab', port: 23 },
@@ -259,8 +296,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 22,
-      name: 'remote-desktop-hosts',
+      version: 23,
+      name: 'session-log-files',
     });
     expect(database.passwordVaultConfig()).toMatchObject({
       formatVersion: 2,
@@ -371,6 +408,47 @@ describe('persistent session history', () => {
       maxParts: 4,
       overridden: false,
     });
+  });
+
+  it('inherits writing log files and validates the log file settings', () => {
+    database = new MuxusDatabase(':memory:');
+    database.saveSessionLoggingPolicy('*', {
+      enabled: false,
+      captureInput: false,
+      maxPartBytes: 1024 * 1024,
+      maxParts: 4,
+      logToFile: true,
+    });
+    expect(database.sessionLoggingPolicy('serial:/dev/ttyUSB0')).toMatchObject({
+      enabled: false,
+      logToFile: true,
+      overridden: false,
+    });
+
+    expect(
+      database.saveSessionLogFileSettings({
+        directory: ' /srv/logs ',
+        filenamePattern: ' {kind}/{host}_{date}.log ',
+        timestamps: true,
+      }),
+    ).toEqual({
+      directory: '/srv/logs',
+      filenamePattern: '{kind}/{host}_{date}.log',
+      timestamps: true,
+    });
+    expect(() =>
+      database!.saveSessionLogFileSettings({
+        directory: 'relative/logs',
+        filenamePattern: '{host}.log',
+        timestamps: false,
+      }),
+    ).toThrow(/absolute/);
+    expect(() =>
+      database!.saveSessionLogFileSettings({
+        filenamePattern: '../{host}.log',
+        timestamps: false,
+      }),
+    ).toThrow(/needs a name/);
   });
 
 });

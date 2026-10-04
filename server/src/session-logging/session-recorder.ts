@@ -13,6 +13,8 @@ import {
   type HistoryEvent,
   SessionHistoryStore,
 } from './history-store.js';
+import { SessionLogFile, sessionLogFilePath } from './session-log-file.js';
+import { TerminalTextNormalizer } from './terminal-text-normalizer.js';
 
 export interface SessionLoggingState {
   enabled: boolean;
@@ -20,6 +22,8 @@ export interface SessionLoggingState {
   paused: boolean;
   captureInput: boolean;
   warning?: string;
+  /** Plain-text log file currently written for this session. */
+  filePath?: string;
 }
 
 /** Stable policy identity for saved hosts and deterministic ad-hoc endpoints. */
@@ -53,11 +57,14 @@ export function sessionProfileIdentity(profile: TerminalProfile): {
 }
 
 /**
- * One durable, timestamped recorder. Persistence errors disable only logging;
- * they never interrupt the user's terminal transport.
+ * One durable, timestamped recorder. It feeds session history and, on its
+ * own schedule, a plain-text log file; pausing and input capture apply to
+ * both. Persistence errors disable only logging; they never interrupt the
+ * user's terminal transport.
  */
 export class SessionRecorder {
   readonly state: SessionLoggingState;
+  private file: SessionLogFile | undefined;
   private startedAtMs = Date.now();
   private inputNormalizer = new TerminalTextNormalizer(0);
   private outputNormalizer = new TerminalTextNormalizer();
@@ -69,6 +76,7 @@ export class SessionRecorder {
   private unsubscribeFailure: (() => void) | undefined;
 
   private constructor(
+    private readonly database: MuxusDatabase,
     private readonly history: SessionHistoryStore,
     private readonly logger: FastifyBaseLogger,
     private readonly policy: ReturnType<MuxusDatabase['sessionLoggingPolicy']>,
@@ -91,6 +99,7 @@ export class SessionRecorder {
     const identity = sessionProfileIdentity(profile);
     const policy = database.sessionLoggingPolicy(identity.profileKey);
     const recorder = new SessionRecorder(
+      database,
       history,
       logger,
       policy,
@@ -107,11 +116,14 @@ export class SessionRecorder {
       },
     );
     if (policy.enabled) recorder.startLogging();
+    if (policy.logToFile) recorder.startFileLog();
     return recorder;
   }
 
   private startLogging(): void {
     if (this.state.enabled || this.terminalEnded) return;
+    // Only a log file can be paused here; the new record joins the pause.
+    const paused = this.state.paused;
     const startedAt = new Date().toISOString();
     this.startedAtMs = Date.parse(startedAt);
     this.inputNormalizer = new TerminalTextNormalizer(0);
@@ -133,7 +145,15 @@ export class SessionRecorder {
       this.state.sessionId,
       (message) => this.suspend(message),
     );
-    this.system('Session logging started.');
+    this.historySystem('Session logging started.');
+    if (paused) {
+      this.historySystem('Session logging paused.');
+      this.state.paused = true;
+      this.history.setSessionState(this.state.sessionId, {
+        paused: true,
+        captureInput: this.state.captureInput,
+      });
+    }
   }
 
   private finishLogging(
@@ -142,11 +162,13 @@ export class SessionRecorder {
   ): void {
     if (!this.state.enabled || !this.state.sessionId) return;
     // A closing marker is useful in a replay even if the session was paused.
+    const paused = this.state.paused;
     this.state.paused = false;
     this.flushNormalizerSnapshots(true);
-    this.system(marker);
+    this.historySystem(marker);
     this.state.enabled = false;
-    this.state.paused = false;
+    // A log file that is still written stays paused.
+    this.state.paused = paused && this.file !== undefined;
     this.history.finishSession(
       this.state.sessionId,
       status,
@@ -161,26 +183,31 @@ export class SessionRecorder {
   }
 
   input(data: Buffer): void {
-    if (
-      !this.state.enabled ||
-      this.state.paused ||
-      this.terminalEnded ||
-      !this.state.captureInput
-    ) return;
+    if (this.state.paused || this.terminalEnded || !this.state.captureInput) return;
+    this.file?.input(data);
+    if (!this.state.enabled) return;
     this.flushOutputNormalizerSnapshot();
     const text = this.inputNormalizer.write(data);
     this.append('input', data, text, this.inputNormalizer.takeLineTimestamps());
   }
 
   output(data: Buffer | string): void {
-    if (!this.state.enabled || this.state.paused || this.terminalEnded) return;
-    if (this.state.captureInput) this.flushInputNormalizerSnapshot();
+    if ((!this.state.enabled && !this.file) || this.state.paused || this.terminalEnded) return;
     const raw = typeof data === 'string' ? Buffer.from(data, 'utf8') : data;
+    this.file?.output(raw);
+    if (!this.state.enabled) return;
+    if (this.state.captureInput) this.flushInputNormalizerSnapshot();
     const text = this.outputNormalizer.write(raw);
     this.append('output', raw, text, this.outputNormalizer.takeLineTimestamps());
   }
 
+  /** A status line for every active log. */
   system(message: string): void {
+    if (!this.state.paused && !this.terminalEnded) this.file?.system(message);
+    this.historySystem(message);
+  }
+
+  private historySystem(message: string): void {
     // Markers must follow every normalized row that was visible before them,
     // even when the reconciler was still retaining an editable shell prompt.
     this.flushNormalizerSnapshots();
@@ -192,14 +219,18 @@ export class SessionRecorder {
     enabled?: boolean;
     paused?: boolean;
     captureInput?: boolean;
+    logToFile?: boolean;
+    logFilePath?: string;
   }): SessionLoggingState {
     if (this.terminalEnded) return { ...this.state };
+    if (patch.logToFile === false) this.stopFileLog('Logging to file stopped');
+    else if (patch.logToFile === true) this.startFileLog(patch.logFilePath);
     if (patch.enabled === false && this.state.enabled) {
       this.finishLogging('completed', 'Session logging stopped.');
-      return { ...this.state };
+    } else if (patch.enabled === true && !this.state.enabled) {
+      this.startLogging();
     }
-    if (patch.enabled === true && !this.state.enabled) this.startLogging();
-    if (!this.state.enabled) return { ...this.state };
+    if (!this.state.enabled && !this.file) return { ...this.state };
     if (patch.paused !== undefined && patch.paused !== this.state.paused) {
       if (patch.paused) {
         this.flushNormalizerSnapshots();
@@ -222,10 +253,12 @@ export class SessionRecorder {
           : 'Input recording suppressed.',
       );
     }
-    this.history.setSessionState(this.state.sessionId!, {
-      paused: this.state.paused,
-      captureInput: this.state.captureInput,
-    });
+    if (this.state.enabled) {
+      this.history.setSessionState(this.state.sessionId!, {
+        paused: this.state.paused,
+        captureInput: this.state.captureInput,
+      });
+    }
     return { ...this.state };
   }
 
@@ -245,7 +278,58 @@ export class SessionRecorder {
   end(status: Exclude<SessionLogStatus, 'active'>): void {
     if (this.terminalEnded) return;
     this.finishLogging(status, `Session logging ended (${status}).`);
+    this.stopFileLog(`Logging to file ended (${status})`);
     this.terminalEnded = true;
+  }
+
+  /**
+   * Start writing a log file: `requestedPath` is appended to, otherwise a new
+   * file is named from the log file settings. A failure only sets a warning.
+   */
+  private startFileLog(requestedPath?: string): void {
+    if (this.file || this.terminalEnded) return;
+    const settings = this.database.sessionLogFileSettings();
+    const { title, host, kind } = this.sessionTemplate;
+    const target =
+      requestedPath ??
+      sessionLogFilePath(settings, { host, title, kind, startedAt: new Date() });
+    let file: SessionLogFile;
+    try {
+      file = SessionLogFile.open(target, {
+        append: requestedPath !== undefined,
+        timestamps: settings.timestamps,
+      });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      this.state.warning = `Could not write the log file ${target}: ${reason}`;
+      this.logger.warn({ path: target, err }, 'session log file could not be opened');
+      return;
+    }
+    file.onFailure((error) => this.fileFailed(file, error));
+    this.file = file;
+    this.state.filePath = file.path;
+    this.state.warning = undefined;
+    const name = title === host ? host : `${title} (${host})`;
+    file.system(`Logging to file started: ${name} at ${new Date().toISOString()}.`);
+    if (this.state.paused) file.system('Session logging paused.');
+  }
+
+  private stopFileLog(marker: string): void {
+    if (!this.file) return;
+    this.file.close(`${marker} at ${new Date().toISOString()}.`);
+    this.file = undefined;
+    this.state.filePath = undefined;
+    if (!this.state.enabled) this.state.paused = false;
+  }
+
+  private fileFailed(file: SessionLogFile, error: Error): void {
+    this.logger.warn({ path: file.path, err: error }, 'session log file write failed');
+    if (this.file !== file) return;
+    this.file = undefined;
+    this.state.filePath = undefined;
+    if (!this.state.enabled) this.state.paused = false;
+    this.state.warning = `Logging to ${file.path} stopped: ${error.message}`;
+    this.stateListener?.({ ...this.state });
   }
 
   private append(
@@ -372,7 +456,8 @@ export class SessionRecorder {
   private suspend(message: string): void {
     if (!this.state.enabled || this.terminalEnded) return;
     this.state.enabled = false;
-    this.state.paused = false;
+    // A log file that is still written stays paused.
+    if (!this.file) this.state.paused = false;
     this.state.warning = message;
     this.pending = [];
     if (this.flushTimer) clearTimeout(this.flushTimer);
@@ -404,347 +489,4 @@ interface PendingEvent {
   text: string[];
   rawBytes: number;
   lineTimestamps: SessionLineTimestamp[];
-}
-
-/**
- * Small streaming terminal-line reconciler used only for search and readable
- * transcripts. It applies the cursor/erase operations used by shells and
- * progress displays, retaining a few editable rows so prompt redraws replace
- * their earlier state instead of becoming duplicate transcript lines. The
- * original byte events remain untouched for exact export.
- */
-export class TerminalTextNormalizer {
-  private readonly decoder = new TextDecoder('utf-8', { fatal: false });
-  private state:
-    | 'text'
-    | 'escape'
-    | 'escape-intermediate'
-    | 'csi'
-    | 'string'
-    | 'string-escape' = 'text';
-  private csi = '';
-  private rows: string[][] = [[]];
-  private cursorRow = 0;
-  private cursorCol = 0;
-  private savedCursor: [number, number] = [0, 0];
-  private committed = '';
-  private rowTimes: (string | undefined)[] = [];
-  private currentTime = '';
-  private committedTimes: SessionLineTimestamp[] = [];
-  private emittedTimes: SessionLineTimestamp[] = [];
-
-  takeLineTimestamps(): SessionLineTimestamp[] {
-    const timestamps = this.emittedTimes;
-    this.emittedTimes = [];
-    return timestamps;
-  }
-
-  constructor(private readonly editableRows = 4) {}
-
-  write(data: Uint8Array, recordedAt = new Date().toISOString()): string {
-    this.currentTime = recordedAt;
-    this.process(this.decoder.decode(data, { stream: true }));
-    this.commitReadyRows();
-    return this.takeCommitted();
-  }
-
-  /** Flush the currently visible rows and start a fresh transcript screen. */
-  drain(): string {
-    this.commitAllRows();
-    this.resetRows();
-    return this.takeCommitted();
-  }
-
-  /** Final decoder flush plus all still-editable rows at session end. */
-  finish(): string {
-    this.process(this.decoder.decode());
-    return this.drain();
-  }
-
-  private process(decoded: string): void {
-    for (const char of decoded) {
-      const code = char.codePointAt(0)!;
-      if (this.state === 'text') {
-        if (code === 0x1b) {
-          this.state = 'escape';
-          continue;
-        }
-        if (char === '\r') {
-          this.cursorCol = 0;
-          continue;
-        }
-        if (char === '\n') {
-          this.rowTimes[this.cursorRow] ??= this.currentTime;
-          this.cursorRow += 1;
-          this.ensureRow(this.cursorRow);
-          continue;
-        }
-        if (char === '\b') {
-          this.cursorCol = Math.max(0, this.cursorCol - 1);
-          continue;
-        }
-        if (char === '\t') {
-          const spaces = 8 - (this.cursorCol % 8);
-          for (let index = 0; index < spaces; index += 1) this.put(' ');
-          continue;
-        }
-        if (code >= 0x20 && code !== 0x7f) this.put(char);
-        continue;
-      }
-
-      if (this.state === 'escape') {
-        if (char === '[') {
-          this.csi = '';
-          this.state = 'csi';
-        }
-        else if (char === ']' || char === 'P' || char === '_' || char === '^') {
-          this.state = 'string';
-        } else if (code >= 0x20 && code <= 0x2f) {
-          this.state = 'escape-intermediate';
-        } else {
-          this.handleEscape(char);
-          this.state = 'text';
-        }
-        continue;
-      }
-      if (this.state === 'escape-intermediate') {
-        if (code >= 0x30 && code <= 0x7e) this.state = 'text';
-        continue;
-      }
-      if (this.state === 'csi') {
-        if (code >= 0x40 && code <= 0x7e) {
-          this.handleCsi(char);
-          this.csi = '';
-          this.state = 'text';
-        } else {
-          this.csi += char;
-        }
-        continue;
-      }
-      if (this.state === 'string') {
-        if (code === 0x07) this.state = 'text';
-        else if (code === 0x1b) this.state = 'string-escape';
-        continue;
-      }
-      if (this.state === 'string-escape') {
-        this.state = char === '\\' ? 'text' : char === '\x1b' ? 'string-escape' : 'string';
-      }
-    }
-  }
-
-  private put(char: string): void {
-    const row = this.ensureRow(this.cursorRow);
-    while (row.length < this.cursorCol) row.push(' ');
-    row[this.cursorCol] = char;
-    this.rowTimes[this.cursorRow] = this.currentTime;
-    this.cursorCol += 1;
-  }
-
-  private handleEscape(final: string): void {
-    if (final === '7') {
-      this.savedCursor = [this.cursorRow, this.cursorCol];
-      return;
-    }
-    if (final === '8') {
-      [this.cursorRow, this.cursorCol] = this.savedCursor;
-      this.ensureRow(this.cursorRow);
-      return;
-    }
-    if (final === 'D') {
-      this.cursorRow += 1;
-      this.ensureRow(this.cursorRow);
-      return;
-    }
-    if (final === 'E') {
-      this.cursorRow += 1;
-      this.cursorCol = 0;
-      this.ensureRow(this.cursorRow);
-      return;
-    }
-    if (final === 'M') {
-      this.cursorRow = Math.max(0, this.cursorRow - 1);
-      this.ensureRow(this.cursorRow);
-      return;
-    }
-    if (final === 'c') this.resetRows();
-  }
-
-  private handleCsi(final: string): void {
-    const privateMode = /^[?>]/.test(this.csi);
-    const raw = this.csi.replace(/^[?>]/, '');
-    const params = raw
-      .split(';')
-      .map((value) => (value === '' ? 0 : Number.parseInt(value, 10)))
-      .map((value) => (Number.isFinite(value) ? value : 0));
-    const first = params[0] ?? 0;
-    const amount = Math.max(1, first);
-
-    if (privateMode && (final === 'h' || final === 'l')) return;
-    switch (final) {
-      case 'A':
-        this.cursorRow = Math.max(0, this.cursorRow - amount);
-        break;
-      case 'B':
-        this.cursorRow += amount;
-        break;
-      case 'C':
-        this.cursorCol += amount;
-        break;
-      case 'D':
-        this.cursorCol = Math.max(0, this.cursorCol - amount);
-        break;
-      case 'E':
-        this.cursorRow += amount;
-        this.cursorCol = 0;
-        break;
-      case 'F':
-        this.cursorRow = Math.max(0, this.cursorRow - amount);
-        this.cursorCol = 0;
-        break;
-      case 'G':
-      case '`':
-        this.cursorCol = Math.max(0, amount - 1);
-        break;
-      case 'H':
-      case 'f':
-        this.cursorRow = Math.max(0, (params[0] || 1) - 1);
-        this.cursorCol = Math.max(0, (params[1] || 1) - 1);
-        break;
-      case 'd':
-        this.cursorRow = Math.max(0, amount - 1);
-        break;
-      case 'J':
-        this.eraseDisplay(first);
-        break;
-      case 'K':
-        this.eraseLine(first);
-        break;
-      case 'P':
-        this.rowTimes[this.cursorRow] = this.currentTime;
-        this.ensureRow(this.cursorRow).splice(this.cursorCol, amount);
-        break;
-      case '@':
-        this.rowTimes[this.cursorRow] = this.currentTime;
-        this.ensureRow(this.cursorRow).splice(
-          this.cursorCol,
-          0,
-          ...Array.from({ length: amount }, () => ' '),
-        );
-        break;
-      case 'X': {
-        this.rowTimes[this.cursorRow] = this.currentTime;
-        const row = this.ensureRow(this.cursorRow);
-        for (let index = 0; index < amount; index += 1) {
-          if (this.cursorCol + index < row.length) row[this.cursorCol + index] = ' ';
-        }
-        break;
-      }
-      case 's':
-        this.savedCursor = [this.cursorRow, this.cursorCol];
-        break;
-      case 'u':
-        [this.cursorRow, this.cursorCol] = this.savedCursor;
-        break;
-    }
-    this.ensureRow(this.cursorRow);
-  }
-
-  private eraseDisplay(mode: number): void {
-    if (mode === 2 || mode === 3) {
-      // A deliberate clear still belongs to searchable history, while the
-      // following screen starts without stale editable prompt fragments.
-      this.commitAllRows();
-      this.resetRows();
-      return;
-    }
-    if (mode === 0) {
-      this.eraseLine(0);
-      this.rows.splice(this.cursorRow + 1);
-      this.rowTimes.splice(this.cursorRow + 1);
-      return;
-    }
-    if (mode === 1) {
-      for (let row = 0; row < this.cursorRow; row += 1) {
-        this.rows[row] = [];
-        this.rowTimes[row] = this.currentTime;
-      }
-      this.eraseLine(1);
-    }
-  }
-
-  private eraseLine(mode: number): void {
-    const row = this.ensureRow(this.cursorRow);
-    this.rowTimes[this.cursorRow] = this.currentTime;
-    if (mode === 2) {
-      this.rows[this.cursorRow] = [];
-      return;
-    }
-    if (mode === 1) {
-      const end = Math.min(this.cursorCol, row.length - 1);
-      for (let index = 0; index <= end; index += 1) row[index] = ' ';
-      return;
-    }
-    row.splice(this.cursorCol);
-  }
-
-  private ensureRow(index: number): string[] {
-    while (this.rows.length <= index) this.rows.push([]);
-    return this.rows[index]!;
-  }
-
-  private commitReadyRows(): void {
-    const count = Math.max(0, this.cursorRow - this.editableRows);
-    for (let index = 0; index < count; index += 1) {
-      this.recordLineTime(index);
-      this.committed += `${lineText(this.rows[index]!)}\n`;
-    }
-    if (count === 0) return;
-    this.rows.splice(0, count);
-    this.rowTimes.splice(0, count);
-    this.cursorRow -= count;
-    this.savedCursor = [
-      Math.max(0, this.savedCursor[0] - count),
-      this.savedCursor[1],
-    ];
-  }
-
-  private commitAllRows(): void {
-    let last = this.rows.length - 1;
-    while (last >= 0 && lineText(this.rows[last]!) === '') last -= 1;
-    if (last < 0) return;
-    for (let index = 0; index <= last; index += 1) {
-      this.recordLineTime(index);
-      this.committed += lineText(this.rows[index]!);
-      if (index < last || last < this.rows.length - 1) this.committed += '\n';
-    }
-  }
-
-  private recordLineTime(index: number): void {
-    this.committedTimes.push({
-      offset: this.committed.length,
-      recordedAt: this.rowTimes[index] ?? this.currentTime,
-    });
-  }
-
-  private resetRows(): void {
-    this.rowTimes = [];
-    this.rows = [[]];
-    this.cursorRow = 0;
-    this.cursorCol = 0;
-    this.savedCursor = [0, 0];
-  }
-
-  private takeCommitted(): string {
-    const output = this.committed;
-    this.committed = '';
-    this.emittedTimes = this.committedTimes;
-    this.committedTimes = [];
-    return output;
-  }
-}
-
-function lineText(row: readonly string[]): string {
-  let end = row.length;
-  while (end > 0 && row[end - 1] === ' ') end -= 1;
-  return row.slice(0, end).join('');
 }

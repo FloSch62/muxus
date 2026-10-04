@@ -27,7 +27,7 @@ export function LoggingSection({
         onChange={onChange}
         allowInherit
       />
-      {!value.inherit && value.enabled && value.captureInput ? (
+      {!value.inherit && (value.enabled || value.logToFile) && value.captureInput ? (
         <Alert severity="warning">
           Input recording can retain commands containing credentials. Output echoed by the remote
           shell may be retained regardless of this switch.

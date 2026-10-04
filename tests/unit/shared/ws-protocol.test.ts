@@ -253,6 +253,32 @@ describe('terminalClientMessageSchema', () => {
     ).toBe(false);
   });
 
+  it('starts a log file with or without a chosen path, never with a path alone', () => {
+    expect(
+      terminalClientMessageSchema.safeParse({ op: 'set-logging', logToFile: true }).success,
+    ).toBe(true);
+    expect(
+      terminalClientMessageSchema.safeParse({
+        op: 'set-logging',
+        logToFile: true,
+        logFilePath: '/home/user/router.log',
+      }).success,
+    ).toBe(true);
+    expect(
+      terminalClientMessageSchema.safeParse({
+        op: 'set-logging',
+        logFilePath: '/home/user/router.log',
+      }).success,
+    ).toBe(false);
+    expect(
+      terminalClientMessageSchema.safeParse({
+        op: 'set-logging',
+        logToFile: true,
+        logFilePath: '   ',
+      }).success,
+    ).toBe(false);
+  });
+
   it('accepts tab renames with a non-blank title', () => {
     expect(terminalClientMessageSchema.safeParse({ op: 'set-title', title: 'Pre-change' }).success).toBe(true);
     expect(terminalClientMessageSchema.safeParse({ op: 'set-title', title: '   ' }).success).toBe(false);

@@ -58,6 +58,8 @@ interface TabBase {
   loggingWarning?: string;
   loggingPaused: boolean;
   captureInput: boolean;
+  /** Plain-text log file the live session is written to. */
+  logFilePath?: string;
   /** Monotonic signal used to reconnect one or many mounted terminal views. */
   reconnectRequest: number;
   /** Optional multiplexer to attach after the replacement SSH shell is ready. */
@@ -108,6 +110,7 @@ type TabUpdate = Partial<{
   loggingWarning: string | undefined;
   loggingPaused: boolean;
   captureInput: boolean;
+  logFilePath: string | undefined;
   failureReason: string | undefined;
   disconnectReason: 'completed' | 'failed' | 'disconnected' | undefined;
   freshTransport: string | undefined;
@@ -468,6 +471,7 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
           loggingWarning: undefined,
           loggingPaused: false,
           captureInput: false,
+          logFilePath: undefined,
           reconnectRequest: 0,
         };
       }),
@@ -869,6 +873,7 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
           loggingWarning: undefined,
           loggingPaused: false,
           captureInput: false,
+          logFilePath: undefined,
           reconnectRequest: 0,
         })),
       };

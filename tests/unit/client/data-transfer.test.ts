@@ -8,6 +8,7 @@ import {
   createOpenSshExport,
   parseTransferDocument,
   restoreImportedConnections,
+  restoreTransferDocument,
   sanitizePreferences,
   type BackupPreferences,
 } from '../../../client/src/data-transfer.js';
@@ -208,13 +209,17 @@ describe('Muxus transfer file parsing', () => {
   });
 });
 
-function mockBackupSnapshot(folders: unknown[] = [], profiles: unknown[] = []): void {
+function mockBackupSnapshot(
+  folders: unknown[] = [],
+  profiles: unknown[] = [],
+  policies: unknown[] = [],
+): void {
   apiFetchMock
     .mockResolvedValueOnce({ hosts: [] })
     .mockResolvedValueOnce({ profiles })
     .mockResolvedValueOnce({ tunnels: [] });
   for (let index = 0; index < 2 + profiles.length; index++) {
-    apiFetchMock.mockResolvedValueOnce({ overridden: false });
+    apiFetchMock.mockResolvedValueOnce(policies[index] ?? { overridden: false });
   }
   apiFetchMock
     .mockResolvedValueOnce({
@@ -225,8 +230,119 @@ function mockBackupSnapshot(folders: unknown[] = [], profiles: unknown[] = []): 
         minFreePercent: 5,
       },
     })
+    .mockResolvedValueOnce({
+      settings: {
+        directory: '/home/test/logs',
+        filenamePattern: '{host}/{date}.log',
+        timestamps: true,
+      },
+      activeDirectory: '/home/test/logs',
+    })
     .mockResolvedValueOnce({ folders });
 }
+
+describe('backing up session log files', () => {
+  const historySettings = {
+    maxTotalBytes: 5 * 1024 ** 3,
+    minFreeBytes: 2 * 1024 ** 3,
+    minFreePercent: 5,
+  };
+
+  it('keeps each policy\'s log file choice and the settings without the folder', async () => {
+    mockBackupSnapshot([], [], [
+      {
+        profileKey: '*',
+        enabled: false,
+        captureInput: false,
+        maxPartBytes: 1024 * 1024,
+        maxParts: 2,
+        logToFile: true,
+        overridden: true,
+      },
+    ]);
+
+    const document = await createBackupDocument();
+
+    expect(document.data.loggingPolicies).toEqual([
+      {
+        profileKey: '*',
+        policy: {
+          enabled: false,
+          captureInput: false,
+          maxPartBytes: 1024 * 1024,
+          maxParts: 2,
+          logToFile: true,
+        },
+      },
+    ]);
+    expect(document.data.logFileSettings).toEqual({
+      filenamePattern: '{host}/{date}.log',
+      timestamps: true,
+    });
+    expect(parseTransferDocument(JSON.stringify(document))).toEqual(document);
+  });
+
+  it('rejects malformed log file settings', () => {
+    expect(() =>
+      parseTransferDocument(
+        JSON.stringify({
+          format: BACKUP_FORMAT,
+          version: TRANSFER_VERSION,
+          createdAt: '2026-10-04T12:00:00.000Z',
+          data: {
+            ...connections,
+            preferences: {},
+            tunnels: [],
+            loggingPolicies: [],
+            historySettings,
+            logFileSettings: { filenamePattern: '', timestamps: 'yes' },
+          },
+        }),
+      ),
+    ).toThrow('The backup data is incomplete or too large.');
+  });
+
+  it('restores the settings into this machine\'s log folder', async () => {
+    apiFetchMock
+      .mockResolvedValueOnce({ settings: { storageLocation: '/srv/history' } })
+      .mockResolvedValueOnce({
+        settings: { directory: '/srv/logs', filenamePattern: '{host}.log', timestamps: false },
+      })
+      .mockResolvedValue({});
+
+    await restoreTransferDocument(
+      parseTransferDocument(
+        JSON.stringify({
+          format: BACKUP_FORMAT,
+          version: TRANSFER_VERSION,
+          createdAt: '2026-10-04T12:00:00.000Z',
+          data: {
+            ...connections,
+            preferences: {},
+            tunnels: [],
+            loggingPolicies: [],
+            historySettings,
+            logFileSettings: { filenamePattern: '{kind}/{host}.log', timestamps: true },
+          },
+        }),
+      ),
+      { preferences: false, connections: false, tunnels: false, logging: true },
+      'replace',
+    );
+
+    expect(apiFetchMock).toHaveBeenCalledWith(
+      '/api/session-history/log-files',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify({
+          filenamePattern: '{kind}/{host}.log',
+          timestamps: true,
+          directory: '/srv/logs',
+        }),
+      }),
+    );
+  });
+});
 
 describe('backing up preferences', () => {
   it('includes display and update-notification choices', async () => {

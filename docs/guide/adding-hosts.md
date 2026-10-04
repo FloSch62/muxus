@@ -98,7 +98,8 @@ To start a forward on demand instead, without opening a terminal, save it as a
 Two per-host overrides of the global [settings](settings.md):
 
 - **Session logging** inherits the global policy, or forces retention on or off for this
-  host, including whether keystrokes are recorded.
+  host, including whether keystrokes are recorded and whether every session writes a
+  [log file](session-history.md#log-files).
 - **Highlighting** assigns a reusable profile, such as the built-in Nokia SR OS or SR Linux
   profile, and adds keyword or regex rules for this host's terminals, either in addition to
   or instead of the global rules.

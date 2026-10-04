@@ -35,7 +35,9 @@ export function SessionLoggingPolicyFields({
               <Typography variant="body2">Use default session logging settings</Typography>
               <Typography variant="caption" color="textSecondary">
                 {value.inherit
-                  ? `Inherited: logging ${value.enabled ? 'enabled' : 'disabled'}.`
+                  ? `Inherited: logging ${value.enabled ? 'enabled' : 'disabled'}${
+                      value.logToFile ? ', log files on' : ''
+                    }.`
                   : 'This host has its own logging and retention policy.'}
               </Typography>
             </Box>
@@ -61,12 +63,30 @@ export function SessionLoggingPolicyFields({
         }
       />
 
+      <FormControlLabel
+        control={
+          <Switch
+            checked={value.logToFile}
+            disabled={disabled}
+            onChange={(event) => onChange({ logToFile: event.target.checked })}
+          />
+        }
+        label={
+          <Box>
+            <Typography variant="body2">Write log files</Typography>
+            <Typography variant="caption" color="textSecondary">
+              Save each new session to a plain-text log file as it runs, independent of history.
+            </Typography>
+          </Box>
+        }
+      />
+
       <Tooltip title="When disabled, client input bytes are never persisted. Commands echoed by the remote shell are still output.">
         <FormControlLabel
           control={
             <Switch
               checked={value.captureInput}
-              disabled={disabled || !value.enabled}
+              disabled={disabled || (!value.enabled && !value.logToFile)}
               onChange={(event) => onChange({ captureInput: event.target.checked })}
             />
           }

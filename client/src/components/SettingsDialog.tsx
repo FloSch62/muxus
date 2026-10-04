@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Autocomplete from '@mui/material/Autocomplete';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
@@ -39,18 +39,29 @@ import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
 import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
 import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop';
 import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
+import {
+  DEFAULT_SESSION_LOG_FILE_PATTERN,
+  sessionLogFileName,
+  sessionLogFilePatternError,
+} from '@muxus/shared';
 import { fetchAppLogs, formatLogEntry } from '../api/logs.js';
 import {
   useSaveSessionHistorySettings,
+  useSaveSessionLogFileSettings,
   useSaveSessionLoggingPolicy,
 } from '../api/session-history.js';
-import { useSessionHistoryStorage, useSessionLoggingPolicy } from '../api/queries.js';
+import {
+  useSessionHistoryStorage,
+  useSessionLogFiles,
+  useSessionLoggingPolicy,
+} from '../api/queries.js';
 import {
   FALLBACK_SESSION_LOGGING_POLICY,
   hostSessionLoggingDraft,
+  sameSessionLoggingDraft,
   sessionLoggingPolicyInput,
-  type HostSessionLoggingDraft,
 } from '../session-logging-policy.js';
+import { useSettingsDraft } from '../settings-draft.js';
 import {
   INTERFACE_ZOOM_STEPS,
   clampInterfaceZoom,
@@ -1144,65 +1155,53 @@ function SessionLoggingSection({ onDirtyChange }: { onDirtyChange: (dirty: boole
     data: localPolicy,
     isLoading: localPolicyLoading,
   } = useSessionLoggingPolicy('local');
-  const [draft, setDraft] = useState<HostSessionLoggingDraft>({
-    ...FALLBACK_SESSION_LOGGING_POLICY,
-    inherit: false,
-    loaded: false,
-  });
-  const [localDraft, setLocalDraft] = useState<HostSessionLoggingDraft>({
-    ...FALLBACK_SESSION_LOGGING_POLICY,
-    inherit: true,
-    loaded: false,
-  });
-  // Refs keep a refetch from clobbering edits in progress; the mirrored state
-  // is what the nav's unsaved marker reads.
-  const defaultDirty = useRef(false);
-  const localDirty = useRef(false);
-  const [defaultEdited, setDefaultEdited] = useState(false);
-  const [localEdited, setLocalEdited] = useState(false);
+  const storedDefault = useMemo(
+    () => (policy ? hostSessionLoggingDraft(policy, false) : undefined),
+    [policy],
+  );
+  const storedLocal = useMemo(
+    () => (localPolicy ? hostSessionLoggingDraft(localPolicy, !localPolicy.overridden) : undefined),
+    [localPolicy],
+  );
+  const {
+    draft,
+    dirty: defaultEdited,
+    edit: set,
+    saved: defaultSaved,
+  } = useSettingsDraft(
+    storedDefault,
+    { ...FALLBACK_SESSION_LOGGING_POLICY, inherit: false, loaded: false },
+    sameSessionLoggingDraft,
+  );
+  const {
+    draft: localDraft,
+    dirty: localEdited,
+    edit: setLocal,
+    saved: localSaved,
+  } = useSettingsDraft(
+    storedLocal,
+    { ...FALLBACK_SESSION_LOGGING_POLICY, inherit: true, loaded: false },
+    sameSessionLoggingDraft,
+  );
   const [historyEdited, setHistoryEdited] = useState(false);
+  const [logFilesEdited, setLogFilesEdited] = useState(false);
   const savePolicy = useSaveSessionLoggingPolicy(() => {
-    defaultDirty.current = false;
-    setDefaultEdited(false);
+    defaultSaved();
     showToast('success', 'Default session logging settings saved.');
   });
   const saveLocalPolicy = useSaveSessionLoggingPolicy(() => {
-    localDirty.current = false;
-    setLocalEdited(false);
+    localSaved();
     showToast('success', 'Local terminal logging settings saved.');
   });
 
   useEffect(() => {
-    onDirtyChange(defaultEdited || localEdited || historyEdited);
-  }, [defaultEdited, localEdited, historyEdited, onDirtyChange]);
-
-  useEffect(() => {
-    if (!policy || defaultDirty.current) return;
-    setDraft(hostSessionLoggingDraft(policy, false));
-  }, [policy]);
-
-  useEffect(() => {
-    if (!localPolicy || localDirty.current) return;
-    setLocalDraft(
-      hostSessionLoggingDraft(localPolicy, !localPolicy.overridden),
-    );
-  }, [localPolicy]);
-
-  const set = (patch: Partial<HostSessionLoggingDraft>) => {
-    defaultDirty.current = true;
-    setDefaultEdited(true);
-    setDraft((current) => ({ ...current, ...patch }));
-  };
-  const setLocal = (patch: Partial<HostSessionLoggingDraft>) => {
-    localDirty.current = true;
-    setLocalEdited(true);
-    setLocalDraft((current) => ({ ...current, ...patch }));
-  };
+    onDirtyChange(defaultEdited || localEdited || historyEdited || logFilesEdited);
+  }, [defaultEdited, localEdited, historyEdited, logFilesEdited, onDirtyChange]);
 
   return (
     <SettingsPage
       title="Session logging"
-      description="Record terminal sessions to search and replay them later. Off by default. Unlike the rest of Settings, changes here apply once saved, and only to sessions opened afterwards."
+      description="Record terminal sessions to search and replay them later, or write them to plain-text log files. Off by default. Unlike the rest of Settings, changes here apply once saved, and only to sessions opened afterwards."
     >
       <SettingsGroup
         title="Default policy"
@@ -1251,8 +1250,123 @@ function SessionLoggingSection({ onDirtyChange }: { onDirtyChange: (dirty: boole
           }
         />
       </SettingsGroup>
+      <LogFileSettings onDirtyChange={setLogFilesEdited} />
       <HistoryStorageSettings onDirtyChange={setHistoryEdited} />
     </SettingsPage>
+  );
+}
+
+interface LogFileDraft {
+  directory: string;
+  filenamePattern: string;
+  timestamps: boolean;
+}
+
+function sameLogFileDraft(a: LogFileDraft, b: LogFileDraft): boolean {
+  return (
+    a.directory.trim() === b.directory.trim() &&
+    a.filenamePattern.trim() === b.filenamePattern.trim() &&
+    a.timestamps === b.timestamps
+  );
+}
+
+function LogFileSettings({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
+  const { data: status, isLoading } = useSessionLogFiles();
+  const settings = status?.settings;
+  const stored = useMemo(
+    () =>
+      settings
+        ? {
+            directory: settings.directory ?? '',
+            filenamePattern: settings.filenamePattern,
+            timestamps: settings.timestamps,
+          }
+        : undefined,
+    [settings],
+  );
+  const {
+    draft,
+    dirty: edited,
+    edit: set,
+    saved,
+  } = useSettingsDraft<LogFileDraft>(
+    stored,
+    { directory: '', filenamePattern: DEFAULT_SESSION_LOG_FILE_PATTERN, timestamps: false },
+    sameLogFileDraft,
+  );
+  useEffect(() => onDirtyChange(edited), [edited, onDirtyChange]);
+  const save = useSaveSessionLogFileSettings(() => {
+    saved();
+    showToast('success', 'Log file settings saved.');
+  });
+  const patternError = sessionLogFilePatternError(draft.filenamePattern);
+  const example = patternError
+    ? undefined
+    : sessionLogFileName(draft.filenamePattern, {
+        host: 'router1',
+        title: 'Core router',
+        kind: 'ssh',
+        startedAt: new Date(),
+      }).join('/');
+
+  return (
+    <SettingsGroup
+      title="Log files"
+      description="Plain-text logs written while a session runs, started from the terminal menu or for every session by the policies above. They are ordinary files: retention and quotas never remove them."
+      flush
+    >
+      <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <TextField
+          label="Log folder"
+          value={draft.directory}
+          onChange={(event) => set({ directory: event.target.value })}
+          helperText="Leave blank for the default folder."
+          placeholder={status?.activeDirectory}
+          slotProps={{
+            htmlInput: { style: { fontFamily: 'monospace' } },
+            inputLabel: { shrink: true },
+          }}
+          fullWidth
+        />
+        <TextField
+          label="File name"
+          value={draft.filenamePattern}
+          onChange={(event) => set({ filenamePattern: event.target.value })}
+          error={!!patternError}
+          helperText={
+            patternError ??
+            `{host}, {title}, {kind}, {date} and {time} are filled in; / starts a subfolder. Example: ${example}`
+          }
+          slotProps={{ htmlInput: { style: { fontFamily: 'monospace' } } }}
+          fullWidth
+        />
+      </Box>
+      <SettingRow
+        label="Show timestamps (UTC)"
+        labelFor="settings-log-file-timestamps"
+        description="Prefix each line with the time it last changed, as in the clean log."
+        control={
+          <Switch
+            id="settings-log-file-timestamps"
+            size="small"
+            checked={draft.timestamps}
+            onChange={(event) => set({ timestamps: event.target.checked })}
+          />
+        }
+      />
+      <SaveBar
+        dirty={edited}
+        label="Save log file settings"
+        disabled={isLoading || !status || !edited || !!patternError || save.isPending}
+        onSave={() =>
+          save.mutate({
+            directory: draft.directory.trim() || undefined,
+            filenamePattern: draft.filenamePattern.trim(),
+            timestamps: draft.timestamps,
+          })
+        }
+      />
+    </SettingsGroup>
   );
 }
 
@@ -1272,17 +1386,38 @@ const EMPTY_HISTORY_STORAGE_DRAFT: HistoryStorageDraft = {
   maxAgeDays: '',
 };
 
+function sameHistoryStorageDraft(a: HistoryStorageDraft, b: HistoryStorageDraft): boolean {
+  return (Object.keys(a) as (keyof HistoryStorageDraft)[]).every(
+    (key) => a[key].trim() === b[key].trim(),
+  );
+}
+
 function HistoryStorageSettings({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
   const { data: status, isLoading } = useSessionHistoryStorage();
-  const [draft, setDraft] = useState<HistoryStorageDraft>(
-    EMPTY_HISTORY_STORAGE_DRAFT,
+  // The status refetches for its usage figures; only the settings feed the form.
+  const settings = status?.settings;
+  const stored = useMemo(
+    () =>
+      settings
+        ? {
+            storageLocation: settings.storageLocation ?? '',
+            maxTotalGiB: bytesToGiB(settings.maxTotalBytes),
+            minFreeGiB: bytesToGiB(settings.minFreeBytes),
+            minFreePercent: String(settings.minFreePercent),
+            maxAgeDays: settings.maxAgeDays ? String(settings.maxAgeDays) : '',
+          }
+        : undefined,
+    [settings],
   );
-  const dirty = useRef(false);
-  const [edited, setEdited] = useState(false);
+  const {
+    draft,
+    dirty: edited,
+    edit: set,
+    saved,
+  } = useSettingsDraft(stored, EMPTY_HISTORY_STORAGE_DRAFT, sameHistoryStorageDraft);
   useEffect(() => onDirtyChange(edited), [edited, onDirtyChange]);
   const save = useSaveSessionHistorySettings((next) => {
-    dirty.current = false;
-    setEdited(false);
+    saved();
     showToast(
       'success',
       next.restartRequired
@@ -1291,24 +1426,6 @@ function HistoryStorageSettings({ onDirtyChange }: { onDirtyChange: (dirty: bool
     );
   });
 
-  useEffect(() => {
-    if (!status || dirty.current) return;
-    setDraft({
-      storageLocation: status.settings.storageLocation ?? '',
-      maxTotalGiB: bytesToGiB(status.settings.maxTotalBytes),
-      minFreeGiB: bytesToGiB(status.settings.minFreeBytes),
-      minFreePercent: String(status.settings.minFreePercent),
-      maxAgeDays: status.settings.maxAgeDays
-        ? String(status.settings.maxAgeDays)
-        : '',
-    });
-  }, [status]);
-
-  const set = (patch: Partial<HistoryStorageDraft>) => {
-    dirty.current = true;
-    setEdited(true);
-    setDraft((current) => ({ ...current, ...patch }));
-  };
   const maxTotalBytes = gibToBytes(draft.maxTotalGiB);
   const minFreeBytes = gibToBytes(draft.minFreeGiB);
   const minFreePercent = Number(draft.minFreePercent);
