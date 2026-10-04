@@ -20,6 +20,7 @@ import type {
 import { apiFetch } from './api/http.js';
 import { fetchHostPreview } from './api/ssh-config.js';
 import { isKeywordHighlightProfileArray } from './highlight-profiles.js';
+import { isCustomTerminalSchemeArray } from './terminal/custom-schemes.js';
 import { saveTextFile } from './save-file.js';
 import { openSshJumpHops } from './saved-hosts.js';
 import {
@@ -54,6 +55,7 @@ const PREFERENCE_KEYS = [
   'lineHeight',
   'lightTerminalScheme',
   'darkTerminalScheme',
+  'customTerminalSchemes',
   'fontColor',
   'backgroundColor',
   'activePaneBorder',
@@ -793,6 +795,9 @@ export function sanitizePreferences(
     output.darkTerminalScheme = input.darkTerminalScheme;
   } else if (legacyTerminalScheme !== undefined) {
     output.darkTerminalScheme = legacyTerminalScheme;
+  }
+  if (isCustomTerminalSchemeArray(input.customTerminalSchemes)) {
+    output.customTerminalSchemes = input.customTerminalSchemes;
   }
   if (input.fontColor === '' || validHexColor(input.fontColor)) {
     output.fontColor = input.fontColor;

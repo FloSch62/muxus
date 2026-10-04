@@ -3,8 +3,13 @@ import Button from '@mui/material/Button';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { useTheme } from '@mui/material/styles';
-import { terminalSchemeIdForMode, usePrefsStore } from '../../state/prefs.js';
 import {
+  terminalSchemeIdForMode,
+  useCustomTerminalSchemes,
+  usePrefsStore,
+} from '../../state/prefs.js';
+import {
+  isTerminalSchemeId,
   terminalColorForHost,
   terminalScheme,
   terminalSchemeIdForHost,
@@ -31,8 +36,10 @@ export function TerminalAppearanceSection({
   );
   const applicationFontColor = usePrefsStore((prefs) => prefs.fontColor);
   const applicationBackgroundColor = usePrefsStore((prefs) => prefs.backgroundColor);
+  const customSchemes = useCustomTerminalSchemes();
   const scheme = terminalScheme(
-    terminalSchemeIdForHost(applicationSchemeId, value.terminalScheme),
+    terminalSchemeIdForHost(applicationSchemeId, value.terminalScheme, customSchemes),
+    customSchemes,
   );
   const defaultFontColor = terminalColorForHost(
     scheme.theme.foreground ?? '#cccccc',
@@ -56,7 +63,10 @@ export function TerminalAppearanceSection({
       <TerminalSchemeSelect
         id="host-terminal-scheme"
         label="Color scheme"
-        value={value.terminalScheme ?? ''}
+        // A scheme that was deleted since inherits, exactly as the terminal does.
+        value={
+          isTerminalSchemeId(value.terminalScheme, customSchemes) ? value.terminalScheme : ''
+        }
         inheritLabel="Use application default"
         onChange={(terminalScheme) => onChange({ terminalScheme: terminalScheme || undefined })}
       />

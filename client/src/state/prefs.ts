@@ -9,6 +9,12 @@ import {
   withBuiltinRuleNames,
 } from '../builtin-highlight-profiles.js';
 import { isKeywordHighlightProfileArray } from '../highlight-profiles.js';
+import {
+  isCustomTerminalSchemeArray,
+  terminalSchemesFromCustom,
+  type CustomTerminalScheme,
+} from '../terminal/custom-schemes.js';
+import type { TerminalScheme } from '../terminal/palette.js';
 import type { KeywordHighlightProfile, KeywordHighlightRule } from '@muxus/shared';
 import { MAX_SSH_KEEPALIVE_INTERVAL_SECONDS } from '@muxus/shared/ws-protocol';
 
@@ -109,6 +115,8 @@ export interface PrefsState {
   lightTerminalScheme: string;
   /** Terminal color scheme id used while the effective application theme is dark. */
   darkTerminalScheme: string;
+  /** Color schemes the user created or imported, offered next to the built-in ones. */
+  customTerminalSchemes: CustomTerminalScheme[];
   /** Terminal text color; empty follows the color scheme's foreground. */
   fontColor: string;
   /** Terminal background color; empty follows the color scheme's background. */
@@ -235,6 +243,35 @@ export function terminalSchemeIdForMode(
   return mode === 'light' ? prefs.lightTerminalScheme : prefs.darkTerminalScheme;
 }
 
+/** The user's custom schemes, ready for the terminal and the scheme pickers. */
+export function useCustomTerminalSchemes(): readonly TerminalScheme[] {
+  return terminalSchemesFromCustom(usePrefsStore((prefs) => prefs.customTerminalSchemes));
+}
+
+/**
+ * Remove a custom scheme. A terminal theme that was set to it returns to its
+ * default; hosts assigned to it fall back to the application setting on
+ * their own.
+ */
+export function withoutCustomTerminalScheme(
+  prefs: Pick<
+    PrefsState,
+    'customTerminalSchemes' | 'lightTerminalScheme' | 'darkTerminalScheme'
+  >,
+  id: string,
+): Partial<PrefsState> {
+  const defaults = usePrefsStore.getInitialState();
+  return {
+    customTerminalSchemes: prefs.customTerminalSchemes.filter((scheme) => scheme.id !== id),
+    ...(prefs.lightTerminalScheme === id
+      ? { lightTerminalScheme: defaults.lightTerminalScheme }
+      : {}),
+    ...(prefs.darkTerminalScheme === id
+      ? { darkTerminalScheme: defaults.darkTerminalScheme }
+      : {}),
+  };
+}
+
 /** Upgrade persisted preferences without mutating the storage snapshot. */
 export function migratePrefsState(persisted: unknown, version: number): unknown {
   if (persisted === null || typeof persisted !== 'object') return persisted;
@@ -288,6 +325,9 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
     }
   }
   delete state.terminalScheme;
+  if (!isCustomTerminalSchemeArray(state.customTerminalSchemes)) {
+    delete state.customTerminalSchemes;
+  }
   // TERM is fixed by the server now; remove the retired client override.
   delete state.termName;
   // Folder presentation arrived in v5. A restored or hand-edited snapshot can
@@ -398,6 +438,7 @@ export const usePrefsStore = create<PrefsState>()(
       lineHeight: 1.0,
       lightTerminalScheme: 'vscode-light',
       darkTerminalScheme: 'vscode-dark',
+      customTerminalSchemes: [],
       fontColor: '',
       backgroundColor: '',
       scrollback: 10_000,

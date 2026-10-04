@@ -12,6 +12,8 @@ import {
   type BackupPreferences,
 } from '../../../client/src/data-transfer.js';
 import { usePrefsStore } from '../../../client/src/state/prefs.js';
+import { customSchemeCopyOf } from '../../../client/src/terminal/custom-schemes.js';
+import { terminalScheme } from '../../../client/src/terminal/palette.js';
 
 vi.mock('../../../client/src/api/http.js', () => ({
   apiFetch: vi.fn(),
@@ -29,6 +31,7 @@ beforeEach(() => {
     backgroundColor: '',
     lightTerminalScheme: 'vscode-light',
     darkTerminalScheme: 'vscode-dark',
+    customTerminalSchemes: [],
     activePaneBorder: false,
     dimInactivePanes: false,
     inactivePaneDimStrength: 0.15,
@@ -257,6 +260,17 @@ describe('backing up preferences', () => {
     expect(document.data.preferences.terminalFileLinkActivation).toBe('ctrl');
   });
 
+  it('includes custom terminal color schemes', async () => {
+    const custom = customSchemeCopyOf(terminalScheme('nord'), []);
+    usePrefsStore.setState({ customTerminalSchemes: [custom], darkTerminalScheme: custom.id });
+    mockBackupSnapshot();
+
+    const document = await createBackupDocument();
+
+    expect(document.data.preferences.customTerminalSchemes).toEqual([custom]);
+    expect(document.data.preferences.darkTerminalScheme).toBe(custom.id);
+  });
+
   it('includes saved local shell profiles and their default selection', async () => {
     usePrefsStore.setState({
       localShellProfiles: [
@@ -348,6 +362,20 @@ describe('restoring terminal color scheme preferences', () => {
     );
     expect(restored.lightTerminalScheme).toBeUndefined();
     expect(restored.darkTerminalScheme).toBeUndefined();
+  });
+
+  it('restores custom schemes and drops a malformed list', () => {
+    const custom = customSchemeCopyOf(terminalScheme('nord'), []);
+
+    expect(
+      sanitizePreferences(
+        prefs({ customTerminalSchemes: [custom], darkTerminalScheme: custom.id }),
+      ),
+    ).toMatchObject({ customTerminalSchemes: [custom], darkTerminalScheme: custom.id });
+    expect(
+      sanitizePreferences(prefs({ customTerminalSchemes: [{ ...custom, name: '' }] }))
+        .customTerminalSchemes,
+    ).toBeUndefined();
   });
 });
 

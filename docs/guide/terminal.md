@@ -48,6 +48,28 @@ Light schemes: **Paper**, **VS Code Light**, **GitHub Light**, **Gruvbox Light**
 **One Dark**, **Nord**, **Gruvbox Dark**, **Catppuccin Mocha**, **Monokai**, **Solarized
 Dark**.
 
+### Custom colour schemes
+
+**Settings → Appearance → Custom color schemes** holds schemes of your own. **New** starts
+one as a copy of any built-in or custom scheme; **Import** reads a colour scheme file in
+one of three formats:
+
+- a **Windows Terminal** colour scheme, as a single JSON object, a list of them, or a
+  `settings.json` with a `schemes` list;
+- an **iTerm2** `.itermcolors` preset, named after its file;
+- a scheme file **exported** from Muxus.
+
+Most published themes ship in at least one of these, so a palette such as Catppuccin
+Frappé is one import away. The editor shows the scheme on a sample of terminal output
+and edits the background, text, cursor and selection colours and the sixteen ANSI
+colours; changes reach open terminals as you make them.
+
+Custom schemes are listed first in the light and dark terminal theme pickers and in each
+host's terminal appearance, and they are part of a [backup](settings.md#backup-data).
+**Export scheme** writes a file to share with another Muxus installation; importing it
+again updates the scheme in place. Deleting a scheme returns a terminal theme that used
+it to its default, and hosts assigned to it follow the application setting again.
+
 Each saved host has a **Terminal appearance** editor section where its colour scheme,
 text colour and background colour can override the application defaults. Leave an option
 on **Use application default** to keep following the global preference. Host overrides

@@ -36,6 +36,9 @@ a running recorder.
   appearance changes. Fifteen schemes are grouped into light and dark sets. **Text color**
   and **Background color** optionally replace the scheme's own for every terminal; **Use
   scheme color** goes back.
+- **Custom color schemes**: your own terminal colour schemes, created from a copy of any
+  scheme or imported from a Windows Terminal or iTerm2 file. See
+  [Custom colour schemes](terminal.md#custom-colour-schemes).
 - **Terminal font**: family, size and line height. The desktop selector includes JetBrains Mono,
   which is bundled, plus the font families installed for the current operating-system
   user. Nerd Font symbols remain an automatic bundled fallback.

@@ -2,7 +2,11 @@ import { lazy, Suspense } from 'react';
 import Box from '@mui/material/Box';
 import { useTheme } from '@mui/material/styles';
 import type { SessionTab } from '../state/tabs.js';
-import { terminalSchemeIdForMode, usePrefsStore } from '../state/prefs.js';
+import {
+  terminalSchemeIdForMode,
+  useCustomTerminalSchemes,
+  usePrefsStore,
+} from '../state/prefs.js';
 import { terminalScheme, themeWithColorOverrides } from '../terminal/palette.js';
 import { loadTerminalViewImpl } from '../lazy-features.js';
 
@@ -12,9 +16,10 @@ const TerminalViewImpl = lazy(loadTerminalViewImpl);
 export function TerminalView({ tab, active }: { tab: SessionTab; active: boolean }) {
   const mode = useTheme().palette.mode;
   const schemeId = usePrefsStore((prefs) => terminalSchemeIdForMode(prefs, mode));
+  const customSchemes = useCustomTerminalSchemes();
   const backgroundColor = usePrefsStore((s) => s.backgroundColor);
   const background = themeWithColorOverrides(
-    terminalScheme(schemeId).theme,
+    terminalScheme(schemeId, customSchemes).theme,
     '',
     backgroundColor,
   ).background;
