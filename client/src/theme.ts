@@ -200,6 +200,9 @@ export function buildTheme(mode: 'light' | 'dark', options: { modalBackdrop?: El
         styleOverrides: { root: { textTransform: 'none', fontWeight: 550 } },
       },
       MuiTextField: { defaultProps: { size: 'small' } },
+      // Typed text is literal. Both bundled fonts would otherwise draw "<=" as
+      // "≤" and "=>" as "⇒" in a regex, path or command; the input inherits this.
+      MuiInputBase: { styleOverrides: { root: { fontVariantLigatures: 'none' } } },
       MuiOutlinedInput: {
         styleOverrides: {
           root: {
