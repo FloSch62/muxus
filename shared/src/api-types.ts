@@ -379,12 +379,14 @@ export interface HostOrderRequest {
 /**
  * One target supplied when the desktop executable is launched from a command
  * line. Names stay unresolved until the renderer has loaded the same host and
- * workspace catalogs used by the rest of the UI.
+ * workspace catalogs used by the rest of the UI. A `connect` name is an
+ * already validated ad-hoc "[user@]host[:port]" SSH target instead.
  */
 export type CommandLineLaunch =
   | { kind: 'host'; name: string }
   | { kind: 'folder'; name: string }
-  | { kind: 'workspace'; name: string };
+  | { kind: 'workspace'; name: string }
+  | { kind: 'connect'; name: string };
 
 /**
  * One extra application window requested by the renderer. Workspace windows
