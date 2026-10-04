@@ -5,6 +5,7 @@ import MenuItem from '@mui/material/MenuItem';
 import CreateNewFolderOutlinedIcon from '@mui/icons-material/CreateNewFolderOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
+import EditNoteOutlinedIcon from '@mui/icons-material/EditNoteOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
@@ -12,7 +13,11 @@ import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
 import SortByAlphaIcon from '@mui/icons-material/SortByAlpha';
 import UnfoldLessIcon from '@mui/icons-material/UnfoldLess';
 import type { FolderNode } from '../../host-tree.js';
-import { loadFolderDialog, loadHostEditorDialog } from '../../lazy-features.js';
+import {
+  loadFolderDialog,
+  loadHostBulkEditDialog,
+  loadHostEditorDialog,
+} from '../../lazy-features.js';
 
 export interface FolderMenuState {
   anchor: HTMLElement;
@@ -27,6 +32,7 @@ export function FolderContextMenu({
   onNewChild,
   onEdit,
   onLaunch,
+  onEditHosts,
   onCollapseAll,
   onDelete,
   onMove,
@@ -41,6 +47,8 @@ export function FolderContextMenu({
   onNewChild: (node: FolderNode) => void;
   onEdit: (node: FolderNode) => void;
   onLaunch: (node: FolderNode) => void;
+  /** Edit every host inside, nested folders included, in one go. */
+  onEditHosts: (node: FolderNode) => void;
   onCollapseAll: (node: FolderNode) => void;
   onDelete: (node: FolderNode) => void;
   onMove: (node: FolderNode, delta: -1 | 1) => void;
@@ -68,6 +76,17 @@ export function FolderContextMenu({
           <PlayArrowOutlinedIcon fontSize="small" />
         </ListItemIcon>
         {count > 0 ? `Launch ${count} host${count === 1 ? '' : 's'}…` : 'Launch hosts…'}
+      </MenuItem>
+      <MenuItem
+        disabled={count === 0}
+        onMouseEnter={() => void (count === 1 ? loadHostEditorDialog() : loadHostBulkEditDialog())}
+        onFocus={() => void (count === 1 ? loadHostEditorDialog() : loadHostBulkEditDialog())}
+        onClick={run(onEditHosts)}
+      >
+        <ListItemIcon>
+          <EditNoteOutlinedIcon fontSize="small" />
+        </ListItemIcon>
+        {count > 1 ? `Edit ${count} hosts…` : count === 1 ? 'Edit host…' : 'Edit hosts…'}
       </MenuItem>
       <Divider />
       <MenuItem disabled={!canMoveUp} onClick={run((node) => onMove(node, -1))}>

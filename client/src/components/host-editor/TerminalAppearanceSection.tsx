@@ -30,25 +30,8 @@ export function TerminalAppearanceSection({
   value: HostTerminalAppearance;
   onChange: (patch: Partial<HostTerminalAppearance>) => void;
 }) {
-  const mode = useTheme().palette.mode;
-  const applicationSchemeId = usePrefsStore((prefs) =>
-    terminalSchemeIdForMode(prefs, mode),
-  );
-  const applicationFontColor = usePrefsStore((prefs) => prefs.fontColor);
-  const applicationBackgroundColor = usePrefsStore((prefs) => prefs.backgroundColor);
   const customSchemes = useCustomTerminalSchemes();
-  const scheme = terminalScheme(
-    terminalSchemeIdForHost(applicationSchemeId, value.terminalScheme, customSchemes),
-    customSchemes,
-  );
-  const defaultFontColor = terminalColorForHost(
-    scheme.theme.foreground ?? '#cccccc',
-    applicationFontColor,
-  );
-  const defaultBackgroundColor = terminalColorForHost(
-    scheme.theme.background ?? '#181818',
-    applicationBackgroundColor,
-  );
+  const defaults = useTerminalColorDefaults(value.terminalScheme);
 
   return (
     <Stack spacing={2.5}>
@@ -73,29 +56,60 @@ export function TerminalAppearanceSection({
       <ColorOverride
         label="Text color"
         value={value.terminalFontColor}
-        defaultValue={defaultFontColor}
+        defaultValue={defaults.fontColor}
         onChange={(terminalFontColor) => onChange({ terminalFontColor })}
       />
       <ColorOverride
         label="Background color"
         value={value.terminalBackgroundColor}
-        defaultValue={defaultBackgroundColor}
+        defaultValue={defaults.backgroundColor}
         onChange={(terminalBackgroundColor) => onChange({ terminalBackgroundColor })}
       />
     </Stack>
   );
 }
 
-function ColorOverride({
+/**
+ * The text and background colors a host gets when it overrides neither: its
+ * scheme's, unless the application settings override those.
+ */
+export function useTerminalColorDefaults(hostScheme: string | undefined): {
+  fontColor: string;
+  backgroundColor: string;
+} {
+  const mode = useTheme().palette.mode;
+  const applicationSchemeId = usePrefsStore((prefs) =>
+    terminalSchemeIdForMode(prefs, mode),
+  );
+  const applicationFontColor = usePrefsStore((prefs) => prefs.fontColor);
+  const applicationBackgroundColor = usePrefsStore((prefs) => prefs.backgroundColor);
+  const customSchemes = useCustomTerminalSchemes();
+  const scheme = terminalScheme(
+    terminalSchemeIdForHost(applicationSchemeId, hostScheme, customSchemes),
+    customSchemes,
+  );
+  return {
+    fontColor: terminalColorForHost(scheme.theme.foreground ?? '#cccccc', applicationFontColor),
+    backgroundColor: terminalColorForHost(
+      scheme.theme.background ?? '#181818',
+      applicationBackgroundColor,
+    ),
+  };
+}
+
+export function ColorOverride({
   label,
   value,
   defaultValue,
   onChange,
+  mixed = false,
 }: {
   label: string;
   value: string | undefined;
   defaultValue: string;
   onChange: (value: string | undefined) => void;
+  /** Several hosts with different colors; picking one or the default sets them all. */
+  mixed?: boolean;
 }) {
   return (
     <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
@@ -119,7 +133,12 @@ function ColorOverride({
           cursor: 'pointer',
         }}
       />
-      {value ? (
+      {mixed ? (
+        <Typography variant="caption" color="textSecondary">
+          Multiple values
+        </Typography>
+      ) : null}
+      {value || mixed ? (
         <Button size="small" onClick={() => onChange(undefined)}>
           Use application default
         </Button>

@@ -66,6 +66,8 @@ interface UiState {
   hostEditor: HostEditorState;
   /** Host whose Muxus-only display metadata is being organized. */
   hostOrganizer: SshHostEntry | SavedHostProfile | false;
+  /** Hosts edited together, by managed host key. */
+  hostBulkEditor: string[] | false;
   /** Sidebar folder being created, renamed, styled, or picked as a target. */
   folderDialog: FolderDialogState;
   /** Global forwarding side panel (saved tunnels + live forwards). */
@@ -84,6 +86,7 @@ interface UiState {
   setWorkspacesOpen: (open: boolean) => void;
   setHostEditor: (value: HostEditorState) => void;
   setHostOrganizer: (value: SshHostEntry | SavedHostProfile | false) => void;
+  setHostBulkEditor: (hostKeys: string[] | false) => void;
   setFolderDialog: (value: FolderDialogState) => void;
   setForwardingOpen: (open: boolean) => void;
   setLogViewerOpen: (open: boolean) => void;
@@ -102,6 +105,7 @@ export const useUiStore = create<UiState>()((set) => ({
   workspacesOpen: false,
   hostEditor: false,
   hostOrganizer: false,
+  hostBulkEditor: false,
   folderDialog: false,
   forwardingOpen: false,
   logViewerOpen: false,
@@ -122,6 +126,7 @@ export const useUiStore = create<UiState>()((set) => ({
   setWorkspacesOpen: (workspacesOpen) => set({ workspacesOpen }),
   setHostEditor: (hostEditor) => set({ hostEditor }),
   setHostOrganizer: (hostOrganizer) => set({ hostOrganizer }),
+  setHostBulkEditor: (hostBulkEditor) => set({ hostBulkEditor }),
   setFolderDialog: (folderDialog) => set({ folderDialog }),
   setForwardingOpen: (forwardingOpen) => set({ forwardingOpen }),
   setLogViewerOpen: (logViewerOpen) => set({ logViewerOpen }),

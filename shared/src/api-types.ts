@@ -847,6 +847,30 @@ export interface HostPreviewResponse {
   text: string;
 }
 
+/**
+ * Connection options a bulk edit can set on many SSH hosts at once. A value
+ * sets the option on every host; null removes it so the host inherits again.
+ * Options left out stay exactly as each host has them.
+ */
+export interface HostOptionsPatch {
+  user?: string | null;
+  port?: number | null;
+  forwardAgent?: boolean | null;
+  forwardX11?: boolean | null;
+  strictHostKeyChecking?: HostBlockOptions['strictHostKeyChecking'] | null;
+}
+
+/** Body of PATCH /api/ssh/config/hosts: one patch for the blocks of many aliases. */
+export interface HostBulkUpdateRequest {
+  aliases: string[];
+  options: HostOptionsPatch;
+}
+
+export interface HostBulkUpdateResponse {
+  /** Host blocks rewritten; aliases that share a block count once. */
+  updated: number;
+}
+
 /** Private key discovered in ~/.ssh. */
 export interface SshKeyInfo {
   path: string;

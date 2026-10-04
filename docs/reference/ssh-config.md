@@ -99,6 +99,11 @@ leaves the symbolic link itself intact.
 Comments, blank lines, ordering, `Match` blocks and every other host are left as they were.
 Deleting a host removes only its block.
 
+A [bulk edit](../guide/hosts.md#editing-several-hosts-at-once) of many hosts goes further:
+it rewrites only the lines of the options it changes, appending an option a block does not
+have yet, so the rest of each block stays byte-identical. Each file is written once, and its
+`.muxus.bak` holds the contents from before the whole edit.
+
 New hosts can be written to the main config, to any file already pulled in with `Include`,
 or to a new group file that Muxus creates and adds an `Include` for.
 

@@ -76,12 +76,14 @@ instead, the way a taskbar button lists an app's open windows. Each entry shows 
 title and number, its state, the remote working directory and the last lines of output, so
 sessions with the same name can be told apart. Pick one to jump to it (an ended session
 reconnects in place), or choose **New session**. ++shift++ + click or middle-click
-skips the list and opens another session straight away.
+skips the list and opens another session straight away. While hosts are
+[selected](#editing-several-hosts-at-once), ++shift++ + click extends the selection instead.
 
 The right-click menu has **Connect**, **Open in new window**,
 **Move up/down**, **Move to folder…**, **Organize & color…**, **Edit host**,
 **Duplicate**, **Copy `ssh …` command** and **Delete host**. **Connect** always opens a
-new session.
+new session. On a host that is part of a selection, it also offers **Edit *n* selected
+hosts…**.
 
 ## Folders
 
@@ -128,6 +130,38 @@ nested folders, as **tabs**, **columns**, **rows** or a **grid**.
   <figcaption>A folder opened as a grid of sessions.</figcaption>
 </figure>
 
+## Editing several hosts at once
+
+++ctrl++ + click a host (++cmd++ + click on macOS) to select it without connecting. Once
+something is selected, ++shift++ + click selects every host between the last one picked and
+the one clicked. A bar under the list counts the selected hosts; **Edit…** opens the bulk
+editor, and ++escape++ or the bar's close button clears the selection. The selection stays
+while you search, so it can gather hosts from several queries.
+
+A folder's menu offers **Edit *n* hosts…** for everything inside it, nested folders
+included, and a selected host's right-click menu offers **Edit *n* selected hosts…**.
+
+The bulk editor shows each setting the hosts share. Where they differ, the field reads
+**Multiple values**, and each host keeps its own value unless you choose one for all of
+them. Only the settings you change are written; everything else about every host stays as it
+was. Each changed setting says how many hosts it changes, with **Undo** to take it back, and
+hosts that already have every new value are skipped.
+
+| Section | Settings | Applies to |
+| --- | --- | --- |
+| Folder & color | Folder, colour | Every host |
+| SSH connection | User, port, host verification, agent forwarding, X11 forwarding, console compatibility, SFTP | SSH hosts |
+| Terminal appearance | Colour scheme, text and background colour | SSH, Telnet and serial hosts |
+| Highlighting | Highlighting profile, global rules | SSH, Telnet and serial hosts |
+| Session logging | Logging policy for new sessions | SSH, Telnet and serial hosts |
+
+In `ssh_config`, a bulk edit rewrites only the lines of the options it changes. Comments,
+formatting and every other option in each `Host` block stay exactly as they were, and each
+file is written once, so its `.muxus.bak` holds the contents from before the whole edit.
+Emptying the user or port removes it from each host, which then falls back to `Host *` blocks
+and [folder credentials](#shared-credentials). A new highlighting profile keeps each host's
+own keyword rules.
+
 ## Search and quick connect
 
 The box at the top of the sidebar both filters and connects.
@@ -158,6 +192,10 @@ the [host editor](adding-hosts.md).
 The tree is a `treeview`. ++arrow-down++ from the search box moves into it, arrows walk and
 expand rows, ++enter++ connects, ++escape++ returns to the search box, and ++alt+up++ /
 ++alt+down++ reorder the focused host or folder among its siblings.
+
+To select hosts from the keyboard, ++shift+space++ selects or deselects the focused host,
+++shift+up++ / ++shift+down++ extend the selection, and ++ctrl+a++ selects every visible host.
+++escape++ clears a selection before it returns to the search box.
 
 ++ctrl+b++ hides the sidebar. The [quick launcher](quick-launcher.md) still reaches every
 host.

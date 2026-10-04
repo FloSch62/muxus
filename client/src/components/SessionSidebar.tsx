@@ -91,6 +91,7 @@ import type { HostSessionsMenuState } from './sidebar/HostSessionsMenu.js';
 import type { LocalShellMenuState } from './sidebar/LocalShellContextMenu.js';
 import { LocalShellIcon } from './LocalShellIcon.js';
 import { HostTree, type HostTreeHandle } from './sidebar/HostTree.js';
+import { SelectionBar } from './sidebar/SelectionBar.js';
 import type { LaunchTarget } from './sidebar/LaunchGroupDialog.js';
 import { useAllManagedHosts } from './sidebar/useAllManagedHosts.js';
 import { useFolderPrefs } from './sidebar/useFolderPrefs.js';
@@ -120,6 +121,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
   const { data: config, isSuccess: sshConfigReady } = useSshConfig();
   const { data: savedData, isSuccess: savedProfilesReady } = useSavedHostProfiles();
   const setHostEditor = useUiStore((s) => s.setHostEditor);
+  const setHostBulkEditor = useUiStore((s) => s.setHostBulkEditor);
   const setFolderDialog = useUiStore((s) => s.setFolderDialog);
   const sidebarWidth = usePrefsStore((state) => state.sidebarWidth);
   const sidebarPosition = usePrefsStore((state) => state.sidebarPosition);
@@ -139,6 +141,8 @@ export const SessionSidebar = memo(function SessionSidebar() {
   const [launchTarget, setLaunchTarget] = useState<LaunchTarget | null>(null);
   /** Folders collapsed during a search; discarded when the query changes. */
   const [searchCollapsed, setSearchCollapsed] = useState<ReadonlySet<string>>(EMPTY_KEYS);
+  /** Hosts picked for a bulk action. Kept while searching, so a selection can span queries. */
+  const [selection, setSelection] = useState<ReadonlySet<string>>(EMPTY_KEYS);
   const deleteHost = useDeleteHost();
   const deleteProfile = useDeleteHostProfile();
   const updateMetadata = useUpdateSshMetadata();
@@ -193,6 +197,32 @@ export const SessionSidebar = memo(function SessionSidebar() {
     () => new Map(tree.hosts.map((host) => [managedHostKey(host), host])),
     [tree],
   );
+  // Resolved against every host rather than the filtered tree: a host the
+  // search hides is still selected, while a deleted one simply drops out.
+  const selectedHosts = useMemo(() => {
+    if (selection.size === 0) return [];
+    const byKey = new Map(allHosts.map((host) => [managedHostKey(host), host]));
+    return [...selection].flatMap((key) => {
+      const host = byKey.get(key);
+      return host ? [host] : [];
+    });
+  }, [allHosts, selection]);
+  const clearSelection = useCallback(() => setSelection(EMPTY_KEYS), []);
+
+  /** One host opens its own editor; several open the bulk editor. */
+  const editHosts = (targets: readonly ManagedHost[]) => {
+    const [first] = targets;
+    if (!first) return;
+    if (targets.length > 1) {
+      setHostBulkEditor(targets.map(managedHostKey));
+      return;
+    }
+    setHostEditor(
+      first.kind === 'ssh'
+        ? { mode: 'edit', entry: first.entry }
+        : { mode: 'edit-profile', entry: first.entry },
+    );
+  };
 
   const mutating =
     reorder.isPending ||
@@ -687,6 +717,8 @@ export const SessionSidebar = memo(function SessionSidebar() {
           scrollContainer={scrollRef}
           matchKey={matchKey}
           sessionsMenuKey={sessionsMenu ? managedHostKey(sessionsMenu.host) : undefined}
+          selectedKeys={selection}
+          onSelectionChange={setSelection}
           isExpanded={isExpanded}
           setExpanded={setExpanded}
           folderColor={folderColor}
@@ -699,7 +731,10 @@ export const SessionSidebar = memo(function SessionSidebar() {
           onLaunch={launchNode}
           onMoveHost={moveHost}
           onMoveFolder={moveFolder}
-          onEscape={() => searchRef.current?.focus()}
+          // Escape lets go of a selection before it leaves the tree.
+          onEscape={() =>
+            selection.size > 0 ? clearSelection() : searchRef.current?.focus()
+          }
           hoverPlacement={hoverPlacement}
           dnd={dnd.binding}
         />
@@ -744,6 +779,14 @@ export const SessionSidebar = memo(function SessionSidebar() {
         ) : null}
       </Box>
 
+      {selectedHosts.length > 0 ? (
+        <SelectionBar
+          count={selectedHosts.length}
+          onEdit={() => editHosts(selectedHosts)}
+          onClear={clearSelection}
+        />
+      ) : null}
+
       {(menu || sessionsMenu || folderMenu || panelMenu || shellMenu || launchTarget) && (
         <Suspense fallback={null}>
           <SidebarMenus
@@ -759,6 +802,10 @@ export const SessionSidebar = memo(function SessionSidebar() {
                 if (menu) moveHostByKey(managedHostKey(menu.host), delta);
               },
               onDelete: requestDelete,
+              // Only offered from a host inside a selection of several.
+              selectedCount:
+                menu && selection.has(managedHostKey(menu.host)) ? selectedHosts.length : 0,
+              onEditSelected: () => editHosts(selectedHosts),
               onMoveToFolder: (host) =>
                 setFolderDialog({
                   mode: 'move-host',
@@ -779,6 +826,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
               onNewChild: (node) => setFolderDialog({ mode: 'new', parentPath: node.path }),
               onEdit: (node) => setFolderDialog({ mode: 'edit', path: node.path }),
               onLaunch: launchNode,
+              onEditHosts: (node) => editHosts(collectHosts(node)),
               onCollapseAll: collapseSubtree,
               onDelete: deleteFolder,
               onMove: (node, delta) => moveFolderByKey(node.key, delta),

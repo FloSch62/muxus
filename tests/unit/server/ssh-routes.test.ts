@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -139,6 +139,59 @@ describe('OpenSSH host keyword metadata', () => {
     });
 
     expect(response.statusCode).toBe(400);
+  });
+});
+
+describe('OpenSSH bulk host updates', () => {
+  const seedConfig = (lines: string[]) => {
+    mkdirSync(path.join(home, '.ssh'), { recursive: true });
+    writeFileSync(path.join(home, '.ssh', 'config'), `${lines.join('\n')}\n`);
+  };
+
+  it('patches the blocks of every listed alias', async () => {
+    seedConfig(['Host a', '  User old', '', 'Host b', '  HostName b.internal']);
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/ssh/config/hosts',
+      headers: auth(),
+      payload: { aliases: ['a', 'b'], options: { user: 'ops', port: null } },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ updated: 2 });
+    expect(readFileSync(path.join(home, '.ssh', 'config'), 'utf8')).toBe(
+      ['Host a', '  User ops', '', 'Host b', '  HostName b.internal', '  User ops', ''].join('\n'),
+    );
+  });
+
+  it('rejects an empty patch and options it cannot set', async () => {
+    seedConfig(['Host a', '  User old']);
+
+    for (const options of [{}, { hostname: 'elsewhere' }, { strictHostKeyChecking: 'maybe' }]) {
+      const response = await app.inject({
+        method: 'PATCH',
+        url: '/api/ssh/config/hosts',
+        headers: auth(),
+        payload: { aliases: ['a'], options },
+      });
+      expect(response.statusCode).toBe(400);
+    }
+    expect(readFileSync(path.join(home, '.ssh', 'config'), 'utf8')).toContain('User old');
+  });
+
+  it('reports an unknown alias without writing', async () => {
+    seedConfig(['Host a', '  User old']);
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/ssh/config/hosts',
+      headers: auth(),
+      payload: { aliases: ['a', 'gone'], options: { user: 'ops' } },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(readFileSync(path.join(home, '.ssh', 'config'), 'utf8')).toContain('User old');
   });
 });
 

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type {
+  HostBulkUpdateResponse,
   HostPreviewResponse,
   OpenSshMetadataPatch,
   OpenSshProfileMetadata,
@@ -12,7 +13,7 @@ import { sendError } from '../util/errors.js';
 import { metadataPatchSchema } from './metadata-schema.js';
 import { defaultSshConfigPath, listHosts, loadConfigDocument } from '../ssh/ssh-config.js';
 import { batchFolderAuthResolver } from '../ssh/folder-auth.js';
-import { deleteHost, previewHost, upsertHost } from '../ssh/ssh-config-edit.js';
+import { deleteHost, patchHosts, previewHost, upsertHost } from '../ssh/ssh-config-edit.js';
 import { listSshKeys } from '../ssh/key-scan.js';
 
 const forwardSchema = z.object({
@@ -25,6 +26,8 @@ const forwardSchema = z.object({
 const sshKeysQuerySchema = z.object({
   identityAgent: z.string().max(4096).optional(),
 });
+
+const strictHostKeyCheckingSchema = z.enum(['yes', 'no', 'accept-new', 'ask']);
 
 const upsertSchema = z.object({
   aliases: z.array(z.string().min(1)).min(1),
@@ -47,9 +50,24 @@ const upsertSchema = z.object({
     passwordOnly: z.boolean().optional(),
     remoteCommand: z.string().optional(),
     requestTty: z.enum(['no', 'yes', 'force', 'auto']).optional(),
-    strictHostKeyChecking: z.enum(['yes', 'no', 'accept-new', 'ask']).optional(),
+    strictHostKeyChecking: strictHostKeyCheckingSchema.optional(),
     extras: z.array(z.object({ keyword: z.string(), value: z.string() })).optional(),
   }),
+});
+
+const bulkUpdateSchema = z.object({
+  aliases: z.array(z.string().min(1)).min(1).max(5000),
+  options: z
+    .object({
+      user: z.string().nullable().optional(),
+      port: z.number().int().min(1).max(65535).nullable().optional(),
+      forwardAgent: z.boolean().nullable().optional(),
+      forwardX11: z.boolean().nullable().optional(),
+      strictHostKeyChecking: strictHostKeyCheckingSchema.nullable().optional(),
+    })
+    // Only these options are safe to set across hosts; anything else is a mistake.
+    .strict()
+    .refine((options) => Object.keys(options).length > 0, 'at least one option is required'),
 });
 
 /** Live OpenSSH config plus Muxus-owned metadata, editing, and key discovery. */
@@ -83,6 +101,19 @@ export function registerSshRoutes(app: FastifyInstance, ctx: AppContext): void {
         ctx.database.renameOpenSshAlias(parsed.data.previousAlias, nextAlias);
       }
       return result;
+    } catch (err) {
+      return sendError(reply, err);
+    }
+  });
+
+  // One change across many hosts, in a single write per config file.
+  app.patch('/api/ssh/config/hosts', async (req, reply): Promise<HostBulkUpdateResponse | void> => {
+    try {
+      const parsed = bulkUpdateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return await reply.code(400).send({ message: parsed.error.issues[0]?.message ?? 'invalid host update' });
+      }
+      return patchHosts(parsed.data.aliases, parsed.data.options);
     } catch (err) {
       return sendError(reply, err);
     }

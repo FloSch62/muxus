@@ -1,6 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { savedHostHopId, type ConfigForward, type HostUpsertRequest } from '@muxus/shared';
+import {
+  savedHostHopId,
+  type ConfigForward,
+  type HostOptionsPatch,
+  type HostUpsertRequest,
+} from '@muxus/shared';
 import { HttpProblem } from '../util/errors.js';
 import {
   defaultSshConfigPath,
@@ -69,6 +74,136 @@ export function upsertHost(req: HostUpsertRequest, rootPath = defaultSshConfigPa
 
   for (const file of changed) writeConfigFile(file, doc.files.get(file) ?? []);
   return { file: targetFile };
+}
+
+/** The ssh_config keyword each patchable option is written as. */
+const PATCH_KEYWORDS = {
+  user: 'User',
+  port: 'Port',
+  forwardAgent: 'ForwardAgent',
+  forwardX11: 'ForwardX11',
+  strictHostKeyChecking: 'StrictHostKeyChecking',
+} as const satisfies Record<keyof HostOptionsPatch, string>;
+
+/**
+ * Apply one option patch to the Host blocks of many aliases — a bulk edit
+ * from the sidebar. Unlike an editor save, which re-renders the whole block,
+ * only the lines of the patched keywords change: comments, blank lines,
+ * spelling and every other option in each block stay byte-identical. Each
+ * touched file is written once, so its `.muxus.bak` holds the content from
+ * before the whole edit rather than from before its last block.
+ */
+export function patchHosts(
+  aliases: readonly string[],
+  patch: HostOptionsPatch,
+  rootPath = defaultSshConfigPath(),
+): { updated: number } {
+  const entries = validatePatch(patch);
+  const doc = loadConfigDocument(rootPath);
+  const blocks = new Set<HostBlock>();
+  for (const alias of aliases) {
+    const block = findHostBlock(doc, alias);
+    if (!block) throw new HttpProblem(404, `no Host block for "${alias}" in ${path.basename(doc.rootPath)}`);
+    // The same boundary as an editor save: an Include may pull in files from
+    // anywhere, but Muxus only writes under the root config's directory.
+    resolveTargetFile(block.file, doc.rootPath);
+    blocks.add(block);
+  }
+
+  const indents = new Map<string, string>();
+  for (const block of blocks) {
+    if (!indents.has(block.file)) indents.set(block.file, detectIndent(doc, block.file));
+  }
+  // Bottom-up within each file, so splicing one block never shifts the line
+  // range of a block still waiting to be patched.
+  const ordered = [...blocks].sort(
+    (a, b) => a.file.localeCompare(b.file) || b.hostLine - a.hostLine,
+  );
+  for (const block of ordered) {
+    const lines = doc.files.get(block.file) ?? [];
+    const patched = patchBlockLines(lines, block, entries, indents.get(block.file) ?? '  ');
+    lines.splice(block.hostLine, block.end - block.hostLine, ...patched);
+    doc.files.set(block.file, lines);
+  }
+
+  for (const file of new Set(ordered.map((block) => block.file))) {
+    writeConfigFile(file, doc.files.get(file) ?? []);
+  }
+  return { updated: blocks.size };
+}
+
+/** One patched keyword, rendered; a null value removes the keyword. */
+interface PatchEntry {
+  key: string;
+  keyword: string;
+  value: string | null;
+}
+
+function validatePatch(patch: HostOptionsPatch): PatchEntry[] {
+  const { user, port } = patch;
+  if (typeof user === 'string' && (!user.trim() || /[\r\n"]/.test(user))) {
+    bad('option values must be non-empty single-line text without quotes');
+  }
+  if (typeof port === 'number' && !(Number.isInteger(port) && port > 0 && port < 65536)) {
+    bad('port must be 1–65535');
+  }
+  const yesNo = (value: boolean) => (value ? 'yes' : 'no');
+  const rendered: Record<keyof HostOptionsPatch, string | null | undefined> = {
+    user: render(user, (value) => quoteToken(value.trim())),
+    port: render(port, String),
+    forwardAgent: render(patch.forwardAgent, yesNo),
+    forwardX11: render(patch.forwardX11, yesNo),
+    strictHostKeyChecking: patch.strictHostKeyChecking,
+  };
+  const entries = Object.entries(PATCH_KEYWORDS).flatMap(([option, keyword]) => {
+    const value = rendered[option as keyof HostOptionsPatch];
+    return value === undefined ? [] : [{ key: keyword.toLowerCase(), keyword, value }];
+  });
+  if (entries.length === 0) bad('at least one option is required');
+  return entries;
+}
+
+/** Render a set value; pass "leave alone" (undefined) and "remove" (null) through. */
+function render<T>(value: T | null | undefined, format: (value: T) => string): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  return format(value);
+}
+
+/**
+ * The block's lines from its Host line on, with each patched keyword set on
+ * its first line (OpenSSH uses the first value it reads) or removed. Later
+ * repeats of a patched keyword are dropped so the block ends up saying one
+ * thing; a keyword the block lacks is appended after its last line.
+ */
+function patchBlockLines(
+  lines: readonly string[],
+  block: HostBlock,
+  entries: readonly PatchEntry[],
+  indent: string,
+): string[] {
+  const replace = new Map<number, string | null>();
+  const append: string[] = [];
+  for (const entry of entries) {
+    const existing = block.options.filter(
+      (option) => option.key === entry.key && option.line !== undefined,
+    );
+    existing.forEach((option, index) => {
+      const keep = index === 0 && entry.value !== null;
+      const lead = /^\s*/.exec(lines[option.line!] ?? '')?.[0] ?? '';
+      replace.set(option.line!, keep ? `${lead}${option.keyword} ${entry.value}` : null);
+    });
+    if (existing.length === 0 && entry.value !== null) {
+      append.push(`${indent}${entry.keyword} ${entry.value}`);
+    }
+  }
+
+  const out: string[] = [];
+  for (let index = block.hostLine; index < block.end; index++) {
+    const next = replace.has(index) ? replace.get(index) : lines[index];
+    if (next !== null && next !== undefined) out.push(next);
+  }
+  return [...out, ...append];
 }
 
 export function deleteHost(alias: string, rootPath = defaultSshConfigPath()): void {

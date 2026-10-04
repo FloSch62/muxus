@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query';
 import type {
   AppInfo,
   ConnectionsResponse,
@@ -179,14 +179,36 @@ export function useSessionLog(id: string | undefined, matchQuery = '') {
   });
 }
 
-export function useSessionLoggingPolicy(profileKey: string, enabled = true) {
-  return useQuery({
+function sessionLoggingPolicyQuery(profileKey: string) {
+  return {
     queryKey: ['session-logging-policy', profileKey],
     queryFn: () =>
       apiFetch<SessionLoggingPolicy>(
         `/api/session-history/policy?profileKey=${encodeURIComponent(profileKey)}`,
       ),
-    enabled,
+  };
+}
+
+export function useSessionLoggingPolicy(profileKey: string, enabled = true) {
+  return useQuery({ ...sessionLoggingPolicyQuery(profileKey), enabled });
+}
+
+/** Module-level so the combined map only changes when a policy does. */
+function policiesByKey(
+  results: ReadonlyArray<UseQueryResult<SessionLoggingPolicy>>,
+): ReadonlyMap<string, SessionLoggingPolicy> {
+  return new Map(
+    results.flatMap((result) => (result.data ? [[result.data.profileKey, result.data] as const] : [])),
+  );
+}
+
+/** Several hosts' policies at once, by profile key; each joins the map as it arrives. */
+export function useSessionLoggingPolicies(
+  profileKeys: readonly string[],
+): ReadonlyMap<string, SessionLoggingPolicy> {
+  return useQueries({
+    queries: profileKeys.map(sessionLoggingPolicyQuery),
+    combine: policiesByKey,
   });
 }
 

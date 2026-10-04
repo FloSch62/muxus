@@ -29,6 +29,7 @@ import {
   loadHostEditorDialog,
   loadFolderDialog,
   loadHostOrganizationDialog,
+  loadHostBulkEditDialog,
   loadCommandButtonMenu,
   loadCommandButtonsDialog,
   loadSettingsDialog,
@@ -44,6 +45,9 @@ const HostEditorDialog = lazy(() =>
 );
 const HostOrganizationDialog = lazy(() =>
   loadHostOrganizationDialog().then((module) => ({ default: module.HostOrganizationDialog })),
+);
+const HostBulkEditDialog = lazy(() =>
+  loadHostBulkEditDialog().then((module) => ({ default: module.HostBulkEditDialog })),
 );
 const FolderDialog = lazy(() =>
   loadFolderDialog().then((module) => ({ default: module.FolderDialog })),
@@ -101,6 +105,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const queryClient = useQueryClient();
   const hostEditorOpen = useUiStore((s) => !!s.hostEditor);
   const hostOrganizerOpen = useUiStore((s) => !!s.hostOrganizer);
+  const hostBulkEditorOpen = useUiStore((s) => !!s.hostBulkEditor);
   const folderDialogOpen = useUiStore((s) => !!s.folderDialog);
   const settingsOpen = useUiStore((s) => s.settingsOpen);
   const commandButtonMenuOpen = useUiStore((s) => s.commandButtonMenuOpen);
@@ -183,6 +188,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
       <Suspense fallback={null}>
         {hostEditorOpen ? <HostEditorDialog /> : null}
         {hostOrganizerOpen ? <HostOrganizationDialog /> : null}
+        {hostBulkEditorOpen ? <HostBulkEditDialog /> : null}
         {folderDialogOpen ? <FolderDialog /> : null}
         {settingsOpen ? <SettingsDialog /> : null}
         {commandButtonMenuOpen ? <CommandButtonMenu /> : null}
