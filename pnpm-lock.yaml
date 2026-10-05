@@ -245,8 +245,8 @@ importers:
         specifier: ^0.13.0-beta.301
         version: 0.13.0-beta.301(@xterm/xterm@6.1.0-beta.304)
       '@xterm/addon-webgl':
-        specifier: 0.20.0-beta.299
-        version: 0.20.0-beta.299(@xterm/xterm@6.1.0-beta.304)
+        specifier: 0.20.0-beta.300
+        version: 0.20.0-beta.300(@xterm/xterm@6.1.0-beta.304)
       '@xterm/xterm':
         specifier: ^6.1.0-beta.304
         version: 6.1.0-beta.304
@@ -1817,10 +1817,10 @@ packages:
     peerDependencies:
       '@xterm/xterm': ^6.1.0-beta.304
 
-  '@xterm/addon-webgl@0.20.0-beta.299':
-    resolution: {integrity: sha512-Buf/Qyff1rzbYAhH3Wb96wkhH73XzQ0b0j/JZUqss0TlXmPGen1anA35jDR0FYpNCCXE41KKM39ZrQSBG2P3OQ==}
+  '@xterm/addon-webgl@0.20.0-beta.300':
+    resolution: {integrity: sha512-BJQiOx8I+zz2woe+/E9nWprRRPevo9slPgyOd43E8o18aG307ccsyaTJoIbSu99uqfDoVLWDRLTy91ZXTFsdig==}
     peerDependencies:
-      '@xterm/xterm': ^6.1.0-beta.303
+      '@xterm/xterm': ^6.1.0-beta.304
 
   '@xterm/xterm@6.1.0-beta.304':
     resolution: {integrity: sha512-Wq9d4qFYslYQBIan+riXotdyurtREc6v+HWdAwV6Y2JSDI9eJ1dkWm/fzYb2rCGgGnM3baiYuSK4Z6OLNKLzDw==}
@@ -4669,7 +4669,7 @@ snapshots:
     dependencies:
       '@xterm/xterm': 6.1.0-beta.304
 
-  '@xterm/addon-webgl@0.20.0-beta.299(@xterm/xterm@6.1.0-beta.304)':
+  '@xterm/addon-webgl@0.20.0-beta.300(@xterm/xterm@6.1.0-beta.304)':
     dependencies:
       '@xterm/xterm': 6.1.0-beta.304
 

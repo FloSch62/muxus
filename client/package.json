@@ -28,7 +28,7 @@
     "@xterm/addon-serialize": "^0.15.0-beta.301",
     "@xterm/addon-unicode11": "^0.10.0-beta.301",
     "@xterm/addon-web-links": "^0.13.0-beta.301",
-    "@xterm/addon-webgl": "0.20.0-beta.299",
+    "@xterm/addon-webgl": "0.20.0-beta.300",
     "@xterm/xterm": "^6.1.0-beta.304",
     "monaco-editor": "^0.57.0",
     "react": "~19.3.0",
