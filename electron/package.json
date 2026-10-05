@@ -46,11 +46,11 @@
     "@electron/rebuild": "^4.2.0",
     "@muxus/server": "workspace:*",
     "@types/node": "^24.13.6",
-    "electron": "44.4.5",
+    "electron": "44.5.1",
     "electron-builder": "^26.17.0",
     "electron-updater": "^6.8.9",
     "esbuild": "^0.28.2",
-    "sharp": "^0.35.4",
+    "sharp": "^0.35.5",
     "shell-env": "^4.0.3",
     "typescript": "^7.0.2"
   }
