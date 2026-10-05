@@ -26,7 +26,6 @@ nav = [
   { "Home" = "index.md" },
   { "Install" = [
     "install/index.md",
-    { "Desktop app" = "install/desktop.md" },
     { "From source" = "install/from-source.md" },
     { "Quickstart" = "quickstart.md" },
   ] },
@@ -75,8 +74,6 @@ nav = [
     "community/index.md",
     { "Contributing" = "community/contributing.md" },
     { "Building from source" = "community/development.md" },
-    { "Signing and releases" = "community/releasing.md" },
-    { "Microsoft Store" = "community/microsoft-store.md" },
     { "FAQ" = "community/faq.md" },
   ] },
   { "About" = "about.md" },

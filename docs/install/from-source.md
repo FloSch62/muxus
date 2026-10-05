@@ -14,6 +14,9 @@ to a browser from a local Fastify server.
 - A C/C++ toolchain for the two native modules (`node-pty`, `serialport`). On Debian and
   Ubuntu, `build-essential` and `python3` are sufficient.
 
+Serial ports and SSH agents need the same setup as in the desktop app; see the
+[platform notes](index.md#platform-notes).
+
 ## Build and run
 
 ```bash

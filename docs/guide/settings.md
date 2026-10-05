@@ -253,7 +253,7 @@ this version, the GitHub repository and a new issue. Below that:
   new version in the background, and **Restart to update** installs it. In the Microsoft
   Store version, **Update now** asks the Store to install it. The web app and Linux `.deb`
   installs instead show **Download**, which opens the GitHub release. See
-  [Updating Muxus](../install/desktop.md#updating-muxus).
+  [Updating Muxus](../install/index.md#updating-muxus).
 - **This installation** lists the facts a bug report needs: version, whether you run the
   desktop app or the web app, the operating system, the Electron and Chromium versions (or
   your browser), and in the web app the server address and its platform. **Copy

@@ -4,7 +4,7 @@ import type { Configuration } from 'electron-builder';
 export function distributionConfig(env: NodeJS.ProcessEnv, platform: string): Configuration {
   const required = (name: string): string => {
     const value = env[name]?.trim();
-    if (!value) throw new Error(`Missing ${name}; see docs/community/releasing.md`);
+    if (!value) throw new Error(`Missing ${name}`);
     return value;
   };
   const config: { -readonly [Key in keyof Configuration]: Configuration[Key] } = { extends: './electron-builder.yml' };
