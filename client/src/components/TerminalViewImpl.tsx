@@ -116,7 +116,6 @@ import {
   connectionFailureReason,
   reattachCommand,
   rendererReattachDelayMs,
-  restoreCwdCommand,
   shouldDelayConnectionLost,
   shouldWaitForTerminalOutput,
   terminalNotice,
@@ -573,8 +572,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     if (!el) return;
     terminalInputReadyRef.current = false;
     const shouldConnect = generation > 0;
+    // A tmux/screen reattach brings back its own directory instead.
     const reconnectCwd =
-      tab.profile.kind === 'ssh' && tab.reconnectRequest > 0
+      tab.profile.kind === 'ssh' && tab.reconnectRequest > 0 && !tab.reconnectMode
         ? tab.terminalCwd
         : undefined;
     if (shouldConnect) {
@@ -1024,6 +1024,8 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
                 profile,
                 freshTransport: tab.freshTransport,
                 title: titleRef.current,
+                // Restored by the remote shell's startup files, not typed in.
+                cwd: reconnectCwd,
                 cols: term.cols,
                 rows: term.rows,
               },
@@ -1186,11 +1188,12 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             const current = useTabsStore
               .getState()
               .tabs.find((candidate) => candidate.id === tab.id);
-            if (!attachingExistingSession && current?.profile?.kind === 'ssh') {
-              const recoveryInput = current.reconnectMode
-                ? reattachCommand(current.reconnectMode)
-                : restoreCwdCommand(reconnectCwd);
-              if (recoveryInput) socket.send(encoder.encode(recoveryInput));
+            if (
+              !attachingExistingSession &&
+              current?.profile?.kind === 'ssh' &&
+              current.reconnectMode
+            ) {
+              socket.send(encoder.encode(reattachCommand(current.reconnectMode)));
             }
             flushPendingInput();
             break;

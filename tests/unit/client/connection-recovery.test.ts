@@ -7,7 +7,6 @@ import {
   reattachCommand,
   rendererReattachDelayMs,
   RENDERER_REATTACH_DELAYS_MS,
-  restoreCwdCommand,
   shouldDelayConnectionLost,
   shouldWaitForTerminalOutput,
   terminalNotice,
@@ -126,17 +125,3 @@ describe('multiplexer reattachment', () => {
   });
 });
 
-describe('working-directory restoration', () => {
-  it('quotes the last integrated cwd as shell data', () => {
-    expect(restoreCwdCommand("/srv/team's $(project)")).toBe(
-      "cd -- '/srv/team'\"'\"'s $(project)' 2>/dev/null || printf '\\r\\nMuxus: could not restore the previous working directory.\\r\\n'\r",
-    );
-  });
-
-  it('only restores bounded absolute Unix paths', () => {
-    expect(restoreCwdCommand('relative/path')).toBeUndefined();
-    expect(restoreCwdCommand('C:\\work')).toBeUndefined();
-    expect(restoreCwdCommand(`/srv/${'x'.repeat(4092)}`)).toBeUndefined();
-    expect(restoreCwdCommand('/srv/bad\0path')).toBeUndefined();
-  });
-});
