@@ -93,17 +93,6 @@ export function reattachCommand(mode: ReattachMode): string {
   return "if command -v screen >/dev/null 2>&1; then screen -xRR; else printf '\\r\\nMuxus: screen is not installed.\\r\\n'; fi\r";
 }
 
-/**
- * Best-effort POSIX-shell cwd restoration for a replacement SSH shell. The
- * shell integration only reports absolute Unix paths, and single-quote
- * escaping keeps every path byte as data rather than terminal input syntax.
- */
-export function restoreCwdCommand(cwd: string | undefined): string | undefined {
-  if (!cwd?.startsWith('/') || cwd.length > 4096 || cwd.includes('\0')) return undefined;
-  const quoted = `'${cwd.replaceAll("'", `'"'"'`)}'`;
-  return `cd -- ${quoted} 2>/dev/null || printf '\\r\\nMuxus: could not restore the previous working directory.\\r\\n'\r`;
-}
-
 /** Keep server-provided failure text from becoming terminal control input. */
 export function terminalNotice(message: string): string {
   let clean = '';

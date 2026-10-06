@@ -588,7 +588,7 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
     cols,
     rows,
     DEFAULT_TERM,
-    { freshTransport: connectMsg.freshTransport },
+    { freshTransport: connectMsg.freshTransport, cwd: connectMsg.cwd },
   );
   const conn = terminalLease.connection;
   // Session forwards belong to the terminal sessions using this transport;

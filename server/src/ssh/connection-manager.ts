@@ -149,8 +149,17 @@ export interface ManagedConnection {
   health(): SshTransportHealth;
   /** Whether the server answered an x11-req on this transport with failure. */
   x11Refused(): boolean;
-  /** Session defaults come from the dialed target when none are passed. */
-  shell(cols: number, rows: number, term: string, session?: SessionSettings): Promise<ClientChannel>;
+  /**
+   * Session defaults come from the dialed target when none are passed. `cwd`
+   * is a best-effort start directory, honoured only by integrated shells.
+   */
+  shell(
+    cols: number,
+    rows: number,
+    term: string,
+    session?: SessionSettings,
+    cwd?: string,
+  ): Promise<ClientChannel>;
   sftp(): Promise<SFTPWrapper>;
   /** Subscribe to passive keepalive health; returns an unsubscribe function. */
   onHealth(listener: (state: SshTransportHealth) => void): () => void;
@@ -580,11 +589,18 @@ export class SshConnectionManager {
     cols: number,
     rows: number,
     term: string,
-    opts: { freshTransport?: string } = {},
+    opts: { freshTransport?: string; cwd?: string } = {},
   ): Promise<TerminalShell> {
-    const lease = await this.connect(profile, io, 'terminal', opts);
+    const { cwd, ...connectOpts } = opts;
+    const lease = await this.connect(profile, io, 'terminal', connectOpts);
     try {
-      const stream = await lease.connection.shell(cols, rows, term, sessionSettings(lease.target.resolved));
+      const stream = await lease.connection.shell(
+        cols,
+        rows,
+        term,
+        sessionSettings(lease.target.resolved),
+        cwd,
+      );
       this.reportX11(lease, io);
       return { lease, stream, transport: lease.reused ? 'shared' : 'new' };
     } catch (err) {
@@ -600,7 +616,13 @@ export class SshConnectionManager {
       io.status('The shared SSH connection refused another session — opening a dedicated one …', { transient: true });
       const dedicated = await this.connect(profile, io, 'terminal', { dedicatedTransport: true });
       try {
-        const stream = await dedicated.connection.shell(cols, rows, term, sessionSettings(dedicated.target.resolved));
+        const stream = await dedicated.connection.shell(
+          cols,
+          rows,
+          term,
+          sessionSettings(dedicated.target.resolved),
+          cwd,
+        );
         this.reportX11(dedicated, io);
         return { lease: dedicated, stream, transport: 'overflow' };
       } catch (retryErr) {
@@ -790,7 +812,7 @@ export class SshConnectionManager {
       health: () => transportHealth,
       configForwards: target.resolved.forwards,
       x11Refused: () => x11?.refused ?? false,
-      shell: async (cols, rows, term, session = sessionSettings(target.resolved)) => {
+      shell: async (cols, rows, term, session = sessionSettings(target.resolved), cwd) => {
         const pty = wantsPty(session.requestTty, !!session.remoteCommand)
           ? terminalPtyOptions(cols, rows, term)
           : undefined;
@@ -807,7 +829,7 @@ export class SshConnectionManager {
             );
           }
           if (pty && !disableSftp) {
-            return openRemoteShell(client, getSftp, pty, env, x11Request);
+            return openRemoteShell(client, getSftp, pty, env, x11Request, cwd);
           }
           // Console compatibility drops SendEnv/SetEnv: ssh2 can only send env
           // requests before pty-req, an order some appliances answer with a

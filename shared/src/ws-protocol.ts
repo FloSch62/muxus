@@ -232,6 +232,12 @@ export const terminalClientMessageSchema = z.discriminatedUnion('op', [
     freshTransport: z.string().min(1).max(100).optional(),
     /** User-facing tab title retained in session history. */
     title: z.string().trim().min(1).max(500).optional(),
+    /**
+     * Directory the tab's previous shell was in. A replacement SSH shell
+     * started through the remote shell integration changes into it during
+     * startup; every other shell ignores it.
+     */
+    cwd: z.string().min(1).max(4096).optional(),
     cols: z.number().int().positive(),
     rows: z.number().int().positive(),
   }),

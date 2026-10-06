@@ -320,4 +320,89 @@ describe('remote shell integration', () => {
       "exec '/bin/bash' --noprofile --rcfile '/home/u/.cache/muxus/bash-init.bash' -i",
     );
   });
+
+  it('hands a reconnect directory to the startup files as quoted data', () => {
+    const cwd = "/srv/team's $(project)";
+    expect(
+      remoteShellCommand(
+        { path: '/bin/bash', kind: 'bash', home: '/home/u' },
+        '/home/u/.cache/muxus',
+        cwd,
+      ),
+    ).toBe(
+      "export MUXUS_RESTORE_CWD='/srv/team'\\''s $(project)'; " +
+        "exec '/bin/bash' --noprofile --rcfile '/home/u/.cache/muxus/bash-init.bash' -i",
+    );
+    expect(
+      remoteShellCommand(
+        { path: '/usr/bin/zsh', kind: 'zsh', home: '/home/u' },
+        '/home/u/.cache/muxus',
+        cwd,
+      ),
+    ).toBe(
+      "export MUXUS_RESTORE_CWD='/srv/team'\\''s $(project)'; unset MUXUS_USER_ZDOTDIR; " +
+        "export ZDOTDIR='/home/u/.cache/muxus/zsh'; exec '/usr/bin/zsh' -l",
+    );
+  });
+
+  it('only restores absolute Unix directories', () => {
+    const bash = { path: '/bin/bash', kind: 'bash', home: '/home/u' } as const;
+    const plain = remoteShellCommand(bash, '/home/u/.cache/muxus');
+    expect(remoteShellCommand(bash, '/home/u/.cache/muxus', 'relative/path')).toBe(plain);
+    expect(remoteShellCommand(bash, '/home/u/.cache/muxus', 'C:\\work')).toBe(plain);
+    expect(remoteShellCommand(bash, '/home/u/.cache/muxus', '/srv/bad\0path')).toBe(plain);
+  });
+
+  it('changes into the reconnect directory at the end of shell startup', async () => {
+    const contents = new Map<string, string>();
+    const probeChannel = new StubChannel();
+    const exec = vi.fn((_command: string, optionsOrCallback: unknown, possibleCallback?: unknown) => {
+      const callback = (possibleCallback ?? optionsOrCallback) as (
+        error: Error | undefined,
+        channel: unknown,
+      ) => void;
+      if (possibleCallback) {
+        callback(undefined, new StubChannel());
+        return;
+      }
+      callback(undefined, probeChannel);
+      setImmediate(() => {
+        probeChannel.emit('data', Buffer.from('__MUXUS_SHELL__=/usr/bin/zsh\n__MUXUS_HOME__=/home/u\n'));
+        probeChannel.emit('close');
+      });
+    });
+    const sftp = {
+      stat: (remotePath: string, callback: (error?: Error, value?: unknown) => void) =>
+        remotePath.endsWith('/.complete')
+          ? callback(new Error('not found'))
+          : callback(undefined, { isDirectory: () => true, isFile: () => false }),
+      mkdir: (_path: string, _attributes: unknown, callback: (error?: Error) => void) => callback(),
+      writeFile: (
+        remotePath: string,
+        content: string,
+        _options: unknown,
+        callback: (error?: Error) => void,
+      ) => {
+        contents.set(remotePath, content);
+        callback();
+      },
+    };
+
+    await openRemoteShell(
+      stubClient(exec),
+      async () => sftp as never,
+      { term: 'xterm-256color', cols: 80, rows: 24 },
+      undefined,
+      undefined,
+      '/srv/project',
+    );
+
+    const zshrc = [...contents].find(([remotePath]) => remotePath.endsWith('/zsh/.zshrc'))?.[1];
+    expect(exec.mock.calls.at(-1)?.[0]).toMatch(/^export MUXUS_RESTORE_CWD='\/srv\/project'; /);
+    // After the user's .zshrc and the integration hooks, so neither undoes it.
+    expect(zshrc?.indexOf('builtin cd -- "$MUXUS_RESTORE_CWD"')).toBeGreaterThan(
+      zshrc!.indexOf('add-zsh-hook precmd'),
+    );
+    expect(zshrc?.trimEnd().endsWith('builtin unset MUXUS_RESTORE_CWD')).toBe(true);
+  });
 });

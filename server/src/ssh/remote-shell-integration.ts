@@ -16,6 +16,19 @@ ZDOTDIR="$__muxus_shim"
 builtin unset __muxus_shim
 `;
 
+// Runs last in bash and zsh startup, so the user's own rc files cannot undo
+// it and nothing is typed into the shell (where it would echo and land in
+// history).
+const RESTORE_CWD = `
+if [[ -n "\${MUXUS_RESTORE_CWD-}" ]]; then
+  builtin cd -- "$MUXUS_RESTORE_CWD" 2>/dev/null ||
+    builtin printf 'Muxus: could not restore the previous working directory.\\n'
+fi
+builtin unset MUXUS_RESTORE_CWD
+`;
+
+const REMOTE_ZSHRC = `${ZSHRC}${RESTORE_CWD}`;
+
 const BASH_INIT = `# Muxus SSH shell integration. Reproduce login startup first.
 if [[ -f /etc/profile ]]; then . /etc/profile; fi
 if [[ -f "$HOME/.bash_profile" ]]; then
@@ -38,7 +51,7 @@ ${SHELL_CWD_REPORT}
   PS0="\\[\\e]133;C\\a\\]\${PS0-}"
   PROMPT_COMMAND="__muxus_prompt_mark\${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
 fi
-`;
+${RESTORE_CWD}`;
 
 // A content-addressed directory makes the installed scripts immutable. Once
 // the completion marker exists, future connections need only one SFTP stat
@@ -46,7 +59,7 @@ fi
 const INTEGRATION_VERSION = createHash('sha256')
   .update(ZSHENV)
   .update(ZPROFILE)
-  .update(ZSHRC)
+  .update(REMOTE_ZSHRC)
   .update(BASH_INIT)
   .digest('hex')
   .slice(0, 12);
@@ -84,6 +97,7 @@ export async function openRemoteShell(
   pty: PseudoTtyOptions,
   env?: Record<string, string>,
   x11?: X11Options,
+  cwd?: string,
 ): Promise<ClientChannel> {
   let transportLost = false;
   let transportError: Error | undefined;
@@ -98,7 +112,7 @@ export async function openRemoteShell(
   client.once('close', onTransportClose);
   client.once('end', onTransportClose);
   try {
-    const integrated = await tryOpenIntegratedRemoteShell(client, getSftp, pty, env, x11);
+    const integrated = await tryOpenIntegratedRemoteShell(client, getSftp, pty, env, x11, cwd);
     if (integrated) return integrated;
     if (transportLost) throw new RemoteShellTransportLostError(transportError);
 
@@ -125,6 +139,7 @@ async function tryOpenIntegratedRemoteShell(
   pty: PseudoTtyOptions,
   env?: Record<string, string>,
   x11?: X11Options,
+  cwd?: string,
 ): Promise<ClientChannel | undefined> {
   try {
     // Do not speculatively open SFTP against console appliances. Many expose
@@ -134,7 +149,7 @@ async function tryOpenIntegratedRemoteShell(
     if (!shell) return undefined;
     const sftp = await getSftp();
     const root = await installIntegration(sftp, shell);
-    return await openExec(client, remoteShellCommand(shell, root), {
+    return await openExec(client, remoteShellCommand(shell, root, cwd), {
       pty,
       ...(env ? { env } : {}),
       ...(x11 ? { x11 } : {}),
@@ -159,16 +174,24 @@ export function parseShellProbe(output: string): SupportedShell | undefined {
   return { path: shellPath, kind: name, home, ...(zdotdir ? { zdotdir } : {}) };
 }
 
-export function remoteShellCommand(shell: SupportedShell, root: string): string {
+/**
+ * The exec command for an integrated shell. `cwd` is the directory a
+ * reconnecting tab was last in; the startup files change into it.
+ */
+export function remoteShellCommand(shell: SupportedShell, root: string, cwd?: string): string {
   const executable = quoteShellWord(shell.path);
+  const restoreCwd =
+    cwd?.startsWith('/') && !cwd.includes('\0')
+      ? `export MUXUS_RESTORE_CWD=${quoteShellWord(cwd)}; `
+      : '';
   if (shell.kind === 'bash') {
-    return `exec ${executable} --noprofile --rcfile ${quoteShellWord(path.posix.join(root, 'bash-init.bash'))} -i`;
+    return `${restoreCwd}exec ${executable} --noprofile --rcfile ${quoteShellWord(path.posix.join(root, 'bash-init.bash'))} -i`;
   }
 
   const userZdotdir = shell.zdotdir
     ? `export MUXUS_USER_ZDOTDIR=${quoteShellWord(shell.zdotdir)}; `
     : 'unset MUXUS_USER_ZDOTDIR; ';
-  return `${userZdotdir}export ZDOTDIR=${quoteShellWord(path.posix.join(root, 'zsh'))}; exec ${executable} -l`;
+  return `${restoreCwd}${userZdotdir}export ZDOTDIR=${quoteShellWord(path.posix.join(root, 'zsh'))}; exec ${executable} -l`;
 }
 
 async function probeShell(client: Client): Promise<SupportedShell | undefined> {
@@ -221,7 +244,7 @@ async function installIntegration(sftp: SFTPWrapper, shell: SupportedShell): Pro
     ? [
         { path: path.posix.join(root, 'zsh', '.zshenv'), content: ZSHENV },
         { path: path.posix.join(root, 'zsh', '.zprofile'), content: ZPROFILE },
-        { path: path.posix.join(root, 'zsh', '.zshrc'), content: ZSHRC },
+        { path: path.posix.join(root, 'zsh', '.zshrc'), content: REMOTE_ZSHRC },
       ]
     : [{ path: path.posix.join(root, 'bash-init.bash'), content: BASH_INIT }];
   await Promise.all(files.map((file) => writeFile(sftp, file.path, file.content)));
