@@ -110,8 +110,14 @@ transport:
   a single authentication round-trip.
 
 Sharing is safe by construction: a connection whose keepalives have gone quiet is not
-reused, and if the server refuses another channel on a shared connection (`MaxSessions`),
-Muxus silently dials a dedicated connection for that pane instead.
+reused, and if the server refuses another channel on a shared connection (`MaxSessions`,
+Cisco IOS and other appliances), Muxus silently dials a dedicated connection for that pane
+instead.
+
+Jump hosts are shared the same way. A dedicated connection, and a connection to any other
+host behind the same jump host, is opened through the jump host's existing connection, so
+the jump host sees no second login. The jump host connection closes a few seconds after the
+last session through it.
 
 Each consumer holds its own lease on the transport:
 
@@ -135,10 +141,10 @@ menu. SSH tabs additionally offer **Reconnect + tmux** and **Reconnect + screen*
 dial a fresh transport and then reattach the existing multiplexer session.
 
 **Force reconnect (new connection)** in the tab menu replaces one tab's connection, even
-while the session is live. It never multiplexes onto an established transport, so it also
-recovers an ended SSH tab whose shared connection went dead while other tabs still hold
-it. Once the replacement is up, new sessions to that host use it instead of the old
-transport.
+while the session is live. It never multiplexes onto an established transport or jump host
+connection, so it also recovers an ended SSH tab whose shared connection went dead while
+other tabs still hold it. Once the replacement is up, new sessions to that host use it
+instead of the old transport.
 
 The [workspace](workspaces.md) dialog reconnects selected ended sessions, all ended
 sessions, or force-reconnects every remote tab. Force reconnect ends live shells; use tmux

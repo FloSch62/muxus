@@ -48,6 +48,7 @@ import {
   type TransportLease,
 } from './connection-leases.js';
 import { connectionAlgorithms } from './algorithms.js';
+import { JumpHopRegistry, type JumpHop } from './jump-hops.js';
 import {
   openRemoteShell,
   RemoteShellTransportLostError,
@@ -284,6 +285,7 @@ export interface ChainHop {
  */
 export class SshConnectionManager {
   private readonly connections = new ConnectionLeaseRegistry<ManagedConnection>();
+  private readonly jumpHops: JumpHopRegistry;
   private readonly closeReasons = new WeakMap<Client, string>();
   private readonly postAuth = new WeakMap<Client, Promise<void>>();
   /**
@@ -338,6 +340,8 @@ export class SshConnectionManager {
       agentWaitStatusMs?: number;
       /** Local X server for X11 forwarding; absent disables it. */
       x11?: LocalX11;
+      /** Test seam; production uses JUMP_HOP_IDLE_MS. */
+      jumpHopIdleMs?: number;
     } = {},
   ) {
     this.knownHosts = options.knownHosts ?? new KnownHostsStore();
@@ -355,6 +359,7 @@ export class SshConnectionManager {
     this.agentWaitStatusMs =
       options.agentWaitStatusMs ?? DEFAULT_AGENT_WAIT_STATUS_MS;
     this.x11 = options.x11;
+    this.jumpHops = new JumpHopRegistry(options.jumpHopIdleMs);
   }
 
   /** Acquire an independent consumer lease on an existing SSH transport. */
@@ -392,7 +397,8 @@ export class SshConnectionManager {
    * tunnels and repeated connects to one host share a single SSH connection,
    * which also keeps Muxus inside server-side connection caps (MaxStartups,
    * per-user limits). Concurrent dials to the same plan (workspace restore)
-   * collapse into one connection and one auth round-trip.
+   * collapse into one connection and one auth round-trip. A transport that
+   * still has to be dialed rides any jump hop already connected for its route.
    */
   async connect(
     profile: SshProfile,
@@ -486,6 +492,7 @@ export class SshConnectionManager {
       metadataAlias,
       disableSftp,
       consoleCompatibility,
+      freshToken,
     ).then((lease) => {
       if (freshToken) {
         // Tag before waiters observe the connection, and retire the replaced
@@ -711,65 +718,117 @@ export class SshConnectionManager {
     metadataAlias: string | undefined,
     disableSftp: boolean,
     consoleCompatibility: boolean,
+    freshToken: string | undefined,
+    reuseJumpHops = true,
   ): Promise<ConnectionLease> {
-    const clients: Client[] = [];
+    // Ride the deepest jump hop this route is already logged in to, so a
+    // second connection behind a jump host costs no second login there.
+    let first = 0;
+    let route: JumpHop | undefined;
+    for (let i = chain.length - 2; reuseJumpHops && i >= 0 && !route; i--) {
+      route = this.jumpHops.reusable(muxKey(chain.slice(0, i + 1)), freshToken);
+      if (route) first = i + 1;
+    }
+    const reused = route;
+    reused?.retain();
     const postAuth: Promise<void>[] = [];
-    const healthListeners = new Set<(state: SshTransportHealth) => void>();
-    const hopHealth = new Map<number, SshTransportHealth>();
-    const stopHealthObservers: Array<() => void> = [];
-    let transportHealth: SshTransportHealth = 'healthy';
-    const updateHopHealth = (index: number, state: SshTransportHealth) => {
-      hopHealth.set(index, state);
-      const next = [...hopHealth.values()].includes('suspect') ? 'suspect' : 'healthy';
-      if (next === transportHealth) return;
-      transportHealth = next;
-      for (const listener of healthListeners) listener(next);
-    };
-    const stopHealth = () => {
-      for (const stop of stopHealthObservers.splice(0)) stop();
-    };
-    let sock: Duplex | undefined;
+    let dialed: Client | undefined;
     try {
-      for (let i = 0; i < chain.length; i++) {
+      for (let i = first; i < chain.length; i++) {
         const hop = chain[i]!;
-        const via = i > 0 ? ` via ${chain[i - 1]!.spec.host}` : '';
+        const reusing = route !== undefined && route === reused;
+        const via = route
+          ? ` via ${route.label}${reusing ? ' over its open connection' : ''}`
+          : '';
         io.status(
           `Connecting to ${hop.user}@${hop.resolved.hostname}:${hop.port}${via} …`,
           { transient: true },
         );
+        let sock: Duplex | undefined;
+        if (route) {
+          try {
+            sock = await openJumpChannel(route.client, hop.resolved.hostname, hop.port);
+          } catch (err) {
+            // A refusal from a live jump host is about the target. Anything
+            // else means the shared connection itself is gone or unusable.
+            if (reusing && (route.isClosed || !isChannelOpenRefusal(err))) {
+              throw new StaleJumpHopError(route, err);
+            }
+            throw err;
+          }
+        }
         const client = await this.dial(hop, sock, io);
-        clients.push(client);
         const pendingPostAuth = this.postAuth.get(client);
         if (pendingPostAuth) postAuth.push(pendingPostAuth);
-        hopHealth.set(i, 'healthy');
-        const transport = (client as Client & { _sock?: Duplex })._sock;
-        if (transport) {
-          const keepalive = sshKeepaliveOptions(hop.resolved);
-          stopHealthObservers.push(
-            observeSshTransportHealth(
-              transport,
-              keepalive.keepaliveInterval,
-              (state) => updateHopHealth(i, state),
-            ),
-          );
+        if (i === chain.length - 1) {
+          dialed = client;
+          break;
         }
-        const next = chain[i + 1];
-        if (next) sock = await openJumpChannel(client, next.resolved.hostname, next.port);
+        const next = this.jumpHops.add({
+          key: muxKey(chain.slice(0, i + 1)),
+          label: hop.spec.host,
+          client,
+          parent: route,
+          replacementToken: freshToken,
+          watchHealth: (update) => this.watchHealth(client, hop, update),
+        });
+        next.retain();
+        route?.release();
+        route = next;
       }
     } catch (err) {
+      // Hops dialed for this chain close unless another chain rides them.
+      route?.release();
+      if (err instanceof StaleJumpHopError) {
+        err.hop.superseded = true;
+        this.log.info(
+          { hop: err.hop.label, err: err.cause },
+          'shared ssh jump host connection failed; dialing the jump host again',
+        );
+        return this.dialChain(
+          chain,
+          profile,
+          io,
+          owner,
+          key,
+          metadataAlias,
+          disableSftp,
+          consoleCompatibility,
+          freshToken,
+          false,
+        );
+      }
       // dial() already logged the raw failure; this adds which hop died.
-      this.log.debug(
-        { err, hops: chain.length, dialed: clients.length },
-        'ssh dial chain aborted',
-      );
-      stopHealth();
-      for (const c of clients.reverse()) c.end();
+      this.log.debug({ err, hops: chain.length, from: first }, 'ssh dial chain aborted');
       throw err;
     }
 
     const target = chain[chain.length - 1]!;
-    const client = clients[clients.length - 1]!;
-    const jumpClients = clients.slice(0, -1);
+    const client = dialed!;
+    const jumpRoute = route;
+    const jumps = jumpRoute?.route() ?? [];
+    const healthListeners = new Set<(state: SshTransportHealth) => void>();
+    let targetHealth: SshTransportHealth = 'healthy';
+    let transportHealth: SshTransportHealth = 'healthy';
+    const updateHealth = () => {
+      const next =
+        targetHealth === 'suspect' || jumps.some((hop) => hop.health() === 'suspect')
+          ? 'suspect'
+          : 'healthy';
+      if (next === transportHealth) return;
+      transportHealth = next;
+      for (const listener of healthListeners) listener(next);
+    };
+    const stopHealthObservers = [
+      this.watchHealth(client, target, (state) => {
+        targetHealth = state;
+        updateHealth();
+      }),
+      ...jumps.map((hop) => hop.onHealth(updateHealth)),
+    ];
+    const stopHealth = () => {
+      for (const stop of stopHealthObservers.splice(0)) stop();
+    };
     const x11: X11Transport | undefined = this.x11?.attach(client);
     const id = nanoid(10);
     const closeListeners = new Set<(reason?: string) => void>();
@@ -880,36 +939,50 @@ export class SshConnectionManager {
         if (ending) return;
         ending = true;
         client.end();
-        for (const jump of [...jumpClients].reverse()) jump.end();
       },
     };
 
+    // A dying hop takes the whole chain with it; surface that as a close.
+    const stopJumpWatch = jumps.map((hop) =>
+      hop.onClose(() => {
+        if (closed || ending) return;
+        this.closeReasons.set(client, `SSH jump host ${hop.label} disconnected.`);
+        client.end();
+      }),
+    );
     client.on('close', () => {
       closed = true;
       stopHealth();
+      for (const stop of stopJumpWatch) stop();
       this.connections.markClosed(managed);
-      for (const jump of jumpClients) jump.end();
+      // Jump hops end with the last chain routed through them.
+      jumpRoute?.release();
       const reason = this.closeReasons.get(client);
       for (const listener of closeListeners) listener(reason);
       closeListeners.clear();
       healthListeners.clear();
     });
-    for (const [index, jump] of jumpClients.entries()) {
-      // A dying hop takes the whole chain with it; surface that as a close.
-      jump.on('close', () => {
-        if (closed || ending) return;
-        this.closeReasons.set(
-          client,
-          `SSH jump host ${chain[index]?.spec.host ?? index + 1} disconnected.`,
-        );
-        client.end();
-      });
-    }
     return this.connections.register(managed, owner);
   }
 
   closeAll(): void {
     this.connections.closeAll();
+    this.jumpHops.closeAll();
+  }
+
+  /** Passive keepalive health of one dialed hop's own transport. */
+  private watchHealth(
+    client: Client,
+    hop: ChainHop,
+    update: (state: SshTransportHealth) => void,
+  ): () => void {
+    const transport = (client as Client & { _sock?: Duplex })._sock;
+    if (!transport) return () => undefined;
+    return observeSshTransportHealth(
+      transport,
+      sshKeepaliveOptions(hop.resolved).keepaliveInterval,
+      update,
+    );
   }
 
   private dial(hop: ChainHop, sock: Duplex | undefined, io: ConnectIo): Promise<Client> {
@@ -1438,10 +1511,29 @@ export function findMetadataAlias(doc: ConfigDocument, requestedHost: string): s
 function openJumpChannel(client: Client, host: string, port: number): Promise<Duplex> {
   return new Promise((resolve, reject) => {
     client.forwardOut('127.0.0.1', 0, host, port, (err, stream) => {
-      if (err) reject(new Error(`jump host could not reach ${host}:${port}: ${err.message}`));
-      else resolve(stream);
+      if (err) {
+        reject(new Error(`jump host could not reach ${host}:${port}: ${err.message}`, { cause: err }));
+      } else {
+        resolve(stream);
+      }
     });
   });
+}
+
+/** The server answered a channel open with an explicit refusal (RFC 4254 reason code). */
+function isChannelOpenRefusal(err: unknown): boolean {
+  const cause = err instanceof Error ? err.cause : undefined;
+  return typeof (cause as { reason?: unknown } | undefined)?.reason === 'number';
+}
+
+/** A shared jump hop could not carry another chain; the chain dials it again. */
+class StaleJumpHopError extends Error {
+  constructor(
+    readonly hop: JumpHop,
+    cause: unknown,
+  ) {
+    super(`shared connection to jump host ${hop.label} failed`, { cause });
+  }
 }
 
 // ---------------------------------------------------------------------------
