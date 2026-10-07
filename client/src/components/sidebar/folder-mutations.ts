@@ -60,9 +60,15 @@ export function deleteFolderPlan(hosts: readonly ManagedHost[], path: string): F
   });
 }
 
-/** Assign one host to a folder; an empty path moves it to the root. */
-export function moveHostPlan(host: ManagedHost, path: string): FolderMove {
-  return { host, group: normalizeGroupPath(path) || null };
+/**
+ * Assign hosts to a folder; an empty path moves them to the root. Hosts that
+ * are already in it have nothing to write and are left out.
+ */
+export function moveHostsPlan(hosts: readonly ManagedHost[], path: string): FolderMove[] {
+  const group = normalizeGroupPath(path) || null;
+  return hosts.flatMap((host) =>
+    isSamePath(host.entry.metadata?.group ?? '', path) ? [] : [{ host, group }],
+  );
 }
 
 export type FolderProblem =

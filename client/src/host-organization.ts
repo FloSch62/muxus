@@ -49,19 +49,21 @@ export function matchesHostTokens(host: SshHostEntry, tokens: readonly string[])
   return matchesTokens(hostSearchText(host), tokens);
 }
 
-/** Build the persisted order after dropping one host before/after another, or
- * append it when the group header itself is the target. */
+/** Build the persisted order after dropping hosts before/after another, or
+ * append them when the group header itself is the target. Several dropped
+ * hosts land together, in the order given. */
 export function hostOrderAfterDrop(
   aliases: readonly string[],
-  sourceAlias: string,
+  sourceAliases: readonly string[],
   targetAlias?: string,
   edge: 'before' | 'after' = 'after',
 ): string[] {
-  const next = aliases.filter((alias) => alias !== sourceAlias);
-  if (!targetAlias) return [...next, sourceAlias];
+  const moving = new Set(sourceAliases);
+  const next = aliases.filter((alias) => !moving.has(alias));
+  if (!targetAlias) return [...next, ...sourceAliases];
   const targetIndex = next.indexOf(targetAlias);
-  if (targetIndex < 0) return [...next, sourceAlias];
-  next.splice(targetIndex + (edge === 'after' ? 1 : 0), 0, sourceAlias);
+  if (targetIndex < 0) return [...next, ...sourceAliases];
+  next.splice(targetIndex + (edge === 'after' ? 1 : 0), 0, ...sourceAliases);
   return next;
 }
 

@@ -214,6 +214,37 @@ export function deleteHost(alias: string, rootPath = defaultSshConfigPath()): vo
   writeConfigFile(block.file, doc.files.get(block.file) ?? []);
 }
 
+/**
+ * Remove the Host blocks of many aliases, as the sidebar's bulk delete does.
+ * Every alias is looked up before anything is written, and each touched file
+ * is written once, so its `.muxus.bak` holds the content from before the whole
+ * delete rather than from before its last block.
+ */
+export function deleteHosts(
+  aliases: readonly string[],
+  rootPath = defaultSshConfigPath(),
+): { deleted: number } {
+  const doc = loadConfigDocument(rootPath);
+  const blocks = new Set<HostBlock>();
+  for (const alias of aliases) {
+    const block = findHostBlock(doc, alias);
+    if (!block) throw new HttpProblem(404, `no Host block for "${alias}" in ${path.basename(doc.rootPath)}`);
+    blocks.add(block);
+  }
+
+  // Bottom-up within each file, so removing one block never shifts the line
+  // range of a block still waiting to be removed.
+  const ordered = [...blocks].sort(
+    (a, b) => a.file.localeCompare(b.file) || b.commentStart - a.commentStart,
+  );
+  for (const block of ordered) removeBlock(doc, block);
+
+  for (const file of new Set(ordered.map((block) => block.file))) {
+    writeConfigFile(file, doc.files.get(file) ?? []);
+  }
+  return { deleted: blocks.size };
+}
+
 /** The exact text upsertHost would write, for the editor's live preview. */
 export function previewHost(req: HostUpsertRequest, rootPath = defaultSshConfigPath()): string {
   validateUpsert(req);

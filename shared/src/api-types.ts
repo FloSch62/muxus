@@ -871,6 +871,16 @@ export interface HostBulkUpdateResponse {
   updated: number;
 }
 
+/** Body of DELETE /api/ssh/config/hosts: the Host blocks of many aliases. */
+export interface HostBulkDeleteRequest {
+  aliases: string[];
+}
+
+export interface HostBulkDeleteResponse {
+  /** Host blocks removed; aliases that share a block count once. */
+  deleted: number;
+}
+
 /** Private key discovered in ~/.ssh. */
 export interface SshKeyInfo {
   path: string;

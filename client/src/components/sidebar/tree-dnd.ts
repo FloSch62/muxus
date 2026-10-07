@@ -6,13 +6,24 @@ import {
   isSamePath,
   MAX_FOLDER_DEPTH,
   type ContainerNode,
+  type HostNode,
   type HostTree,
+  type TreeNode,
   type VisibleNode,
 } from '../../host-tree.js';
 
+/** A host being dragged, and the container it is dragged out of. */
+export interface DraggedHost {
+  hostKey: string;
+  parentKey: string;
+}
+
 export type DragSource =
-  | { kind: 'host'; hostKey: string; parentKey: string }
+  /** The grabbed host alone, or every host of the selection it belongs to, in tree order. */
+  | { kind: 'host'; hosts: readonly DraggedHost[] }
   | { kind: 'folder'; folderKey: string; path: string };
+
+const NO_SELECTION: ReadonlySet<string> = new Set();
 
 export type DropTarget =
   | { kind: 'into-folder'; folderKey: string }
@@ -51,9 +62,25 @@ export function dropTargetForRow(row: VisibleNode, ratio: number): DropTarget | 
   };
 }
 
-export function dragSourceForRow(row: VisibleNode): DragSource | undefined {
+/**
+ * What dragging `row` picks up. A host inside a selection of several brings the
+ * whole selection along, collapsed folders included, the way a file manager
+ * moves every selected file; a host outside the selection drags alone.
+ */
+export function dragSourceForRow(
+  row: VisibleNode,
+  tree: HostTree,
+  selection: ReadonlySet<string> = NO_SELECTION,
+): DragSource | undefined {
   if (row.node.kind === 'host') {
-    return { kind: 'host', hostKey: row.key, parentKey: row.node.parentKey };
+    const nodes =
+      selection.size > 1 && selection.has(row.key)
+        ? hostNodes(tree.roots).filter((node) => selection.has(node.key))
+        : [row.node];
+    return {
+      kind: 'host',
+      hosts: nodes.map((node) => ({ hostKey: node.key, parentKey: node.parentKey })),
+    };
   }
   // ssh_config file groups belong to the config file, not to the sidebar.
   if (row.node.kind !== 'folder') return undefined;
@@ -100,11 +127,14 @@ export function canDrop(source: DragSource, target: DropTarget, tree: HostTree):
   const destination = targetPath(target, tree);
 
   if (source.kind === 'host') {
-    if (target.kind === 'host-edge' && target.hostKey === source.hostKey) return false;
-    // Reordering within the container a host already sits in changes no group,
-    // so it stays available even inside a read-only ssh_config file group.
+    // Beside a host that is itself being dragged would place it relative to itself.
+    if (target.kind === 'host-edge' && source.hosts.some((host) => host.hostKey === target.hostKey)) {
+      return false;
+    }
+    // Reordering within the container the hosts already sit in changes no
+    // group, so it stays available even inside a read-only ssh_config file group.
     if (isPureReorder(source, target)) return true;
-    // Otherwise the host is changing folders, and a file group is not one.
+    // Otherwise a host is changing folders, and a file group is not one.
     return destination !== undefined;
   }
 
@@ -164,12 +194,23 @@ export function sameTarget(a: DropTarget | null, b: DropTarget): boolean {
   return true;
 }
 
-/** A drop that only changes order, never which container the host is in. */
+/** A drop that only changes order, never which container any dragged host is in. */
 export function isPureReorder(source: DragSource, target: DropTarget): boolean {
   if (source.kind !== 'host') return false;
-  if (target.kind === 'host-edge') return target.parentKey === source.parentKey;
-  if (target.kind === 'folder-edge') return target.parentKey === source.parentKey;
-  return target.kind === 'into-folder' && target.folderKey === source.parentKey;
+  const containerKey =
+    target.kind === 'host-edge' || target.kind === 'folder-edge'
+      ? target.parentKey
+      : target.kind === 'into-folder'
+        ? target.folderKey
+        : undefined;
+  return (
+    containerKey !== undefined && source.hosts.every((host) => host.parentKey === containerKey)
+  );
+}
+
+/** Every host below `nodes`, in render order. */
+function hostNodes(nodes: readonly TreeNode[]): HostNode[] {
+  return nodes.flatMap((node) => (node.kind === 'host' ? [node] : hostNodes(node.children)));
 }
 
 /** Deepest nesting below a folder, in levels; a leaf folder is 0. */

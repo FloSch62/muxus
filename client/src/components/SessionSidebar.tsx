@@ -32,18 +32,20 @@ import {
   useFolderSettings,
   useMoveFolderSettings,
 } from '../api/folder-settings.js';
+import { useDeleteManagedHosts } from '../api/host-delete.js';
 import { useApplyFolderMoves } from '../api/host-groups.js';
 import { useReorderManagedHosts } from '../api/host-order.js';
-import { useDeleteHostProfile, useUpdateHostProfileMetadata } from '../api/profiles.js';
+import { useDeleteHostProfile } from '../api/profiles.js';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
-import { useDeleteHost, useUpdateSshMetadata } from '../api/ssh-config.js';
-import { confirmDeleteHost } from '../host-actions.js';
+import { useDeleteHost } from '../api/ssh-config.js';
+import { confirmDeleteHost, confirmDeleteHosts } from '../host-actions.js';
 import { tabHostKey } from '../host-sessions.js';
 import { hostOrderAfterDrop } from '../host-organization.js';
 import {
   buildHostTree,
   folderParentPath,
   folderSiblings,
+  isSamePath,
   siblingHostKeys,
   type ContainerNode,
   type FolderNode,
@@ -83,7 +85,7 @@ import { useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
 import { PanelResizeHandle } from './PanelResizeHandle.js';
 import { treeLabelSx, treeRowSx } from './sidebar/tree-row-style.js';
-import { deleteFolderPlan, folderRewritePlan } from './sidebar/folder-mutations.js';
+import { deleteFolderPlan, folderRewritePlan, moveHostsPlan } from './sidebar/folder-mutations.js';
 import type { FolderMenuState } from './sidebar/FolderContextMenu.js';
 import type { HostMenuState } from './sidebar/HostContextMenu.js';
 import type { HostActivation } from './sidebar/HostRow.js';
@@ -145,8 +147,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
   const [selection, setSelection] = useState<ReadonlySet<string>>(EMPTY_KEYS);
   const deleteHost = useDeleteHost();
   const deleteProfile = useDeleteHostProfile();
-  const updateMetadata = useUpdateSshMetadata();
-  const updateProfileMetadata = useUpdateHostProfileMetadata();
+  const deleteHosts = useDeleteManagedHosts();
   const reorder = useReorderManagedHosts();
   const applyFolderMoves = useApplyFolderMoves();
   const { data: folderSettingsData } = useFolderSettings();
@@ -224,11 +225,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
     );
   };
 
-  const mutating =
-    reorder.isPending ||
-    updateMetadata.isPending ||
-    updateProfileMetadata.isPending ||
-    applyFolderMoves.isPending;
+  const mutating = reorder.isPending || applyFolderMoves.isPending;
   const filtering = !!needle;
   // Both catalogs must be complete before an order can be persisted: writing
   // a partial list would leave the omitted source carrying conflicting ranks.
@@ -282,24 +279,32 @@ export const SessionSidebar = memo(function SessionSidebar() {
     [moveHostByKey],
   );
 
-  /** Commit a drag: change the host's folder if it moved, then its order. */
-  const dropHost = useCallback(
-    (hostKey: string, path: string | undefined, order: string[]) => {
-      const host = hostByKey.get(hostKey);
-      if (!host) return;
-      if (path === undefined) {
+  /** Commit a drag: change the folder of every host that moved, then their order. */
+  const dropHosts = useCallback(
+    (hostKeys: readonly string[], path: string | undefined, order: string[]) => {
+      const moves =
+        path === undefined
+          ? []
+          : moveHostsPlan(
+              hostKeys.flatMap((key) => {
+                const host = hostByKey.get(key);
+                return host ? [host] : [];
+              }),
+              path,
+            );
+      if (moves.length === 0) {
         commitOrder(order);
         return;
       }
-      const patch = { group: path || null };
-      const moved =
-        host.kind === 'ssh'
-          ? updateMetadata.mutateAsync({ alias: host.entry.alias, patch })
-          : updateProfileMetadata.mutateAsync({ id: host.entry.id, patch });
-      // Order is only meaningful once the host actually belongs to the folder.
-      void moved.then(() => commitOrder(order)).catch(() => undefined);
+      // Order is only meaningful once the hosts actually belong to the folder.
+      void applyFolderMoves
+        .mutateAsync({ moves })
+        .then(({ failed }) => {
+          if (failed === 0) commitOrder(order);
+        })
+        .catch(() => undefined);
     },
-    [hostByKey, commitOrder, updateMetadata, updateProfileMetadata],
+    [hostByKey, commitOrder, applyFolderMoves],
   );
 
   const dropFolder = useCallback(
@@ -344,7 +349,8 @@ export const SessionSidebar = memo(function SessionSidebar() {
   const dnd = useTreeDnd({
     tree,
     enabled: reorderEnabled,
-    onDropHost: dropHost,
+    selection,
+    onDropHosts: dropHosts,
     onDropFolder: dropFolder,
     hostOrderAfterDrop,
   });
@@ -375,6 +381,39 @@ export const SessionSidebar = memo(function SessionSidebar() {
       if (!confirmed) return;
       if (host.kind === 'ssh') deleteHost.mutate(host.entry.alias);
       else deleteProfile.mutate(host.entry.id);
+    });
+  };
+
+  /** One host takes the usual question; several are asked about, and deleted, together. */
+  const requestDeleteHosts = (targets: readonly ManagedHost[]) => {
+    const [first] = targets;
+    if (!first) return;
+    if (targets.length === 1) {
+      requestDelete(first);
+      return;
+    }
+    void confirmDeleteHosts(
+      targets.map((host) => ({
+        name: managedHostDisplayName(host),
+        sshFile: host.kind === 'ssh' ? host.entry.file : undefined,
+      })),
+    ).then((confirmed) => {
+      if (confirmed) deleteHosts.mutate(targets, { onSuccess: clearSelection });
+    });
+  };
+
+  /** Pick a folder for hosts, starting from the one they share, if any. */
+  const moveHosts = (targets: readonly ManagedHost[]) => {
+    const [first] = targets;
+    if (!first) return;
+    const path = first.entry.metadata?.group ?? '';
+    setFolderDialog({
+      mode: 'move-hosts',
+      hostKeys: targets.map(managedHostKey),
+      hostName: targets.length === 1 ? managedHostDisplayName(first) : undefined,
+      currentPath: targets.every((host) => isSamePath(host.entry.metadata?.group ?? '', path))
+        ? path
+        : '',
     });
   };
 
@@ -783,6 +822,8 @@ export const SessionSidebar = memo(function SessionSidebar() {
         <SelectionBar
           count={selectedHosts.length}
           onEdit={() => editHosts(selectedHosts)}
+          onMove={() => moveHosts(selectedHosts)}
+          onDelete={() => requestDeleteHosts(selectedHosts)}
           onClear={clearSelection}
         />
       ) : null}
@@ -806,13 +847,9 @@ export const SessionSidebar = memo(function SessionSidebar() {
               selectedCount:
                 menu && selection.has(managedHostKey(menu.host)) ? selectedHosts.length : 0,
               onEditSelected: () => editHosts(selectedHosts),
-              onMoveToFolder: (host) =>
-                setFolderDialog({
-                  mode: 'move-host',
-                  hostKey: managedHostKey(host),
-                  hostName: managedHostDisplayName(host),
-                  currentPath: host.entry.metadata?.group ?? '',
-                }),
+              onMoveSelected: () => moveHosts(selectedHosts),
+              onDeleteSelected: () => requestDeleteHosts(selectedHosts),
+              onMoveToFolder: (host) => moveHosts([host]),
             }}
             sessions={{
               menu: sessionsMenu,

@@ -35,12 +35,18 @@ const AUTO_EXPAND_MS = 500;
 export interface TreeDndOptions {
   tree: HostTree;
   enabled: boolean;
+  /** Selected hosts; grabbing one of several drags them all. */
+  selection: ReadonlySet<string>;
   /**
-   * Settle a host's order among its new siblings. `path` is the folder it moves
-   * into ('' clears the folder); `undefined` means the container did not change
-   * and only the order should be written.
+   * Settle dropped hosts' order among their new siblings. `path` is the folder
+   * they move into ('' clears the folder); `undefined` means no host changed
+   * container and only the order should be written.
    */
-  onDropHost: (hostKey: string, path: string | undefined, siblingOrder: string[]) => void;
+  onDropHosts: (
+    hostKeys: readonly string[],
+    path: string | undefined,
+    siblingOrder: string[],
+  ) => void;
   /**
    * Re-parent a whole folder subtree, and settle its position among its new
    * siblings when the drop named one. `fromPath === toPath` is a pure reorder.
@@ -48,7 +54,7 @@ export interface TreeDndOptions {
   onDropFolder: (fromPath: string, toPath: string, placement?: FolderPlacement) => void;
   hostOrderAfterDrop: (
     keys: readonly string[],
-    sourceKey: string,
+    sourceKeys: readonly string[],
     targetKey: string | undefined,
     edge: 'before' | 'after',
   ) => string[];
@@ -70,7 +76,8 @@ export interface TreeDnd {
 export function useTreeDnd({
   tree,
   enabled,
-  onDropHost,
+  selection,
+  onDropHosts,
   onDropFolder,
   hostOrderAfterDrop,
 }: TreeDndOptions): TreeDnd {
@@ -79,6 +86,12 @@ export function useTreeDnd({
   const [dragExpanded, setDragExpanded] = useState<ReadonlySet<string>>(new Set());
   const rowsRef = useRef<readonly VisibleNode[]>([]);
   const expandTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // Read at drag start through refs, so selecting a host does not hand every
+  // row a new drag handler and re-render the whole tree.
+  const treeRef = useRef(tree);
+  treeRef.current = tree;
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
 
   const clearTimer = () => {
     if (expandTimer.current === undefined) return;
@@ -121,7 +134,7 @@ export function useTreeDnd({
   );
 
   const onDragStart = useCallback((event: DragEvent<HTMLElement>, row: VisibleNode) => {
-    const next = dragSourceForRow(row);
+    const next = dragSourceForRow(row, treeRef.current, selectionRef.current);
     if (!next) {
       event.preventDefault();
       return;
@@ -130,6 +143,9 @@ export function useTreeDnd({
     // getData is unreadable during dragover in every browser, so the source
     // lives in state; this payload is only for the drag image and stray drops.
     event.dataTransfer.setData('text/plain', row.key);
+    if (next.kind === 'host' && next.hosts.length > 1) {
+      setCountDragImage(event, `${next.hosts.length} hosts`);
+    }
     setSource(next);
     setTarget(null);
   }, []);
@@ -202,31 +218,39 @@ export function useTreeDnd({
         return;
       }
 
-      // The order the host settles into among its new siblings. Dropping onto
+      // The order the hosts settle into among their new siblings. Dropping onto
       // the folder itself appends; dropping on an edge inserts there.
+      const hostKeys = source.hosts.map((host) => host.hostKey);
       const container = containerFor(target, tree);
       const siblings = container ? siblingHostKeys(container) : [];
       const order = hostOrderAfterDrop(
         siblings,
-        source.hostKey,
+        hostKeys,
         target.kind === 'host-edge' ? target.hostKey : undefined,
         target.kind === 'host-edge' ? target.edge : 'after',
       );
-      onDropHost(source.hostKey, isPureReorder(source, target) ? undefined : destination, order);
+      onDropHosts(hostKeys, isPureReorder(source, target) ? undefined : destination, order);
       reset();
     },
-    [source, target, tree, onDropHost, onDropFolder, hostOrderAfterDrop, reset],
+    [source, target, tree, onDropHosts, onDropFolder, hostOrderAfterDrop, reset],
   );
 
   const observeRows = useCallback((rows: readonly VisibleNode[]) => {
     rowsRef.current = rows;
   }, []);
   const isDragExpanded = useCallback((key: string) => dragExpanded.has(key), [dragExpanded]);
-  const isDragging = useCallback(
-    (key: string) =>
-      !!source && (source.kind === 'host' ? source.hostKey : source.folderKey) === key,
+  const draggedKeys = useMemo(
+    () =>
+      new Set(
+        !source
+          ? []
+          : source.kind === 'host'
+            ? source.hosts.map((host) => host.hostKey)
+            : [source.folderKey],
+      ),
     [source],
   );
+  const isDragging = useCallback((key: string) => draggedKeys.has(key), [draggedKeys]);
   const dropEdgeFor = useCallback(
     (key: string) => {
       if (target?.kind === 'host-edge' && target.hostKey === key) return target.edge;
@@ -269,6 +293,41 @@ export function useTreeDnd({
   );
 
   return { binding, dragging: !!source };
+}
+
+/**
+ * A drag of several hosts shows how many it carries instead of the one row
+ * under the pointer. The browser snapshots the element during dragstart, so it
+ * only has to exist until then.
+ */
+function setCountDragImage(event: DragEvent<HTMLElement>, label: string): void {
+  const row = getComputedStyle(event.currentTarget);
+  const image = document.createElement('div');
+  image.textContent = label;
+  Object.assign(image.style, {
+    position: 'fixed',
+    top: '-1000px',
+    left: '0',
+    padding: '3px 10px',
+    borderRadius: '6px',
+    whiteSpace: 'nowrap',
+    font: row.font,
+    color: row.color,
+    background: opaqueBackground(event.currentTarget.parentElement),
+    border: '1px solid color-mix(in srgb, currentColor 30%, transparent)',
+  });
+  document.body.append(image);
+  event.dataTransfer.setDragImage(image, 0, 0);
+  setTimeout(() => image.remove(), 0);
+}
+
+/** The first solid background behind `element`: rows themselves are transparent. */
+function opaqueBackground(element: HTMLElement | null): string {
+  for (let node = element; node; node = node.parentElement) {
+    const color = getComputedStyle(node).backgroundColor;
+    if (color && color !== 'transparent' && !/^rgba\(.*,\s*0\)$/.test(color)) return color;
+  }
+  return 'Canvas';
 }
 
 /** The row whose box is closest to `clientY`, within a row's height. */

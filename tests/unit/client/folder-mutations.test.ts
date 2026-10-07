@@ -6,7 +6,7 @@ import {
   folderProblemMessage,
   folderRewritePlan,
   folderTargetProblem,
-  moveHostPlan,
+  moveHostsPlan,
 } from '../../../client/src/components/sidebar/folder-mutations.js';
 
 const ROOT = '/home/test/.ssh/config';
@@ -117,13 +117,27 @@ describe('deleteFolderPlan', () => {
   });
 });
 
-describe('moveHostPlan', () => {
+describe('moveHostsPlan', () => {
   it('assigns a folder, normalizing the path', () => {
-    expect(moveHostPlan(HOSTS[0]!, ' /Lab// EU /').group).toBe('Lab/EU');
+    expect(summary(moveHostsPlan(HOSTS.slice(0, 2), ' /Lab// EU /'))).toEqual({
+      a: 'Lab/EU',
+      b: 'Lab/EU',
+    });
   });
 
   it('clears the folder when the path is empty', () => {
-    expect(moveHostPlan(HOSTS[0]!, '   ').group).toBeNull();
+    expect(summary(moveHostsPlan([HOSTS[0]!], '   '))).toEqual({ a: null });
+  });
+
+  it('leaves out hosts that are already in the folder, whatever its casing', () => {
+    expect(summary(moveHostsPlan(HOSTS, 'prod/eu'))).toEqual({
+      a: 'prod/eu',
+      c: 'prod/eu',
+      d: 'prod/eu',
+      e: 'prod/eu',
+      f: 'prod/eu',
+    });
+    expect(moveHostsPlan([HOSTS[5]!], '')).toEqual([]);
   });
 });
 

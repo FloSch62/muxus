@@ -50,15 +50,15 @@ import {
   folderProblemMessage,
   folderRewritePlan,
   folderTargetProblem,
-  moveHostPlan,
+  moveHostsPlan,
 } from './folder-mutations.js';
 import { useFolderPrefs } from './useFolderPrefs.js';
 import { useAllManagedHosts } from './useAllManagedHosts.js';
 
 /**
- * Create, rename, re-parent and style a sidebar folder, and pick the folder a
- * single host belongs to. All four are the same underlying edit — a rewrite of
- * one group path — so they share a dialog rather than being three near-copies.
+ * Create, rename, re-parent and style a sidebar folder, and pick the folder
+ * hosts belong to. All four are the same underlying edit — a rewrite of one
+ * group path — so they share a dialog rather than being three near-copies.
  */
 export function FolderDialog() {
   const state = useUiStore((s) => s.folderDialog);
@@ -84,7 +84,7 @@ export function FolderDialog() {
   // Load the folder's current shape once, when the dialog opens on it.
   useEffect(() => {
     if (state === false) return;
-    if (state.mode === 'move-host') {
+    if (state.mode === 'move-hosts') {
       setName('');
       setParent(state.currentPath);
       return;
@@ -103,15 +103,15 @@ export function FolderDialog() {
     setIcon(style?.icon);
   }, [state]);
 
-  const movingHost = state !== false && state.mode === 'move-host' ? state : undefined;
+  const movingHosts = state !== false && state.mode === 'move-hosts' ? state : undefined;
   const mode = state === false ? undefined : state.mode;
   const sourcePath = state !== false && state.mode === 'edit' ? state.path : '';
 
   const saveSettings = useSaveFolderSettings();
   const moveSettings = useMoveFolderSettings();
-  const { data: settingsData } = useFolderSettings(state !== false && !movingHost);
+  const { data: settingsData } = useFolderSettings(state !== false && !movingHosts);
   const { data: vaultStatus } = usePasswordVaultStatus();
-  const { data: sshKeys } = useSshKeys(state !== false && !movingHost);
+  const { data: sshKeys } = useSshKeys(state !== false && !movingHosts);
   const settingsRecord = sourcePath
     ? folderSettingsForPath(settingsData?.folders, sourcePath)
     : undefined;
@@ -122,7 +122,7 @@ export function FolderDialog() {
   const seedPort = settingsRecord?.auth.port !== undefined ? String(settingsRecord.auth.port) : '';
   const seedKey = settingsRecord?.auth.identityFiles?.[0] ?? '';
   useEffect(() => {
-    if (state === false || state.mode === 'move-host') return;
+    if (state === false || state.mode === 'move-hosts') return;
     const editing = state.mode === 'edit';
     setAuthUser(editing ? seedUser : '');
     setAuthPort(editing ? seedPort : '');
@@ -132,10 +132,10 @@ export function FolderDialog() {
     setMasterPassword('');
   }, [state, seedUser, seedPort, seedKey]);
 
-  const target = movingHost
+  const target = movingHosts
     ? normalizeGroupPath(parent)
     : normalizeGroupPath(folderPath([...folderSegments(parent), sanitizeFolderName(name)]));
-  const problem = movingHost ? undefined : folderTargetProblem(sourcePath, target);
+  const problem = movingHosts ? undefined : folderTargetProblem(sourcePath, target);
   // Exact comparison, not folder identity: two paths that differ only in case
   // are the same folder, but changing its capitalisation is still a rename and
   // has to be written out, or the old spelling stays on screen.
@@ -203,11 +203,13 @@ export function FolderDialog() {
   };
 
   const submit = () => {
-    if (movingHost) {
-      const host = allHosts.find((entry) => managedHostKey(entry) === movingHost.hostKey);
-      if (host) {
-        applyMoves.mutate({ moves: [moveHostPlan(host, target)], label: movingHost.hostName });
-      }
+    if (movingHosts) {
+      const keys = new Set(movingHosts.hostKeys);
+      const moves = moveHostsPlan(
+        allHosts.filter((host) => keys.has(managedHostKey(host))),
+        target,
+      );
+      if (moves.length > 0) applyMoves.mutate({ moves });
       close();
       return;
     }
@@ -242,8 +244,10 @@ export function FolderDialog() {
   };
 
   const Preview = folderIcon(icon, true);
-  const title = movingHost
-    ? `Move “${movingHost.hostName}”`
+  const title = movingHosts
+    ? movingHosts.hostName !== undefined
+      ? `Move “${movingHosts.hostName}”`
+      : `Move ${movingHosts.hostKeys.length} hosts`
     : mode === 'new'
       ? 'New folder'
       : `Edit “${folderLabel(sourcePath)}”`;
@@ -265,7 +269,7 @@ export function FolderDialog() {
           </Typography>
 
           <Stack spacing={2.25}>
-            {!movingHost && (
+            {!movingHosts && (
               <TextField
                 label="Folder name"
                 value={name}
@@ -281,13 +285,13 @@ export function FolderDialog() {
             <FolderPathField
               value={parent}
               onChange={setParent}
-              label={movingHost ? 'Folder' : 'Inside folder'}
+              label={movingHosts ? 'Folder' : 'Inside folder'}
               error={!!problem && problem.kind !== 'empty'}
               helperText={
                 problem && problem.kind !== 'empty'
                   ? folderProblemMessage(problem)
-                  : movingHost
-                    ? 'Leave empty to move this host out of every folder.'
+                  : movingHosts
+                    ? `Leave empty to move ${movingHosts.hostKeys.length === 1 ? 'this host' : 'these hosts'} out of every folder.`
                     : 'Leave empty for a top-level folder.'
               }
               exclude={
@@ -297,7 +301,7 @@ export function FolderDialog() {
               }
             />
 
-            {!movingHost && (
+            {!movingHosts && (
               <>
                 <HostColorPicker value={color} onChange={setColor} />
                 <Box>
@@ -521,14 +525,14 @@ export function FolderDialog() {
             type="submit"
             variant="contained"
             disabled={
-              (!movingHost &&
+              (!movingHosts &&
                 (!!problem ||
                   portInvalid ||
                   (passwordNeedsMaster && !masterPassword.trim()))) ||
               applyMoves.isPending
             }
           >
-            {movingHost ? 'Move' : mode === 'new' ? 'Create' : 'Save'}
+            {movingHosts ? 'Move' : mode === 'new' ? 'Create' : 'Save'}
           </Button>
         </DialogActions>
       </Box>

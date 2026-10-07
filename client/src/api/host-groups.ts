@@ -25,12 +25,15 @@ export interface FolderMutationResult {
  * own error toast and invalidation — renaming a 40-host folder over a flaky
  * connection would produce 40 of each. This batches the same PATCH endpoints
  * into a single optimistic update, a single toast, and a single refetch.
+ *
+ * `label` names the folder being renamed, moved or deleted; hosts moved on
+ * their own leave it out.
  */
 export function useApplyFolderMoves() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ moves }: { moves: FolderMove[]; label: string }) => {
+    mutationFn: async ({ moves }: { moves: FolderMove[]; label?: string }) => {
       let failed = 0;
       for (let index = 0; index < moves.length; index += CHUNK_SIZE) {
         const chunk = moves.slice(index, index + CHUNK_SIZE);
@@ -87,15 +90,19 @@ export function useApplyFolderMoves() {
       if (failed === 0) return;
       showToast(
         'error',
-        `Moved ${attempted - failed} of ${attempted} hosts — “${label}” is only partly moved.`,
+        label !== undefined
+          ? `Moved ${attempted - failed} of ${attempted} hosts — “${label}” is only partly moved.`
+          : attempted === 1
+            ? 'Could not move that host.'
+            : `Moved ${attempted - failed} of ${attempted} hosts — the others stayed where they were.`,
       );
     },
-    onError: (_error, _variables, context) => {
+    onError: (_error, { label }, context) => {
       if (context?.previousConfig) queryClient.setQueryData(['ssh-config'], context.previousConfig);
       if (context?.previousProfiles) {
         queryClient.setQueryData(['saved-host-profiles'], context.previousProfiles);
       }
-      showToast('error', 'Could not move that folder.');
+      showToast('error', label !== undefined ? 'Could not move that folder.' : 'Could not move those hosts.');
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ['ssh-config'] });

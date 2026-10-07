@@ -55,6 +55,8 @@ export function HostContextMenu({
   onMoveToFolder,
   selectedCount,
   onEditSelected,
+  onMoveSelected,
+  onDeleteSelected,
 }: {
   menu: HostMenuState | null;
   onClose: () => void;
@@ -66,6 +68,8 @@ export function HostContextMenu({
   /** Size of the selection the menu's host belongs to; 0 when it is not selected. */
   selectedCount: number;
   onEditSelected: () => void;
+  onMoveSelected: () => void;
+  onDeleteSelected: () => void;
 }) {
   const setHostEditor = useUiStore((s) => s.setHostEditor);
   const setHostOrganizer = useUiStore((s) => s.setHostOrganizer);
@@ -79,6 +83,9 @@ export function HostContextMenu({
     if (menu) action(menu.host);
     onClose();
   };
+  // Moving and deleting act on the whole selection the host belongs to, as in
+  // a file manager. Editing keeps both, since one host has a fuller editor.
+  const forSelection = selectedCount > 1;
 
   return (
     <Menu
@@ -144,12 +151,12 @@ export function HostContextMenu({
       <MenuItem
         onMouseEnter={() => void loadFolderDialog()}
         onFocus={() => void loadFolderDialog()}
-        onClick={run(onMoveToFolder)}
+        onClick={run(forSelection ? onMoveSelected : onMoveToFolder)}
       >
         <ListItemIcon>
           <DriveFileMoveOutlinedIcon fontSize="small" />
         </ListItemIcon>
-        Move to folder…
+        {forSelection ? `Move ${selectedCount} selected hosts…` : 'Move to folder…'}
       </MenuItem>
       <MenuItem
         onMouseEnter={() => void loadHostOrganizationDialog()}
@@ -177,7 +184,7 @@ export function HostContextMenu({
         </ListItemIcon>
         Edit host
       </MenuItem>
-      {selectedCount > 1 ? (
+      {forSelection ? (
         <MenuItem
           onMouseEnter={() => void loadHostBulkEditDialog()}
           onFocus={() => void loadHostBulkEditDialog()}
@@ -219,11 +226,14 @@ export function HostContextMenu({
         {copyAction?.label ?? 'Copy'}
       </MenuItem>
       <Divider />
-      <MenuItem onClick={run(onDelete)} sx={{ color: 'error.main' }}>
+      <MenuItem
+        onClick={run(forSelection ? onDeleteSelected : onDelete)}
+        sx={{ color: 'error.main' }}
+      >
         <ListItemIcon sx={{ color: 'error.main' }}>
           <DeleteOutlineIcon fontSize="small" />
         </ListItemIcon>
-        Delete host
+        {forSelection ? `Delete ${selectedCount} selected hosts` : 'Delete host'}
       </MenuItem>
     </Menu>
   );

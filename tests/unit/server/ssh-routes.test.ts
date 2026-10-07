@@ -195,6 +195,57 @@ describe('OpenSSH bulk host updates', () => {
   });
 });
 
+describe('OpenSSH bulk host deletes', () => {
+  const configPath = () => path.join(home, '.ssh', 'config');
+  const seedConfig = (lines: string[]) => {
+    mkdirSync(path.join(home, '.ssh'), { recursive: true });
+    writeFileSync(configPath(), `${lines.join('\n')}\n`);
+  };
+
+  it('removes the blocks of every listed alias', async () => {
+    seedConfig(['Host a', '  User old', '', 'Host b', '  HostName b.internal', '', 'Host c', '  User keep']);
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/api/ssh/config/hosts',
+      headers: auth(),
+      payload: { aliases: ['a', 'b'] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ deleted: 2 });
+    expect(readFileSync(configPath(), 'utf8')).toBe(['Host c', '  User keep', ''].join('\n'));
+  });
+
+  it('rejects an empty list', async () => {
+    seedConfig(['Host a', '  User old']);
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/api/ssh/config/hosts',
+      headers: auth(),
+      payload: { aliases: [] },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(readFileSync(configPath(), 'utf8')).toContain('Host a');
+  });
+
+  it('reports an unknown alias without deleting anything', async () => {
+    seedConfig(['Host a', '  User old']);
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/api/ssh/config/hosts',
+      headers: auth(),
+      payload: { aliases: ['a', 'gone'] },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(readFileSync(configPath(), 'utf8')).toContain('Host a');
+  });
+});
+
 describe('OpenSSH agent routes', () => {
   it('persists IdentityAgent from the validated host payload', async () => {
     const response = await app.inject({
