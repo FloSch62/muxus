@@ -124,6 +124,30 @@ Each consumer holds its own lease on the transport:
 - closing one tab does not affect the others; the connection closes with its last consumer;
 - a [tunnel](tunnels.md) holds its own lease, so closing every terminal leaves it running.
 
+## Connection summary
+
+With **Show a summary when an SSH session connects** turned on in
+[Settings → Behavior](settings.md#behavior), every new SSH session starts with what the
+connection ended up with:
+
+```text
+➤ SSH session to admin@100.124.182.28
+  • Route            : via bastion
+  • Server           : OpenSSH_9.6p1
+  • Authentication   : public key (SSH agent)
+  • Encryption       : chacha20-poly1305@openssh.com  (curve25519-sha256)
+  • Compression      : ✘  (disabled)
+  • SFTP browser     : ✔
+  • X11 forwarding   : ✘  (refused by the server)
+  • Agent forwarding : ✔
+```
+
+The values are what was negotiated, not what was configured: `Compression yes` against a
+server without compression reads *not supported by the server*, and a host that asks for X11
+when the server refuses it reads *refused by the server*. A session that joins an open
+connection says so on the Route line. Port forwards from the host's configuration that are
+running on the connection are listed last.
+
 ## Connection loss
 
 Muxus sends an SSH keepalive after 30 idle seconds by default. Settings → Behavior changes

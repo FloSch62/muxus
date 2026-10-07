@@ -162,6 +162,19 @@ describe('GPU renderer preference', () => {
   });
 });
 
+describe('SSH session summary preference', () => {
+  it('is off until the user asks for it', () => {
+    expect(usePrefsStore.getInitialState().sshSessionSummary).toBe(false);
+  });
+
+  it('keeps a boolean choice and drops malformed persisted values', () => {
+    expect(migratePrefsState({ sshSessionSummary: true }, 16)).toEqual({ sshSessionSummary: true });
+    expect(migratePrefsState({ sshSessionSummary: 'yes', monoFontSize: 16 }, 16)).toEqual({
+      monoFontSize: 16,
+    });
+  });
+});
+
 describe('tab number visibility preference', () => {
   it('defaults to revealing numbers while Alt is held', () => {
     expect(usePrefsStore.getInitialState().tabNumberVisibility).toBe('shortcut');

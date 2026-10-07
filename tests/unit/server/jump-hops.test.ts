@@ -326,6 +326,22 @@ describe('jump host reuse', () => {
     expect(jump.stats.forwardsByConnection).toEqual([1, 3]);
   }, 15_000);
 
+  it('names the jump hosts in the session summary', async () => {
+    const jump = await start();
+    const app = await start();
+    manager = makeManager(writeConfig(jump.port, { app: app.port }));
+
+    const shell = await manager.connectShell(ssh('app'), makeIo().io, 80, 24, 'xterm-256color');
+    expect(shell.summary).toMatchObject({
+      user: 'tester',
+      port: app.port,
+      jumpHosts: ['bastion'],
+      proxyCommand: false,
+    });
+    shell.stream.close();
+    shell.lease.release();
+  }, 15_000);
+
   it('closes the jump connection only after the last chain through it', async () => {
     const jump = await start();
     const app = await start();

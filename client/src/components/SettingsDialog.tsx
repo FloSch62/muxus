@@ -967,7 +967,7 @@ function BehaviorSection() {
   return (
     <SettingsPage
       title="Behavior"
-      description="How tabs close, and how sessions come back after a restart or a dropped connection."
+      description="How tabs close, what a new SSH session reports, and how sessions come back after a restart or a dropped connection."
     >
       <SettingsGroup title="Tabs">
         <SettingRow
@@ -980,6 +980,21 @@ function BehaviorSection() {
               size="small"
               checked={prefs.confirmCloseConnected}
               onChange={(e) => prefs.set({ confirmCloseConnected: e.target.checked })}
+            />
+          }
+        />
+      </SettingsGroup>
+      <SettingsGroup title="Connecting">
+        <SettingRow
+          label="Show a summary when an SSH session connects"
+          labelFor="settings-ssh-session-summary"
+          description="Prints the route, server, login method and encryption above the remote shell, and whether compression, the SFTP browser, X11 and agent forwarding are active."
+          control={
+            <Switch
+              id="settings-ssh-session-summary"
+              size="small"
+              checked={prefs.sshSessionSummary}
+              onChange={(e) => prefs.set({ sshSessionSummary: e.target.checked })}
             />
           }
         />

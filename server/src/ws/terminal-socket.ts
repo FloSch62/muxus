@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
 import { nanoid } from 'nanoid';
-import type { TerminalServerMessage } from '@muxus/shared';
+import type { ConfigForward, TerminalServerMessage } from '@muxus/shared';
 import {
   TERMINAL_SESSION_CLOSE_REASON,
   terminalClientMessageSchema,
@@ -582,7 +582,7 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
   }
 
   // --- SSH ---
-  const { lease: terminalLease, stream, transport } = await ctx.connections.connectShell(
+  const { lease: terminalLease, stream, transport, summary } = await ctx.connections.connectShell(
     profile,
     io,
     cols,
@@ -617,6 +617,7 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
   // shared transport. startConfig deduplicates rules already started by a
   // sibling session and collapses concurrent attempts for the same listener.
   const configForwardIds: string[] = [];
+  const runningForwards: ConfigForward[] = [];
   for (const fwd of conn.configForwards) {
     if (!socketOpen) break;
     try {
@@ -628,6 +629,7 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
         targetPort: fwd.targetPort,
       });
       if (started.started) configForwardIds.push(started.info.id);
+      runningForwards.push(fwd);
     } catch (err) {
       sendControl(socket, { op: 'status', message: `forward -${fwd.type[0]?.toUpperCase()} ${fwd.bindPort} failed: ${err instanceof Error ? err.message : String(err)}` });
     }
@@ -725,6 +727,7 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
     host: conn.host,
     user: conn.user,
     sftpAvailable: conn.sftpAvailable,
+    summary: { ...summary, forwards: runningForwards },
   });
 }
 

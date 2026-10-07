@@ -138,6 +138,14 @@ include the global set. See [keyword highlighting](terminal.md#keyword-highlight
 **Confirm before closing a live session** is on by default because closing a connected tab
 ends its shell.
 
+**Show a summary when an SSH session connects** is off by default. Turned on, each new SSH
+session starts with a short list above the remote shell's output: the route (direct, or
+through which jump hosts), the server software, the login method, the negotiated cipher and
+key exchange, and whether compression, the SFTP browser, X11 forwarding and agent forwarding
+are active. A feature that is off says why, for example when the server refused X11 or
+offered no compression. Port forwards from the host's configuration are listed when there
+are any. The switch applies to the next connection.
+
 **SSH keepalive interval** defaults to 30 seconds. It sends a protocol-level probe while an
 SSH connection is idle so firewalls, NATs and VPNs do not silently discard it. An explicit
 `ServerAliveInterval` in the host's OpenSSH configuration takes precedence; choose **SSH

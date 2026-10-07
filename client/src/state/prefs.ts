@@ -151,6 +151,8 @@ export interface PrefsState {
   autoReconnectRemote: boolean;
   /** SSH keepalive fallback in seconds; zero relies entirely on ssh_config. */
   sshKeepaliveIntervalSeconds: number;
+  /** Print the route, encryption and active features when an SSH session connects. */
+  sshSessionSummary: boolean;
   /** X11 forwarding master switch; null follows the platform default (off on macOS). */
   x11Enabled: boolean | null;
   /** Forward X11 for hosts without ForwardX11; null follows the platform default. */
@@ -295,6 +297,7 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   ) {
     delete state.sshKeepaliveIntervalSeconds;
   }
+  if (typeof state.sshSessionSummary !== 'boolean') delete state.sshSessionSummary;
   if (typeof state.activePaneBorder !== 'boolean') delete state.activePaneBorder;
   if (typeof state.dimInactivePanes !== 'boolean') delete state.dimInactivePanes;
   if (typeof state.webglRenderer !== 'boolean') delete state.webglRenderer;
@@ -457,6 +460,7 @@ export const usePrefsStore = create<PrefsState>()(
       confirmCloseConnected: true,
       autoReconnectRemote: true,
       sshKeepaliveIntervalSeconds: DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
+      sshSessionSummary: false,
       x11Enabled: null,
       x11ForwardByDefault: null,
       x11ClipboardSharing: false,
