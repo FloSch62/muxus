@@ -17,29 +17,69 @@ bottom of the window: right-click the bar and choose **Move bar to the bottom**,
 <figure markdown="span">
   ![The command button bar above a session](../assets/screenshots/command-buttons.png#only-light){ .shadow }
   ![The command button bar above a session](../assets/screenshots/command-buttons-dark.png#only-dark){ .shadow }
-  <figcaption>The bar appears once at least one command has been saved.</figcaption>
+  <figcaption>The bar appears once at least one command has been saved. With several groups, the selector on the left switches between them.</figcaption>
 </figure>
 
 Buttons are managed with the :material-flash: control in the top bar. Each button has:
 
 - a **label**, which is displayed, and a **command**, which is sent;
 - a **Run immediately** switch. On, the command runs. Off, it is inserted at the prompt for
-  review and submitted with ++enter++.
+  review and submitted with ++enter++;
+- an optional **colour**, picked from the dot in the label field.
 
-Insert-only is the appropriate mode for destructive commands.
+Insert-only is the appropriate mode for destructive commands, and a colour such as red
+marks them at a glance. Colours are a fixed palette with a darker shade on light themes and
+a lighter one on dark themes, so labels stay readable either way.
 
-Buttons are disabled while the focused tab is not connected, and their order is
-configurable.
+Buttons are disabled while the focused tab is not connected. The arrows reorder them, and
+the copy button duplicates one right below itself as a starting point for a similar
+command.
 
 Turn off **Show command bar** in the command-button manager to reclaim the vertical space
 and use only the keyboard menu. This hides the bar without deleting any saved commands.
+
+### Groups
+
+With many commands, for several vendors or tasks, sort them into groups. The bar shows one
+group at a time, and the selector at its left end switches between them; each entry lists
+how many commands it holds.
+
+In the command-button manager, **New group** adds a group, and the list on the left
+selects the group whose buttons are shown. A group can be renamed, moved up or down, or
+deleted together with its buttons. A button's **Group** field moves it to another group.
+
+Every installation has a **Default** group, which cannot be deleted and holds the
+commands saved before groups existed. It can be renamed, for example to *General*. The
+group selector only appears once there is a second group.
+
+### A group per host
+
+A host can choose the group the bar shows, so every session to it starts with the right
+commands. The quickest way is from the bar itself: during a session to the host, pick the
+group in the selector, open it again and tick **Always show *group* for *host***; untick it
+to stop. The same setting is **Command button group** under **Terminal appearance** in the
+host's [editor](adding-hosts.md), and the [bulk editor](hosts.md#editing-several-hosts-at-once)
+sets it for several hosts at once. Whenever a session to that host is the active tab, the
+bar switches to its group.
+
+| Active session | Group shown |
+| --- | --- |
+| Host with a group | The host's group |
+| Host with a group, after picking another in the bar | The picked group, for that tab only |
+| Any other session, or no session | The group last picked in the bar |
+
+Picking a group while such a host's tab is active only changes that tab; the choice lasts
+until the tab is closed. Picking one anywhere else becomes the group for every session
+without its own.
 
 ### Keyboard menu
 
 Press ++ctrl+space++ to open a compact menu beside the active terminal cursor. Start
 typing to search command labels and command text, use ++up++ and ++down++ to choose a
-result, then press ++enter++ to send it. The menu also links to **Manage command
-buttons** so commands can be added or reordered without reaching for the mouse.
+result, then press ++enter++ to send it. The group shown in the bar comes first; other
+groups follow under their own headings, so a search reaches every saved command. The menu
+also links to **Manage command buttons** so commands can be added or reordered without
+reaching for the mouse.
 
 The shortcut is rebindable under **Terminal → Show saved command menu** in the
 [keyboard sheet](../reference/keyboard-shortcuts.md).

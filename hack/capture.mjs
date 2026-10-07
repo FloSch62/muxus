@@ -476,11 +476,19 @@ add('shortcuts', async () => {
 
 add('command-buttons', async () => {
   const page = await open({
+    commandButtonGroups: [
+      { id: 'default', name: 'Web servers' },
+      { id: 'network', name: 'Network' },
+      { id: 'troubleshooting', name: 'Troubleshooting' },
+    ],
     commandButtons: [
-      { id: 'a', label: 'status', command: 'status', sendEnter: true },
-      { id: 'b', label: 'tail access log', command: 'tailaccess', sendEnter: true },
+      { id: 'a', label: 'status', command: 'status', sendEnter: true, color: 'green' },
+      { id: 'b', label: 'tail access log', command: 'tailaccess', sendEnter: true, color: 'blue' },
       { id: 'c', label: 'disk', command: 'df -h', sendEnter: true },
-      { id: 'd', label: 'restart edge', command: 'sudo systemctl restart edge', sendEnter: false },
+      { id: 'd', label: 'restart edge', command: 'sudo systemctl restart edge', sendEnter: false, color: 'red' },
+      { id: 'e', label: 'BGP summary', command: 'show bgp summary', sendEnter: true, groupId: 'network', color: 'purple' },
+      { id: 'f', label: 'interfaces', command: 'show interfaces brief', sendEnter: true, groupId: 'network' },
+      { id: 'g', label: 'ping gateway', command: 'ping -c 3 10.0.0.1', sendEnter: true, groupId: 'troubleshooting', color: 'orange' },
     ],
   });
   await connect(page, 'web-01');

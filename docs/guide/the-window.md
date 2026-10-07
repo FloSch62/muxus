@@ -33,8 +33,9 @@ window controls sit inside it. From left to right:
 | :material-cog: | [Settings](settings.md) |
 
 Below it, an optional **action bar** appears once [command buttons](commands.md) have been
-saved and the bar is enabled. Each button sends its command to the focused terminal. The
-bar can also sit at the bottom of the window, below the panes.
+saved and the bar is enabled. Each button sends its command to the focused terminal; with
+several command groups, a selector at its left end switches between them. The bar can also
+sit at the bottom of the window, below the panes.
 
 ## Hosts sidebar
 

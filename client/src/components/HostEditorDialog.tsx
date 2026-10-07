@@ -316,6 +316,7 @@ function SshHostEditorContent({
         terminalScheme: draft.terminalScheme ?? null,
         terminalFontColor: draft.terminalFontColor ?? null,
         terminalBackgroundColor: draft.terminalBackgroundColor ?? null,
+        commandButtonGroup: draft.commandButtonGroup ?? null,
         disableSftp: draft.disableSftp,
         consoleCompatibility: draft.consoleCompatibility,
         keywordHighlights:
@@ -339,6 +340,7 @@ function SshHostEditorContent({
         terminalScheme: draft.terminalScheme ?? null,
         terminalFontColor: draft.terminalFontColor ?? null,
         terminalBackgroundColor: draft.terminalBackgroundColor ?? null,
+        commandButtonGroup: draft.commandButtonGroup ?? null,
         disableSftp: draft.disableSftp,
         consoleCompatibility: draft.consoleCompatibility,
         keywordHighlights:
@@ -423,6 +425,7 @@ function SshHostEditorContent({
         draft.terminalScheme,
         draft.terminalFontColor,
         draft.terminalBackgroundColor,
+        draft.commandButtonGroup,
       ].filter(Boolean).length || undefined,
     },
     { value: 'auth', label: 'Authentication', icon: <KeyOutlinedIcon fontSize="small" /> },

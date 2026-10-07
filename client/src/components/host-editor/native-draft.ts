@@ -25,6 +25,8 @@ export interface NativeHostDraft {
   terminalScheme?: string;
   terminalFontColor?: string;
   terminalBackgroundColor?: string;
+  /** Command button group the bar switches to in this host's sessions. */
+  commandButtonGroup?: string;
   host: string;
   port: string;
   path: string;
@@ -46,6 +48,7 @@ export function blankNativeDraft(prefillTarget = '', group = ''): NativeHostDraf
     terminalScheme: undefined,
     terminalFontColor: undefined,
     terminalBackgroundColor: undefined,
+    commandButtonGroup: undefined,
     host,
     port: port ?? '23',
     path: '',
@@ -67,6 +70,7 @@ export function nativeDraftFromProfile(saved: SavedHostProfile, duplicate: boole
   draft.terminalScheme = saved.metadata.terminalScheme;
   draft.terminalFontColor = saved.metadata.terminalFontColor;
   draft.terminalBackgroundColor = saved.metadata.terminalBackgroundColor;
+  draft.commandButtonGroup = saved.metadata.commandButtonGroup;
   draft.keywordHighlights = saved.metadata.keywordHighlights ?? draft.keywordHighlights;
   if (saved.profile.kind === 'telnet') {
     draft.host = saved.profile.host;
@@ -130,6 +134,7 @@ export function nativeDraftMetadataPatch(draft: NativeHostDraft): OpenSshMetadat
     terminalScheme: draft.terminalScheme ?? null,
     terminalFontColor: draft.terminalFontColor ?? null,
     terminalBackgroundColor: draft.terminalBackgroundColor ?? null,
+    commandButtonGroup: draft.commandButtonGroup ?? null,
     keywordHighlights:
       highlights.inheritGlobal && !highlights.profileId && highlights.rules.length === 0
         ? null

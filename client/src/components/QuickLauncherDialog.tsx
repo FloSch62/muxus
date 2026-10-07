@@ -50,7 +50,13 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { useForwards, useSavedHostProfiles, useSessionHistory, useSshConfig, useTunnels } from '../api/queries.js';
 import { startTunnel, stopForward } from '../api/tunnels.js';
-import { commandButtonInput } from '../command-buttons.js';
+import { useActiveCommandButtonGroup } from '../command-button-groups.js';
+import {
+  commandButtonGroupOf,
+  commandButtonInk,
+  commandButtonInput,
+  commandButtonLabel,
+} from '../command-buttons.js';
 import { confirmDiscardRemoteEditors } from '../editor/remote-editor-registry.js';
 import { folderSegments } from '../host-tree.js';
 import {
@@ -79,7 +85,11 @@ import {
   openLocalShellProfile,
   openLocalTerminal,
 } from '../session-actions.js';
-import type { CommandButton, LocalShellProfileConfig } from '../state/prefs.js';
+import type {
+  CommandButton,
+  CommandButtonGroup,
+  LocalShellProfileConfig,
+} from '../state/prefs.js';
 import { usePrefsStore } from '../state/prefs.js';
 import { useTabsStore, type TabStatus } from '../state/tabs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
@@ -139,6 +149,7 @@ export function QuickLauncherDialog() {
   const tabs = useTabsStore((state) => state.tabs);
   const activeId = useTabsStore((state) => state.activeId);
   const commands = usePrefsStore((state) => state.commandButtons);
+  const { groups: commandGroups, shownId: shownCommandGroup } = useActiveCommandButtonGroup();
   const localShellProfiles = usePrefsStore((state) => state.localShellProfiles);
   const wslShellProfiles = useWslShellProfiles();
   const keybindings = usePrefsStore((state) => state.keybindings);
@@ -205,6 +216,8 @@ export function QuickLauncherDialog() {
         activeWorkspaceId,
         openWorkspaceWindowCounts,
         commands,
+        commandGroups,
+        shownCommandGroup,
         localShellProfiles,
         wslShellProfiles,
         tunnels,
@@ -216,6 +229,8 @@ export function QuickLauncherDialog() {
       activeId,
       activeWorkspaceId,
       commands,
+      commandGroups,
+      shownCommandGroup,
       localShellProfiles,
       openWorkspaceWindowCounts,
       forwards,
@@ -750,6 +765,8 @@ function buildCatalogResults({
   activeWorkspaceId,
   openWorkspaceWindowCounts,
   commands,
+  commandGroups,
+  shownCommandGroup,
   localShellProfiles,
   wslShellProfiles,
   tunnels,
@@ -764,6 +781,9 @@ function buildCatalogResults({
   activeWorkspaceId?: string;
   openWorkspaceWindowCounts: Readonly<Record<string, number>>;
   commands: readonly CommandButton[];
+  commandGroups: readonly CommandButtonGroup[];
+  /** The group the command bar shows; its commands lead the empty launcher. */
+  shownCommandGroup: string;
   localShellProfiles: readonly LocalShellProfileConfig[];
   wslShellProfiles: readonly LocalShellProfileConfig[];
   tunnels: readonly TunnelRecord[];
@@ -874,18 +894,24 @@ function buildCatalogResults({
     });
   }
 
-  for (const [index, command] of commands.entries()) {
+  let shownCommands = 0;
+  for (const command of commands) {
+    const groupId = commandButtonGroupOf(command, commandGroups);
+    const shown = groupId === shownCommandGroup;
+    // Group names only mean something once there is more than one group.
+    const group =
+      commandGroups.length > 1
+        ? commandGroups.find((candidate) => candidate.id === groupId)?.name
+        : undefined;
     results.push({
       id: `command:${command.id}`,
       kind: 'command',
       command,
-      label: command.label.trim() || command.command.trim() || 'Command',
-      detail: command.sendEnter
-        ? `Run · ${oneLine(command.command)}`
-        : `Insert · ${oneLine(command.command)}`,
-      keywords: ['command', 'saved command', command.command],
-      priority: 130,
-      showWhenEmpty: activeConnected && index < 5,
+      label: commandButtonLabel(command),
+      detail: `${group ? `${group} · ` : ''}${command.sendEnter ? 'Run' : 'Insert'} · ${oneLine(command.command)}`,
+      keywords: ['command', 'saved command', command.command, ...(group ? [group] : [])],
+      priority: shown ? 130 : 120,
+      showWhenEmpty: activeConnected && shown && shownCommands++ < 5,
       disabledReason: activeConnected ? undefined : 'Connect a terminal to use this command',
     });
   }
@@ -1121,7 +1147,17 @@ function ResultIcon({ result }: { result: LauncherResult }) {
     return <DnsOutlinedIcon {...props} color="primary" />;
   }
   if (result.kind === 'workspace') return <WorkspacesOutlinedIcon {...props} />;
-  if (result.kind === 'command') return <BoltOutlinedIcon {...props} color="warning" />;
+  if (result.kind === 'command') {
+    const color = result.command.color;
+    return color ? (
+      <BoltOutlinedIcon
+        {...props}
+        sx={(theme) => ({ color: commandButtonInk(color, theme.palette.mode) })}
+      />
+    ) : (
+      <BoltOutlinedIcon {...props} color="warning" />
+    );
+  }
   if (result.kind === 'tunnel') {
     return result.running ? (
       <StopOutlinedIcon {...props} color="success" />

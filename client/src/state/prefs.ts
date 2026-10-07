@@ -8,6 +8,13 @@ import {
   withBuiltinHighlightProfiles,
   withBuiltinRuleNames,
 } from '../builtin-highlight-profiles.js';
+import {
+  DEFAULT_COMMAND_GROUP,
+  DEFAULT_COMMAND_GROUP_ID,
+  normalizeCommandButtonGroups,
+  normalizeCommandButtons,
+  type CommandButtonColor,
+} from '../command-buttons.js';
 import { isKeywordHighlightProfileArray } from '../highlight-profiles.js';
 import {
   isCustomTerminalSchemeArray,
@@ -78,6 +85,16 @@ export interface CommandButton {
   command: string;
   /** Append an Enter keystroke after sending the saved command. */
   sendEnter: boolean;
+  /** Group the button is filed under; absent means the default group. */
+  groupId?: string;
+  /** Accent from the command button palette; absent keeps the plain look. */
+  color?: CommandButtonColor;
+}
+
+/** A named set of command buttons the bar shows one at a time. */
+export interface CommandButtonGroup {
+  id: string;
+  name: string;
 }
 
 /** A reusable local terminal launch configuration. Arguments stay structured
@@ -186,8 +203,12 @@ export interface PrefsState {
    * unbinds the command; commands absent from the map keep their defaults.
    */
   keybindings: Record<string, string[]>;
-  /** One-click commands shown in the action bar. */
+  /** One-click commands shown in the action bar, in order within each group. */
   commandButtons: CommandButton[];
+  /** Command button groups in menu order; the default group is always first. */
+  commandButtonGroups: CommandButtonGroup[];
+  /** Group the bar shows for sessions whose host does not choose one. */
+  selectedCommandButtonGroup: string;
   /** Show saved commands as buttons beside the terminals in addition to the keyboard menu. */
   showCommandBar: boolean;
   /** Dock the command bar above or below the pane canvas. */
@@ -368,6 +389,25 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   if (!isKeywordHighlightProfileArray(state.keywordHighlightProfiles)) {
     delete state.keywordHighlightProfiles;
   }
+  // Groups and colors arrived in v17. Earlier buttons carry neither and stay
+  // in the default group; a malformed entry is dropped rather than all of them.
+  const commandButtonGroups = normalizeCommandButtonGroups(state.commandButtonGroups);
+  if (commandButtonGroups) state.commandButtonGroups = commandButtonGroups;
+  else delete state.commandButtonGroups;
+  const commandButtons = normalizeCommandButtons(
+    state.commandButtons,
+    commandButtonGroups ?? [DEFAULT_COMMAND_GROUP],
+  );
+  if (commandButtons) state.commandButtons = commandButtons;
+  else delete state.commandButtons;
+  if (
+    typeof state.selectedCommandButtonGroup !== 'string' ||
+    !(commandButtonGroups ?? [DEFAULT_COMMAND_GROUP]).some(
+      (group) => group.id === state.selectedCommandButtonGroup,
+    )
+  ) {
+    delete state.selectedCommandButtonGroup;
+  }
   // Built-in platform profiles arrived in v15. Existing installations get them
   // once; one deleted afterwards stays deleted. A snapshot without the key
   // picks them up from the store defaults instead.
@@ -490,6 +530,8 @@ export const usePrefsStore = create<PrefsState>()(
       inactivePaneDimStrength: DEFAULT_INACTIVE_PANE_DIM_STRENGTH,
       keybindings: {},
       commandButtons: [],
+      commandButtonGroups: [DEFAULT_COMMAND_GROUP],
+      selectedCommandButtonGroup: DEFAULT_COMMAND_GROUP_ID,
       showCommandBar: true,
       commandBarPosition: 'top',
       keywordHighlights: [],
@@ -507,7 +549,7 @@ export const usePrefsStore = create<PrefsState>()(
     }),
     {
       name: 'muxus-prefs',
-      version: 16,
+      version: 17,
       migrate: migratePrefsState,
       storage: createJSONStorage(() => muxusStateStorage),
     },

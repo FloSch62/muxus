@@ -707,7 +707,10 @@ function LayoutSettings() {
   const sidebarPosition = usePrefsStore((s) => s.sidebarPosition);
   const commandBarPosition = usePrefsStore((s) => s.commandBarPosition);
   const showCommandBar = usePrefsStore((s) => s.showCommandBar);
-  const hasCommandButtons = usePrefsStore((s) => s.commandButtons.length > 0);
+  // The same rule as the bar itself: it shows once there is a button or a group.
+  const hasCommandButtons = usePrefsStore(
+    (s) => s.commandButtons.length > 0 || s.commandButtonGroups.length > 1,
+  );
   const set = usePrefsStore((s) => s.set);
   const commandBarNote = !showCommandBar
     ? 'Turned off. Switch it back on from the saved command buttons control in the top bar.'

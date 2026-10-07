@@ -28,6 +28,7 @@ const serialHost: SavedHostProfile = {
     terminalScheme: 'gruvbox-dark',
     terminalFontColor: '#ebdbb2',
     terminalBackgroundColor: '#282828',
+    commandButtonGroup: 'command-group-console',
     keywordHighlights: {
       inheritGlobal: false,
       profileId: 'nokia-sros',
@@ -161,6 +162,7 @@ describe('nativeDraftMetadataPatch', () => {
       terminalScheme: null,
       terminalFontColor: null,
       terminalBackgroundColor: null,
+      commandButtonGroup: null,
       keywordHighlights: null,
     });
     const draft = nativeDraftFromProfile(serialHost, false);
@@ -170,6 +172,7 @@ describe('nativeDraftMetadataPatch', () => {
       terminalScheme: 'gruvbox-dark',
       terminalFontColor: '#ebdbb2',
       terminalBackgroundColor: '#282828',
+      commandButtonGroup: 'command-group-console',
       keywordHighlights: serialHost.metadata.keywordHighlights,
     });
   });

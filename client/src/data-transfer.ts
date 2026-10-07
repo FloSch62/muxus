@@ -21,6 +21,11 @@ import type {
 } from '@muxus/shared';
 import { apiFetch } from './api/http.js';
 import { fetchHostPreview } from './api/ssh-config.js';
+import {
+  DEFAULT_COMMAND_GROUP,
+  normalizeCommandButtonGroups,
+  normalizeCommandButtons,
+} from './command-buttons.js';
 import { isKeywordHighlightProfileArray } from './highlight-profiles.js';
 import { isCustomTerminalSchemeArray } from './terminal/custom-schemes.js';
 import { saveTextFile } from './save-file.js';
@@ -83,6 +88,8 @@ const PREFERENCE_KEYS = [
   'newSshHostStorage',
   'notifyOnNewVersion',
   'commandButtons',
+  'commandButtonGroups',
+  'selectedCommandButtonGroup',
   'showCommandBar',
   'commandBarPosition',
   'keywordHighlights',
@@ -626,6 +633,7 @@ function portableMetadata(
     terminalFontColor: metadata.terminalFontColor,
     terminalBackgroundColor: metadata.terminalBackgroundColor,
     keywordHighlights: metadata.keywordHighlights,
+    commandButtonGroup: metadata.commandButtonGroup,
     disableSftp: metadata.disableSftp,
     consoleCompatibility: metadata.consoleCompatibility,
     sortOrder: metadata.sortOrder,
@@ -782,6 +790,7 @@ function metadataPatch(metadata: PortableHostMetadata): OpenSshMetadataPatch {
     terminalFontColor: metadata.terminalFontColor ?? null,
     terminalBackgroundColor: metadata.terminalBackgroundColor ?? null,
     keywordHighlights: metadata.keywordHighlights ?? null,
+    commandButtonGroup: metadata.commandButtonGroup ?? null,
     disableSftp: metadata.disableSftp ?? false,
     consoleCompatibility: metadata.consoleCompatibility ?? false,
   };
@@ -906,12 +915,20 @@ export function sanitizePreferences(
   if (typeof input.notifyOnNewVersion === 'boolean') {
     output.notifyOnNewVersion = input.notifyOnNewVersion;
   }
+  // Buttons are checked against the groups in the same backup; one from an
+  // older release has none, so its buttons all land in the default group.
+  const commandButtonGroups = normalizeCommandButtonGroups(input.commandButtonGroups);
+  if (commandButtonGroups) output.commandButtonGroups = commandButtonGroups;
+  const commandButtons = normalizeCommandButtons(
+    input.commandButtons,
+    commandButtonGroups ?? [DEFAULT_COMMAND_GROUP],
+  );
+  if (commandButtons) output.commandButtons = commandButtons;
   if (
-    Array.isArray(input.commandButtons) &&
-    input.commandButtons.length <= 100 &&
-    input.commandButtons.every(validCommandButton)
+    typeof input.selectedCommandButtonGroup === 'string' &&
+    commandButtonGroups?.some((group) => group.id === input.selectedCommandButtonGroup)
   ) {
-    output.commandButtons = input.commandButtons;
+    output.selectedCommandButtonGroup = input.selectedCommandButtonGroup;
   }
   if (typeof input.showCommandBar === 'boolean') {
     output.showCommandBar = input.showCommandBar;
@@ -1140,18 +1157,6 @@ function nonEmptyString(value: unknown): value is string {
 
 function finiteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
-}
-
-function validCommandButton(value: unknown): boolean {
-  return (
-    isRecord(value) &&
-    nonEmptyString(value.id) &&
-    typeof value.label === 'string' &&
-    value.label.length <= 200 &&
-    typeof value.command === 'string' &&
-    value.command.length <= 100_000 &&
-    typeof value.sendEnter === 'boolean'
-  );
 }
 
 function validKeywordHighlight(value: unknown): boolean {

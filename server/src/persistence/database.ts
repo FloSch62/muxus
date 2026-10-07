@@ -430,6 +430,14 @@ const MIGRATIONS = [
       VALUES (1, NULL, '{host}_{date}_{time}.log', 0);
     `,
   },
+  {
+    version: 24,
+    name: 'host-command-button-group',
+    sql: `
+      ALTER TABLE connection_profiles
+        ADD COLUMN command_button_group TEXT;
+    `,
+  },
 ] as const;
 
 /** Kinds stored as Muxus-owned saved hosts (everything but OpenSSH metadata rows). */
@@ -570,6 +578,7 @@ export interface OpenSshMetadata {
   terminalFontColor?: string;
   terminalBackgroundColor?: string;
   keywordHighlights?: HostKeywordHighlightConfig;
+  commandButtonGroup?: string;
   disableSftp?: boolean;
   consoleCompatibility?: boolean;
   lastConnectedAt?: string;
@@ -757,6 +766,7 @@ export class MuxusDatabase {
         profiles.terminal_font_color,
         profiles.terminal_background_color,
         profiles.keyword_highlights_json,
+        profiles.command_button_group,
         profiles.disable_sftp,
         profiles.console_compatibility,
         profiles.last_connected_at,
@@ -865,6 +875,7 @@ export class MuxusDatabase {
             terminal_font_color = ?,
             terminal_background_color = ?,
             keyword_highlights_json = ?,
+            command_button_group = ?,
             disable_sftp = ?,
             console_compatibility = ?,
             updated_at = CURRENT_TIMESTAMP
@@ -889,6 +900,9 @@ export class MuxusDatabase {
           : patch.keywordHighlights === null
             ? null
             : JSON.stringify(patch.keywordHighlights),
+        patch.commandButtonGroup === undefined
+          ? nullableString(current.command_button_group)
+          : patch.commandButtonGroup,
         patch.disableSftp === undefined
           ? Number(current.disable_sftp)
           : patch.disableSftp
@@ -1354,6 +1368,7 @@ export class MuxusDatabase {
             terminal_font_color = ?,
             terminal_background_color = ?,
             keyword_highlights_json = ?,
+            command_button_group = ?,
             disable_sftp = ?,
             console_compatibility = ?,
             updated_at = CURRENT_TIMESTAMP
@@ -1378,6 +1393,9 @@ export class MuxusDatabase {
           : patch.keywordHighlights === null
             ? null
             : JSON.stringify(patch.keywordHighlights),
+        patch.commandButtonGroup === undefined
+          ? nullableString(current.command_button_group)
+          : patch.commandButtonGroup,
         patch.disableSftp === undefined
           ? Number(current.disable_sftp)
           : patch.disableSftp
@@ -2282,6 +2300,7 @@ function metadataFromRow(row: SqlRow): OpenSshMetadata {
     terminalFontColor: optionalString(row.terminal_font_color),
     terminalBackgroundColor: optionalString(row.terminal_background_color),
     keywordHighlights: keywordHighlightsFromJson(row.keyword_highlights_json),
+    commandButtonGroup: optionalString(row.command_button_group),
     ...(Number(row.disable_sftp) === 1 ? { disableSftp: true } : {}),
     ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),
     lastConnectedAt: optionalString(row.last_connected_at),
@@ -2308,6 +2327,7 @@ function savedHostFromRow(row: SqlRow): SavedHostProfile {
       terminalFontColor: optionalString(row.terminal_font_color),
       terminalBackgroundColor: optionalString(row.terminal_background_color),
       keywordHighlights: keywordHighlightsFromJson(row.keyword_highlights_json),
+      commandButtonGroup: optionalString(row.command_button_group),
       ...(Number(row.disable_sftp) === 1 ? { disableSftp: true } : {}),
       ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),
       lastConnectedAt: optionalString(row.last_connected_at),
