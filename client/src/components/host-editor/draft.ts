@@ -67,13 +67,18 @@ export interface HostDraft {
   sessionLogging: HostSessionLoggingDraft;
 }
 
-export function blankDraft(prefillTarget = '', group = ''): HostDraft {
+export function blankDraft(
+  prefillTarget = '',
+  group = '',
+  storage: HostDraft['storage'] = 'openssh',
+): HostDraft {
   // A quick-connect target already carries the fields the form asks for; a bare
-  // name the sidebar could not find is just the alias.
+  // name the sidebar could not find is just the alias. A Muxus profile needs
+  // its hostname spelled out, so the bare name fills that too.
   const target = prefillTarget.trim();
   const parsed = /[@:]/.test(target) ? parseHostTarget(target) : undefined;
   return {
-    storage: 'openssh',
+    storage,
     aliasText: parsed?.host ?? target,
     description: '',
     displayName: '',
@@ -85,7 +90,7 @@ export function blankDraft(prefillTarget = '', group = ''): HostDraft {
     disableSftp: false,
     consoleCompatibility: false,
     file: '',
-    hostname: parsed?.host ?? '',
+    hostname: parsed?.host ?? (storage === 'muxus' ? target : ''),
     user: parsed?.user ?? '',
     port: parsed?.port ?? '',
     authMode: 'default',

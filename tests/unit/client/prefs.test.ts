@@ -175,6 +175,27 @@ describe('SSH session summary preference', () => {
   });
 });
 
+describe('new-host and password prompt defaults', () => {
+  it('keep the current behavior until the user changes them', () => {
+    expect(usePrefsStore.getInitialState()).toMatchObject({
+      rememberPasswordsByDefault: false,
+      newSshHostStorage: 'openssh',
+    });
+  });
+
+  it('keep valid choices and drop malformed persisted values', () => {
+    expect(
+      migratePrefsState({ rememberPasswordsByDefault: true, newSshHostStorage: 'muxus' }, 16),
+    ).toEqual({ rememberPasswordsByDefault: true, newSshHostStorage: 'muxus' });
+    expect(
+      migratePrefsState(
+        { rememberPasswordsByDefault: 'yes', newSshHostStorage: 'database', monoFontSize: 16 },
+        16,
+      ),
+    ).toEqual({ monoFontSize: 16 });
+  });
+});
+
 describe('tab number visibility preference', () => {
   it('defaults to revealing numbers while Alt is held', () => {
     expect(usePrefsStore.getInitialState().tabNumberVisibility).toBe('shortcut');

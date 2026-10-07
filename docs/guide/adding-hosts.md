@@ -11,6 +11,9 @@ The SSH editor lets you choose where a new host lives:
 - **OpenSSH config** writes a standard `Host` block that also works with `ssh`, `scp`
   and `rsync` outside Muxus.
 
+New hosts start in OpenSSH config. To start them in Muxus app data instead, change
+**Settings → Behavior → Save new SSH hosts in**.
+
 Presentation attributes such as folder, colour, highlighting and logging policy always
 live in the Muxus database.
 

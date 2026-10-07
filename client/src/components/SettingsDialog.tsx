@@ -78,6 +78,7 @@ import {
   useCustomTerminalSchemes,
   usePrefsStore,
   type CommandBarPosition,
+  type NewSshHostStorage,
   type RightClickAction,
   type SidebarPosition,
   type TabNumberVisibility,
@@ -944,6 +945,11 @@ function TerminalSection() {
 
 const SSH_KEEPALIVE_CHOICES = [0, 15, DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS, 60, 120];
 
+const NEW_SSH_HOST_STORAGE_OPTIONS = [
+  ['muxus', 'Muxus app data only'],
+  ['openssh', 'OpenSSH config'],
+] as const satisfies ReadonlyArray<readonly [NewSshHostStorage, string]>;
+
 function BehaviorSection() {
   const prefs = usePrefsStore();
   const keepaliveOptions: Array<readonly [number, string]> = [
@@ -967,7 +973,7 @@ function BehaviorSection() {
   return (
     <SettingsPage
       title="Behavior"
-      description="How tabs close, what a new SSH session reports, and how sessions come back after a restart or a dropped connection."
+      description="How tabs close, where new SSH hosts are saved, what a new SSH session reports, and how sessions come back after a restart or a dropped connection."
     >
       <SettingsGroup title="Tabs">
         <SettingRow
@@ -980,6 +986,21 @@ function BehaviorSection() {
               size="small"
               checked={prefs.confirmCloseConnected}
               onChange={(e) => prefs.set({ confirmCloseConnected: e.target.checked })}
+            />
+          }
+        />
+      </SettingsGroup>
+      <SettingsGroup title="New hosts">
+        <SettingRow
+          label="Save new SSH hosts in"
+          description="The host editor starts with this choice, and each new host can still pick the other. OpenSSH config also works with ssh in any terminal."
+          control={
+            <RowSelect<NewSshHostStorage>
+              id="settings-new-ssh-host-storage"
+              label="Save new SSH hosts in"
+              value={prefs.newSshHostStorage}
+              onChange={(newSshHostStorage) => prefs.set({ newSshHostStorage })}
+              options={NEW_SSH_HOST_STORAGE_OPTIONS}
             />
           }
         />

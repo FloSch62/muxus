@@ -33,6 +33,7 @@ import {
   hostSessionLoggingDraft,
   sessionLoggingPolicyInput,
 } from '../session-logging-policy.js';
+import { usePrefsStore } from '../state/prefs.js';
 import { useUiStore, type HostEditorState } from '../state/ui.js';
 import { AdvancedSection } from './host-editor/AdvancedSection.js';
 import { AuthSection } from './host-editor/AuthSection.js';
@@ -176,7 +177,13 @@ function stateIdentity(state: OpenState): string {
 }
 
 function initialSshDraft(state: OpenState): HostDraft {
-  if (state.mode === 'new') return blankDraft(state.prefillTarget, state.group);
+  if (state.mode === 'new') {
+    return blankDraft(
+      state.prefillTarget,
+      state.group,
+      usePrefsStore.getState().newSshHostStorage,
+    );
+  }
   if (state.mode === 'edit' || state.mode === 'duplicate') {
     return draftFromEntry(state.entry, state.mode === 'duplicate');
   }

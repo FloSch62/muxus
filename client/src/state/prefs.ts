@@ -27,6 +27,8 @@ export type TabNumberVisibility = 'shortcut' | 'always';
 export type SidebarPosition = 'left' | 'right';
 /** Where the saved-command bar sits relative to the pane canvas. */
 export type CommandBarPosition = 'top' | 'bottom';
+/** Where the host editor saves a new SSH host unless told otherwise. */
+export type NewSshHostStorage = 'openssh' | 'muxus';
 
 export const DEFAULT_INACTIVE_PANE_DIM_STRENGTH = 0.15;
 export const MIN_INACTIVE_PANE_DIM_STRENGTH = 0.1;
@@ -153,6 +155,10 @@ export interface PrefsState {
   sshKeepaliveIntervalSeconds: number;
   /** Print the route, encryption and active features when an SSH session connects. */
   sshSessionSummary: boolean;
+  /** Pre-select "Remember this password" on password prompts. */
+  rememberPasswordsByDefault: boolean;
+  /** Storage the host editor starts with for a new SSH host. */
+  newSshHostStorage: NewSshHostStorage;
   /** X11 forwarding master switch; null follows the platform default (off on macOS). */
   x11Enabled: boolean | null;
   /** Forward X11 for hosts without ForwardX11; null follows the platform default. */
@@ -232,6 +238,10 @@ export function isCommandBarPosition(value: unknown): value is CommandBarPositio
   return value === 'top' || value === 'bottom';
 }
 
+export function isNewSshHostStorage(value: unknown): value is NewSshHostStorage {
+  return value === 'openssh' || value === 'muxus';
+}
+
 export function isTerminalFileLinkActivation(
   value: unknown,
 ): value is TerminalFileLinkActivation {
@@ -298,6 +308,10 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
     delete state.sshKeepaliveIntervalSeconds;
   }
   if (typeof state.sshSessionSummary !== 'boolean') delete state.sshSessionSummary;
+  if (typeof state.rememberPasswordsByDefault !== 'boolean') {
+    delete state.rememberPasswordsByDefault;
+  }
+  if (!isNewSshHostStorage(state.newSshHostStorage)) delete state.newSshHostStorage;
   if (typeof state.activePaneBorder !== 'boolean') delete state.activePaneBorder;
   if (typeof state.dimInactivePanes !== 'boolean') delete state.dimInactivePanes;
   if (typeof state.webglRenderer !== 'boolean') delete state.webglRenderer;
@@ -461,6 +475,8 @@ export const usePrefsStore = create<PrefsState>()(
       autoReconnectRemote: true,
       sshKeepaliveIntervalSeconds: DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
       sshSessionSummary: false,
+      rememberPasswordsByDefault: false,
+      newSshHostStorage: 'openssh',
       x11Enabled: null,
       x11ForwardByDefault: null,
       x11ClipboardSharing: false,

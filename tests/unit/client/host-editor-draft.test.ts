@@ -261,6 +261,23 @@ describe('SSH host editor draft', () => {
     });
   });
 
+  it('starts a new host in the requested storage', () => {
+    expect(blankDraft().storage).toBe('openssh');
+    expect(blankDraft('', '', 'muxus').storage).toBe('muxus');
+  });
+
+  it('uses a bare prefilled name as the hostname of a Muxus profile', () => {
+    const draft = blankDraft('myairframe4', '', 'muxus');
+    expect(draft).toMatchObject({ aliasText: 'myairframe4', hostname: 'myairframe4' });
+    expect(draftProblem(draft)).toBeNull();
+    expect(blankDraft('ops@edge01.lab.test:2222', '', 'muxus')).toMatchObject({
+      aliasText: 'edge01.lab.test',
+      hostname: 'edge01.lab.test',
+      user: 'ops',
+      port: '2222',
+    });
+  });
+
   it('prefills the selected folder for a new host', () => {
     expect(blankDraft('', 'Production/Edge')).toMatchObject({
       group: 'Production/Edge',

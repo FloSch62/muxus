@@ -41,6 +41,8 @@ beforeEach(() => {
     defaultLocalShellProfileId: '',
     showWslDistributions: true,
     sshSessionSummary: false,
+    rememberPasswordsByDefault: false,
+    newSshHostStorage: 'openssh',
     keywordHighlightProfiles: [],
   });
 });
@@ -579,6 +581,35 @@ describe('restoring the SSH session summary preference', () => {
     const document = await createBackupDocument();
 
     expect(document.data.preferences.sshSessionSummary).toBe(true);
+  });
+});
+
+describe('restoring the new-host and password prompt defaults', () => {
+  const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
+
+  it('restores valid choices and drops malformed values', () => {
+    expect(
+      sanitizePreferences(
+        prefs({ rememberPasswordsByDefault: true, newSshHostStorage: 'muxus' }),
+      ),
+    ).toMatchObject({ rememberPasswordsByDefault: true, newSshHostStorage: 'muxus' });
+    const malformed = sanitizePreferences(
+      prefs({ rememberPasswordsByDefault: 1, newSshHostStorage: 'database' }),
+    );
+    expect(malformed.rememberPasswordsByDefault).toBeUndefined();
+    expect(malformed.newSshHostStorage).toBeUndefined();
+  });
+
+  it('are part of a backup', async () => {
+    usePrefsStore.setState({ rememberPasswordsByDefault: true, newSshHostStorage: 'muxus' });
+    mockBackupSnapshot();
+
+    const document = await createBackupDocument();
+
+    expect(document.data.preferences).toMatchObject({
+      rememberPasswordsByDefault: true,
+      newSshHostStorage: 'muxus',
+    });
   });
 });
 
