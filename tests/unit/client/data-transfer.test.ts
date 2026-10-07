@@ -40,6 +40,7 @@ beforeEach(() => {
     localShellProfiles: [],
     defaultLocalShellProfileId: '',
     showWslDistributions: true,
+    sshSessionSummary: false,
     keywordHighlightProfiles: [],
   });
 });
@@ -556,6 +557,28 @@ describe('restoring local shell profiles', () => {
     expect(
       sanitizePreferences(prefs({ showWslDistributions: 'false' })).showWslDistributions,
     ).toBeUndefined();
+  });
+});
+
+describe('restoring the SSH session summary preference', () => {
+  const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
+
+  it('restores the switch and drops a malformed value', () => {
+    expect(sanitizePreferences(prefs({ sshSessionSummary: true }))).toMatchObject({
+      sshSessionSummary: true,
+    });
+    expect(
+      sanitizePreferences(prefs({ sshSessionSummary: 'on' })).sshSessionSummary,
+    ).toBeUndefined();
+  });
+
+  it('is part of a backup', async () => {
+    usePrefsStore.setState({ sshSessionSummary: true });
+    mockBackupSnapshot();
+
+    const document = await createBackupDocument();
+
+    expect(document.data.preferences.sshSessionSummary).toBe(true);
   });
 });
 

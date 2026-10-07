@@ -207,6 +207,7 @@ describe('X11 forwarding over SSH', () => {
       authData: REAL_COOKIE,
     });
     expect(statuses).toEqual([]);
+    expect(shell.summary.x11).toBe('on');
     shell.stream.close();
     shell.lease.release();
 
@@ -222,6 +223,7 @@ describe('X11 forwarding over SSH', () => {
     expect(await firstData(shell.stream)).toContain('shell ok');
     expect(ssh.capture.requests).toHaveLength(0);
     expect(statuses).toEqual([]);
+    expect(shell.summary.x11).toBe('off');
     shell.stream.close();
     shell.lease.release();
   });
@@ -231,6 +233,22 @@ describe('X11 forwarding over SSH', () => {
     const shell = await manager.connectShell(profile, makeIo([]), 80, 24, 'xterm');
     expect(await firstData(shell.stream)).toContain('shell ok');
     expect(ssh.capture.requests).toHaveLength(0);
+    expect(shell.summary.x11).toBe('off');
+    shell.stream.close();
+    shell.lease.release();
+  });
+
+  it('names a missing local X server in the summary of a host that asks for X11', async () => {
+    const ssh = await startServer(true);
+    cleanups.push(() => new Promise<void>((resolve) => ssh.server.close(() => resolve())));
+    const x11 = new LocalX11({ log, env: {}, platform: 'linux' });
+    const manager = makeManager(ssh.port, ['  ForwardX11 yes'], x11);
+    cleanups.push(() => manager.closeAll());
+
+    const shell = await manager.connectShell(profile, makeIo([]), 80, 24, 'xterm');
+    expect(await firstData(shell.stream)).toContain('shell ok');
+    expect(ssh.capture.requests).toHaveLength(0);
+    expect(shell.summary.x11).toBe('no-server');
     shell.stream.close();
     shell.lease.release();
   });
@@ -241,11 +259,13 @@ describe('X11 forwarding over SSH', () => {
     const first = await manager.connectShell(profile, makeIo(statuses), 80, 24, 'xterm');
     expect(await firstData(first.stream)).toContain('shell ok');
     expect(statuses).toEqual([expect.stringContaining('refused X11 forwarding')]);
+    expect(first.summary.x11).toBe('refused');
 
     // A second pane on the shared transport does not repeat the refused request.
     const second = await manager.connectShell(profile, makeIo([]), 80, 24, 'xterm');
     expect(await firstData(second.stream)).toContain('shell ok');
     expect(second.transport).toBe('shared');
+    expect(second.summary.x11).toBe('refused');
     expect(ssh.capture.requests).toHaveLength(1);
     for (const shell of [first, second]) {
       shell.stream.close();

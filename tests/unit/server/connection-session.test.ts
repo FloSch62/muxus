@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import type net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { Server } from 'ssh2';
+import { Server, type ServerConfig } from 'ssh2';
 import { afterEach, afterAll, describe, expect, it, vi } from 'vitest';
 import type { SshProfile } from '@muxus/shared/ws-protocol';
 import { SshConnectionManager, type ConnectIo } from '../../../server/src/ssh/connection-manager.js';
@@ -39,9 +39,11 @@ interface SessionCapture {
 }
 
 /** sshd stand-in that records what the client requested on its session. */
-function startCapturingServer(): Promise<{ server: Server; port: number; capture: SessionCapture }> {
+function startCapturingServer(
+  config: Partial<ServerConfig> = {},
+): Promise<{ server: Server; port: number; capture: SessionCapture }> {
   const capture: SessionCapture = { env: {}, ptyRequested: false, shellRequested: false, authMethods: [] };
-  const server = new Server({ hostKeys: [HOST_KEY] }, (conn) => {
+  const server = new Server({ hostKeys: [HOST_KEY], ...config }, (conn) => {
     conn.on('error', () => undefined);
     conn.on('authentication', (authCtx) => {
       if (authCtx.method !== 'none') capture.authMethods.push(authCtx.method);
@@ -214,6 +216,37 @@ function startKeyboardInteractiveFallbackServer(): Promise<{
         port: (server.address() as net.AddressInfo).port,
         capture,
       });
+    });
+  });
+}
+
+/** Asks for a keyboard-interactive code first, then the password. */
+function startTwoFactorServer(): Promise<{ server: Server; port: number }> {
+  const server = new Server({ hostKeys: [HOST_KEY] }, (conn) => {
+    conn.on('error', () => undefined);
+    let codeAccepted = false;
+    conn.on('authentication', (authCtx) => {
+      if (authCtx.method === 'keyboard-interactive' && !codeAccepted) {
+        authCtx.prompt([{ prompt: 'Code: ', echo: true }], (answers) => {
+          codeAccepted = answers[0] === PASSWORD;
+          if (codeAccepted) authCtx.reject(['password'], true);
+          else authCtx.reject(['keyboard-interactive']);
+        });
+      } else if (authCtx.method === 'password' && codeAccepted && authCtx.password === PASSWORD) {
+        authCtx.accept();
+      } else {
+        authCtx.reject(codeAccepted ? ['password'] : ['keyboard-interactive']);
+      }
+    });
+    conn.on('ready', () => {
+      conn.on('session', (acceptSession) => {
+        acceptSession().on('shell', (acceptShell) => acceptShell().write('shell ok\n'));
+      });
+    });
+  });
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => {
+      resolve({ server, port: (server.address() as net.AddressInfo).port });
     });
   });
 }
@@ -783,5 +816,97 @@ describe('session settings from ssh config', () => {
       });
     });
     lease.release();
+  }, 15_000);
+});
+
+describe('session summary', () => {
+  let manager: SshConnectionManager | undefined;
+  let server: Server | undefined;
+
+  afterEach(async () => {
+    manager?.closeAll();
+    manager = undefined;
+    if (server) {
+      await new Promise<void>((resolve) => server!.close(() => resolve()));
+      server = undefined;
+    }
+  });
+
+  // A plain shell: no pty, so no shell-integration probe.
+  const plain = ['  RequestTTY no', '  IdentityAgent none'];
+
+  it('describes a direct password login, and a second tab on its connection', async () => {
+    const started = await startCapturingServer();
+    server = started.server;
+    manager = makeManager(writeConfig(started.port, plain));
+
+    const first = await manager.connectShell(profile, makeIo(), 80, 24, 'xterm-256color');
+    expect(first.summary).toEqual({
+      user: 'tester',
+      host: '127.0.0.1',
+      port: started.port,
+      jumpHosts: [],
+      proxyCommand: false,
+      shared: false,
+      serverSoftware: expect.stringMatching(/^ssh2js/),
+      authMethods: ['password'],
+      cipher: expect.any(String),
+      kex: expect.any(String),
+      compression: 'off',
+      sftp: true,
+      x11: 'off',
+      agentForwarding: 'off',
+    });
+
+    const second = await manager.connectShell(profile, makeIo(), 80, 24, 'xterm-256color');
+    expect(second.transport).toBe('shared');
+    expect(second.summary).toEqual({ ...first.summary, shared: true });
+    for (const shell of [first, second]) {
+      shell.stream.close();
+      shell.lease.release();
+    }
+  }, 15_000);
+
+  it('reports compression the server agreed to, or that it offered none', async () => {
+    const zlib = await startCapturingServer();
+    server = zlib.server;
+    manager = makeManager(writeConfig(zlib.port, [...plain, '  Compression yes']));
+    const compressed = await manager.connectShell(profile, makeIo(), 80, 24, 'xterm-256color');
+    expect(compressed.summary.compression).toBe('on');
+    compressed.stream.close();
+    compressed.lease.release();
+    manager.closeAll();
+    await new Promise<void>((resolve) => zlib.server.close(() => resolve()));
+
+    const none = await startCapturingServer({ algorithms: { compress: ['none'] } });
+    server = none.server;
+    manager = makeManager(writeConfig(none.port, [...plain, '  Compression yes']));
+    const uncompressed = await manager.connectShell(profile, makeIo(), 80, 24, 'xterm-256color');
+    expect(uncompressed.summary.compression).toBe('unsupported');
+    uncompressed.stream.close();
+    uncompressed.lease.release();
+  }, 15_000);
+
+  it('says when agent forwarding is asked for but no agent is reachable', async () => {
+    const started = await startCapturingServer();
+    server = started.server;
+    manager = makeManager(writeConfig(started.port, [...plain, '  ForwardAgent yes']));
+
+    const shell = await manager.connectShell(profile, makeIo(), 80, 24, 'xterm-256color');
+    expect(shell.summary.agentForwarding).toBe('no-agent');
+    shell.stream.close();
+    shell.lease.release();
+  }, 15_000);
+
+  it('lists every method of a multi-factor login in order', async () => {
+    const started = await startTwoFactorServer();
+    server = started.server;
+    manager = makeManager(writeConfig(started.port, plain));
+
+    const shell = await manager.connectShell(profile, makeIo(), 80, 24, 'xterm-256color');
+    expect(await firstData(shell.stream)).toContain('shell ok');
+    expect(shell.summary.authMethods).toEqual(['keyboard-interactive', 'password']);
+    shell.stream.close();
+    shell.lease.release();
   }, 15_000);
 });

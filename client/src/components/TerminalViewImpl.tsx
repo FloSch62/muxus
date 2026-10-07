@@ -75,6 +75,7 @@ import {
   type KeywordHighlighter,
 } from '../terminal/keyword-highlighting.js';
 import { registerTerminal } from '../terminal/terminal-registry.js';
+import { formatSshSessionSummary } from '../terminal/ssh-session-summary.js';
 import {
   attachTerminalFileLinks,
   resolveTerminalFilePath,
@@ -1152,6 +1153,14 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
               interruptionTimer = undefined;
             }
             clearTransientStatus();
+            // A reattached renderer replays `ready`; its summary is already on screen.
+            if (
+              !attachingExistingSession &&
+              ctl.summary &&
+              usePrefsStore.getState().sshSessionSummary
+            ) {
+              term.write(formatSshSessionSummary(ctl.summary));
+            }
             waitingForTerminalOutput = pendingTransferId
               ? false
               : shouldWaitForTerminalOutput(tab.profile.kind, receivedTerminalOutput);

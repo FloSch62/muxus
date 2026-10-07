@@ -77,6 +77,7 @@ const PREFERENCE_KEYS = [
   'terminalFileLinkActivation',
   'pasteWarnMultiline',
   'confirmCloseConnected',
+  'sshSessionSummary',
   'notifyOnNewVersion',
   'commandButtons',
   'showCommandBar',
@@ -889,6 +890,9 @@ export function sanitizePreferences(
   }
   if (typeof input.confirmCloseConnected === 'boolean') {
     output.confirmCloseConnected = input.confirmCloseConnected;
+  }
+  if (typeof input.sshSessionSummary === 'boolean') {
+    output.sshSessionSummary = input.sshSessionSummary;
   }
   if (typeof input.notifyOnNewVersion === 'boolean') {
     output.notifyOnNewVersion = input.notifyOnNewVersion;

@@ -244,3 +244,97 @@ describe('terminal socket dial mode', () => {
     expect(release).toHaveBeenCalledOnce();
   });
 });
+
+describe('terminal socket connect mode', () => {
+  it('sends the SSH session summary with the config forwards that started', async () => {
+    let route!: (socket: TestSocket) => void;
+    const stream = Object.assign(new EventEmitter(), {
+      close: vi.fn(),
+      write: vi.fn(),
+      setWindow: vi.fn(),
+      pause: vi.fn(),
+      resume: vi.fn(),
+    });
+    const summary = {
+      user: 'alice',
+      host: 'router.example',
+      port: 22,
+      jumpHosts: [],
+      proxyCommand: false,
+      shared: false,
+      authMethods: ['password'],
+      compression: 'off',
+      sftp: true,
+      x11: 'off',
+      agentForwarding: 'off',
+    };
+    const connectShell = vi.fn().mockResolvedValue({
+      lease: {
+        connection: {
+          id: 'connection-1',
+          host: 'router.example',
+          user: 'alice',
+          sftpAvailable: true,
+          configForwards: [
+            { type: 'local', bindPort: 8080, targetHost: 'db', targetPort: 5432 },
+            { type: 'dynamic', bindPort: 1080 },
+          ],
+          onHealth: () => () => undefined,
+          onClose: () => () => undefined,
+        },
+        release: vi.fn(),
+      },
+      stream,
+      transport: 'new',
+      summary,
+    });
+    const startConfig = vi
+      .fn()
+      .mockResolvedValueOnce({ info: { id: 'forward-1' }, started: true })
+      .mockRejectedValueOnce(new Error('address already in use'));
+    const app = {
+      get: (_path: string, _options: unknown, handler: (socket: TestSocket) => void) => {
+        route = handler;
+      },
+      log: { info: vi.fn(), warn: vi.fn() },
+    };
+    const ctx = {
+      connections: {
+        connectShell,
+        resolveProfile: (profile: unknown) => profile,
+        leaseCount: () => 0,
+      },
+      forwards: { startConfig, stop: vi.fn(), stopSessionForConnection: vi.fn() },
+      database: {
+        sessionLoggingPolicy: () => ({ enabled: false, logToFile: false, captureInput: false }),
+      },
+    };
+    registerTerminalSocket(app as never, ctx as never);
+
+    const socket = new TestSocket();
+    route(socket);
+    socket.emit(
+      'message',
+      Buffer.from(
+        JSON.stringify({
+          op: 'connect',
+          profile: { kind: 'ssh', target: 'router.example' },
+          cols: 80,
+          rows: 24,
+        }),
+      ),
+      false,
+    );
+
+    const frames = () =>
+      socket.send.mock.calls
+        .filter(([frame]) => typeof frame === 'string')
+        .map(([frame]) => JSON.parse(String(frame)) as { op: string; summary?: unknown });
+    await vi.waitFor(() => expect(frames().some((frame) => frame.op === 'ready')).toBe(true));
+    expect(frames().find((frame) => frame.op === 'ready')?.summary).toEqual({
+      ...summary,
+      forwards: [{ type: 'local', bindPort: 8080, targetHost: 'db', targetPort: 5432 }],
+    });
+    socket.close(1000, TERMINAL_SESSION_CLOSE_REASON);
+  });
+});

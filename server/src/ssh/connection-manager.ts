@@ -10,6 +10,7 @@ import ssh2, {
   type BaseAgent,
   type ClientChannel,
   type ConnectConfig,
+  type NegotiatedAlgorithms,
   type ParsedKey,
   type Prompt,
   type PseudoTtyOptions,
@@ -25,6 +26,7 @@ import {
   type ConfigForward,
   type ConnectionInfo,
   type SshProfile,
+  type SshSessionSummary,
   savedHostHopId,
 } from '@muxus/shared';
 import {
@@ -125,6 +127,26 @@ function wantsPty(requestTty: ResolvedTarget['requestTty'], hasCommand: boolean)
   return !hasCommand;
 }
 
+/** What one dialed hop learned while connecting, kept for the session summary. */
+interface HandshakeFacts {
+  /** Server software from its identification string. */
+  serverSoftware?: string;
+  negotiated?: NegotiatedAlgorithms;
+  /** Methods the server accepted, in order. */
+  authMethods: AuthenticationType[];
+  /** The config asked for compression (`Compression yes`). */
+  compressionRequested: boolean;
+  agentForwarding: SshSessionSummary['agentForwarding'];
+}
+
+/** How a transport was reached and what it negotiated. */
+export interface TransportFacts extends HandshakeFacts {
+  /** Jump hosts in dialing order; empty for a direct connection. */
+  jumpHosts: string[];
+  /** The first hop was reached through a ProxyCommand. */
+  proxyCommand: boolean;
+}
+
 export interface ManagedConnection {
   id: string;
   client: Client;
@@ -150,6 +172,9 @@ export interface ManagedConnection {
   health(): SshTransportHealth;
   /** Whether the server answered an x11-req on this transport with failure. */
   x11Refused(): boolean;
+  /** Whether the server accepted X11 forwarding on this session channel. */
+  x11Forwarded(channel: ClientChannel): boolean;
+  facts: TransportFacts;
   /**
    * Session defaults come from the dialed target when none are passed. `cwd`
    * is a best-effort start directory, honoured only by integrated shells.
@@ -207,6 +232,8 @@ export interface TerminalShell {
    * another session; its sibling still owns the config forwards.
    */
   transport: 'new' | 'shared' | 'overflow';
+  /** Port forwards are started after the shell opens, so they are left to the caller. */
+  summary: Omit<SshSessionSummary, 'forwards'>;
 }
 
 const MAX_JUMP_DEPTH = 8;
@@ -288,6 +315,7 @@ export class SshConnectionManager {
   private readonly jumpHops: JumpHopRegistry;
   private readonly closeReasons = new WeakMap<Client, string>();
   private readonly postAuth = new WeakMap<Client, Promise<void>>();
+  private readonly handshakes = new WeakMap<Client, HandshakeFacts>();
   /**
    * In-flight dials by mux key, so simultaneous sessions share one TCP
    * connection and one auth round-trip. A list, not a single slot: overlapping
@@ -608,8 +636,7 @@ export class SshConnectionManager {
         sessionSettings(lease.target.resolved),
         cwd,
       );
-      this.reportX11(lease, io);
-      return { lease, stream, transport: lease.reused ? 'shared' : 'new' };
+      return this.opened(lease, stream, lease.reused ? 'shared' : 'new', io);
     } catch (err) {
       lease.release();
       if (err instanceof RemoteShellTransportLostError) {
@@ -630,8 +657,7 @@ export class SshConnectionManager {
           sessionSettings(dedicated.target.resolved),
           cwd,
         );
-        this.reportX11(dedicated, io);
-        return { lease: dedicated, stream, transport: 'overflow' };
+        return this.opened(dedicated, stream, 'overflow', io);
       } catch (retryErr) {
         dedicated.release();
         if (retryErr instanceof RemoteShellTransportLostError) {
@@ -649,6 +675,57 @@ export class SshConnectionManager {
         throw retryErr;
       }
     }
+  }
+
+  /** Report X11 trouble and describe what the new session ended up with. */
+  private opened(
+    lease: MuxedConnectionLease,
+    stream: ClientChannel,
+    transport: TerminalShell['transport'],
+    io: ConnectIo,
+  ): TerminalShell {
+    this.reportX11(lease, io);
+    const conn = lease.connection;
+    const { facts } = conn;
+    const compression = facts.negotiated?.cs.compress;
+    return {
+      lease,
+      stream,
+      transport,
+      summary: {
+        user: conn.user,
+        host: conn.host,
+        port: conn.port,
+        jumpHosts: facts.jumpHosts,
+        proxyCommand: facts.proxyCommand,
+        shared: transport === 'shared',
+        serverSoftware: facts.serverSoftware,
+        authMethods: facts.authMethods,
+        cipher: facts.negotiated?.cs.cipher,
+        kex: facts.negotiated?.kex,
+        compression:
+          compression && compression !== 'none'
+            ? 'on'
+            : facts.compressionRequested
+              ? 'unsupported'
+              : 'off',
+        sftp: conn.sftpAvailable,
+        x11: this.x11State(lease, stream),
+        agentForwarding: facts.agentForwarding,
+      },
+    };
+  }
+
+  /** Mirrors reportX11: a reason is given only when the session asked for X11. */
+  private x11State(
+    lease: MuxedConnectionLease,
+    stream: ClientChannel,
+  ): SshSessionSummary['x11'] {
+    if (lease.connection.x11Forwarded(stream)) return 'on';
+    if (!this.x11?.enabled()) return 'off';
+    const forwardX11 = lease.target.resolved.forwardX11;
+    if (this.x11.status().source === 'none') return forwardX11 === true ? 'no-server' : 'off';
+    return lease.connection.x11Refused() && this.x11.wanted(forwardX11) ? 'refused' : 'off';
   }
 
   /**
@@ -701,8 +778,7 @@ export class SshConnectionManager {
         term,
         sessionSettings(compatible.target.resolved),
       );
-      this.reportX11(compatible, io);
-      return { lease: compatible, stream, transport };
+      return this.opened(compatible, stream, transport, io);
     } catch (retryError) {
       compatible.release();
       throw retryError;
@@ -830,6 +906,7 @@ export class SshConnectionManager {
       for (const stop of stopHealthObservers.splice(0)) stop();
     };
     const x11: X11Transport | undefined = this.x11?.attach(client);
+    const x11Channels = new WeakSet<ClientChannel>();
     const id = nanoid(10);
     const closeListeners = new Set<(reason?: string) => void>();
     const postAuthSettled = Promise.all(postAuth).then(() => undefined);
@@ -871,6 +948,12 @@ export class SshConnectionManager {
       health: () => transportHealth,
       configForwards: target.resolved.forwards,
       x11Refused: () => x11?.refused ?? false,
+      x11Forwarded: (channel) => x11Channels.has(channel),
+      facts: {
+        ...this.handshakes.get(client)!,
+        jumpHosts: chain.slice(0, -1).map((hop) => hop.spec.host),
+        proxyCommand: chain[0]!.resolved.proxyCommand !== undefined,
+      },
       shell: async (cols, rows, term, session = sessionSettings(target.resolved), cwd) => {
         const pty = wantsPty(session.requestTty, !!session.remoteCommand)
           ? terminalPtyOptions(cols, rows, term)
@@ -902,7 +985,9 @@ export class SshConnectionManager {
             : x11?.request(session.forwardX11);
         if (!x11Request) return open();
         try {
-          return await open(x11Request);
+          const channel = await open(x11Request);
+          x11Channels.add(channel);
+          return channel;
         } catch (err) {
           if (!isX11Rejection(err)) throw err;
           // Like ssh(1), a refused x11-req costs X11, not the session. ssh2
@@ -1098,11 +1183,24 @@ export class SshConnectionManager {
         rejectBeforeReady(new Error('Timed out while waiting for SSH readiness.'));
         client.destroy();
       });
+      let negotiated: NegotiatedAlgorithms | undefined;
       client.on('banner', (message: string) => io.status(message.trimEnd()));
+      client.on('handshake', (algorithms) => {
+        negotiated = algorithms;
+      });
       client.on('ready', () => {
         if (settled) return;
         ready = true;
         settled = true;
+        this.handshakes.set(client, {
+          // ssh2 keeps the software part of the server's identification
+          // string privately; it publishes no accessor for it.
+          serverSoftware: (client as Client & { _remoteVer?: string })._remoteVer,
+          negotiated,
+          authMethods: auth.acceptedMethods(),
+          compressionRequested: hop.resolved.compression === true,
+          agentForwarding: !hop.resolved.forwardAgent ? 'off' : agentSocket ? 'on' : 'no-agent',
+        });
         this.log.debug(
           { host: hop.resolved.hostname, port: hop.port, user: hop.user },
           'ssh connection ready',
@@ -1648,6 +1746,9 @@ class AuthLadder {
   private partialPasswordCandidate: RememberedPasswordCandidate | undefined;
   private savedPasswordAttempted = false;
   private retryKeyboardInteractive = false;
+  /** The method last offered to the server, and those it partially accepted. */
+  private lastMethod: AuthenticationType | undefined;
+  private readonly partialMethods: AuthenticationType[] = [];
   cancelled = false;
 
   constructor(
@@ -1673,7 +1774,14 @@ class AuthLadder {
       }
       this.lastPasswordCandidate = undefined;
     }
+    if (partialSuccess && this.lastMethod) this.partialMethods.push(this.lastMethod);
+    this.lastMethod = undefined;
     this.advance(authsLeft, cb);
+  }
+
+  /** Once the connection is ready: the methods that logged in, in order. */
+  acceptedMethods(): AuthenticationType[] {
+    return this.lastMethod ? [...this.partialMethods, this.lastMethod] : [...this.partialMethods];
   }
 
   private advance(
@@ -1706,6 +1814,7 @@ class AuthLadder {
       .then((method) => {
         if (method) {
           this.log?.debug({ host, method: attempt.type }, 'trying ssh auth method');
+          this.lastMethod = attempt.type;
           cb(method);
         } else {
           this.log?.debug(

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { ConfigForward } from './api-types.js';
 
 /** Fixed subprotocol selected by the server for terminal sockets. */
 export const TERMINAL_WS_PROTOCOL = 'muxus.terminal.v1';
@@ -292,6 +293,42 @@ export const terminalClientMessageSchema = z.discriminatedUnion('op', [
 ]);
 export type TerminalClientMessage = z.infer<typeof terminalClientMessageSchema>;
 
+/**
+ * What an SSH session ended up with once its shell opened: how it was
+ * reached, what the transport negotiated and which optional features are
+ * active. Terminals print it on connect when the user has asked for it.
+ */
+export interface SshSessionSummary {
+  user: string;
+  host: string;
+  port: number;
+  /** Jump hosts in dialing order; empty when the target was dialed directly. */
+  jumpHosts: string[];
+  /** The first hop was reached through a ProxyCommand. */
+  proxyCommand: boolean;
+  /** The session joined a connection that was already open. */
+  shared: boolean;
+  /** Server software from its identification string, such as "OpenSSH_9.6p1". */
+  serverSoftware?: string;
+  /** Methods the server accepted, in order; several for a multi-factor login. */
+  authMethods: string[];
+  cipher?: string;
+  kex?: string;
+  /** `unsupported`: compression was asked for and the server offered none. */
+  compression: 'on' | 'off' | 'unsupported';
+  /** Whether the file browser may open SFTP on this connection. */
+  sftp: boolean;
+  /**
+   * `refused`: the server answered the X11 request with failure.
+   * `no-server`: the host asks for X11 but no local X server was found.
+   */
+  x11: 'on' | 'off' | 'refused' | 'no-server';
+  /** `no-agent`: the host asks for agent forwarding but no agent is reachable. */
+  agentForwarding: 'on' | 'off' | 'no-agent';
+  /** Port forwards from the host's configuration running on the connection. */
+  forwards: ConfigForward[];
+}
+
 /** Text frames the server sends on /ws/terminal. */
 export type TerminalServerMessage =
   /** Stable server-side identity used for renderer reattachment and window handoff. */
@@ -319,7 +356,15 @@ export type TerminalServerMessage =
       hop?: string;
     }
   /** Transport attached; SSH connIds also key follow-up SFTP/forward calls when available. */
-  | { op: 'ready'; connId: string; host?: string; user?: string; sftpAvailable?: boolean }
+  | {
+      op: 'ready';
+      connId: string;
+      host?: string;
+      user?: string;
+      sftpAvailable?: boolean;
+      /** SSH terminal sessions only. */
+      summary?: SshSessionSummary;
+    }
   /** Current durable-log state, emitted at start and after every live change. */
   | {
       op: 'logging-state';
