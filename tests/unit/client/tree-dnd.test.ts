@@ -65,8 +65,14 @@ const rows = flattenVisibleTree(tree, () => true);
 const row = (key: string): VisibleNode => rows.find((entry) => entry.key === key)!;
 
 const fileGroupKey = `file:${ROOT}`;
-const dragEdge: DragSource = { kind: 'host', hostKey: 'ssh:edge', parentKey: folderKey('Prod/EU') };
-const dragLoose: DragSource = { kind: 'host', hostKey: 'ssh:loose', parentKey: fileGroupKey };
+const dragEdge: DragSource = {
+  kind: 'host',
+  hosts: [{ hostKey: 'ssh:edge', parentKey: folderKey('Prod/EU') }],
+};
+const dragLoose: DragSource = {
+  kind: 'host',
+  hosts: [{ hostKey: 'ssh:loose', parentKey: fileGroupKey }],
+};
 const dragProd: DragSource = { kind: 'folder', folderKey: folderKey('Prod'), path: 'Prod' };
 const dragLab: DragSource = { kind: 'folder', folderKey: folderKey('Lab'), path: 'Lab' };
 
@@ -161,12 +167,42 @@ describe('folder ordering', () => {
 
 describe('dragSourceForRow', () => {
   it('describes hosts and folders', () => {
-    expect(dragSourceForRow(row('ssh:edge'))).toEqual(dragEdge);
-    expect(dragSourceForRow(row(folderKey('Prod')))).toEqual(dragProd);
+    expect(dragSourceForRow(row('ssh:edge'), tree)).toEqual(dragEdge);
+    expect(dragSourceForRow(row(folderKey('Prod')), tree)).toEqual(dragProd);
   });
 
   it('refuses to drag an ssh_config file group', () => {
-    expect(dragSourceForRow(row(fileGroupKey))).toBeUndefined();
+    expect(dragSourceForRow(row(fileGroupKey), tree)).toBeUndefined();
+  });
+
+  it('carries the whole selection, in tree order, when a selected host is grabbed', () => {
+    const selection = new Set(['ssh:loose', 'ssh:edge', 'ssh:lab-1']);
+    expect(dragSourceForRow(row('ssh:lab-1'), tree, selection)).toEqual({
+      kind: 'host',
+      // Top-level folders sort alphabetically, so Lab comes before Prod.
+      hosts: [
+        { hostKey: 'ssh:lab-1', parentKey: folderKey('Lab') },
+        { hostKey: 'ssh:edge', parentKey: folderKey('Prod/EU') },
+        { hostKey: 'ssh:loose', parentKey: fileGroupKey },
+      ],
+    });
+  });
+
+  it('includes selected hosts inside collapsed folders', () => {
+    // The visible rows do not matter: the selection is resolved against the tree.
+    const collapsed = flattenVisibleTree(tree, (key) => key !== folderKey('Prod'));
+    const lab = collapsed.find((entry) => entry.key === 'ssh:lab-1')!;
+    const source = dragSourceForRow(lab, tree, new Set(['ssh:lab-1', 'ssh:core']));
+    expect(source?.kind === 'host' && source.hosts.map((host) => host.hostKey)).toEqual([
+      'ssh:lab-1',
+      'ssh:core',
+    ]);
+  });
+
+  it('drags a host outside the selection on its own', () => {
+    expect(dragSourceForRow(row('ssh:edge'), tree, new Set(['ssh:core', 'ssh:lab-1']))).toEqual(
+      dragEdge,
+    );
   });
 });
 
@@ -253,6 +289,56 @@ describe('canDrop', () => {
     expect(canDrop(source, { kind: 'into-folder', folderKey: folderKey('target') }, deeper)).toBe(
       false,
     );
+  });
+});
+
+describe('canDrop with several hosts', () => {
+  const dragMixed: DragSource = {
+    kind: 'host',
+    hosts: [
+      { hostKey: 'ssh:core', parentKey: folderKey('Prod') },
+      { hostKey: 'ssh:lab-1', parentKey: folderKey('Lab') },
+    ],
+  };
+
+  it('moves them into a folder or out to the root', () => {
+    expect(canDrop(dragMixed, { kind: 'into-folder', folderKey: folderKey('Prod/EU') }, tree)).toBe(
+      true,
+    );
+    expect(canDrop(dragMixed, { kind: 'root' }, tree)).toBe(true);
+    // Lab already holds one of them; the other still moves in.
+    const intoLab = { kind: 'into-folder', folderKey: folderKey('Lab') } as const;
+    expect(canDrop(dragMixed, intoLab, tree)).toBe(true);
+    expect(isPureReorder(dragMixed, intoLab)).toBe(false);
+  });
+
+  it('refuses to place them beside one of themselves', () => {
+    expect(
+      canDrop(
+        dragMixed,
+        { kind: 'host-edge', hostKey: 'ssh:lab-1', parentKey: folderKey('Lab'), edge: 'after' },
+        tree,
+      ),
+    ).toBe(false);
+  });
+
+  it('reorders inside a file group only when every host already sits there', () => {
+    const intoFile = {
+      kind: 'host-edge' as const,
+      hostKey: 'ssh:loose',
+      parentKey: fileGroupKey,
+      edge: 'after' as const,
+    };
+    expect(canDrop(dragMixed, intoFile, tree)).toBe(false);
+    const fromFile: DragSource = {
+      kind: 'host',
+      hosts: [
+        { hostKey: 'ssh:a', parentKey: fileGroupKey },
+        { hostKey: 'ssh:b', parentKey: fileGroupKey },
+      ],
+    };
+    expect(canDrop(fromFile, intoFile, tree)).toBe(true);
+    expect(isPureReorder(fromFile, intoFile)).toBe(true);
   });
 });
 

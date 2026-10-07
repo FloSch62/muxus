@@ -13,7 +13,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { HostUpsertRequest } from '@muxus/shared';
-import { deleteHost, patchHosts, previewHost, upsertHost } from '../../../server/src/ssh/ssh-config-edit.js';
+import {
+  deleteHost,
+  deleteHosts,
+  patchHosts,
+  previewHost,
+  upsertHost,
+} from '../../../server/src/ssh/ssh-config-edit.js';
 import { listHosts, loadConfigDocument } from '../../../server/src/ssh/ssh-config.js';
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'muxus-sshedit-'));
@@ -334,6 +340,62 @@ describe('deleteHost', () => {
   it('404s for unknown aliases', () => {
     const root = seed('Host a\n  User alpha\n');
     expect(() => deleteHost('nope', root)).toThrowError(/no Host block/);
+  });
+});
+
+describe('deleteHosts', () => {
+  it('removes every listed block with its prelude comment, collapsing blanks', () => {
+    const root = seed(
+      [
+        'Host a',
+        '  User alpha',
+        '',
+        '# doomed',
+        'Host web',
+        '  HostName web.example.com',
+        '',
+        'Host keep',
+        '  User kept',
+        '',
+        'Host db',
+        '  HostName db.internal',
+        '',
+      ].join('\n'),
+    );
+
+    expect(deleteHosts(['db', 'web'], root)).toEqual({ deleted: 2 });
+
+    expect(readFileSync(root, 'utf8')).toBe(
+      ['Host a', '  User alpha', '', 'Host keep', '  User kept', ''].join('\n'),
+    );
+  });
+
+  it('deletes across included files, writing each file once', () => {
+    const root = seed(['Host web', '  User old', '', 'Host db', '  User old', '', 'Host z', '  User zed', ''].join('\n'));
+    const groupFile = path.join(path.dirname(root), 'config.d', 'work');
+    upsertHost({ aliases: ['edge'], file: groupFile, options: { user: 'old' } }, root);
+    const before = readFileSync(root, 'utf8');
+
+    expect(deleteHosts(['web', 'db', 'edge'], root)).toEqual({ deleted: 3 });
+
+    expect(listHosts(loadConfigDocument(root)).map((host) => host.alias)).toEqual(['z']);
+    // One write per file: the backup holds the content from before the whole delete.
+    expect(readFileSync(`${root}.muxus.bak`, 'utf8')).toBe(before);
+  });
+
+  it('counts aliases that share a block once', () => {
+    const root = seed(['Host db db-alias', '  HostName db.internal', '', 'Host z', '  User zed', ''].join('\n'));
+
+    expect(deleteHosts(['db', 'db-alias'], root)).toEqual({ deleted: 1 });
+    expect(readFileSync(root, 'utf8')).toBe(['Host z', '  User zed', ''].join('\n'));
+  });
+
+  it('leaves the file untouched when any alias is unknown', () => {
+    const content = ['Host web', '  User old', ''].join('\n');
+    const root = seed(content);
+
+    expect(() => deleteHosts(['web', 'missing'], root)).toThrow(/no Host block for "missing"/);
+    expect(readFileSync(root, 'utf8')).toBe(content);
   });
 });
 

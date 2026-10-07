@@ -82,8 +82,9 @@ skips the list and opens another session straight away. While hosts are
 The right-click menu has **Connect**, **Open in new window**,
 **Move up/down**, **Move to folder…**, **Organize & color…**, **Edit host**,
 **Duplicate**, **Copy `ssh …` command** and **Delete host**. **Connect** always opens a
-new session. On a host that is part of a selection, it also offers **Edit *n* selected
-hosts…**.
+new session. On a host that is part of a selection, moving and deleting apply to the whole
+selection (**Move *n* selected hosts…**, **Delete *n* selected hosts**), and the menu also
+offers **Edit *n* selected hosts…**.
 
 ## Folders
 
@@ -92,7 +93,8 @@ Hosts without a folder are grouped by the file they were defined in.
 
 - **Create** a folder by right-clicking empty space in the sidebar → **New folder**, or
   nest one inside another from a folder's menu.
-- **Fill** it by dragging hosts in, or from a host's **Move to folder…**.
+- **Fill** it by dragging hosts in, or from a host's **Move to folder…**. Dragging one
+  [selected](#editing-several-hosts-at-once) host brings every selected host along.
 - **Style** it with **Rename, move & style…**, which sets a colour and an icon (cloud,
   servers, storage, network, LAN, cluster, lock, lab, site).
 - **Reorder** with drag & drop, or ++alt+up++ / ++alt+down++ on the focused row. Hosts keep
@@ -135,11 +137,21 @@ nested folders, as **tabs**, **columns**, **rows** or a **grid**.
 ++ctrl++ + click a host (++cmd++ + click on macOS) to select it without connecting. Once
 something is selected, ++shift++ + click selects every host between the last one picked and
 the one clicked. A bar under the list counts the selected hosts; **Edit…** opens the bulk
-editor, and ++escape++ or the bar's close button clears the selection. The selection stays
-while you search, so it can gather hosts from several queries.
+editor, the folder button moves them all to a folder, the bin deletes them, and ++escape++ or
+the bar's close button clears the selection. The selection stays while you search, so it can
+gather hosts from several queries.
 
 A folder's menu offers **Edit *n* hosts…** for everything inside it, nested folders
-included, and a selected host's right-click menu offers **Edit *n* selected hosts…**.
+included, and a selected host's right-click menu offers **Edit *n* selected hosts…**,
+**Move *n* selected hosts…** and **Delete *n* selected hosts**.
+
+Dragging a selected host drags the whole selection, including hosts inside collapsed
+folders, and they land together, in the order they had in the list. A host that is not
+selected drags on its own.
+
+Deleting several hosts asks once and names them. `ssh_config` hosts are removed with each
+config file written once, so its `.muxus.bak` holds the contents from before the whole
+delete; hosts stored in Muxus are removed from Muxus.
 
 The bulk editor shows each setting the hosts share. Where they differ, the field reads
 **Multiple values**, and each host keeps its own value unless you choose one for all of

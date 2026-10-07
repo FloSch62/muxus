@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type {
+  HostBulkDeleteResponse,
   HostBulkUpdateResponse,
   HostPreviewResponse,
   OpenSshMetadataPatch,
@@ -13,7 +14,7 @@ import { sendError } from '../util/errors.js';
 import { metadataPatchSchema } from './metadata-schema.js';
 import { defaultSshConfigPath, listHosts, loadConfigDocument } from '../ssh/ssh-config.js';
 import { batchFolderAuthResolver } from '../ssh/folder-auth.js';
-import { deleteHost, patchHosts, previewHost, upsertHost } from '../ssh/ssh-config-edit.js';
+import { deleteHost, deleteHosts, patchHosts, previewHost, upsertHost } from '../ssh/ssh-config-edit.js';
 import { listSshKeys } from '../ssh/key-scan.js';
 
 const forwardSchema = z.object({
@@ -68,6 +69,10 @@ const bulkUpdateSchema = z.object({
     // Only these options are safe to set across hosts; anything else is a mistake.
     .strict()
     .refine((options) => Object.keys(options).length > 0, 'at least one option is required'),
+});
+
+const bulkDeleteSchema = z.object({
+  aliases: z.array(z.string().min(1)).min(1).max(5000),
 });
 
 /** Live OpenSSH config plus Muxus-owned metadata, editing, and key discovery. */
@@ -137,6 +142,23 @@ export function registerSshRoutes(app: FastifyInstance, ctx: AppContext): void {
       deleteHost(alias);
       ctx.database.deleteSessionLoggingPolicy(`ssh:${alias}`);
       return { ok: true };
+    } catch (err) {
+      return sendError(reply, err);
+    }
+  });
+
+  // Many hosts at once, in a single write per config file.
+  app.delete('/api/ssh/config/hosts', async (req, reply): Promise<HostBulkDeleteResponse | void> => {
+    try {
+      const parsed = bulkDeleteSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return await reply.code(400).send({ message: parsed.error.issues[0]?.message ?? 'invalid host list' });
+      }
+      const result = deleteHosts(parsed.data.aliases);
+      for (const alias of parsed.data.aliases) {
+        ctx.database.deleteSessionLoggingPolicy(`ssh:${alias}`);
+      }
+      return result;
     } catch (err) {
       return sendError(reply, err);
     }

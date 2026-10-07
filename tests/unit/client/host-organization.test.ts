@@ -35,17 +35,25 @@ const host = (
 
 describe('host organization', () => {
   it('builds same-group and cross-group drop orders', () => {
-    expect(hostOrderAfterDrop(['alpha', 'bravo', 'charlie'], 'alpha', 'bravo', 'after')).toEqual([
+    expect(hostOrderAfterDrop(['alpha', 'bravo', 'charlie'], ['alpha'], 'bravo', 'after')).toEqual([
       'bravo',
       'alpha',
       'charlie',
     ]);
-    expect(hostOrderAfterDrop(['alpha', 'bravo'], 'charlie', 'alpha', 'before')).toEqual([
+    expect(hostOrderAfterDrop(['alpha', 'bravo'], ['charlie'], 'alpha', 'before')).toEqual([
       'charlie',
       'alpha',
       'bravo',
     ]);
-    expect(hostOrderAfterDrop(['alpha', 'bravo'], 'charlie')).toEqual(['alpha', 'bravo', 'charlie']);
+    expect(hostOrderAfterDrop(['alpha', 'bravo'], ['charlie'])).toEqual(['alpha', 'bravo', 'charlie']);
+  });
+
+  it('lands several dropped hosts together, in the order given', () => {
+    expect(
+      hostOrderAfterDrop(['a', 'b', 'c', 'd', 'e'], ['a', 'x', 'd'], 'c', 'after'),
+    ).toEqual(['b', 'c', 'a', 'x', 'd', 'e']);
+    expect(hostOrderAfterDrop(['a', 'b', 'c'], ['c', 'a'], 'b', 'before')).toEqual(['c', 'a', 'b']);
+    expect(hostOrderAfterDrop(['a', 'b'], ['x', 'y'])).toEqual(['a', 'b', 'x', 'y']);
   });
 
   it('puts custom groups first while retaining config-file structure for ungrouped hosts', () => {

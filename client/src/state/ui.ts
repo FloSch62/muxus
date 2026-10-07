@@ -25,8 +25,11 @@ export type FolderDialogState =
   | { mode: 'new'; parentPath?: string }
   /** Rename, re-parent, colour or icon an existing folder. */
   | { mode: 'edit'; path: string }
-  /** Pick the folder one host should live in. */
-  | { mode: 'move-host'; hostKey: string; hostName: string; currentPath: string };
+  /**
+   * Pick the folder hosts should live in. `currentPath` is the folder they all
+   * share, or '' when they are spread across several.
+   */
+  | { mode: 'move-hosts'; hostKeys: string[]; hostName?: string; currentPath: string };
 
 export type SettingsSection =
   | 'appearance'
