@@ -35,6 +35,7 @@ import {
   MIN_INACTIVE_PANE_DIM_STRENGTH,
   isCommandBarPosition,
   isLocalShellProfileArray,
+  isNewSshHostStorage,
   isSidebarPosition,
   isTerminalFileLinkActivation,
   usePrefsStore,
@@ -78,6 +79,8 @@ const PREFERENCE_KEYS = [
   'pasteWarnMultiline',
   'confirmCloseConnected',
   'sshSessionSummary',
+  'rememberPasswordsByDefault',
+  'newSshHostStorage',
   'notifyOnNewVersion',
   'commandButtons',
   'showCommandBar',
@@ -893,6 +896,12 @@ export function sanitizePreferences(
   }
   if (typeof input.sshSessionSummary === 'boolean') {
     output.sshSessionSummary = input.sshSessionSummary;
+  }
+  if (typeof input.rememberPasswordsByDefault === 'boolean') {
+    output.rememberPasswordsByDefault = input.rememberPasswordsByDefault;
+  }
+  if (isNewSshHostStorage(input.newSshHostStorage)) {
+    output.newSshHostStorage = input.newSshHostStorage;
   }
   if (typeof input.notifyOnNewVersion === 'boolean') {
     output.notifyOnNewVersion = input.notifyOnNewVersion;

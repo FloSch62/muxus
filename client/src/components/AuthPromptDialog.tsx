@@ -14,6 +14,7 @@ import type {
   AuthPromptInfo,
   AuthPromptResponse,
 } from '@muxus/shared';
+import { usePrefsStore } from '../state/prefs.js';
 
 export type AuthPromptRequest = AuthPromptInfo;
 export type AuthPromptResult = AuthPromptResponse;
@@ -27,11 +28,11 @@ export function AuthPromptDialog({
   onSubmit: (result: AuthPromptResult | null) => void;
 }) {
   const [answers, setAnswers] = useState<string[]>([]);
-  const [rememberPassword, setRememberPassword] = useState(false);
+  const [rememberPassword, setRememberPassword] = useState(rememberByDefault);
   const [error, setError] = useState<string>();
   useEffect(() => {
     setAnswers(request ? request.prompts.map(() => '') : []);
-    setRememberPassword(false);
+    setRememberPassword(rememberByDefault());
     setError(undefined);
   }, [request]);
 
@@ -39,7 +40,7 @@ export function AuthPromptDialog({
 
   const finish = (result: AuthPromptResult | null) => {
     setAnswers((current) => current.map(() => ''));
-    setRememberPassword(false);
+    setRememberPassword(rememberByDefault());
     setError(undefined);
     onSubmit(result);
   };
@@ -147,4 +148,9 @@ export function AuthPromptDialog({
       </DialogActions>
     </Dialog>
   );
+}
+
+/** Read when a prompt opens, so the setting never flips an open checkbox. */
+function rememberByDefault(): boolean {
+  return usePrefsStore.getState().rememberPasswordsByDefault;
 }

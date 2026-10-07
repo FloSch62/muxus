@@ -138,6 +138,11 @@ include the global set. See [keyword highlighting](terminal.md#keyword-highlight
 **Confirm before closing a live session** is on by default because closing a connected tab
 ends its shell.
 
+**Save new SSH hosts in** chooses where the host editor starts a new SSH host: **OpenSSH
+config** (the default) or **Muxus app data only**. The editor's **Save host in** field can
+still pick the other one for a single host. Session imports keep their own choice. See
+[Adding & editing hosts](adding-hosts.md).
+
 **Show a summary when an SSH session connects** is off by default. Turned on, each new SSH
 session starts with a short list above the remote shell's output: the route (direct, or
 through which jump hosts), the server software, the login method, the negotiated cipher and
@@ -192,6 +197,10 @@ second chord, and defaults are restored in one click. The sheet is also reachabl
 The password vault is optional. New vaults default to the never-prompt policy, which uses
 the operating-system credential store.
 
+- **Remember passwords by default** opens every password prompt with **Remember this
+  password** already selected, so a password is saved without ticking it each time. It is
+  off by default. Clear the box on a prompt to keep that one login transient. Without a
+  vault, the first saved password creates it.
 - **Create password vault** sets a master password of at least 8 characters.
 - **Change prompt policy** chooses when routine SSH use needs the master password:
   **Never for saved credentials** stores the vault key in the OS credential store,

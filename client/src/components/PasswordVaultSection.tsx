@@ -11,6 +11,7 @@ import InputAdornment from '@mui/material/InputAdornment';
 import MenuItem from '@mui/material/MenuItem';
 import Skeleton from '@mui/material/Skeleton';
 import Stack from '@mui/material/Stack';
+import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
@@ -39,6 +40,7 @@ import {
 } from '../api/password-vault.js';
 import { usePasswordVaultStatus } from '../api/password-vault-queries.js';
 import { confirmAction } from '../state/dialogs.js';
+import { usePrefsStore } from '../state/prefs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import {
   SettingRow,
@@ -59,6 +61,8 @@ export function PasswordVaultSection() {
   const queryClient = useQueryClient();
   const result = usePasswordVaultStatus();
   const status = result.data;
+  const rememberPasswordsByDefault = usePrefsStore((s) => s.rememberPasswordsByDefault);
+  const setPrefs = usePrefsStore((s) => s.set);
   const [dialogMode, setDialogMode] = useState<MasterDialogMode>();
   const [editing, setEditing] = useState<PasswordVaultCredential>();
   const [busy, setBusy] = useState(false);
@@ -151,6 +155,23 @@ export function PasswordVaultSection() {
                 Unlock now
               </Button>
             ) : undefined
+          }
+        />
+        <SettingRow
+          label="Remember passwords by default"
+          labelFor="settings-remember-passwords"
+          description={
+            status.configured
+              ? 'Password prompts start with “Remember this password” selected. Clear it for a login that should not be saved.'
+              : 'Password prompts start with “Remember this password” selected. The first saved password creates the vault.'
+          }
+          control={
+            <Switch
+              id="settings-remember-passwords"
+              size="small"
+              checked={rememberPasswordsByDefault}
+              onChange={(e) => setPrefs({ rememberPasswordsByDefault: e.target.checked })}
+            />
           }
         />
         {status.configured ? (
