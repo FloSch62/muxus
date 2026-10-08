@@ -311,6 +311,7 @@ function PaneCanvas({
                   <SftpPanel
                     key={tab.connId}
                     connId={tab.connId}
+                    hostLabel={tab.title}
                     terminalPath={tab.terminalCwd}
                     followTerminalFolder={tab.sftpFollowTerminal !== false}
                     onFollowTerminalFolderChange={(sftpFollowTerminal) =>

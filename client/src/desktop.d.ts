@@ -3,6 +3,7 @@ import type {
   AppWindowLaunch,
   CommandLineLaunch,
   DesktopUpdateState,
+  LocalCopyChange,
   LocalOpenApplication,
   LocalOpenResult,
   LocalOpenTarget,
@@ -68,6 +69,10 @@ declare global {
       cancelLocalCopy?(id: string): Promise<void>;
       /** Close the copy and open it with the chosen program. */
       openLocalCopy?(id: string, target: LocalOpenTarget): Promise<LocalOpenResult>;
+      /** Read an opened copy back in slices, starting at 0; an empty slice ends it. */
+      readLocalCopy?(id: string, offset: number): Promise<Uint8Array | undefined>;
+      /** Subscribe to programs saving new contents into opened copies; returns unsubscribe. */
+      onLocalCopyChanged?(callback: (change: LocalCopyChange) => void): () => void;
       /** Read bookmark-only sessions from the current Windows user's MobaXterm install. */
       readMobaXtermSessions(): Promise<MobaXtermSessionSource | undefined>;
       /** List font families installed for the current operating-system user. */

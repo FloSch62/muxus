@@ -51,16 +51,19 @@ function xhrError(xhr: XMLHttpRequest): ApiError {
   );
 }
 
-/** XMLHttpRequest remains the browser API that exposes upload byte progress. */
+/**
+ * XMLHttpRequest remains the browser API that exposes upload byte progress.
+ * Resolves with the parsed JSON response, if there is one.
+ */
 export function uploadRawWithProgress(
   path: string,
-  file: File,
+  file: Blob,
   options: {
     onProgress: (progress: ByteProgress) => void;
     onUploadComplete?: () => void;
     signal?: AbortSignal;
   },
-): Promise<void> {
+): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     const report = progressReporter(options.onProgress);
@@ -80,7 +83,13 @@ export function uploadRawWithProgress(
       if (xhr.status === 401) reportAuthInvalid();
       if (xhr.status >= 200 && xhr.status < 300) {
         report(file.size, file.size, true);
-        resolve();
+        let body: unknown;
+        try {
+          body = xhr.responseText ? JSON.parse(xhr.responseText) : undefined;
+        } catch {
+          body = undefined;
+        }
+        resolve(body);
       } else {
         reject(xhrError(xhr));
       }
@@ -97,8 +106,10 @@ export async function downloadBlobWithProgress(
   path: string,
   onProgress: (progress: ByteProgress) => void,
   signal?: AbortSignal,
+  onHeaders?: (headers: Headers) => void,
 ): Promise<Blob> {
   const response = await apiFetchRaw(path, { signal });
+  onHeaders?.(response.headers);
   const headerValue = response.headers.get('content-length');
   const header = headerValue === null ? undefined : Number(headerValue);
   const total = header !== undefined && Number.isFinite(header) && header >= 0 ? header : undefined;

@@ -59,7 +59,7 @@ describe('opening remote files locally', () => {
     const { calls, chunks } = bridge();
     const blob = new Blob([new Uint8Array(20 * 1024 * 1024)]);
 
-    await openDownloadedFile('dump.bin', blob, { kind: 'default' }, calls);
+    await expect(openDownloadedFile('dump.bin', blob, { kind: 'default' }, calls)).resolves.toBe('copy-1');
 
     expect(calls.beginLocalCopy).toHaveBeenCalledWith('dump.bin');
     expect(chunks).toEqual([8 * 1024 * 1024, 8 * 1024 * 1024, 4 * 1024 * 1024]);

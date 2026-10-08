@@ -61,12 +61,23 @@ downloading it by hand first: an HTML page in the browser, an image in a viewer,
   program, such as an AppImage.
 
 The file is downloaded with the usual progress bar into a private folder of its own, then
-handed to the program. It is a copy: saving it in that program does not change the file on
-the remote host, so upload it again to keep the edit. Copies untouched for a day are removed
-the next time Muxus starts or opens a file. On Linux they are kept under `.muxus-open` in
-your Downloads folder, where sandboxed snap applications can read them; on Windows and
-macOS they are kept in the temporary folder. On Windows, the copy carries the same
-downloaded-from-the-internet mark as a browser download.
+handed to the program. On Linux these copies are kept under `.muxus-open` in your Downloads
+folder, where sandboxed snap applications can read them; on Windows and macOS they are kept
+in the temporary folder. On Windows, the copy carries the same downloaded-from-the-internet
+mark as a browser download. Copies untouched for a day are removed the next time Muxus
+starts or opens a file.
+
+### Uploading your changes
+
+When the program saves the file, Muxus asks **Upload changes to *file*?** and uploads it
+back to the same path, with a progress card in the bottom-left corner of the window. Tick
+**Upload later changes to this file without asking** to have later saves uploaded straight
+away. Saves that leave the contents unchanged are not offered.
+
+If the file on the server changed after you opened it, Muxus does not overwrite it
+silently: it asks before replacing that version with yours. The upload needs the session
+that opened the file; once that connection has closed, Muxus tells you where your copy is
+so you can upload it by hand.
 
 ## Transfer safety
 

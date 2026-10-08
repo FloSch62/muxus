@@ -1,10 +1,12 @@
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   createLocalCopy,
+  fileSignature,
   launchEnvironment,
+  LocalCopyWatcher,
   LOCAL_COPY_MAX_AGE_MS,
   localCopyFileName,
   purgeStaleLocalCopies,
@@ -149,5 +151,75 @@ describe('launching programs', () => {
       .poll(() => readFile(marker, 'utf8').catch(() => ''), { timeout: 5_000 })
       .toBe('opened');
     await expect(startDetached(path.join(directory, 'missing'), [])).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+});
+
+describe('watching an opened copy', () => {
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 400));
+
+  async function watched() {
+    const directory = await scratch();
+    const file = path.join(directory, 'plan.drawio');
+    await writeFile(file, '<mxfile/>');
+    const changes: number[] = [];
+    const watcher = new LocalCopyWatcher(file, await fileSignature(file), () => changes.push(Date.now()), 50);
+    return { directory, file, changes, watcher };
+  }
+
+  it('reports a save with new contents once', async () => {
+    const { file, changes, watcher } = await watched();
+    try {
+      await writeFile(file, '<mxfile>edited</mxfile>');
+      await writeFile(file, '<mxfile>edited again</mxfile>');
+      await expect.poll(() => changes.length, { timeout: 3_000 }).toBe(1);
+      await settle();
+      expect(changes).toHaveLength(1);
+    } finally {
+      watcher.close();
+    }
+  });
+
+  it('reports a program that saves by renaming a new file over the copy', async () => {
+    const { directory, file, changes, watcher } = await watched();
+    try {
+      const temporary = path.join(directory, '.plan.drawio.tmp');
+      await writeFile(temporary, '<mxfile>saved</mxfile>');
+      await rename(temporary, file);
+      await expect.poll(() => changes.length, { timeout: 3_000 }).toBe(1);
+    } finally {
+      watcher.close();
+    }
+  });
+
+  it('ignores touches, lock files and rewrites of the same contents', async () => {
+    const { directory, file, changes, watcher } = await watched();
+    try {
+      const later = new Date(Date.now() + 5_000);
+      await utimes(file, later, later);
+      await writeFile(file, '<mxfile/>');
+      await writeFile(path.join(directory, '.~lock.plan.drawio#'), 'lock');
+      await settle();
+      expect(changes).toEqual([]);
+    } finally {
+      watcher.close();
+    }
+  });
+
+  it('stops reporting once closed', async () => {
+    const { file, changes, watcher } = await watched();
+    watcher.close();
+    await writeFile(file, '<mxfile>edited</mxfile>');
+    await settle();
+    expect(changes).toEqual([]);
+  });
+
+  it('hashes the contents into a signature', async () => {
+    const directory = await scratch();
+    const file = path.join(directory, 'a.txt');
+    await writeFile(file, 'abc');
+    expect(await fileSignature(file)).toMatchObject({
+      size: 3,
+      hash: 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+    });
   });
 });

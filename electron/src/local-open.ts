@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process';
-import { lstat, mkdir, mkdtemp, open, readdir, rm, writeFile, type FileHandle } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { createReadStream, watch, type FSWatcher } from 'node:fs';
+import { lstat, mkdir, mkdtemp, open, readdir, rm, stat, writeFile, type FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 
 // Remote files opened with a local program are written to a private folder
@@ -17,6 +19,13 @@ export interface LocalCopy {
   directory: string;
   file: string;
   handle: FileHandle;
+}
+
+export interface FileSignature {
+  size: number;
+  mtimeMs: number;
+  /** SHA-256 of the contents, hex. */
+  hash: string;
 }
 
 /** A remote file name that is safe to create on every desktop platform. */
@@ -168,4 +177,80 @@ export function runOpener(
       else reject(new Error(`${path.basename(command)} exited with ${code ?? signal}`));
     });
   });
+}
+
+/** Size, modification time and content hash of a file. */
+export async function fileSignature(file: string): Promise<FileSignature> {
+  const info = await stat(file);
+  const hash = createHash('sha256');
+  for await (const chunk of createReadStream(file)) hash.update(chunk as Buffer);
+  return { size: info.size, mtimeMs: info.mtimeMs, hash: hash.digest('hex') };
+}
+
+/**
+ * Report when a program saves new contents into a local copy. The folder is
+ * watched rather than the file because many programs save by writing a new
+ * file and renaming it over the old one. Saves that leave the contents as
+ * they were, lock files and backups next to the copy are ignored.
+ */
+export class LocalCopyWatcher {
+  private readonly watcher: FSWatcher;
+  private readonly name: string;
+  private timer?: NodeJS.Timeout;
+  private checking = false;
+  private recheck = false;
+  private closed = false;
+
+  constructor(
+    private readonly file: string,
+    private signature: FileSignature,
+    private readonly onChange: () => void,
+    private readonly settleMs = 700,
+  ) {
+    this.name = path.basename(file);
+    this.watcher = watch(path.dirname(file), (_event, changed) => {
+      if (changed && changed !== this.name) return;
+      this.schedule();
+    });
+    this.watcher.on('error', () => this.close());
+  }
+
+  close(): void {
+    this.closed = true;
+    clearTimeout(this.timer);
+    this.watcher.close();
+  }
+
+  // A save arrives as a burst of events; look once it has settled.
+  private schedule(): void {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => void this.check(), this.settleMs);
+  }
+
+  private async check(): Promise<void> {
+    if (this.closed) return;
+    if (this.checking) {
+      this.recheck = true;
+      return;
+    }
+    this.checking = true;
+    try {
+      const info = await stat(this.file).catch(() => undefined);
+      // Missing in the middle of a rename-style save; the rename reports again.
+      if (!info?.isFile()) return;
+      if (info.size === this.signature.size && info.mtimeMs === this.signature.mtimeMs) return;
+      const next = await fileSignature(this.file);
+      const changed = next.hash !== this.signature.hash;
+      this.signature = next;
+      if (changed && !this.closed) this.onChange();
+    } catch {
+      // Unreadable while the program is still writing; its next event retries.
+    } finally {
+      this.checking = false;
+      if (this.recheck) {
+        this.recheck = false;
+        this.schedule();
+      }
+    }
+  }
 }

@@ -56,13 +56,13 @@ export async function chooseLocalProgram(
   return choice.application;
 }
 
-/** Hand a downloaded remote file to the desktop app and open it locally. */
+/** Hand a downloaded remote file to the desktop app and open it; resolves to the copy's id. */
 export async function openDownloadedFile(
   name: string,
   blob: Blob,
   target: LocalOpenTarget,
   bridge = localCopyBridge(),
-): Promise<void> {
+): Promise<string> {
   if (!bridge) throw new Error('Opening files with local programs needs the Muxus desktop app.');
   const id = await bridge.beginLocalCopy(name);
   if (!id) throw new Error(`Could not create a local copy of ${name}.`);
@@ -79,4 +79,5 @@ export async function openDownloadedFile(
   }
   const result = await bridge.openLocalCopy(id, target);
   if (!result.ok) throw new Error(`Could not open ${name}: ${result.message}`);
+  return id;
 }

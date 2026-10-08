@@ -86,6 +86,7 @@ export function SftpWindow({ launch }: { launch: SftpLaunch }) {
         <Suspense fallback={null}>
           <SftpPanel
             connId={launch.connId}
+            hostLabel={launch.title}
             initialPath={launch.path}
             fill={editorPaths.length === 0}
             onOpenFile={openFile}

@@ -1,6 +1,6 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID, type Hash } from 'node:crypto';
 import { constants as fsConstants, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { access, readFile, rm, stat } from 'node:fs/promises';
+import { access, open as openFile, readFile, rm, stat, type FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -11,6 +11,7 @@ import {
   type IpcMainEvent,
   type IpcMainInvokeEvent,
   ipcMain,
+  type WebContents,
   Menu,
   nativeImage,
   nativeTheme,
@@ -31,6 +32,7 @@ import type {
   DesktopUpdateState,
   LocalOpenApplication,
   LocalOpenResult,
+  LocalCopyChange,
   LocalOpenTarget,
   LocalProgramChoice,
   MobaXtermSessionSource,
@@ -56,6 +58,7 @@ import {
 import {
   createLocalCopy,
   launchEnvironment,
+  LocalCopyWatcher,
   markAsDownloaded,
   purgeStaleLocalCopies,
   runOpener,
@@ -786,8 +789,22 @@ type PickedProgram =
 
 let linuxApplications: LinuxApplicationCatalog | undefined;
 const pickedPrograms = new Map<string, PickedProgram>();
-const localCopies = new Map<string, LocalCopy & { owner: number }>();
+const LOCAL_COPY_READ_BYTES = 8 * 1024 * 1024;
+// Programs keep files open for hours; watching is cheap, but not unbounded.
+const MAX_WATCHED_LOCAL_COPIES = 64;
+
+const localCopies = new Map<string, LocalCopy & { owner: number; hash: Hash }>();
 const localCopyOwners = new Set<number>();
+/** Opened copies whose changes are reported back to the window that opened them. */
+const watchedCopies = new Map<
+  string,
+  {
+    file: string;
+    owner: number;
+    watcher: LocalCopyWatcher;
+    reader?: { handle: FileHandle; offset: number };
+  }
+>();
 const programIcons = new Map<string, Promise<string | undefined>>();
 
 function linuxApplicationCatalog(): LinuxApplicationCatalog {
@@ -840,6 +857,32 @@ function localCopyRoot(): string {
 function ownedLocalCopy(event: IpcMainInvokeEvent, id: unknown) {
   const copy = typeof id === 'string' ? localCopies.get(id) : undefined;
   return copy && copy.owner === event.sender.id ? copy : undefined;
+}
+
+function watchLocalCopy(
+  id: string,
+  file: string,
+  signature: { size: number; mtimeMs: number; hash: string },
+  owner: WebContents,
+): void {
+  const watcher = new LocalCopyWatcher(file, signature, () => {
+    if (owner.isDestroyed()) return;
+    const change: LocalCopyChange = { id, file };
+    owner.send('muxus:local-open:changed', change);
+  });
+  watchedCopies.set(id, { file, owner: owner.id, watcher });
+  for (const oldest of watchedCopies.keys()) {
+    if (watchedCopies.size <= MAX_WATCHED_LOCAL_COPIES) break;
+    unwatchLocalCopy(oldest);
+  }
+}
+
+function unwatchLocalCopy(id: string): void {
+  const watched = watchedCopies.get(id);
+  if (!watched) return;
+  watchedCopies.delete(id);
+  watched.watcher.close();
+  void watched.reader?.handle.close().catch(() => undefined);
 }
 
 async function discardLocalCopy(id: string): Promise<void> {
@@ -999,14 +1042,18 @@ ipcMain.handle('muxus:local-open:begin', async (event, name: unknown): Promise<s
   const copy = await createLocalCopy(root, name);
   const id = randomUUID();
   const owner = event.sender.id;
-  localCopies.set(id, { ...copy, owner });
-  // A window closed mid-transfer leaves no half-written copy behind.
+  localCopies.set(id, { ...copy, owner, hash: createHash('sha256') });
+  // A window closed mid-transfer leaves no half-written copy behind, and
+  // nobody is left to ask about later changes to the ones it opened.
   if (!localCopyOwners.has(owner)) {
     localCopyOwners.add(owner);
     event.sender.once('destroyed', () => {
       localCopyOwners.delete(owner);
       for (const [copyId, unfinished] of localCopies) {
         if (unfinished.owner === owner) void discardLocalCopy(copyId);
+      }
+      for (const [copyId, watched] of watchedCopies) {
+        if (watched.owner === owner) unwatchLocalCopy(copyId);
       }
     });
   }
@@ -1023,8 +1070,37 @@ ipcMain.handle('muxus:local-open:write', async (event, id: unknown, chunk: unkno
     const { bytesWritten } = await copy.handle.write(chunk, offset, chunk.byteLength - offset);
     offset += bytesWritten;
   }
+  copy.hash.update(chunk);
   return true;
 });
+
+/**
+ * The next slice of an opened copy, for uploading it back. Reading from 0
+ * opens the file once and later slices come from that handle, so a program
+ * that saves again mid-read cannot mix two versions.
+ */
+ipcMain.handle(
+  'muxus:local-open:read',
+  async (event, id: unknown, offset: unknown): Promise<Uint8Array | undefined> => {
+    const watched = typeof id === 'string' ? watchedCopies.get(id) : undefined;
+    if (!watched || watched.owner !== event.sender.id) return undefined;
+    if (typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0) return undefined;
+    if (offset === 0) {
+      await watched.reader?.handle.close().catch(() => undefined);
+      watched.reader = { handle: await openFile(watched.file, 'r'), offset: 0 };
+    }
+    const reader = watched.reader;
+    if (!reader || reader.offset !== offset) return undefined;
+    const buffer = Buffer.alloc(LOCAL_COPY_READ_BYTES);
+    const { bytesRead } = await reader.handle.read(buffer, 0, buffer.length, offset);
+    reader.offset += bytesRead;
+    if (bytesRead === 0) {
+      watched.reader = undefined;
+      await reader.handle.close().catch(() => undefined);
+    }
+    return buffer.subarray(0, bytesRead);
+  },
+);
 
 ipcMain.handle('muxus:local-open:cancel', async (event, id: unknown): Promise<void> => {
   if (ownedLocalCopy(event, id)) await discardLocalCopy(id as string);
@@ -1043,7 +1119,11 @@ ipcMain.handle(
     try {
       await copy.handle.close();
       if (process.platform === 'win32') await markAsDownloaded(copy.file);
+      // Taken before the program starts, so whatever it saves counts as a change.
+      const info = await stat(copy.file);
+      const signature = { size: info.size, mtimeMs: info.mtimeMs, hash: copy.hash.digest('hex') };
       await openLocalCopy(copy.file, target);
+      watchLocalCopy(id as string, copy.file, signature, event.sender);
       return { ok: true };
     } catch (err) {
       mainLog('warn', `could not open ${copy.file} locally`, err);

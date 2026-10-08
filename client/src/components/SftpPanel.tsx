@@ -1,11 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
-import Button from '@mui/material/Button';
 import Checkbox from '@mui/material/Checkbox';
 import CircularProgress from '@mui/material/CircularProgress';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
-import LinearProgress from '@mui/material/LinearProgress';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import Menu from '@mui/material/Menu';
@@ -60,8 +58,10 @@ import {
   MIN_SFTP_PANEL_WIDTH,
 } from '../sftp-panel-width.js';
 import { initialSftpPath } from '../sftp-panel-state.js';
+import { useLocalCopiesStore } from '../state/local-copies.js';
 import { FileTypeIcon } from './FileTypeIcon.js';
 import { OpenWithDialog } from './OpenWithDialog.js';
+import { formatSize, TransferProgress } from './TransferProgress.js';
 import { PanelResizeHandle } from './PanelResizeHandle.js';
 
 interface DroppedFile {
@@ -114,19 +114,6 @@ function cleanRelativePath(value: string): string {
     .join('/');
 }
 
-function formatSize(size?: number): string {
-  if (size === undefined) return '';
-  if (size < 1024) return `${size} B`;
-  const units = ['KiB', 'MiB', 'GiB', 'TiB'];
-  let value = size;
-  let unit = -1;
-  do {
-    value /= 1024;
-    unit++;
-  } while (value >= 1024 && unit < units.length - 1);
-  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]}`;
-}
-
 // A directory listing re-renders on every selection and transfer tick, and a
 // timestamp always renders the same string.
 const MTIME_LABELS = new Map<number, string>();
@@ -141,10 +128,6 @@ function formatMtime(ms?: number): string {
   if (MTIME_LABELS.size >= MTIME_CACHE_LIMIT) MTIME_LABELS.clear();
   MTIME_LABELS.set(ms, label);
   return label;
-}
-
-function formatSpeed(bytesPerSecond: number): string {
-  return bytesPerSecond > 0 ? `${formatSize(bytesPerSecond)}/s` : 'Starting…';
 }
 
 function isAbortError(error: unknown): boolean {
@@ -325,6 +308,7 @@ export function SftpPanel({
   onFollowTerminalFolderChange,
   fill = false,
   onOpenInNewWindow,
+  hostLabel,
 }: {
   connId: string;
   onOpenFile: (path: string) => void;
@@ -337,6 +321,8 @@ export function SftpPanel({
   /** Fill a standalone window instead of using the saved side-panel width. */
   fill?: boolean;
   onOpenInNewWindow?: (path: string) => void;
+  /** The session's name, for messages about files uploaded back to it. */
+  hostLabel?: string;
 }) {
   const startingPath = initialSftpPath(initialPath, terminalPath, followTerminalFolder);
   const [path, setPath] = useState(startingPath);
@@ -407,11 +393,11 @@ export function SftpPanel({
   const localOpen = canOpenLocally();
   const localChooser = openWithChooser();
 
-  /** Download `file` with progress, then hand the bytes to `deliver`. */
+  /** Download `file` with progress, then hand the bytes and the remote modification time to `deliver`. */
   const fetchFile = (
     entry: SftpEntry,
     file: string,
-    deliver: (blob: Blob) => Promise<void> | void,
+    deliver: (blob: Blob, remoteMtimeMs: number | undefined) => Promise<void> | void,
   ) => {
     if (busy) {
       showToast('warning', 'Wait for the current SFTP operation to finish.');
@@ -434,6 +420,7 @@ export function SftpPanel({
         fileCount: 1,
       });
       try {
+        let remoteMtimeMs: number | undefined;
         const blob = await downloadBlobWithProgress(
           `/api/sftp/${connId}/download?path=${encodeURIComponent(file)}`,
           (progress) =>
@@ -447,6 +434,10 @@ export function SftpPanel({
               fileCount: 1,
             }),
           controller.signal,
+          (headers) => {
+            const modified = Date.parse(headers.get('last-modified') ?? '');
+            remoteMtimeMs = Number.isNaN(modified) ? undefined : modified;
+          },
         );
         setTransfer({
           id,
@@ -459,7 +450,7 @@ export function SftpPanel({
           fileIndex: 1,
           fileCount: 1,
         });
-        await deliver(blob);
+        await deliver(blob, remoteMtimeMs);
         setTimeout(
           () => setTransfer((current) => (current?.id === id ? undefined : current)),
           1_200,
@@ -481,8 +472,20 @@ export function SftpPanel({
       showToast('success', `Downloaded ${entry.name}`);
     });
 
+  // Saves in the program are offered for upload back to `file` (LocalCopySync).
   const openLocally = (entry: SftpEntry, file: string, target: LocalOpenTarget) =>
-    fetchFile(entry, file, (blob) => openDownloadedFile(entry.name, blob, target));
+    fetchFile(entry, file, async (blob, remoteMtimeMs) => {
+      const id = await openDownloadedFile(entry.name, blob, target);
+      useLocalCopiesStore.getState().track({
+        id,
+        connId,
+        remotePath: file,
+        name: entry.name,
+        ...(hostLabel ? { host: hostLabel } : {}),
+        ...(remoteMtimeMs === undefined ? {} : { remoteMtimeMs }),
+        autoUpload: false,
+      });
+    });
 
   // The path is taken now: a followed terminal can change folders while a
   // program is being picked.
@@ -721,13 +724,6 @@ export function SftpPanel({
 
   const hasLocalFiles = (event: React.DragEvent) =>
     Array.from(event.dataTransfer.types).includes('Files');
-  const transferPercent =
-    transfer?.phase === 'complete'
-      ? 100
-      : transfer?.total && transfer.total > 0
-      ? Math.min(100, (transfer.loaded / transfer.total) * 100)
-      : undefined;
-
   return (
     <Box
       ref={panelRef}
@@ -903,75 +899,16 @@ export function SftpPanel({
         </Typography>
       </Stack>
       {transfer && (
-        <Box
-          sx={(theme) => ({
-            mx: 0.75,
-            mb: 0.75,
-            p: 1,
-            border: 1,
-            borderColor: transfer.phase === 'complete' ? alpha(theme.palette.success.main, 0.45) : 'divider',
-            borderRadius: 1,
-            bgcolor:
-              transfer.phase === 'complete'
-                ? alpha(theme.palette.success.main, 0.07)
-                : alpha(theme.palette.primary.main, 0.04),
-          })}
-        >
-          <Stack direction="row" sx={{ alignItems: 'center', gap: 0.75, mb: 0.6 }}>
-            {transfer.direction === 'upload' ? (
-              <UploadFileOutlinedIcon color={transfer.phase === 'complete' ? 'success' : 'primary'} sx={{ fontSize: 17 }} />
-            ) : (
-              <DownloadOutlinedIcon color={transfer.phase === 'complete' ? 'success' : 'primary'} sx={{ fontSize: 17 }} />
-            )}
-            <Typography variant="caption" noWrap title={transfer.name} sx={{ flex: 1, fontWeight: 600 }}>
-              {transfer.phase === 'complete'
-                ? `${transfer.direction === 'upload' ? 'Uploaded' : 'Downloaded'} ${transfer.name}`
-                : transfer.phase === 'cancelling'
-                  ? `Cancelling ${transfer.name}…`
-                : transfer.phase === 'finalizing'
-                  ? `Finishing ${transfer.name} on remote…`
-                  : transfer.phase === 'preparing'
-                    ? `Preparing ${transfer.name}…`
-                  : `${transfer.direction === 'upload' ? 'Uploading' : 'Downloading'} ${transfer.name}`}
-            </Typography>
-            <Typography variant="caption" color="textSecondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-              {transferPercent === undefined ? '—' : `${Math.round(transferPercent)}%`}
-            </Typography>
-            {transfer.phase !== 'complete' &&
-              transfer.phase !== 'finalizing' &&
-              transfer.phase !== 'cancelling' && (
-                <Button
-                  color="error"
-                  onClick={() => {
-                    setTransfer((current) =>
-                      current ? { ...current, phase: 'cancelling', bytesPerSecond: 0 } : current,
-                    );
-                    transferControllerRef.current?.abort();
-                  }}
-                  sx={{ minWidth: 0, px: 0.75, py: 0.1 }}
-                >
-                  Cancel
-                </Button>
-              )}
-          </Stack>
-          <LinearProgress
-            color={transfer.phase === 'complete' ? 'success' : 'primary'}
-            variant={transferPercent === undefined ? 'indeterminate' : 'determinate'}
-            value={transferPercent ?? 0}
-          />
-          <Stack direction="row" sx={{ mt: 0.55, justifyContent: 'space-between', gap: 1 }}>
-            <Typography variant="caption" color="textSecondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-              {formatSize(transfer.loaded)}
-              {transfer.total !== undefined ? ` / ${formatSize(transfer.total)}` : ''}
-              {transfer.phase === 'transferring' ? ` · ${formatSpeed(transfer.bytesPerSecond)}` : ''}
-            </Typography>
-            {transfer.fileCount > 1 && (
-              <Typography variant="caption" color="textSecondary">
-                File {transfer.fileIndex} of {transfer.fileCount}
-              </Typography>
-            )}
-          </Stack>
-        </Box>
+        <TransferProgress
+          transfer={transfer}
+          onCancel={() => {
+            setTransfer((current) =>
+              current ? { ...current, phase: 'cancelling', bytesPerSecond: 0 } : current,
+            );
+            transferControllerRef.current?.abort();
+          }}
+          sx={{ mx: 0.75, mb: 0.75 }}
+        />
       )}
       <Box sx={{ flex: 1, overflow: 'auto', position: 'relative' }}>
         {(isFetching || busy) && !transfer && <CircularProgress size={18} sx={{ position: 'absolute', zIndex: 2, top: 8, right: 12 }} />}

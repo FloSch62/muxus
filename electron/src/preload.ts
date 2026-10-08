@@ -3,6 +3,7 @@ import type {
   AppWindowLaunch,
   CommandLineLaunch,
   DesktopUpdateState,
+  LocalCopyChange,
   LocalOpenApplication,
   LocalOpenResult,
   LocalOpenTarget,
@@ -210,6 +211,16 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   /** Close the copy and open it with the chosen program. */
   openLocalCopy(id: string, target: LocalOpenTarget): Promise<LocalOpenResult> {
     return ipcRenderer.invoke('muxus:local-open:finish', id, target);
+  },
+  /** Read an opened copy back in slices, starting at 0; an empty slice ends it. */
+  readLocalCopy(id: string, offset: number): Promise<Uint8Array | undefined> {
+    return ipcRenderer.invoke('muxus:local-open:read', id, offset);
+  },
+  /** Subscribe to programs saving new contents into opened copies; returns unsubscribe. */
+  onLocalCopyChanged(callback: (change: LocalCopyChange) => void): () => void {
+    const listener = (_event: unknown, change: LocalCopyChange): void => callback(change);
+    ipcRenderer.on('muxus:local-open:changed', listener);
+    return () => ipcRenderer.removeListener('muxus:local-open:changed', listener);
   },
   /** Read bookmark-only session data from the current Windows user's MobaXterm install. */
   readMobaXtermSessions(): Promise<MobaXtermSessionSource | undefined> {

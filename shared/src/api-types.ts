@@ -144,6 +144,13 @@ export type LocalOpenResult = { ok: true } | { ok: false; message: string };
 /** A program picked with the native file picker, or why the pick cannot be used. */
 export type LocalProgramChoice = { application: LocalOpenApplication } | { message: string };
 
+/** A local copy whose contents a program changed after it was opened. */
+export interface LocalCopyChange {
+  id: string;
+  /** Where the copy lives, for messages that point the user at it. */
+  file: string;
+}
+
 /**
  * ssh_config keywords the dialer applies even though they have no editor
  * field of their own (they are edited under Advanced). Everything else in
@@ -985,6 +992,12 @@ export interface EditorFileSaveResponse {
 export type SftpFileResponse = EditorFileResponse;
 export type SftpFileSaveRequest = EditorFileSaveRequest;
 export type SftpFileSaveResponse = EditorFileSaveResponse;
+
+export interface SftpUploadResponse {
+  ok: true;
+  /** The uploaded file's modification time, when the server reported it. */
+  mtimeMs?: number;
+}
 
 export type ForwardType = 'local' | 'remote' | 'dynamic';
 
