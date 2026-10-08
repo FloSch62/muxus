@@ -21,6 +21,8 @@ const MODIFIERS = [
   { flag: 'metaKey', codes: [0xe05b, 0xe05c] },
 ] as const;
 const MODIFIER_CODES = new Set<number>(MODIFIERS.flatMap((modifier) => [...modifier.codes]));
+const LOCK_CODES = new Set(['ScrollLock', 'NumLock', 'CapsLock']);
+const OUTBOUND_MESSAGE_LIMIT = 1024 * 1024;
 
 /** Why an RDP connection attempt failed, in the terms the UI acts on. */
 export type RdpFailureKind = 'credentials' | 'refused' | 'failed';
@@ -137,6 +139,8 @@ export interface RdpConnectOptions {
 export class RdpConnection {
   /** Modifiers the server currently sees held down. */
   private readonly heldModifiers = new Set<number>();
+  /** Lock-key state as last reported to the server, `ScrollLock,NumLock,CapsLock`. */
+  private lockState: string | undefined;
   private lastClipboardText: string | undefined;
   private closed = false;
 
@@ -170,7 +174,11 @@ export class RdpConnection {
         },
       )
       .extension(new Extension('display_control', true))
-      .extension(new Extension('autologon', true));
+      .extension(new Extension('autologon', true))
+      // IronRDP sends a whole clipboard transfer as one WebSocket message; past
+      // the backend's 16 MiB payload cap that closes the session. The backend
+      // relays a byte stream, so splitting frames is safe.
+      .extension(new Extension('outbound_message_size_limit', OUTBOUND_MESSAGE_LIMIT));
     if (options.shareClipboard) {
       builder
         .remoteClipboardChangedCallback((data: ClipboardData) => {
@@ -236,7 +244,15 @@ export class RdpConnection {
     if (scancode === undefined) return false;
     const modifier = MODIFIER_CODES.has(scancode);
     if (event.type === 'keydown') {
-      this.syncLockKeys(event);
+      // IronRDP sends a repeat of a held key as release + press, which would
+      // toggle a held Caps Lock over and over; modifiers have nothing to repeat.
+      if (event.repeat && (modifier || LOCK_CODES.has(event.code))) return true;
+      // A lock key toggles the server's lock itself; syncing first could undo that.
+      if (!LOCK_CODES.has(event.code) && this.syncLockKeys(event)) {
+        // A synchronize event also lets go of every key on the server
+        // ([MS-RDPBCGR] 2.2.8.1.1.3.1.1.5), so held modifiers must go down again.
+        this.heldModifiers.clear();
+      }
       if (modifier) this.heldModifiers.add(scancode);
       this.apply([...(modifier ? [] : this.reconcileModifiers(event)), DeviceEvent.keyPressed(scancode)]);
     } else {
@@ -254,12 +270,18 @@ export class RdpConnection {
    */
   private reconcileModifiers(event: KeyboardEvent): DeviceEvent[] {
     const events: DeviceEvent[] = [];
+    // Chrome on Linux reports AltGr as AltRight with the AltGraph state but
+    // altKey false; letting go of it would turn AltGr+Q (@ on a German
+    // layout) into a plain q.
+    const altGraph = event.getModifierState('AltGraph');
     for (const { flag, codes } of MODIFIERS) {
       const held = codes.filter((code) => this.heldModifiers.has(code));
-      if (event[flag] && held.length === 0) {
-        this.heldModifiers.add(codes[0]);
-        events.push(DeviceEvent.keyPressed(codes[0]));
-      } else if (!event[flag]) {
+      const down = event[flag] || (flag === 'altKey' && altGraph);
+      if (down && held.length === 0) {
+        const code = flag === 'altKey' && !event.altKey ? codes[1] : codes[0];
+        this.heldModifiers.add(code);
+        events.push(DeviceEvent.keyPressed(code));
+      } else if (!down) {
         for (const code of held) {
           this.heldModifiers.delete(code);
           events.push(DeviceEvent.keyReleased(code));
@@ -269,18 +291,25 @@ export class RdpConnection {
     return events;
   }
 
-  private syncLockKeys(event: KeyboardEvent): void {
-    if (this.closed) return;
+  /**
+   * Tell the server the lock-key state when it differs from what it was last
+   * told (first key, or a lock toggled while focus was elsewhere). Returns
+   * whether a synchronize event went out. Windows releases every key on one,
+   * so sending it before each key dropped Shift from every letter typed.
+   */
+  private syncLockKeys(event: KeyboardEvent): boolean {
+    const scrollLock = event.getModifierState('ScrollLock');
+    const numLock = event.getModifierState('NumLock');
+    const capsLock = event.getModifierState('CapsLock');
+    const state = `${scrollLock},${numLock},${capsLock}`;
+    if (this.closed || state === this.lockState) return false;
+    this.lockState = state;
     try {
-      this.session.synchronizeLockKeys(
-        event.getModifierState('ScrollLock'),
-        event.getModifierState('NumLock'),
-        event.getModifierState('CapsLock'),
-        false,
-      );
+      this.session.synchronizeLockKeys(scrollLock, numLock, capsLock, false);
     } catch {
       /* closing */
     }
+    return true;
   }
 
   /** Map a pointer position in CSS pixels onto the remote desktop. */
@@ -308,16 +337,20 @@ export class RdpConnection {
   }
 
   wheel(event: WheelEvent): void {
-    const vertical = event.deltaY !== 0;
-    const delta = vertical ? event.deltaY : event.deltaX;
     const unit =
       event.deltaMode === WheelEvent.DOM_DELTA_LINE
         ? RotationUnit.Line
         : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
           ? RotationUnit.Page
           : RotationUnit.Pixel;
-    // RDP counts positive rotation away from the user; DOM deltas grow toward them.
-    this.apply([DeviceEvent.wheelRotations(vertical, -delta, unit)]);
+    const events: DeviceEvent[] = [];
+    // RDP counts vertical rotation positive away from the user, while DOM
+    // deltaY grows toward them. Horizontally both count to the right.
+    const vertical = Math.round(-event.deltaY);
+    const horizontal = Math.round(event.deltaX);
+    if (vertical !== 0) events.push(DeviceEvent.wheelRotations(true, vertical, unit));
+    if (horizontal !== 0) events.push(DeviceEvent.wheelRotations(false, horizontal, unit));
+    this.apply(events);
   }
 
   /** Let go of everything held down, e.g. when focus leaves mid-chord. */

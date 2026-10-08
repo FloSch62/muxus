@@ -539,6 +539,9 @@ export function RemoteDesktopViewImpl({
             if (rdpRef.current?.key(event.nativeEvent)) event.preventDefault();
           }}
           onMouseMove={(event) => rdpRef.current?.pointerMove(event.nativeEvent)}
+          // Keep the pointer while a button is down, so a drag that leaves the
+          // canvas still moves and releases on the server instead of sticking.
+          onPointerDown={(event) => event.currentTarget.setPointerCapture(event.pointerId)}
           onMouseDown={(event) => {
             canvasRef.current?.focus({ preventScroll: true });
             if (!rdpRef.current) return;
