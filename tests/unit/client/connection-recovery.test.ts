@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   AUTO_RECONNECT_DELAYS_MS,
   autoReconnectDelayMs,
+  autoReconnectNotice,
+  canDiagnoseConnection,
   CONNECTION_INTERRUPTION_GRACE_MS,
   connectionFailureReason,
+  isDiagnoseKey,
   reattachCommand,
+  reconnectPrompt,
   rendererReattachDelayMs,
   RENDERER_REATTACH_DELAYS_MS,
   shouldDelayConnectionLost,
@@ -125,3 +129,33 @@ describe('multiplexer reattachment', () => {
   });
 });
 
+
+describe('connection diagnostics key', () => {
+  it('is offered for network sessions that failed or dropped', () => {
+    expect(canDiagnoseConnection('ssh', 'failed')).toBe(true);
+    expect(canDiagnoseConnection('telnet', 'disconnected')).toBe(true);
+    expect(canDiagnoseConnection('ssh', 'completed')).toBe(false);
+    expect(canDiagnoseConnection('local', 'failed')).toBe(false);
+    expect(canDiagnoseConnection('serial', 'failed')).toBe(false);
+  });
+
+  it('answers to D in either case only', () => {
+    expect(isDiagnoseKey('d')).toBe(true);
+    expect(isDiagnoseKey('D')).toBe(true);
+    expect(isDiagnoseKey('\x04')).toBe(false);
+    expect(isDiagnoseKey('dd')).toBe(false);
+  });
+
+  it('names the key in the prompts that offer it', () => {
+    expect(reconnectPrompt(false)).toBe('Press any key to reconnect');
+    expect(reconnectPrompt(true)).toBe(
+      'Press D to diagnose the connection, any other key to reconnect',
+    );
+    expect(autoReconnectNotice(2_000, 1, false)).toBe(
+      `Reconnecting in 2s (attempt 1 of ${AUTO_RECONNECT_DELAYS_MS.length}) — any key reconnects now`,
+    );
+    expect(autoReconnectNotice(5_000, 2, true)).toBe(
+      `Reconnecting in 5s (attempt 2 of ${AUTO_RECONNECT_DELAYS_MS.length}) — D diagnoses, any other key reconnects now`,
+    );
+  });
+});

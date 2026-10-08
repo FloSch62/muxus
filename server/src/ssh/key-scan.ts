@@ -54,12 +54,13 @@ export function resolveAgentSocket(identityAgent?: string): string | undefined {
   return identityAgent.replace(/^~(?=$|[\\/])/, os.homedir());
 }
 
-interface AgentKeyProbe {
+export interface AgentKeyProbe {
   available: boolean;
   keys: SshAgentKey[];
 }
 
-async function probeAgentKeys(
+/** Ask an agent for its identities; `available` is false when it does not answer. */
+export async function probeAgentKeys(
   sock: string | undefined,
   agent?: BaseAgent<ParsedKey>,
 ): Promise<AgentKeyProbe> {

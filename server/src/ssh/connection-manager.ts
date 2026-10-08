@@ -555,6 +555,17 @@ export class SshConnectionManager {
    * stale workspace to replace the saved connection fields. Resolve it at the
    * server boundary so edits and deletions take effect on the next dial.
    */
+  /** The hops `connect` dials for a profile, in dialing order, the target last. */
+  dialPlan(profile: SshProfile): ChainHop[] {
+    return buildChain(
+      this.loadConfig(),
+      this.resolveProfile(profile),
+      this.folderAuth,
+      this.profileFolderAuth,
+      this.savedSshProfile,
+    );
+  }
+
   resolveProfile(profile: SshProfile): SshProfile {
     if (!profile.profileId) return profile;
     const saved = this.savedSshProfile?.(profile.profileId);
@@ -1544,7 +1555,8 @@ export function expandProxyCommand(
   });
 }
 
-function expandedProxyCommand(hop: ChainHop): string | undefined {
+/** A hop's ProxyCommand with its tokens filled in, if it has one. */
+export function expandedProxyCommand(hop: ChainHop): string | undefined {
   if (!hop.resolved.proxyCommand) return undefined;
   return expandProxyCommand(hop.resolved.proxyCommand, {
     hostname: hop.resolved.hostname,

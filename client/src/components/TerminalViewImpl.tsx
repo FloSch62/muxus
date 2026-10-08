@@ -42,6 +42,7 @@ import {
   wsUrl,
 } from '../api/http.js';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
+import { diagnoseConnection } from '../api/diagnostics.js';
 import {
   copyToClipboard,
   readClipboardContent,
@@ -77,6 +78,10 @@ import {
 import { registerTerminal } from '../terminal/terminal-registry.js';
 import { formatSshSessionSummary } from '../terminal/ssh-session-summary.js';
 import {
+  DIAGNOSIS_PROGRESS,
+  formatConnectionDiagnostics,
+} from '../terminal/connection-diagnostics.js';
+import {
   attachTerminalFileLinks,
   resolveTerminalFilePath,
 } from '../terminal/file-links.js';
@@ -110,12 +115,15 @@ import {
 import { HostKeyDialog, type HostKeyRequest } from './HostKeyDialog.js';
 import { PasteConfirmDialog } from './PasteConfirmDialog.js';
 import {
-  AUTO_RECONNECT_DELAYS_MS,
   AUTO_RECONNECT_STABLE_MS,
   autoReconnectDelayMs,
+  autoReconnectNotice,
+  canDiagnoseConnection,
   CONNECTION_INTERRUPTION_GRACE_MS,
   connectionFailureReason,
+  isDiagnoseKey,
   reattachCommand,
+  reconnectPrompt,
   rendererReattachDelayMs,
   shouldDelayConnectionLost,
   shouldWaitForTerminalOutput,
@@ -898,6 +906,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     let rendererReattachTimer: ReturnType<typeof setTimeout> | undefined;
     let rendererStableTimer: ReturnType<typeof setTimeout> | undefined;
     let autoReconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    /** The ended session offers the diagnose key. */
+    let diagnosable = false;
+    let diagnosis: AbortController | undefined;
     let rendererReattachAttempts = 0;
     let terminalId = tab.transferId ? tab.terminalId : undefined;
     let pendingTransferId = tab.transferId;
@@ -989,7 +1000,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           autoReconnectAttemptsRef.current - 1,
         );
         term.write(
-          '\x1b[1;36mAutomatic reconnect disabled — press any key to reconnect\x1b[0m\r\n',
+          `\x1b[1;36mAutomatic reconnect disabled. ${reconnectPrompt(diagnosable)}\x1b[0m\r\n`,
         );
       }
     });
@@ -998,6 +1009,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       const socket = new WebSocket(wsUrl('/ws/terminal'), wsProtocols());
       const attachingExistingSession = !!attachTerminalId;
       let socketFailed = false;
+      diagnosable = false;
       ws = socket;
       wsRef.current = socket;
       socket.binaryType = 'arraybuffer';
@@ -1285,12 +1297,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
               reasonKind === 'completed' ? 'session ended' : 'connection lost'
             }: ${terminalNotice(reason)}]\x1b[0m\r\n`,
           );
+          diagnosable = canDiagnoseConnection(tab.profile.kind, reasonKind);
           if (redialDelay === undefined) {
-            term.write('\x1b[1;36mPress any key to reconnect\x1b[0m\r\n');
+            term.write(`\x1b[1;36m${reconnectPrompt(diagnosable)}\x1b[0m\r\n`);
           } else {
             autoReconnectAttemptsRef.current += 1;
             term.write(
-              `\x1b[1;36mReconnecting in ${Math.round(redialDelay / 1000)}s (attempt ${autoReconnectAttemptsRef.current} of ${AUTO_RECONNECT_DELAYS_MS.length}) — any key reconnects now\x1b[0m\r\n`,
+              `\x1b[1;36m${autoReconnectNotice(redialDelay, autoReconnectAttemptsRef.current, diagnosable)}\x1b[0m\r\n`,
             );
             autoReconnectTimer = setTimeout(() => {
               autoReconnectTimer = undefined;
@@ -1386,6 +1399,45 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       return true;
     };
 
+    // Checks run from the backend against the first hop; the report lands
+    // below the failure, followed by the prompt again. A pending automatic
+    // reconnect waits for the user instead of redialling over the report.
+    const diagnoseFromTerminalInput = () => {
+      if (diagnosis) return;
+      const profile = useTabsStore
+        .getState()
+        .tabs.find((candidate) => candidate.id === tab.id)?.profile;
+      if (profile?.kind !== 'ssh' && profile?.kind !== 'telnet') return;
+      if (autoReconnectTimer !== undefined) {
+        clearTimeout(autoReconnectTimer);
+        autoReconnectTimer = undefined;
+        autoReconnectAttemptsRef.current = Math.max(0, autoReconnectAttemptsRef.current - 1);
+      }
+      const controller = new AbortController();
+      diagnosis = controller;
+      term.write(`\r\n${DIAGNOSIS_PROGRESS}`);
+      const settle = (text: string) => {
+        if (disposed || controller.signal.aborted) return;
+        diagnosis = undefined;
+        term.write(`\r\x1b[2K${text}\x1b[1;36m${reconnectPrompt(true)}\x1b[0m\r\n`);
+      };
+      diagnoseConnection(profile, controller.signal).then(
+        (report) => settle(formatConnectionDiagnostics(report)),
+        (err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          settle(`\x1b[31m[diagnostics failed: ${terminalNotice(message)}]\x1b[0m\r\n`);
+        },
+      );
+    };
+
+    const handleEndedSessionInput = (data: string) => {
+      if (diagnosable && isDiagnoseKey(data)) {
+        diagnoseFromTerminalInput();
+        return;
+      }
+      reconnectFromTerminalInput();
+    };
+
     // onKey fires synchronously before onData and carries the DOM event that
     // produced the encoded bytes. Keep it only long enough to normalize that
     // one emission; protocol replies and programmatic input have no key event.
@@ -1401,7 +1453,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       if (sendInput(normalized)) {
         if (broadcast) broadcastTerminalInput(tab.id, normalized);
       } else {
-        reconnectFromTerminalInput();
+        handleEndedSessionInput(normalized);
       }
     });
     const onBinary = term.onBinary((data) => {
@@ -1477,6 +1529,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       if (rendererReattachTimer !== undefined) clearTimeout(rendererReattachTimer);
       if (rendererStableTimer !== undefined) clearTimeout(rendererStableTimer);
       if (autoReconnectTimer !== undefined) clearTimeout(autoReconnectTimer);
+      diagnosis?.abort();
       if (ws) {
         ws.onopen = null;
         ws.onmessage = null;

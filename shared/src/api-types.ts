@@ -1162,3 +1162,28 @@ export type HostStatsResponse =
     }
   /** The host ran no POSIX shell for the probe: a network appliance, Windows, a forced command. */
   | { status: 'unsupported'; message: string };
+
+/** `info` states a fact without judging it; `skipped` means the check could not run. */
+export type ConnectionCheckStatus = 'ok' | 'warn' | 'fail' | 'info' | 'skipped';
+
+/** One step of a connection diagnosis, printed as one row. */
+export interface ConnectionCheck {
+  /** Short row label: DNS, Ping, TCP, SSH, Agent, Key files, Route. */
+  label: string;
+  status: ConnectionCheckStatus;
+  detail: string;
+}
+
+/**
+ * Network checks run from this computer against the first host a session
+ * dials: name resolution, ICMP echo, a TCP connect per address and, for SSH,
+ * the server's greeting. Hosts behind a jump host or ProxyCommand are only
+ * reachable through it, so the checks stop there.
+ */
+export interface ConnectionDiagnosticsResponse {
+  /** The endpoint the checks ran against, as host:port. */
+  checked: string;
+  checks: ConnectionCheck[];
+  /** Best guess at the cause, read from the lowest layer that failed. */
+  conclusion: string;
+}

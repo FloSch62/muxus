@@ -36,6 +36,7 @@ import { registerLogRoutes } from './routes/logs.js';
 import { registerLocalFileRoutes } from './routes/local-files.js';
 import { registerLocalShellRoutes } from './routes/local-shells.js';
 import { registerHostStatsRoutes } from './routes/host-stats.js';
+import { registerDiagnosticsRoutes } from './routes/diagnostics.js';
 import { appLogPinoSink } from './logging/log-buffer.js';
 import {
   defaultHistoryRoot,
@@ -213,6 +214,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   registerLocalFileRoutes(app);
   registerLocalShellRoutes(app);
   registerHostStatsRoutes(app, ctx);
+  registerDiagnosticsRoutes(app, ctx);
   registerTerminalSocket(app, ctx);
   registerSftpLeaseSocket(app, ctx);
   registerDesktopSockets(app, ctx);
