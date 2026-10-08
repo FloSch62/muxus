@@ -42,6 +42,39 @@ export function autoReconnectDelayMs(input: AutoReconnectInput): number | undefi
   return AUTO_RECONNECT_DELAYS_MS[input.attempts];
 }
 
+/**
+ * Whether an ended session offers the diagnose key: a network session that
+ * failed or dropped, not a shell that exited on its own.
+ */
+export function canDiagnoseConnection(
+  profileKind: SessionProfile['kind'],
+  reason: 'completed' | 'failed' | 'disconnected',
+): boolean {
+  return reason !== 'completed' && (profileKind === 'ssh' || profileKind === 'telnet');
+}
+
+/** The key that runs connection diagnostics instead of reconnecting. */
+export function isDiagnoseKey(data: string): boolean {
+  return data === 'd' || data === 'D';
+}
+
+/** The line that tells an ended session's user what a key press does. */
+export function reconnectPrompt(diagnose: boolean): string {
+  return diagnose
+    ? 'Press D to diagnose the connection, any other key to reconnect'
+    : 'Press any key to reconnect';
+}
+
+/** The countdown line shown while an automatic reconnect is pending. */
+export function autoReconnectNotice(
+  delayMs: number,
+  attempt: number,
+  diagnose: boolean,
+): string {
+  const keys = diagnose ? 'D diagnoses, any other key reconnects now' : 'any key reconnects now';
+  return `Reconnecting in ${Math.round(delayMs / 1000)}s (attempt ${attempt} of ${AUTO_RECONNECT_DELAYS_MS.length}) — ${keys}`;
+}
+
 const ANSI_CSI_PATTERN = new RegExp(
   `${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`,
   'g',

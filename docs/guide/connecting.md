@@ -176,3 +176,24 @@ sessions, or force-reconnects every remote tab. Force reconnect ends live shells
 or screen when remote programs must survive. Saved tunnels keep their existing
 connections: the replaced transport carries them until they stop, while new sessions and
 new tunnels use the replacement.
+
+### Diagnosing a failed connection
+
+When an SSH or Telnet session fails or drops, press ++d++ in its terminal instead of
+reconnecting. Muxus checks the connection from this computer and prints the result below
+the failure:
+
+| Check | What it tells you |
+| --- | --- |
+| DNS | Whether the host name resolves, and to which addresses |
+| Ping | Whether the host answers ICMP echo. Many hosts and firewalls drop ping, so no reply is only a hint |
+| TCP | Whether each address accepts a connection on the port, refuses it, or does not answer |
+| SSH | Whether the port greets with an SSH identification, and which server software sent it |
+| Agent, Key files | Whether the SSH agent answers and holds keys, and whether configured `IdentityFile`s exist |
+
+The last line names the likely cause, read from the lowest check that failed. Only the
+first host Muxus dials is in reach: behind a jump host the checks stop at the jump host,
+and a host reached through `ProxyCommand` is not dialed directly at all. The checks use the
+system `ping` and plain TCP connections, so they work the same on Windows, macOS and Linux
+without extra tools or administrator rights. Any other key reconnects as before; pressing
+++d++ while an automatic reconnect is pending stops the countdown.
