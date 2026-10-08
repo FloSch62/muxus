@@ -521,6 +521,9 @@ export class DesktopSession {
     const profile = this.profile!;
     const target = `${profile.host}:${profile.port}`;
     const gateway = this.gateway;
+    // A session that closed mid-connect has dropped its gateway; dialling
+    // directly would skip the jump host the profile requires.
+    if (!gateway && (profile.sshGateway || this.closed)) throw new Error('connection closed');
     if (!gateway) {
       this.status(`Connecting to ${target} …`, true);
       return connectTcp(profile.host, profile.port);

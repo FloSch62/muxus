@@ -12,7 +12,7 @@ import {
 } from '@muxus/shared/ws-protocol';
 import { buildApp } from '../../../server/src/app.js';
 import { resolveConfig } from '../../../server/src/config.js';
-import { DesktopTickets } from '../../../server/src/remote-desktop/desktop-socket.js';
+import { DesktopSession, DesktopTickets } from '../../../server/src/remote-desktop/desktop-socket.js';
 
 const TOKEN = 'desktop-socket-test-token';
 
@@ -195,6 +195,31 @@ describe('desktop tickets', () => {
     expect(tickets.redeem(second, 'vnc')).toBeUndefined();
     const closed = tickets.issue({ closed: true } as never, 'rdp');
     expect(tickets.redeem(closed, 'rdp')).toBeUndefined();
+  });
+});
+
+describe('desktop stream target', () => {
+  it('never dials around a gateway the session no longer has', async () => {
+    const server = net.createServer();
+    let dialled = false;
+    server.on('connection', (socket) => {
+      dialled = true;
+      socket.destroy();
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    cleanups.push(() => server.close());
+    const { port } = server.address() as AddressInfo;
+    const session = new DesktopSession({ readyState: WebSocket.OPEN, send: () => {} } as never, { vault: undefined } as never, app.log, new DesktopTickets());
+    const internals = session as unknown as { profile: unknown };
+
+    internals.profile = { kind: 'rdp', host: '127.0.0.1', port, sshGateway: { target: 'bastion' } };
+    await expect(session.streamTarget().open()).rejects.toThrow('connection closed');
+    // A direct profile whose session closed mid-connect must not dial either.
+    internals.profile = { kind: 'rdp', host: '127.0.0.1', port };
+    session.close('gone');
+    await expect(session.streamTarget().open()).rejects.toThrow('connection closed');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(dialled).toBe(false);
   });
 });
 
