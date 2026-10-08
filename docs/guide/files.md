@@ -44,9 +44,40 @@ same tab.
 
 ## Managing
 
-The row menu, opened with right-click, has **Open in editor**, **Download**, **Rename** and
-**Delete**. The toolbar adds **New folder**. Deleting a directory removes its contents and
-is confirmed first.
+The row menu, opened with right-click, has **Open in editor**, **Open with default
+program**, **Open with…**, **Download**, **Rename** and **Delete**. The toolbar adds **New
+folder**. Deleting a directory removes its contents and is confirmed first.
+
+## Opening files with local programs
+
+In the desktop app, a file can be opened with a program on your computer without
+downloading it by hand first: an HTML page in the browser, an image in a viewer, a
+`.drawio` diagram in draw.io.
+
+- **Open with default program** uses the program your system opens that type of file with.
+- **Open with…** lets you choose. Windows shows its own *How do you want to open this
+  file?* dialog, and macOS asks for an application. On Linux, Muxus lists the installed
+  programs, with those that handle the file's type at the top; **Browse…** picks any other
+  program, such as an AppImage.
+
+The file is downloaded with the usual progress bar into a private folder of its own, then
+handed to the program. On Linux these copies are kept under `.muxus-open` in your Downloads
+folder, where sandboxed snap applications can read them; on Windows and macOS they are kept
+in the temporary folder. On Windows, the copy carries the same downloaded-from-the-internet
+mark as a browser download. Copies untouched for a day are removed the next time Muxus
+starts or opens a file.
+
+### Uploading your changes
+
+When the program saves the file, Muxus asks **Upload changes to *file*?** and uploads it
+back to the same path, with a progress card in the bottom-left corner of the window. Tick
+**Upload later changes to this file without asking** to have later saves uploaded straight
+away. Saves that leave the contents unchanged are not offered.
+
+If the file on the server changed after you opened it, Muxus does not overwrite it
+silently: it asks before replacing that version with yours. The upload needs the session
+that opened the file; once that connection has closed, Muxus tells you where your copy is
+so you can upload it by hand.
 
 ## Transfer safety
 

@@ -3,6 +3,11 @@ import type {
   AppWindowLaunch,
   CommandLineLaunch,
   DesktopUpdateState,
+  LocalCopyChange,
+  LocalOpenApplication,
+  LocalOpenResult,
+  LocalOpenTarget,
+  LocalProgramChoice,
   MobaXtermSessionSource,
   UpdateCheckResult,
 } from '@muxus/shared';
@@ -53,6 +58,21 @@ declare global {
       selectLogFile(defaultPath: string): Promise<string | undefined>;
       /** Reveal a file in the operating system's file manager. */
       showItemInFolder(file: string): void;
+      /** Linux: installed programs ranked for a file of this name. */
+      listLocalApplications?(fileName: string): Promise<LocalOpenApplication[] | undefined>;
+      /** Pick a program with the native file picker (macOS and Linux). */
+      chooseLocalProgram?(): Promise<LocalProgramChoice | undefined>;
+      /** Start a private local copy of a remote file; resolves to its handle. */
+      beginLocalCopy?(name: string): Promise<string | undefined>;
+      /** Append the next chunk; false when the copy is gone or the chunk was refused. */
+      writeLocalCopy?(id: string, chunk: Uint8Array): Promise<boolean>;
+      cancelLocalCopy?(id: string): Promise<void>;
+      /** Close the copy and open it with the chosen program. */
+      openLocalCopy?(id: string, target: LocalOpenTarget): Promise<LocalOpenResult>;
+      /** Read an opened copy back in slices, starting at 0; an empty slice ends it. */
+      readLocalCopy?(id: string, offset: number): Promise<Uint8Array | undefined>;
+      /** Subscribe to programs saving new contents into opened copies; returns unsubscribe. */
+      onLocalCopyChanged?(callback: (change: LocalCopyChange) => void): () => void;
       /** Read bookmark-only sessions from the current Windows user's MobaXterm install. */
       readMobaXtermSessions(): Promise<MobaXtermSessionSource | undefined>;
       /** List font families installed for the current operating-system user. */

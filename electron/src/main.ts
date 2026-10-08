@@ -1,4 +1,6 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { createHash, randomUUID, type Hash } from 'node:crypto';
+import { constants as fsConstants, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { access, open as openFile, readFile, rm, stat, type FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -9,7 +11,9 @@ import {
   type IpcMainEvent,
   type IpcMainInvokeEvent,
   ipcMain,
+  type WebContents,
   Menu,
+  nativeImage,
   nativeTheme,
   screen,
   shell,
@@ -26,6 +30,11 @@ import type {
   AppWindowLaunch,
   CommandLineLaunch,
   DesktopUpdateState,
+  LocalOpenApplication,
+  LocalOpenResult,
+  LocalCopyChange,
+  LocalOpenTarget,
+  LocalProgramChoice,
   MobaXtermSessionSource,
   UpdateCheckResult,
 } from '@muxus/shared';
@@ -38,6 +47,24 @@ import {
   developmentUserDataPath,
   seedDevelopmentDatabase,
 } from './development-database.js';
+import {
+  currentDesktops,
+  desktopApplicationFromText,
+  detectIconTheme,
+  expandExec,
+  LinuxApplicationCatalog,
+  type DesktopApplication,
+} from './linux-applications.js';
+import {
+  createLocalCopy,
+  launchEnvironment,
+  LocalCopyWatcher,
+  markAsDownloaded,
+  purgeStaleLocalCopies,
+  runOpener,
+  startDetached,
+  type LocalCopy,
+} from './local-open.js';
 import { importLoginShellEnvironment } from './login-shell-environment.js';
 import { initMainLog, installCrashCapture, mainLog, mainLogPath } from './main-log.js';
 import { readLocalMobaXtermSessions } from './mobaxterm.js';
@@ -746,6 +773,366 @@ ipcMain.on('muxus:show-item-in-folder', (event, file: unknown) => {
   if (typeof file === 'string' && path.isAbsolute(file)) shell.showItemInFolder(file);
 });
 
+// "Open with": the renderer downloads a remote file, streams it here in
+// chunks, and the copy is opened with a local program. The renderer only
+// ever names a program by an ID this process handed out, so it cannot make
+// Muxus run an arbitrary executable.
+const LOCAL_COPY_CHUNK_MAX_BYTES = 16 * 1024 * 1024;
+const MAX_REMOTE_FILE_NAME_LENGTH = 1024;
+const PROGRAM_ICON_PIXELS = 48;
+const MAX_SVG_ICON_BYTES = 256 * 1024;
+
+type PickedProgram =
+  | { kind: 'mac-app'; path: string }
+  | { kind: 'executable'; path: string }
+  | { kind: 'desktop-entry'; application: DesktopApplication };
+
+let linuxApplications: LinuxApplicationCatalog | undefined;
+const pickedPrograms = new Map<string, PickedProgram>();
+const LOCAL_COPY_READ_BYTES = 8 * 1024 * 1024;
+// Programs keep files open for hours; watching is cheap, but not unbounded.
+const MAX_WATCHED_LOCAL_COPIES = 64;
+
+const localCopies = new Map<string, LocalCopy & { owner: number; hash: Hash }>();
+const localCopyOwners = new Set<number>();
+/** Opened copies whose changes are reported back to the window that opened them. */
+const watchedCopies = new Map<
+  string,
+  {
+    file: string;
+    owner: number;
+    watcher: LocalCopyWatcher;
+    reader?: { handle: FileHandle; offset: number };
+  }
+>();
+const programIcons = new Map<string, Promise<string | undefined>>();
+
+function linuxApplicationCatalog(): LinuxApplicationCatalog {
+  const home = app.getPath('home');
+  linuxApplications ??= new LinuxApplicationCatalog(process.env, home, {
+    iconTheme: () => detectIconTheme(process.env, home),
+  });
+  return linuxApplications;
+}
+
+/** A program icon as a small data: URL; theme PNGs can be 512px and larger. */
+function programIconDataUrl(file: string): Promise<string | undefined> {
+  let icon = programIcons.get(file);
+  if (!icon) {
+    icon = (async () => {
+      try {
+        if (file.endsWith('.svg')) {
+          const info = await stat(file);
+          if (!info.isFile() || info.size > MAX_SVG_ICON_BYTES) return undefined;
+          return `data:image/svg+xml;base64,${(await readFile(file)).toString('base64')}`;
+        }
+        const image = nativeImage.createFromBuffer(await readFile(file));
+        if (image.isEmpty()) return undefined;
+        return (
+          image.getSize().width > PROGRAM_ICON_PIXELS
+            ? image.resize({ width: PROGRAM_ICON_PIXELS, quality: 'best' })
+            : image
+        ).toDataURL();
+      } catch {
+        return undefined;
+      }
+    })();
+    programIcons.set(file, icon);
+  }
+  return icon;
+}
+
+function localCopyRoot(): string {
+  if (!isLinux) return path.join(app.getPath('temp'), 'muxus-open');
+  // Strict snaps (Ubuntu's Firefox among them) get a private /tmp and cannot
+  // read hidden folders at the top of the home directory, so Linux copies
+  // live in a hidden folder inside Downloads. Without a Downloads folder the
+  // lookup returns home itself; the shared /tmp then needs a per-user name.
+  const downloads = app.getPath('downloads');
+  return path.resolve(downloads) === path.resolve(app.getPath('home'))
+    ? path.join(app.getPath('temp'), `muxus-open-${process.getuid?.() ?? 'user'}`)
+    : path.join(downloads, '.muxus-open');
+}
+
+function ownedLocalCopy(event: IpcMainInvokeEvent, id: unknown) {
+  const copy = typeof id === 'string' ? localCopies.get(id) : undefined;
+  return copy && copy.owner === event.sender.id ? copy : undefined;
+}
+
+function watchLocalCopy(
+  id: string,
+  file: string,
+  signature: { size: number; mtimeMs: number; hash: string },
+  owner: WebContents,
+): void {
+  const watcher = new LocalCopyWatcher(file, signature, () => {
+    if (owner.isDestroyed()) return;
+    const change: LocalCopyChange = { id, file };
+    owner.send('muxus:local-open:changed', change);
+  });
+  watchedCopies.set(id, { file, owner: owner.id, watcher });
+  for (const oldest of watchedCopies.keys()) {
+    if (watchedCopies.size <= MAX_WATCHED_LOCAL_COPIES) break;
+    unwatchLocalCopy(oldest);
+  }
+}
+
+function unwatchLocalCopy(id: string): void {
+  const watched = watchedCopies.get(id);
+  if (!watched) return;
+  watchedCopies.delete(id);
+  watched.watcher.close();
+  void watched.reader?.handle.close().catch(() => undefined);
+}
+
+async function discardLocalCopy(id: string): Promise<void> {
+  const copy = localCopies.get(id);
+  if (!copy) return;
+  localCopies.delete(id);
+  await copy.handle.close().catch(() => undefined);
+  await rm(copy.directory, { recursive: true, force: true }).catch(() => undefined);
+}
+
+function parseLocalOpenTarget(value: unknown): LocalOpenTarget | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const target = value as Record<string, unknown>;
+  if (target.kind === 'default' || target.kind === 'system-chooser') {
+    return { kind: target.kind };
+  }
+  if (target.kind === 'application' && typeof target.id === 'string' && target.id.length <= 500) {
+    return { kind: 'application', id: target.id };
+  }
+  return undefined;
+}
+
+async function openLocalCopy(file: string, target: LocalOpenTarget): Promise<void> {
+  if (target.kind === 'default') {
+    if (isLinux) {
+      // Electron's openPath runs xdg-open with Electron's own environment.
+      try {
+        await runOpener('xdg-open', [file], { env: launchEnvironment(process.env) });
+        return;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      }
+    }
+    const failure = await shell.openPath(file);
+    if (failure) throw new Error(failure);
+    return;
+  }
+  if (target.kind === 'system-chooser') {
+    if (process.platform !== 'win32') throw new Error('No system chooser on this platform');
+    // OpenAs_RunDLL takes the rest of the command line, unquoted, as the path.
+    const rundll32 = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'rundll32.exe');
+    await startDetached(rundll32, [`shell32.dll,OpenAs_RunDLL ${file}`], {
+      windowsVerbatimArguments: true,
+    });
+    return;
+  }
+
+  const picked = pickedPrograms.get(target.id);
+  if (picked?.kind === 'mac-app') {
+    await runOpener('/usr/bin/open', ['-a', picked.path, file]);
+    return;
+  }
+  if (picked?.kind === 'executable') {
+    await startDetached(picked.path, [file], {
+      cwd: app.getPath('home'),
+      env: launchEnvironment(process.env),
+    });
+    return;
+  }
+  const application =
+    picked?.kind === 'desktop-entry'
+      ? picked.application
+      : isLinux
+        ? await linuxApplicationCatalog().find(target.id)
+        : undefined;
+  if (!application) throw new Error('That program is no longer installed');
+  const argv = expandExec(application, file);
+  if (!argv) throw new Error(`${application.name} has an unreadable launch command`);
+  const [command, ...args] = argv;
+  await startDetached(command!, args, {
+    cwd: application.workingDirectory ?? app.getPath('home'),
+    env: launchEnvironment(process.env),
+  });
+}
+
+ipcMain.handle(
+  'muxus:local-open:applications',
+  async (event, fileName: unknown): Promise<LocalOpenApplication[] | undefined> => {
+    if (!isManagedWindowSender(event) || !isLinux) return undefined;
+    if (typeof fileName !== 'string' || fileName.length > MAX_REMOTE_FILE_NAME_LENGTH) return undefined;
+    const catalog = linuxApplicationCatalog();
+    const { choices } = await catalog.applicationsFor(fileName);
+    return Promise.all(
+      choices.map(async ({ application, recommended, isDefault }) => {
+        const iconFile = await catalog.iconFile(application);
+        const icon = iconFile ? await programIconDataUrl(iconFile) : undefined;
+        return {
+          id: application.id,
+          name: application.name,
+          ...(icon ? { icon } : {}),
+          ...(recommended ? { recommended } : {}),
+          ...(isDefault ? { isDefault } : {}),
+        };
+      }),
+    );
+  },
+);
+
+ipcMain.handle(
+  'muxus:local-open:choose-program',
+  async (event): Promise<LocalProgramChoice | undefined> => {
+    const win = senderWindow(event);
+    if (!win || (!isMac && !isLinux)) return undefined;
+    const result = await dialog.showOpenDialog(
+      win,
+      isMac
+        ? {
+            title: 'Choose an application',
+            defaultPath: '/Applications',
+            buttonLabel: 'Open',
+            properties: ['openFile'],
+            filters: [{ name: 'Applications', extensions: ['app'] }],
+          }
+        : { title: 'Choose a program', buttonLabel: 'Open', properties: ['openFile'] },
+    );
+    const file = result.canceled ? undefined : result.filePaths[0];
+    if (!file) return undefined;
+
+    let program: PickedProgram;
+    let name: string;
+    if (isMac) {
+      program = { kind: 'mac-app', path: file };
+      name = path.basename(file, '.app');
+    } else if (file.endsWith('.desktop')) {
+      let text: string;
+      try {
+        text = await readFile(file, 'utf8');
+      } catch {
+        return { message: `${path.basename(file)} could not be read.` };
+      }
+      const application = desktopApplicationFromText(text, path.basename(file), file, {
+        currentDesktops: currentDesktops(process.env),
+      });
+      if (!application) return { message: `${path.basename(file)} does not describe a program Muxus can start.` };
+      program = { kind: 'desktop-entry', application };
+      name = application.name;
+    } else {
+      try {
+        await access(file, fsConstants.X_OK);
+      } catch {
+        return { message: `${path.basename(file)} is not an executable program.` };
+      }
+      program = { kind: 'executable', path: file };
+      name = path.basename(file);
+    }
+    const id = `picked:${randomUUID()}`;
+    pickedPrograms.set(id, program);
+    return { application: { id, name } };
+  },
+);
+
+ipcMain.handle('muxus:local-open:begin', async (event, name: unknown): Promise<string | undefined> => {
+  if (!isManagedWindowSender(event)) return undefined;
+  if (typeof name !== 'string' || !name || name.length > MAX_REMOTE_FILE_NAME_LENGTH) return undefined;
+  const root = localCopyRoot();
+  void purgeStaleLocalCopies(root);
+  const copy = await createLocalCopy(root, name);
+  const id = randomUUID();
+  const owner = event.sender.id;
+  localCopies.set(id, { ...copy, owner, hash: createHash('sha256') });
+  // A window closed mid-transfer leaves no half-written copy behind, and
+  // nobody is left to ask about later changes to the ones it opened.
+  if (!localCopyOwners.has(owner)) {
+    localCopyOwners.add(owner);
+    event.sender.once('destroyed', () => {
+      localCopyOwners.delete(owner);
+      for (const [copyId, unfinished] of localCopies) {
+        if (unfinished.owner === owner) void discardLocalCopy(copyId);
+      }
+      for (const [copyId, watched] of watchedCopies) {
+        if (watched.owner === owner) unwatchLocalCopy(copyId);
+      }
+    });
+  }
+  return id;
+});
+
+ipcMain.handle('muxus:local-open:write', async (event, id: unknown, chunk: unknown): Promise<boolean> => {
+  const copy = ownedLocalCopy(event, id);
+  if (!copy || !(chunk instanceof Uint8Array) || chunk.byteLength > LOCAL_COPY_CHUNK_MAX_BYTES) {
+    return false;
+  }
+  let offset = 0;
+  while (offset < chunk.byteLength) {
+    const { bytesWritten } = await copy.handle.write(chunk, offset, chunk.byteLength - offset);
+    offset += bytesWritten;
+  }
+  copy.hash.update(chunk);
+  return true;
+});
+
+/**
+ * The next slice of an opened copy, for uploading it back. Reading from 0
+ * opens the file once and later slices come from that handle, so a program
+ * that saves again mid-read cannot mix two versions.
+ */
+ipcMain.handle(
+  'muxus:local-open:read',
+  async (event, id: unknown, offset: unknown): Promise<Uint8Array | undefined> => {
+    const watched = typeof id === 'string' ? watchedCopies.get(id) : undefined;
+    if (!watched || watched.owner !== event.sender.id) return undefined;
+    if (typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0) return undefined;
+    if (offset === 0) {
+      await watched.reader?.handle.close().catch(() => undefined);
+      watched.reader = { handle: await openFile(watched.file, 'r'), offset: 0 };
+    }
+    const reader = watched.reader;
+    if (!reader || reader.offset !== offset) return undefined;
+    const buffer = Buffer.alloc(LOCAL_COPY_READ_BYTES);
+    const { bytesRead } = await reader.handle.read(buffer, 0, buffer.length, offset);
+    reader.offset += bytesRead;
+    if (bytesRead === 0) {
+      watched.reader = undefined;
+      await reader.handle.close().catch(() => undefined);
+    }
+    return buffer.subarray(0, bytesRead);
+  },
+);
+
+ipcMain.handle('muxus:local-open:cancel', async (event, id: unknown): Promise<void> => {
+  if (ownedLocalCopy(event, id)) await discardLocalCopy(id as string);
+});
+
+ipcMain.handle(
+  'muxus:local-open:finish',
+  async (event, id: unknown, value: unknown): Promise<LocalOpenResult> => {
+    const copy = ownedLocalCopy(event, id);
+    const target = parseLocalOpenTarget(value);
+    if (!copy || !target) {
+      if (copy) await discardLocalCopy(id as string);
+      return { ok: false, message: 'The downloaded copy is no longer available.' };
+    }
+    localCopies.delete(id as string);
+    try {
+      await copy.handle.close();
+      if (process.platform === 'win32') await markAsDownloaded(copy.file);
+      // Taken before the program starts, so whatever it saves counts as a change.
+      const info = await stat(copy.file);
+      const signature = { size: info.size, mtimeMs: info.mtimeMs, hash: copy.hash.digest('hex') };
+      await openLocalCopy(copy.file, target);
+      watchLocalCopy(id as string, copy.file, signature, event.sender);
+      return { ok: true };
+    } catch (err) {
+      mainLog('warn', `could not open ${copy.file} locally`, err);
+      await rm(copy.directory, { recursive: true, force: true }).catch(() => undefined);
+      return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    }
+  },
+);
+
 ipcMain.handle(
   'muxus:read-mobaxterm-sessions',
   async (event): Promise<MobaXtermSessionSource | undefined> => {
@@ -955,6 +1342,7 @@ if (!app.requestSingleInstanceLock(initialCommandLineLaunch ?? {})) {
       return;
     }
     mainLog('info', `server listening at ${server.url}`);
+    void purgeStaleLocalCopies(localCopyRoot());
     buildMenu();
     const url = server.url;
     appUrl = url;

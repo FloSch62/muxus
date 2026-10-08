@@ -24,6 +24,7 @@ import { BackendStatusBanner } from './components/BackendStatusBanner.js';
 import { UpdateNotification } from './components/UpdateNotification.js';
 import { useDialogStore } from './state/dialogs.js';
 import { useToastStore } from './state/toast.js';
+import { useLocalCopiesStore } from './state/local-copies.js';
 import type { WorkspaceInitialSelection } from './workspace-persistence.js';
 import {
   loadHostEditorDialog,
@@ -68,6 +69,11 @@ const DialogHost = lazy(() =>
 const ToastHost = lazy(() =>
   import('./components/ToastHost.js').then((module) => ({
     default: module.ToastHost,
+  })),
+);
+const LocalCopySync = lazy(() =>
+  import('./components/LocalCopySync.js').then((module) => ({
+    default: module.LocalCopySync,
   })),
 );
 const CommandButtonMenu = lazy(() =>
@@ -118,6 +124,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const commandLineLaunch = window.muxusDesktop?.commandLineLaunch;
   const dialogOpen = useDialogStore((s) => s.queue.length > 0);
   const toastOpen = useToastStore((s) => !!s.toast);
+  const localCopiesOpened = useLocalCopiesStore((s) => Object.keys(s.copies).length > 0);
   const standaloneLaunch = launch?.kind === 'session' || launch?.kind === 'tab-transfer';
   const [startupReady, setStartupReady] = useState(standaloneLaunch);
   const [newWorkspaceId] = useState(() =>
@@ -203,6 +210,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
         ) : null}
         {dialogOpen ? <DialogHost /> : null}
         {toastOpen ? <ToastHost /> : null}
+        {localCopiesOpened ? <LocalCopySync /> : null}
       </Suspense>
       <BackendStatusBanner />
       {!launch ? <UpdateNotification /> : null}

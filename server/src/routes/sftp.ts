@@ -11,6 +11,7 @@ import type {
   SftpFileSaveRequest,
   SftpFileSaveResponse,
   SftpListResponse,
+  SftpUploadResponse,
 } from '@muxus/shared';
 import type { AppContext } from '../app.js';
 import { HttpProblem, sendError } from '../util/errors.js';
@@ -137,7 +138,7 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
       const lease = await acquireSftp(req);
       releaseLease = once(lease.release);
       const file = requirePath(req);
-      const stat = await call<{ size?: number }>((cb) => lease.sftp.stat(file, cb));
+      const stat = await call<{ size?: number; mtime?: number }>((cb) => lease.sftp.stat(file, cb));
       const stream = lease.sftp.createReadStream(file);
       // Streaming outlives the route handler. Keep the SFTP lease until the
       // remote stream or HTTP response closes so a closed terminal tab cannot
@@ -151,6 +152,9 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
         .header('content-type', 'application/octet-stream')
         .header('content-disposition', `attachment; filename="${encodeURIComponent(path.basename(file))}"`);
       if (stat.size !== undefined) void reply.header('content-length', stat.size);
+      // Lets a client that opens the file locally upload it back with a
+      // check that nobody changed the remote file in between.
+      if (stat.mtime) void reply.header('last-modified', new Date(stat.mtime * 1000).toUTCString());
       return reply.send(stream);
     } catch (err) {
       releaseLease?.();
@@ -271,12 +275,19 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
       return await withSftp(req, async (sftp) => {
         const file = requirePath(req);
         const overwrite = requireOverwrite(req);
+        const expectedMtimeMs = optionalMtime(req);
         const body = req.body;
         if (!body || typeof (body as NodeJS.ReadableStream).pipe !== 'function') {
           throw new HttpProblem(400, 'expected an application/octet-stream body');
         }
 
         const existing = await lstatIfPresent(sftp, file);
+        if (
+          expectedMtimeMs !== undefined &&
+          (existing?.mtime === undefined ? undefined : existing.mtime * 1000) !== expectedMtimeMs
+        ) {
+          throw new HttpProblem(409, 'the remote file changed since it was downloaded', 'SFTP_FILE_CHANGED');
+        }
         if (existing?.isDirectory()) {
           throw new HttpProblem(409, 'a directory already exists at the upload destination', 'SFTP_DESTINATION_IS_DIRECTORY');
         }
@@ -304,7 +315,12 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
           }
           throw err;
         }
-        return { ok: true };
+        const mtimeMs = await call<SftpAttrs>((cb) => sftp.stat(file, cb)).then(
+          (saved) => (saved.mtime ? saved.mtime * 1000 : undefined),
+          () => undefined,
+        );
+        const response: SftpUploadResponse = { ok: true, ...(mtimeMs === undefined ? {} : { mtimeMs }) };
+        return response;
       });
     } catch (err) {
       return sendError(reply, err);
@@ -487,7 +503,10 @@ async function unlinkIfPresent(sftp: SFTPWrapper, file: string): Promise<void> {
 
 function isUnsupportedSftpOperation(err: unknown): boolean {
   const code = (err as { code?: unknown } | undefined)?.code;
-  return code === 8 || code === 'OP_UNSUPPORTED';
+  if (code === 8 || code === 'OP_UNSUPPORTED') return true;
+  // ssh2 refuses locally, without a status code, when the server never
+  // advertised the extension (servers other than OpenSSH).
+  return err instanceof Error && err.message === 'Server does not support this extended request';
 }
 
 async function mkdirRecursive(sftp: SFTPWrapper, target: string): Promise<void> {
@@ -516,6 +535,15 @@ function requirePath(req: FastifyRequest): string {
   const p = fromQuery ?? fromBody;
   if (!p) throw new HttpProblem(400, 'path is required');
   return p;
+}
+
+/** `expectedMtimeMs`: upload only if the remote file still has this modification time. */
+function optionalMtime(req: FastifyRequest): number | undefined {
+  const value = (req.query as { expectedMtimeMs?: unknown }).expectedMtimeMs;
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) throw new HttpProblem(400, 'expectedMtimeMs must be a timestamp');
+  return parsed;
 }
 
 function requireOverwrite(req: FastifyRequest): boolean {

@@ -11,6 +11,7 @@ interface FakeSftp {
   rename?(from: string, to: string, callback: (error?: Error | null) => void): void;
   ext_openssh_rename?(from: string, to: string, callback: (error?: Error | null) => void): void;
   unlink?(path: string, callback: (error?: Error | null) => void): void;
+  stat?(path: string, callback: (error: Error | null, attrs?: unknown) => void): void;
 }
 
 function captureUploadHandler(
@@ -53,7 +54,7 @@ function captureDownloadHandler(stream: PassThrough): {
         connection: {
           sftp: async () => ({
             stat: (_path: string, callback: (error: Error | null, attrs?: unknown) => void) =>
-              callback(null, { size: 7 }),
+              callback(null, { size: 7, mtime: 1_760_000_000 }),
             createReadStream: () => stream,
           }),
         },
@@ -244,6 +245,79 @@ describe('SFTP upload overwrite policy', () => {
     );
   });
 
+  it('replaces a file only while it keeps the modification time the client downloaded', async () => {
+    const createWriteStream = vi.fn((_path: string, _options: { flags: string }) => new Writable({ write: (_c, _e, cb) => cb() }));
+    const handler = captureUploadHandler({
+      lstat: (_path, callback) => callback(null, { ...regularFile, mtime: 1_700_000_000 }),
+      stat: (_path, callback) => callback(null, { ...regularFile, mtime: 1_700_000_050 }),
+      createWriteStream,
+      ext_openssh_rename: (_from, _to, callback) => callback(null),
+      unlink: vi.fn(),
+    });
+
+    const stale = await invoke(handler, {
+      path: '/remote/plan.drawio',
+      overwrite: 'true',
+      expectedMtimeMs: '1699999999000',
+    });
+    expect(stale.status).toBe(409);
+    expect(stale.body).toEqual({
+      message: 'the remote file changed since it was downloaded',
+      code: 'SFTP_FILE_CHANGED',
+    });
+    expect(createWriteStream).not.toHaveBeenCalled();
+
+    const current = await invoke(handler, {
+      path: '/remote/plan.drawio',
+      overwrite: 'true',
+      expectedMtimeMs: '1700000000000',
+    });
+    expect(current.result).toEqual({ ok: true, mtimeMs: 1_700_000_050_000 });
+    expect(createWriteStream).toHaveBeenCalledOnce();
+  });
+
+  it('treats a removed remote file as changed when a version was expected', async () => {
+    const createWriteStream = vi.fn();
+    const handler = captureUploadHandler({
+      lstat: (_path, callback) => callback(Object.assign(new Error('not found'), { code: 2 })),
+      createWriteStream,
+    });
+
+    const response = await invoke(handler, {
+      path: '/remote/plan.drawio',
+      overwrite: 'true',
+      expectedMtimeMs: '1700000000000',
+    });
+
+    expect(response.status).toBe(409);
+    expect(createWriteStream).not.toHaveBeenCalled();
+    expect((await invoke(handler, { path: '/remote/plan.drawio', expectedMtimeMs: 'soon' })).status).toBe(400);
+  });
+
+  it('replaces a file on servers without the posix-rename extension', async () => {
+    const unlink = vi.fn((_path: string, callback: (error?: Error | null) => void) => callback(null));
+    let renamed = 0;
+    const rename = vi.fn((_from: string, _to: string, callback: (error?: Error | null) => void) =>
+      // Plain SFTP v3 rename refuses an existing destination.
+      renamed++ === 0 ? callback(new Error('Failure')) : callback(null),
+    );
+    const handler = captureUploadHandler({
+      lstat: (_path, callback) => callback(null, regularFile),
+      createWriteStream: () => new Writable({ write: (_c, _e, cb) => cb() }),
+      ext_openssh_rename: () => {
+        throw new Error('Server does not support this extended request');
+      },
+      rename,
+      unlink,
+    });
+
+    const response = await invoke(handler, { path: '/remote/report.txt', overwrite: 'true' });
+
+    expect(response.result).toEqual({ ok: true });
+    expect(unlink).toHaveBeenCalledWith('/remote/report.txt', expect.any(Function));
+    expect(rename).toHaveBeenCalledTimes(2);
+  });
+
   it('refuses to follow a destination symlink even with overwrite consent', async () => {
     const createWriteStream = vi.fn();
     const handler = captureUploadHandler({
@@ -333,6 +407,7 @@ describe('SFTP download transport ownership', () => {
 
     expect(result).toBe(stream);
     expect(headers.get('content-length')).toBe(7);
+    expect(headers.get('last-modified')).toBe('Thu, 09 Oct 2025 08:53:20 GMT');
     expect(release).not.toHaveBeenCalled();
 
     raw.emit('close');
