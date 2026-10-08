@@ -43,6 +43,7 @@ export interface BulkHostValues {
   terminalScheme: string | undefined;
   terminalFontColor: string | undefined;
   terminalBackgroundColor: string | undefined;
+  commandButtonGroup: string | undefined;
   highlightProfileId: string | undefined;
   highlightInheritGlobal: boolean;
   sessionLogging: HostSessionLoggingDraft;
@@ -72,6 +73,7 @@ export const BULK_FIELD_AUDIENCE: { readonly [F in BulkHostField]: BulkAudience 
   terminalScheme: 'terminal',
   terminalFontColor: 'terminal',
   terminalBackgroundColor: 'terminal',
+  commandButtonGroup: 'terminal',
   highlightProfileId: 'terminal',
   highlightInheritGlobal: 'terminal',
   sessionLogging: 'terminal',
@@ -133,6 +135,7 @@ export function bulkValuesForHost(
     values.terminalScheme = metadata?.terminalScheme;
     values.terminalFontColor = metadata?.terminalFontColor;
     values.terminalBackgroundColor = metadata?.terminalBackgroundColor;
+    values.commandButtonGroup = metadata?.commandButtonGroup;
     values.highlightProfileId = highlights?.profileId;
     values.highlightInheritGlobal = highlights?.inheritGlobal ?? true;
     if (logging) values.sessionLogging = hostSessionLoggingDraft(logging, !logging.overridden);
@@ -359,6 +362,9 @@ function metadataPatch(
   if (differs.has('terminalFontColor')) patch.terminalFontColor = changes.terminalFontColor ?? null;
   if (differs.has('terminalBackgroundColor')) {
     patch.terminalBackgroundColor = changes.terminalBackgroundColor ?? null;
+  }
+  if (differs.has('commandButtonGroup')) {
+    patch.commandButtonGroup = changes.commandButtonGroup ?? null;
   }
   if (differs.has('consoleCompatibility')) patch.consoleCompatibility = changes.consoleCompatibility;
   if (differs.has('disableSftp')) patch.disableSftp = changes.disableSftp;

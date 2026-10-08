@@ -74,7 +74,8 @@ Each saved host has a **Terminal appearance** editor section where its colour sc
 text colour and background colour can override the application defaults. Leave an option
 on **Use application default** to keep following the global preference. Host overrides
 apply to open terminals immediately, which makes sessions easy to identify when the tab
-strip and sidebar are hidden in focus mode.
+strip and sidebar are hidden in focus mode. The same section chooses the
+[command button group](commands.md#a-group-per-host) the bar shows for the host.
 
 Scheme, font family, size and line height are in
 [Settings → Appearance](settings.md#appearance). Cursor style (block, underline, bar),
@@ -175,6 +176,7 @@ rules, or disable the global set and use only its profile and host rules. See th
 ## Command buttons
 
 Frequently used commands can be saved to a one-click bar above the terminal, configured to
-run immediately or to be inserted for review.
+run immediately or to be inserted for review. They can be colour-coded and sorted into
+groups, such as one per vendor, and a host can switch the bar to its own group.
 
 [More on command buttons :octicons-arrow-right-24:](commands.md)

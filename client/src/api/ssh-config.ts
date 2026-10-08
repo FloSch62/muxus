@@ -83,6 +83,9 @@ export function useUpdateSshMetadata(onSuccess?: (metadata: OpenSshProfileMetada
               ...(patch.keywordHighlights !== undefined
                 ? { keywordHighlights: patch.keywordHighlights ?? undefined }
                 : {}),
+              ...(patch.commandButtonGroup !== undefined
+                ? { commandButtonGroup: patch.commandButtonGroup ?? undefined }
+                : {}),
               ...(patch.disableSftp !== undefined
                 ? { disableSftp: patch.disableSftp || undefined }
                 : {}),

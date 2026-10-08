@@ -43,6 +43,7 @@ import { EditorShell, type EditorSectionDef } from './host-editor/EditorShell.js
 import { LoggingSection } from './host-editor/LoggingSection.js';
 import {
   ColorOverride,
+  commandButtonGroupOptions,
   useTerminalColorDefaults,
 } from './host-editor/TerminalAppearanceSection.js';
 import { TerminalSchemeSelect } from './TerminalSchemeSelect.js';
@@ -75,7 +76,7 @@ const SECTIONS: ReadonlyArray<{
     value: 'appearance',
     label: 'Terminal appearance',
     icon: <PaletteOutlinedIcon fontSize="small" />,
-    fields: ['terminalScheme', 'terminalFontColor', 'terminalBackgroundColor'],
+    fields: ['terminalScheme', 'terminalFontColor', 'terminalBackgroundColor', 'commandButtonGroup'],
   },
   {
     value: 'highlighting',
@@ -247,6 +248,7 @@ function BulkEditBody({ hostKeys, onClose }: { hostKeys: readonly string[]; onCl
           scheme={field('terminalScheme')}
           fontColor={field('terminalFontColor')}
           backgroundColor={field('terminalBackgroundColor')}
+          commandButtonGroup={field('commandButtonGroup')}
         />
       )}
       {section === 'highlighting' && (
@@ -446,13 +448,16 @@ function AppearanceSection({
   scheme,
   fontColor,
   backgroundColor,
+  commandButtonGroup,
 }: {
   total: number;
   scheme: BulkFieldState<string | undefined>;
   fontColor: BulkFieldState<string | undefined>;
   backgroundColor: BulkFieldState<string | undefined>;
+  commandButtonGroup: BulkFieldState<string | undefined>;
 }) {
   const customSchemes = useCustomTerminalSchemes();
+  const commandGroups = usePrefsStore((state) => state.commandButtonGroups);
   // With mixed schemes the color pickers start from the application's own.
   const defaults = useTerminalColorDefaults(scheme.mixed ? undefined : scheme.value);
 
@@ -497,6 +502,18 @@ function AppearanceSection({
           onChange={backgroundColor.set}
         />
         <FieldStatus state={backgroundColor} />
+      </Box>
+      <Box>
+        <BulkSelect
+          label="Command button group"
+          state={{
+            mixed: commandButtonGroup.mixed,
+            value: commandButtonGroup.value ?? '',
+            set: (value: string) => commandButtonGroup.set(value || undefined),
+          }}
+          options={commandButtonGroupOptions(commandGroups, commandButtonGroup.value)}
+        />
+        <FieldStatus state={commandButtonGroup} inset />
       </Box>
     </Stack>
   );

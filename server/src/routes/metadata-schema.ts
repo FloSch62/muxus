@@ -32,6 +32,8 @@ export const metadataPatchSchema = z
     terminalFontColor: hexColorSchema.nullable().optional(),
     terminalBackgroundColor: hexColorSchema.nullable().optional(),
     keywordHighlights: hostKeywordHighlightsSchema.nullable().optional(),
+    // The id of a command button group, which lives in the client's preferences.
+    commandButtonGroup: z.string().min(1).max(200).nullable().optional(),
     disableSftp: z.boolean().optional(),
     consoleCompatibility: z.boolean().optional(),
   })

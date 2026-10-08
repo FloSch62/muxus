@@ -48,6 +48,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 21, name: 'host-terminal-appearance' },
       { version: 22, name: 'remote-desktop-hosts' },
       { version: 23, name: 'session-log-files' },
+      { version: 24, name: 'host-command-button-group' },
     ]);
   });
 
@@ -138,7 +139,10 @@ describe('MuxusDatabase migrations', () => {
     }
 
     database = new MuxusDatabase(filename);
-    expect(database.appliedMigrations().at(-1)).toEqual({ version: 23, name: 'session-log-files' });
+    expect(database.appliedMigrations().at(-1)).toEqual({
+      version: 24,
+      name: 'host-command-button-group',
+    });
     expect(database.savedHostProfile(telnet.id)).toMatchObject({
       name: 'Core switch',
       profile: { kind: 'telnet', host: 'switch.lab', port: 23 },
@@ -296,8 +300,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 23,
-      name: 'session-log-files',
+      version: 24,
+      name: 'host-command-button-group',
     });
     expect(database.passwordVaultConfig()).toMatchObject({
       formatVersion: 2,
@@ -578,6 +582,41 @@ describe('hybrid OpenSSH metadata', () => {
       terminalFontColor: undefined,
       terminalBackgroundColor: undefined,
     });
+  });
+
+  it('stores and clears the command button group of OpenSSH and saved hosts', () => {
+    database = new MuxusDatabase(':memory:');
+    const serial = database.saveSavedHostProfile({
+      name: 'Rack console',
+      profile: {
+        kind: 'serial',
+        path: '/dev/ttyUSB0',
+        baudRate: 9_600,
+        dataBits: 8,
+        stopBits: 1,
+        parity: 'none',
+        flowControl: 'none',
+      },
+    });
+
+    expect(
+      database.updateOpenSshMetadata('core-01', { commandButtonGroup: 'command-group-juniper' }),
+    ).toMatchObject({ commandButtonGroup: 'command-group-juniper' });
+    expect(
+      database.updateSavedHostMetadata(serial.id, { commandButtonGroup: 'command-group-huawei' })
+        .metadata,
+    ).toMatchObject({ commandButtonGroup: 'command-group-huawei' });
+
+    // Other metadata edits leave the group alone; null clears it.
+    database.updateOpenSshMetadata('core-01', { color: '#ef4444' });
+    expect(database.openSshMetadata(['core-01']).get('core-01')).toMatchObject({
+      color: '#ef4444',
+      commandButtonGroup: 'command-group-juniper',
+    });
+    database.updateOpenSshMetadata('core-01', { commandButtonGroup: null });
+    database.updateSavedHostMetadata(serial.id, { commandButtonGroup: null });
+    expect(database.openSshMetadata(['core-01']).get('core-01')?.commandButtonGroup).toBeUndefined();
+    expect(database.savedHostProfile(serial.id)?.metadata.commandButtonGroup).toBeUndefined();
   });
 
   it('moves hosts between case-insensitive groups and can clear organization', () => {

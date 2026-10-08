@@ -60,6 +60,12 @@ interface UiState {
   settingsTarget: SettingsTarget | null;
   commandButtonMenuOpen: boolean;
   commandButtonsOpen: boolean;
+  /**
+   * Command button group picked while a session whose host opens its own
+   * group was active, by tab id. Kept per window and never persisted, so
+   * switching tabs cannot rewrite the saved preferences.
+   */
+  commandButtonGroupByTab: Readonly<Record<string, string>>;
   shortcutsOpen: boolean;
   quickLauncherOpen: boolean;
   historyOpen: boolean;
@@ -82,6 +88,7 @@ interface UiState {
   openSettings: (target: SettingsTarget) => void;
   setCommandButtonMenuOpen: (open: boolean) => void;
   setCommandButtonsOpen: (open: boolean) => void;
+  setCommandButtonGroupForTab: (tabId: string, groupId: string) => void;
   setShortcutsOpen: (open: boolean) => void;
   setQuickLauncherOpen: (open: boolean) => void;
   setHistoryOpen: (open: boolean) => void;
@@ -101,6 +108,7 @@ export const useUiStore = create<UiState>()((set) => ({
   settingsTarget: null,
   commandButtonMenuOpen: false,
   commandButtonsOpen: false,
+  commandButtonGroupByTab: {},
   shortcutsOpen: false,
   quickLauncherOpen: false,
   historyOpen: false,
@@ -117,6 +125,10 @@ export const useUiStore = create<UiState>()((set) => ({
   openSettings: (settingsTarget) => set({ settingsOpen: true, settingsTarget }),
   setCommandButtonMenuOpen: (commandButtonMenuOpen) => set({ commandButtonMenuOpen }),
   setCommandButtonsOpen: (commandButtonsOpen) => set({ commandButtonsOpen }),
+  setCommandButtonGroupForTab: (tabId, groupId) =>
+    set((state) => ({
+      commandButtonGroupByTab: { ...state.commandButtonGroupByTab, [tabId]: groupId },
+    })),
   setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
   setQuickLauncherOpen: (quickLauncherOpen) => set({ quickLauncherOpen }),
   setHistoryOpen: (historyOpen) =>

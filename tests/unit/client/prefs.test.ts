@@ -37,6 +37,52 @@ const ubuntuProfile = {
   startupCommand: 'cd project',
 };
 
+describe('command button groups preference', () => {
+  const uptime = { id: 'uptime', label: 'Uptime', command: 'uptime', sendEnter: true };
+
+  it('starts with the default group shown', () => {
+    const initial = usePrefsStore.getInitialState();
+    expect(initial.commandButtonGroups).toEqual([{ id: 'default', name: 'Default' }]);
+    expect(initial.selectedCommandButtonGroup).toBe('default');
+  });
+
+  it('keeps buttons saved before groups existed, all in the default group', () => {
+    expect(migratePrefsState({ commandButtons: [uptime] }, 16)).toEqual({ commandButtons: [uptime] });
+  });
+
+  it('repairs groups and buttons instead of discarding them', () => {
+    expect(
+      migratePrefsState(
+        {
+          commandButtonGroups: [{ id: 'juniper', name: 'Juniper' }, { id: 'juniper', name: 'Twice' }],
+          commandButtons: [
+            { ...uptime, groupId: 'juniper', color: 'blue' },
+            { ...uptime, id: 'gone', groupId: 'cisco', color: 'neon' },
+            { id: 'broken' },
+          ],
+          selectedCommandButtonGroup: 'cisco',
+        },
+        16,
+      ),
+    ).toEqual({
+      commandButtonGroups: [
+        { id: 'default', name: 'Default' },
+        { id: 'juniper', name: 'Juniper' },
+      ],
+      commandButtons: [
+        { ...uptime, groupId: 'juniper', color: 'blue' },
+        { ...uptime, id: 'gone' },
+      ],
+    });
+    expect(
+      migratePrefsState(
+        { commandButtonGroups: [{ id: 'juniper', name: 'Juniper' }], selectedCommandButtonGroup: 'juniper' },
+        16,
+      ),
+    ).toMatchObject({ selectedCommandButtonGroup: 'juniper' });
+  });
+});
+
 describe('SSH keepalive preference', () => {
   it('defaults to a 30-second fallback', () => {
     expect(usePrefsStore.getInitialState().sshKeepaliveIntervalSeconds).toBe(

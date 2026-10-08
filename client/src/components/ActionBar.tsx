@@ -1,20 +1,35 @@
 import { memo, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Divider from '@mui/material/Divider';
 import IconButton from '@mui/material/IconButton';
 import ListItemIcon from '@mui/material/ListItemIcon';
+import ListItemText from '@mui/material/ListItemText';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import Tooltip from '@mui/material/Tooltip';
+import Typography from '@mui/material/Typography';
+import CheckBoxIcon from '@mui/icons-material/CheckBox';
+import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
+import CheckIcon from '@mui/icons-material/Check';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
 import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop';
-import { activateCommandButton } from '../command-buttons.js';
+import { useUpdateHostProfileMetadata } from '../api/profiles.js';
+import { useUpdateSshMetadata } from '../api/ssh-config.js';
+import { useActiveCommandButtonGroup } from '../command-button-groups.js';
+import {
+  activateCommandButton,
+  commandButtonGroupOf,
+  commandButtonLabel,
+} from '../command-buttons.js';
 import { usePrefsStore, type CommandBarPosition } from '../state/prefs.js';
 import { showToast } from '../state/toast.js';
 import { useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
+import { commandButtonColorSx } from './command-button-style.js';
 
 export const ActionBar = memo(function ActionBar({
   position,
@@ -26,12 +41,37 @@ export const ActionBar = memo(function ActionBar({
   const setPrefs = usePrefsStore((state) => state.set);
   const activeTab = useTabsStore((state) => state.tabs.find((tab) => tab.id === state.activeId));
   const setOpen = useUiStore((state) => state.setCommandButtonsOpen);
+  const { groups, shownId, host, hostName, hostGroupId, select } = useActiveCommandButtonGroup();
+  const updateSshMetadata = useUpdateSshMetadata();
+  const updateProfileMetadata = useUpdateHostProfileMetadata();
   const [menu, setMenu] = useState<{ top: number; left: number } | null>(null);
-  if (!showCommandBar || buttons.length === 0) return null;
+  const [groupMenu, setGroupMenu] = useState<HTMLElement | null>(null);
+  const grouped = groups.length > 1;
+  if (!showCommandBar || (buttons.length === 0 && !grouped)) return null;
   const connected = activeTab?.status === 'connected';
   const atBottom = position === 'bottom';
-  // Tooltips open toward the panes rather than off the window edge.
+  // Tooltips and menus open toward the panes rather than off the window edge.
   const tooltipPlacement = atBottom ? 'top' : 'bottom';
+  const shownGroup = groups.find((group) => group.id === shownId);
+  const shownButtons = buttons.filter(
+    (button) => commandButtonGroupOf(button, groups) === shownId,
+  );
+  const countIn = (groupId: string) =>
+    buttons.filter((button) => commandButtonGroupOf(button, groups) === groupId).length;
+  // The same host setting as Terminal appearance → Command button group.
+  const shownForHost = !!host && hostGroupId === shownId;
+  const toggleHostGroup = () => {
+    if (!host) return;
+    const patch = { commandButtonGroup: shownForHost ? null : shownId };
+    if (host.kind === 'ssh') updateSshMetadata.mutate({ alias: host.entry.alias, patch });
+    else updateProfileMetadata.mutate({ id: host.entry.id, patch });
+    showToast(
+      'success',
+      shownForHost
+        ? `Sessions to ${hostName} no longer switch the command group.`
+        : `Sessions to ${hostName} now show ${shownGroup?.name ?? 'this group'}.`,
+    );
+  };
 
   return (
     <Box
@@ -47,44 +87,177 @@ export const ActionBar = memo(function ActionBar({
         alignItems: 'center',
         gap: 0.75,
         px: 1,
-        overflowX: 'auto',
         bgcolor: 'sidebar',
         [atBottom ? 'borderTop' : 'borderBottom']: 1,
         borderColor: 'divider',
       }}
     >
-      {buttons.map((button) => (
-        <Tooltip
-          key={button.id}
-          placement={tooltipPlacement}
-          title={`${button.command || 'No command'}${button.sendEnter ? ' · runs immediately' : ' · inserts only'}`}
-        >
-          <span>
+      {grouped ? (
+        <>
+          <Tooltip
+            placement={tooltipPlacement}
+            title={
+              hostName && shownId === hostGroupId
+                ? `Command group · opened by ${hostName}`
+                : 'Command group'
+            }
+          >
             <Button
               size="small"
-              variant="outlined"
-              disabled={!connected || !button.command}
-              onClick={() => {
-                const sent = activateCommandButton(terminalHandle(activeTab?.id), button);
-                if (!sent) showToast('warning', 'The active terminal is not connected.');
+              color="inherit"
+              aria-label={`Command group: ${shownGroup?.name ?? ''}`}
+              aria-haspopup="menu"
+              aria-expanded={groupMenu ? 'true' : undefined}
+              endIcon={<ExpandMoreIcon />}
+              onClick={(event) => setGroupMenu(event.currentTarget)}
+              sx={{
+                flexShrink: 0,
+                minWidth: 0,
+                maxWidth: 200,
+                px: 1,
+                py: 0.25,
+                color: 'sidebarInk',
+                fontWeight: 550,
+                '& .MuiButton-endIcon': { ml: 0.25 },
               }}
-              sx={{ minWidth: 0, whiteSpace: 'nowrap', py: 0.25 }}
             >
-              {button.label.trim() || button.command.trim() || 'Command'}
+              <Box
+                component="span"
+                sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              >
+                {shownGroup?.name}
+              </Box>
             </Button>
-          </span>
-        </Tooltip>
-      ))}
+          </Tooltip>
+          <Divider orientation="vertical" flexItem sx={{ my: 1 }} />
+        </>
+      ) : null}
+      <Box
+        sx={{
+          flex: 1,
+          minWidth: 0,
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.75,
+          overflowX: 'auto',
+          scrollbarWidth: 'thin',
+        }}
+      >
+        {shownButtons.length === 0 ? (
+          <Typography variant="caption" color="textSecondary" noWrap sx={{ px: 0.5 }}>
+            No commands in this group yet.
+          </Typography>
+        ) : null}
+        {shownButtons.map((button) => (
+          <Tooltip
+            key={button.id}
+            placement={tooltipPlacement}
+            title={`${button.command || 'No command'}${button.sendEnter ? ' · runs immediately' : ' · inserts only'}`}
+          >
+            <span style={{ flexShrink: 0 }}>
+              <Button
+                size="small"
+                variant="outlined"
+                disabled={!connected || !button.command}
+                onClick={() => {
+                  const sent = activateCommandButton(terminalHandle(activeTab?.id), button);
+                  if (!sent) showToast('warning', 'The active terminal is not connected.');
+                }}
+                sx={[
+                  { minWidth: 0, whiteSpace: 'nowrap', py: 0.25 },
+                  commandButtonColorSx(button.color),
+                ]}
+              >
+                {commandButtonLabel(button)}
+              </Button>
+            </span>
+          </Tooltip>
+        ))}
+      </Box>
       <Tooltip title="Manage command buttons" placement={tooltipPlacement}>
         <IconButton
           size="small"
           aria-label="Manage command buttons"
           onClick={() => setOpen(true)}
-          sx={{ ml: 'auto' }}
+          sx={{ flexShrink: 0 }}
         >
           <SettingsOutlinedIcon fontSize="small" />
         </IconButton>
       </Tooltip>
+      <Menu
+        open={!!groupMenu}
+        anchorEl={groupMenu}
+        onClose={() => setGroupMenu(null)}
+        anchorOrigin={{ vertical: atBottom ? 'top' : 'bottom', horizontal: 'left' }}
+        transformOrigin={{ vertical: atBottom ? 'bottom' : 'top', horizontal: 'left' }}
+        slotProps={{
+          list: { dense: true, 'aria-label': 'Command groups' },
+          paper: { sx: { minWidth: 220, maxWidth: 320 } },
+        }}
+      >
+        {groups.map((group) => (
+          <MenuItem
+            key={group.id}
+            onClick={() => {
+              setGroupMenu(null);
+              select(group.id);
+            }}
+          >
+            <ListItemText
+              primary={group.name}
+              secondary={group.id === hostGroupId && hostName ? `Opens with ${hostName}` : undefined}
+              slotProps={{ primary: { noWrap: true }, secondary: { noWrap: true } }}
+            />
+            <Typography
+              variant="caption"
+              color="textSecondary"
+              aria-label={`${countIn(group.id)} commands`}
+              sx={{ ml: 2, minWidth: 16, textAlign: 'right' }}
+            >
+              {countIn(group.id)}
+            </Typography>
+            {/* A fixed slot, so the counts line up whichever group is checked. */}
+            <Box component="span" sx={{ width: 18, ml: 1, display: 'flex', flexShrink: 0 }}>
+              {group.id === shownId ? (
+                <CheckIcon aria-label="Shown group" sx={{ fontSize: 18 }} />
+              ) : null}
+            </Box>
+          </MenuItem>
+        ))}
+        <Divider />
+        {host ? (
+          <MenuItem
+            aria-checked={shownForHost}
+            role="menuitemcheckbox"
+            onClick={() => {
+              setGroupMenu(null);
+              toggleHostGroup();
+            }}
+            sx={{ whiteSpace: 'normal' }}
+          >
+            <ListItemIcon>
+              {shownForHost ? (
+                <CheckBoxIcon fontSize="small" color="primary" />
+              ) : (
+                <CheckBoxOutlineBlankIcon fontSize="small" />
+              )}
+            </ListItemIcon>
+            <ListItemText primary={`Always show ${shownGroup?.name ?? 'this group'} for ${hostName}`} />
+          </MenuItem>
+        ) : null}
+        <MenuItem
+          onClick={() => {
+            setGroupMenu(null);
+            setOpen(true);
+          }}
+        >
+          <ListItemIcon>
+            <SettingsOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          Manage command buttons…
+        </MenuItem>
+      </Menu>
       <Menu
         open={!!menu}
         anchorReference="anchorPosition"

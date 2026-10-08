@@ -670,6 +670,8 @@ export interface OpenSshProfileMetadata {
   terminalBackgroundColor?: string;
   /** Muxus-only terminal highlighting for this OpenSSH alias. */
   keywordHighlights?: HostKeywordHighlightConfig;
+  /** Command button group the bar switches to while this host's session is active. */
+  commandButtonGroup?: string;
   /** Do not open SFTP channels or probe for remote Unix shell integration. */
   disableSftp?: boolean;
   /** Console appliances: also suppress env requests and tolerate a rejected PTY. */
@@ -687,6 +689,7 @@ export interface OpenSshMetadataPatch {
   terminalFontColor?: string | null;
   terminalBackgroundColor?: string | null;
   keywordHighlights?: HostKeywordHighlightConfig | null;
+  commandButtonGroup?: string | null;
   disableSftp?: boolean;
   consoleCompatibility?: boolean;
 }

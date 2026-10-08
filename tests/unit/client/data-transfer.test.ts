@@ -948,6 +948,7 @@ describe('restoring imported serial hosts', () => {
           terminalFontColor: '#eceff4',
           terminalBackgroundColor: '#2e3440',
           keywordHighlights: null,
+          commandButtonGroup: null,
           disableSftp: false,
           consoleCompatibility: false,
         }),
@@ -1125,6 +1126,53 @@ describe('restoring the command bar preference', () => {
     expect(
       sanitizePreferences(prefs({ showCommandBar: 'hidden' })).showCommandBar,
     ).toBeUndefined();
+  });
+});
+
+describe('restoring command button groups', () => {
+  const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
+  const juniper = { id: 'juniper', name: 'Juniper' };
+  const bgp = {
+    id: 'bgp',
+    label: 'BGP',
+    command: 'show bgp summary',
+    sendEnter: true,
+    groupId: 'juniper',
+    color: 'purple',
+  };
+
+  it('restores groups, the selected group, and each button in its group', () => {
+    expect(
+      sanitizePreferences(
+        prefs({
+          commandButtonGroups: [juniper],
+          commandButtons: [bgp],
+          selectedCommandButtonGroup: 'juniper',
+        }),
+      ),
+    ).toMatchObject({
+      commandButtonGroups: [{ id: 'default', name: 'Default' }, juniper],
+      commandButtons: [bgp],
+      selectedCommandButtonGroup: 'juniper',
+    });
+  });
+
+  it('files buttons from a backup without groups under the default group', () => {
+    const restored = sanitizePreferences(
+      prefs({ commandButtons: [bgp], selectedCommandButtonGroup: 'juniper' }),
+    );
+    expect(restored.commandButtons).toEqual([
+      { id: 'bgp', label: 'BGP', command: 'show bgp summary', sendEnter: true, color: 'purple' },
+    ]);
+    expect(restored.commandButtonGroups).toBeUndefined();
+    expect(restored.selectedCommandButtonGroup).toBeUndefined();
+  });
+
+  it('drops a malformed button without losing the rest', () => {
+    expect(
+      sanitizePreferences(prefs({ commandButtons: [{ id: 'x', command: 7 }, { ...bgp, groupId: undefined }] }))
+        .commandButtons,
+    ).toEqual([{ ...bgp, groupId: undefined }].map(({ groupId: _groupId, ...button }) => button));
   });
 });
 

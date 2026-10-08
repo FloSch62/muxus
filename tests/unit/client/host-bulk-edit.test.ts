@@ -234,6 +234,27 @@ describe('bulkEditPlan', () => {
     expect(cleared.metadata.map(({ patch }) => patch.keywordHighlights)).toEqual([null]);
   });
 
+  it('sets and clears the command button group on terminal hosts only', () => {
+    const hosts = [
+      openSsh('a', {}, { commandButtonGroup: 'juniper' }),
+      telnet('t'),
+      rdp('desk'),
+    ];
+
+    expect(summarizeBulkValues(hosts, new Map()).commandButtonGroup).toEqual({
+      state: 'mixed',
+      count: 2,
+    });
+    const set = bulkEditPlan(hosts, { commandButtonGroup: 'juniper' });
+    expect(set.metadata).toEqual([
+      { host: hosts[1], patch: { commandButtonGroup: 'juniper' } },
+    ]);
+    const cleared = bulkEditPlan(hosts, { commandButtonGroup: undefined });
+    expect(cleared.metadata).toEqual([
+      { host: hosts[0], patch: { commandButtonGroup: null } },
+    ]);
+  });
+
   it('applies terminal and SSH settings only where they mean something', () => {
     const hosts = [openSsh('a'), telnet('t'), rdp('desk')];
 

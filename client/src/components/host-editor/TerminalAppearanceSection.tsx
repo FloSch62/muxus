@@ -1,12 +1,15 @@
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
+import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { useTheme } from '@mui/material/styles';
 import {
   terminalSchemeIdForMode,
   useCustomTerminalSchemes,
   usePrefsStore,
+  type CommandButtonGroup,
 } from '../../state/prefs.js';
 import {
   isTerminalSchemeId,
@@ -20,6 +23,7 @@ export interface HostTerminalAppearance {
   terminalScheme?: string;
   terminalFontColor?: string;
   terminalBackgroundColor?: string;
+  commandButtonGroup?: string;
 }
 
 /** Terminal colors saved with a host, shared by all three host kinds. */
@@ -65,8 +69,68 @@ export function TerminalAppearanceSection({
         defaultValue={defaults.backgroundColor}
         onChange={(terminalBackgroundColor) => onChange({ terminalBackgroundColor })}
       />
+      <Box sx={{ pt: 1 }}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+          Command buttons
+        </Typography>
+        <Typography variant="body2" color="textSecondary">
+          The command bar switches to this group while a session to this host is active.
+        </Typography>
+      </Box>
+      <CommandButtonGroupSelect
+        value={value.commandButtonGroup}
+        onChange={(commandButtonGroup) => onChange({ commandButtonGroup })}
+      />
     </Stack>
   );
+}
+
+/** Where the bar's group comes from: the one picked there, or one this host names. */
+function CommandButtonGroupSelect({
+  value,
+  onChange,
+}: {
+  value: string | undefined;
+  onChange: (groupId: string | undefined) => void;
+}) {
+  const groups = usePrefsStore((state) => state.commandButtonGroups);
+  return (
+    <TextField
+      select
+      fullWidth
+      label="Command button group"
+      value={value ?? ''}
+      onChange={(event) => onChange(event.target.value || undefined)}
+      helperText={
+        groups.length > 1
+          ? 'Another group can still be picked in the bar during the session.'
+          : 'Create groups in the command button manager, for example one per vendor.'
+      }
+    >
+      {commandButtonGroupOptions(groups, value).map((option) => (
+        <MenuItem key={option.value} value={option.value}>
+          {option.label}
+        </MenuItem>
+      ))}
+    </TextField>
+  );
+}
+
+/**
+ * The choices for a host's command button group. A group deleted since the
+ * host named it stays listed, so the select can show what is stored.
+ */
+export function commandButtonGroupOptions(
+  groups: readonly CommandButtonGroup[],
+  value: string | undefined,
+): Array<{ value: string; label: string }> {
+  return [
+    { value: '', label: 'Group chosen in the bar' },
+    ...(value && !groups.some((group) => group.id === value)
+      ? [{ value, label: 'Deleted group' }]
+      : []),
+    ...groups.map((group) => ({ value: group.id, label: group.name.trim() || 'Untitled group' })),
+  ];
 }
 
 /**

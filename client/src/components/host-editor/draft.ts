@@ -36,6 +36,8 @@ export interface HostDraft {
   terminalScheme?: string;
   terminalFontColor?: string;
   terminalBackgroundColor?: string;
+  /** Command button group the bar switches to in this host's sessions. */
+  commandButtonGroup?: string;
   /** Muxus-only plain-shell mode: no SFTP or shell integration. */
   disableSftp: boolean;
   /** Muxus-only console mode: also no env requests, with PTY rejection fallback. */
@@ -87,6 +89,7 @@ export function blankDraft(
     terminalScheme: undefined,
     terminalFontColor: undefined,
     terminalBackgroundColor: undefined,
+    commandButtonGroup: undefined,
     disableSftp: false,
     consoleCompatibility: false,
     file: '',
@@ -132,6 +135,7 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
     terminalScheme: entry.metadata?.terminalScheme,
     terminalFontColor: entry.metadata?.terminalFontColor,
     terminalBackgroundColor: entry.metadata?.terminalBackgroundColor,
+    commandButtonGroup: entry.metadata?.commandButtonGroup,
     disableSftp: entry.metadata?.disableSftp ?? false,
     consoleCompatibility: entry.metadata?.consoleCompatibility ?? false,
     file: entry.file,
@@ -193,6 +197,7 @@ export function draftFromSavedSshProfile(
     terminalScheme: saved.metadata.terminalScheme,
     terminalFontColor: saved.metadata.terminalFontColor,
     terminalBackgroundColor: saved.metadata.terminalBackgroundColor,
+    commandButtonGroup: saved.metadata.commandButtonGroup,
     disableSftp: saved.metadata.disableSftp ?? false,
     consoleCompatibility: saved.metadata.consoleCompatibility ?? false,
     file: '',

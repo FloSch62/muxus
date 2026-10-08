@@ -146,6 +146,7 @@ export function NativeHostEditorContent({
         draft.terminalScheme,
         draft.terminalFontColor,
         draft.terminalBackgroundColor,
+        draft.commandButtonGroup,
       ].filter(Boolean).length || undefined,
     },
     ...(kind === 'serial'
