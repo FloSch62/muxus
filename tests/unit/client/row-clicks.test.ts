@@ -36,9 +36,16 @@ describe('sidebar rows opening on a single click', () => {
     expect(hostClickOutcome(ctrlClick(1), 'click', false)).toBe('toggle');
   });
 
-  it('extends a selection with Shift-click, and opens another session without one', () => {
+  it('selects a range with Shift-click, even with nothing selected yet', () => {
     expect(hostClickOutcome(shiftClick(1), 'click', true)).toBe('extend');
-    expect(hostClickOutcome(shiftClick(1), 'click', false)).toBe('open');
+    expect(hostClickOutcome(shiftClick(1), 'click', false)).toBe('extend');
+    expect(hostClickOutcome(shiftClick(2), 'click', false)).toBe('extend');
+  });
+
+  it('keeps Shift from the keyboard and middle-click for another session', () => {
+    expect(hostClickOutcome(shiftClick(0), 'click', false)).toBe('open');
+    expect(hostClickOutcome(shiftClick(0), 'click', true)).toBe('extend');
+    expect(hostClickOutcome(middleClick, 'click', true)).toBe('open');
   });
 });
 

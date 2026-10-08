@@ -14,7 +14,6 @@ import {
   managedHostKey,
   type ManagedHost,
 } from '../../managed-hosts.js';
-import { IS_MAC } from '../../platform.js';
 import { connectManagedHost } from '../../session-actions.js';
 import { tabsInOrder, useTabsStore, type SessionTab } from '../../state/tabs.js';
 import { terminalHandle } from '../../terminal/terminal-registry.js';
@@ -62,7 +61,7 @@ function statusDetail(tab: SessionTab): string | undefined {
 /**
  * Clicking a host that already has sessions in this window lists them, the way
  * a taskbar button lists an app's open windows: pick one to jump to it, or
- * start another. Shift-click or middle-click on the row skips the list.
+ * start another. Middle-click on the row skips the list.
  */
 export function HostSessionsMenu({
   menu,
@@ -240,7 +239,7 @@ export function HostSessionsMenu({
           New session
         </Typography>
         <Typography component="span" sx={{ fontSize: 11, color: 'text.secondary' }}>
-          {IS_MAC ? '⇧ Click' : 'Shift+Click'}
+          Middle-click
         </Typography>
       </MenuItem>
     </Menu>

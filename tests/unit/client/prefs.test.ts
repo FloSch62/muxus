@@ -170,6 +170,40 @@ describe('sidebar open gesture preference', () => {
   });
 });
 
+describe('status bar preferences', () => {
+  it('starts shown, with every item chosen in bar order', () => {
+    const initial = usePrefsStore.getInitialState();
+    expect(initial.showStatusBar).toBe(true);
+    expect(initial.statusBarItems).toEqual([
+      'hostname',
+      'os',
+      'cpu',
+      'memory',
+      'disk',
+      'network',
+      'uptime',
+      'users',
+    ]);
+  });
+
+  it('keeps valid persisted values during migration', () => {
+    expect(
+      migratePrefsState({ showStatusBar: true, statusBarItems: ['cpu', 'disk'] }, 17),
+    ).toEqual({ showStatusBar: true, statusBarItems: ['cpu', 'disk'] });
+    expect(migratePrefsState({ statusBarItems: [] }, 17)).toEqual({ statusBarItems: [] });
+  });
+
+  it('drops a malformed switch or item list', () => {
+    expect(
+      migratePrefsState(
+        { showStatusBar: 'yes', statusBarItems: ['cpu', 'temperature'], monoFontSize: 16 },
+        17,
+      ),
+    ).toEqual({ monoFontSize: 16 });
+    expect(migratePrefsState({ statusBarItems: ['cpu', 'cpu'] }, 17)).toEqual({});
+  });
+});
+
 describe('terminal file link activation preference', () => {
   it('defaults to Alt + left click so normal terminal selection remains available', () => {
     expect(usePrefsStore.getInitialState().terminalFileLinkActivation).toBe('alt');

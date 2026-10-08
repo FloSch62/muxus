@@ -27,6 +27,7 @@ import {
   normalizeCommandButtons,
 } from './command-buttons.js';
 import { isKeywordHighlightProfileArray } from './highlight-profiles.js';
+import { isStatusBarItemList } from './host-stats.js';
 import { isCustomTerminalSchemeArray } from './terminal/custom-schemes.js';
 import { saveTextFile } from './save-file.js';
 import { openSshJumpHops } from './saved-hosts.js';
@@ -94,6 +95,8 @@ const PREFERENCE_KEYS = [
   'selectedCommandButtonGroup',
   'showCommandBar',
   'commandBarPosition',
+  'showStatusBar',
+  'statusBarItems',
   'keywordHighlights',
   'keywordHighlightProfiles',
   'sidebarCollapsed',
@@ -939,6 +942,12 @@ export function sanitizePreferences(
   }
   if (isCommandBarPosition(input.commandBarPosition)) {
     output.commandBarPosition = input.commandBarPosition;
+  }
+  if (typeof input.showStatusBar === 'boolean') {
+    output.showStatusBar = input.showStatusBar;
+  }
+  if (isStatusBarItemList(input.statusBarItems)) {
+    output.statusBarItems = input.statusBarItems;
   }
   if (
     Array.isArray(input.keywordHighlights) &&

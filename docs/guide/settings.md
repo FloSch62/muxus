@@ -29,6 +29,10 @@ a running recorder.
   [file browser](files.md#docking-it-in-the-sidebar) beside the terminal (default) or in the
   sidebar, and place the [command bar](commands.md) at the top (default) or bottom. A
   miniature of the window previews the arrangement.
+- **Status bar**: **Show status bar** adds the [status bar](the-window.md#status-bar) with
+  the active session's host statistics along the bottom of the window. On by default.
+  **Items** picks what it shows: host name, operating system, CPU, memory, disk, network
+  traffic, uptime and logged-in users. All are on until you turn one off.
 - **Split panes**: **Dim inactive panes** or **Outline the focused pane** with a thin
   theme-aware accent. Both are off by default; dimming starts at 15% and is adjustable. Multi-exec panes stay emphasized. These
   effects are presentation-only and do not alter terminal colours or output.

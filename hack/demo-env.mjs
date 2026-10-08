@@ -535,6 +535,8 @@ function startSshd(host, keys, hostMap) {
           const stream = accept();
           if (ptyRequested) return attachPty(stream, ['-c', info.command]);
           const child = spawn('/usr/bin/bash', ['-c', info.command], { cwd: root, env: shellEnv });
+          // Like sshd: the channel is the command's stdin (`sh -s` reads its script from it).
+          stream.pipe(child.stdin).on('error', () => {});
           child.stdout.pipe(stream);
           child.stderr.pipe(stream.stderr);
           child.on('close', (code) => {

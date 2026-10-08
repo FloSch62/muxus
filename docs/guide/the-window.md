@@ -95,6 +95,40 @@ moving a tab toward a direction with no pane splits one off.
 
 Both are loaded lazily. Their code is fetched the first time the button is used.
 
+## Status bar
+
+A bar along the bottom of the window describes the host of the active tab and refreshes
+every few seconds:
+
+| Item | Shows |
+| --- | --- |
+| **Host name** | The name the host gives itself |
+| **Operating system** | Distribution and version, such as Ubuntu 24.04.1 LTS; the kernel in its tooltip |
+| **CPU** | Usage across all cores since the last refresh; the core count and load average in its tooltip |
+| **RAM** | Memory in use out of the total; available memory and swap in its tooltip |
+| **Disk** | How full the filesystem holding `/` is (the system drive on Windows) |
+| **↓ ↑** | Traffic received and sent per second on the interface of the default route |
+| **Up** | Time since the host booted |
+| **Users** | Login sessions, as `who` lists them; the names in its tooltip |
+
+The meters for CPU, memory and disk turn amber at 80% and red at 95%. Right-click the bar,
+or use the button at its right end, to choose the items or hide the bar; **Settings →
+Appearance → Status bar** has the same choices and brings a hidden bar back. **Toggle status
+bar** in the [keyboard shortcuts](../reference/keyboard-shortcuts.md) can be bound to a key.
+
+**SSH sessions** are read over the connection that is already open: Muxus runs a short,
+read-only `sh` script on an extra channel, without asking for a password again and without
+installing anything. Linux hosts report every item. macOS and BSD hosts report the load
+average in place of CPU usage, and BSD hosts leave out memory. A host that cannot run the
+script, such as a network device or a Windows server, shows **This host does not report
+statistics** and is not asked again on that connection.
+
+**Local terminals** show the computer they run on. Windows reports neither logged-in users
+nor network traffic.
+
+Only the tab in front is read, and nothing is read while the window is minimised or the bar
+is hidden. Telnet, serial and remote desktop tabs show no statistics.
+
 ## Empty panes
 
 A pane with no tabs shows the empty state, which offers to add a host or open a local

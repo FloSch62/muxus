@@ -75,9 +75,9 @@ Click a row to connect. If the host already has tabs in the window, the click li
 instead, the way a taskbar button lists an app's open windows. Each entry shows the tab's
 title and number, its state, the remote working directory and the last lines of output, so
 sessions with the same name can be told apart. Pick one to jump to it (an ended session
-reconnects in place), or choose **New session**. ++shift++ + click or middle-click
-skips the list and opens another session straight away. While hosts are
-[selected](#editing-several-hosts-at-once), ++shift++ + click extends the selection instead.
+reconnects in place), or choose **New session**. A middle-click skips the list and opens
+another session straight away. ++shift++ + click [selects](#editing-several-hosts-at-once)
+every host from the last one clicked to this one, without connecting.
 
 ### Opening with a double-click
 
@@ -145,10 +145,11 @@ nested folders, as **tabs**, **columns**, **rows** or a **grid**.
 
 ## Editing several hosts at once
 
-++ctrl++ + click a host (++cmd++ + click on macOS) to select it without connecting. Once
-something is selected, ++shift++ + click selects every host between the last one picked and
-the one clicked. When hosts [open with a double-click](#opening-with-a-double-click), a plain
-click selects too. A bar under the list counts the selected hosts; **Edit…** opens the bulk
+++ctrl++ + click a host (++cmd++ + click on macOS) to select it without connecting, and
+++shift++ + click selects every host between the last one clicked and this one. The host a
+plain click connected counts as clicked, so click one host and ++shift++ + click another to
+select the whole range. When hosts [open with a double-click](#opening-with-a-double-click),
+a plain click selects too. A bar under the list counts the selected hosts; **Edit…** opens the bulk
 editor, the folder button moves them all to a folder, the bin deletes them, and ++escape++ or
 the bar's close button clears the selection. The selection stays while you search, so it can
 gather hosts from several queries.

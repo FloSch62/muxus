@@ -328,9 +328,10 @@ export function HostTree({
 
   /**
    * Selection gestures never connect: Ctrl/Cmd-click toggles a host, and
-   * Shift-click extends a selection that exists. With nothing selected,
-   * Shift-click keeps opening another session. When hosts open on a
-   * double-click, a plain click selects just that host instead.
+   * Shift-click selects the range from the last host clicked. A plain click
+   * that connects still counts as that host, so click then Shift-click picks
+   * a range. When hosts open on a double-click, a plain click selects just
+   * that host instead.
    */
   const activateHost = useCallback(
     (host: ManagedHost, anchor: HTMLElement | undefined, gesture: HostActivation) => {
@@ -351,9 +352,15 @@ export function HostTree({
           onSelectionChange(new Set([key]));
           return;
         case 'open':
+          if (openGesture === 'click') {
+            // Mouse clicks only: middle-click and Enter leave the anchor be.
+            if ((gesture.clicks ?? 0) > 0) anchorRef.current = { key, base: selectionRef.current };
+            onActivate(host, anchor, gesture);
+            return;
+          }
           // The second click of a double-click is the first activation here,
           // so a host with open tabs still lists them.
-          onActivate(host, anchor, openGesture === 'click' ? gesture : { ...gesture, repeat: false });
+          onActivate(host, anchor, { ...gesture, repeat: false });
           return;
         case 'ignore':
           return;

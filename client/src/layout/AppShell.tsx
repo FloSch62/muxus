@@ -35,6 +35,7 @@ import {
 import { ErrorBoundary } from '../components/ErrorBoundary.js';
 import { CommandLineLaunchHandler } from '../components/CommandLineLaunchHandler.js';
 import { ActionBar } from '../components/ActionBar.js';
+import { StatusBar } from '../components/StatusBar.js';
 import { EmptyPane } from '../components/EmptyPane.js';
 import { TabStrip } from '../components/TabStrip.js';
 import { TerminalView } from '../components/TerminalView.js';
@@ -113,6 +114,7 @@ export function AppShell({
         {showSidebar && sidebarOnRight ? <Sidebar /> : null}
       </Box>
       {focusMode || !commandBarAtBottom ? null : <ActionBar position="bottom" />}
+      {focusMode ? null : <StatusBar />}
     </Box>
   );
 }
