@@ -32,6 +32,8 @@ import LaunchOutlinedIcon from '@mui/icons-material/LaunchOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
+import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined';
+import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import { useQueryClient } from '@tanstack/react-query';
 import type { LocalOpenTarget, SftpEntry } from '@muxus/shared';
 import { ApiError, apiFetch } from '../api/http.js';
@@ -185,6 +187,12 @@ function saveDownload(name: string, blob: Blob): void {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+/**
+ * A panel too narrow for the modification times and the drag hint, such as the
+ * browser docked in the sidebar. The panel is the size container.
+ */
+const NARROW_PANEL = '@container (max-width: 359px)';
+
 const SftpEntryTable = memo(function SftpEntryTable({
   connId,
   currentPath,
@@ -207,14 +215,23 @@ const SftpEntryTable = memo(function SftpEntryTable({
   onContextMenu: (entry: SftpEntry, x: number, y: number) => void;
 }) {
   return (
-    <Table size="small" stickyHeader sx={{ '& td, & th': { py: 0.45, fontSize: 12 } }}>
+    <Table
+      size="small"
+      stickyHeader
+      sx={{
+        '& td, & th': { py: 0.45, fontSize: 12 },
+        [NARROW_PANEL]: { '& .sftp-modified': { display: 'none' } },
+      }}
+    >
       <TableHead>
         <TableRow>
           <TableCell>Name</TableCell>
           <TableCell align="right" sx={{ width: 72 }}>
             Size
           </TableCell>
-          <TableCell sx={{ width: 112 }}>Modified</TableCell>
+          <TableCell className="sftp-modified" sx={{ width: 112 }}>
+            Modified
+          </TableCell>
         </TableRow>
       </TableHead>
       <TableBody>
@@ -272,7 +289,7 @@ const SftpEntryTable = memo(function SftpEntryTable({
               <TableCell align="right" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
                 {entry.type === 'file' ? formatSize(entry.size) : ''}
               </TableCell>
-              <TableCell sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
+              <TableCell className="sftp-modified" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>
                 {formatMtime(entry.mtimeMs)}
               </TableCell>
             </TableRow>
@@ -307,6 +324,8 @@ export function SftpPanel({
   followTerminalFolder = false,
   onFollowTerminalFolderChange,
   fill = false,
+  inSidebar = false,
+  onMove,
   onOpenInNewWindow,
   hostLabel,
 }: {
@@ -320,6 +339,10 @@ export function SftpPanel({
   onFollowTerminalFolderChange?: (follow: boolean) => void;
   /** Fill a standalone window instead of using the saved side-panel width. */
   fill?: boolean;
+  /** Docked in the window sidebar: it fills the sidebar and is titled with its session. */
+  inSidebar?: boolean;
+  /** Move the browser between the sidebar and its terminal. */
+  onMove?: () => void;
   onOpenInNewWindow?: (path: string) => void;
   /** The session's name, for messages about files uploaded back to it. */
   hostLabel?: string;
@@ -341,7 +364,10 @@ export function SftpPanel({
   const panelRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const panelWidth = usePrefsStore((state) => state.sftpPanelWidth);
+  const sidebarOnLeft = usePrefsStore((state) => state.sidebarPosition === 'left');
   const setPrefs = usePrefsStore((state) => state.set);
+  // The sidebar sizes itself; only the panel beside a terminal has its own width.
+  const fillsParent = fill || inSidebar;
 
   const { data, isFetching, error } = useSftpList(connId, path);
   useEffect(() => {
@@ -728,16 +754,18 @@ export function SftpPanel({
     <Box
       ref={panelRef}
       sx={{
-        width: fill ? '100%' : panelWidth,
-        maxWidth: fill ? 'none' : '70%',
+        width: fillsParent ? '100%' : panelWidth,
+        maxWidth: fillsParent ? 'none' : '70%',
         flexShrink: 0,
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        borderLeft: fill ? 0 : 1,
+        borderLeft: fillsParent ? 0 : 1,
         borderColor: 'divider',
-        bgcolor: 'background.paper',
+        bgcolor: inSidebar ? 'sidebar' : 'background.paper',
         position: 'relative',
+        containerType: 'inline-size',
+        ...(inSidebar ? { '& .MuiTableCell-stickyHeader': { bgcolor: 'sidebar' } } : {}),
       }}
       onDragEnter={(event) => {
         if (!hasLocalFiles(event)) return;
@@ -768,7 +796,7 @@ export function SftpPanel({
         void collectDrop(items).then(upload).catch(showErrorToast);
       }}
     >
-      {!fill && (
+      {!fillsParent && (
         <PanelResizeHandle
           panelRef={panelRef}
           edge="left"
@@ -783,12 +811,34 @@ export function SftpPanel({
       )}
       <Stack direction="row" sx={{ px: 1.25, pt: 1, alignItems: 'center' }}>
         <FolderOpenOutlinedIcon sx={{ mr: 0.75, fontSize: 18, color: 'primary.main' }} />
-        <Typography variant="subtitle2" sx={{ flex: 1 }}>
-          File browser
+        {/* Away from its terminal, the browser says whose files these are. */}
+        <Typography variant="subtitle2" noWrap sx={{ flex: 1, minWidth: 0 }}>
+          {inSidebar && hostLabel ? hostLabel : 'File browser'}
         </Typography>
-        <Typography variant="caption" color="textSecondary">
+        <Typography variant="caption" color="textSecondary" sx={{ ml: 0.75 }}>
           SFTP
         </Typography>
+        {onMove && (
+          <Tooltip title={inSidebar ? 'Move beside the terminal' : 'Move to the sidebar'}>
+            <IconButton
+              size="small"
+              aria-label={
+                inSidebar ? 'Move file browser beside the terminal' : 'Move file browser to the sidebar'
+              }
+              onClick={onMove}
+              sx={{ ml: 0.5 }}
+            >
+              {inSidebar ? (
+                <VerticalSplitOutlinedIcon sx={{ fontSize: 17 }} />
+              ) : (
+                // The glyph draws its panel on the right; mirrored, it shows the left.
+                <ViewSidebarOutlinedIcon
+                  sx={{ fontSize: 17, transform: sidebarOnLeft ? 'scaleX(-1)' : undefined }}
+                />
+              )}
+            </IconButton>
+          </Tooltip>
+        )}
         {onOpenInNewWindow && (
           <Tooltip title="Open file browser in new window">
             <IconButton
@@ -894,7 +944,7 @@ export function SftpPanel({
           </span>
         </Tooltip>
         <Box sx={{ flex: 1 }} />
-        <Typography variant="caption" color="textDisabled">
+        <Typography variant="caption" color="textDisabled" sx={{ [NARROW_PANEL]: { display: 'none' } }}>
           Drag in to upload · drag out to download
         </Typography>
       </Stack>

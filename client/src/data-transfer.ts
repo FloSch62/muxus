@@ -39,6 +39,7 @@ import {
   MAX_INACTIVE_PANE_DIM_STRENGTH,
   MIN_INACTIVE_PANE_DIM_STRENGTH,
   isCommandBarPosition,
+  isFileBrowserPosition,
   isLocalShellProfileArray,
   isNewSshHostStorage,
   isSidebarPosition,
@@ -96,6 +97,7 @@ const PREFERENCE_KEYS = [
   'keywordHighlightProfiles',
   'sidebarCollapsed',
   'sidebarPosition',
+  'fileBrowserPosition',
   'sidebarWidth',
   'sidebarCollapsedFolders',
   'sidebarFolderStyles',
@@ -951,6 +953,9 @@ export function sanitizePreferences(
   }
   if (isSidebarPosition(input.sidebarPosition)) {
     output.sidebarPosition = input.sidebarPosition;
+  }
+  if (isFileBrowserPosition(input.fileBrowserPosition)) {
+    output.fileBrowserPosition = input.fileBrowserPosition;
   }
   if (
     finiteRange(

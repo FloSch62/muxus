@@ -37,6 +37,8 @@ export type TabNumberVisibility = 'shortcut' | 'always';
 export type SidebarPosition = 'left' | 'right';
 /** Where the saved-command bar sits relative to the pane canvas. */
 export type CommandBarPosition = 'top' | 'bottom';
+/** Beside each SSH terminal, or behind a tab in the window sidebar. */
+export type FileBrowserPosition = 'pane' | 'sidebar';
 /** Where the host editor saves a new SSH host unless told otherwise. */
 export type NewSshHostStorage = 'openssh' | 'muxus';
 
@@ -225,6 +227,8 @@ export interface PrefsState {
   sidebarCollapsed: boolean;
   /** Which side of the window the hosts sidebar docks on. */
   sidebarPosition: SidebarPosition;
+  /** Where the remote file browser opens: beside its terminal, or in the sidebar. */
+  fileBrowserPosition: FileBrowserPosition;
   /** Width of the sessions and hosts sidebar. */
   sidebarWidth: number;
   /** Folder keys the user collapsed. Absent means expanded, so a new folder
@@ -260,6 +264,10 @@ export function isSidebarPosition(value: unknown): value is SidebarPosition {
 
 export function isCommandBarPosition(value: unknown): value is CommandBarPosition {
   return value === 'top' || value === 'bottom';
+}
+
+export function isFileBrowserPosition(value: unknown): value is FileBrowserPosition {
+  return value === 'pane' || value === 'sidebar';
 }
 
 export function isNewSshHostStorage(value: unknown): value is NewSshHostStorage {
@@ -320,6 +328,7 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   if (!isTabNumberVisibility(state.tabNumberVisibility)) delete state.tabNumberVisibility;
   if (!isSidebarPosition(state.sidebarPosition)) delete state.sidebarPosition;
   if (!isCommandBarPosition(state.commandBarPosition)) delete state.commandBarPosition;
+  if (!isFileBrowserPosition(state.fileBrowserPosition)) delete state.fileBrowserPosition;
   if (!isTerminalFileLinkActivation(state.terminalFileLinkActivation)) {
     delete state.terminalFileLinkActivation;
   }
@@ -541,6 +550,7 @@ export const usePrefsStore = create<PrefsState>()(
       keywordHighlightProfiles: [...BUILTIN_HIGHLIGHT_PROFILES],
       sidebarCollapsed: false,
       sidebarPosition: 'left',
+      fileBrowserPosition: 'pane',
       sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
       sidebarCollapsedFolders: [],
       sidebarFolderStyles: {},

@@ -15,6 +15,7 @@ import {
   closableTabIdsToRight,
   useTabsStore,
 } from '../../../client/src/state/tabs.js';
+import { useUiStore } from '../../../client/src/state/ui.js';
 import { findPane } from '../../../client/src/state/workspace-layout.js';
 
 /** Let the close flow run up to the point where it raises its dialog. */
@@ -35,7 +36,11 @@ beforeEach(() => {
     activeId: null,
     zoomedPaneId: null,
   });
-  usePrefsStore.setState({ confirmCloseConnected: true, splitInheritsSession: true });
+  usePrefsStore.setState({
+    confirmCloseConnected: true,
+    splitInheritsSession: true,
+    fileBrowserPosition: 'pane',
+  });
   useDialogStore.setState({ queue: [] });
 });
 
@@ -240,6 +245,20 @@ describe('host SFTP action', () => {
         { profile: { kind: 'local' } },
       ],
     });
+  });
+
+  it('brings the docked file browser forward instead of opening one beside the terminal', () => {
+    usePrefsStore.setState({ fileBrowserPosition: 'sidebar', sidebarCollapsed: true });
+    useUiStore.setState({ sidebarView: 'hosts' });
+
+    const id = openManagedHostSftp(host);
+
+    expect(useTabsStore.getState()).toMatchObject({
+      activeId: id,
+      tabs: [{ id, profile: { kind: 'ssh', target: 'router' }, sftpOpen: false }],
+    });
+    expect(usePrefsStore.getState().sidebarCollapsed).toBe(false);
+    expect(useUiStore.getState().sidebarView).toBe('files');
   });
 
   it('does nothing when SFTP is explicitly disabled', () => {

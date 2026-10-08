@@ -25,9 +25,10 @@ a running recorder.
 - **Application theme**: light, dark, or follow the system.
 - **Interface scale**: the size of the whole window. Terminal text has a separate zoom
   (++ctrl+shift+equal++ / ++ctrl+shift+minus++ / ++ctrl+wheel++).
-- **Layout**: dock the hosts sidebar on the left (default) or right, and place the
-  [command bar](commands.md) at the top (default) or bottom. A miniature of the window
-  previews the arrangement.
+- **Layout**: dock the hosts sidebar on the left (default) or right, open the
+  [file browser](files.md#docking-it-in-the-sidebar) beside the terminal (default) or in the
+  sidebar, and place the [command bar](commands.md) at the top (default) or bottom. A
+  miniature of the window previews the arrangement.
 - **Split panes**: **Dim inactive panes** or **Outline the focused pane** with a thin
   theme-aware accent. Both are off by default; dimming starts at 15% and is adjustable. Multi-exec panes stay emphasized. These
   effects are presentation-only and do not alter terminal colours or output.
