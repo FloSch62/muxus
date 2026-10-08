@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { DEFAULT_SIDEBAR_WIDTH } from '../sidebar-width.js';
 import { DEFAULT_SFTP_PANEL_WIDTH } from '../sftp-panel-width.js';
 import { muxusStateStorage } from './persist-storage.js';
+import { isStatusBarItemList, STATUS_BAR_ITEMS, type StatusBarItem } from '../host-stats.js';
 import {
   BUILTIN_HIGHLIGHT_PROFILES,
   withBuiltinHighlightProfiles,
@@ -220,6 +221,10 @@ export interface PrefsState {
   showCommandBar: boolean;
   /** Dock the command bar above or below the pane canvas. */
   commandBarPosition: CommandBarPosition;
+  /** Show the active session's host statistics along the bottom of the window. */
+  showStatusBar: boolean;
+  /** What the status bar shows, in bar order. */
+  statusBarItems: StatusBarItem[];
   /** Rules applied to every terminal; hosts may add to or replace these. */
   keywordHighlights: KeywordHighlightRule[];
   /** Named rule sets referenced by saved-host highlighting metadata. */
@@ -350,6 +355,8 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
     delete state.sshKeepaliveIntervalSeconds;
   }
   if (typeof state.sshSessionSummary !== 'boolean') delete state.sshSessionSummary;
+  if (typeof state.showStatusBar !== 'boolean') delete state.showStatusBar;
+  if (!isStatusBarItemList(state.statusBarItems)) delete state.statusBarItems;
   if (typeof state.rememberPasswordsByDefault !== 'boolean') {
     delete state.rememberPasswordsByDefault;
   }
@@ -555,6 +562,8 @@ export const usePrefsStore = create<PrefsState>()(
       selectedCommandButtonGroup: DEFAULT_COMMAND_GROUP_ID,
       showCommandBar: true,
       commandBarPosition: 'top',
+      showStatusBar: true,
+      statusBarItems: [...STATUS_BAR_ITEMS],
       keywordHighlights: [],
       keywordHighlightProfiles: [...BUILTIN_HIGHLIGHT_PROFILES],
       sidebarCollapsed: false,

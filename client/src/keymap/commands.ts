@@ -450,6 +450,18 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
     },
   },
   {
+    id: 'app.status-bar',
+    title: 'Toggle status bar',
+    category: 'app',
+    defaultChords: [],
+    keywords: ['status', 'statistics', 'cpu', 'memory', 'disk', 'uptime', 'hide', 'show'],
+    run: () => {
+      const prefs = usePrefsStore.getState();
+      prefs.set({ showStatusBar: !prefs.showStatusBar });
+      return true;
+    },
+  },
+  {
     id: 'app.focus-mode',
     title: 'Toggle focus mode',
     category: 'app',

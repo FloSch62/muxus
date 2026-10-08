@@ -2,7 +2,7 @@ import type { SidebarOpenGesture } from '../../state/prefs.js';
 
 /** How a host row was activated. */
 export interface HostActivation {
-  /** Shift-click or middle-click: open another session, never list the open ones. */
+  /** Middle-click, Shift+Enter or Shift + double-click: open another session, never list the open ones. */
   newSession: boolean;
   /** The second click of a double-click. */
   repeat: boolean;
@@ -10,7 +10,10 @@ export interface HostActivation {
   clicks?: number;
   /** Ctrl/Cmd-click: add the host to the selection or take it out instead of connecting. */
   toggleSelection?: boolean;
-  /** Shift-click: extends a selection when there is one, else opens a new session. */
+  /**
+   * Shift held: a click selects the range from the last host clicked; from the
+   * keyboard it extends a selection when there is one, else opens a new session.
+   */
   extendSelection?: boolean;
 }
 
@@ -29,21 +32,21 @@ export function clickOpensRow(clicks: number, gesture: SidebarOpenGesture): bool
 export type HostClickOutcome = 'open' | 'toggle' | 'extend' | 'select' | 'ignore';
 
 /**
- * With single-click opening, only Ctrl/Cmd-click and a Shift-click that has a
- * selection to extend stay out of connecting. With double-click opening, the
- * first click is file-manager selection — plain, Ctrl/Cmd or Shift — and the
- * second click opens; anything past a double-click is ignored.
+ * Ctrl/Cmd-click and Shift-click select in either mode; with single-click
+ * opening, every other click connects. With double-click opening, the first
+ * click is file-manager selection — plain, Ctrl/Cmd or Shift — and the second
+ * click opens; anything past a double-click is ignored. From the keyboard,
+ * Shift extends a selection that exists and otherwise opens another session.
  */
 export function hostClickOutcome(
   activation: HostActivation,
   gesture: SidebarOpenGesture,
   hasSelection: boolean,
 ): HostClickOutcome {
-  const selectsOnClick = gesture === 'double-click' && (activation.clicks ?? 0) > 0;
-  if (selectsOnClick && activation.clicks !== 1) {
-    return activation.clicks === 2 ? 'open' : 'ignore';
-  }
+  const clicks = activation.clicks ?? 0;
+  const selectsOnClick = gesture === 'double-click' && clicks > 0;
+  if (selectsOnClick && clicks !== 1) return clicks === 2 ? 'open' : 'ignore';
   if (activation.toggleSelection) return 'toggle';
-  if (activation.extendSelection && (selectsOnClick || hasSelection)) return 'extend';
+  if (activation.extendSelection && (clicks > 0 || hasSelection)) return 'extend';
   return selectsOnClick ? 'select' : 'open';
 }

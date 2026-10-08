@@ -417,7 +417,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
 
   /**
    * A host that already has tabs in this window lists them first, so a click
-   * lands on the session you had instead of stacking up duplicates. Shift- or
+   * lands on the session you had instead of stacking up duplicates. A
    * middle-click, and any host with nothing open, connect straight away.
    */
   const activateHost = useCallback(

@@ -31,6 +31,8 @@ beforeEach(() => {
     sidebarPosition: 'left',
     fileBrowserPosition: 'pane',
     sidebarOpenGesture: 'click',
+    showStatusBar: false,
+    statusBarItems: ['hostname', 'cpu'],
     backgroundColor: '',
     lightTerminalScheme: 'vscode-light',
     darkTerminalScheme: 'vscode-dark',
@@ -377,6 +379,8 @@ describe('backing up preferences', () => {
       sidebarPosition: 'right',
       fileBrowserPosition: 'sidebar',
       sidebarOpenGesture: 'double-click',
+      showStatusBar: true,
+      statusBarItems: ['memory', 'network'],
       backgroundColor: '#102030',
       lightTerminalScheme: 'paper',
       darkTerminalScheme: 'dracula',
@@ -396,6 +400,8 @@ describe('backing up preferences', () => {
     expect(document.data.preferences.sidebarPosition).toBe('right');
     expect(document.data.preferences.fileBrowserPosition).toBe('sidebar');
     expect(document.data.preferences.sidebarOpenGesture).toBe('double-click');
+    expect(document.data.preferences.showStatusBar).toBe(true);
+    expect(document.data.preferences.statusBarItems).toEqual(['memory', 'network']);
     expect(document.data.preferences.lightTerminalScheme).toBe('paper');
     expect(document.data.preferences.darkTerminalScheme).toBe('dracula');
     expect(document.data.preferences.activePaneBorder).toBe(false);
@@ -1227,6 +1233,17 @@ describe('restoring the layout preferences', () => {
     expect(restored.sidebarPosition).toBeUndefined();
     expect(restored.fileBrowserPosition).toBeUndefined();
     expect(restored.commandBarPosition).toBeUndefined();
+  });
+
+  it('restores the status bar and its items, and drops items it does not know', () => {
+    expect(
+      sanitizePreferences(prefs({ showStatusBar: true, statusBarItems: ['uptime', 'users'] })),
+    ).toMatchObject({ showStatusBar: true, statusBarItems: ['uptime', 'users'] });
+    const restored = sanitizePreferences(
+      prefs({ showStatusBar: 'on', statusBarItems: ['uptime', 'gpu'] }),
+    );
+    expect(restored.showStatusBar).toBeUndefined();
+    expect(restored.statusBarItems).toBeUndefined();
   });
 
   it('restores how sidebar entries open, and drops a gesture it does not know', () => {

@@ -1122,3 +1122,43 @@ export interface ConnectionInfo {
 export interface ConnectionsResponse {
   connections: ConnectionInfo[];
 }
+
+/**
+ * One reading of a host's counters for the status bar. Every field is
+ * optional: a host reports what its platform exposes. Rates (CPU busy share,
+ * network throughput) come from the difference between two readings.
+ */
+export interface HostStatsSample {
+  hostname?: string;
+  /** Distribution or product name with its version, such as "Ubuntu 24.04.1 LTS". */
+  os?: string;
+  /** Kernel name and release, such as "Linux 6.8.0-45-generic". */
+  kernel?: string;
+  uptimeSeconds?: number;
+  /** Cumulative CPU time over all cores in any one unit; busy = 1 - Δidle / Δtotal. */
+  cpuTime?: { total: number; idle: number };
+  cores?: number;
+  loadAverage?: [number, number, number];
+  memory?: {
+    totalBytes: number;
+    availableBytes: number;
+    swapTotalBytes?: number;
+    swapFreeBytes?: number;
+  };
+  /** Byte counters of the interface that carries the default route. */
+  network?: { interface: string; receivedBytes: number; sentBytes: number };
+  /** One user name per login session, as `who` lists them. */
+  users?: string[];
+  /** The filesystem holding `/` (the system drive on Windows). */
+  disk?: { mount: string; totalBytes: number; usedBytes: number; availableBytes: number };
+}
+
+export type HostStatsResponse =
+  | {
+      status: 'ok';
+      /** Server clock at the reading, for rates when the host reports no uptime. */
+      sampledAt: number;
+      sample: HostStatsSample;
+    }
+  /** The host ran no POSIX shell for the probe: a network appliance, Windows, a forced command. */
+  | { status: 'unsupported'; message: string };

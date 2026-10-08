@@ -3,9 +3,11 @@ import Autocomplete from '@mui/material/Autocomplete';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Checkbox from '@mui/material/Checkbox';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import FormControl from '@mui/material/FormControl';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
 import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
@@ -63,6 +65,11 @@ import {
   sessionLoggingPolicyInput,
 } from '../session-logging-policy.js';
 import { useSettingsDraft } from '../settings-draft.js';
+import {
+  STATUS_BAR_ITEM_LABELS,
+  STATUS_BAR_ITEMS,
+  withStatusBarItem,
+} from '../host-stats.js';
 import {
   INTERFACE_ZOOM_STEPS,
   clampInterfaceZoom,
@@ -510,6 +517,60 @@ function AppearanceSection() {
       </SettingsGroup>
 
       <LayoutSettings />
+
+      <SettingsGroup title="Status bar">
+        <SettingRow
+          label="Show status bar"
+          labelFor="settings-status-bar"
+          description="The active session's host along the bottom of the window. SSH hosts are read every few seconds with a short command over the open connection; nothing is installed on them."
+          control={
+            <Switch
+              id="settings-status-bar"
+              size="small"
+              checked={prefs.showStatusBar}
+              onChange={(event) => prefs.set({ showStatusBar: event.target.checked })}
+            />
+          }
+        />
+        <SettingRow
+          label="Items"
+          description="Right-click the bar to change these without opening Settings."
+          disabled={!prefs.showStatusBar}
+        >
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+              columnGap: 2,
+              mt: 1,
+            }}
+          >
+            {STATUS_BAR_ITEMS.map((item) => (
+              <FormControlLabel
+                key={item}
+                sx={{ m: 0 }}
+                disabled={!prefs.showStatusBar}
+                control={
+                  <Checkbox
+                    size="small"
+                    checked={prefs.statusBarItems.includes(item)}
+                    onChange={(event) =>
+                      prefs.set({
+                        statusBarItems: withStatusBarItem(
+                          prefs.statusBarItems,
+                          item,
+                          event.target.checked,
+                        ),
+                      })
+                    }
+                  />
+                }
+                label={<Typography variant="body2">{STATUS_BAR_ITEM_LABELS[item]}</Typography>}
+              />
+            ))}
+          </Box>
+        </SettingRow>
+      </SettingsGroup>
 
       <SettingsGroup title="Terminal colors">
         <SettingRow

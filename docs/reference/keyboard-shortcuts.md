@@ -67,6 +67,7 @@ resetting them.
 | --- | --- |
 | Quick launcher | ++ctrl+k++ |
 | Toggle hosts sidebar | ++ctrl+b++ |
+| Toggle [status bar](../guide/the-window.md#status-bar) | *(unbound by default)* |
 | Settings | ++ctrl+comma++ |
 | Keyboard shortcuts | ++ctrl+shift+slash++ |
 
@@ -79,8 +80,8 @@ resetting them.
 | Resize a split, reset it to half | Drag the divider, double-click it |
 | Pane actions (split, zoom, close) | Right-click the tab strip |
 | Rename a tab, close a tab | Double-click it, middle-click it |
-| New session to a host that already has one open | ++shift++ + click or middle-click it in the sidebar |
-| Select hosts in the sidebar to [edit, move or delete them together](../guide/hosts.md#editing-several-hosts-at-once) | ++ctrl++ + click (++cmd++ + click on macOS), then ++shift++ + click for a range |
+| New session to a host that already has one open | Middle-click it in the sidebar |
+| Select hosts in the sidebar to [edit, move or delete them together](../guide/hosts.md#editing-several-hosts-at-once) | ++ctrl++ + click (++cmd++ + click on macOS) for one, ++shift++ + click for a range from the last host clicked |
 | Search next / previous match | ++enter++, ++shift+enter++ |
 
 ## File editor
