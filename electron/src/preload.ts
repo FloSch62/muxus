@@ -3,6 +3,10 @@ import type {
   AppWindowLaunch,
   CommandLineLaunch,
   DesktopUpdateState,
+  LocalOpenApplication,
+  LocalOpenResult,
+  LocalOpenTarget,
+  LocalProgramChoice,
   MobaXtermSessionSource,
 } from '@muxus/shared';
 
@@ -184,6 +188,28 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   /** Reveal a file in the operating system's file manager. */
   showItemInFolder(file: string): void {
     ipcRenderer.send('muxus:show-item-in-folder', file);
+  },
+  /** Linux: installed programs ranked for a file of this name. */
+  listLocalApplications(fileName: string): Promise<LocalOpenApplication[] | undefined> {
+    return ipcRenderer.invoke('muxus:local-open:applications', fileName);
+  },
+  /** Pick a program with the native file picker (macOS and Linux). */
+  chooseLocalProgram(): Promise<LocalProgramChoice | undefined> {
+    return ipcRenderer.invoke('muxus:local-open:choose-program');
+  },
+  /** Start a private local copy of a remote file; resolves to its handle. */
+  beginLocalCopy(name: string): Promise<string | undefined> {
+    return ipcRenderer.invoke('muxus:local-open:begin', name);
+  },
+  writeLocalCopy(id: string, chunk: Uint8Array): Promise<boolean> {
+    return ipcRenderer.invoke('muxus:local-open:write', id, chunk);
+  },
+  cancelLocalCopy(id: string): Promise<void> {
+    return ipcRenderer.invoke('muxus:local-open:cancel', id);
+  },
+  /** Close the copy and open it with the chosen program. */
+  openLocalCopy(id: string, target: LocalOpenTarget): Promise<LocalOpenResult> {
+    return ipcRenderer.invoke('muxus:local-open:finish', id, target);
   },
   /** Read bookmark-only session data from the current Windows user's MobaXterm install. */
   readMobaXtermSessions(): Promise<MobaXtermSessionSource | undefined> {

@@ -44,9 +44,29 @@ same tab.
 
 ## Managing
 
-The row menu, opened with right-click, has **Open in editor**, **Download**, **Rename** and
-**Delete**. The toolbar adds **New folder**. Deleting a directory removes its contents and
-is confirmed first.
+The row menu, opened with right-click, has **Open in editor**, **Open with default
+program**, **Open with…**, **Download**, **Rename** and **Delete**. The toolbar adds **New
+folder**. Deleting a directory removes its contents and is confirmed first.
+
+## Opening files with local programs
+
+In the desktop app, a file can be opened with a program on your computer without
+downloading it by hand first: an HTML page in the browser, an image in a viewer, a
+`.drawio` diagram in draw.io.
+
+- **Open with default program** uses the program your system opens that type of file with.
+- **Open with…** lets you choose. Windows shows its own *How do you want to open this
+  file?* dialog, and macOS asks for an application. On Linux, Muxus lists the installed
+  programs, with those that handle the file's type at the top; **Browse…** picks any other
+  program, such as an AppImage.
+
+The file is downloaded with the usual progress bar into a private folder of its own, then
+handed to the program. It is a copy: saving it in that program does not change the file on
+the remote host, so upload it again to keep the edit. Copies untouched for a day are removed
+the next time Muxus starts or opens a file. On Linux they are kept under `.muxus-open` in
+your Downloads folder, where sandboxed snap applications can read them; on Windows and
+macOS they are kept in the temporary folder. On Windows, the copy carries the same
+downloaded-from-the-internet mark as a browser download.
 
 ## Transfer safety
 

@@ -119,6 +119,31 @@ export interface MobaXtermSessionSource {
   content: string;
 }
 
+/** A local program the desktop app can open a downloaded remote file with. */
+export interface LocalOpenApplication {
+  /** Opaque to the renderer; the main process resolves it again before launching. */
+  id: string;
+  name: string;
+  /** data: URL of the program's icon, when one was found. */
+  icon?: string;
+  /** The program declares support for the file's type. */
+  recommended?: boolean;
+  /** The desktop's configured default program for the file's type. */
+  isDefault?: boolean;
+}
+
+/** How the desktop app opens a downloaded remote file. */
+export type LocalOpenTarget =
+  | { kind: 'default' }
+  /** Windows' own "How do you want to open this file?" dialog. */
+  | { kind: 'system-chooser' }
+  | { kind: 'application'; id: string };
+
+export type LocalOpenResult = { ok: true } | { ok: false; message: string };
+
+/** A program picked with the native file picker, or why the pick cannot be used. */
+export type LocalProgramChoice = { application: LocalOpenApplication } | { message: string };
+
 /**
  * ssh_config keywords the dialer applies even though they have no editor
  * field of their own (they are edited under Advanced). Everything else in

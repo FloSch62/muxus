@@ -20,6 +20,7 @@ import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import { alpha } from '@mui/material/styles';
+import AppsOutlinedIcon from '@mui/icons-material/AppsOutlined';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import CreateNewFolderOutlinedIcon from '@mui/icons-material/CreateNewFolderOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
@@ -29,11 +30,12 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import FolderOffOutlinedIcon from '@mui/icons-material/FolderOffOutlined';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
+import LaunchOutlinedIcon from '@mui/icons-material/LaunchOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import { useQueryClient } from '@tanstack/react-query';
-import type { SftpEntry } from '@muxus/shared';
+import type { LocalOpenTarget, SftpEntry } from '@muxus/shared';
 import { ApiError, apiFetch } from '../api/http.js';
 import { useSftpList } from '../api/queries.js';
 import {
@@ -46,6 +48,12 @@ import { showErrorToast, showToast } from '../state/toast.js';
 import { usePrefsStore } from '../state/prefs.js';
 import { loadMonacoTextEditor } from '../lazy-features.js';
 import {
+  canOpenLocally,
+  chooseLocalProgram,
+  openDownloadedFile,
+  openWithChooser,
+} from '../local-open.js';
+import {
   clampSftpPanelWidth,
   DEFAULT_SFTP_PANEL_WIDTH,
   maxSftpPanelWidth,
@@ -53,6 +61,7 @@ import {
 } from '../sftp-panel-width.js';
 import { initialSftpPath } from '../sftp-panel-state.js';
 import { FileTypeIcon } from './FileTypeIcon.js';
+import { OpenWithDialog } from './OpenWithDialog.js';
 import { PanelResizeHandle } from './PanelResizeHandle.js';
 
 interface DroppedFile {
@@ -335,6 +344,7 @@ export function SftpPanel({
   const [dragOver, setDragOver] = useState(false);
   const [selectedName, setSelectedName] = useState<string>();
   const [menu, setMenu] = useState<{ x: number; y: number; entry: SftpEntry } | null>(null);
+  const [openWithFile, setOpenWithFile] = useState<{ entry: SftpEntry; path: string }>();
   const [busy, setBusy] = useState(false);
   const [transfer, setTransfer] = useState<TransferState>();
   const nextTransferIdRef = useRef(1);
@@ -394,8 +404,19 @@ export function SftpPanel({
     setMenu({ x, y, entry });
   }, []);
 
-  const download = (entry: SftpEntry) => {
-    if (busy) return;
+  const localOpen = canOpenLocally();
+  const localChooser = openWithChooser();
+
+  /** Download `file` with progress, then hand the bytes to `deliver`. */
+  const fetchFile = (
+    entry: SftpEntry,
+    file: string,
+    deliver: (blob: Blob) => Promise<void> | void,
+  ) => {
+    if (busy) {
+      showToast('warning', 'Wait for the current SFTP operation to finish.');
+      return;
+    }
     void (async () => {
       const id = nextTransferIdRef.current++;
       const controller = new AbortController();
@@ -414,7 +435,7 @@ export function SftpPanel({
       });
       try {
         const blob = await downloadBlobWithProgress(
-          `/api/sftp/${connId}/download?path=${encodeURIComponent(remotePath(entry))}`,
+          `/api/sftp/${connId}/download?path=${encodeURIComponent(file)}`,
           (progress) =>
             setTransfer({
               id,
@@ -438,8 +459,7 @@ export function SftpPanel({
           fileIndex: 1,
           fileCount: 1,
         });
-        saveDownload(entry.name, blob);
-        showToast('success', `Downloaded ${entry.name}`);
+        await deliver(blob);
         setTimeout(
           () => setTransfer((current) => (current?.id === id ? undefined : current)),
           1_200,
@@ -453,6 +473,32 @@ export function SftpPanel({
         setBusy(false);
       }
     })();
+  };
+
+  const download = (entry: SftpEntry) =>
+    fetchFile(entry, remotePath(entry), (blob) => {
+      saveDownload(entry.name, blob);
+      showToast('success', `Downloaded ${entry.name}`);
+    });
+
+  const openLocally = (entry: SftpEntry, file: string, target: LocalOpenTarget) =>
+    fetchFile(entry, file, (blob) => openDownloadedFile(entry.name, blob, target));
+
+  // The path is taken now: a followed terminal can change folders while a
+  // program is being picked.
+  const openWith = (entry: SftpEntry) => {
+    const file = remotePath(entry);
+    if (localChooser === 'system') {
+      openLocally(entry, file, { kind: 'system-chooser' });
+    } else if (localChooser === 'program-picker') {
+      chooseLocalProgram()
+        .then((program) => {
+          if (program) openLocally(entry, file, { kind: 'application', id: program.id });
+        })
+        .catch(showErrorToast);
+    } else if (localChooser === 'application-list') {
+      setOpenWithFile({ entry, path: file });
+    }
   };
 
   const upload = (payload: DropPayload) => {
@@ -1013,6 +1059,32 @@ export function SftpPanel({
             <ListItemText>Open in editor</ListItemText>
           </MenuItem>
         )}
+        {menu?.entry.type === 'file' && localOpen && (
+          <MenuItem
+            onClick={() => {
+              if (menu) openLocally(menu.entry, remotePath(menu.entry), { kind: 'default' });
+              setMenu(null);
+            }}
+          >
+            <ListItemIcon>
+              <LaunchOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Open with default program</ListItemText>
+          </MenuItem>
+        )}
+        {menu?.entry.type === 'file' && localChooser && (
+          <MenuItem
+            onClick={() => {
+              if (menu) openWith(menu.entry);
+              setMenu(null);
+            }}
+          >
+            <ListItemIcon>
+              <AppsOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Open with…</ListItemText>
+          </MenuItem>
+        )}
         {menu?.entry.type === 'file' && (
           <MenuItem
             onClick={() => {
@@ -1050,6 +1122,16 @@ export function SftpPanel({
           <ListItemText>Delete</ListItemText>
         </MenuItem>
       </Menu>
+      {openWithFile && (
+        <OpenWithDialog
+          fileName={openWithFile.entry.name}
+          onClose={() => setOpenWithFile(undefined)}
+          onOpen={(target) => {
+            setOpenWithFile(undefined);
+            openLocally(openWithFile.entry, openWithFile.path, target);
+          }}
+        />
+      )}
     </Box>
   );
 }
