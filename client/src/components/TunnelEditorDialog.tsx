@@ -10,7 +10,10 @@ import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import Paper from '@mui/material/Paper';
 import Stack from '@mui/material/Stack';
+import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
 import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
@@ -101,6 +104,10 @@ function TunnelEditorForm({
   const [targetPort, setTargetPort] = useState(
     editing?.targetPort ? String(editing.targetPort) : '',
   );
+  const [autoStart, setAutoStart] = useState(editing?.autoStart ?? false);
+  const [autoReconnect, setAutoReconnect] = useState(
+    editing?.autoReconnect ?? false,
+  );
 
   const aliases = (config?.hosts ?? []).flatMap((host) => host.aliases);
   const selectedHost = (config?.hosts ?? []).find((host) =>
@@ -137,6 +144,8 @@ function TunnelEditorForm({
           type === 'dynamic' ? undefined : targetHost.trim(),
         targetPort:
           type === 'dynamic' ? undefined : Number(targetPort),
+        autoStart,
+        autoReconnect,
       }).then((record) => ({ record, start })),
     onSuccess: ({ record, start }) => {
       onClose();
@@ -355,6 +364,28 @@ function TunnelEditorForm({
               </Stack>
             </Stack>
           </Box>
+
+          <Paper variant="outlined" sx={{ px: 1.5, py: 1.25 }}>
+            <Stack spacing={1.25}>
+              <SwitchRow
+                checked={autoStart}
+                onChange={setAutoStart}
+                label="Start when Muxus starts"
+                detail="Brings the tunnel up as Muxus opens, without a terminal."
+              />
+              <SwitchRow
+                checked={autoReconnect}
+                onChange={setAutoReconnect}
+                label="Reconnect automatically"
+                detail="Connects again when the SSH connection drops or the host cannot be reached yet, until you stop the tunnel."
+              />
+              <Typography variant="caption" color="textSecondary">
+                Both sign in with keys, the SSH agent or a password saved in the
+                vault. A login that needs a passphrase, 2FA code or host key
+                confirmation waits until you start the tunnel.
+              </Typography>
+            </Stack>
+          </Paper>
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
@@ -479,6 +510,40 @@ function HostSummary({ host }: { host: SshHostEntry }) {
         />
       ) : null}
     </Stack>
+  );
+}
+
+function SwitchRow({
+  checked,
+  onChange,
+  label,
+  detail,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+  detail: string;
+}) {
+  return (
+    <FormControlLabel
+      sx={{ m: 0, alignItems: 'flex-start', gap: 1.25 }}
+      control={
+        <Switch
+          size="small"
+          checked={checked}
+          onChange={(event) => onChange(event.target.checked)}
+          sx={{ mt: 0.25 }}
+        />
+      }
+      label={
+        <Box>
+          <Typography variant="body2">{label}</Typography>
+          <Typography variant="caption" color="textSecondary">
+            {detail}
+          </Typography>
+        </Box>
+      }
+    />
   );
 }
 

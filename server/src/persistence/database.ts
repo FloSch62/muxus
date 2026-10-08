@@ -438,6 +438,16 @@ const MIGRATIONS = [
         ADD COLUMN command_button_group TEXT;
     `,
   },
+  {
+    version: 25,
+    name: 'tunnel-autostart-reconnect',
+    sql: `
+      ALTER TABLE tunnels
+        ADD COLUMN auto_start INTEGER NOT NULL DEFAULT 0 CHECK(auto_start IN (0, 1));
+      ALTER TABLE tunnels
+        ADD COLUMN auto_reconnect INTEGER NOT NULL DEFAULT 0 CHECK(auto_reconnect IN (0, 1));
+    `,
+  },
 ] as const;
 
 /** Kinds stored as Muxus-owned saved hosts (everything but OpenSSH metadata rows). */
@@ -1713,7 +1723,7 @@ export class MuxusDatabase {
   listTunnels(): TunnelRecord[] {
     return this.db
       .prepare(`
-        SELECT id, name, target, ssh_options_json, type, bind_port, target_host, target_port, created_at, updated_at
+        SELECT id, name, target, ssh_options_json, type, bind_port, target_host, target_port, auto_start, auto_reconnect, created_at, updated_at
         FROM tunnels
         ORDER BY COALESCE(NULLIF(name, ''), target) COLLATE NOCASE, created_at
       `)
@@ -1731,8 +1741,8 @@ export class MuxusDatabase {
     const id = input.id ?? nanoid();
     this.db
       .prepare(`
-        INSERT INTO tunnels(id, name, target, ssh_options_json, type, bind_port, target_host, target_port)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO tunnels(id, name, target, ssh_options_json, type, bind_port, target_host, target_port, auto_start, auto_reconnect)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           target = excluded.target,
@@ -1741,6 +1751,8 @@ export class MuxusDatabase {
           bind_port = excluded.bind_port,
           target_host = excluded.target_host,
           target_port = excluded.target_port,
+          auto_start = excluded.auto_start,
+          auto_reconnect = excluded.auto_reconnect,
           updated_at = CURRENT_TIMESTAMP
       `)
       .run(
@@ -1752,14 +1764,20 @@ export class MuxusDatabase {
         input.bindPort,
         dynamic ? null : input.targetHost!.trim(),
         dynamic ? null : input.targetPort!,
+        input.autoStart ? 1 : 0,
+        input.autoReconnect ? 1 : 0,
       );
+    return this.tunnel(id)!;
+  }
+
+  tunnel(id: string): TunnelRecord | undefined {
     const row = this.db
       .prepare(`
-        SELECT id, name, target, ssh_options_json, type, bind_port, target_host, target_port, created_at, updated_at
+        SELECT id, name, target, ssh_options_json, type, bind_port, target_host, target_port, auto_start, auto_reconnect, created_at, updated_at
         FROM tunnels WHERE id = ?
       `)
-      .get(id)!;
-    return tunnelFromRow(row);
+      .get(id);
+    return row ? tunnelFromRow(row) : undefined;
   }
 
   deleteTunnel(id: string): boolean {
@@ -2270,6 +2288,8 @@ function tunnelFromRow(row: SqlRow): TunnelRecord {
     bindPort: Number(row.bind_port),
     targetHost: type === 'dynamic' ? undefined : String(row.target_host),
     targetPort: type === 'dynamic' ? undefined : Number(row.target_port),
+    autoStart: Number(row.auto_start) === 1,
+    autoReconnect: Number(row.auto_reconnect) === 1,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };

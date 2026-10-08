@@ -23,8 +23,9 @@ export interface RunningServer {
 /** Start the server programmatically (used by the CLI entry and the Electron shell). */
 export async function startServer(overrides: Partial<ServerConfig> = {}): Promise<RunningServer> {
   const config = resolveConfig(overrides);
-  const { app } = await buildApp(config);
+  const { app, ctx } = await buildApp(config);
   await app.listen({ host: config.host, port: config.port });
+  ctx.forwards.autostart(ctx.database.listTunnels());
   // config.port may be 0 (pick any free port); read the real one back.
   const port = (app.server.address() as AddressInfo).port;
   const urls = serverUrls(config.host, port, config.token);

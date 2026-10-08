@@ -341,7 +341,8 @@ export function QuickLauncherDialog() {
   ) => {
     setBusyResultId(`tunnel:${tunnel.id}`);
     try {
-      if (running) {
+      // A tunnel that gave up reconnecting starts again, with its prompts.
+      if (running && running.status !== 'error') {
         await stopForward(running.id);
         showToast('success', `Stopped tunnel “${tunnel.name ?? tunnel.target}”.`);
       } else {
@@ -958,7 +959,7 @@ function buildCatalogResults({
       tunnel,
       running,
       label: tunnel.name ?? tunnel.target,
-      detail: `${running ? 'Running' : 'Stopped'} · ${describeTunnel(tunnel)}`,
+      detail: `${tunnelState(running)} · ${describeTunnel(tunnel)}`,
       keywords: ['tunnel', 'forward', tunnel.target, tunnel.type],
       priority: running ? 280 : 100,
       showWhenEmpty: !!running,
@@ -1159,7 +1160,7 @@ function ResultIcon({ result }: { result: LauncherResult }) {
     );
   }
   if (result.kind === 'tunnel') {
-    return result.running ? (
+    return result.running && result.running.status !== 'error' ? (
       <StopOutlinedIcon {...props} color="success" />
     ) : (
       <SwapHorizOutlinedIcon {...props} />
@@ -1245,6 +1246,14 @@ function tabStatusLabel(status: TabStatus): string {
   if (status === 'connecting') return 'Connecting';
   if (status === 'interrupted') return 'Connection interrupted';
   return 'Disconnected — reconnect';
+}
+
+function tunnelState(running: ForwardInfo | undefined): string {
+  if (!running) return 'Stopped';
+  if (running.status === 'starting') return 'Starting';
+  if (running.status === 'reconnecting') return 'Reconnecting';
+  if (running.status === 'error') return 'Needs sign-in';
+  return 'Running';
 }
 
 function describeTunnel(tunnel: TunnelRecord): string {

@@ -1096,7 +1096,9 @@ function validateBackupData(data: Record<string, unknown>): void {
         nonEmptyString(tunnel.id) &&
         nonEmptyString(tunnel.target) &&
         ['local', 'remote', 'dynamic'].includes(String(tunnel.type)) &&
-        Number.isInteger(tunnel.bindPort),
+        Number.isInteger(tunnel.bindPort) &&
+        (tunnel.autoStart === undefined || typeof tunnel.autoStart === 'boolean') &&
+        (tunnel.autoReconnect === undefined || typeof tunnel.autoReconnect === 'boolean'),
     ) ||
     !data.loggingPolicies.every(
       (entry) =>

@@ -23,7 +23,10 @@ import {
 } from '../terminal/custom-schemes.js';
 import type { TerminalScheme } from '../terminal/palette.js';
 import type { KeywordHighlightProfile, KeywordHighlightRule } from '@muxus/shared';
-import { MAX_SSH_KEEPALIVE_INTERVAL_SECONDS } from '@muxus/shared/ws-protocol';
+import {
+  DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
+  MAX_SSH_KEEPALIVE_INTERVAL_SECONDS,
+} from '@muxus/shared/ws-protocol';
 
 export type ThemeMode = 'light' | 'dark' | 'os';
 export type EffectiveThemeMode = Exclude<ThemeMode, 'os'>;
@@ -40,7 +43,7 @@ export type NewSshHostStorage = 'openssh' | 'muxus';
 export const DEFAULT_INACTIVE_PANE_DIM_STRENGTH = 0.15;
 export const MIN_INACTIVE_PANE_DIM_STRENGTH = 0.1;
 export const MAX_INACTIVE_PANE_DIM_STRENGTH = 0.6;
-export const DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS = 30;
+export { DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS };
 
 /**
  * SSH keepalive fallback as wire fields for a connect or dial message, read

@@ -49,6 +49,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 22, name: 'remote-desktop-hosts' },
       { version: 23, name: 'session-log-files' },
       { version: 24, name: 'host-command-button-group' },
+      { version: 25, name: 'tunnel-autostart-reconnect' },
     ]);
   });
 
@@ -140,8 +141,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 24,
-      name: 'host-command-button-group',
+      version: 25,
+      name: 'tunnel-autostart-reconnect',
     });
     expect(database.savedHostProfile(telnet.id)).toMatchObject({
       name: 'Core switch',
@@ -300,8 +301,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 24,
-      name: 'host-command-button-group',
+      version: 25,
+      name: 'tunnel-autostart-reconnect',
     });
     expect(database.passwordVaultConfig()).toMatchObject({
       formatVersion: 2,
@@ -470,6 +471,25 @@ describe('saved tunnels', () => {
 
     expect(database.deleteTunnel(created.id)).toBe(true);
     expect(database.listTunnels()).toHaveLength(0);
+  });
+
+  it('keeps autostart and auto-reconnect off unless they are switched on', () => {
+    database = new MuxusDatabase(':memory:');
+    const rule = { target: 'web', type: 'dynamic', bindPort: 1080 } as const;
+
+    const created = database.saveTunnel(rule);
+    expect(created).toMatchObject({ autoStart: false, autoReconnect: false });
+
+    const started = database.saveTunnel({ ...rule, id: created.id, autoStart: true });
+    expect(started).toMatchObject({ autoStart: true, autoReconnect: false });
+    const enabled = database.saveTunnel({ ...rule, id: created.id, autoStart: true, autoReconnect: true });
+    expect(enabled).toMatchObject({ autoStart: true, autoReconnect: true });
+    expect(database.tunnel(created.id)).toEqual(enabled);
+    expect(database.listTunnels()).toEqual([enabled]);
+
+    // An update without the flags (an older backup, "Save as tunnel") switches them off.
+    expect(database.saveTunnel({ ...rule, id: created.id })).toMatchObject({ autoStart: false, autoReconnect: false });
+    expect(database.tunnel('missing')).toBeUndefined();
   });
 
   it('rejects local/remote rules without a tunnel target', () => {

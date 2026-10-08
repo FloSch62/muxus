@@ -305,6 +305,25 @@ describe('backing up session log files', () => {
     ).toThrow('The backup data is incomplete or too large.');
   });
 
+  it('accepts saved tunnels with or without their switches and rejects malformed ones', () => {
+    const backup = (tunnels: unknown[]) =>
+      JSON.stringify({
+        format: BACKUP_FORMAT,
+        version: TRANSFER_VERSION,
+        createdAt: '2026-10-08T12:00:00.000Z',
+        data: { ...connections, preferences: {}, tunnels, loggingPolicies: [], historySettings },
+      });
+    const tunnel = { id: 'tunnel-1', target: 'db', type: 'dynamic', bindPort: 1080 };
+
+    const switched = { ...tunnel, id: 'tunnel-2', autoStart: true, autoReconnect: true };
+    expect(parseTransferDocument(backup([tunnel, switched])).data).toMatchObject({ tunnels: [tunnel, switched] });
+    for (const malformed of [{ autoStart: 'yes' }, { autoReconnect: 'yes' }]) {
+      expect(() => parseTransferDocument(backup([{ ...tunnel, ...malformed }]))).toThrow(
+        'The backup data is incomplete or too large.',
+      );
+    }
+  });
+
   it('restores the settings into this machine\'s log folder', async () => {
     apiFetchMock
       .mockResolvedValueOnce({ settings: { storageLocation: '/srv/history' } })

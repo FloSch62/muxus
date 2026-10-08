@@ -25,7 +25,7 @@ window controls sit inside it. From left to right:
 | :material-checkbox-multiple-marked-outline: **Multi-exec** | Type once into several sessions at once. See [multi-exec](commands.md#multi-execution) |
 | :material-flash: | [Saved command buttons](commands.md) |
 | :material-folder-outline: | The [file browser](files.md) for the active SSH tab |
-| :material-swap-horizontal: | The [forwarding panel](tunnels.md); the badge counts active forwards |
+| :material-swap-horizontal: | The [forwarding panel](tunnels.md); the badge counts forwards and turns amber while a tunnel [reconnects or could not start](tunnels.md#starting-with-muxus-and-reconnecting) |
 | :material-console: | Terminal actions: find, select all, copy all, export, logging, clear, zoom |
 | :material-history: | [Session history](session-history.md) |
 | :material-weather-night: | Theme: light → dark → follow system |

@@ -26,12 +26,17 @@ const tunnelSchema = z
     bindPort: z.number().int().min(1).max(65535),
     targetHost: z.string().min(1).max(500).optional(),
     targetPort: z.number().int().min(1).max(65535).optional(),
+    autoStart: z.boolean().optional(),
+    autoReconnect: z.boolean().optional(),
   })
   .refine((t) => t.type === 'dynamic' || (!!t.targetHost && !!t.targetPort), {
     message: 'targetHost and targetPort are required for local/remote tunnels',
   });
 
-/** Saved tunnel definitions — start/stop happens via /api/forwards. */
+/**
+ * Saved tunnel definitions — start/stop happens via /api/forwards. Saving or
+ * deleting one ends a redial that should no longer happen.
+ */
 export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/tunnels', (): TunnelsResponse => ({ tunnels: ctx.database.listTunnels() }));
 
@@ -41,7 +46,9 @@ export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): voi
       if (!parsed.success) {
         return await reply.code(400).send({ message: parsed.error.issues[0]?.message ?? 'invalid tunnel' });
       }
-      return ctx.database.saveTunnel(parsed.data);
+      const saved = ctx.database.saveTunnel(parsed.data);
+      ctx.forwards.tunnelChanged(saved.id);
+      return saved;
     } catch (err) {
       return sendError(reply, err);
     }
@@ -49,6 +56,8 @@ export function registerTunnelRoutes(app: FastifyInstance, ctx: AppContext): voi
 
   app.delete('/api/tunnels/:id', (req) => {
     const { id } = req.params as { id: string };
-    return { deleted: ctx.database.deleteTunnel(id) };
+    const deleted = ctx.database.deleteTunnel(id);
+    ctx.forwards.tunnelChanged(id);
+    return { deleted };
   });
 }

@@ -10,16 +10,21 @@ import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import IconButton from '@mui/material/IconButton';
 import ListItemIcon from '@mui/material/ListItemIcon';
+import ListItemText from '@mui/material/ListItemText';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
+import AutorenewIcon from '@mui/icons-material/Autorenew';
 import BookmarkAddOutlinedIcon from '@mui/icons-material/BookmarkAddOutlined';
+import CheckBoxIcon from '@mui/icons-material/CheckBox';
+import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
 import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
@@ -30,7 +35,14 @@ import type { ConfigForward, ConnectionInfo, ForwardInfo, SshHostEntry, TunnelRe
 import { apiFetch } from '../api/http.js';
 import { useConnections, useForwards, useSshConfig, useTunnels } from '../api/queries.js';
 import { useUpsertHost } from '../api/ssh-config.js';
-import { adoptForward, deleteTunnel, saveTunnel, startTunnel, stopForward } from '../api/tunnels.js';
+import {
+  adoptForward,
+  deleteTunnel,
+  saveTunnel,
+  saveTunnelOptions,
+  startTunnel,
+  stopForward,
+} from '../api/tunnels.js';
 import { confirmAction } from '../state/dialogs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
@@ -46,6 +58,11 @@ import { TunnelEditorDialog, type TunnelEditorState } from './TunnelEditorDialog
 
 const MONO = { fontFamily: '"JetBrains Mono", monospace' } as const;
 const EMPTY_FORWARDS: ForwardInfo[] = [];
+/** Per-tunnel switches offered in the row menu as well as the editor. */
+const TUNNEL_SWITCHES = [
+  { option: 'autoStart', label: 'Start when Muxus starts' },
+  { option: 'autoReconnect', label: 'Reconnect automatically' },
+] as const;
 
 /**
  * Global forwarding side panel: saved tunnels started/stopped independently
@@ -115,6 +132,13 @@ export function ForwardingPanel() {
 
   const stop = useMutation({
     mutationFn: stopForward,
+    onSuccess: invalidate,
+    onError: showErrorToast,
+  });
+
+  const toggleSwitch = useMutation({
+    mutationFn: ({ tunnel, option }: { tunnel: TunnelRecord; option: (typeof TUNNEL_SWITCHES)[number]['option'] }) =>
+      saveTunnelOptions(tunnel, { [option]: !tunnel[option] }),
     onSuccess: invalidate,
     onError: showErrorToast,
   });
@@ -232,6 +256,8 @@ export function ForwardingPanel() {
         {tunnels.map((tunnel) => {
           const running = runningByTunnel.get(tunnel.id);
           const busy = starting[tunnel.id];
+          /** The server stopped trying: start it again, with prompts, or dismiss it. */
+          const needsStart = running?.status === 'error';
           return (
             <Stack
               key={tunnel.id}
@@ -246,38 +272,86 @@ export function ForwardingPanel() {
                   borderRadius: '50%',
                   flexShrink: 0,
                   bgcolor: running
-                    ? running.status === 'error'
-                      ? statusTextColor('error')(theme)
-                      : statusTextColor('success')(theme)
+                    ? statusTextColor(
+                        running.status === 'error'
+                          ? 'error'
+                          : running.status === 'active'
+                            ? 'success'
+                            : 'warning',
+                      )(theme)
                     : theme.palette.text.disabled,
                 })}
               />
               <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
-                  {tunnel.name || tunnel.target}
-                </Typography>
+                <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
+                  <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
+                    {tunnel.name || tunnel.target}
+                  </Typography>
+                  {tunnel.autoStart ? (
+                    <Tooltip title="Starts with Muxus">
+                      <PowerSettingsNewIcon
+                        aria-label="Starts with Muxus"
+                        sx={{ fontSize: 13, color: 'text.secondary', flexShrink: 0 }}
+                      />
+                    </Tooltip>
+                  ) : null}
+                  {tunnel.autoReconnect ? (
+                    <Tooltip title="Reconnects automatically">
+                      <AutorenewIcon
+                        aria-label="Reconnects automatically"
+                        sx={{ fontSize: 14, color: 'text.secondary', flexShrink: 0 }}
+                      />
+                    </Tooltip>
+                  ) : null}
+                </Stack>
                 <Typography variant="caption" color="textSecondary" noWrap sx={{ display: 'block', ...MONO, fontSize: 11 }}>
                   {busy ?? `${FORWARD_FLAG[tunnel.type]} ${describeForward(tunnel)}`}
                 </Typography>
                 <Typography variant="caption" color="textDisabled" noWrap sx={{ display: 'block', fontSize: 11 }}>
                   {describeTunnelConnection(tunnel)}
                 </Typography>
-                {running?.error && (
-                  <Typography variant="caption" sx={{ color: 'error.main', display: 'block' }} noWrap>
-                    {running.error}
+                {running?.status === 'starting' && (
+                  <Typography variant="caption" color="textSecondary" sx={{ display: 'block' }} noWrap>
+                    Starting…
                   </Typography>
+                )}
+                {running?.status === 'reconnecting' && (
+                  <Tooltip title={running.error ?? ''}>
+                    <Typography
+                      variant="caption"
+                      sx={(theme) => ({ color: statusTextColor('warning')(theme), display: 'block' })}
+                      noWrap
+                    >
+                      Reconnecting{running.error ? ` — ${running.error}` : '…'}
+                    </Typography>
+                  </Tooltip>
+                )}
+                {running?.status === 'error' && running.error && (
+                  <Tooltip title={running.error}>
+                    <Typography variant="caption" sx={{ color: 'error.main', display: 'block' }} noWrap>
+                      {running.error}
+                    </Typography>
+                  </Tooltip>
                 )}
               </Box>
               {busy ? (
                 <CircularProgress size={18} sx={{ mx: 0.75 }} />
-              ) : running ? (
-                <Tooltip title="Stop tunnel">
+              ) : running && !needsStart ? (
+                <Tooltip
+                  title={
+                    running.status === 'starting'
+                      ? 'Cancel start'
+                      : running.status === 'reconnecting'
+                        ? 'Stop reconnecting'
+                        : 'Stop tunnel'
+                  }
+                >
                   <IconButton size="small" aria-label={`Stop tunnel ${tunnel.name ?? tunnel.id}`} onClick={() => stop.mutate(running.id)}>
                     <StopIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
               ) : (
-                <Tooltip title={`Start tunnel (via ${tunnel.target})`}>
+                <Tooltip title={needsStart ? 'Start tunnel and sign in' : `Start tunnel (via ${tunnel.target})`}>
                   <span>
                     <IconButton
                       size="small"
@@ -291,6 +365,17 @@ export function ForwardingPanel() {
                   </span>
                 </Tooltip>
               )}
+              {needsStart ? (
+                <Tooltip title="Dismiss">
+                  <IconButton
+                    size="small"
+                    aria-label={`Dismiss tunnel error ${tunnel.name ?? tunnel.id}`}
+                    onClick={() => stop.mutate(running.id)}
+                  >
+                    <CloseIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Tooltip>
+              ) : null}
               <IconButton
                 className="tunnel-row-menu"
                 size="small"
@@ -327,6 +412,27 @@ export function ForwardingPanel() {
       </Box>
 
       <Menu open={!!tunnelMenu} anchorEl={tunnelMenu?.anchor} onClose={() => setTunnelMenu(null)}>
+        {TUNNEL_SWITCHES.map(({ option, label }) => (
+          <MenuItem
+            key={option}
+            role="menuitemcheckbox"
+            aria-checked={!!tunnelMenu?.tunnel[option]}
+            onClick={() => {
+              if (tunnelMenu) toggleSwitch.mutate({ tunnel: tunnelMenu.tunnel, option });
+              setTunnelMenu(null);
+            }}
+          >
+            <ListItemIcon>
+              {tunnelMenu?.tunnel[option] ? (
+                <CheckBoxIcon fontSize="small" color="primary" />
+              ) : (
+                <CheckBoxOutlineBlankIcon fontSize="small" />
+              )}
+            </ListItemIcon>
+            <ListItemText>{label}</ListItemText>
+          </MenuItem>
+        ))}
+        <Divider />
         <MenuItem
           onClick={() => {
             if (tunnelMenu) setEditor({ tunnel: tunnelMenu.tunnel });

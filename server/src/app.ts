@@ -114,7 +114,9 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
     consoleCompatibilityForProfile: (id) =>
       database.consoleCompatibilityForSavedHost(id),
   });
-  const forwards = new ForwardManager(connections, app.log);
+  const forwards = new ForwardManager(connections, app.log, {
+    tunnel: (id) => database.tunnel(id),
+  });
   const historySettings = database.sessionHistorySettings();
   const configuredHistoryRoot =
     config.historyPath ??
