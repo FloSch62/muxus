@@ -36,7 +36,6 @@ import { ErrorBoundary } from '../components/ErrorBoundary.js';
 import { CommandLineLaunchHandler } from '../components/CommandLineLaunchHandler.js';
 import { ActionBar } from '../components/ActionBar.js';
 import { EmptyPane } from '../components/EmptyPane.js';
-import { SessionSidebar } from '../components/SessionSidebar.js';
 import { TabStrip } from '../components/TabStrip.js';
 import { TerminalView } from '../components/TerminalView.js';
 import { RemoteDesktopView } from '../components/RemoteDesktopView.js';
@@ -46,6 +45,8 @@ import {
   loadSftpPanel,
 } from '../lazy-features.js';
 import { layout } from '../theme.js';
+import { moveFileBrowser } from '../file-browser.js';
+import { Sidebar } from './Sidebar.js';
 import { TopBar } from './TopBar.js';
 import { openAppWindow } from '../window-management.js';
 
@@ -89,7 +90,7 @@ export function AppShell({
       <TopBar />
       {focusMode || commandBarAtBottom ? null : <ActionBar position="top" />}
       <Box sx={{ flex: 1, display: 'flex', minHeight: 0 }}>
-        {showSidebar && !sidebarOnRight ? <SessionSidebar /> : null}
+        {showSidebar && !sidebarOnRight ? <Sidebar /> : null}
         <Box sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>
           <PaneCanvas
             root={root}
@@ -109,7 +110,7 @@ export function AppShell({
         ) : null}
         {/* Docked on the right, the sidebar keeps the window edge and the
             forwarding panel opens between it and the panes. */}
-        {showSidebar && sidebarOnRight ? <SessionSidebar /> : null}
+        {showSidebar && sidebarOnRight ? <Sidebar /> : null}
       </Box>
       {focusMode || !commandBarAtBottom ? null : <ActionBar position="bottom" />}
     </Box>
@@ -150,6 +151,7 @@ function PaneCanvas({
   const showTerminal = useTabsStore((state) => state.showTerminal);
   const updateTab = useTabsStore((state) => state.update);
   const tabNumberVisibility = usePrefsStore((state) => state.tabNumberVisibility);
+  const fileBrowserBesidePanes = usePrefsStore((state) => state.fileBrowserPosition === 'pane');
   const activePaneBorder = usePrefsStore((state) => state.activePaneBorder);
   const dimInactivePanes = usePrefsStore((state) => state.dimInactivePanes);
   const inactivePaneDimStrength = usePrefsStore((state) => state.inactivePaneDimStrength);
@@ -305,31 +307,36 @@ function PaneCanvas({
                 <EmptyPane onAddHost={onAddHost} replaceTabId={tab.id} />
               )}
             </Box>
-            {visible && tab.sftpOpen && tab.sftpAvailable !== false && tab.connId && (
-              <ErrorBoundary label="The file browser">
-                <Suspense fallback={null}>
-                  <SftpPanel
-                    key={tab.connId}
-                    connId={tab.connId}
-                    hostLabel={tab.title}
-                    terminalPath={tab.terminalCwd}
-                    followTerminalFolder={tab.sftpFollowTerminal !== false}
-                    onFollowTerminalFolderChange={(sftpFollowTerminal) =>
-                      updateTab(tab.id, { sftpFollowTerminal })
-                    }
-                    onOpenFile={(path) => openEditor(tab.id, path)}
-                    onOpenInNewWindow={(path) =>
-                      openAppWindow({
-                        kind: 'sftp',
-                        connId: tab.connId!,
-                        title: tab.title,
-                        path,
-                      })
-                    }
-                  />
-                </Suspense>
-              </ErrorBoundary>
-            )}
+            {fileBrowserBesidePanes &&
+              visible &&
+              tab.sftpOpen &&
+              tab.sftpAvailable !== false &&
+              tab.connId && (
+                <ErrorBoundary label="The file browser">
+                  <Suspense fallback={null}>
+                    <SftpPanel
+                      key={tab.connId}
+                      connId={tab.connId}
+                      hostLabel={tab.title}
+                      terminalPath={tab.terminalCwd}
+                      followTerminalFolder={tab.sftpFollowTerminal !== false}
+                      onFollowTerminalFolderChange={(sftpFollowTerminal) =>
+                        updateTab(tab.id, { sftpFollowTerminal })
+                      }
+                      onOpenFile={(path) => openEditor(tab.id, path)}
+                      onMove={() => moveFileBrowser('sidebar', tab.id)}
+                      onOpenInNewWindow={(path) =>
+                        openAppWindow({
+                          kind: 'sftp',
+                          connId: tab.connId!,
+                          title: tab.title,
+                          path,
+                        })
+                      }
+                    />
+                  </Suspense>
+                </ErrorBoundary>
+              )}
           </Box>
         );
       })}

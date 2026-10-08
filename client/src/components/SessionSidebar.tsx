@@ -73,17 +73,10 @@ import {
   loadSidebarMenus,
   loadTerminalViewImpl,
 } from '../lazy-features.js';
-import {
-  clampSidebarWidth,
-  DEFAULT_SIDEBAR_WIDTH,
-  maxSidebarWidth,
-  MIN_SIDEBAR_WIDTH,
-} from '../sidebar-width.js';
 import { confirmAction } from '../state/dialogs.js';
 import { usePrefsStore } from '../state/prefs.js';
 import { useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
-import { PanelResizeHandle } from './PanelResizeHandle.js';
 import { treeLabelSx, treeRowSx } from './sidebar/tree-row-style.js';
 import { deleteFolderPlan, folderRewritePlan, moveHostsPlan } from './sidebar/folder-mutations.js';
 import type { FolderMenuState } from './sidebar/FolderContextMenu.js';
@@ -125,12 +118,10 @@ export const SessionSidebar = memo(function SessionSidebar() {
   const setHostEditor = useUiStore((s) => s.setHostEditor);
   const setHostBulkEditor = useUiStore((s) => s.setHostBulkEditor);
   const setFolderDialog = useUiStore((s) => s.setFolderDialog);
-  const sidebarWidth = usePrefsStore((state) => state.sidebarWidth);
   const sidebarPosition = usePrefsStore((state) => state.sidebarPosition);
   const localShellProfiles = usePrefsStore((state) => state.localShellProfiles);
   const wslShellProfiles = useWslShellProfiles();
   const setPrefs = usePrefsStore((state) => state.set);
-  const sidebarRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const treeRef = useRef<HostTreeHandle>(null);
@@ -574,42 +565,23 @@ export const SessionSidebar = memo(function SessionSidebar() {
     : 0;
 
   const empty = hosts.length === 0 && profiles.length === 0;
-  // Everything side-specific mirrors when the sidebar docks on the right: the
-  // divider and resize grip face the panes, and hover cards open toward them.
+  // Hover cards open toward the panes, wherever the sidebar docks.
   const onRight = sidebarPosition === 'right';
   const hoverPlacement = onRight ? 'left' : 'right';
 
   return (
     <Box
-      ref={sidebarRef}
       // Every menu and the launch dialog live in one lazy chunk. Pointing at
       // the sidebar at all is enough warning to have it ready by the time a
       // right-click lands.
       onMouseEnter={() => void loadSidebarMenus()}
       sx={{
-        width: sidebarWidth,
-        maxWidth: '45%',
-        flexShrink: 0,
-        height: '100%',
+        flex: 1,
+        minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
-        bgcolor: 'sidebar',
-        [onRight ? 'borderLeft' : 'borderRight']: 1,
-        borderColor: 'divider',
-        position: 'relative',
       }}
     >
-      <PanelResizeHandle
-        panelRef={sidebarRef}
-        edge={onRight ? 'left' : 'right'}
-        width={sidebarWidth}
-        defaultWidth={DEFAULT_SIDEBAR_WIDTH}
-        minWidth={MIN_SIDEBAR_WIDTH}
-        maxWidth={maxSidebarWidth}
-        clampWidth={clampSidebarWidth}
-        onWidthChange={(nextSidebarWidth) => setPrefs({ sidebarWidth: nextSidebarWidth })}
-        label="Resize hosts sidebar"
-      />
       <Stack direction="row" spacing={1} sx={{ p: 1.25, pb: 0.75, alignItems: 'center' }}>
         <TextField
           fullWidth

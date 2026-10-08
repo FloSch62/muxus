@@ -24,7 +24,7 @@ window controls sit inside it. From left to right:
 | **Workspace name** | Opens the [workspace dialog](workspaces.md): save, lock, open, rename, set a startup workspace |
 | :material-checkbox-multiple-marked-outline: **Multi-exec** | Type once into several sessions at once. See [multi-exec](commands.md#multi-execution) |
 | :material-flash: | [Saved command buttons](commands.md) |
-| :material-folder-outline: | The [file browser](files.md) for the active SSH tab |
+| :material-folder-outline: | The [file browser](files.md) for the active SSH tab, beside the terminal or in the sidebar |
 | :material-swap-horizontal: | The [forwarding panel](tunnels.md); the badge counts forwards and turns amber while a tunnel [reconnects or could not start](tunnels.md#starting-with-muxus-and-reconnecting) |
 | :material-console: | Terminal actions: find, select all, copy all, export, logging, clear, zoom |
 | :material-history: | [Session history](session-history.md) |
@@ -51,6 +51,10 @@ to dial a target that is not saved.
 The sidebar docks on the left by default. To dock it on the right, right-click empty space
 in the sidebar and choose **Move sidebar to the right**, or use **Settings → Appearance →
 Layout**. The width and collapsed state carry over, and ++ctrl+b++ toggles it on either side.
+
+With the [file browser docked in the sidebar](files.md#docking-it-in-the-sidebar), a column
+of vertical tabs runs along the window edge: **Hosts** and **File browser**. Both share the
+sidebar's width, and each keeps its place while the other is in front.
 
 [More on hosts :octicons-arrow-right-24:](hosts.md)
 
@@ -81,7 +85,8 @@ moving a tab toward a direction with no pane splits one off.
 ## Side panels
 
 - The **file browser** opens inside the active SSH tab, to the right of the terminal, and
-  can be popped out into its own window.
+  can be popped out into its own window. It can also live in the sidebar, where it follows
+  the active session.
 - The **forwarding panel** docks on the right of the window and lists saved tunnels plus
   the forwards running on each live connection. With the hosts sidebar on the right, the
   panel opens between the panes and the sidebar.

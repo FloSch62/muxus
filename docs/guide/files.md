@@ -24,6 +24,26 @@ operation, so no second connection or authentication is required.
   directory and follows later `cd` commands; clear it to browse independently.
 - **Open in new window** moves the browser into its own window on the same connection.
 
+## Docking it in the sidebar
+
+By default the browser opens beside the terminal, separately for each SSH tab. It can live
+in the sidebar instead, one browser for the whole window that shows the files of whichever
+SSH session is active:
+
+- Click **Move to the sidebar** in the browser's header, or choose **Sidebar** for **File
+  browser** under **Settings → Appearance → Layout**.
+- The sidebar gains vertical tabs along the window edge: **Hosts** and **File browser**.
+  Click one, or use the arrow keys once a tab has focus. The folder button in the top bar
+  switches to the file browser and back.
+- Switching to another SSH tab shows that session's files. A local, Telnet, serial or remote
+  desktop tab has none, and the browser says so.
+- The browser stays where it was while the hosts are in front, so an upload keeps running
+  and the folder is unchanged when you switch back.
+- **Move beside the terminal** in the header puts it back next to the terminal.
+
+In a narrow sidebar the **Modified** column and the drag hint are hidden; widen the sidebar
+by dragging its edge to bring them back.
+
 ## Transferring
 
 | Gesture | What it does |

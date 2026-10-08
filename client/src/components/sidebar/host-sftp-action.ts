@@ -1,3 +1,4 @@
+import { showFileBrowser } from '../../file-browser.js';
 import type { ManagedHost } from '../../managed-hosts.js';
 import { connectManagedHost } from '../../session-actions.js';
 import { useTabsStore } from '../../state/tabs.js';
@@ -48,8 +49,7 @@ export function openManagedHostSftp(host: ManagedHost): string | undefined {
     matching.find((tab) => tab.id === state.activeId) ??
     matching[0];
   const id = reusable?.id ?? connectManagedHost(host);
-  const next = useTabsStore.getState();
-  next.update(id, { sftpOpen: true });
-  next.activate(id);
+  showFileBrowser(id);
+  useTabsStore.getState().activate(id);
   return id;
 }

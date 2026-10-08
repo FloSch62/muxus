@@ -58,6 +58,7 @@ import {
   commandButtonLabel,
 } from '../command-buttons.js';
 import { confirmDiscardRemoteEditors } from '../editor/remote-editor-registry.js';
+import { toggleFileBrowser } from '../file-browser.js';
 import { folderSegments } from '../host-tree.js';
 import {
   managedHostAddress,
@@ -394,7 +395,7 @@ export function QuickLauncherDialog() {
       case 'sftp': {
         const tab = tabState.tabs.find((candidate) => candidate.id === tabState.activeId);
         if (tab?.profile && tab.profile.kind === 'ssh' && tab.connId) {
-          tabState.update(tab.id, { sftpOpen: !tab.sftpOpen });
+          toggleFileBrowser(tab.id);
         }
         break;
       }

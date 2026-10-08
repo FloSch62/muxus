@@ -120,22 +120,31 @@ describe('appearance preference', () => {
 });
 
 describe('layout preferences', () => {
-  it('docks the sidebar on the left and the command bar on top by default', () => {
+  it('docks the sidebar on the left, the file browser beside the terminal and the command bar on top by default', () => {
     const initial = usePrefsStore.getInitialState();
     expect(initial.sidebarPosition).toBe('left');
+    expect(initial.fileBrowserPosition).toBe('pane');
     expect(initial.commandBarPosition).toBe('top');
   });
 
   it('keeps valid positions during migration', () => {
     expect(
-      migratePrefsState({ sidebarPosition: 'right', commandBarPosition: 'bottom' }, 16),
-    ).toEqual({ sidebarPosition: 'right', commandBarPosition: 'bottom' });
+      migratePrefsState(
+        { sidebarPosition: 'right', fileBrowserPosition: 'sidebar', commandBarPosition: 'bottom' },
+        16,
+      ),
+    ).toEqual({ sidebarPosition: 'right', fileBrowserPosition: 'sidebar', commandBarPosition: 'bottom' });
   });
 
   it('falls back to the defaults when a persisted position is invalid', () => {
     expect(
       migratePrefsState(
-        { sidebarPosition: 'bottom', commandBarPosition: 'left', monoFontSize: 16 },
+        {
+          sidebarPosition: 'bottom',
+          fileBrowserPosition: 'left',
+          commandBarPosition: 'left',
+          monoFontSize: 16,
+        },
         16,
       ),
     ).toEqual({ monoFontSize: 16 });

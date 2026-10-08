@@ -1,6 +1,10 @@
 import Box from '@mui/material/Box';
 import { alpha, type Theme } from '@mui/material/styles';
-import type { CommandBarPosition, SidebarPosition } from '../state/prefs.js';
+import type {
+  CommandBarPosition,
+  FileBrowserPosition,
+  SidebarPosition,
+} from '../state/prefs.js';
 
 const WIDTH = 200;
 const HEIGHT = 126;
@@ -10,6 +14,9 @@ const INNER_HEIGHT = HEIGHT - 2;
 const TOP_BAR = 13;
 const COMMAND_BAR = 11;
 const SIDEBAR = 58;
+/** The vertical tabs that appear with the file browser docked in the sidebar. */
+const RAIL = 10;
+const FILE_PANEL = 46;
 const TAB_STRIP = 10;
 
 const motion = {
@@ -50,17 +57,22 @@ function Line({
 
 /**
  * A miniature of the window that follows the layout preferences, so moving the
- * sidebar or the command bar is visible before the dialog is closed. Purely
- * decorative: the toggles beside it carry the state for assistive technology.
+ * sidebar, the file browser or the command bar is visible before the dialog is
+ * closed. Purely decorative: the toggles beside it carry the state for
+ * assistive technology.
  */
 export function LayoutPreview({
   sidebarPosition,
+  fileBrowserPosition,
   commandBarPosition,
 }: {
   sidebarPosition: SidebarPosition;
+  fileBrowserPosition: FileBrowserPosition;
   commandBarPosition: CommandBarPosition;
 }) {
   const sidebarOnRight = sidebarPosition === 'right';
+  const filesInSidebar = fileBrowserPosition === 'sidebar';
+  const rail = filesInSidebar ? RAIL : 0;
   const barAtBottom = commandBarPosition === 'bottom';
   const mainTop = TOP_BAR + (barAtBottom ? 0 : COMMAND_BAR);
   const mainBottom = barAtBottom ? COMMAND_BAR : 0;
@@ -143,6 +155,31 @@ export function LayoutPreview({
         <Box sx={{ width: 4, height: 4, borderRadius: '50%', bgcolor: ink(0.22) }} />
       </Box>
 
+      {/* Vertical tabs at the window edge: hosts in front, the file browser behind. */}
+      {filesInSidebar ? (
+        <Box
+          data-preview-part="rail"
+          sx={{
+            position: 'absolute',
+            top: mainTop,
+            bottom: mainBottom,
+            left: sidebarOnRight ? INNER_WIDTH - RAIL : 0,
+            width: RAIL,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '3px',
+            pt: '5px',
+            bgcolor: 'sidebar',
+            [sidebarOnRight ? 'borderLeft' : 'borderRight']: 1,
+            borderColor: 'divider',
+          }}
+        >
+          <Box sx={{ width: 5, height: 5, borderRadius: 0.5, bgcolor: ink(0.34) }} />
+          <Box sx={{ width: 5, height: 5, borderRadius: 0.5, bgcolor: ink(0.14) }} />
+        </Box>
+      ) : null}
+
       {/* Hosts sidebar: search box, then a short tree with one live host. */}
       <Box
         data-preview-part="sidebar"
@@ -151,7 +188,7 @@ export function LayoutPreview({
           position: 'absolute',
           top: mainTop,
           bottom: mainBottom,
-          left: sidebarOnRight ? INNER_WIDTH - SIDEBAR : 0,
+          left: sidebarOnRight ? INNER_WIDTH - rail - SIDEBAR : rail,
           width: SIDEBAR,
           display: 'flex',
           flexDirection: 'column',
@@ -190,8 +227,8 @@ export function LayoutPreview({
           position: 'absolute',
           top: mainTop,
           bottom: mainBottom,
-          left: sidebarOnRight ? 0 : SIDEBAR,
-          right: sidebarOnRight ? SIDEBAR : 0,
+          left: sidebarOnRight ? 0 : SIDEBAR + rail,
+          right: sidebarOnRight ? SIDEBAR + rail : 0,
           display: 'flex',
           flexDirection: 'column',
         }}
@@ -224,15 +261,62 @@ export function LayoutPreview({
             <Line width={16} />
           </Box>
         </Box>
-        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px', p: '6px' }}>
-          <Line width="46%" />
-          <Line width="68%" />
-          <Line width="38%" />
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
-            <Line width={14} color={(theme) => alpha(theme.palette.success.main, 0.8)} />
-            <Line width={22} />
-            <Box sx={{ width: 3, height: 5, bgcolor: 'primary.main', opacity: 0.8 }} />
+        <Box sx={{ flex: 1, minHeight: 0, display: 'flex' }}>
+          <Box
+            sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px', p: '6px' }}
+          >
+            <Line width="46%" />
+            <Line width="68%" />
+            <Line width="38%" />
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <Line width={14} color={(theme) => alpha(theme.palette.success.main, 0.8)} />
+              <Line width={22} />
+              <Box sx={{ width: 3, height: 5, bgcolor: 'primary.main', opacity: 0.8 }} />
+            </Box>
           </Box>
+          {/* The file browser beside its terminal: a path, then a few files. */}
+          {filesInSidebar ? null : (
+            <Box
+              data-preview-part="file-browser"
+              sx={{
+                width: FILE_PANEL,
+                flexShrink: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '4px',
+                p: '5px',
+                bgcolor: 'background.paper',
+                borderLeft: 1,
+                borderColor: 'divider',
+              }}
+            >
+              <Box
+                sx={{
+                  height: 6,
+                  mb: '2px',
+                  borderRadius: 0.5,
+                  border: 1,
+                  borderColor: ink(0.14),
+                  flexShrink: 0,
+                }}
+              />
+              {[70, 55, 80, 48].map((width, index) => (
+                <Box key={width} sx={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                  <Box
+                    sx={{
+                      width: 3,
+                      height: 3,
+                      borderRadius: 0.25,
+                      flexShrink: 0,
+                      bgcolor: (theme) =>
+                        index < 2 ? alpha(theme.palette.primary.main, 0.7) : ink(0.22)(theme),
+                    }}
+                  />
+                  <Line width={`${width}%`} />
+                </Box>
+              ))}
+            </Box>
+          )}
         </Box>
       </Box>
     </Box>

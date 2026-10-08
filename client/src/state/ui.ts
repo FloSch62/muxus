@@ -45,6 +45,9 @@ export type SettingsSection =
   | 'debug'
   | 'about';
 
+/** What the window sidebar shows while the file browser is docked in it. */
+export type SidebarView = 'hosts' | 'files';
+
 /** Where the settings dialog opens, and the entry in that section to bring
  * into view, such as one local shell profile. */
 export interface SettingsTarget {
@@ -81,6 +84,11 @@ interface UiState {
   folderDialog: FolderDialogState;
   /** Global forwarding side panel (saved tunnels + live forwards). */
   forwardingOpen: boolean;
+  /**
+   * The sidebar tab in front. Kept per window and never persisted, like the
+   * window's tabs, so each window browses its own sessions.
+   */
+  sidebarView: SidebarView;
   /** Diagnostic log viewer (settings → debug). */
   logViewerOpen: boolean;
   setFocusMode: (active: boolean) => void;
@@ -99,6 +107,7 @@ interface UiState {
   setHostBulkEditor: (hostKeys: string[] | false) => void;
   setFolderDialog: (value: FolderDialogState) => void;
   setForwardingOpen: (open: boolean) => void;
+  setSidebarView: (view: SidebarView) => void;
   setLogViewerOpen: (open: boolean) => void;
 }
 
@@ -119,6 +128,7 @@ export const useUiStore = create<UiState>()((set) => ({
   hostBulkEditor: false,
   folderDialog: false,
   forwardingOpen: false,
+  sidebarView: 'hosts',
   logViewerOpen: false,
   setFocusMode: (focusMode) => set({ focusMode }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen, settingsTarget: null }),
@@ -144,5 +154,6 @@ export const useUiStore = create<UiState>()((set) => ({
   setHostBulkEditor: (hostBulkEditor) => set({ hostBulkEditor }),
   setFolderDialog: (folderDialog) => set({ folderDialog }),
   setForwardingOpen: (forwardingOpen) => set({ forwardingOpen }),
+  setSidebarView: (sidebarView) => set({ sidebarView }),
   setLogViewerOpen: (logViewerOpen) => set({ logViewerOpen }),
 }));

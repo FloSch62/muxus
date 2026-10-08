@@ -38,6 +38,7 @@ import TerminalIcon from '@mui/icons-material/Terminal';
 import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
 import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
 import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop';
+import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined';
 import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import {
   DEFAULT_SESSION_LOG_FILE_PATTERN,
@@ -78,6 +79,7 @@ import {
   useCustomTerminalSchemes,
   usePrefsStore,
   type CommandBarPosition,
+  type FileBrowserPosition,
   type NewSshHostStorage,
   type RightClickAction,
   type SidebarPosition,
@@ -699,12 +701,13 @@ function AppearanceSection() {
   );
 }
 
-/** The layout toggles share one width so the two groups line up. */
-const layoutToggleSx = { px: 1.5, gap: 0.75, minWidth: 92 } as const;
+/** The layout toggles share one width so the groups line up; "Terminal" is the longest label. */
+const layoutToggleSx = { px: 1.5, gap: 0.75, minWidth: 102 } as const;
 
-/** Where the hosts sidebar and the command bar dock, beside a live miniature. */
+/** Where the hosts sidebar, the file browser and the command bar dock, beside a live miniature. */
 function LayoutSettings() {
   const sidebarPosition = usePrefsStore((s) => s.sidebarPosition);
+  const fileBrowserPosition = usePrefsStore((s) => s.fileBrowserPosition);
   const commandBarPosition = usePrefsStore((s) => s.commandBarPosition);
   const showCommandBar = usePrefsStore((s) => s.showCommandBar);
   // The same rule as the bar itself: it shows once there is a button or a group.
@@ -723,7 +726,11 @@ function LayoutSettings() {
       <SettingsGroup title="Layout" flush>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center' }}>
           <Box sx={{ p: 2, pr: { xs: 2, sm: 0.5 } }}>
-            <LayoutPreview sidebarPosition={sidebarPosition} commandBarPosition={commandBarPosition} />
+            <LayoutPreview
+              sidebarPosition={sidebarPosition}
+              fileBrowserPosition={fileBrowserPosition}
+              commandBarPosition={commandBarPosition}
+            />
           </Box>
           <Box sx={{ flex: '1 1 300px', minWidth: 0 }}>
             <SettingRow
@@ -747,6 +754,33 @@ function LayoutSettings() {
                   <ToggleButton value="right" sx={layoutToggleSx}>
                     <ViewSidebarOutlinedIcon fontSize="small" />
                     Right
+                  </ToggleButton>
+                </ToggleButtonGroup>
+              }
+            />
+            <SettingRow
+              label="File browser"
+              description="Beside each SSH terminal, or as a tab in the sidebar that follows the active session."
+              control={
+                <ToggleButtonGroup
+                  exclusive
+                  size="small"
+                  aria-label="File browser"
+                  value={fileBrowserPosition}
+                  onChange={(_e, value: FileBrowserPosition | null) => {
+                    if (value) set({ fileBrowserPosition: value });
+                  }}
+                >
+                  <ToggleButton value="pane" sx={layoutToggleSx}>
+                    <VerticalSplitOutlinedIcon fontSize="small" />
+                    Terminal
+                  </ToggleButton>
+                  <ToggleButton value="sidebar" sx={layoutToggleSx}>
+                    <ViewSidebarOutlinedIcon
+                      fontSize="small"
+                      sx={sidebarPosition === 'left' ? { transform: 'scaleX(-1)' } : undefined}
+                    />
+                    Sidebar
                   </ToggleButton>
                 </ToggleButtonGroup>
               }
@@ -780,7 +814,7 @@ function LayoutSettings() {
       </SettingsGroup>
       <Typography variant="caption" color="textSecondary" component="p" sx={{ mt: 1, mb: 0 }}>
         Right-click empty space in the sidebar, or the command bar itself, to move either one
-        without opening Settings.
+        without opening Settings. The file browser moves with the button in its header.
       </Typography>
     </Box>
   );

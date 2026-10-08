@@ -51,6 +51,7 @@ import TerminalIcon from '@mui/icons-material/Terminal';
 import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined';
 import PodcastsOutlinedIcon from '@mui/icons-material/PodcastsOutlined';
 import { isDesktopProfile } from '@muxus/shared/ws-protocol';
+import { showFileBrowser } from '../file-browser.js';
 import { useChordLabel } from '../keymap/hints.js';
 import { ChordHint, withChord } from './ChordHint.js';
 import {
@@ -1197,7 +1198,7 @@ export function TabStrip({
         {menuTabSupportsSftp ? (
           <MenuItem
             onClick={() => {
-              update(menuTab.id, { sftpOpen: true });
+              showFileBrowser(menuTab.id);
               activate(menuTab.id);
               setMenu(null);
             }}

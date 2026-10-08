@@ -45,6 +45,7 @@ import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import type { ForwardInfo } from '@muxus/shared';
 import { useForwards } from '../api/queries.js';
 import { copyToClipboard } from '../clipboard.js';
+import { toggleFileBrowser, useFileBrowserShown } from '../file-browser.js';
 import { layout } from '../theme.js';
 import { setTitleBarHeight } from '../titlebar-overlay.js';
 import { useChordLabel } from '../keymap/hints.js';
@@ -91,7 +92,6 @@ export const TopBar = memo(function TopBar() {
   const forwardingOpen = useUiStore((s) => s.forwardingOpen);
   const setForwardingOpen = useUiStore((s) => s.setForwardingOpen);
   const activeTab = useTabsStore((s) => s.tabs.find((t) => t.id === s.activeId));
-  const updateTab = useTabsStore((s) => s.update);
   const requestSearch = useTabsStore((s) => s.requestSearch);
   const { data: forwardsData } = useForwards();
   const allForwards = forwardsData?.forwards ?? [];
@@ -109,6 +109,11 @@ export const TopBar = memo(function TopBar() {
     .filter(Boolean)
     .join(', ');
   const sshReady = !!activeTab?.connId && activeTab.sftpAvailable !== false;
+  const fileBrowserShown = useFileBrowserShown(activeTab);
+  // With the file browser docked in it, the sidebar is more than the hosts.
+  const sidebarName = usePrefsStore((s) =>
+    s.fileBrowserPosition === 'sidebar' ? 'sidebar' : 'hosts',
+  );
   const terminalReady = !!activeTab?.profile;
   const [terminalMenu, setTerminalMenu] = useState<HTMLElement | null>(null);
   const [appearanceMenu, setAppearanceMenu] = useState<HTMLElement | null>(null);
@@ -167,7 +172,9 @@ export const TopBar = memo(function TopBar() {
         }}
       >
         <Box data-focus-mode-control sx={{ flex: 1, display: focusMode ? 'block' : 'none' }} />
-        <Tooltip title={withChord(sidebarCollapsed ? 'Show hosts' : 'Hide hosts', sidebarChord)}>
+        <Tooltip
+          title={withChord(`${sidebarCollapsed ? 'Show' : 'Hide'} ${sidebarName}`, sidebarChord)}
+        >
           <IconButton size="small" aria-label="Toggle hosts sidebar" onClick={() => setPrefs({ sidebarCollapsed: !sidebarCollapsed })} sx={{ mr: 0.5 }}>
             <MenuIcon fontSize="small" />
           </IconButton>
@@ -206,14 +213,14 @@ export const TopBar = memo(function TopBar() {
           </IconButton>
         </Tooltip>
         {sshReady && (
-          <Tooltip title={activeTab.sftpOpen ? 'Hide file browser' : 'Show file browser (SFTP)'}>
+          <Tooltip title={fileBrowserShown ? 'Hide file browser' : 'Show file browser (SFTP)'}>
             <IconButton
               size="small"
               aria-label="Toggle file browser"
-              color={activeTab.sftpOpen ? 'primary' : 'default'}
+              color={fileBrowserShown ? 'primary' : 'default'}
               onMouseEnter={() => void loadSftpPanel()}
               onFocus={() => void loadSftpPanel()}
-              onClick={() => updateTab(activeTab.id, { sftpOpen: !activeTab.sftpOpen })}
+              onClick={() => toggleFileBrowser(activeTab.id)}
             >
               <FolderOutlinedIcon fontSize="small" />
             </IconButton>
