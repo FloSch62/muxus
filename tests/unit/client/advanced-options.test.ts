@@ -53,6 +53,7 @@ describe('legacy algorithm preset', () => {
     expect(legacyPresetState(extras)).toBe('partial');
     expect(next[0]!.value).toContain('+curve25519-sha256,');
     expect(next[0]!.value).toContain('diffie-hellman-group14-sha1');
+    expect(next[0]!.value.endsWith(',diffie-hellman-group1-sha1')).toBe(true);
     expect(next[1]!.value).toBe('ssh-ed25519,ssh-rsa');
     expect(legacyPresetState(next)).toBe('enabled');
   });

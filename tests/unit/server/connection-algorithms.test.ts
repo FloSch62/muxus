@@ -3,12 +3,26 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import type net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { Server } from 'ssh2';
+import { Server, type Algorithms } from 'ssh2';
 import { afterEach, afterAll, describe, expect, it, vi } from 'vitest';
 import type { SshProfile } from '@muxus/shared/ws-protocol';
 import { SshConnectionManager, type ConnectIo } from '../../../server/src/ssh/connection-manager.js';
 import { KnownHostsStore } from '../../../server/src/ssh/known-hosts.js';
 import { loadConfigDocument } from '../../../server/src/ssh/ssh-config.js';
+
+// The desktop build runs on Electron, whose BoringSSL has no modp1/modp2 named
+// DH groups. Drop them before ssh2 captures the crypto functions so these
+// handshakes negotiate the way the shipped app does.
+await vi.hoisted(async () => {
+  const { default: crypto } = await import('node:crypto');
+  const createGroup = crypto.createDiffieHellmanGroup;
+  vi.spyOn(crypto, 'createDiffieHellmanGroup').mockImplementation((name) => {
+    if (name === 'modp1' || name === 'modp2') {
+      throw Object.assign(new Error('Unknown DH group'), { code: 'ERR_CRYPTO_UNKNOWN_DH_GROUP' });
+    }
+    return createGroup(name);
+  });
+});
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'muxus-algo-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -24,17 +38,19 @@ const HOST_KEY = generateKeyPairSync('rsa', {
 /**
  * An sshd stand-in for an old console server: ssh-rsa host key only, and a
  * handshake restricted to the legacy algorithms modern clients disable by
- * default (aes128-cbc, diffie-hellman-group14-sha1).
+ * default (aes128-cbc, diffie-hellman-group14-sha1 unless overridden).
  */
-function startLegacyServer(): Promise<{ server: Server; port: number }> {
+function startLegacyServer(
+  algorithms: Algorithms = {
+    kex: ['diffie-hellman-group14-sha1'],
+    cipher: ['aes128-cbc'],
+    serverHostKey: ['ssh-rsa'],
+  },
+): Promise<{ server: Server; port: number }> {
   const server = new Server(
     {
       hostKeys: [HOST_KEY],
-      algorithms: {
-        kex: ['diffie-hellman-group14-sha1'],
-        cipher: ['aes128-cbc'],
-        serverHostKey: ['ssh-rsa'],
-      },
+      algorithms,
     },
     (conn) => {
       conn.on('error', () => undefined);
@@ -137,6 +153,33 @@ describe('legacy algorithm negotiation', () => {
         '  Ciphers aes128-cbc',
         '  KexAlgorithms +diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1',
         '  HostKeyAlgorithms +ssh-rsa',
+      ]),
+    );
+
+    const shell = await manager.connectShell(profile, makeIo(), 80, 24, 'xterm-256color');
+    const banner = await new Promise<string>((resolve) => {
+      shell.stream.once('data', (chunk: Buffer) => resolve(chunk.toString()));
+    });
+    expect(banner).toContain('console ready');
+    shell.stream.close();
+    shell.lease.release();
+  }, 15_000);
+
+  it('connects to a device that only speaks diffie-hellman-group1-sha1', async () => {
+    // Cisco IOS 12.2 switches offer nothing newer than these.
+    const started = await startLegacyServer({
+      kex: ['diffie-hellman-group1-sha1'],
+      cipher: ['aes256-cbc'],
+      hmac: ['hmac-sha1'],
+      serverHostKey: ['ssh-rsa'],
+    });
+    server = started.server;
+    manager = makeManager(
+      writeConfig(started.port, [
+        '  KexAlgorithms diffie-hellman-group1-sha1',
+        '  HostKeyAlgorithms ssh-rsa',
+        '  Ciphers aes256-cbc',
+        '  MACs hmac-sha1',
       ]),
     );
 
