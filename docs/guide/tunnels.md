@@ -30,6 +30,30 @@ host-key check, key passphrase and 2FA prompt.
 Tunnels hold their own transport lease, so closing every terminal to that host does not
 stop the tunnel.
 
+### Starting with Muxus and reconnecting
+
+Two switches, in the tunnel editor or the tunnel's :material-dots-vertical: menu, run a
+tunnel without anyone pressing :material-play:. Both are off for new tunnels.
+
+- **Start when Muxus starts** brings the tunnel up as Muxus opens, without a terminal.
+  Such tunnels show :material-power: next to their name.
+- **Reconnect automatically** brings the tunnel back after its SSH connection drops. Such
+  tunnels show :material-autorenew: next to their name.
+
+When the connection is lost, the forwarded port closes and the tunnel's dot turns amber
+while Muxus connects again: after 2 seconds, then 5, 15 and 30, and once a minute after
+that, until the host answers or the tunnel is stopped. Once the connection is back, the
+rule starts on it with the same port. A drop after at least 30 seconds of uptime starts
+again from the shortest wait. A tunnel with both switches on also keeps trying when the
+host cannot be reached at startup, for example before the VPN is up. With only **Start
+when Muxus starts** on, a failed start turns the dot red and shows the reason.
+
+These automatic starts never show a prompt. Keys, the SSH agent and passwords kept in the
+[password vault](settings.md#passwords) sign in as usual. If the login needs anything else,
+such as a key passphrase, a 2FA code, an unsaved password or a new or changed host key, the
+tunnel stops trying and shows **Sign-in needed**. :material-play: then starts it with the
+usual prompts, and :material-close: dismisses the message.
+
 ## Forwards on a live connection
 
 The lower section lists each connected host and the forwards running on it:

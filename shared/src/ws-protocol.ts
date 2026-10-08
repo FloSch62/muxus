@@ -11,6 +11,9 @@ export const TERMINAL_SESSION_CLOSE_REASON = 'terminal session closed';
 /** Upper bound for the Muxus-wide ServerAliveInterval fallback, in seconds. */
 export const MAX_SSH_KEEPALIVE_INTERVAL_SECONDS = 3600;
 
+/** The ServerAliveInterval fallback Muxus uses unless Settings say otherwise. */
+export const DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS = 30;
+
 /** Protocols offered by browser WebSocket clients during the HTTP upgrade. */
 export function terminalWebSocketProtocols(token: string): string[] {
   return [TERMINAL_WS_PROTOCOL, `${TERMINAL_WS_AUTH_PREFIX}${token}`];

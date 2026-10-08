@@ -8,6 +8,15 @@ export function saveTunnel(input: TunnelInput): Promise<TunnelRecord> {
   return apiFetch<TunnelRecord>('/api/tunnels', { method: 'PUT', headers: JSON_HEADERS, body: JSON.stringify(input) });
 }
 
+/** Switch a saved tunnel's start/reconnect options, keeping the rest of its definition. */
+export function saveTunnelOptions(
+  tunnel: TunnelRecord,
+  options: Partial<Pick<TunnelInput, 'autoStart' | 'autoReconnect'>>,
+): Promise<TunnelRecord> {
+  const { createdAt: _createdAt, updatedAt: _updatedAt, ...input } = tunnel;
+  return saveTunnel({ ...input, ...options });
+}
+
 export function deleteTunnel(id: string): Promise<{ deleted: boolean }> {
   return apiFetch<{ deleted: boolean }>(`/api/tunnels/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }

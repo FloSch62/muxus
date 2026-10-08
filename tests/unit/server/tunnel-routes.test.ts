@@ -82,4 +82,29 @@ describe('saved tunnel routes', () => {
 
     expect(response.statusCode).toBe(400);
   });
+
+  it('saves the autostart and auto-reconnect switches', async () => {
+    const payload = { target: 'db', type: 'dynamic', bindPort: 1080, autoStart: true, autoReconnect: true };
+    const created = await app.inject({ method: 'PUT', url: '/api/tunnels', headers: auth(), payload });
+    expect(created.statusCode).toBe(200);
+    expect(created.json()).toMatchObject({ autoStart: true, autoReconnect: true });
+
+    const switchedOff = await app.inject({
+      method: 'PUT',
+      url: '/api/tunnels',
+      headers: auth(),
+      payload: { ...payload, id: created.json().id, autoStart: false },
+    });
+    expect(switchedOff.json()).toMatchObject({ id: created.json().id, autoStart: false, autoReconnect: true });
+
+    for (const invalid of [{ autoStart: 'yes' }, { autoReconnect: 1 }]) {
+      const response = await app.inject({
+        method: 'PUT',
+        url: '/api/tunnels',
+        headers: auth(),
+        payload: { ...payload, ...invalid },
+      });
+      expect(response.statusCode).toBe(400);
+    }
+  });
 });

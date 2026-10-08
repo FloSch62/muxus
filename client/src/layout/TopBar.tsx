@@ -42,6 +42,7 @@ import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
 import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
+import type { ForwardInfo } from '@muxus/shared';
 import { useForwards } from '../api/queries.js';
 import { copyToClipboard } from '../clipboard.js';
 import { layout } from '../theme.js';
@@ -93,7 +94,20 @@ export const TopBar = memo(function TopBar() {
   const updateTab = useTabsStore((s) => s.update);
   const requestSearch = useTabsStore((s) => s.requestSearch);
   const { data: forwardsData } = useForwards();
-  const activeForwards = forwardsData?.forwards.length ?? 0;
+  const allForwards = forwardsData?.forwards ?? [];
+  const countForwards = (status: ForwardInfo['status']) =>
+    allForwards.filter((forward) => forward.status === status).length;
+  const activeForwards = countForwards('active');
+  const startingForwards = countForwards('starting');
+  /** Tunnels whose connection dropped, or that could not start on their own. */
+  const interruptedForwards = countForwards('reconnecting') + countForwards('error');
+  const forwardsSummary = [
+    activeForwards ? `${activeForwards} active` : '',
+    startingForwards ? `${startingForwards} starting` : '',
+    interruptedForwards ? `${interruptedForwards} interrupted` : '',
+  ]
+    .filter(Boolean)
+    .join(', ');
   const sshReady = !!activeTab?.connId && activeTab.sftpAvailable !== false;
   const terminalReady = !!activeTab?.profile;
   const [terminalMenu, setTerminalMenu] = useState<HTMLElement | null>(null);
@@ -205,7 +219,7 @@ export const TopBar = memo(function TopBar() {
             </IconButton>
           </Tooltip>
         )}
-        <Tooltip title={`Port forwarding & tunnels${activeForwards ? ` — ${activeForwards} active` : ''}`}>
+        <Tooltip title={`Port forwarding & tunnels${forwardsSummary ? ` — ${forwardsSummary}` : ''}`}>
           <IconButton
             size="small"
             aria-label="Toggle forwarding panel"
@@ -214,7 +228,12 @@ export const TopBar = memo(function TopBar() {
             onFocus={() => void loadForwardingPanel()}
             onClick={() => setForwardingOpen(!forwardingOpen)}
           >
-            <Badge badgeContent={activeForwards} color="success" max={99} slotProps={{ badge: { sx: { fontSize: 9, height: 14, minWidth: 14 } } }}>
+            <Badge
+              badgeContent={allForwards.length}
+              color={interruptedForwards ? 'warning' : 'success'}
+              max={99}
+              slotProps={{ badge: { sx: { fontSize: 9, height: 14, minWidth: 14 } } }}
+            >
               <SwapHorizOutlinedIcon fontSize="small" />
             </Badge>
           </IconButton>

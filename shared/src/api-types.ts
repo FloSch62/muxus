@@ -977,6 +977,7 @@ export interface ForwardRequest {
 
 export interface ForwardInfo {
   id: string;
+  /** The connection carrying the forward; empty until a started tunnel first connects. */
   connId: string;
   type: ForwardType;
   bindPort: number;
@@ -989,7 +990,14 @@ export interface ForwardInfo {
    * stop with it. Independent forwards are explicitly saved/manual tunnels.
    */
   lifecycle: 'session' | 'independent';
-  status: 'active' | 'error';
+  /**
+   * starting = a tunnel that starts with Muxus is making its first dial;
+   * reconnecting = an auto-reconnect tunnel is waiting to dial again;
+   * error = the server stopped trying, because the dial needs the user or
+   * the tunnel does not reconnect.
+   */
+  status: 'active' | 'starting' | 'reconnecting' | 'error';
+  /** Why the forward is not active (the last failed attempt). */
   error?: string;
   /** Saved tunnel this forward realizes, when it was started from one. */
   tunnelId?: string;
@@ -1018,6 +1026,10 @@ export interface TunnelRecord {
   bindPort: number;
   targetHost?: string;
   targetPort?: number;
+  /** Start without prompting when Muxus starts. */
+  autoStart: boolean;
+  /** Redial and restart the forward when its SSH connection drops. */
+  autoReconnect: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -1032,6 +1044,10 @@ export interface TunnelInput {
   bindPort: number;
   targetHost?: string;
   targetPort?: number;
+  /** Absent = off. */
+  autoStart?: boolean;
+  /** Absent = off. */
+  autoReconnect?: boolean;
 }
 
 /** Safe-to-persist SSH settings owned by a saved tunnel. */
