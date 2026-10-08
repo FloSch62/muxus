@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { connectionAlgorithms } from '../../../server/src/ssh/algorithms.js';
+import type { KeyObject } from 'node:crypto';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { connectionAlgorithms, supportedAlgorithms } from '../../../server/src/ssh/algorithms.js';
 
 describe('connectionAlgorithms', () => {
   it('returns no override when the config sets nothing', () => {
@@ -78,5 +79,41 @@ describe('connectionAlgorithms', () => {
       serverHostKey: { append: ['ssh-rsa'] },
     });
     expect(notes).toEqual([]);
+  });
+});
+
+describe('ssh-dss availability', () => {
+  afterEach(() => {
+    vi.doUnmock('node:crypto');
+    vi.resetModules();
+  });
+
+  it('keeps ssh-dss where the crypto backend verifies DSA', () => {
+    expect(supportedAlgorithms().HostKeyAlgorithms).toContain('ssh-dss');
+  });
+
+  it('drops ssh-dss and reports it where DSA verification is unavailable', async () => {
+    // BoringSSL (Electron) parses DSA keys but throws on every DSA verify.
+    vi.resetModules();
+    vi.doMock('node:crypto', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('node:crypto')>();
+      const verify = (...args: Parameters<typeof actual.verify>) => {
+        if ((args[2] as KeyObject).asymmetricKeyType === 'dsa') {
+          throw Object.assign(new Error('unsupported algorithm'), {
+            code: 'ERR_OSSL_EVP_UNSUPPORTED_ALGORITHM',
+          });
+        }
+        return actual.verify(...args);
+      };
+      return { ...actual, verify };
+    });
+    const algorithms = await import('../../../server/src/ssh/algorithms.js');
+
+    expect(algorithms.supportedAlgorithms().HostKeyAlgorithms).not.toContain('ssh-dss');
+    expect(algorithms.supportedAlgorithms().HostKeyAlgorithms).toContain('ssh-rsa');
+    const result = algorithms.connectionAlgorithms({ hostKeyAlgorithms: '+ssh-dss,ssh-rsa' });
+    expect(result.algorithms).toEqual({ serverHostKey: { append: ['ssh-rsa'] } });
+    expect(result.notes).toEqual(['HostKeyAlgorithms: skipping ssh-dss — not supported by the SSH engine.']);
+    expect(() => algorithms.connectionAlgorithms({ hostKeyAlgorithms: 'ssh-dss' })).toThrow(/HostKeyAlgorithms/);
   });
 });

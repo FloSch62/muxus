@@ -3,7 +3,10 @@
  * append forms, so modern hosts matched by the same block keep working.
  */
 export const LEGACY_ALGORITHM_PRESET = [
-  { keyword: 'KexAlgorithms', value: '+diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha1' },
+  {
+    keyword: 'KexAlgorithms',
+    value: '+diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha1,diffie-hellman-group1-sha1',
+  },
   { keyword: 'HostKeyAlgorithms', value: '+ssh-rsa' },
   { keyword: 'Ciphers', value: '+aes256-cbc,aes192-cbc,aes128-cbc,3des-cbc' },
 ] as const;
