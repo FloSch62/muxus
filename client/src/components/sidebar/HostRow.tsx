@@ -16,20 +16,9 @@ import {
 import { loadTerminalViewImpl } from '../../lazy-features.js';
 import { hostKindIcon } from '../host-kind-icon.js';
 import { hostDetailLines } from './host-details.js';
+import type { HostActivation } from './row-clicks.js';
 import { TREE_BASE_INSET, indentPx, treeLabelSx, treeRowSx } from './tree-row-style.js';
 import type { LiveCounts } from './useLiveHostCounts.js';
-
-/** How a host row was activated. */
-export interface HostActivation {
-  /** Shift-click or middle-click: open another session, never list the open ones. */
-  newSession: boolean;
-  /** The second click of a double-click. */
-  repeat: boolean;
-  /** Ctrl/Cmd-click: add the host to the selection or take it out instead of connecting. */
-  toggleSelection?: boolean;
-  /** Shift-click: extends a selection when there is one, else opens a new session. */
-  extendSelection?: boolean;
-}
 
 export interface HostRowProps {
   row: VisibleNode;
@@ -147,6 +136,7 @@ export const HostRow = memo(function HostRow({
           onActivate(host, event.currentTarget, {
             newSession: event.shiftKey,
             repeat: event.detail > 1,
+            clicks: event.detail,
             toggleSelection: event.ctrlKey || event.metaKey,
             extendSelection: event.shiftKey,
           })

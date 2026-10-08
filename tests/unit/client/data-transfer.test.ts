@@ -30,6 +30,7 @@ beforeEach(() => {
     commandBarPosition: 'top',
     sidebarPosition: 'left',
     fileBrowserPosition: 'pane',
+    sidebarOpenGesture: 'click',
     backgroundColor: '',
     lightTerminalScheme: 'vscode-light',
     darkTerminalScheme: 'vscode-dark',
@@ -375,6 +376,7 @@ describe('backing up preferences', () => {
       commandBarPosition: 'bottom',
       sidebarPosition: 'right',
       fileBrowserPosition: 'sidebar',
+      sidebarOpenGesture: 'double-click',
       backgroundColor: '#102030',
       lightTerminalScheme: 'paper',
       darkTerminalScheme: 'dracula',
@@ -393,6 +395,7 @@ describe('backing up preferences', () => {
     expect(document.data.preferences.commandBarPosition).toBe('bottom');
     expect(document.data.preferences.sidebarPosition).toBe('right');
     expect(document.data.preferences.fileBrowserPosition).toBe('sidebar');
+    expect(document.data.preferences.sidebarOpenGesture).toBe('double-click');
     expect(document.data.preferences.lightTerminalScheme).toBe('paper');
     expect(document.data.preferences.darkTerminalScheme).toBe('dracula');
     expect(document.data.preferences.activePaneBorder).toBe(false);
@@ -1224,6 +1227,15 @@ describe('restoring the layout preferences', () => {
     expect(restored.sidebarPosition).toBeUndefined();
     expect(restored.fileBrowserPosition).toBeUndefined();
     expect(restored.commandBarPosition).toBeUndefined();
+  });
+
+  it('restores how sidebar entries open, and drops a gesture it does not know', () => {
+    expect(sanitizePreferences(prefs({ sidebarOpenGesture: 'double-click' }))).toMatchObject({
+      sidebarOpenGesture: 'double-click',
+    });
+    expect(
+      sanitizePreferences(prefs({ sidebarOpenGesture: 'hover' })).sidebarOpenGesture,
+    ).toBeUndefined();
   });
 });
 

@@ -82,6 +82,7 @@ import {
   type FileBrowserPosition,
   type NewSshHostStorage,
   type RightClickAction,
+  type SidebarOpenGesture,
   type SidebarPosition,
   type TabNumberVisibility,
   type TerminalFileLinkActivation,
@@ -987,6 +988,11 @@ const NEW_SSH_HOST_STORAGE_OPTIONS = [
   ['openssh', 'OpenSSH config'],
 ] as const satisfies ReadonlyArray<readonly [NewSshHostStorage, string]>;
 
+const SIDEBAR_OPEN_GESTURE_OPTIONS = [
+  ['click', 'Single click'],
+  ['double-click', 'Double-click'],
+] as const satisfies ReadonlyArray<readonly [SidebarOpenGesture, string]>;
+
 function BehaviorSection() {
   const prefs = usePrefsStore();
   const keepaliveOptions: Array<readonly [number, string]> = [
@@ -1010,7 +1016,7 @@ function BehaviorSection() {
   return (
     <SettingsPage
       title="Behavior"
-      description="How tabs close, where new SSH hosts are saved, what a new SSH session reports, and how sessions come back after a restart or a dropped connection."
+      description="How tabs close, how sidebar entries open, where new SSH hosts are saved, what a new SSH session reports, and how sessions come back after a restart or a dropped connection."
     >
       <SettingsGroup title="Tabs">
         <SettingRow
@@ -1023,6 +1029,21 @@ function BehaviorSection() {
               size="small"
               checked={prefs.confirmCloseConnected}
               onChange={(e) => prefs.set({ confirmCloseConnected: e.target.checked })}
+            />
+          }
+        />
+      </SettingsGroup>
+      <SettingsGroup title="Hosts sidebar">
+        <SettingRow
+          label="Open hosts with"
+          description="With double-click, a single click selects a host, as in a file manager. Local terminals open the same way, and Enter opens either way."
+          control={
+            <RowSelect<SidebarOpenGesture>
+              id="settings-sidebar-open-gesture"
+              label="Open hosts with"
+              value={prefs.sidebarOpenGesture}
+              onChange={(sidebarOpenGesture) => prefs.set({ sidebarOpenGesture })}
+              options={SIDEBAR_OPEN_GESTURE_OPTIONS}
             />
           }
         />

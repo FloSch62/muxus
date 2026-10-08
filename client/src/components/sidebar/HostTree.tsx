@@ -19,8 +19,10 @@ import {
   type VisibleNode,
 } from '../../host-tree.js';
 import { managedHostDisplayName, managedHostKey, type ManagedHost } from '../../managed-hosts.js';
+import type { SidebarOpenGesture } from '../../state/prefs.js';
 import { FolderRow } from './FolderRow.js';
-import { HostRow, type HostActivation } from './HostRow.js';
+import { HostRow } from './HostRow.js';
+import { hostClickOutcome, type HostActivation } from './row-clicks.js';
 import { focusAfterChange } from './tree-navigation.js';
 import {
   rangeSelection,
@@ -63,6 +65,8 @@ export interface HostTreeProps {
   folderIconId: (key: string) => string | undefined;
   liveByKey: Map<string, LiveCounts>;
   reorderEnabled: boolean;
+  /** Single click opens a host, or selects it and a double-click opens it. */
+  openGesture: SidebarOpenGesture;
   onActivate: (
     host: ManagedHost,
     anchor: HTMLElement | undefined,
@@ -108,6 +112,8 @@ export interface TreeDndBinding {
   dragging: boolean;
 }
 
+const EMPTY_SELECTION: ReadonlySet<string> = new Set();
+
 /** Enough rows for a tall window before the viewport has been measured. */
 function initialRowWindow(): RowWindow {
   const height = typeof window === 'undefined' ? 1080 : window.innerHeight;
@@ -139,6 +145,7 @@ export function HostTree({
   folderIconId,
   liveByKey,
   reorderEnabled,
+  openGesture,
   onActivate,
   onHostMenu,
   onFolderMenu,
@@ -322,25 +329,37 @@ export function HostTree({
   /**
    * Selection gestures never connect: Ctrl/Cmd-click toggles a host, and
    * Shift-click extends a selection that exists. With nothing selected,
-   * Shift-click keeps opening another session.
+   * Shift-click keeps opening another session. When hosts open on a
+   * double-click, a plain click selects just that host instead.
    */
   const activateHost = useCallback(
     (host: ManagedHost, anchor: HTMLElement | undefined, gesture: HostActivation) => {
       const key = managedHostKey(host);
-      if (gesture.toggleSelection) {
-        const toggled = toggleSelection(selectionRef.current, key);
-        anchorRef.current = toggled.anchor;
-        onSelectionChange(toggled.selection);
-        return;
+      switch (hostClickOutcome(gesture, openGesture, selectionRef.current.size > 0)) {
+        case 'toggle': {
+          const toggled = toggleSelection(selectionRef.current, key);
+          anchorRef.current = toggled.anchor;
+          onSelectionChange(toggled.selection);
+          return;
+        }
+        case 'extend':
+          anchorRef.current ??= { key, base: selectionRef.current };
+          onSelectionChange(rangeSelection(nodesRef.current, anchorRef.current, key));
+          return;
+        case 'select':
+          anchorRef.current = { key, base: EMPTY_SELECTION };
+          onSelectionChange(new Set([key]));
+          return;
+        case 'open':
+          // The second click of a double-click is the first activation here,
+          // so a host with open tabs still lists them.
+          onActivate(host, anchor, openGesture === 'click' ? gesture : { ...gesture, repeat: false });
+          return;
+        case 'ignore':
+          return;
       }
-      if (gesture.extendSelection && selectionRef.current.size > 0) {
-        anchorRef.current ??= { key, base: selectionRef.current };
-        onSelectionChange(rangeSelection(nodesRef.current, anchorRef.current, key));
-        return;
-      }
-      onActivate(host, anchor, gesture);
     },
-    [onActivate, onSelectionChange],
+    [onActivate, onSelectionChange, openGesture],
   );
 
   // Nothing selected means no range to extend, whoever cleared it.
@@ -400,8 +419,13 @@ export function HostTree({
   }, []);
 
   const toggleFolder = useCallback(
-    (row: VisibleNode) => setExpanded(row.key, !expandedFor(row.key)),
-    [setExpanded, expandedFor],
+    (row: VisibleNode, clicks: number) => {
+      // Where a double-click opens hosts it is a habit, and must not toggle a
+      // folder open and straight back shut.
+      if (openGesture === 'double-click' && clicks > 1) return;
+      setExpanded(row.key, !expandedFor(row.key));
+    },
+    [setExpanded, expandedFor, openGesture],
   );
   const launchFolder = useCallback(
     (row: VisibleNode) => {

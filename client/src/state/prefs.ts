@@ -39,6 +39,8 @@ export type SidebarPosition = 'left' | 'right';
 export type CommandBarPosition = 'top' | 'bottom';
 /** Beside each SSH terminal, or behind a tab in the window sidebar. */
 export type FileBrowserPosition = 'pane' | 'sidebar';
+/** Click that opens a sidebar entry; with double-click, a single click selects. */
+export type SidebarOpenGesture = 'click' | 'double-click';
 /** Where the host editor saves a new SSH host unless told otherwise. */
 export type NewSshHostStorage = 'openssh' | 'muxus';
 
@@ -229,6 +231,8 @@ export interface PrefsState {
   sidebarPosition: SidebarPosition;
   /** Where the remote file browser opens: beside its terminal, or in the sidebar. */
   fileBrowserPosition: FileBrowserPosition;
+  /** Whether a sidebar entry opens on a single click or on a double-click. */
+  sidebarOpenGesture: SidebarOpenGesture;
   /** Width of the sessions and hosts sidebar. */
   sidebarWidth: number;
   /** Folder keys the user collapsed. Absent means expanded, so a new folder
@@ -268,6 +272,10 @@ export function isCommandBarPosition(value: unknown): value is CommandBarPositio
 
 export function isFileBrowserPosition(value: unknown): value is FileBrowserPosition {
   return value === 'pane' || value === 'sidebar';
+}
+
+export function isSidebarOpenGesture(value: unknown): value is SidebarOpenGesture {
+  return value === 'click' || value === 'double-click';
 }
 
 export function isNewSshHostStorage(value: unknown): value is NewSshHostStorage {
@@ -329,6 +337,7 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   if (!isSidebarPosition(state.sidebarPosition)) delete state.sidebarPosition;
   if (!isCommandBarPosition(state.commandBarPosition)) delete state.commandBarPosition;
   if (!isFileBrowserPosition(state.fileBrowserPosition)) delete state.fileBrowserPosition;
+  if (!isSidebarOpenGesture(state.sidebarOpenGesture)) delete state.sidebarOpenGesture;
   if (!isTerminalFileLinkActivation(state.terminalFileLinkActivation)) {
     delete state.terminalFileLinkActivation;
   }
@@ -551,6 +560,7 @@ export const usePrefsStore = create<PrefsState>()(
       sidebarCollapsed: false,
       sidebarPosition: 'left',
       fileBrowserPosition: 'pane',
+      sidebarOpenGesture: 'click',
       sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
       sidebarCollapsedFolders: [],
       sidebarFolderStyles: {},

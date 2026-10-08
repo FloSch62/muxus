@@ -151,6 +151,25 @@ describe('layout preferences', () => {
   });
 });
 
+describe('sidebar open gesture preference', () => {
+  it('opens sidebar entries on a single click by default', () => {
+    expect(usePrefsStore.getInitialState().sidebarOpenGesture).toBe('click');
+  });
+
+  it.each(['click', 'double-click'] as const)(
+    'keeps the valid %s gesture during migration',
+    (sidebarOpenGesture) => {
+      expect(migratePrefsState({ sidebarOpenGesture }, 16)).toEqual({ sidebarOpenGesture });
+    },
+  );
+
+  it('drops a malformed persisted gesture', () => {
+    expect(migratePrefsState({ sidebarOpenGesture: 'triple-click', monoFontSize: 16 }, 16)).toEqual({
+      monoFontSize: 16,
+    });
+  });
+});
+
 describe('terminal file link activation preference', () => {
   it('defaults to Alt + left click so normal terminal selection remains available', () => {
     expect(usePrefsStore.getInitialState().terminalFileLinkActivation).toBe('alt');
