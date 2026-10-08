@@ -26,7 +26,8 @@ export interface FolderRowProps {
   dropInto?: boolean;
   /** Draw the insertion line above or below, for a "place beside" drop. */
   dropEdge?: 'before' | 'after';
-  onToggle: (row: VisibleNode) => void;
+  /** Click, Enter or Space; `clicks` is the event's `detail` (0 for the keyboard). */
+  onToggle: (row: VisibleNode, clicks: number) => void;
   /** Alt+Arrow reorder, the keyboard equivalent of dragging this folder. */
   onMove?: (row: VisibleNode, delta: -1 | 1) => void;
   onLaunch: (row: VisibleNode) => void;
@@ -92,7 +93,7 @@ export const FolderRow = memo(function FolderRow({
       draggable={draggable}
       onDragStart={onDragStart ? (event) => onDragStart(event, row) : undefined}
       onDragEnd={onDragEnd}
-      onClick={() => onToggle(row)}
+      onClick={(event) => onToggle(row, event.detail)}
       aria-keyshortcuts={onMove ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
       onKeyDown={(event) => {
         if (!onMove || !event.altKey) return;

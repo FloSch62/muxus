@@ -43,7 +43,9 @@ The sidebar presents saved hosts as a tree: OpenSSH `Host` blocks grouped by the
 came from, plus user-defined folders, colours and icons. A green dot marks a host with a
 live session, and a hover card shows the address, jump chain, key and auto-started
 forwards. Clicking a host that already has tabs open lists them so you can jump back to
-one or start another ([host rows](hosts.md#host-rows)).
+one or start another ([host rows](hosts.md#host-rows)). Hosts can also
+[open with a double-click](hosts.md#opening-with-a-double-click), leaving a single click to
+select them.
 
 The box at the top both filters and connects. Type an alias to filter, or `user@host:port`
 to dial a target that is not saved.

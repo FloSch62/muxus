@@ -77,11 +77,11 @@ import { confirmAction } from '../state/dialogs.js';
 import { usePrefsStore } from '../state/prefs.js';
 import { useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
+import { clickOpensRow, type HostActivation } from './sidebar/row-clicks.js';
 import { treeLabelSx, treeRowSx } from './sidebar/tree-row-style.js';
 import { deleteFolderPlan, folderRewritePlan, moveHostsPlan } from './sidebar/folder-mutations.js';
 import type { FolderMenuState } from './sidebar/FolderContextMenu.js';
 import type { HostMenuState } from './sidebar/HostContextMenu.js';
-import type { HostActivation } from './sidebar/HostRow.js';
 import type { HostSessionsMenuState } from './sidebar/HostSessionsMenu.js';
 import type { LocalShellMenuState } from './sidebar/LocalShellContextMenu.js';
 import { LocalShellIcon } from './LocalShellIcon.js';
@@ -119,6 +119,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
   const setHostBulkEditor = useUiStore((s) => s.setHostBulkEditor);
   const setFolderDialog = useUiStore((s) => s.setFolderDialog);
   const sidebarPosition = usePrefsStore((state) => state.sidebarPosition);
+  const openGesture = usePrefsStore((state) => state.sidebarOpenGesture);
   const localShellProfiles = usePrefsStore((state) => state.localShellProfiles);
   const wslShellProfiles = useWslShellProfiles();
   const setPrefs = usePrefsStore((state) => state.set);
@@ -639,6 +640,12 @@ export const SessionSidebar = memo(function SessionSidebar() {
           event.preventDefault();
           setPanelMenu({ top: event.clientY, left: event.clientX });
         }}
+        // Where a plain click selects a host, a click beside the rows lets go
+        // of it, as in a file manager.
+        onClick={(event) => {
+          if (openGesture !== 'double-click') return;
+          if (!(event.target as Element).closest('li, button')) clearSelection();
+        }}
       >
         <List dense disablePadding>
           <ListItemButton
@@ -646,7 +653,9 @@ export const SessionSidebar = memo(function SessionSidebar() {
             sx={fixedRowSx}
             onMouseEnter={() => void loadTerminalViewImpl()}
             onFocus={() => void loadTerminalViewImpl()}
-            onClick={() => openLocalTerminal()}
+            onClick={(event) => {
+              if (clickOpensRow(event.detail, openGesture)) openLocalTerminal();
+            }}
             onContextMenu={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -673,7 +682,9 @@ export const SessionSidebar = memo(function SessionSidebar() {
                 sx={[...fixedRowSx, { pl: 3 }]}
                 onMouseEnter={() => void loadTerminalViewImpl()}
                 onFocus={() => void loadTerminalViewImpl()}
-                onClick={() => openLocalShellProfile(profile)}
+                onClick={(event) => {
+                  if (clickOpensRow(event.detail, openGesture)) openLocalShellProfile(profile);
+                }}
                 onContextMenu={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -703,7 +714,8 @@ export const SessionSidebar = memo(function SessionSidebar() {
               sx={fixedRowSx}
               onMouseEnter={() => void loadTerminalViewImpl()}
               onFocus={() => void loadTerminalViewImpl()}
-              onClick={() => {
+              onClick={(event) => {
+                if (!clickOpensRow(event.detail, openGesture)) return;
                 connectTarget(filter.trim());
                 setFilter('');
               }}
@@ -736,6 +748,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
           folderIconId={folderIconId}
           liveByKey={liveByKey}
           reorderEnabled={reorderEnabled}
+          openGesture={openGesture}
           onActivate={activateHost}
           onHostMenu={openMenu}
           onFolderMenu={openFolderMenu}

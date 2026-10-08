@@ -42,6 +42,7 @@ import {
   isFileBrowserPosition,
   isLocalShellProfileArray,
   isNewSshHostStorage,
+  isSidebarOpenGesture,
   isSidebarPosition,
   isTerminalFileLinkActivation,
   usePrefsStore,
@@ -98,6 +99,7 @@ const PREFERENCE_KEYS = [
   'sidebarCollapsed',
   'sidebarPosition',
   'fileBrowserPosition',
+  'sidebarOpenGesture',
   'sidebarWidth',
   'sidebarCollapsedFolders',
   'sidebarFolderStyles',
@@ -956,6 +958,9 @@ export function sanitizePreferences(
   }
   if (isFileBrowserPosition(input.fileBrowserPosition)) {
     output.fileBrowserPosition = input.fileBrowserPosition;
+  }
+  if (isSidebarOpenGesture(input.sidebarOpenGesture)) {
+    output.sidebarOpenGesture = input.sidebarOpenGesture;
   }
   if (
     finiteRange(

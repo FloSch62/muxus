@@ -79,6 +79,17 @@ reconnects in place), or choose **New session**. ++shift++ + click or middle-cli
 skips the list and opens another session straight away. While hosts are
 [selected](#editing-several-hosts-at-once), ++shift++ + click extends the selection instead.
 
+### Opening with a double-click
+
+To open hosts with a double-click instead, set **Open hosts with** to **Double-click** under
+**Settings → Behavior**. A single click then selects the host, as in a file manager:
+++ctrl++ + click (++cmd++ + click on macOS) adds or removes one, ++shift++ + click selects
+the range from the last host clicked, and clicking empty space below the list clears the
+selection. A double-click connects, or lists the host's open tabs as above, and ++shift++ +
+double-click opens another session. ++enter++ and middle-click still open straight away.
+Folders keep opening and closing on a single click, so a double-click toggles them only once,
+and the **Local terminal** rows wait for a double-click as well.
+
 The right-click menu has **Connect**, **Open in new window**,
 **Move up/down**, **Move to folder…**, **Organize & color…**, **Edit host**,
 **Duplicate**, **Copy `ssh …` command** and **Delete host**. **Connect** always opens a
@@ -136,7 +147,8 @@ nested folders, as **tabs**, **columns**, **rows** or a **grid**.
 
 ++ctrl++ + click a host (++cmd++ + click on macOS) to select it without connecting. Once
 something is selected, ++shift++ + click selects every host between the last one picked and
-the one clicked. A bar under the list counts the selected hosts; **Edit…** opens the bulk
+the one clicked. When hosts [open with a double-click](#opening-with-a-double-click), a plain
+click selects too. A bar under the list counts the selected hosts; **Edit…** opens the bulk
 editor, the folder button moves them all to a folder, the bin deletes them, and ++escape++ or
 the bar's close button clears the selection. The selection stays while you search, so it can
 gather hosts from several queries.

@@ -139,6 +139,11 @@ include the global set. See [keyword highlighting](terminal.md#keyword-highlight
 **Confirm before closing a live session** is on by default because closing a connected tab
 ends its shell.
 
+**Open hosts with** chooses how sidebar entries open: a **Single click** (the default) or a
+**Double-click**. With a double-click, a single click selects a host as in a file manager;
+the local terminal rows follow the same choice, and ++enter++ opens either way. See
+[Opening with a double-click](hosts.md#opening-with-a-double-click).
+
 **Save new SSH hosts in** chooses where the host editor starts a new SSH host: **OpenSSH
 config** (the default) or **Muxus app data only**. The editor's **Save host in** field can
 still pick the other one for a single host. Session imports keep their own choice. See
