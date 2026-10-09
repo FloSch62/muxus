@@ -97,6 +97,11 @@ export interface CommandButton {
   groupId?: string;
   /** Accent from the command button palette; absent keeps the plain look. */
   color?: CommandButtonColor;
+  /**
+   * Named vault secret the button types instead of `command`. Only the id is
+   * stored; the backend types the value, and `sendEnter` adds Enter after it.
+   */
+  secretId?: string;
 }
 
 /** A named set of command buttons the bar shows one at a time. */

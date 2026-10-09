@@ -309,6 +309,18 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
     },
   },
   {
+    id: 'terminal.send-secret',
+    title: 'Send secret…',
+    category: 'terminal',
+    defaultChords: ['Mod+Shift+P'],
+    keywords: ['password', 'vault', 'enable', 'sudo', 'pin', 'type secret', 'credential'],
+    run: () => {
+      if (!activeTerminal()) return false;
+      useUiStore.getState().setSendSecretMenuOpen(true);
+      return true;
+    },
+  },
+  {
     id: 'terminal.toggle-editor',
     title: 'Switch between terminal and open files',
     category: 'terminal',

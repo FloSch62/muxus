@@ -11,6 +11,7 @@ import path from 'node:path';
 import {
   DEFAULT_PASSWORD_VAULT_UNLOCK_POLICY,
   type PasswordVaultCredential,
+  type PasswordVaultSecret,
   type PasswordVaultStatus,
   type PasswordVaultUnlockPolicy,
 } from '@muxus/shared';
@@ -31,6 +32,10 @@ export const SSH_PASSWORD_SERVICE = 'muxus/ssh-password/v1';
 export const MASTER_PASSWORD_MIN_LENGTH = 8;
 export const MASTER_PASSWORD_MAX_BYTES = 1024;
 export const SSH_PASSWORD_MAX_BYTES = 8192;
+/** Named secrets that are not tied to a login, such as an `enable` password. */
+export const NAMED_SECRET_SERVICE = 'muxus/named-secret/v1';
+export const VAULT_SECRET_NAME_MAX_LENGTH = 80;
+export const VAULT_SECRET_USERNAME_MAX_LENGTH = 256;
 
 const FORMAT_VERSION = 3 as const;
 const CREDENTIAL_FORMAT_VERSION = 1 as const;
@@ -127,6 +132,18 @@ export class InvalidSavedPasswordFormatError extends Error {
   }
 }
 
+export class InvalidVaultSecretError extends Error {
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+export class VaultSecretNameTakenError extends Error {
+  constructor(name: string) {
+    super(`A secret named “${name}” already exists.`);
+  }
+}
+
 export class CredentialVaultCorruptError extends Error {
   constructor() {
     super('A saved password could not be decrypted.');
@@ -207,7 +224,22 @@ export class PasswordVault {
       osKeyStoreAvailable: this.osKeyStoreAvailable,
       credentialCount: credentials.length,
       credentials,
+      secrets: this.secrets(),
     };
+  }
+
+  secrets(): PasswordVaultSecret[] {
+    return this.database
+      .listEncryptedCredentials(PASSWORD_VAULT_PROVIDER, NAMED_SECRET_SERVICE)
+      .map(
+        (record): PasswordVaultSecret => ({
+          id: record.id,
+          name: record.label ?? 'Secret',
+          ...(record.username ? { username: record.username } : {}),
+          createdAt: record.createdAt,
+          updatedAt: record.updatedAt,
+        }),
+      );
   }
 
   async create(
@@ -498,6 +530,7 @@ export class PasswordVault {
         service: record.service,
         account: record.account,
         label: record.label,
+        username: record.username,
         formatVersion: CREDENTIAL_FORMAT_VERSION,
         nonce: encrypted.nonce,
         ciphertext: encrypted.ciphertext,
@@ -506,6 +539,107 @@ export class PasswordVault {
       return true;
     } finally {
       plaintext.fill(0);
+      managementKey.fill(0);
+    }
+  }
+
+  hasSecret(id: string): boolean {
+    return this.secretRecord(id) !== undefined;
+  }
+
+  /**
+   * A named secret's value for typing into a session. Like a saved SSH
+   * password, it follows the prompt policy: no master password while the
+   * vault is unlocked, otherwise `masterPassword` is required.
+   */
+  async secretValue(
+    id: string,
+    masterPassword?: string,
+  ): Promise<string | undefined> {
+    const record = this.secretRecord(id);
+    if (!record) return undefined;
+    const access = await this.credentialKey(masterPassword);
+    try {
+      return this.decryptRecord(record, access.key);
+    } finally {
+      if (access.ephemeral) access.key.fill(0);
+    }
+  }
+
+  /** Save a new named secret. Like editing a saved value, this always takes the master password. */
+  async createSecret(
+    input: { name: string; username?: string; value: string },
+    masterPassword: string,
+  ): Promise<PasswordVaultSecret> {
+    const details = this.secretDetails(input);
+    validateSecretValue(input.value);
+    const config = this.requireConfig();
+    const managementKey = await unwrapMasterKey(masterPassword, config);
+    const plaintext = Buffer.from(input.value, 'utf8');
+    try {
+      this.ensureKeyCheck(config, managementKey);
+      const record = this.database.upsertEncryptedCredentialAtomically(
+        {
+          provider: PASSWORD_VAULT_PROVIDER,
+          service: NAMED_SECRET_SERVICE,
+          account: randomBytes(16).toString('base64url'),
+          label: details.name,
+          username: details.username,
+        },
+        (ref) => {
+          const encrypted = seal(plaintext, managementKey, credentialAad(ref.id));
+          return {
+            formatVersion: CREDENTIAL_FORMAT_VERSION,
+            nonce: encrypted.nonce,
+            ciphertext: encrypted.ciphertext,
+            authTag: encrypted.authTag,
+          };
+        },
+      );
+      return this.secrets().find((secret) => secret.id === record.id)!;
+    } finally {
+      plaintext.fill(0);
+      managementKey.fill(0);
+    }
+  }
+
+  /** Rename a named secret, and replace its value when one is given. */
+  async updateSecret(
+    id: string,
+    input: { name: string; username?: string; value?: string },
+    masterPassword: string,
+  ): Promise<PasswordVaultSecret | undefined> {
+    const record = this.secretRecord(id);
+    if (!record) return undefined;
+    const details = this.secretDetails(input, id);
+    if (input.value !== undefined) validateSecretValue(input.value);
+    const config = this.requireConfig();
+    const managementKey = await unwrapMasterKey(masterPassword, config);
+    const plaintext = input.value === undefined ? undefined : Buffer.from(input.value, 'utf8');
+    try {
+      this.ensureKeyCheck(config, managementKey);
+      if (plaintext) {
+        const encrypted = seal(plaintext, managementKey, credentialAad(record.id));
+        this.database.upsertEncryptedCredential({
+          provider: record.provider,
+          service: record.service,
+          account: record.account,
+          label: details.name,
+          username: details.username,
+          formatVersion: CREDENTIAL_FORMAT_VERSION,
+          nonce: encrypted.nonce,
+          ciphertext: encrypted.ciphertext,
+          authTag: encrypted.authTag,
+        });
+      } else {
+        this.database.updateCredentialRefDetails(record.id, PASSWORD_VAULT_PROVIDER, {
+          label: details.name,
+          username: details.username,
+        });
+      }
+      return this.secrets().find((secret) => secret.id === record.id);
+    } finally {
+      plaintext?.fill(0);
       managementKey.fill(0);
     }
   }
@@ -551,6 +685,32 @@ export class PasswordVault {
     if (config?.unlockPolicy === 'never') {
       await this.deletePendingOsKeyBestEffort(config.vaultId);
     }
+  }
+
+  private secretRecord(id: string): EncryptedCredentialRecord | undefined {
+    const record = this.database.encryptedCredentialById(id, PASSWORD_VAULT_PROVIDER);
+    return record?.service === NAMED_SECRET_SERVICE ? record : undefined;
+  }
+
+  /** A trimmed name no other secret uses, and the optional user name. */
+  private secretDetails(
+    input: { name: string; username?: string },
+    id?: string,
+  ): { name: string; username?: string } {
+    const name = input.name.trim();
+    const username = input.username?.trim() || undefined;
+    if (!name) throw new InvalidVaultSecretError('Give the secret a name.');
+    if (Array.from(name).length > VAULT_SECRET_NAME_MAX_LENGTH) {
+      throw new InvalidVaultSecretError('The secret name is too long.');
+    }
+    if (username && Array.from(username).length > VAULT_SECRET_USERNAME_MAX_LENGTH) {
+      throw new InvalidVaultSecretError('The user name is too long.');
+    }
+    const key = name.toLocaleLowerCase();
+    if (this.secrets().some((secret) => secret.id !== id && secret.name.toLocaleLowerCase() === key)) {
+      throw new VaultSecretNameTakenError(name);
+    }
+    return { name, ...(username ? { username } : {}) };
   }
 
   private requireConfig(): PasswordVaultConfigRecord {
@@ -824,6 +984,13 @@ function validateMasterPasswordLength(
 function validateSavedPassword(password: string): void {
   if (Buffer.byteLength(password, 'utf8') > SSH_PASSWORD_MAX_BYTES) {
     throw new InvalidSavedPasswordFormatError();
+  }
+}
+
+function validateSecretValue(value: string): void {
+  if (value.length === 0) throw new InvalidVaultSecretError('Enter the secret to save.');
+  if (Buffer.byteLength(value, 'utf8') > SSH_PASSWORD_MAX_BYTES) {
+    throw new InvalidVaultSecretError('The secret is too long to save.');
   }
 }
 

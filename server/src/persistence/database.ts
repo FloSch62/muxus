@@ -448,6 +448,15 @@ const MIGRATIONS = [
         ADD COLUMN auto_reconnect INTEGER NOT NULL DEFAULT 0 CHECK(auto_reconnect IN (0, 1));
     `,
   },
+  {
+    // Named vault secrets carry an optional user name as plain metadata.
+    version: 26,
+    name: 'credential-usernames',
+    sql: `
+      ALTER TABLE credential_refs
+        ADD COLUMN username TEXT;
+    `,
+  },
 ] as const;
 
 /** Kinds stored as Muxus-owned saved hosts (everything but OpenSSH metadata rows). */
@@ -620,6 +629,8 @@ export interface CredentialRefInput {
   /** Account/key used to retrieve the secret from the provider. */
   account: string;
   label?: string;
+  /** Plain account name shown beside a named secret. */
+  username?: string;
 }
 
 export interface CredentialRefRecord extends CredentialRefInput {
@@ -1038,14 +1049,27 @@ export class MuxusDatabase {
     const id = existing ? String(existing.id) : nanoid();
     this.db
       .prepare(`
-        INSERT INTO credential_refs(id, provider, service, account, label)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO credential_refs(id, provider, service, account, label, username)
+        VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(provider, service, account) DO UPDATE SET
           label = excluded.label,
+          username = excluded.username,
           updated_at = CURRENT_TIMESTAMP
       `)
-      .run(id, input.provider, input.service, input.account, input.label?.trim() || null);
-    return { id, ...input, label: input.label?.trim() || undefined };
+      .run(
+        id,
+        input.provider,
+        input.service,
+        input.account,
+        input.label?.trim() || null,
+        input.username?.trim() || null,
+      );
+    return {
+      id,
+      ...input,
+      label: input.label?.trim() || undefined,
+      username: input.username?.trim() || undefined,
+    };
   }
 
   passwordVaultConfig(): PasswordVaultConfigRecord | undefined {
@@ -1141,7 +1165,7 @@ export class MuxusDatabase {
     const row = this.db
       .prepare(`
         SELECT refs.id, refs.provider, refs.service, refs.account, refs.label,
-               refs.created_at, secrets.updated_at, secrets.format_version,
+               refs.username, refs.created_at, secrets.updated_at, secrets.format_version,
                secrets.nonce, secrets.ciphertext, secrets.auth_tag
         FROM credential_refs AS refs
         JOIN credential_secrets AS secrets ON secrets.credential_ref_id = refs.id
@@ -1158,7 +1182,7 @@ export class MuxusDatabase {
     const row = this.db
       .prepare(`
         SELECT refs.id, refs.provider, refs.service, refs.account, refs.label,
-               refs.created_at, secrets.updated_at, secrets.format_version,
+               refs.username, refs.created_at, secrets.updated_at, secrets.format_version,
                secrets.nonce, secrets.ciphertext, secrets.auth_tag
         FROM credential_refs AS refs
         JOIN credential_secrets AS secrets ON secrets.credential_ref_id = refs.id
@@ -1172,7 +1196,7 @@ export class MuxusDatabase {
     return this.db
       .prepare(`
         SELECT refs.id, refs.provider, refs.service, refs.account, refs.label,
-               refs.created_at, secrets.updated_at, secrets.format_version,
+               refs.username, refs.created_at, secrets.updated_at, secrets.format_version,
                secrets.nonce, secrets.ciphertext, secrets.auth_tag
         FROM credential_refs AS refs
         JOIN credential_secrets AS secrets ON secrets.credential_ref_id = refs.id
@@ -1243,6 +1267,25 @@ export class MuxusDatabase {
             WHERE provider = ? AND service = ? AND account = ?
           `)
           .run(label, provider, service, account).changes,
+      ) === 1
+    );
+  }
+
+  /** Rename a credential and change its user name; the ciphertext stays as it is. */
+  updateCredentialRefDetails(
+    id: string,
+    provider: string,
+    details: { label: string; username?: string },
+  ): boolean {
+    return (
+      Number(
+        this.db
+          .prepare(`
+            UPDATE credential_refs
+            SET label = ?, username = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND provider = ?
+          `)
+          .run(details.label.trim(), details.username?.trim() || null, id, provider).changes,
       ) === 1
     );
   }
@@ -2234,6 +2277,7 @@ function encryptedCredentialFromRow(row: SqlRow): EncryptedCredentialRecord {
     service: String(row.service),
     account: String(row.account),
     label: nullableString(row.label) ?? undefined,
+    username: nullableString(row.username) ?? undefined,
     formatVersion: Number(row.format_version) as 1,
     nonce: blob(row, 'nonce'),
     ciphertext: blob(row, 'ciphertext'),
