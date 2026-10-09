@@ -10,6 +10,7 @@ import type {
   FolderAuthSettings,
   ForwardType,
   HostKeywordHighlightConfig,
+  LoginSequence,
   ManagedHostRef,
   OpenSshMetadataPatch,
   PasswordVaultUnlockPolicy,
@@ -457,6 +458,19 @@ const MIGRATIONS = [
         ADD COLUMN username TEXT;
     `,
   },
+  {
+    // NULL inherits the folder's sequence; an empty step list means none.
+    version: 27,
+    name: 'login-sequences',
+    sql: `
+      ALTER TABLE connection_profiles
+        ADD COLUMN login_sequence_json TEXT
+        CHECK(login_sequence_json IS NULL OR json_valid(login_sequence_json));
+      ALTER TABLE folder_settings
+        ADD COLUMN login_sequence_json TEXT
+        CHECK(login_sequence_json IS NULL OR json_valid(login_sequence_json));
+    `,
+  },
 ] as const;
 
 /** Kinds stored as Muxus-owned saved hosts (everything but OpenSSH metadata rows). */
@@ -600,6 +614,7 @@ export interface OpenSshMetadata {
   commandButtonGroup?: string;
   disableSftp?: boolean;
   consoleCompatibility?: boolean;
+  loginSequence?: LoginSequence;
   lastConnectedAt?: string;
   connectCount: number;
 }
@@ -610,6 +625,7 @@ export interface FolderSettingsRow {
   path: string;
   pathKey: string;
   auth: FolderAuthSettings;
+  loginSequence?: LoginSequence;
   createdAt: string;
   updatedAt: string;
 }
@@ -790,6 +806,7 @@ export class MuxusDatabase {
         profiles.command_button_group,
         profiles.disable_sftp,
         profiles.console_compatibility,
+        profiles.login_sequence_json,
         profiles.last_connected_at,
         profiles.connect_count,
         groups.name AS group_name
@@ -899,6 +916,7 @@ export class MuxusDatabase {
             command_button_group = ?,
             disable_sftp = ?,
             console_compatibility = ?,
+            login_sequence_json = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `)
@@ -934,6 +952,7 @@ export class MuxusDatabase {
           : patch.consoleCompatibility
             ? 1
             : 0,
+        loginSequenceColumn(patch.loginSequence, current.login_sequence_json),
         String(current.id),
       );
     return metadataFromRow(this.metadataByAlias.get(alias)!);
@@ -1424,6 +1443,7 @@ export class MuxusDatabase {
             command_button_group = ?,
             disable_sftp = ?,
             console_compatibility = ?,
+            login_sequence_json = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `)
@@ -1459,6 +1479,7 @@ export class MuxusDatabase {
           : patch.consoleCompatibility
             ? 1
             : 0,
+        loginSequenceColumn(patch.loginSequence, current.login_sequence_json),
         id,
       );
     return this.savedHostProfile(id)!;
@@ -2078,6 +2099,44 @@ export class MuxusDatabase {
     return this.folderSettingsForPath(normalized)!;
   }
 
+  /** Set or clear (null) a folder's login sequence; the row must exist. */
+  setFolderLoginSequence(id: string, sequence: LoginSequence | null): void {
+    if (sequence) assertSecretFree(sequence, 'folder.loginSequence');
+    this.db
+      .prepare(`
+        UPDATE folder_settings
+        SET login_sequence_json = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `)
+      .run(sequence ? JSON.stringify(sequence) : null, id);
+  }
+
+  /**
+   * A host's own login sequence and the folder it lives in, for an OpenSSH
+   * alias or a Muxus-owned host. Undefined when the database knows nothing
+   * about the host, which then has neither.
+   */
+  hostLoginSequence(
+    host: { alias: string } | { profileId: string },
+  ): { loginSequence?: LoginSequence; group?: string } | undefined {
+    const row =
+      'alias' in host
+        ? this.metadataByAlias.get(host.alias)
+        : this.db
+            .prepare(`
+              SELECT profiles.login_sequence_json, groups.name AS group_name
+              FROM connection_profiles AS profiles
+              LEFT JOIN connection_groups AS groups ON groups.id = profiles.group_id
+              WHERE profiles.id = ? AND profiles.kind IN ${SAVED_HOST_KINDS_SQL}
+            `)
+            .get(host.profileId);
+    if (!row) return undefined;
+    return {
+      loginSequence: loginSequenceFromJson(row.login_sequence_json),
+      group: optionalString(row.group_name),
+    };
+  }
+
   /** Remove one settings row only — descendants keep their own settings. */
   removeFolderSettingsRow(id: string): void {
     this.db.prepare('DELETE FROM folder_settings WHERE id = ?').run(id);
@@ -2345,6 +2404,7 @@ function folderSettingsFromRow(row: SqlRow): FolderSettingsRow {
     path: String(row.path),
     pathKey: String(row.path_key),
     auth: JSON.parse(String(row.auth_json)) as FolderAuthSettings,
+    loginSequence: loginSequenceFromJson(row.login_sequence_json),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };
@@ -2367,6 +2427,7 @@ function metadataFromRow(row: SqlRow): OpenSshMetadata {
     commandButtonGroup: optionalString(row.command_button_group),
     ...(Number(row.disable_sftp) === 1 ? { disableSftp: true } : {}),
     ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),
+    loginSequence: loginSequenceFromJson(row.login_sequence_json),
     lastConnectedAt: optionalString(row.last_connected_at),
     connectCount: Number(row.connect_count),
   };
@@ -2394,6 +2455,7 @@ function savedHostFromRow(row: SqlRow): SavedHostProfile {
       commandButtonGroup: optionalString(row.command_button_group),
       ...(Number(row.disable_sftp) === 1 ? { disableSftp: true } : {}),
       ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),
+      loginSequence: loginSequenceFromJson(row.login_sequence_json),
       lastConnectedAt: optionalString(row.last_connected_at),
       connectCount: Number(row.connect_count),
     },
@@ -2420,6 +2482,28 @@ function keywordHighlightsFromJson(value: unknown): HostKeywordHighlightConfig |
   } catch {
     return undefined;
   }
+}
+
+/** Stored sequences were validated when written; anything unreadable counts as none set. */
+function loginSequenceFromJson(value: unknown): LoginSequence | undefined {
+  if (typeof value !== 'string') return undefined;
+  try {
+    const parsed = JSON.parse(value) as Partial<LoginSequence>;
+    return Array.isArray(parsed.steps) ? (parsed as LoginSequence) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A metadata patch's sequence as the column value: undefined keeps the current one. */
+function loginSequenceColumn(
+  patch: LoginSequence | null | undefined,
+  current: SQLOutputValue | undefined,
+): string | null {
+  if (patch === undefined) return nullableString(current);
+  if (patch === null) return null;
+  assertSecretFree(patch, 'loginSequence');
+  return JSON.stringify(patch);
 }
 
 function optionalString(value: unknown): string | undefined {

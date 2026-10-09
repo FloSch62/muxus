@@ -40,6 +40,7 @@ import HorizontalSplitOutlinedIcon from '@mui/icons-material/HorizontalSplitOutl
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowLeftIcon from '@mui/icons-material/KeyboardArrowLeft';
 import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';
+import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import OpenInFullOutlinedIcon from '@mui/icons-material/OpenInFullOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
@@ -761,6 +762,22 @@ export function TabStrip({
                 sx={{ fontSize: 13, flexShrink: 0, color: 'text.secondary' }}
               />
             ) : null}
+            {tab.loginSequence ? (
+              <Tooltip
+                title={`Login sequence, step ${tab.loginSequence.step} of ${tab.loginSequence.steps}: ${tab.loginSequence.detail}`}
+              >
+                <LoginOutlinedIcon
+                  aria-label="Login sequence running"
+                  color="info"
+                  sx={{
+                    fontSize: 14,
+                    flexShrink: 0,
+                    animation: 'muxus-pulse 1.2s ease-in-out infinite',
+                    '@keyframes muxus-pulse': { '50%': { opacity: 0.35 } },
+                  }}
+                />
+              </Tooltip>
+            ) : null}
             {multiExecSelected.has(tab.id) && (
               <Tooltip
                 title={
@@ -1352,6 +1369,19 @@ export function TabStrip({
             </ListItemText>
           </MenuItem>
         )}
+        {menuTab?.loginSequence ? (
+          <MenuItem
+            onClick={() => {
+              terminalHandle(menuTab.id)?.cancelLoginSequence();
+              setMenu(null);
+            }}
+          >
+            <ListItemIcon>
+              <LoginOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Cancel login sequence</ListItemText>
+          </MenuItem>
+        ) : null}
         {menuTabIsDesktop ? null : (
           <MenuItem
             disabled={

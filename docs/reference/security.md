@@ -123,6 +123,13 @@ diagnostic log, even with input capture on. Only output the remote side echoes b
 recorded. Saved commands, preferences and backups contain the ID alone, so a command
 button restored on another machine shows its secret as missing.
 
+[Login sequences](../guide/adding-hosts.md#login-sequence) work the same way: a secret step
+stores the ID, the backend types the value into the session it runs in, and a sequence in a
+backup or on another machine refers to a secret that is not there and stops at that step.
+Patterns are matched in the backend against a bounded window of output, and a regular
+expression is abandoned after a short time limit, so a pathological pattern cannot stall
+other sessions.
+
 ## Host keys
 
 Verification uses `~/.ssh/known_hosts` and the read-only `/etc/ssh/ssh_known_hosts`, hashed

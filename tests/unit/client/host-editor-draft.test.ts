@@ -283,4 +283,39 @@ describe('SSH host editor draft', () => {
       group: 'Production/Edge',
     });
   });
+
+  it('loads the login sequence from either host source and keeps it out of ssh_config', () => {
+    const loginSequence = {
+      steps: [
+        { id: 'w', kind: 'wait' as const, pattern: '[>#]\\s*$', regex: true, timeoutSeconds: 15 },
+        { id: 's', kind: 'send' as const, text: 'terminal length 0', enter: true },
+      ],
+    };
+    expect(blankDraft().loginSequence).toEqual({ mode: 'inherit', steps: [] });
+    const fromConfig = draftFromEntry(
+      { ...entry, metadata: { profileId: 'p', connectCount: 0, loginSequence } },
+      true,
+    );
+    expect(fromConfig.loginSequence).toEqual({ mode: 'custom', steps: loginSequence.steps });
+    expect(draftProblem(fromConfig)).toBeNull();
+    expect(JSON.stringify(draftToRequest(fromConfig))).not.toContain('terminal length');
+
+    const fromProfile = draftFromSavedSshProfile(
+      {
+        id: 'r',
+        kind: 'ssh',
+        name: 'Router',
+        profile: { kind: 'ssh', profileId: 'r', target: 'router.test', useConfig: false },
+        metadata: { profileId: 'r', connectCount: 0, loginSequence: { steps: [] } },
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+      },
+      false,
+    );
+    expect(fromProfile.loginSequence.mode).toBe('none');
+    expect(JSON.stringify(draftToSavedSshInput(fromProfile))).not.toContain('loginSequence');
+    expect(
+      draftProblem({ ...fromConfig, loginSequence: { mode: 'custom', steps: [{ id: 'x', kind: 'secret', secretId: '', enter: true }] } }),
+    ).toBe('Login sequence step 1: Choose a secret from the password vault.');
+  });
 });

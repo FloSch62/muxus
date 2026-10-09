@@ -11,6 +11,7 @@ import Typography from '@mui/material/Typography';
 import HighlightOutlinedIcon from '@mui/icons-material/HighlightOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import LanguageOutlinedIcon from '@mui/icons-material/LanguageOutlined';
+import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
 import UsbOutlinedIcon from '@mui/icons-material/UsbOutlined';
@@ -32,6 +33,7 @@ import { HostColorPicker } from './HostColorPicker.js';
 import { EditorShell, type EditorSectionDef } from './host-editor/EditorShell.js';
 import { HighlightingSection } from './host-editor/HighlightingSection.js';
 import { LoggingSection } from './host-editor/LoggingSection.js';
+import { LoginSequenceSection } from './host-editor/LoginSequenceSection.js';
 import { TerminalAppearanceSection } from './host-editor/TerminalAppearanceSection.js';
 import {
   nativeDraftMetadataPatch,
@@ -46,7 +48,7 @@ const COMMON_BAUD_RATES = [
 ];
 
 type NativeEditorState = Exclude<HostEditorState, false>;
-type NativeSection = 'general' | 'appearance' | 'line' | 'logging' | 'highlighting';
+type NativeSection = 'general' | 'appearance' | 'line' | 'login' | 'logging' | 'highlighting';
 
 /**
  * Telnet/serial editor rendered into the shared host-editor shell, so the
@@ -153,6 +155,12 @@ export function NativeHostEditorContent({
       ? [{ value: 'line' as const, label: 'Line settings', icon: <TuneOutlinedIcon fontSize="small" /> }]
       : []),
     {
+      value: 'login',
+      label: 'Login sequence',
+      icon: <LoginOutlinedIcon fontSize="small" />,
+      count: draft.loginSequence.mode === 'custom' ? draft.loginSequence.steps.length : undefined,
+    },
+    {
       value: 'logging',
       label: 'Session logging',
       icon: <HistoryOutlinedIcon fontSize="small" />,
@@ -204,6 +212,13 @@ export function NativeHostEditorContent({
         <GeneralSection kind={kind} draft={draft} set={set} />
       )}
       {activeSection === 'line' && <LineSettingsSection draft={draft} set={set} />}
+      {activeSection === 'login' && (
+        <LoginSequenceSection
+          value={draft.loginSequence}
+          onChange={(loginSequence) => set({ loginSequence })}
+          group={draft.group}
+        />
+      )}
       {activeSection === 'appearance' && (
         <TerminalAppearanceSection value={draft} onChange={set} />
       )}

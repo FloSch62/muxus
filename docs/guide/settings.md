@@ -218,10 +218,11 @@ the operating-system credential store.
   needed** prompts for each use.
 - **Secrets** are passwords and PINs that are not a login, such as an `enable` or `sudo`
   password; a user name is optional. **Add secret** saves one, and
-  [command buttons](commands.md#buttons-that-send-a-secret) and **Send secret…** type them
-  into a session. Adding, viewing and editing a secret take the master password; typing
-  one follows the prompt policy. Deleting a secret that command buttons still use warns
-  first and names them.
+  [command buttons](commands.md#buttons-that-send-a-secret), **Send secret…** and
+  [login sequences](adding-hosts.md#login-sequence) type them into a session. Adding, viewing
+  and editing a secret take the master password; typing one follows the prompt policy.
+  Deleting a secret that command buttons or login sequences still use warns first and names
+  them.
 - **View or edit password** asks for the master password before revealing the saved value.
 - **Change master password** changes that management password without rewriting every
   credential.
@@ -239,8 +240,9 @@ stored in the application-data directory.
 ## Backup & data
 
 **Create backup** writes the Muxus-side data to a file: folders, colours, saved
-Telnet/serial hosts, workspaces, tunnels and preferences. **Restore a backup** merges a file
-back in; items absent from the file are not deleted.
+Telnet/serial hosts, workspaces, tunnels, login sequences and preferences. **Restore a backup**
+merges a file back in; items absent from the file are not deleted. A login sequence's secret
+steps keep only which vault secret they type.
 
 **Export OpenSSH** writes the SSH hosts out as a standard `ssh_config` for use with another
 client. Non-secret shared folder defaults are copied into each affected host block so the

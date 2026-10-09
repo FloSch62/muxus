@@ -33,8 +33,10 @@ capture.
 
     Typed text returns from the remote as output, so a command containing a token is
     recorded even with input capture off. **Pause logging before displaying secrets.**
-    A [vault secret](commands.md#buttons-that-send-a-secret) sent from a command button or
-    **Send secret…** is never recorded as input, even with input capture on.
+    A [vault secret](commands.md#buttons-that-send-a-secret) sent from a command button,
+    **Send secret…** or a host's [login sequence](adding-hosts.md#login-sequence) is never
+    recorded as input, even with input capture on. A login sequence that stops or is
+    cancelled leaves a status line saying so.
 
 ## Searching and reading
 
