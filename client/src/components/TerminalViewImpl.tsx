@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import CircularProgress from '@mui/material/CircularProgress';
 import Divider from '@mui/material/Divider';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
@@ -61,7 +63,7 @@ import {
   broadcastTerminalPaste,
   mirroredTabIds,
 } from '../state/multi-exec.js';
-import { setPasteProgress } from '../state/paste-progress.js';
+import { setPasteProgress, usePasteProgressStore } from '../state/paste-progress.js';
 import {
   TERMINAL_SYMBOL_FONT,
   sshKeepalivePrefField,
@@ -359,6 +361,10 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const searchRequest = useTabsStore(
     (s) => s.tabs.find((candidate) => candidate.id === tab.id)?.searchRequest ?? 0,
   );
+  const loginSequence = useTabsStore(
+    (s) => s.tabs.find((candidate) => candidate.id === tab.id)?.loginSequence,
+  );
+  const pasting = usePasteProgressStore((s) => tab.id in s.byTab);
   const monoFontSize = usePrefsStore((s) => s.monoFontSize);
   const fontFamily = usePrefsStore((s) => s.fontFamily);
   const lineHeight = usePrefsStore((s) => s.lineHeight);
@@ -909,6 +915,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         socket.send(JSON.stringify({ op: 'set-logging', ...patch }));
         return true;
       },
+      sendBreak: () => {
+        const socket = wsRef.current;
+        if (!ready || !socket || socket.readyState !== WebSocket.OPEN) return false;
+        socket.send(JSON.stringify({ op: 'send-break' }));
+        return true;
+      },
+      cancelLoginSequence,
     });
 
     const onNativePaste = (event: ClipboardEvent) => {
@@ -1093,6 +1106,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       const socket = new WebSocket(wsUrl('/ws/terminal'), wsProtocols());
       const attachingExistingSession = !!attachTerminalId;
       let socketFailed = false;
+      /** A tmux/screen reattach held back until the host's login sequence is done. */
+      let pendingReattach: string | undefined;
+      if (!attachingExistingSession) updateTab(tab.id, { loginSequence: undefined });
       diagnosable = false;
       ws = socket;
       wsRef.current = socket;
@@ -1298,9 +1314,43 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
               current?.profile?.kind === 'ssh' &&
               current.reconnectMode
             ) {
-              socket.send(encoder.encode(reattachCommand(current.reconnectMode)));
+              // The server announces a login sequence before `ready`; the
+              // multiplexer reattaches once the sequence has logged in.
+              if (current.loginSequence) pendingReattach = reattachCommand(current.reconnectMode);
+              else socket.send(encoder.encode(reattachCommand(current.reconnectMode)));
             }
             flushPendingInput();
+            break;
+          }
+          case 'login-sequence': {
+            const wasRunning = !!useTabsStore
+              .getState()
+              .tabs.find((candidate) => candidate.id === tab.id)?.loginSequence;
+            if (ctl.state === 'running') {
+              updateTab(tab.id, {
+                loginSequence: { step: ctl.step, steps: ctl.steps, detail: ctl.detail },
+              });
+              break;
+            }
+            updateTab(tab.id, { loginSequence: undefined });
+            // A vault prompt the sequence opened has nothing left to answer.
+            if (ready) setAuthPrompt(null);
+            const reattach = pendingReattach;
+            pendingReattach = undefined;
+            if (ctl.state === 'done') {
+              if (reattach) socket.send(encoder.encode(reattach));
+              break;
+            }
+            // A renderer that reattaches after the sequence ended has the note on screen already.
+            if (!wasRunning) break;
+            const notice =
+              ctl.state === 'failed'
+                ? `\x1b[33m[login sequence stopped: ${terminalNotice(ctl.message ?? `step ${ctl.step} failed`).replace(/\.$/, '')}]\x1b[0m\r\n`
+                : `\x1b[90m[login sequence cancelled at step ${ctl.step} of ${ctl.steps}]\x1b[0m\r\n`;
+            // Measured after the output already queued, so the note starts on a line of its own.
+            term.write('', () => {
+              term.write(`${term.buffer.active.cursorX === 0 ? '' : '\r\n'}${notice}`);
+            });
             break;
           }
           case 'logging-state':
@@ -1317,6 +1367,12 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
               showToast('success', `Logging to ${ctl.filePath}`);
             }
             announceLogFileRef.current = false;
+            break;
+          case 'break-result':
+            if (!ctl.ok) {
+              const notice = `\x1b[33m[${terminalNotice(ctl.message ?? 'BREAK was not sent')}]\x1b[0m\r\n`;
+              term.write(term.buffer.active.cursorX > 0 ? `\r\n${notice}` : notice);
+            }
             break;
           case 'exit':
             exitMessage = ctl;
@@ -1424,6 +1480,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             logFilePath: undefined,
             failureReason: reason,
             disconnectReason: reasonKind,
+            loginSequence: undefined,
           });
         };
 
@@ -1439,6 +1496,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           logFilePath: undefined,
           failureReason: reason,
           disconnectReason: reasonKind,
+          loginSequence: undefined,
         });
         interruptionTimer = setTimeout(() => {
           const current = useTabsStore
@@ -1776,6 +1834,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     else ws.send(JSON.stringify({ op: 'auth-response', ...response }));
   };
 
+  function cancelLoginSequence(): boolean {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+    ws.send(JSON.stringify({ op: 'cancel-login-sequence' }));
+    return true;
+  }
+
   const answerHostKey = (accept: boolean) => {
     setHostKey(null);
     const ws = wsRef.current;
@@ -2036,6 +2101,43 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         </MenuItem>
       </Menu>
       <PasteProgressOverlay tabId={tab.id} />
+      {loginSequence ? (
+        <Paper
+          elevation={6}
+          aria-live="polite"
+          sx={{
+            position: 'absolute',
+            zIndex: 5,
+            right: 18,
+            // Above the paced-paste progress when both are showing.
+            bottom: pasting ? 72 : 16,
+            maxWidth: 'calc(100% - 36px)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            pl: 1.25,
+            pr: 0.5,
+            py: 0.375,
+            border: 1,
+            borderColor: 'divider',
+          }}
+        >
+          <CircularProgress size={13} thickness={5} sx={{ flexShrink: 0 }} />
+          <Typography variant="caption" noWrap sx={{ minWidth: 0 }}>
+            Login sequence {loginSequence.step}/{loginSequence.steps} · {loginSequence.detail}
+          </Typography>
+          <Button
+            size="small"
+            onClick={() => {
+              cancelLoginSequence();
+              termRef.current?.focus();
+            }}
+            sx={{ flexShrink: 0, minWidth: 0 }}
+          >
+            Cancel
+          </Button>
+        </Paper>
+      ) : null}
       <AuthPromptDialog request={authPrompt} onSubmit={answerAuth} />
       <HostKeyDialog request={hostKey} onAnswer={answerHostKey} />
       {pendingPaste !== null ? (

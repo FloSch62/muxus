@@ -11,6 +11,11 @@ import {
   blankHostSessionLoggingDraft,
   type HostSessionLoggingDraft,
 } from '../../session-logging-policy.js';
+import {
+  loginSequenceDraft,
+  loginSequenceProblem,
+  type LoginSequenceDraft,
+} from '../../login-sequence.js';
 import { keywordHighlightRulesProblem } from '../../terminal/keyword-matching.js';
 import { parseHostTarget } from './native-draft.js';
 
@@ -70,6 +75,8 @@ export interface HostDraft {
   extras: Array<{ keyword: string; value: string }>;
   keywordHighlights: HostKeywordHighlightConfig;
   sessionLogging: HostSessionLoggingDraft;
+  /** Muxus-only login steps, saved with the metadata. */
+  loginSequence: LoginSequenceDraft;
 }
 
 export function blankDraft(
@@ -122,6 +129,7 @@ export function blankDraft(
     extras: [],
     keywordHighlights: { inheritGlobal: true, rules: [] },
     sessionLogging: blankHostSessionLoggingDraft(),
+    loginSequence: loginSequenceDraft(undefined),
   };
 }
 
@@ -180,6 +188,7 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
       rules: [],
     },
     sessionLogging: blankHostSessionLoggingDraft(),
+    loginSequence: loginSequenceDraft(entry.metadata?.loginSequence),
   };
 }
 
@@ -244,6 +253,7 @@ export function draftFromSavedSshProfile(
       rules: [],
     },
     sessionLogging: blankHostSessionLoggingDraft(),
+    loginSequence: loginSequenceDraft(saved.metadata.loginSequence),
   };
 }
 
@@ -294,7 +304,10 @@ export function draftProblem(draft: HostDraft): string | null {
   for (const e of draft.extras) {
     if (!/^[A-Za-z][A-Za-z0-9]*$/.test(e.keyword)) return `"${e.keyword}" is not a valid option keyword.`;
   }
-  return keywordHighlightRulesProblem(draft.keywordHighlights.rules);
+  return (
+    loginSequenceProblem(draft.loginSequence) ??
+    keywordHighlightRulesProblem(draft.keywordHighlights.rules)
+  );
 }
 
 /** Serialize a database-backed SSH host without involving ssh_config. */

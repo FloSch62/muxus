@@ -7,6 +7,8 @@ export interface TerminalTransport {
   /** Settle once everything written so far has left for the remote end. */
   drain(): Promise<void>;
   resize(cols: number, rows: number): void;
+  /** Signal BREAK: a held break condition on a serial line, IAC BRK on Telnet. */
+  sendBreak(): Promise<void>;
   pause(): void;
   resume(): void;
   close(): void;

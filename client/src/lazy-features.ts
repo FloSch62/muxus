@@ -8,6 +8,7 @@ export const loadSidebarMenus = () => import('./components/sidebar/SidebarMenus.
 export const loadSettingsDialog = () => import('./components/SettingsDialog.js');
 export const loadCommandButtonMenu = () => import('./components/CommandButtonMenu.js');
 export const loadCommandButtonsDialog = () => import('./components/CommandButtonsDialog.js');
+export const loadSendSecretMenu = () => import('./components/SendSecretMenu.js');
 export const loadShortcutsDialog = () => import('./components/ShortcutsDialog.js');
 export const loadSessionHistoryDialog = () => import('./components/SessionHistoryDialog.js');
 export const loadLogViewerDialog = () => import('./components/LogViewerDialog.js');

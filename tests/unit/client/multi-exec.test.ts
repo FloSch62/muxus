@@ -41,6 +41,8 @@ function handle(
     cancelTransfer: vi.fn(),
     sendPaste: vi.fn(() => true),
     cancelPaste: vi.fn(),
+    sendBreak: vi.fn(() => true),
+    cancelLoginSequence: vi.fn(() => false),
     ...overrides,
   };
 }

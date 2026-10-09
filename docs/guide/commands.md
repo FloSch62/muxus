@@ -35,6 +35,41 @@ Buttons are disabled while the focused tab is not connected. The arrows reorder 
 the copy button duplicates one right below itself as a starting point for a similar
 command.
 
+### Buttons that send a secret
+
+An `enable` or configure-mode password, a `sudo` password or a PIN does not belong in a
+command, where it would be saved in plain text and copied into backups. Save it as a
+[secret in the password vault](settings.md#passwords) instead and let a button type it:
+
+1. In the command-button manager, switch the button from **Command** to **Secret**.
+2. Pick the secret, or choose **New secret…** to add one on the spot.
+3. Leave **Press Enter after it** on to answer a password prompt, or turn it off to type
+   the secret without Enter.
+
+The button stores only which secret it types, never the value, and carries a
+:material-key-outline: key so it is clear what it does. Muxus types the secret into the
+focused session exactly like typed input, and [multi-execution](#multi-execution) mirrors
+it to the selected sessions like any other input. The value never passes through the
+window, the quick launcher, [session history](session-history.md) or log files; only what
+the remote side echoes back can be recorded, and a password prompt echoes nothing.
+
+Using a secret follows the vault's prompt policy: with **Never** it is typed straight away,
+otherwise Muxus asks for the master password first.
+
+Deleting a secret that buttons still use warns first. Those buttons then show a
+:material-alert-outline: warning, stay disabled and say that their secret is missing, until
+another secret is picked for them.
+
+### Send secret…
+
+++ctrl+shift+p++ (or **Send secret…** in the [quick launcher](quick-launcher.md)) opens a
+menu of saved secrets beside the cursor. Type to search by name or user name, then press
+++enter++ to type the secret and press Enter, or ++shift+enter++ to type it only. The menu
+also links to **Manage secrets…** in **Settings → Passwords**.
+
+The shortcut is rebindable under **Terminal → Send secret…** in the
+[keyboard sheet](../reference/keyboard-shortcuts.md).
+
 Turn off **Show command bar** in the command-button manager to reclaim the vertical space
 and use only the keyboard menu. This hides the bar without deleting any saved commands.
 
@@ -97,7 +132,8 @@ Multi-execution mirrors keystrokes into several live terminals at once.
 1. Open the multi-exec control in the top bar.
 2. Select at least **two** connected sessions, either individually or with the presets
    **This split**, **Visible splits** and **All live**. The control turns **Active**.
-3. Type in any selected terminal. Every selected terminal receives the same input.
+3. Type in any selected terminal. Every selected terminal receives the same input, and so
+   does a [secret](#buttons-that-send-a-secret) sent into one of them.
 4. **Clear selection** when finished.
 
 A paste is mirrored as well. Each terminal types it in at its own host's
@@ -108,6 +144,9 @@ hold up the others, and cancelling the paste in one terminal stops it in all of 
 
     This includes any session where a prompt is waiting for confirmation. The control stays
     visibly **Active** while mirroring is on.
+
+[Send BREAK](telnet-serial.md#send-break) is not mirrored. It only reaches the session it
+was sent from.
 
 ### Switching it off and on
 

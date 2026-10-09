@@ -27,6 +27,8 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import CheckIcon from '@mui/icons-material/Check';
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
+import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
+import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
 import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop';
 import { useActiveCommandButtonGroup } from '../command-button-groups.js';
@@ -58,6 +60,7 @@ import {
 import { useUiStore } from '../state/ui.js';
 import { CommandButtonColorDot } from './command-button-style.js';
 import { useAllManagedHosts } from './sidebar/useAllManagedHosts.js';
+import { VaultSecretField } from './VaultSecretField.js';
 
 export function CommandButtonsDialog() {
   const open = useUiStore((state) => state.commandButtonsOpen);
@@ -435,6 +438,8 @@ function CommandButtonCard({
 }) {
   const name = button.label || 'command';
   const labelRef = useSelectWhen(focusRequested, onFocused);
+  // An empty id is a secret button whose secret is not picked yet.
+  const sendsSecret = button.secretId !== undefined;
   return (
     <Paper variant="outlined" sx={{ p: 1.5 }}>
       <Stack spacing={1.25}>
@@ -459,16 +464,23 @@ function CommandButtonCard({
             }}
             sx={{ width: 220, flexShrink: 0 }}
           />
-          <TextField
-            label="Command"
-            value={button.command}
-            onChange={(event) => onChange({ command: event.target.value })}
-            placeholder="systemctl status nginx"
-            fullWidth
-            multiline
-            maxRows={3}
-            slotProps={{ htmlInput: { spellCheck: false } }}
-          />
+          {sendsSecret ? (
+            <VaultSecretField
+              value={button.secretId || undefined}
+              onChange={(secretId) => onChange({ secretId })}
+            />
+          ) : (
+            <TextField
+              label="Command"
+              value={button.command}
+              onChange={(event) => onChange({ command: event.target.value })}
+              placeholder="systemctl status nginx"
+              fullWidth
+              multiline
+              maxRows={3}
+              slotProps={{ htmlInput: { spellCheck: false } }}
+            />
+          )}
           <Stack direction="row" spacing={0} sx={{ pt: 0.25 }}>
             <Tooltip title="Move up">
               <span>
@@ -519,6 +531,30 @@ function CommandButtonCard({
           </Stack>
         </Stack>
         <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            aria-label={`What ${name} sends`}
+            value={sendsSecret ? 'secret' : 'command'}
+            onChange={(_event, value: 'command' | 'secret' | null) => {
+              if (value === 'secret' && !sendsSecret) {
+                // Clear the text, so a password typed there before is not kept.
+                onChange({ secretId: '', command: '' });
+              } else if (value === 'command' && sendsSecret) {
+                onChange({ secretId: undefined });
+              }
+            }}
+            sx={{ flexShrink: 0 }}
+          >
+            <ToggleButton value="command" sx={{ px: 1.25, gap: 0.5 }}>
+              <TerminalOutlinedIcon fontSize="small" />
+              Command
+            </ToggleButton>
+            <ToggleButton value="secret" sx={{ px: 1.25, gap: 0.5 }}>
+              <KeyOutlinedIcon fontSize="small" />
+              Secret
+            </ToggleButton>
+          </ToggleButtonGroup>
           <FormControlLabel
             sx={{ m: 0, flex: 1 }}
             control={
@@ -529,12 +565,21 @@ function CommandButtonCard({
               />
             }
             label={
-              <Box>
-                <Typography variant="body2">Run immediately</Typography>
-                <Typography variant="caption" color="textSecondary">
-                  Send Enter after the command. Turn off to insert it for review first.
-                </Typography>
-              </Box>
+              sendsSecret ? (
+                <Box>
+                  <Typography variant="body2">Press Enter after it</Typography>
+                  <Typography variant="caption" color="textSecondary">
+                    Answers a password prompt. Turn off to type the secret without Enter.
+                  </Typography>
+                </Box>
+              ) : (
+                <Box>
+                  <Typography variant="body2">Run immediately</Typography>
+                  <Typography variant="caption" color="textSecondary">
+                    Send Enter after the command. Turn off to insert it for review first.
+                  </Typography>
+                </Box>
+              )
             }
           />
           {groups.length > 1 ? (

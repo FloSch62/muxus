@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TERMINAL_SESSION_CLOSE_REASON } from '@muxus/shared/ws-protocol';
+import { TerminalInputs } from '../../../server/src/ws/terminal-inputs.js';
 import { registerTerminalSocket } from '../../../server/src/ws/terminal-socket.js';
 
 beforeEach(() => vi.useFakeTimers());
@@ -83,6 +84,7 @@ async function sshSession() {
     database: {
       sessionLoggingPolicy: () => ({ enabled: false, logToFile: false, captureInput: false }),
     },
+    terminalInputs: new TerminalInputs(),
   };
   registerTerminalSocket(app as never, ctx as never);
 

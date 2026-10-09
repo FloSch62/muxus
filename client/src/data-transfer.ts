@@ -4,6 +4,7 @@ import type {
   FolderSettingsResponse,
   HostBlockOptions,
   HostUpsertRequest,
+  LoginSequence,
   ManagedHostRef,
   OpenSshMetadataPatch,
   SavedHostProfile,
@@ -33,6 +34,7 @@ import {
 } from './command-buttons.js';
 import { isKeywordHighlightProfileArray } from './highlight-profiles.js';
 import { isStatusBarItemList } from './host-stats.js';
+import { isLoginSequence } from './login-sequence.js';
 import { isCustomTerminalSchemeArray } from './terminal/custom-schemes.js';
 import { saveTextFile } from './save-file.js';
 import { openSshJumpHops } from './saved-hosts.js';
@@ -157,6 +159,8 @@ export interface BackupLoggingPolicy {
 export interface PortableFolderSettings {
   path: string;
   auth: FolderAuthSettings;
+  /** Steps only: a vault step names its secret, whose value stays in the vault. */
+  loginSequence?: LoginSequence;
 }
 
 export type PortableHistorySettings = Omit<
@@ -280,8 +284,12 @@ export async function createBackupDocument(
       historySettings,
       logFileSettings,
       folderSettings: folderSettings.folders
-        .filter((folder) => Object.keys(folder.auth).length > 0)
-        .map(({ path, auth }) => ({ path, auth })),
+        .filter((folder) => Object.keys(folder.auth).length > 0 || folder.loginSequence)
+        .map(({ path, auth, loginSequence }) => ({
+          path,
+          auth,
+          ...(loginSequence ? { loginSequence } : {}),
+        })),
     },
   };
 }
@@ -652,6 +660,7 @@ function portableMetadata(
     pasteCharDelayMs: metadata.pasteCharDelayMs,
     disableSftp: metadata.disableSftp,
     consoleCompatibility: metadata.consoleCompatibility,
+    loginSequence: metadata.loginSequence,
     sortOrder: metadata.sortOrder,
   };
 }
@@ -789,7 +798,12 @@ async function restoreFolderSettings(
     await apiFetch<{ folder: unknown }>('/api/folders/settings', {
       method: 'PUT',
       headers: JSON_HEADERS,
-      body: JSON.stringify({ path: entry.path, auth: entry.auth }),
+      body: JSON.stringify({
+        path: entry.path,
+        auth: entry.auth,
+        // A sequence that does not check out is dropped, not the whole folder.
+        ...(isLoginSequence(entry.loginSequence) ? { loginSequence: entry.loginSequence } : {}),
+      }),
     });
     if (exists) result.updated++;
     else result.added++;
@@ -811,6 +825,7 @@ function metadataPatch(metadata: PortableHostMetadata): OpenSshMetadataPatch {
     pasteCharDelayMs: metadata.pasteCharDelayMs ?? null,
     disableSftp: metadata.disableSftp ?? false,
     consoleCompatibility: metadata.consoleCompatibility ?? false,
+    loginSequence: isLoginSequence(metadata.loginSequence) ? metadata.loginSequence : null,
   };
 }
 

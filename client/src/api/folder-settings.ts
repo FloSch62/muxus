@@ -3,8 +3,12 @@ import type {
   FolderAuthSettings,
   FolderSettingsRecord,
   FolderSettingsResponse,
+  LoginSequence,
+  SavedHostProfilesResponse,
+  SshConfigResponse,
 } from '@muxus/shared';
 import { isDescendantPath, isSamePath } from '../host-tree.js';
+import type { LoginSequenceOwner } from '../login-sequence.js';
 import { showToast } from '../state/toast.js';
 import { apiFetch } from './http.js';
 
@@ -45,16 +49,18 @@ export interface SaveFolderSettingsInput {
   password?: string | null;
   /** Required by the server while the password vault is locked. */
   masterPassword?: string;
+  /** The folder's login sequence; null clears it, undefined keeps it. */
+  loginSequence?: LoginSequence | null;
 }
 
 export function useSaveFolderSettings() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ path, auth, password, masterPassword }: SaveFolderSettingsInput) => {
+    mutationFn: async ({ path, auth, password, masterPassword, loginSequence }: SaveFolderSettingsInput) => {
       await apiFetch<{ folder: FolderSettingsRecord | null }>('/api/folders/settings', {
         method: 'PUT',
         headers: JSON_HEADERS,
-        body: JSON.stringify({ path, auth }),
+        body: JSON.stringify({ path, auth, ...(loginSequence !== undefined ? { loginSequence } : {}) }),
       });
       if (typeof password === 'string') {
         await apiFetch<{ folder: FolderSettingsRecord }>('/api/folders/settings/password', {
@@ -116,6 +122,26 @@ export function useDeleteFolderSettings() {
       ),
     onSettled: () => invalidateFolderSettings(queryClient),
   });
+}
+
+/** Every host and folder that sets its own login sequence, for checks before a secret is deleted. */
+export async function fetchLoginSequenceOwners(): Promise<LoginSequenceOwner[]> {
+  const [config, saved, folders] = await Promise.all([
+    apiFetch<SshConfigResponse>('/api/ssh/config'),
+    apiFetch<SavedHostProfilesResponse>('/api/profiles'),
+    apiFetch<FolderSettingsResponse>('/api/folders/settings'),
+  ]);
+  return [
+    ...config.hosts.map((host) => ({
+      label: host.metadata?.displayName ?? host.alias,
+      loginSequence: host.metadata?.loginSequence,
+    })),
+    ...saved.profiles.map((profile) => ({
+      label: profile.name,
+      loginSequence: profile.metadata.loginSequence,
+    })),
+    ...folders.folders.map((folder) => ({ label: folder.path, loginSequence: folder.loginSequence })),
+  ];
 }
 
 function invalidateFolderSettings(queryClient: QueryClient): void {

@@ -50,7 +50,9 @@ describe('MuxusDatabase migrations', () => {
       { version: 23, name: 'session-log-files' },
       { version: 24, name: 'host-command-button-group' },
       { version: 25, name: 'tunnel-autostart-reconnect' },
-      { version: 26, name: 'host-paste-pacing' },
+      { version: 26, name: 'credential-usernames' },
+      { version: 27, name: 'login-sequences' },
+      { version: 28, name: 'host-paste-pacing' },
     ]);
   });
 
@@ -142,7 +144,7 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 26,
+      version: 28,
       name: 'host-paste-pacing',
     });
     expect(database.savedHostProfile(telnet.id)).toMatchObject({
@@ -302,7 +304,7 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 26,
+      version: 28,
       name: 'host-paste-pacing',
     });
     expect(database.passwordVaultConfig()).toMatchObject({

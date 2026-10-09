@@ -40,6 +40,7 @@ import HorizontalSplitOutlinedIcon from '@mui/icons-material/HorizontalSplitOutl
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowLeftIcon from '@mui/icons-material/KeyboardArrowLeft';
 import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';
+import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
 import MoreHorizIcon from '@mui/icons-material/MoreHoriz';
 import OpenInFullOutlinedIcon from '@mui/icons-material/OpenInFullOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
@@ -50,6 +51,7 @@ import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined';
 import PodcastsOutlinedIcon from '@mui/icons-material/PodcastsOutlined';
+import PowerInputOutlinedIcon from '@mui/icons-material/PowerInputOutlined';
 import { isDesktopProfile } from '@muxus/shared/ws-protocol';
 import { showFileBrowser } from '../file-browser.js';
 import { useChordLabel } from '../keymap/hints.js';
@@ -77,6 +79,7 @@ import {
 import { findPane } from '../state/workspace-layout.js';
 import { layout, statusTextColor } from '../theme.js';
 import { useMultiExecStore } from '../state/multi-exec.js';
+import { canSendBreak, sendBreak, supportsBreak } from '../terminal/send-break.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
 import { editableManagedHostForProfile } from '../managed-hosts.js';
@@ -213,6 +216,7 @@ export function TabStrip({
   const splitUpChord = useChordLabel('pane.split.up');
   const zoomChord = useChordLabel('pane.zoom');
   const closePaneChord = useChordLabel('pane.close');
+  const sendBreakChord = useChordLabel('terminal.send-break');
 
   const splitPane = (direction: PaneDirection) => {
     focusPane(paneId);
@@ -763,6 +767,22 @@ export function TabStrip({
               />
             ) : null}
             <TabPasteProgress tabId={tab.id} />
+            {tab.loginSequence ? (
+              <Tooltip
+                title={`Login sequence, step ${tab.loginSequence.step} of ${tab.loginSequence.steps}: ${tab.loginSequence.detail}`}
+              >
+                <LoginOutlinedIcon
+                  aria-label="Login sequence running"
+                  color="info"
+                  sx={{
+                    fontSize: 14,
+                    flexShrink: 0,
+                    animation: 'muxus-pulse 1.2s ease-in-out infinite',
+                    '@keyframes muxus-pulse': { '50%': { opacity: 0.35 } },
+                  }}
+                />
+              </Tooltip>
+            ) : null}
             {multiExecSelected.has(tab.id) && (
               <Tooltip
                 title={
@@ -1354,6 +1374,19 @@ export function TabStrip({
             </ListItemText>
           </MenuItem>
         )}
+        {menuTab?.loginSequence ? (
+          <MenuItem
+            onClick={() => {
+              terminalHandle(menuTab.id)?.cancelLoginSequence();
+              setMenu(null);
+            }}
+          >
+            <ListItemIcon>
+              <LoginOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Cancel login sequence</ListItemText>
+          </MenuItem>
+        ) : null}
         {menuTabIsDesktop ? null : (
           <MenuItem
             disabled={
@@ -1410,6 +1443,21 @@ export function TabStrip({
             </ListItemText>
           </MenuItem>
         )}
+        {supportsBreak(menuTab) ? (
+          <MenuItem
+            disabled={!canSendBreak(menuTab)}
+            onClick={() => {
+              sendBreak(menuTab);
+              setMenu(null);
+            }}
+          >
+            <ListItemIcon>
+              <PowerInputOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Send BREAK</ListItemText>
+            <ChordHint chord={sendBreakChord} />
+          </MenuItem>
+        ) : null}
         <Divider />
         <MenuItem
           onClick={() => {

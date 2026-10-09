@@ -28,6 +28,7 @@ import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import KeyboardOutlinedIcon from '@mui/icons-material/KeyboardOutlined';
+import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
@@ -40,6 +41,7 @@ import {
   SNIPPET_MATCH_END,
   SNIPPET_MATCH_START,
   type ForwardInfo,
+  type PasswordVaultStatus,
   type SavedHostProfile,
   type SessionLogSummary,
   type SessionProfile,
@@ -48,13 +50,13 @@ import {
   type WorkspaceSummary,
 } from '@muxus/shared';
 import { useQueryClient } from '@tanstack/react-query';
+import { usePasswordVaultStatus } from '../api/password-vault-queries.js';
 import { useForwards, useSavedHostProfiles, useSessionHistory, useSshConfig, useTunnels } from '../api/queries.js';
 import { startTunnel, stopForward } from '../api/tunnels.js';
 import { useActiveCommandButtonGroup } from '../command-button-groups.js';
 import {
   commandButtonGroupOf,
   commandButtonInk,
-  commandButtonInput,
   commandButtonLabel,
 } from '../command-buttons.js';
 import { confirmDiscardRemoteEditors } from '../editor/remote-editor-registry.js';
@@ -96,8 +98,9 @@ import { useTabsStore, type TabStatus } from '../state/tabs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
 import { useWorkspacesStore } from '../state/workspaces.js';
-import { terminalHandle } from '../terminal/terminal-registry.js';
+import { canSendBreak, supportsBreak } from '../terminal/send-break.js';
 import { formatTimestamp } from '../time-format.js';
+import { findVaultSecret, runCommandButton, vaultSecretMissing } from '../vault-secrets.js';
 import { focusOpenWorkspace, openWorkspace } from '../workspace-persistence.js';
 import {
   AuthPromptDialog,
@@ -151,6 +154,9 @@ export function QuickLauncherDialog() {
   const activeId = useTabsStore((state) => state.activeId);
   const commands = usePrefsStore((state) => state.commandButtons);
   const { groups: commandGroups, shownId: shownCommandGroup } = useActiveCommandButtonGroup();
+  const { data: vault } = usePasswordVaultStatus(
+    commands.some((command) => command.secretId !== undefined),
+  );
   const localShellProfiles = usePrefsStore((state) => state.localShellProfiles);
   const wslShellProfiles = useWslShellProfiles();
   const keybindings = usePrefsStore((state) => state.keybindings);
@@ -197,6 +203,11 @@ export function QuickLauncherDialog() {
     activeTab.profile.kind === 'ssh' &&
     !!activeTab.connId &&
     activeTab.sftpAvailable !== false;
+  const activeBreak = supportsBreak(activeTab)
+    ? canSendBreak(activeTab)
+      ? 'ready'
+      : 'waiting'
+    : 'none';
   const liveCount = tabs.filter(
     (tab) =>
       tab.profile &&
@@ -219,6 +230,7 @@ export function QuickLauncherDialog() {
         commands,
         commandGroups,
         shownCommandGroup,
+        vault,
         localShellProfiles,
         wslShellProfiles,
         tunnels,
@@ -232,6 +244,7 @@ export function QuickLauncherDialog() {
       commands,
       commandGroups,
       shownCommandGroup,
+      vault,
       localShellProfiles,
       openWorkspaceWindowCounts,
       forwards,
@@ -259,9 +272,10 @@ export function QuickLauncherDialog() {
       buildActionResults({
         activeConnected: !!activeConnected,
         activeSsh: !!activeSsh,
+        activeBreak,
         keybindings,
       }),
-    [activeConnected, activeSsh, keybindings],
+    [activeBreak, activeConnected, activeSsh, keybindings],
   );
   const allResults = useMemo(
     () => [...catalogResults, ...queryResults, ...actionResults],
@@ -447,8 +461,11 @@ export function QuickLauncherDialog() {
         }
         break;
       case 'command': {
-        const handle = terminalHandle(activeId);
-        const sent = handle?.sendInput(commandButtonInput(result.command)) ?? false;
+        const secretId = result.command.secretId;
+        const sent = runCommandButton(activeId, result.command, {
+          secretName: secretId ? findVaultSecret(vault, secretId)?.name : undefined,
+          queryClient,
+        });
         if (sent) close();
         else showToast('warning', 'The active terminal is not connected.');
         break;
@@ -769,6 +786,7 @@ function buildCatalogResults({
   commands,
   commandGroups,
   shownCommandGroup,
+  vault,
   localShellProfiles,
   wslShellProfiles,
   tunnels,
@@ -786,6 +804,8 @@ function buildCatalogResults({
   commandGroups: readonly CommandButtonGroup[];
   /** The group the command bar shows; its commands lead the empty launcher. */
   shownCommandGroup: string;
+  /** Names of the secrets saved commands type; never their values. */
+  vault: PasswordVaultStatus | undefined;
   localShellProfiles: readonly LocalShellProfileConfig[];
   wslShellProfiles: readonly LocalShellProfileConfig[];
   tunnels: readonly TunnelRecord[];
@@ -905,6 +925,35 @@ function buildCatalogResults({
       commandGroups.length > 1
         ? commandGroups.find((candidate) => candidate.id === groupId)?.name
         : undefined;
+    if (command.secretId !== undefined) {
+      const secret = command.secretId ? findVaultSecret(vault, command.secretId) : undefined;
+      const missing = !command.secretId || vaultSecretMissing(vault, command.secretId) === true;
+      results.push({
+        id: `command:${command.id}`,
+        kind: 'command',
+        command,
+        label: commandButtonLabel(command),
+        detail: `${group ? `${group} · ` : ''}${
+          missing ? 'Secret missing' : `Types secret ${secret ? `“${secret.name}”` : ''}`.trim()
+        }`,
+        keywords: [
+          'command',
+          'saved command',
+          'secret',
+          'password',
+          ...(secret ? [secret.name] : []),
+          ...(group ? [group] : []),
+        ],
+        priority: shown ? 130 : 120,
+        showWhenEmpty: activeConnected && shown && !missing && shownCommands++ < 5,
+        disabledReason: !activeConnected
+          ? 'Connect a terminal to use this command'
+          : missing
+            ? 'Its secret is no longer in the password vault'
+            : undefined,
+      });
+      continue;
+    }
     results.push({
       id: `command:${command.id}`,
       kind: 'command',
@@ -1035,10 +1084,13 @@ function buildQueryResults({
 function buildActionResults({
   activeConnected,
   activeSsh,
+  activeBreak,
   keybindings,
 }: {
   activeConnected: boolean;
   activeSsh: boolean;
+  /** Send BREAK only exists for serial, Telnet and SSH tabs. */
+  activeBreak: 'none' | 'waiting' | 'ready';
   keybindings: KeybindingOverrides;
 }): LauncherResult[] {
   const results: LauncherResult[] = [];
@@ -1097,6 +1149,8 @@ function buildActionResults({
   // the palette doubles as the discovery path for the keymap.
   for (const command of KEY_COMMANDS) {
     if (command.palette === false) continue;
+    const sendsBreak = command.id === 'terminal.send-break';
+    if (sendsBreak && activeBreak === 'none') continue;
     const chords = chordLabels(command.id, keybindings);
     results.push({
       id: `keymap:${command.id}`,
@@ -1108,6 +1162,8 @@ function buildActionResults({
       keywords: [...(command.keywords ?? []), ...chords, command.category, 'shortcut'],
       priority: 60,
       showWhenEmpty: false,
+      disabledReason:
+        sendsBreak && activeBreak === 'waiting' ? 'Wait for the session to connect first' : undefined,
     });
   }
 
@@ -1151,6 +1207,16 @@ function ResultIcon({ result }: { result: LauncherResult }) {
   if (result.kind === 'workspace') return <WorkspacesOutlinedIcon {...props} />;
   if (result.kind === 'command') {
     const color = result.command.color;
+    if (result.command.secretId !== undefined) {
+      return color ? (
+        <KeyOutlinedIcon
+          {...props}
+          sx={(theme) => ({ color: commandButtonInk(color, theme.palette.mode) })}
+        />
+      ) : (
+        <KeyOutlinedIcon {...props} color="warning" />
+      );
+    }
     return color ? (
       <BoltOutlinedIcon
         {...props}

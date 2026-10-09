@@ -5,10 +5,17 @@ import type {
   SavedHostProfileInput,
   SerialProfile,
 } from '@muxus/shared';
+import { DEFAULT_BREAK_DURATION_MS, MAX_BREAK_DURATION_MS } from '@muxus/shared/ws-protocol';
 import {
   blankHostSessionLoggingDraft,
   type HostSessionLoggingDraft,
 } from '../../session-logging-policy.js';
+import {
+  loginSequenceDraft,
+  loginSequenceFromDraft,
+  loginSequenceProblem,
+  type LoginSequenceDraft,
+} from '../../login-sequence.js';
 import { keywordHighlightRulesProblem } from '../../terminal/keyword-matching.js';
 
 /**
@@ -38,8 +45,11 @@ export interface NativeHostDraft {
   stopBits: SerialProfile['stopBits'];
   parity: SerialProfile['parity'];
   flowControl: SerialProfile['flowControl'];
+  /** Milliseconds Send BREAK holds a serial line. */
+  breakDurationMs: string;
   keywordHighlights: HostKeywordHighlightConfig;
   sessionLogging: HostSessionLoggingDraft;
+  loginSequence: LoginSequenceDraft;
 }
 
 export function blankNativeDraft(prefillTarget = '', group = ''): NativeHostDraft {
@@ -62,8 +72,10 @@ export function blankNativeDraft(prefillTarget = '', group = ''): NativeHostDraf
     stopBits: 1,
     parity: 'none',
     flowControl: 'none',
+    breakDurationMs: String(DEFAULT_BREAK_DURATION_MS),
     keywordHighlights: { inheritGlobal: true, rules: [] },
     sessionLogging: blankHostSessionLoggingDraft(),
+    loginSequence: loginSequenceDraft(undefined),
   };
 }
 
@@ -79,6 +91,7 @@ export function nativeDraftFromProfile(saved: SavedHostProfile, duplicate: boole
   draft.pasteLineDelayMs = saved.metadata.pasteLineDelayMs;
   draft.pasteCharDelayMs = saved.metadata.pasteCharDelayMs;
   draft.keywordHighlights = saved.metadata.keywordHighlights ?? draft.keywordHighlights;
+  draft.loginSequence = loginSequenceDraft(saved.metadata.loginSequence);
   if (saved.profile.kind === 'telnet') {
     draft.host = saved.profile.host;
     draft.port = String(saved.profile.port);
@@ -89,6 +102,7 @@ export function nativeDraftFromProfile(saved: SavedHostProfile, duplicate: boole
     draft.stopBits = saved.profile.stopBits;
     draft.parity = saved.profile.parity;
     draft.flowControl = saved.profile.flowControl;
+    draft.breakDurationMs = String(saved.profile.breakDurationMs ?? DEFAULT_BREAK_DURATION_MS);
   } else {
     throw new Error('saved host is not a Telnet or serial profile');
   }
@@ -105,8 +119,15 @@ export function nativeDraftProblem(draft: NativeHostDraft, kind: 'telnet' | 'ser
     if (!draft.path.trim()) return 'Choose or enter a serial port.';
     const baud = Number(draft.baudRate);
     if (!Number.isInteger(baud) || baud < 1 || baud > 12_000_000) return 'Baud rate must be between 1 and 12000000.';
+    const breakDuration = Number(draft.breakDurationMs);
+    if (!Number.isInteger(breakDuration) || breakDuration < 1 || breakDuration > MAX_BREAK_DURATION_MS) {
+      return `Break duration must be between 1 and ${MAX_BREAK_DURATION_MS} ms.`;
+    }
   }
-  return keywordHighlightRulesProblem(draft.keywordHighlights.rules);
+  return (
+    loginSequenceProblem(draft.loginSequence) ??
+    keywordHighlightRulesProblem(draft.keywordHighlights.rules)
+  );
 }
 
 export function nativeDraftToInput(
@@ -128,6 +149,7 @@ export function nativeDraftToInput(
             stopBits: draft.stopBits,
             parity: draft.parity,
             flowControl: draft.flowControl,
+            breakDurationMs: Number(draft.breakDurationMs),
           },
   };
 }
@@ -148,6 +170,7 @@ export function nativeDraftMetadataPatch(draft: NativeHostDraft): OpenSshMetadat
       highlights.inheritGlobal && !highlights.profileId && highlights.rules.length === 0
         ? null
         : highlights,
+    loginSequence: loginSequenceFromDraft(draft.loginSequence),
   };
 }
 

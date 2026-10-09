@@ -566,6 +566,12 @@ export class SshConnectionManager {
     );
   }
 
+  /** The ssh_config alias whose Muxus metadata a session to this profile uses, as `connect` finds it. */
+  metadataAliasFor(profile: SshProfile): string | undefined {
+    if (profile.useConfig === false || profile.profileId) return undefined;
+    return findMetadataAlias(this.loadConfig(), parseHostSpec(profile.target).host);
+  }
+
   resolveProfile(profile: SshProfile): SshProfile {
     if (!profile.profileId) return profile;
     const saved = this.savedSshProfile?.(profile.profileId);

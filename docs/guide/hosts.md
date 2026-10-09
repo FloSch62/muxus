@@ -132,6 +132,15 @@ automatically when a host falls back to password login; a password remembered fo
 host itself still wins. Folder credentials move with the folder when it is renamed or
 dragged, and deleting the folder deletes them.
 
+### Shared login sequence
+
+The same dialog's **Login sequence** section sets a
+[login sequence](adding-hosts.md#login-sequence) for every SSH, Telnet and serial host in
+the folder, nested folders included. A host that sets its own sequence, or **No login
+sequence**, keeps it; otherwise the nearest folder with a sequence wins, and a subfolder can
+choose **No login sequence** to switch its parent's off. The sequence moves with the folder
+like its credentials.
+
 ### Launching a folder
 
 A folder's menu offers **Launch *n* hosts…**, which opens every host it contains, including
@@ -179,6 +188,7 @@ hosts that already have every new value are skipped.
 | Terminal appearance | Colour scheme, text and background colour, command button group, paste delays | SSH, Telnet and serial hosts |
 | Highlighting | Highlighting profile, global rules | SSH, Telnet and serial hosts |
 | Session logging | Logging policy for new sessions | SSH, Telnet and serial hosts |
+| Login sequence | One sequence for every host, none, or each host's folder sequence again | SSH, Telnet and serial hosts |
 
 In `ssh_config`, a bulk edit rewrites only the lines of the options it changes. Comments,
 formatting and every other option in each `Host` block stay exactly as they were, and each
