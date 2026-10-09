@@ -36,13 +36,9 @@ import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined
 import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import { useQueryClient } from '@tanstack/react-query';
 import type { LocalOpenTarget, SftpEntry } from '@muxus/shared';
-import { ApiError, apiFetch } from '../api/http.js';
+import { apiFetch } from '../api/http.js';
 import { useSftpList } from '../api/queries.js';
-import {
-  downloadBlobWithProgress,
-  uploadRawWithProgress,
-  type ByteProgress,
-} from '../api/transfers.js';
+import { downloadBlobWithProgress } from '../api/transfers.js';
 import { confirmAction, promptForText } from '../state/dialogs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { usePrefsStore } from '../state/prefs.js';
@@ -60,21 +56,21 @@ import {
   MIN_SFTP_PANEL_WIDTH,
 } from '../sftp-panel-width.js';
 import { initialSftpPath } from '../sftp-panel-state.js';
+import {
+  cleanRelativePath,
+  collectDrop,
+  isEmptyPayload,
+  joinRemotePath as joinPath,
+  uploadSummary,
+  uploadToRemote,
+  type DropPayload,
+} from '../sftp-upload.js';
 import { useLocalCopiesStore } from '../state/local-copies.js';
+import { useSftpUploadsStore } from '../state/sftp-uploads.js';
 import { FileTypeIcon } from './FileTypeIcon.js';
 import { OpenWithDialog } from './OpenWithDialog.js';
 import { formatSize, TransferProgress } from './TransferProgress.js';
 import { PanelResizeHandle } from './PanelResizeHandle.js';
-
-interface DroppedFile {
-  file: File;
-  relativePath: string;
-}
-
-interface DropPayload {
-  files: DroppedFile[];
-  directories: string[];
-}
 
 interface TransferState {
   id: number;
@@ -88,32 +84,10 @@ interface TransferState {
   fileCount: number;
 }
 
-interface WebkitFileEntry {
-  isFile: boolean;
-  isDirectory: boolean;
-  name: string;
-  file(success: (file: File) => void, error?: (error: DOMException) => void): void;
-  createReader(): {
-    readEntries(success: (entries: WebkitFileEntry[]) => void, error?: (error: DOMException) => void): void;
-  };
-}
-
-function joinPath(dir: string, name: string): string {
-  return dir === '/' ? `/${name}` : `${dir}/${name}`;
-}
-
 function parentPath(dir: string): string {
   if (dir === '/') return '/';
   const idx = dir.lastIndexOf('/');
   return idx <= 0 ? '/' : dir.slice(0, idx);
-}
-
-function cleanRelativePath(value: string): string {
-  return value
-    .replaceAll('\\', '/')
-    .split('/')
-    .filter((part) => part && part !== '.' && part !== '..')
-    .join('/');
 }
 
 // A directory listing re-renders on every selection and transfer tick, and a
@@ -134,48 +108,6 @@ function formatMtime(ms?: number): string {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';
-}
-
-async function readDirectory(reader: ReturnType<WebkitFileEntry['createReader']>): Promise<WebkitFileEntry[]> {
-  const result: WebkitFileEntry[] = [];
-  while (true) {
-    const batch = await new Promise<WebkitFileEntry[]>((resolve, reject) => reader.readEntries(resolve, reject));
-    if (batch.length === 0) return result;
-    result.push(...batch);
-  }
-}
-
-async function collectDrop(items: DataTransferItem[]): Promise<DropPayload> {
-  const payload: DropPayload = { files: [], directories: [] };
-  const entries: WebkitFileEntry[] = [];
-  for (const item of items) {
-    const getter = (item as unknown as { webkitGetAsEntry?: () => WebkitFileEntry | null }).webkitGetAsEntry;
-    const entry = getter?.call(item);
-    if (entry) entries.push(entry);
-  }
-
-  const visit = async (entry: WebkitFileEntry, parent: string): Promise<void> => {
-    const relativePath = cleanRelativePath(parent ? `${parent}/${entry.name}` : entry.name);
-    if (entry.isFile) {
-      const file = await new Promise<File>((resolve, reject) => entry.file(resolve, reject));
-      payload.files.push({ file, relativePath });
-      return;
-    }
-    if (!entry.isDirectory) return;
-    payload.directories.push(relativePath);
-    const children = await readDirectory(entry.createReader());
-    await Promise.all(children.map((child) => visit(child, relativePath)));
-  };
-
-  if (entries.length > 0) {
-    await Promise.all(entries.map((entry) => visit(entry, '')));
-    return payload;
-  }
-  for (const item of items) {
-    const file = item.getAsFile();
-    if (file) payload.files.push({ file, relativePath: file.name });
-  }
-  return payload;
 }
 
 function saveDownload(name: string, blob: Blob): void {
@@ -328,6 +260,7 @@ export function SftpPanel({
   onMove,
   onOpenInNewWindow,
   hostLabel,
+  shown = true,
 }: {
   connId: string;
   onOpenFile: (path: string) => void;
@@ -346,6 +279,8 @@ export function SftpPanel({
   onOpenInNewWindow?: (path: string) => void;
   /** The session's name, for messages about files uploaded back to it. */
   hostLabel?: string;
+  /** False while kept mounted out of sight, as in the sidebar behind the hosts. */
+  shown?: boolean;
 }) {
   const startingPath = initialSftpPath(initialPath, terminalPath, followTerminalFolder);
   const [path, setPath] = useState(startingPath);
@@ -382,6 +317,12 @@ export function SftpPanel({
     setSelectedName(undefined);
   }, [followTerminalFolder, terminalPath]);
   useEffect(() => () => transferControllerRef.current?.abort(), []);
+  // Files dropped onto a terminal of this connection report their upload here.
+  const terminalUpload = useSftpUploadsStore((state) => state.uploads[connId]);
+  useEffect(
+    () => (shown ? useSftpUploadsStore.getState().attachBrowser(connId) : undefined),
+    [connId, shown],
+  );
 
   const entries = useMemo(
     () =>
@@ -531,132 +472,19 @@ export function SftpPanel({
   };
 
   const upload = (payload: DropPayload) => {
-    if (busy || (payload.files.length === 0 && payload.directories.length === 0)) return;
+    if (busy || isEmptyPayload(payload)) return;
     void (async () => {
       const id = nextTransferIdRef.current++;
       const controller = new AbortController();
       transferControllerRef.current = controller;
       setBusy(true);
-      const parentDirectories = payload.files
-        .map(({ relativePath }) => cleanRelativePath(relativePath).split('/').slice(0, -1).join('/'))
-        .filter(Boolean);
-      const directories = [...new Set([...payload.directories, ...parentDirectories])]
-        .filter(Boolean)
-        .sort((a, b) => a.split('/').length - b.split('/').length);
-      const totalBytes = payload.files.reduce((sum, item) => sum + item.file.size, 0);
-      let completedBytes = 0;
-      let uploaded = 0;
-      let currentFileIndex = 0;
-      setTransfer({
-        id,
-        direction: 'upload',
-        name: directories[0] ?? payload.files[0]?.relativePath ?? 'Preparing upload',
-        loaded: 0,
-        total: totalBytes || undefined,
-        bytesPerSecond: 0,
-        phase: 'preparing',
-        fileIndex: 0,
-        fileCount: payload.files.length,
-      });
       try {
-        for (const relative of directories) {
-          setTransfer({
-            id,
-            direction: 'upload',
-            name: relative,
-            loaded: completedBytes,
-            total: totalBytes || undefined,
-            bytesPerSecond: 0,
-            phase: 'preparing',
-            fileIndex: currentFileIndex,
-            fileCount: payload.files.length,
-          });
-          await apiFetch(`/api/sftp/${connId}/mkdir`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ path: joinPath(currentPath, relative), recursive: true }),
-            signal: controller.signal,
-          });
-        }
-        for (const item of payload.files) {
-          currentFileIndex++;
-          const relative = cleanRelativePath(item.relativePath || item.file.name);
-          const destination = joinPath(currentPath, relative);
-          const updateProgress = (progress: ByteProgress) =>
-            setTransfer({
-              id,
-              direction: 'upload',
-              name: relative,
-              loaded: completedBytes + progress.loaded,
-              total: totalBytes,
-              bytesPerSecond: progress.bytesPerSecond,
-              phase: 'transferring',
-              fileIndex: currentFileIndex,
-              fileCount: payload.files.length,
-            });
-          const send = (overwrite: boolean) =>
-            uploadRawWithProgress(
-              `/api/sftp/${connId}/upload?path=${encodeURIComponent(destination)}${overwrite ? '&overwrite=true' : ''}`,
-              item.file,
-              {
-                onProgress: updateProgress,
-                signal: controller.signal,
-                onUploadComplete: () =>
-                  setTransfer((current) =>
-                    current?.id === id
-                      ? {
-                          ...current,
-                          loaded: completedBytes + item.file.size,
-                          phase: 'finalizing',
-                        }
-                      : current,
-                  ),
-              },
-            );
-          try {
-            await send(false);
-            uploaded++;
-          } catch (uploadError) {
-            if (
-              !(uploadError instanceof ApiError) ||
-              uploadError.status !== 409 ||
-              uploadError.body?.code !== 'SFTP_DESTINATION_EXISTS'
-            ) {
-              throw uploadError;
-            }
-            const replace = await confirmAction({
-              title: 'Replace the existing file?',
-              description: `${relative} already exists on the remote host.`,
-              confirmLabel: 'Replace',
-              destructive: true,
-            });
-            if (!replace) {
-              completedBytes += item.file.size;
-              continue;
-            }
-            await send(true);
-            uploaded++;
-          }
-          completedBytes += item.file.size;
-        }
-        showToast(
-          'success',
-          uploaded > 0
-            ? `Uploaded ${uploaded === 1 ? '1 file' : `${uploaded} files`}`
-            : `Created ${directories.length === 1 ? '1 folder' : `${directories.length} folders`}`,
-        );
-        refresh();
-        setTransfer({
-          id,
-          direction: 'upload',
-          name: payload.files.at(-1)?.relativePath ?? directories.at(-1) ?? 'Upload',
-          loaded: totalBytes,
-          total: totalBytes || undefined,
-          bytesPerSecond: 0,
-          phase: 'complete',
-          fileIndex: payload.files.length,
-          fileCount: payload.files.length,
+        const result = await uploadToRemote(connId, currentPath, payload, {
+          signal: controller.signal,
+          onProgress: (progress) => setTransfer({ id, ...progress }),
         });
+        showToast('success', uploadSummary(result));
+        refresh();
         setTimeout(
           () => setTransfer((current) => (current?.id === id ? undefined : current)),
           1_200,
@@ -957,6 +785,13 @@ export function SftpPanel({
             );
             transferControllerRef.current?.abort();
           }}
+          sx={{ mx: 0.75, mb: 0.75 }}
+        />
+      )}
+      {terminalUpload && (
+        <TransferProgress
+          transfer={terminalUpload}
+          onCancel={terminalUpload.cancel}
           sx={{ mx: 0.75, mb: 0.75 }}
         />
       )}

@@ -114,6 +114,7 @@ import {
 } from './AuthPromptDialog.js';
 import { HostKeyDialog, type HostKeyRequest } from './HostKeyDialog.js';
 import { PasteConfirmDialog } from './PasteConfirmDialog.js';
+import { useTerminalFileDrop } from './TerminalFileDrop.js';
 import {
   AUTO_RECONNECT_STABLE_MS,
   autoReconnectDelayMs,
@@ -429,6 +430,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     pasteToTerminal(text, broadcast);
     return Promise.resolve();
   };
+
+  // Dropped paths are typed into this terminal only, never broadcast.
+  const fileDrop = useTerminalFileDrop(
+    tab,
+    (text) => pasteToTerminal(text, false),
+    () => termRef.current?.focus(),
+  );
 
   /** Refit, unless the pane is hidden and there is nothing to measure. */
   const fitTerminal = (): boolean => {
@@ -1692,7 +1700,10 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   };
 
   return (
-    <Box sx={{ height: '100%', p: 1, pt: 0.75, minHeight: 0, position: 'relative' }}>
+    <Box
+      {...fileDrop.handlers}
+      sx={{ height: '100%', p: 1, pt: 0.75, minHeight: 0, position: 'relative' }}
+    >
       <Box
         ref={containerRef}
         onMouseDownCapture={(event) => {
@@ -1834,6 +1845,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           </IconButton>
         </Paper>
       )}
+      {fileDrop.overlay}
       <Menu
         open={!!ctxMenu}
         onClose={closeCtxMenu}

@@ -25,6 +25,7 @@ import { UpdateNotification } from './components/UpdateNotification.js';
 import { useDialogStore } from './state/dialogs.js';
 import { useToastStore } from './state/toast.js';
 import { useLocalCopiesStore } from './state/local-copies.js';
+import { useSftpUploadsStore } from './state/sftp-uploads.js';
 import type { WorkspaceInitialSelection } from './workspace-persistence.js';
 import {
   loadHostEditorDialog,
@@ -76,6 +77,11 @@ const LocalCopySync = lazy(() =>
     default: module.LocalCopySync,
   })),
 );
+const TerminalUploadProgress = lazy(() =>
+  import('./components/TerminalUploadProgress.js').then((module) => ({
+    default: module.TerminalUploadProgress,
+  })),
+);
 const CommandButtonMenu = lazy(() =>
   loadCommandButtonMenu().then((module) => ({ default: module.CommandButtonMenu })),
 );
@@ -125,6 +131,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const dialogOpen = useDialogStore((s) => s.queue.length > 0);
   const toastOpen = useToastStore((s) => !!s.toast);
   const localCopiesOpened = useLocalCopiesStore((s) => Object.keys(s.copies).length > 0);
+  const terminalUploading = useSftpUploadsStore((s) => Object.keys(s.uploads).length > 0);
   const standaloneLaunch = launch?.kind === 'session' || launch?.kind === 'tab-transfer';
   const [startupReady, setStartupReady] = useState(standaloneLaunch);
   const [newWorkspaceId] = useState(() =>
@@ -212,6 +219,12 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
         {toastOpen ? <ToastHost /> : null}
         {localCopiesOpened ? <LocalCopySync /> : null}
       </Suspense>
+      {/* Its own boundary: a dialog or toast loading must not hide upload progress. */}
+      {terminalUploading ? (
+        <Suspense fallback={null}>
+          <TerminalUploadProgress />
+        </Suspense>
+      ) : null}
       <BackendStatusBanner />
       {!launch ? <UpdateNotification /> : null}
     </ThemeProvider>

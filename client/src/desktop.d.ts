@@ -99,6 +99,8 @@ declare global {
       onCycleTab(callback: (backwards: boolean) => void): () => void;
       /** Close the main window (fallback when no terminal tab is open). */
       closeWindow(): void;
+      /** Where a file dropped into the window lives on disk; empty when it is not a file on disk. */
+      getPathForFile?(file: File): string;
     };
   }
 }

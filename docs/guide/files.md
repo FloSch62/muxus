@@ -62,6 +62,31 @@ same tab.
     Uploading onto an existing path asks for confirmation and names the file it would
     replace.
 
+## Dropping files onto the terminal
+
+Files and folders dropped onto an SSH terminal are uploaded into the shell's current
+directory, without opening the file browser. While you drag, the terminal names the target,
+for example *Upload to /home/admin/project*.
+
+- The directory is the one the shell last reported, so it follows `cd`. Bash and zsh report
+  it through Muxus's shell integration, and any shell that sends OSC 7 works too. Without a
+  report, files go to the home directory.
+- Several files and whole folders can be dropped at once; folders arrive with everything
+  inside them, empty subfolders included.
+- The upload uses the session's own connection, so there is no second login. Progress shows
+  in the file browser when it is open for that session, otherwise in a card in the
+  bottom-left corner of the window, with **Cancel**. The usual overwrite confirmation
+  applies.
+- A host without SFTP ([console compatibility mode or **Disable SFTP and shell integration
+  only**](adding-hosts.md#advanced)) shows *SFTP is disabled for this host* instead of
+  uploading.
+- Telnet, serial and remote desktop tabs do not take dropped files.
+
+In the desktop app, hold ++shift++ while dropping onto an SSH terminal to type the local
+paths at the prompt instead of uploading. Shift is used on every platform because ++ctrl++,
+++alt++, ++option++ and ++cmd++ already choose between copying, moving and linking in file
+managers. Dropping onto a [local terminal](terminal.md#dropping-files) always types the paths.
+
 ## Managing
 
 The row menu, opened with right-click, has **Open in editor**, **Open with default
