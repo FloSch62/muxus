@@ -179,6 +179,7 @@ export const DIAL_TIME_KEYWORDS: ReadonlySet<string> = new Set([
   'requesttty',
   'stricthostkeychecking',
   'forwardx11',
+  'securitykeyprovider',
 ]);
 
 export type UpdateCheckResult =

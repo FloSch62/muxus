@@ -9,6 +9,7 @@ const { createAgent, utils } = ssh2;
 import type { SshAgentKey, SshKeyInfo, SshKeysResponse } from '@muxus/shared';
 import { fingerprintSha256 } from './known-hosts.js';
 import { ResponsiveAgent } from './responsive-agent.js';
+import { isSecurityKeyType, readOpenSshKeyFile } from './security-keys.js';
 
 /**
  * Discover the user's SSH identities for the host editor's key picker: the
@@ -140,14 +141,21 @@ export async function listSshKeys(
     const head = content.subarray(0, 64).toString('latin1');
     if (!PRIVATE_KEY_HEADERS.some((h) => head.startsWith(h))) continue;
 
-    const probe = utils.parseKey(content);
-    const encrypted = probe instanceof Error;
+    // A security key file holds only a key handle; its header names the key.
+    const header = readOpenSshKeyFile(content);
+    const securityKey = header && isSecurityKeyType(header.type) ? header : undefined;
+    const probe = securityKey ? undefined : utils.parseKey(content);
+    const encrypted = securityKey ? securityKey.encrypted : probe instanceof Error;
     if (probe instanceof Error && !/passphrase|encrypted/i.test(probe.message)) continue; // not actually a usable key
     const parsed = probe instanceof Error ? undefined : probe;
 
-    let type = parsed?.type as string | undefined;
+    let type = (parsed?.type ?? securityKey?.type) as string | undefined;
     let comment = parsed?.comment || undefined;
-    let fingerprint = parsed ? fingerprintSha256(parsed.getPublicSSH()) : undefined;
+    let fingerprint = parsed
+      ? fingerprintSha256(parsed.getPublicSSH())
+      : securityKey
+        ? fingerprintSha256(securityKey.publicBlob)
+        : undefined;
 
     // The .pub sibling names the algorithm and comment even for encrypted keys.
     try {
