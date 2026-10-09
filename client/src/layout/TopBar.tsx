@@ -21,6 +21,8 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
 import DeleteSweepOutlinedIcon from '@mui/icons-material/DeleteSweepOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
+import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
+import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import EditNoteOutlinedIcon from '@mui/icons-material/EditNoteOutlined';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
@@ -57,6 +59,7 @@ import { useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
 import { useWorkspacesStore } from '../state/workspaces.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
+import { supportsFileTransfer } from '../terminal/file-transfer.js';
 import { ChordHint, withChord } from '../components/ChordHint.js';
 import { MultiExecControl } from '../components/MultiExecControl.js';
 import {
@@ -401,6 +404,35 @@ export const TopBar = memo(function TopBar() {
           </ListItemIcon>
           <ListItemText>Export as HTML (colors)</ListItemText>
         </MenuItem>
+        {supportsFileTransfer(activeTab?.profile) ? <Divider /> : null}
+        {supportsFileTransfer(activeTab?.profile) ? (
+          <MenuItem
+            disabled={activeTab?.status !== 'connected'}
+            onClick={() => {
+              closeMenu();
+              handle()?.openFileTransfer('send');
+            }}
+          >
+            <ListItemIcon>
+              <UploadFileOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Send file…</ListItemText>
+          </MenuItem>
+        ) : null}
+        {supportsFileTransfer(activeTab?.profile) ? (
+          <MenuItem
+            disabled={activeTab?.status !== 'connected'}
+            onClick={() => {
+              closeMenu();
+              handle()?.openFileTransfer('receive');
+            }}
+          >
+            <ListItemIcon>
+              <DownloadOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Receive file…</ListItemText>
+          </MenuItem>
+        ) : null}
         {activeTab?.loggingEnabled !== undefined ? <Divider /> : null}
         {activeTab?.loggingEnabled !== undefined ? (
           <MenuItem

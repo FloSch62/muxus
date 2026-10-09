@@ -88,6 +88,55 @@ describe('TelnetCodec', () => {
     expect(test.codec.encode(Buffer.from([13, 255]))).toEqual(Buffer.from([13, 255, 255]));
   });
 
+  it('negotiates TRANSMIT-BINARY both ways for a file transfer and undoes it after', async () => {
+    const test = codec();
+    const { ready, restore } = test.codec.requestBinary();
+    expect(test.sent).toEqual([Buffer.from([IAC, DO, BINARY]), Buffer.from([IAC, WILL, BINARY])]);
+    test.codec.feed(Buffer.from([IAC, WILL, BINARY, IAC, DO, BINARY]));
+    await ready;
+    // The server's answers are acknowledgements, not requests to answer.
+    expect(test.sent).toHaveLength(2);
+    expect(test.codec.encodeTransfer(Buffer.from([13, 0, 255, 10, 255]))).toEqual(
+      Buffer.from([13, 0, 255, 255, 10, 255, 255]),
+    );
+    test.codec.feed(Buffer.from([1, 255, 255, 13, 0, 2]));
+    expect(Buffer.concat(test.received)).toEqual(Buffer.from([1, 255, 13, 0, 2]));
+
+    restore();
+    expect(test.sent.slice(2)).toEqual([Buffer.from([IAC, DONT, BINARY]), Buffer.from([IAC, WONT, BINARY])]);
+    test.codec.feed(Buffer.from([IAC, WONT, BINARY, IAC, DONT, BINARY]));
+    expect(test.sent).toHaveLength(4);
+  });
+
+  it('keeps a transfer 8-bit clean when the server refuses binary mode', async () => {
+    const test = codec();
+    const { ready } = test.codec.requestBinary();
+    test.codec.feed(Buffer.from([IAC, WONT, BINARY, IAC, DONT, BINARY]));
+    await ready;
+    expect(test.sent).toHaveLength(2);
+    // NVT rules: CR travels as CR NUL, and IAC is doubled.
+    expect(test.codec.encodeTransfer(Buffer.from([13, 65, 255, 13, 10]))).toEqual(
+      Buffer.from([13, 0, 65, 255, 255, 13, 0, 10]),
+    );
+  });
+
+  it('leaves binary mode alone when the session already had it', async () => {
+    const test = codec();
+    test.codec.feed(Buffer.from([IAC, WILL, BINARY, IAC, DO, BINARY]));
+    test.sent.length = 0;
+    const { ready, restore } = test.codec.requestBinary();
+    await ready;
+    restore();
+    expect(test.sent).toEqual([]);
+  });
+
+  it('stops waiting for a server that never answers', async () => {
+    const test = codec();
+    const started = Date.now();
+    await test.codec.requestBinary(50).ready;
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
   it('decodes NVT CR-NUL while preserving CR-LF', () => {
     const test = codec();
     test.codec.feed(Buffer.from([65, 13]));

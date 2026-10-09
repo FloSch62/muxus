@@ -374,6 +374,22 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
     run: () => toggleMultiExec(),
   },
   {
+    id: 'terminal.send-file',
+    title: 'Send file (XMODEM, YMODEM, ZMODEM)…',
+    category: 'terminal',
+    defaultChords: [],
+    keywords: ['upload', 'xmodem', 'ymodem', 'zmodem', 'rz', 'loady', 'loadx', 'bootloader', 'firmware'],
+    run: () => activeTerminal()?.openFileTransfer('send') ?? false,
+  },
+  {
+    id: 'terminal.receive-file',
+    title: 'Receive file (XMODEM, YMODEM, ZMODEM)…',
+    category: 'terminal',
+    defaultChords: [],
+    keywords: ['download', 'xmodem', 'ymodem', 'zmodem', 'sz'],
+    run: () => activeTerminal()?.openFileTransfer('receive') ?? false,
+  },
+  {
     id: 'terminal.force-reconnect-all',
     title: 'Force reconnect all remote sessions',
     category: 'terminal',

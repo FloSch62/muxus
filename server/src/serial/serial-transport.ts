@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type { SerialPort } from 'serialport';
 import type { SerialProfile } from '@muxus/shared';
-import type { TerminalTransport } from '../transports/terminal-transport.js';
+import { writableDrained, type TerminalTransport } from '../transports/terminal-transport.js';
 
 export function serialOpenOptions(profile: SerialProfile): ConstructorParameters<typeof SerialPort>[0] {
   return {
@@ -85,6 +85,14 @@ export class SerialTransport extends EventEmitter implements TerminalTransport {
 
   write(data: Buffer): void {
     if (!this.ended && this.port.isOpen) this.port.write(data);
+  }
+
+  writeRaw(data: Buffer): void {
+    this.write(data);
+  }
+
+  drained(): Promise<void> | undefined {
+    return this.ended || !this.port.isOpen ? undefined : writableDrained(this.port);
   }
 
   resize(_cols: number, _rows: number): void {

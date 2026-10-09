@@ -46,12 +46,15 @@ function transferLabel(transfer: TransferProgressState, host: string | undefined
 export function TransferProgress({
   transfer,
   host,
+  label: labelOverride,
   onCancel,
   sx,
 }: {
   transfer: TransferProgressState;
   /** Names the remote end in the label ("to web-01") instead of "remote". */
   host?: string;
+  /** Replaces the generated upload/download label. */
+  label?: string;
   onCancel?: () => void;
   sx?: SxProps<Theme>;
 }) {
@@ -61,7 +64,7 @@ export function TransferProgress({
     : transfer.total && transfer.total > 0
       ? Math.min(100, (transfer.loaded / transfer.total) * 100)
       : undefined;
-  const label = transferLabel(transfer, host);
+  const label = labelOverride ?? transferLabel(transfer, host);
   const Icon = transfer.direction === 'upload' ? UploadFileOutlinedIcon : DownloadOutlinedIcon;
   return (
     <Box

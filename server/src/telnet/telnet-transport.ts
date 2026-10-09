@@ -1,7 +1,7 @@
 import net from 'node:net';
 import { EventEmitter } from 'node:events';
 import type { TelnetProfile } from '@muxus/shared';
-import type { TerminalTransport } from '../transports/terminal-transport.js';
+import { writableDrained, type TerminalTransport } from '../transports/terminal-transport.js';
 
 const IAC = 255;
 const DONT = 254;
@@ -37,6 +37,10 @@ export class TelnetCodec {
   private subData: number[] = [];
   private readonly remoteEnabled = new Set<number>();
   private readonly localEnabled = new Set<number>();
+  /** Options we asked for (DO / WILL) and the server has not answered yet. */
+  private readonly remoteRequested = new Set<number>();
+  private readonly localRequested = new Set<number>();
+  private requestAnswered: (() => void) | undefined;
   private pendingCr = false;
 
   constructor(
@@ -114,6 +118,62 @@ export class TelnetCodec {
     return Buffer.from(output);
   }
 
+  /**
+   * File transfer data: IAC is doubled, and a bare CR becomes CR NUL while
+   * this side is not in TRANSMIT-BINARY mode. Nothing else is translated.
+   */
+  encodeTransfer(data: Buffer): Buffer {
+    const binary = this.localEnabled.has(OPT_BINARY);
+    if (data.indexOf(IAC) < 0 && (binary || data.indexOf(13) < 0)) return data;
+    const output = Buffer.allocUnsafe(data.length * 2);
+    let length = 0;
+    for (const byte of data) {
+      output[length++] = byte;
+      if (byte === IAC) output[length++] = IAC;
+      else if (byte === 13 && !binary) output[length++] = 0;
+    }
+    return output.subarray(0, length);
+  }
+
+  /**
+   * Ask for TRANSMIT-BINARY (RFC 856) in both directions. `ready` resolves
+   * once the server has answered or after `timeoutMs`; `restore` returns to
+   * the modes in force before.
+   */
+  requestBinary(timeoutMs = 2000): { ready: Promise<void>; restore: () => void } {
+    const hadRemote = this.remoteEnabled.has(OPT_BINARY);
+    const hadLocal = this.localEnabled.has(OPT_BINARY);
+    if (!hadRemote) {
+      this.remoteRequested.add(OPT_BINARY);
+      this.sendCommand(DO, OPT_BINARY);
+    }
+    if (!hadLocal) {
+      this.localRequested.add(OPT_BINARY);
+      this.sendCommand(WILL, OPT_BINARY);
+    }
+    const ready = new Promise<void>((resolve) => {
+      const check = () => {
+        if (this.remoteRequested.has(OPT_BINARY) || this.localRequested.has(OPT_BINARY)) return;
+        clearTimeout(timer);
+        this.requestAnswered = undefined;
+        resolve();
+      };
+      const timer = setTimeout(() => {
+        this.requestAnswered = undefined;
+        resolve();
+      }, timeoutMs);
+      this.requestAnswered = check;
+      check();
+    });
+    const restore = () => {
+      this.remoteRequested.delete(OPT_BINARY);
+      this.localRequested.delete(OPT_BINARY);
+      if (!hadRemote && this.remoteEnabled.delete(OPT_BINARY)) this.sendCommand(DONT, OPT_BINARY);
+      if (!hadLocal && this.localEnabled.delete(OPT_BINARY)) this.sendCommand(WONT, OPT_BINARY);
+    };
+    return { ready, restore };
+  }
+
   resize(cols: number, rows: number): void {
     this.cols = cols;
     this.rows = rows;
@@ -127,6 +187,17 @@ export class TelnetCodec {
   }
 
   private negotiate(command: number, option: number): void {
+    // Answers to our own requests are acknowledgements, not new requests.
+    if ((command === WILL || command === WONT) && this.remoteRequested.delete(option)) {
+      if (command === WILL) this.remoteEnabled.add(option);
+      this.requestAnswered?.();
+      return;
+    }
+    if ((command === DO || command === DONT) && this.localRequested.delete(option)) {
+      if (command === DO) this.localEnabled.add(option);
+      this.requestAnswered?.();
+      return;
+    }
     if (command === WILL) {
       const supported =
         option === OPT_BINARY || option === OPT_ECHO || option === OPT_SUPPRESS_GO_AHEAD;
@@ -275,6 +346,23 @@ export class TelnetTransport extends EventEmitter implements TerminalTransport {
 
   write(data: Buffer): void {
     if (!this.ended) this.socket.write(this.codec.encode(data));
+  }
+
+  writeRaw(data: Buffer): void {
+    if (!this.ended) this.socket.write(this.codec.encodeTransfer(data));
+  }
+
+  drained(): Promise<void> | undefined {
+    return this.ended ? undefined : writableDrained(this.socket);
+  }
+
+  async binaryTransfer(): Promise<() => void> {
+    if (this.ended) return () => undefined;
+    const { ready, restore } = this.codec.requestBinary();
+    await ready;
+    return () => {
+      if (!this.ended) restore();
+    };
   }
 
   resize(cols: number, rows: number): void {

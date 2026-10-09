@@ -517,12 +517,14 @@ function startSshd(host, keys, hostMap) {
             rows: size.rows,
             cwd: root,
             env: shellEnv,
+            // Raw bytes both ways, so binary transfers (sz/rz) survive.
+            encoding: null,
           });
           shell.onData((data) => {
             if (stream.writable) stream.write(data);
           });
           shell.onExit(() => stream.end());
-          stream.on('data', (data) => shell.write(data.toString('utf8')));
+          stream.on('data', (data) => shell.write(data));
           stream.on('close', () => shell.kill());
         };
 

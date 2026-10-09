@@ -223,6 +223,14 @@ export interface AuthPromptResponse {
   skipped?: boolean;
 }
 
+/**
+ * Terminal file transfer protocols. The XMODEM variants differ in what a
+ * receiver asks for (checksum or CRC) and in block size (128 or 1024 bytes);
+ * a sender follows whatever the receiver asks for.
+ */
+export const FILE_TRANSFER_PROTOCOLS = ['xmodem', 'xmodem-crc', 'xmodem-1k', 'ymodem', 'zmodem'] as const;
+export type FileTransferProtocol = (typeof FILE_TRANSFER_PROTOCOLS)[number];
+
 /** Text frames the client sends on /ws/terminal. */
 export const terminalClientMessageSchema = z.discriminatedUnion('op', [
   z.object({
@@ -293,6 +301,21 @@ export const terminalClientMessageSchema = z.discriminatedUnion('op', [
   ),
   /** The tab was renamed; the active history record takes the new title. */
   z.object({ op: z.literal('set-title'), title: z.string().trim().min(1).max(500) }),
+  /**
+   * Start an XMODEM, YMODEM or ZMODEM transfer on the raw byte stream, or
+   * accept the ZMODEM transfer the remote side offered. Sends name files
+   * staged through /api/terminal-files.
+   */
+  z.object({
+    op: z.literal('file-transfer-start'),
+    direction: z.enum(['send', 'receive']),
+    protocol: z.enum(FILE_TRANSFER_PROTOCOLS),
+    files: z.array(z.string().min(1).max(64)).min(1).max(256).optional(),
+    /** XMODEM carries no file name; this names the received file. */
+    fileName: z.string().trim().min(1).max(255).optional(),
+  }),
+  /** Cancel the running transfer, or decline the one the remote side offered. */
+  z.object({ op: z.literal('file-transfer-cancel') }),
 ]);
 export type TerminalClientMessage = z.infer<typeof terminalClientMessageSchema>;
 
@@ -330,6 +353,37 @@ export interface SshSessionSummary {
   agentForwarding: 'on' | 'off' | 'no-agent';
   /** Port forwards from the host's configuration running on the connection. */
   forwards: ConfigForward[];
+}
+
+/** A terminal file transfer as the renderer shows it. */
+export interface FileTransferState {
+  /** New for every transfer on the terminal. */
+  id: string;
+  direction: 'send' | 'receive';
+  protocol: FileTransferProtocol;
+  /**
+   * `offer`: the remote side started ZMODEM (`sz` or `rz`) and waits for an
+   * answer. `waiting`: started here, the other side has not begun yet.
+   */
+  phase: 'offer' | 'waiting' | 'transferring' | 'cancelling' | 'complete' | 'cancelled' | 'failed';
+  /** Started by the remote side rather than from the terminal menu. */
+  automatic: boolean;
+  fileName?: string;
+  /** 1-based position in a batch. */
+  fileIndex?: number;
+  fileCount?: number;
+  /** Bytes of the current file so far, and its size when known. */
+  bytes: number;
+  total?: number;
+  /** Size of the whole batch, when the sender announced it. */
+  batchTotal?: number;
+  bytesPerSecond: number;
+  /** Finished incoming files, fetched from /api/terminal-files/:id. */
+  received: Array<{ id: string; name: string; size: number }>;
+  /** Outgoing files the receiver declined, usually because they exist there. */
+  skipped?: string[];
+  /** Why the transfer failed or stopped. */
+  message?: string;
 }
 
 /** Text frames the server sends on /ws/terminal. */
@@ -380,6 +434,8 @@ export type TerminalServerMessage =
       /** Plain-text log file this session is being written to, if any. */
       filePath?: string;
     }
+  /** Progress of an XMODEM, YMODEM or ZMODEM transfer; terminal output pauses while one runs. */
+  | { op: 'file-transfer'; transfer: FileTransferState }
   | {
       op: 'exit';
       code?: number;

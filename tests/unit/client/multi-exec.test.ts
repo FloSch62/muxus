@@ -34,6 +34,7 @@ function handle(sendInput: TerminalHandle['sendInput']): TerminalHandle {
     persistSnapshot: vi.fn(async () => undefined),
     prepareTransfer: vi.fn(async () => true),
     cancelTransfer: vi.fn(),
+    openFileTransfer: vi.fn(() => false),
   };
 }
 

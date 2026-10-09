@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Divider from '@mui/material/Divider';
 import IconButton from '@mui/material/IconButton';
@@ -19,6 +19,8 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import DeleteSweepOutlinedIcon from '@mui/icons-material/DeleteSweepOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
+import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
+import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import SearchIcon from '@mui/icons-material/Search';
@@ -34,7 +36,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 // own async chunk instead of the eager xterm bundle.
 import type { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
-import type { AppInfo, TerminalServerMessage } from '@muxus/shared';
+import type { AppInfo, FileTransferState, TerminalServerMessage } from '@muxus/shared';
 import {
   apiFetch,
   closeTerminalWebSocket,
@@ -114,6 +116,8 @@ import {
 } from './AuthPromptDialog.js';
 import { HostKeyDialog, type HostKeyRequest } from './HostKeyDialog.js';
 import { PasteConfirmDialog } from './PasteConfirmDialog.js';
+import { TerminalFileTransfer, type FileTransferMessage } from './TerminalFileTransfer.js';
+import { supportsFileTransfer, type FileTransferDirection } from '../terminal/file-transfer.js';
 import {
   AUTO_RECONNECT_STABLE_MS,
   autoReconnectDelayMs,
@@ -303,6 +307,8 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const [authPrompt, setAuthPrompt] = useState<AuthPromptRequest | null>(null);
   const [hostKey, setHostKey] = useState<HostKeyRequest | null>(null);
   const [pendingPaste, setPendingPaste] = useState<PendingPaste | null>(null);
+  const [fileTransfer, setFileTransfer] = useState<FileTransferState>();
+  const [fileTransferRequest, setFileTransferRequest] = useState<FileTransferDirection | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchCase, setSearchCase] = useState(false);
@@ -410,6 +416,16 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     }),
     [searchCase, searchWord, searchRegex],
   );
+
+  const sendFileTransfer = useCallback((message: FileTransferMessage): boolean => {
+    const socket = wsRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+    socket.send(JSON.stringify(message));
+    return true;
+  }, []);
+  const closeFileTransferRequest = useCallback(() => setFileTransferRequest(null), []);
+  const focusTerminal = useCallback(() => termRef.current?.focus(), []);
+  const canTransferFiles = supportsFileTransfer(tab.profile) && tab.status === 'connected';
 
   const pasteToTerminal = (text: string, broadcast: boolean) => {
     const term = termRef.current;
@@ -825,6 +841,14 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         socket.send(JSON.stringify({ op: 'set-logging', ...patch }));
         return true;
       },
+      openFileTransfer: (direction) => {
+        const socket = wsRef.current;
+        if (!ready || !socket || socket.readyState !== WebSocket.OPEN || !supportsFileTransfer(tab.profile)) {
+          return false;
+        }
+        setFileTransferRequest(direction);
+        return true;
+      },
     });
 
     const onNativePaste = (event: ClipboardEvent) => {
@@ -1234,6 +1258,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             }
             announceLogFileRef.current = false;
             break;
+          case 'file-transfer':
+            setFileTransfer(ctl.transfer);
+            break;
           case 'exit':
             exitMessage = ctl;
             break;
@@ -1247,6 +1274,8 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         if (wsRef.current === socket) wsRef.current = null;
         if (disposed) return;
         clearTransientStatus();
+        setFileTransfer(undefined);
+        setFileTransferRequest(null);
         const reason =
           socketFailed && !ready && !exitMessage
             ? 'Could not reach the Muxus backend.'
@@ -1898,6 +1927,35 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           </ListItemIcon>
           <ListItemText>Find</ListItemText>
         </MenuItem>
+        {supportsFileTransfer(tab.profile) ? <Divider /> : null}
+        {supportsFileTransfer(tab.profile) ? (
+          <MenuItem
+            disabled={!canTransferFiles}
+            onClick={() => {
+              setCtxMenu(null);
+              setFileTransferRequest('send');
+            }}
+          >
+            <ListItemIcon>
+              <UploadFileOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Send file…</ListItemText>
+          </MenuItem>
+        ) : null}
+        {supportsFileTransfer(tab.profile) ? (
+          <MenuItem
+            disabled={!canTransferFiles}
+            onClick={() => {
+              setCtxMenu(null);
+              setFileTransferRequest('receive');
+            }}
+          >
+            <ListItemIcon>
+              <DownloadOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Receive file…</ListItemText>
+          </MenuItem>
+        ) : null}
         <Divider />
         <MenuItem
           onClick={() => {
@@ -1939,6 +1997,17 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           </Typography>
         </MenuItem>
       </Menu>
+      {supportsFileTransfer(tab.profile) ? (
+        <TerminalFileTransfer
+          host={tab.title}
+          profileKind={tab.profile.kind}
+          transfer={fileTransfer}
+          request={fileTransferRequest}
+          onRequestClose={closeFileTransferRequest}
+          send={sendFileTransfer}
+          onDone={focusTerminal}
+        />
+      ) : null}
       <AuthPromptDialog request={authPrompt} onSubmit={answerAuth} />
       <HostKeyDialog request={hostKey} onAnswer={answerHostKey} />
       {pendingPaste !== null ? (

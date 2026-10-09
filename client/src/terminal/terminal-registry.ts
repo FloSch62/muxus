@@ -51,6 +51,8 @@ export interface TerminalHandle {
     logToFile?: boolean;
     logFilePath?: string;
   }): boolean;
+  /** Open the XMODEM / YMODEM / ZMODEM send or receive dialog; false when unavailable. */
+  openFileTransfer(direction: 'send' | 'receive'): boolean;
 }
 
 const handles = new Map<string, TerminalHandle>();

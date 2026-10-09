@@ -37,6 +37,8 @@ import { registerLocalFileRoutes } from './routes/local-files.js';
 import { registerLocalShellRoutes } from './routes/local-shells.js';
 import { registerHostStatsRoutes } from './routes/host-stats.js';
 import { registerDiagnosticsRoutes } from './routes/diagnostics.js';
+import { registerTerminalFileRoutes } from './routes/terminal-files.js';
+import { StagedFiles } from './file-transfer/staged-files.js';
 import { appLogPinoSink } from './logging/log-buffer.js';
 import {
   defaultHistoryRoot,
@@ -52,6 +54,8 @@ export interface AppContext {
   history: SessionHistoryStore;
   vault: PasswordVault;
   x11: LocalX11;
+  /** Files on their way into or out of XMODEM, YMODEM and ZMODEM transfers. */
+  transferFiles: StagedFiles;
 }
 
 // Not named __dirname: the Electron esbuild bundle defines that identifier
@@ -141,6 +145,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
     history,
     vault,
     x11,
+    transferFiles: new StagedFiles(),
   };
   database.pruneTerminalSnapshots();
 
@@ -215,6 +220,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   registerLocalShellRoutes(app);
   registerHostStatsRoutes(app, ctx);
   registerDiagnosticsRoutes(app, ctx);
+  registerTerminalFileRoutes(app, ctx);
   registerTerminalSocket(app, ctx);
   registerSftpLeaseSocket(app, ctx);
   registerDesktopSockets(app, ctx);
@@ -237,6 +243,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
     connections.closeAll();
     x11.close();
     vault.dispose();
+    await ctx.transferFiles.close();
     await history.close();
     database.close();
   });

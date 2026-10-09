@@ -125,6 +125,63 @@ expression options. Every match is marked in the scrollbar.
     newline in a copied snippet cannot execute part of a script before it is read. It is a
     [setting](settings.md#terminal), and it is on by default.
 
+## Sending and receiving files
+
+Serial, Telnet and SSH terminals can move files over the session itself with XMODEM,
+YMODEM or ZMODEM. That is how an image reaches a bootloader (U-Boot `loady`, Cisco ROMMON
+`xmodem`), and how files reach hosts without SFTP, such as those behind a console server
+or several shells deep.
+
+### ZMODEM starts by itself
+
+Run `sz` or `rz` from lrzsz on the remote side and Muxus takes over:
+
+- `sz report.tar.gz` asks whether to receive the files, naming the first one and the size
+  of the batch. Each file is saved as soon as it is complete: as a browser download, or
+  through the save dialog in the desktop app.
+- `rz` asks for the files to send and opens a file picker. `rz` does not overwrite a file
+  that already exists on its side; Muxus says which files were skipped.
+
+Only a complete ZMODEM header with a valid checksum starts a transfer, so ordinary output,
+binary output included, never does.
+
+### Sending and receiving by hand
+
+**Send file…** and **Receive file…** are in the terminal-actions menu, the right-click
+menu and the command palette. Choose the protocol the other side speaks:
+
+| Protocol | Typical use |
+| --- | --- |
+| XMODEM (checksum) | The oldest receivers; 128-byte blocks |
+| XMODEM-CRC | U-Boot `loadx`, Cisco ROMMON `xmodem` |
+| XMODEM-1K | Receivers that take 1024-byte blocks |
+| YMODEM | U-Boot `loady`, `rb` and `sb`; batches with names and exact sizes |
+| ZMODEM | `rz` and `sz`; streaming with error recovery |
+
+Start the receiving side first: type `loady` at the U-Boot prompt, wait for it to print
+`C`, then **Send file…**. To receive, start the sender (`sx file`, `sb file`), then
+**Receive file…**. XMODEM carries no file name, so receiving asks for one, and the file
+keeps the sender's padding up to a whole block. Sending with ZMODEM types `rz` for you, as
+`sz` does.
+
+### While a transfer runs
+
+Terminal output pauses and keystrokes are held back until the transfer ends. A panel over
+the terminal shows the file, the progress, the transfer rate and **Cancel**. Cancel sends
+the CAN sequence, which stops `sz`, `rz`, `loady` and the like, and then lets the remote
+side's message and prompt through again.
+
+The transferred bytes are kept out of [session history](session-history.md) and log
+files; a line such as `ZMODEM: received report.tar.gz (12 MiB)` records the transfer
+instead. On Telnet, Muxus switches the connection to TRANSMIT-BINARY for the transfer and
+back afterwards, and escapes IAC bytes, so every byte value arrives intact.
+
+!!! note "Software flow control"
+
+    XMODEM and YMODEM send raw bytes, so a serial port set to XON/XOFF flow control can
+    swallow parts of a block. Use RTS/CTS or no flow control for them; ZMODEM escapes
+    XON and XOFF and works either way.
+
 ## Keyword highlighting
 
 Highlighting rules colour keywords in every terminal, such as `ERROR` on red and

@@ -74,3 +74,6 @@ Telnet and serial tabs behave as ordinary tabs. They live in panes, take colour 
 [multi-exec](commands.md#multi-execution) groups, are saved in [workspaces](workspaces.md),
 and are recorded by [session history](session-history.md) when it is enabled. Features that
 require SSH do not apply: no file browser, no remote editor, no port forwarding.
+Files still travel over the line itself with
+[XMODEM, YMODEM and ZMODEM](terminal.md#sending-and-receiving-files), the way bootloaders
+such as U-Boot expect them.

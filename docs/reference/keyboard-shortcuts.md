@@ -60,6 +60,8 @@ resetting them.
 | Toggle [multi-execution](../guide/commands.md#multi-execution) | ++ctrl+shift+m++ |
 | Increase / decrease font size | ++ctrl+shift+equal++, ++ctrl+shift+minus++ (also ++ctrl+equal++ / ++ctrl+minus++) |
 | Reset font size | ++ctrl+shift+0++, ++ctrl+0++ |
+| Send a file with [XMODEM, YMODEM or ZMODEM](../guide/terminal.md#sending-and-receiving-files) | *(unbound by default)* |
+| Receive a file with XMODEM, YMODEM or ZMODEM | *(unbound by default)* |
 
 ## Application
 

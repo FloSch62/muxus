@@ -18,7 +18,9 @@ import {
 } from '../local/pty-manager.js';
 import { SerialTransport } from '../serial/serial-transport.js';
 import { TelnetTransport } from '../telnet/telnet-transport.js';
-import type { TerminalTransport } from '../transports/terminal-transport.js';
+import { writableDrained, type TerminalTransport } from '../transports/terminal-transport.js';
+import { TerminalFileTransfers } from '../file-transfer/terminal-file-transfer.js';
+import type { StagedFiles } from '../file-transfer/staged-files.js';
 import {
   SessionRecorder,
   type SessionLoggingState,
@@ -40,6 +42,7 @@ const REPLAYED_CONTROL_OPS = [
   'ready',
   'logging-state',
   'connection-health',
+  'file-transfer',
 ] as const;
 const replayedControlOps = new Set<string>(REPLAYED_CONTROL_OPS);
 
@@ -351,10 +354,13 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
   const control = new ControlChannel();
   let writeInput: ((data: Buffer) => void) | undefined;
   let recorder: SessionRecorder | undefined;
+  /** XMODEM/YMODEM/ZMODEM on the session's byte stream; keystrokes wait while one runs. */
+  let transfers: TerminalFileTransfers | undefined;
   let socketOpen = true;
 
   socket.on('message', (data: Buffer, isBinary: boolean) => {
     if (isBinary) {
+      if (transfers?.busy) return;
       if (writeInput) recorder?.input(data);
       writeInput?.(data);
       return;
@@ -364,6 +370,7 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
       if (parsed.success) control.push(parsed.data);
     } catch {
       // Non-JSON text frames are treated as input (some clients send text).
+      if (transfers?.busy) return;
       const input = Buffer.from(data.toString('utf8'), 'utf8');
       if (writeInput) recorder?.input(input);
       writeInput?.(input);
@@ -537,7 +544,7 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
       transport.close();
       return;
     }
-    attachTerminalTransport(
+    transfers = attachTerminalTransport(
       socket,
       control,
       transport,
@@ -547,6 +554,7 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
       `serial-${nanoid(10)}`,
       recorder,
       handleLoggingControl,
+      ctx.transferFiles,
     );
     app.log.info(
       { path: profile.path, baudRate: profile.baudRate },
@@ -565,7 +573,7 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
       transport.close();
       return;
     }
-    attachTerminalTransport(
+    transfers = attachTerminalTransport(
       socket,
       control,
       transport,
@@ -575,6 +583,7 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
       `telnet-${nanoid(10)}`,
       recorder,
       handleLoggingControl,
+      ctx.transferFiles,
     );
     app.log.info({ host: profile.host, port: profile.port }, 'telnet session established');
     if (profile.profileId) ctx.database.recordSavedHostConnection(profile.profileId);
@@ -648,27 +657,48 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
   writeInput = (data) => stream.write(data);
   control.onMessage = (msg) => {
     if (handleLoggingControl(msg)) return;
+    if (transfers?.control(msg)) return;
     if (msg.op === 'resize') stream.setWindow(msg.rows, msg.cols, 0, 0);
   };
 
   // Flow control: a runaway `cat hugefile` must not balloon the ws buffer.
   let paused = false;
+  let transferPaused = false;
   const resumeTimer = setInterval(() => {
     if (paused && socket.bufferedAmount < BACKPRESSURE_HIGH / 2) {
       paused = false;
-      stream.resume();
+      if (!transferPaused) stream.resume();
     }
   }, BACKPRESSURE_POLL_MS);
 
-  stream.on('data', (chunk: Buffer) => {
-    recorder?.output(chunk);
-    if (socket.readyState !== socket.OPEN) return;
-    socket.send(chunk, { binary: true });
-    if (!paused && socket.bufferedAmount > BACKPRESSURE_HIGH) {
-      paused = true;
-      stream.pause();
-    }
+  const sshTransfers = new TerminalFileTransfers({
+    link: {
+      write: (data) => stream.write(data),
+      drain: () => writableDrained(stream),
+      pause: () => {
+        transferPaused = true;
+        stream.pause();
+      },
+      resume: () => {
+        transferPaused = false;
+        if (!paused) stream.resume();
+      },
+    },
+    display: (chunk) => {
+      recorder?.output(chunk);
+      if (socket.readyState !== socket.OPEN) return;
+      socket.send(chunk, { binary: true });
+      if (!paused && socket.bufferedAmount > BACKPRESSURE_HIGH) {
+        paused = true;
+        stream.pause();
+      }
+    },
+    send: (message) => sendControl(socket, message),
+    note: (message) => recorder?.system(message),
+    files: ctx.transferFiles,
   });
+  transfers = sshTransfers;
+  stream.on('data', (chunk: Buffer) => sshTransfers.output(chunk));
   let exitCode: number | undefined;
   let receivedExit = false;
   stream.on('exit', (code: number | null) => {
@@ -704,6 +734,7 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
   socket.on('close', () => {
     clearInterval(resumeTimer);
     unsubscribeClose();
+    sshTransfers.close();
   });
 
   app.log.info({ target: profile.target, host: conn.host, user: conn.user, connId: conn.id, transport }, 'ssh session established');
@@ -740,31 +771,54 @@ function attachTerminalTransport(
   connId: string,
   recorder: SessionRecorder,
   handleLoggingControl: (msg: TerminalClientMessage) => boolean,
-): void {
+  files: StagedFiles,
+): TerminalFileTransfers {
   setWriteInput((data) => transport.write(data));
-  control.onMessage = (msg) => {
-    if (handleLoggingControl(msg)) return;
-    if (msg.op === 'resize') transport.resize(msg.cols, msg.rows);
-  };
 
   let paused = false;
+  let transferPaused = false;
   let closed = false;
   const resumeTimer = setInterval(() => {
     if (paused && socket.bufferedAmount < BACKPRESSURE_HIGH / 2) {
       paused = false;
-      transport.resume();
+      if (!transferPaused) transport.resume();
     }
   }, BACKPRESSURE_POLL_MS);
 
-  const unsubscribeData = transport.onData((data) => {
-    recorder.output(data);
-    if (socket.readyState !== socket.OPEN) return;
-    socket.send(data, { binary: true });
-    if (!paused && socket.bufferedAmount > BACKPRESSURE_HIGH) {
-      paused = true;
-      transport.pause();
-    }
+  const transfers = new TerminalFileTransfers({
+    link: {
+      write: (data) => transport.writeRaw(data),
+      drain: () => transport.drained(),
+      pause: () => {
+        transferPaused = true;
+        transport.pause();
+      },
+      resume: () => {
+        transferPaused = false;
+        if (!paused) transport.resume();
+      },
+      ...(transport.binaryTransfer ? { binary: () => transport.binaryTransfer!() } : {}),
+    },
+    display: (data) => {
+      recorder.output(data);
+      if (socket.readyState !== socket.OPEN) return;
+      socket.send(data, { binary: true });
+      if (!paused && socket.bufferedAmount > BACKPRESSURE_HIGH) {
+        paused = true;
+        transport.pause();
+      }
+    },
+    send: (message) => sendControl(socket, message),
+    note: (message) => recorder.system(message),
+    files,
   });
+  control.onMessage = (msg) => {
+    if (handleLoggingControl(msg)) return;
+    if (transfers.control(msg)) return;
+    if (msg.op === 'resize') transport.resize(msg.cols, msg.rows);
+  };
+
+  const unsubscribeData = transport.onData((data) => transfers.output(data));
   let finished = false;
   const finish = (
     reason: 'completed' | 'failed' | 'disconnected',
@@ -786,9 +840,11 @@ function attachTerminalTransport(
     unsubscribeData();
     unsubscribeError();
     unsubscribeClose();
+    transfers.close();
     transport.close();
   });
   sendControl(socket, { op: 'ready', connId });
+  return transfers;
 }
 
 function sendControl(socket: WebSocket, msg: TerminalServerMessage): void {

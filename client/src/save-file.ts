@@ -8,6 +8,20 @@ export function saveTextFile(filename: string, text: string, mime = 'text/plain'
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Save binary content under `filename`: a browser download, or the desktop
+ * app's save dialog.
+ */
+export function saveBlobFile(filename: string, blob: Blob): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  // Revoking synchronously can cancel a download that has not started yet.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 /** "muxus-<slug>-YYYYMMDD-HHMMSS.<ext>" for terminal exports. */
 export function exportFilename(title: string, ext: string): string {
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'terminal';

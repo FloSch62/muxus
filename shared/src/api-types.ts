@@ -1187,3 +1187,13 @@ export interface ConnectionDiagnosticsResponse {
   /** Best guess at the cause, read from the lowest layer that failed. */
   conclusion: string;
 }
+
+/**
+ * A file waiting between the browser and a terminal XMODEM, YMODEM or ZMODEM
+ * transfer: an upload a send will read, or a received file to download.
+ */
+export interface StagedTransferFile {
+  id: string;
+  name: string;
+  size: number;
+}
