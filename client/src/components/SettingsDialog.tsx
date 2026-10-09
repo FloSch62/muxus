@@ -117,6 +117,7 @@ import { chordSx } from './chord-style.js';
 import { CustomTerminalSchemeSettings } from './CustomTerminalSchemeSettings.js';
 import { HighlightProfilesSection } from './HighlightProfilesSection.js';
 import { LayoutPreview } from './LayoutPreview.js';
+import { LinkHandlerSettings } from './LinkHandlerSettings.js';
 import { LocalShellProfilesSection } from './LocalShellProfilesSection.js';
 import { SessionLoggingPolicyFields } from './SessionLoggingPolicyFields.js';
 import { RowSelect, SettingRow, SettingsGroup, SettingsPage } from './SettingsLayout.js';
@@ -1226,6 +1227,7 @@ function BehaviorSection() {
           }
         />
       </SettingsGroup>
+      <LinkHandlerSettings />
     </SettingsPage>
   );
 }

@@ -37,6 +37,26 @@ export function fingerprintSha256(key: Buffer): string {
   return `SHA256:${createHash('sha256').update(key).digest('base64').replace(/=+$/, '')}`;
 }
 
+/** MD5:… fingerprint, as `ssh-keygen -E md5 -l` prints it. */
+export function fingerprintMd5(key: Buffer): string {
+  return `MD5:${createHash('md5').update(key).digest('hex').replace(/(..)(?!$)/g, '$1:')}`;
+}
+
+/**
+ * The key's fingerprint in the same hash as a canonical link fingerprint
+ * (see normalizeHostKeyFingerprint), for comparing and for messages.
+ */
+export function fingerprintLike(key: Buffer, expected: string): string {
+  return expected.includes('MD5:') ? fingerprintMd5(key) : fingerprintSha256(key);
+}
+
+/** Whether a host key is the one a canonical link fingerprint names. */
+export function hostKeyMatchesFingerprint(key: Buffer, expected: string): boolean {
+  const space = expected.indexOf(' ');
+  if (space >= 0 && hostKeyType(key) !== expected.slice(0, space)) return false;
+  return fingerprintLike(key, expected) === expected.slice(space + 1);
+}
+
 /** "ssh-ed25519", "ecdsa-sha2-nistp256", … — the leading string of the key blob. */
 export function hostKeyType(key: Buffer): string {
   try {

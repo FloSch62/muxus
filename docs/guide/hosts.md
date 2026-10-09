@@ -222,6 +222,56 @@ address or folder match.
 When a search matches nothing, the empty state offers to add what was typed, prefilled into
 the [host editor](adding-hosts.md).
 
+## Opening ssh:// and telnet:// links
+
+The desktop app can open links such as `ssh://admin@10.0.0.1:2222` or `telnet://switch-01`
+from a browser, wiki, ticket or monitoring dashboard. Because this changes a system-wide
+default, it is opt-in: open **Settings → Behavior** and press **Use Muxus for ssh:// links**
+or **Use Muxus for telnet:// links**. Each row shows which program opens those links now.
+To hand them back, choose another program in the system's default-application settings.
+
+A link opens as a new tab in the Muxus window you used last, or starts Muxus first. When it
+names a host you already have, that host's settings are used:
+
+- an `ssh://` link whose host is an OpenSSH alias connects through that `Host` block, with
+  a user or port in the link taking the place of the configured ones, like
+  `ssh -p 2222 admin@alias`;
+- otherwise a host whose host name and port (22, or 23 for Telnet, when the link has none)
+  match is used. If several match, the link's user decides; if that still leaves more than
+  one, Muxus does not guess;
+- a Muxus-only host is used by its name or address only when the link's user and port fit
+  it, because it always connects with its own saved fields.
+
+Anything else connects like [quick connect](#search-and-quick-connect): `ssh://` dials
+`[user@]host[:port]` through the OpenSSH configuration, and `telnet://` opens a Telnet
+session to the host, on port 23 unless the link says otherwise.
+
+| Link | Opens |
+| --- | --- |
+| `ssh://admin@10.0.0.1:2222` | SSH to port 2222 as `admin` |
+| `ssh://edge-router` | The `edge-router` host from `~/.ssh/config` |
+| `ssh://[2001:db8::1]:830` | SSH to an IPv6 address |
+| `ssh://admin;fingerprint=SHA256:…@10.0.0.1` | SSH that only proceeds with that host key, see [Host keys](connecting.md#fingerprints-in-ssh-links) |
+| `telnet://switch-01:2323` | Telnet to port 2323 |
+
+Links are checked before anything is dialed. Hosts and users are limited to the same plain
+names as [`--connect`](../reference/cli.md#ad-hoc-ssh-connections), so a link cannot pass
+options such as `-oProxyCommand=…` or reach a shell. A link with a password
+(`ssh://user:secret@host`) is refused, since Muxus asks for passwords itself and links end
+up in browser history. A path, query or fragment after the host is ignored, as are
+connection parameters other than `fingerprint`. A malformed link, or one for another
+scheme, shows an error notification instead of connecting.
+
+On Linux, a Muxus installed from the `.deb` package registers its own desktop file. The
+AppImage and a source checkout have no installed desktop file, so pressing the button
+writes a hidden `muxus-url-handler.desktop` to `~/.local/share/applications` that starts
+that copy, and sets it as the default with `xdg-mime`. An AppImage whose path contains
+spaces is started through a `muxus-link-handler` link in `~/.config/Muxus`, since
+`xdg-open` cannot read such a path. If the AppImage is moved, press the button again. On
+Windows, the installer lists Muxus under **Default apps**; when Windows
+keeps another choice, or for the Microsoft Store version, the button opens those settings
+so you can pick Muxus there.
+
 ## Keyboard
 
 The tree is a `treeview`. ++arrow-down++ from the search box moves into it, arrows walk and

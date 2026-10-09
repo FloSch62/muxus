@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { ConfigForward } from './api-types.js';
+import { normalizeHostKeyFingerprint } from './connection-links.js';
 import {
   MAX_PACED_PASTE_LENGTH,
   MAX_PASTE_CHAR_DELAY_MS,
@@ -102,6 +103,15 @@ export const sshProfileSchema = z.object({
   remoteCommand: z.string().min(1).max(32_768).optional(),
   requestTty: z.enum(['no', 'yes', 'force', 'auto']).optional(),
   strictHostKeyChecking: z.enum(['yes', 'no', 'accept-new', 'ask']).optional(),
+  /**
+   * Host key the target must present, from an ssh:// link's fingerprint, in
+   * canonical form. It only tightens verification and is never saved with a host.
+   */
+  hostKeyFingerprint: z
+    .string()
+    .max(200)
+    .refine((value) => normalizeHostKeyFingerprint(value) === value, 'invalid host key fingerprint')
+    .optional(),
 });
 
 export const telnetProfileSchema = z.object({

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CommandLineLaunch } from '@muxus/shared';
+import { parseConnectionLink, type CommandLineLaunch } from '@muxus/shared';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
 import {
   resolveCommandLineFolder,
   resolveCommandLineHost,
   resolveCommandLineWorkspace,
+  resolveConnectionLink,
   type TargetResolution,
 } from '../command-line-launch.js';
 import { managedHostDisplayName } from '../managed-hosts.js';
@@ -12,6 +13,7 @@ import {
   connectManagedHost,
   connectTarget,
   launchManagedHostGroup,
+  openSessionProfile,
 } from '../session-actions.js';
 import { showToast } from '../state/toast.js';
 import { useWorkspacesStore } from '../state/workspaces.js';
@@ -21,6 +23,12 @@ import { openAppWindow } from '../window-management.js';
 interface QueuedLaunch {
   id: number;
   request: CommandLineLaunch;
+}
+
+/** A link as it may appear in a notification: short, and only printable characters. */
+function linkLabel(url: string): string {
+  const printable = url.trim().replace(/\p{C}/gu, '�');
+  return printable.length > 80 ? `${printable.slice(0, 79)}…` : printable;
 }
 
 function resolutionError(
@@ -46,7 +54,9 @@ export function CommandLineLaunchHandler() {
   );
   const active = queue[0];
   const needsHostCatalog =
-    active?.request.kind === 'host' || active?.request.kind === 'folder';
+    active?.request.kind === 'host' ||
+    active?.request.kind === 'folder' ||
+    active?.request.kind === 'url';
   const sshQuery = useSshConfig(needsHostCatalog);
   const profilesQuery = useSavedHostProfiles(needsHostCatalog);
   const hostCatalogReady = !!sshQuery.data && !!profilesQuery.data;
@@ -89,6 +99,28 @@ export function CommandLineLaunchHandler() {
 
       const ssh = sshQuery.data;
       const profiles = profilesQuery.data;
+      if (request.kind === 'url') {
+        const parsed = parseConnectionLink(request.name);
+        if (!parsed.ok) {
+          showToast('error', `Cannot open “${linkLabel(request.name)}”. ${parsed.error}`);
+          return;
+        }
+        const launch = resolveConnectionLink(
+          parsed.link,
+          ssh?.hosts ?? [],
+          profiles?.profiles ?? [],
+        );
+        if (launch.kind === 'ad-hoc') {
+          openSessionProfile(launch.profile, launch.title);
+          showToast('info', `Connecting to “${launch.title}”.`);
+          return;
+        }
+        const name = managedHostDisplayName(launch.host);
+        openSessionProfile(launch.profile, name, launch.host.entry.metadata?.color);
+        showToast('info', `Connecting to “${name}”.`);
+        return;
+      }
+
       if (request.kind === 'host') {
         const resolution = resolveCommandLineHost(
           request.name,

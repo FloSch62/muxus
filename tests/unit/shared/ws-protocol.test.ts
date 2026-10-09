@@ -183,6 +183,33 @@ describe('sessionProfileSchema', () => {
   });
 });
 
+describe('ssh link host key fingerprints', () => {
+  const fingerprint = 'SHA256:nThbg6kXUpJWGl7E1IGOCspRomTxdCARLviKw6E5SY8';
+
+  it('accepts canonical fingerprints only', () => {
+    for (const hostKeyFingerprint of [
+      fingerprint,
+      'MD5:c1:b1:30:29:d7:b8:de:6c:97:77:10:d7:46:41:63:87',
+      'ssh-rsa MD5:c1:b1:30:29:d7:b8:de:6c:97:77:10:d7:46:41:63:87',
+    ]) {
+      expect(
+        sessionProfileSchema.safeParse({ kind: 'ssh', target: 'x', hostKeyFingerprint }).success,
+      ).toBe(true);
+    }
+    for (const hostKeyFingerprint of [
+      '',
+      `${fingerprint}=`,
+      fingerprint.toLowerCase(),
+      'SHA256:nope',
+      'ssh-rsa-c1-b1-30-29-d7-b8-de-6c-97-77-10-d7-46-41-63-87',
+    ]) {
+      expect(
+        sessionProfileSchema.safeParse({ kind: 'ssh', target: 'x', hostKeyFingerprint }).success,
+      ).toBe(false);
+    }
+  });
+});
+
 describe('terminalClientMessageSchema', () => {
   it('accepts connect with profile and dimensions', () => {
     const parsed = terminalClientMessageSchema.safeParse({

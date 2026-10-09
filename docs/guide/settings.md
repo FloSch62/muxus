@@ -177,6 +177,11 @@ few times. Turn it off to restore remote tabs without logging in. **Restore term
 history** saves recent output locally every few seconds and replays it above the new
 session after a restore or reconnect.
 
+In the desktop app, **Links** has **Use Muxus for ssh:// links** and **Use Muxus for
+telnet:// links**. Each makes Muxus the system's handler for that kind of link and shows
+which program handles it now. See
+[Opening ssh:// and telnet:// links](hosts.md#opening-ssh-and-telnet-links).
+
 ## X11 forwarding
 
 **Enable X11 forwarding** lets graphical programs started in SSH sessions open their

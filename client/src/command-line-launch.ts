@@ -1,7 +1,10 @@
-import type {
-  SavedHostProfile,
-  SshHostEntry,
-  WorkspaceSummary,
+import {
+  connectionLinkTarget,
+  type ConnectionLink,
+  type SavedHostProfile,
+  type SessionProfile,
+  type SshHostEntry,
+  type WorkspaceSummary,
 } from '@muxus/shared';
 import { buildHostTree, type ContainerNode } from './host-tree.js';
 import {
@@ -143,4 +146,110 @@ export function resolveCommandLineWorkspace(
   return idMatches.length > 0
     ? resultFor(idMatches)
     : resultFor(workspaces.filter((workspace) => normalized(workspace.name) === target));
+}
+
+/** What an ssh:// or telnet:// link opens. */
+export type ConnectionLinkLaunch =
+  | { kind: 'host'; host: ManagedHost; profile: SessionProfile }
+  | { kind: 'ad-hoc'; profile: SessionProfile; title: string };
+
+interface LinkCandidate {
+  host: ManagedHost;
+  /** Matched by alias or saved-host name rather than by address. */
+  identity: boolean;
+  user?: string;
+}
+
+const DEFAULT_PORTS = { ssh: 22, telnet: 23 } as const;
+
+function linkCandidates(
+  link: ConnectionLink,
+  sshHosts: readonly SshHostEntry[],
+  savedProfiles: readonly SavedHostProfile[],
+): LinkCandidate[] {
+  const host = normalized(link.host);
+  const port = link.port ?? DEFAULT_PORTS[link.scheme];
+  const candidates: LinkCandidate[] = [];
+  if (link.scheme === 'ssh') {
+    for (const entry of sshHosts) {
+      const identity = entry.aliases.some((alias) => normalized(alias) === host);
+      // An alias keeps working with another user or port, like `ssh -p`.
+      if (
+        identity ||
+        (normalized(entry.resolved.hostname) === host && entry.resolved.port === port)
+      ) {
+        candidates.push({ host: { kind: 'ssh', entry }, identity, user: entry.resolved.user });
+      }
+    }
+  }
+  for (const entry of savedProfiles) {
+    const profile = entry.profile;
+    if (profile.kind !== link.scheme) continue;
+    const address = profile.kind === 'ssh' ? profile.target : profile.kind === 'telnet' ? profile.host : '';
+    const savedPort = profile.kind === 'telnet' ? profile.port : profile.kind === 'ssh' ? (profile.port ?? 22) : 0;
+    const user = profile.kind === 'ssh' ? profile.user : undefined;
+    const identity = normalized(entry.name) === host;
+    if (!identity && !(normalized(address) === host && savedPort === port)) continue;
+    // A saved Muxus host always dials with its own fields, so a link that asks
+    // for another user or port is not that host.
+    if (link.port !== undefined && savedPort !== link.port) continue;
+    if (link.scheme === 'ssh' && link.user !== undefined && user !== link.user) continue;
+    candidates.push({ host: { kind: 'profile', entry }, identity, user });
+  }
+  return candidates;
+}
+
+function linkTitle(link: ConnectionLink): string {
+  if (link.scheme === 'ssh') return connectionLinkTarget(link);
+  const host = link.host.includes(':') ? `[${link.host}]` : link.host;
+  return link.port === undefined || link.port === DEFAULT_PORTS.telnet ? host : `${host}:${link.port}`;
+}
+
+/**
+ * Open a link with a saved host when it names one: by ssh_config alias or
+ * saved-host name first, else by host name and port. Several matches are
+ * narrowed by the link's user; a choice that is still ambiguous, or no match
+ * at all, connects like quick connect instead of guessing.
+ */
+export function resolveConnectionLink(
+  link: ConnectionLink,
+  sshHosts: readonly SshHostEntry[],
+  savedProfiles: readonly SavedHostProfile[],
+): ConnectionLinkLaunch {
+  const candidates = linkCandidates(link, sshHosts, savedProfiles);
+  const identities = candidates.filter((candidate) => candidate.identity);
+  let matches = identities.length > 0 ? identities : candidates;
+  if (matches.length > 1 && link.user !== undefined) {
+    matches = matches.filter((candidate) => candidate.user === link.user);
+  }
+  const pin = link.hostKeyFingerprint ? { hostKeyFingerprint: link.hostKeyFingerprint } : {};
+  const match = matches.length === 1 ? matches[0]!.host : undefined;
+  if (match?.kind === 'profile') {
+    return { kind: 'host', host: match, profile: { ...match.entry.profile, profileId: match.entry.id, ...pin } };
+  }
+  if (match?.kind === 'ssh') {
+    // Dialed like `ssh [user@]alias [-p port]`, so the link's user and port
+    // win; a plain alias keeps the tab recognisable as that host.
+    const { resolved } = match.entry;
+    const alias = match.entry.aliases.find((candidate) => normalized(candidate) === normalized(link.host));
+    const target = connectionLinkTarget({
+      scheme: 'ssh',
+      host: alias ?? match.entry.alias,
+      ...(link.user !== undefined && link.user !== resolved.user ? { user: link.user } : {}),
+      ...(link.port !== undefined && link.port !== resolved.port ? { port: link.port } : {}),
+    });
+    return { kind: 'host', host: match, profile: { kind: 'ssh', target, ...pin } };
+  }
+  if (link.scheme === 'telnet') {
+    return {
+      kind: 'ad-hoc',
+      profile: { kind: 'telnet', host: link.host, port: link.port ?? DEFAULT_PORTS.telnet },
+      title: linkTitle(link),
+    };
+  }
+  return {
+    kind: 'ad-hoc',
+    profile: { kind: 'ssh', target: connectionLinkTarget(link), ...pin },
+    title: linkTitle(link),
+  };
 }

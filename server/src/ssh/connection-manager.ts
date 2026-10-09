@@ -37,7 +37,13 @@ import {
   parseSshKey,
   type OpenSshCertificate,
 } from './certificates.js';
-import { KnownHostsStore, fingerprintSha256, hostKeyType } from './known-hosts.js';
+import {
+  KnownHostsStore,
+  fingerprintLike,
+  fingerprintSha256,
+  hostKeyMatchesFingerprint,
+  hostKeyType,
+} from './known-hosts.js';
 import { listAgentKeys, resolveAgentSocket } from './key-scan.js';
 import {
   DEFAULT_AGENT_OPERATION_TIMEOUT_MS,
@@ -61,7 +67,7 @@ import {
   type ConnectionLeaseOwner,
   type TransportLease,
 } from './connection-leases.js';
-import { connectionAlgorithms } from './algorithms.js';
+import { connectionAlgorithms, hostKeyAlgorithmsPreferring } from './algorithms.js';
 import { JumpHopRegistry, type JumpHop } from './jump-hops.js';
 import {
   openRemoteShell,
@@ -314,6 +320,8 @@ export interface ChainHop {
   hopLabel?: string;
   /** Folder passwords in the vault this hop may fall back to, nearest first. */
   folderPasswords?: readonly FolderPasswordRef[];
+  /** Target only: the host key an ssh:// link pinned, in canonical form. */
+  hostKeyFingerprint?: string;
 }
 
 /**
@@ -595,8 +603,13 @@ export class SshConnectionManager {
     // Connection fields come from the database. The keepalive fallback is an
     // application preference supplied by the current renderer, so the wire
     // value always wins — including its absence (preference set to
-    // configuration-only), which must clear anything a client stored.
-    return { ...saved, keepaliveIntervalSeconds: profile.keepaliveIntervalSeconds };
+    // configuration-only), which must clear anything a client stored. So
+    // does a link's host key fingerprint, which only tightens verification.
+    return {
+      ...saved,
+      keepaliveIntervalSeconds: profile.keepaliveIntervalSeconds,
+      hostKeyFingerprint: profile.hostKeyFingerprint,
+    };
   }
 
   /**
@@ -1154,7 +1167,7 @@ export class SshConnectionManager {
       this.log,
       agentHooks,
     );
-    const { algorithms, notes } = connectionAlgorithms(hop.resolved);
+    const { algorithms, notes } = connectionAlgorithms(pinnedHostKeyPreference(hop));
     for (const note of notes) {
       this.log.debug({ host: hop.resolved.hostname }, note);
       io.status(note);
@@ -1331,6 +1344,22 @@ export class SshConnectionManager {
   ): Promise<boolean> {
     const host = hop.resolved.hostname;
     const port = hop.port;
+    const pinned = hop.hostKeyFingerprint;
+    if (pinned) {
+      // Checked before known_hosts: no stored key or StrictHostKeyChecking
+      // setting may let a key through that the link rules out.
+      if (!hostKeyMatchesFingerprint(key, pinned)) {
+        this.log.warn(
+          { host, port, keyType: hostKeyType(key) },
+          'host key does not match the fingerprint in the link',
+        );
+        io.status(
+          `HOST KEY MISMATCH for ${host}: the link expects ${pinned}, the server offered ${hostKeyType(key)} ${fingerprintLike(key, pinned)} — refusing to connect.`,
+        );
+        return false;
+      }
+      io.status(`The ${hostKeyType(key)} host key of ${host} matches the fingerprint in the link.`);
+    }
     const store = this.knownHostsFor(hop);
     const verdict = store.verify(host, port, key);
     this.log.debug(
@@ -1397,9 +1426,12 @@ export function muxKey(
   disableSftp = false,
   consoleCompatibility = false,
 ): string {
+  // A pinned target never shares a transport whose key it has not checked.
   const hops = chain.map(
     (hop) =>
-      `${hop.user}@${hop.resolved.hostname}:${hop.port};agentForward=${hop.resolved.forwardAgent ? 'yes' : 'no'}`,
+      `${hop.user}@${hop.resolved.hostname}:${hop.port};agentForward=${hop.resolved.forwardAgent ? 'yes' : 'no'}${
+        hop.hostKeyFingerprint ? `;hostKey=${hop.hostKeyFingerprint}` : ''
+      }`,
   );
   const first = chain[0];
   const proxy = first?.resolved.proxyCommand ? expandedProxyCommand(first) : undefined;
@@ -1508,6 +1540,9 @@ export function buildChain(
       port: owner?.port ?? spec.port ?? resolved.port,
       hopLabel: final ? undefined : spec.host,
       folderPasswords: folder?.passwords,
+      ...(final && profile.hostKeyFingerprint
+        ? { hostKeyFingerprint: profile.hostKeyFingerprint }
+        : {}),
     });
   };
 
@@ -1560,6 +1595,18 @@ const EMPTY_CONFIG_DOCUMENT: ConfigDocument = {
   blocks: [],
   sequence: [],
 };
+
+/**
+ * A fingerprint in the draft's `<key type>-<md5>` form names one key type, so
+ * a server holding several host keys is asked for that one first. A
+ * configured HostKeyAlgorithms list is left alone.
+ */
+function pinnedHostKeyPreference(hop: ChainHop): ResolvedTarget {
+  const pinned = hop.hostKeyFingerprint;
+  const space = pinned?.indexOf(' ') ?? -1;
+  if (!pinned || space < 0 || hop.resolved.hostKeyAlgorithms) return hop.resolved;
+  return { ...hop.resolved, hostKeyAlgorithms: hostKeyAlgorithmsPreferring(pinned.slice(0, space)) };
+}
 
 function directSettings(hostname: string): ResolvedTarget {
   return {

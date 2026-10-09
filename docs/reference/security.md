@@ -140,6 +140,10 @@ entries included, applying the same rules as OpenSSH:
 - a changed key produces a warning, and accepting performs the `ssh-keygen -R`-style
   replacement.
 
+A fingerprint in an `ssh://` link is an additional check: a key that does not match it is
+refused whatever `known_hosts` says, and a matching key still goes through `known_hosts`
+and the trust prompt. See [Fingerprints in ssh:// links](../guide/connecting.md#fingerprints-in-ssh-links).
+
 Config edits are atomic and leave a `.muxus.bak` of the previous contents.
 
 ## Session logging
@@ -236,6 +240,10 @@ from OpenSSH's askpass request to the Muxus prompt and are never stored.
 The Electron build embeds the server in-process, uses context isolation with a narrow
 preload bridge, and blocks unexpected navigation. There is no remote content: everything
 the window loads is served from the local server.
+
+Muxus becomes the handler for `ssh://` and `telnet://` links only when asked in Settings.
+A link is parsed into a host, user and port that are validated like `--connect` targets,
+so it cannot add options or reach a shell, and it never carries a password.
 
 ## What Muxus does not do
 
