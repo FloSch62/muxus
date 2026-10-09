@@ -34,6 +34,9 @@ export interface NativeHostDraft {
   terminalBackgroundColor?: string;
   /** Command button group the bar switches to in this host's sessions. */
   commandButtonGroup?: string;
+  /** Paste pacing; unset follows the Terminal settings. */
+  pasteLineDelayMs?: number;
+  pasteCharDelayMs?: number;
   host: string;
   port: string;
   path: string;
@@ -59,6 +62,8 @@ export function blankNativeDraft(prefillTarget = '', group = ''): NativeHostDraf
     terminalFontColor: undefined,
     terminalBackgroundColor: undefined,
     commandButtonGroup: undefined,
+    pasteLineDelayMs: undefined,
+    pasteCharDelayMs: undefined,
     host,
     port: port ?? '23',
     path: '',
@@ -83,6 +88,8 @@ export function nativeDraftFromProfile(saved: SavedHostProfile, duplicate: boole
   draft.terminalFontColor = saved.metadata.terminalFontColor;
   draft.terminalBackgroundColor = saved.metadata.terminalBackgroundColor;
   draft.commandButtonGroup = saved.metadata.commandButtonGroup;
+  draft.pasteLineDelayMs = saved.metadata.pasteLineDelayMs;
+  draft.pasteCharDelayMs = saved.metadata.pasteCharDelayMs;
   draft.keywordHighlights = saved.metadata.keywordHighlights ?? draft.keywordHighlights;
   draft.loginSequence = loginSequenceDraft(saved.metadata.loginSequence);
   if (saved.profile.kind === 'telnet') {
@@ -157,6 +164,8 @@ export function nativeDraftMetadataPatch(draft: NativeHostDraft): OpenSshMetadat
     terminalFontColor: draft.terminalFontColor ?? null,
     terminalBackgroundColor: draft.terminalBackgroundColor ?? null,
     commandButtonGroup: draft.commandButtonGroup ?? null,
+    pasteLineDelayMs: draft.pasteLineDelayMs ?? null,
+    pasteCharDelayMs: draft.pasteCharDelayMs ?? null,
     keywordHighlights:
       highlights.inheritGlobal && !highlights.profileId && highlights.rules.length === 0
         ? null

@@ -1,5 +1,10 @@
 import { z } from 'zod';
 import type { ConfigForward } from './api-types.js';
+import {
+  MAX_PACED_PASTE_LENGTH,
+  MAX_PASTE_CHAR_DELAY_MS,
+  MAX_PASTE_LINE_DELAY_MS,
+} from './paste-pacing.js';
 
 /** Fixed subprotocol selected by the server for terminal sockets. */
 export const TERMINAL_WS_PROTOCOL = 'muxus.terminal.v1';
@@ -302,6 +307,21 @@ export const terminalClientMessageSchema = z.discriminatedUnion('op', [
   /** The tab was renamed; the active history record takes the new title. */
   z.object({ op: z.literal('set-title'), title: z.string().trim().min(1).max(500) }),
   /**
+   * Paste text paced by the backend, whose timers keep running while the
+   * window is hidden. Line breaks go out as CR, the way a terminal pastes;
+   * pastes queue behind one still running.
+   */
+  z.object({
+    op: z.literal('paste'),
+    text: z.string().min(1).max(MAX_PACED_PASTE_LENGTH),
+    /** Enclose the whole paste, not each line, in bracketed-paste markers. */
+    bracketed: z.boolean(),
+    lineDelayMs: z.number().int().min(0).max(MAX_PASTE_LINE_DELAY_MS),
+    charDelayMs: z.number().int().min(0).max(MAX_PASTE_CHAR_DELAY_MS),
+  }),
+  /** Stop the paced paste that is running and drop the queued ones. */
+  z.object({ op: z.literal('paste-cancel') }),
+  /**
    * Send a BREAK to this session only: a held break on a serial line, IAC BRK
    * on Telnet, or an RFC 4335 `break` request on an SSH channel.
    */
@@ -403,6 +423,17 @@ export type TerminalServerMessage =
       message?: string;
       /** Whether the shell ended normally, setup failed, or a live transport was lost. */
       reason: 'completed' | 'failed' | 'disconnected';
+    }
+  /** Paced paste progress over every queued paste, throttled while it runs. */
+  | {
+      op: 'paste-progress';
+      state: 'running' | 'done' | 'cancelled';
+      /** The line being sent, from 1, and the lines of every queued paste. */
+      line: number;
+      lines: number;
+      /** UTF-16 code units sent and queued. */
+      sent: number;
+      total: number;
     }
   /** The host's login sequence started a step, finished, or stopped. */
   | {

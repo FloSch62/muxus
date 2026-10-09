@@ -69,6 +69,12 @@ Platform naming:
     A serial port cannot be shared, so splitting a pane from a serial session always asks
     what to start rather than opening a second reader on the same device.
 
+!!! tip "Pasting a configuration"
+
+    A console without flow control drops input sent faster than it reads. Set a
+    [delay after each line](terminal.md#pasting-into-slow-consoles) under the host's
+    **Terminal appearance**, and Muxus types pastes in a line at a time.
+
 ## Send BREAK
 
 Some consoles act on a BREAK signal rather than on any key: Cisco ROMMON and password

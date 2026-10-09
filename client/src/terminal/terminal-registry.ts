@@ -40,6 +40,10 @@ export interface TerminalHandle {
   paste(text: string): void;
   /** Read and paste the current clipboard, including images in SSH and local terminals. */
   pasteClipboard(): void;
+  /** Paste without a preview, paced by this session's host settings. */
+  sendPaste(text: string): boolean;
+  /** Stop this session's paced paste, if one is running. */
+  cancelPaste(): void;
   /**
    * Start/stop/pause persistence, change input capture, or start/stop the
    * log file (`logFilePath` is appended to; absent uses a generated name).

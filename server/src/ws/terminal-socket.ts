@@ -27,6 +27,7 @@ import {
 } from '../session-logging/session-recorder.js';
 import { resolveLoginSequence, type LoginSequenceHost } from '../login-sequence/resolve.js';
 import { LoginSequenceSession } from '../login-sequence/session.js';
+import { PastePacer } from './paste-pacer.js';
 
 const CONNECT_TIMEOUT_MS = 30_000;
 const KEEPALIVE_MS = 30_000;
@@ -44,6 +45,7 @@ const REPLAYED_CONTROL_OPS = [
   'ready',
   'logging-state',
   'connection-health',
+  'paste-progress',
   'login-sequence',
 ] as const;
 const replayedControlOps = new Set<string>(REPLAYED_CONTROL_OPS);
@@ -514,9 +516,29 @@ async function handleSession(
     );
     return true;
   };
+  // Pasted input the backend paces; each kind of session sets how it is written.
+  let writePastedInput: ((data: Buffer) => Promise<void>) | undefined;
+  const pastePacer = new PastePacer(
+    (data) => {
+      if (!writePastedInput) return;
+      recorder?.input(data);
+      return writePastedInput(data);
+    },
+    (progress) => sendControl(socket, { op: 'paste-progress', ...progress }),
+  );
+  // Closing the tab or losing the connection ends the session and the paste.
+  socket.once('close', () => pastePacer.close());
+  const handlePasteControl = (msg: TerminalClientMessage): boolean => {
+    if (msg.op === 'paste') pastePacer.enqueue(msg);
+    else if (msg.op === 'paste-cancel') pastePacer.cancel();
+    else return false;
+    return true;
+  };
   let loginSequence: LoginSequenceSession | undefined;
   control.intercept = (msg) =>
-    handleLoggingControl(msg) || (loginSequence?.handleControl(msg) ?? false);
+    handleLoggingControl(msg) ||
+    handlePasteControl(msg) ||
+    (loginSequence?.handleControl(msg) ?? false);
   sendLoggingState();
   socket.once('close', () => recorder?.end('disconnected'));
 
@@ -554,6 +576,9 @@ async function handleSession(
     let startupInput = localStartupInput(profile.startupCommand);
     let startupOutput = '';
     writeInput = (data) => pty.write(data.toString('utf8'));
+    writePastedInput = async (data) => {
+      pty.write(data.toString('utf8'));
+    };
     control.onMessage = (msg) => {
       if (handleLoggingControl(msg)) return;
       if (msg.op === 'resize') pty.resize(msg.cols, msg.rows);
@@ -602,6 +627,7 @@ async function handleSession(
       handleLoggingControl,
       prepareLoginSequence(() => (profile.profileId ? { profileId: profile.profileId } : undefined)),
     );
+    writePastedInput = drainedWriter(transport);
     app.log.info(
       { path: profile.path, baudRate: profile.baudRate },
       'serial session established',
@@ -631,6 +657,7 @@ async function handleSession(
       handleLoggingControl,
       prepareLoginSequence(() => (profile.profileId ? { profileId: profile.profileId } : undefined)),
     );
+    writePastedInput = drainedWriter(transport);
     app.log.info({ host: profile.host, port: profile.port }, 'telnet session established');
     if (profile.profileId) ctx.database.recordSavedHostConnection(profile.profileId);
     return;
@@ -701,6 +728,11 @@ async function handleSession(
   }
 
   writeInput = (data) => stream.write(data);
+  // The callback runs once the channel window has taken the data.
+  writePastedInput = (data) =>
+    new Promise((resolve) => {
+      stream.write(data, () => resolve());
+    });
   control.onMessage = (msg) => {
     if (handleLoggingControl(msg)) return;
     if (msg.op === 'resize') stream.setWindow(msg.rows, msg.cols, 0, 0);
@@ -867,6 +899,14 @@ function attachTerminalTransport(
   });
   loginSequence?.start();
   sendControl(socket, { op: 'ready', connId });
+}
+
+/** Write to a byte transport, settling once it has sent the bytes on. */
+function drainedWriter(transport: TerminalTransport): (data: Buffer) => Promise<void> {
+  return (data) => {
+    transport.write(data);
+    return transport.drain();
+  };
 }
 
 /** Send a BREAK and report the outcome; `send` resolves to why it did not go out, if it did not. */

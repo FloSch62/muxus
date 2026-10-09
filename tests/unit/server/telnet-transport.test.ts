@@ -150,6 +150,28 @@ describe('TelnetTransport', () => {
     }
   });
 
+  it('settles a drain once earlier writes have been flushed, and at once when closed', async () => {
+    const server = net.createServer((socket) => socket.resume());
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address() as AddressInfo;
+
+    let transport: TelnetTransport | undefined;
+    try {
+      transport = await TelnetTransport.connect(
+        { kind: 'telnet', host: '127.0.0.1', port: address.port },
+        80,
+        24,
+      );
+      transport.write(Buffer.from('x'.repeat(256 * 1024)));
+      await expect(transport.drain()).resolves.toBeUndefined();
+      transport.close();
+      await expect(transport.drain()).resolves.toBeUndefined();
+    } finally {
+      transport?.close();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   it('sends BREAK as a bare IAC BRK while input keeps its IAC escaping', async () => {
     const fromClient: Buffer[] = [];
     let received: (() => void) | undefined;

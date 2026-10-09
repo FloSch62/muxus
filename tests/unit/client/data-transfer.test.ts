@@ -509,6 +509,21 @@ describe('restoring terminal file link activation preferences', () => {
   });
 });
 
+describe('restoring paste pacing preferences', () => {
+  const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
+
+  it('restores delays in range and drops the rest', () => {
+    expect(
+      sanitizePreferences(prefs({ pasteLineDelayMs: 300, pasteCharDelayMs: 0 })),
+    ).toMatchObject({ pasteLineDelayMs: 300, pasteCharDelayMs: 0 });
+    const restored = sanitizePreferences(
+      prefs({ pasteLineDelayMs: 60_000, pasteCharDelayMs: 'slow' }),
+    );
+    expect(restored.pasteLineDelayMs).toBeUndefined();
+    expect(restored.pasteCharDelayMs).toBeUndefined();
+  });
+});
+
 describe('restoring terminal color scheme preferences', () => {
   const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
 
@@ -810,6 +825,8 @@ describe('backing up host terminal schemes', () => {
           terminalScheme: 'solarized-dark',
           terminalFontColor: '#fdf6e3',
           terminalBackgroundColor: '#002b36',
+          pasteLineDelayMs: 200,
+          pasteCharDelayMs: 0,
           connectCount: 0,
         },
         createdAt: '2026-08-10T00:00:00.000Z',
@@ -822,6 +839,11 @@ describe('backing up host terminal schemes', () => {
     expect(document.data.savedHosts[0]?.metadata.terminalScheme).toBe('solarized-dark');
     expect(document.data.savedHosts[0]?.metadata.terminalFontColor).toBe('#fdf6e3');
     expect(document.data.savedHosts[0]?.metadata.terminalBackgroundColor).toBe('#002b36');
+    // An explicit 0 is an override too: this host is never paced.
+    expect(document.data.savedHosts[0]?.metadata).toMatchObject({
+      pasteLineDelayMs: 200,
+      pasteCharDelayMs: 0,
+    });
   });
 });
 
@@ -1085,6 +1107,8 @@ describe('restoring imported serial hosts', () => {
           terminalBackgroundColor: '#2e3440',
           keywordHighlights: null,
           commandButtonGroup: null,
+          pasteLineDelayMs: null,
+          pasteCharDelayMs: null,
           disableSftp: false,
           consoleCompatibility: false,
           loginSequence: null,

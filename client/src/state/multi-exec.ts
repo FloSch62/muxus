@@ -164,3 +164,21 @@ export function broadcastTerminalInput(
   }
   return delivered;
 }
+
+/**
+ * Paste into every other mirrored terminal. Each one paces the paste by its
+ * own host's settings, in its own backend session, independently of the rest.
+ */
+export function broadcastTerminalPaste(sourceTabId: string, text: string): number {
+  let delivered = 0;
+  for (const tabId of mirroredTabIds(sourceTabId)) {
+    if (tabId !== sourceTabId && terminalHandle(tabId)?.sendPaste(text)) delivered++;
+  }
+  return delivered;
+}
+
+/** The terminals mirroring input with this one, itself included; empty when it mirrors nothing. */
+export function mirroredTabIds(tabId: string): string[] {
+  const { selectedIds } = useMultiExecStore.getState();
+  return selectedIds.length >= 2 && selectedIds.includes(tabId) ? selectedIds : [];
+}

@@ -100,6 +100,28 @@ describe('SSH keepalive preference', () => {
   });
 });
 
+describe('paste pacing preferences', () => {
+  it('sends pastes at once by default', () => {
+    const initial = usePrefsStore.getInitialState();
+    expect(initial.pasteLineDelayMs).toBe(0);
+    expect(initial.pasteCharDelayMs).toBe(0);
+  });
+
+  it('keeps delays in range and drops malformed ones', () => {
+    expect(migratePrefsState({ pasteLineDelayMs: 250, pasteCharDelayMs: 5 }, 17)).toEqual({
+      pasteLineDelayMs: 250,
+      pasteCharDelayMs: 5,
+    });
+    expect(
+      migratePrefsState(
+        { pasteLineDelayMs: 10_001, pasteCharDelayMs: 1.5, monoFontSize: 16 },
+        17,
+      ),
+    ).toEqual({ monoFontSize: 16 });
+    expect(migratePrefsState({ pasteLineDelayMs: '100', pasteCharDelayMs: -1 }, 17)).toEqual({});
+  });
+});
+
 describe('appearance preference', () => {
   it('defaults new installations to the system appearance', () => {
     expect(usePrefsStore.getInitialState().themeMode).toBe('os');

@@ -52,6 +52,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 25, name: 'tunnel-autostart-reconnect' },
       { version: 26, name: 'credential-usernames' },
       { version: 27, name: 'login-sequences' },
+      { version: 28, name: 'host-paste-pacing' },
     ]);
   });
 
@@ -143,8 +144,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 27,
-      name: 'login-sequences',
+      version: 28,
+      name: 'host-paste-pacing',
     });
     expect(database.savedHostProfile(telnet.id)).toMatchObject({
       name: 'Core switch',
@@ -303,8 +304,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 27,
-      name: 'login-sequences',
+      version: 28,
+      name: 'host-paste-pacing',
     });
     expect(database.passwordVaultConfig()).toMatchObject({
       formatVersion: 2,
@@ -639,6 +640,35 @@ describe('hybrid OpenSSH metadata', () => {
     database.updateSavedHostMetadata(serial.id, { commandButtonGroup: null });
     expect(database.openSshMetadata(['core-01']).get('core-01')?.commandButtonGroup).toBeUndefined();
     expect(database.savedHostProfile(serial.id)?.metadata.commandButtonGroup).toBeUndefined();
+  });
+
+  it('stores and clears the paste delays of OpenSSH and saved hosts', () => {
+    database = new MuxusDatabase(':memory:');
+    const telnet = database.saveSavedHostProfile({
+      name: 'Core switch',
+      profile: { kind: 'telnet', host: 'switch.lab', port: 23 },
+    });
+
+    expect(
+      database.updateOpenSshMetadata('core-01', { pasteLineDelayMs: 250, pasteCharDelayMs: 0 }),
+    ).toMatchObject({ pasteLineDelayMs: 250, pasteCharDelayMs: 0 });
+    expect(
+      database.updateSavedHostMetadata(telnet.id, { pasteCharDelayMs: 5 }).metadata,
+    ).toMatchObject({ pasteCharDelayMs: 5 });
+    expect(database.savedHostProfile(telnet.id)?.metadata.pasteLineDelayMs).toBeUndefined();
+
+    // Other metadata edits leave the delays alone; null follows the settings again.
+    database.updateOpenSshMetadata('core-01', { color: '#ef4444' });
+    expect(database.openSshMetadata(['core-01']).get('core-01')).toMatchObject({
+      pasteLineDelayMs: 250,
+      pasteCharDelayMs: 0,
+    });
+    database.updateOpenSshMetadata('core-01', { pasteLineDelayMs: null, pasteCharDelayMs: null });
+    database.updateSavedHostMetadata(telnet.id, { pasteCharDelayMs: null });
+    const cleared = database.openSshMetadata(['core-01']).get('core-01');
+    expect(cleared?.pasteLineDelayMs).toBeUndefined();
+    expect(cleared?.pasteCharDelayMs).toBeUndefined();
+    expect(database.savedHostProfile(telnet.id)?.metadata.pasteCharDelayMs).toBeUndefined();
   });
 
   it('moves hosts between case-insensitive groups and can clear organization', () => {

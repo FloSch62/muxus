@@ -87,6 +87,7 @@ import { useUiStore } from '../state/ui.js';
 import { loadHostEditorDialog } from '../lazy-features.js';
 import { hostKindIcon } from './host-kind-icon.js';
 import { LocalShellIcon } from './LocalShellIcon.js';
+import { TabPasteProgress } from './PasteProgress.js';
 import {
   activeTabTransfer,
   beginTabDrag,
@@ -765,6 +766,7 @@ export function TabStrip({
                 sx={{ fontSize: 13, flexShrink: 0, color: 'text.secondary' }}
               />
             ) : null}
+            <TabPasteProgress tabId={tab.id} />
             {tab.loginSequence ? (
               <Tooltip
                 title={`Login sequence, step ${tab.loginSequence.step} of ${tab.loginSequence.steps}: ${tab.loginSequence.detail}`}

@@ -43,6 +43,7 @@ import { FolderPathField } from './FolderPathField.js';
 import { HostColorPicker } from './HostColorPicker.js';
 import { EditorShell, type EditorSectionDef } from './host-editor/EditorShell.js';
 import { LoggingSection } from './host-editor/LoggingSection.js';
+import { PasteDelayField } from './host-editor/PasteDelayField.js';
 import { LoginSequenceEditor } from './LoginSequenceEditor.js';
 import {
   ColorOverride,
@@ -79,7 +80,14 @@ const SECTIONS: ReadonlyArray<{
     value: 'appearance',
     label: 'Terminal appearance',
     icon: <PaletteOutlinedIcon fontSize="small" />,
-    fields: ['terminalScheme', 'terminalFontColor', 'terminalBackgroundColor', 'commandButtonGroup'],
+    fields: [
+      'terminalScheme',
+      'terminalFontColor',
+      'terminalBackgroundColor',
+      'commandButtonGroup',
+      'pasteLineDelayMs',
+      'pasteCharDelayMs',
+    ],
   },
   {
     value: 'highlighting',
@@ -253,6 +261,8 @@ function BulkEditBody({ hostKeys, onClose }: { hostKeys: readonly string[]; onCl
           fontColor={field('terminalFontColor')}
           backgroundColor={field('terminalBackgroundColor')}
           commandButtonGroup={field('commandButtonGroup')}
+          pasteLineDelayMs={field('pasteLineDelayMs')}
+          pasteCharDelayMs={field('pasteCharDelayMs')}
         />
       )}
       {section === 'highlighting' && (
@@ -456,15 +466,21 @@ function AppearanceSection({
   fontColor,
   backgroundColor,
   commandButtonGroup,
+  pasteLineDelayMs,
+  pasteCharDelayMs,
 }: {
   total: number;
   scheme: BulkFieldState<string | undefined>;
   fontColor: BulkFieldState<string | undefined>;
   backgroundColor: BulkFieldState<string | undefined>;
   commandButtonGroup: BulkFieldState<string | undefined>;
+  pasteLineDelayMs: BulkFieldState<number | undefined>;
+  pasteCharDelayMs: BulkFieldState<number | undefined>;
 }) {
   const customSchemes = useCustomTerminalSchemes();
   const commandGroups = usePrefsStore((state) => state.commandButtonGroups);
+  const defaultLineDelay = usePrefsStore((state) => state.pasteLineDelayMs);
+  const defaultCharDelay = usePrefsStore((state) => state.pasteCharDelayMs);
   // With mixed schemes the color pickers start from the application's own.
   const defaults = useTerminalColorDefaults(scheme.mixed ? undefined : scheme.value);
 
@@ -522,6 +538,28 @@ function AppearanceSection({
         />
         <FieldStatus state={commandButtonGroup} inset />
       </Box>
+      <Stack direction="row" spacing={1.5}>
+        <Box sx={{ flex: 1 }}>
+          <PasteDelayField
+            kind="line"
+            value={pasteLineDelayMs.value}
+            mixed={pasteLineDelayMs.mixed}
+            defaultValue={defaultLineDelay}
+            onChange={pasteLineDelayMs.set}
+          />
+          <FieldStatus state={pasteLineDelayMs} inset />
+        </Box>
+        <Box sx={{ flex: 1 }}>
+          <PasteDelayField
+            kind="char"
+            value={pasteCharDelayMs.value}
+            mixed={pasteCharDelayMs.mixed}
+            defaultValue={defaultCharDelay}
+            onChange={pasteCharDelayMs.set}
+          />
+          <FieldStatus state={pasteCharDelayMs} inset />
+        </Box>
+      </Stack>
     </Stack>
   );
 }

@@ -321,6 +321,8 @@ function SshHostEditorContent({
         terminalFontColor: draft.terminalFontColor ?? null,
         terminalBackgroundColor: draft.terminalBackgroundColor ?? null,
         commandButtonGroup: draft.commandButtonGroup ?? null,
+        pasteLineDelayMs: draft.pasteLineDelayMs ?? null,
+        pasteCharDelayMs: draft.pasteCharDelayMs ?? null,
         disableSftp: draft.disableSftp,
         consoleCompatibility: draft.consoleCompatibility,
         keywordHighlights:
@@ -346,6 +348,8 @@ function SshHostEditorContent({
         terminalFontColor: draft.terminalFontColor ?? null,
         terminalBackgroundColor: draft.terminalBackgroundColor ?? null,
         commandButtonGroup: draft.commandButtonGroup ?? null,
+        pasteLineDelayMs: draft.pasteLineDelayMs ?? null,
+        pasteCharDelayMs: draft.pasteCharDelayMs ?? null,
         disableSftp: draft.disableSftp,
         consoleCompatibility: draft.consoleCompatibility,
         keywordHighlights:
@@ -432,6 +436,7 @@ function SshHostEditorContent({
         draft.terminalFontColor,
         draft.terminalBackgroundColor,
         draft.commandButtonGroup,
+        draft.pasteLineDelayMs !== undefined || draft.pasteCharDelayMs !== undefined,
       ].filter(Boolean).length || undefined,
     },
     { value: 'auth', label: 'Authentication', icon: <KeyOutlinedIcon fontSize="small" /> },
