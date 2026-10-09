@@ -96,6 +96,7 @@ import { useTabsStore, type TabStatus } from '../state/tabs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
 import { useWorkspacesStore } from '../state/workspaces.js';
+import { canSendBreak, supportsBreak } from '../terminal/send-break.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
 import { formatTimestamp } from '../time-format.js';
 import { focusOpenWorkspace, openWorkspace } from '../workspace-persistence.js';
@@ -197,6 +198,11 @@ export function QuickLauncherDialog() {
     activeTab.profile.kind === 'ssh' &&
     !!activeTab.connId &&
     activeTab.sftpAvailable !== false;
+  const activeBreak = supportsBreak(activeTab)
+    ? canSendBreak(activeTab)
+      ? 'ready'
+      : 'waiting'
+    : 'none';
   const liveCount = tabs.filter(
     (tab) =>
       tab.profile &&
@@ -259,9 +265,10 @@ export function QuickLauncherDialog() {
       buildActionResults({
         activeConnected: !!activeConnected,
         activeSsh: !!activeSsh,
+        activeBreak,
         keybindings,
       }),
-    [activeConnected, activeSsh, keybindings],
+    [activeBreak, activeConnected, activeSsh, keybindings],
   );
   const allResults = useMemo(
     () => [...catalogResults, ...queryResults, ...actionResults],
@@ -1035,10 +1042,13 @@ function buildQueryResults({
 function buildActionResults({
   activeConnected,
   activeSsh,
+  activeBreak,
   keybindings,
 }: {
   activeConnected: boolean;
   activeSsh: boolean;
+  /** Send BREAK only exists for serial, Telnet and SSH tabs. */
+  activeBreak: 'none' | 'waiting' | 'ready';
   keybindings: KeybindingOverrides;
 }): LauncherResult[] {
   const results: LauncherResult[] = [];
@@ -1097,6 +1107,8 @@ function buildActionResults({
   // the palette doubles as the discovery path for the keymap.
   for (const command of KEY_COMMANDS) {
     if (command.palette === false) continue;
+    const sendsBreak = command.id === 'terminal.send-break';
+    if (sendsBreak && activeBreak === 'none') continue;
     const chords = chordLabels(command.id, keybindings);
     results.push({
       id: `keymap:${command.id}`,
@@ -1108,6 +1120,8 @@ function buildActionResults({
       keywords: [...(command.keywords ?? []), ...chords, command.category, 'shortcut'],
       priority: 60,
       showWhenEmpty: false,
+      disabledReason:
+        sendsBreak && activeBreak === 'waiting' ? 'Wait for the session to connect first' : undefined,
     });
   }
 

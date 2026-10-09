@@ -1,4 +1,5 @@
 import type { AppWindowLaunch } from '@muxus/shared';
+import { MAX_BREAK_DURATION_MS } from '@muxus/shared/ws-protocol';
 import { authToken } from './api/http.js';
 
 const LAUNCH_FRAGMENT_KEY = 'launch';
@@ -113,7 +114,12 @@ function isSessionProfile(profile: Record<string, unknown>): boolean {
     (profile.parity === undefined ||
       ['none', 'even', 'odd', 'mark', 'space'].includes(profile.parity as string)) &&
     (profile.flowControl === undefined ||
-      ['none', 'hardware', 'software'].includes(profile.flowControl as string))
+      ['none', 'hardware', 'software'].includes(profile.flowControl as string)) &&
+    (profile.breakDurationMs === undefined ||
+      (typeof profile.breakDurationMs === 'number' &&
+        Number.isInteger(profile.breakDurationMs) &&
+        profile.breakDurationMs >= 1 &&
+        profile.breakDurationMs <= MAX_BREAK_DURATION_MS))
   );
 }
 

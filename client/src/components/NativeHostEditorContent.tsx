@@ -16,6 +16,7 @@ import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
 import UsbOutlinedIcon from '@mui/icons-material/UsbOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import type { SavedHostProfile, SerialPortInfo, SerialProfile } from '@muxus/shared';
+import { MAX_BREAK_DURATION_MS } from '@muxus/shared/ws-protocol';
 import { useDeleteHostProfile, useSaveHostProfile, useUpdateHostProfileMetadata } from '../api/profiles.js';
 import { useSaveSessionLoggingPolicy } from '../api/session-history.js';
 import { useSerialPorts, useSessionLoggingPolicy } from '../api/queries.js';
@@ -438,6 +439,18 @@ function LineSettingsSection({
           <MenuItem value="software">Software (XON/XOFF)</MenuItem>
         </TextField>
       </Stack>
+      <TextField
+        label="Break duration"
+        type="number"
+        value={draft.breakDurationMs}
+        onChange={(event) => set({ breakDurationMs: event.target.value })}
+        helperText="How long Send BREAK holds the line."
+        slotProps={{
+          htmlInput: { min: 1, max: MAX_BREAK_DURATION_MS },
+          input: { endAdornment: <Typography color="textSecondary">ms</Typography> },
+        }}
+        sx={{ maxWidth: { sm: 260 } }}
+      />
     </Stack>
   );
 }

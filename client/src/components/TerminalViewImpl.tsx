@@ -825,6 +825,12 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         socket.send(JSON.stringify({ op: 'set-logging', ...patch }));
         return true;
       },
+      sendBreak: () => {
+        const socket = wsRef.current;
+        if (!ready || !socket || socket.readyState !== WebSocket.OPEN) return false;
+        socket.send(JSON.stringify({ op: 'send-break' }));
+        return true;
+      },
     });
 
     const onNativePaste = (event: ClipboardEvent) => {
@@ -1233,6 +1239,12 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
               showToast('success', `Logging to ${ctl.filePath}`);
             }
             announceLogFileRef.current = false;
+            break;
+          case 'break-result':
+            if (!ctl.ok) {
+              const notice = `\x1b[33m[${terminalNotice(ctl.message ?? 'BREAK was not sent')}]\x1b[0m\r\n`;
+              term.write(term.buffer.active.cursorX > 0 ? `\r\n${notice}` : notice);
+            }
             break;
           case 'exit':
             exitMessage = ctl;

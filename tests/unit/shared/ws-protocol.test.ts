@@ -142,6 +142,17 @@ describe('sessionProfileSchema', () => {
     expect(sessionProfileSchema.safeParse({ kind: 'telnet', host: 'x', port: 0 }).success).toBe(false);
   });
 
+  it('keeps a serial break duration within 1 ms and 10 s', () => {
+    expect(
+      sessionProfileSchema.parse({ kind: 'serial', path: 'COM3', breakDurationMs: 500 }),
+    ).toMatchObject({ breakDurationMs: 500 });
+    for (const breakDurationMs of [0, 10_001, 2.5]) {
+      expect(
+        sessionProfileSchema.safeParse({ kind: 'serial', path: 'COM3', breakDurationMs }).success,
+      ).toBe(false);
+    }
+  });
+
   it('rejects invalid serial framing and baud rates', () => {
     expect(
       sessionProfileSchema.safeParse({ kind: 'serial', path: 'COM3', baudRate: 0 }).success,
@@ -194,6 +205,10 @@ describe('terminalClientMessageSchema', () => {
         rows: 40,
       }).success,
     ).toBe(true);
+  });
+
+  it('accepts a BREAK request without parameters', () => {
+    expect(terminalClientMessageSchema.parse({ op: 'send-break' })).toEqual({ op: 'send-break' });
   });
 
   it('accepts preparing and cancelling a live terminal handoff', () => {

@@ -105,6 +105,9 @@ Multi-execution mirrors keystrokes into several live terminals at once.
     This includes any session where a prompt is waiting for confirmation. The control stays
     visibly **Active** while mirroring is on.
 
+[Send BREAK](telnet-serial.md#send-break) is not mirrored. It only reaches the session it
+was sent from.
+
 ### Switching it off and on
 
 ++ctrl+shift+m++ toggles mirroring without opening the control, so a mirrored command can be

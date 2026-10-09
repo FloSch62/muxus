@@ -46,6 +46,7 @@ accepts a typed path when the device is not listed. Line settings are per profil
 | **Stop bits** | 1, 2 |
 | **Parity** | none, even, odd, mark, space |
 | **Flow control** | RTS/CTS, XON/XOFF, or none |
+| **Break duration** | How long [Send BREAK](#send-break) holds the line, 1 … 10 000 ms (default 250) |
 
 Platform naming:
 
@@ -67,6 +68,30 @@ Platform naming:
 
     A serial port cannot be shared, so splitting a pane from a serial session always asks
     what to start rather than opening a second reader on the same device.
+
+## Send BREAK
+
+Some consoles act on a BREAK signal rather than on any key: Cisco ROMMON and password
+recovery, the OpenBoot `ok` prompt on Sun and Oracle machines, magic SysRq on a Linux serial
+console, and console servers that pass BREAK through to the attached port.
+
+**Send BREAK** is in the terminal-actions menu, in the tab's right-click menu, and in the
+[quick launcher](quick-launcher.md). It has no shortcut until one is recorded for it under
+**Terminal → Send BREAK** in the [keyboard sheet](../reference/keyboard-shortcuts.md).
+
+| Session | What is sent |
+| --- | --- |
+| **Serial** | The line is held in the break state for the host's **Break duration**, then released |
+| **Telnet** | `IAC BRK` |
+| **SSH** | An RFC 4335 `break` request of 250 ms, for console servers reached over SSH |
+
+An SSH server that refuses the request, or does not answer it, leaves a short notice in the
+terminal, as does a serial driver that cannot signal a break. OpenSSH accepts the request only
+for sessions with a terminal, so a host set to `RequestTTY no` refuses it.
+
+The action is not offered for local shells or remote desktops, and
+[multi-execution](commands.md#multi-execution) never mirrors it: BREAK goes to the session it
+was sent from.
 
 ## Shared behaviour
 

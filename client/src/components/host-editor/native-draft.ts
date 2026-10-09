@@ -5,6 +5,7 @@ import type {
   SavedHostProfileInput,
   SerialProfile,
 } from '@muxus/shared';
+import { DEFAULT_BREAK_DURATION_MS, MAX_BREAK_DURATION_MS } from '@muxus/shared/ws-protocol';
 import {
   blankHostSessionLoggingDraft,
   type HostSessionLoggingDraft,
@@ -35,6 +36,8 @@ export interface NativeHostDraft {
   stopBits: SerialProfile['stopBits'];
   parity: SerialProfile['parity'];
   flowControl: SerialProfile['flowControl'];
+  /** Milliseconds Send BREAK holds a serial line. */
+  breakDurationMs: string;
   keywordHighlights: HostKeywordHighlightConfig;
   sessionLogging: HostSessionLoggingDraft;
 }
@@ -57,6 +60,7 @@ export function blankNativeDraft(prefillTarget = '', group = ''): NativeHostDraf
     stopBits: 1,
     parity: 'none',
     flowControl: 'none',
+    breakDurationMs: String(DEFAULT_BREAK_DURATION_MS),
     keywordHighlights: { inheritGlobal: true, rules: [] },
     sessionLogging: blankHostSessionLoggingDraft(),
   };
@@ -82,6 +86,7 @@ export function nativeDraftFromProfile(saved: SavedHostProfile, duplicate: boole
     draft.stopBits = saved.profile.stopBits;
     draft.parity = saved.profile.parity;
     draft.flowControl = saved.profile.flowControl;
+    draft.breakDurationMs = String(saved.profile.breakDurationMs ?? DEFAULT_BREAK_DURATION_MS);
   } else {
     throw new Error('saved host is not a Telnet or serial profile');
   }
@@ -98,6 +103,10 @@ export function nativeDraftProblem(draft: NativeHostDraft, kind: 'telnet' | 'ser
     if (!draft.path.trim()) return 'Choose or enter a serial port.';
     const baud = Number(draft.baudRate);
     if (!Number.isInteger(baud) || baud < 1 || baud > 12_000_000) return 'Baud rate must be between 1 and 12000000.';
+    const breakDuration = Number(draft.breakDurationMs);
+    if (!Number.isInteger(breakDuration) || breakDuration < 1 || breakDuration > MAX_BREAK_DURATION_MS) {
+      return `Break duration must be between 1 and ${MAX_BREAK_DURATION_MS} ms.`;
+    }
   }
   return keywordHighlightRulesProblem(draft.keywordHighlights.rules);
 }
@@ -121,6 +130,7 @@ export function nativeDraftToInput(
             stopBits: draft.stopBits,
             parity: draft.parity,
             flowControl: draft.flowControl,
+            breakDurationMs: Number(draft.breakDurationMs),
           },
   };
 }

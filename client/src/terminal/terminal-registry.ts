@@ -51,6 +51,8 @@ export interface TerminalHandle {
     logToFile?: boolean;
     logFilePath?: string;
   }): boolean;
+  /** Send BREAK to this session alone; false while it is not attached. */
+  sendBreak(): boolean;
 }
 
 const handles = new Map<string, TerminalHandle>();
