@@ -25,6 +25,20 @@ function off(reason: string): string {
   return `${RED}✘${RESET}  ${MUTED}(${reason})${RESET}`;
 }
 
+/** The login methods, naming the key's signature algorithm when it is known. */
+function authentication(summary: SshSessionSummary): string {
+  const algorithm = summary.authKeyAlgorithm;
+  return summary.authMethods
+    .map((method) => {
+      const label = AUTH_METHOD_LABELS[method] ?? method;
+      if (!algorithm || (method !== 'agent' && method !== 'publickey')) return label;
+      // FIDO2 keys (sk-ssh-ed25519@openssh.com, sk-ecdsa-…) are hardware keys.
+      const kind = algorithm.startsWith('sk-') ? label.replace('public key', 'security key') : label;
+      return `${kind}  ${MUTED}(${algorithm})${RESET}`;
+    })
+    .join(' + ');
+}
+
 function hostPort(host: string, port: number): string {
   if (port === 22) return host;
   return host.includes(':') ? `[${host}]:${port}` : `${host}:${port}`;
@@ -63,12 +77,7 @@ function forwards(list: readonly ConfigForward[]): string {
 export function formatSshSessionSummary(summary: SshSessionSummary): string {
   const rows: Array<[label: string, value: string]> = [['Route', route(summary)]];
   if (summary.serverSoftware) rows.push(['Server', summary.serverSoftware]);
-  if (summary.authMethods.length) {
-    rows.push([
-      'Authentication',
-      summary.authMethods.map((method) => AUTH_METHOD_LABELS[method] ?? method).join(' + '),
-    ]);
-  }
+  if (summary.authMethods.length) rows.push(['Authentication', authentication(summary)]);
   if (summary.cipher) {
     rows.push([
       'Encryption',

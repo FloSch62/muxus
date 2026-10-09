@@ -15,8 +15,10 @@ import { MuxusDatabase } from '../../../server/src/persistence/database.js';
 import {
   InvalidMasterPasswordError,
   InvalidMasterPasswordFormatError,
+  InvalidVaultSecretError,
   PasswordVault,
   VaultAutomaticAccessError,
+  VaultSecretNameTakenError,
   VaultUnlockRequiredError,
   sshPasswordAccount,
 } from '../../../server/src/security/password-vault.js';
@@ -502,6 +504,91 @@ describe('password vault', () => {
       locked: true,
       credentialCount: 0,
     });
+  });
+
+  it('keeps named secrets apart from login passwords, behind the master password', async () => {
+    const store = await setup();
+    await store.create(MASTER, 'never');
+    await store.rememberSshPassword(account(), 'alice@router.example:22', REMOTE_PASSWORD);
+
+    await expect(
+      store.createSecret({ name: 'Core enable', value: 'enable-secret' }, 'incorrect-pass'),
+    ).rejects.toThrow(InvalidMasterPasswordError);
+    const enable = await store.createSecret(
+      { name: '  Core enable ', value: 'enable-secret' },
+      MASTER,
+    );
+    const sudo = await store.createSecret(
+      { name: 'Lab sudo', username: ' admin ', value: 'sudo-secret' },
+      MASTER,
+    );
+    expect(enable).toMatchObject({ name: 'Core enable' });
+    expect(enable).not.toHaveProperty('username');
+    expect(sudo).toMatchObject({ name: 'Lab sudo', username: 'admin' });
+    expect(store.status()).toMatchObject({
+      credentialCount: 1,
+      credentials: [{ label: 'alice@router.example:22' }],
+      secrets: [{ name: 'Core enable' }, { name: 'Lab sudo', username: 'admin' }],
+    });
+    expect(JSON.stringify(store.status())).not.toContain('enable-secret');
+
+    // Using one follows the prompt policy; with "never" it needs no master password.
+    await expect(store.secretValue(enable.id)).resolves.toBe('enable-secret');
+    await expect(store.secretValue('no-such-secret')).resolves.toBeUndefined();
+    await expect(store.revealCredential(sudo.id, MASTER)).resolves.toBe('sudo-secret');
+
+    await expect(
+      store.createSecret({ name: 'core ENABLE', value: 'other' }, MASTER),
+    ).rejects.toThrow(VaultSecretNameTakenError);
+    await expect(
+      store.createSecret({ name: '   ', value: 'other' }, MASTER),
+    ).rejects.toThrow(InvalidVaultSecretError);
+    await expect(
+      store.createSecret({ name: 'Empty', value: '' }, MASTER),
+    ).rejects.toThrow(InvalidVaultSecretError);
+
+    // Renaming keeps the value; a new value replaces it. Both take the master password.
+    await expect(
+      store.updateSecret(enable.id, { name: 'Edge enable' }, 'incorrect-pass'),
+    ).rejects.toThrow(InvalidMasterPasswordError);
+    await store.updateSecret(enable.id, { name: 'Edge enable', username: 'ops' }, MASTER);
+    await expect(store.secretValue(enable.id)).resolves.toBe('enable-secret');
+    await store.updateSecret(enable.id, { name: 'Edge enable', value: 'rotated' }, MASTER);
+    await expect(store.secretValue(enable.id)).resolves.toBe('rotated');
+    expect(store.secrets().find((secret) => secret.id === enable.id)).toMatchObject({
+      name: 'Edge enable',
+    });
+    await expect(
+      store.updateSecret(enable.id, { name: 'lab sudo' }, MASTER),
+    ).rejects.toThrow(VaultSecretNameTakenError);
+    // A saved SSH password is not a named secret.
+    const [credential] = store.status().credentials;
+    expect(store.hasSecret(credential!.id)).toBe(false);
+    await expect(store.secretValue(credential!.id)).resolves.toBeUndefined();
+
+    expect(store.deleteCredential(enable.id)).toBe(true);
+    expect(store.hasSecret(enable.id)).toBe(false);
+    expect(store.status().secrets.map((secret) => secret.name)).toEqual(['Lab sudo']);
+  });
+
+  it('asks for the master password to use a secret under the stricter policies', async () => {
+    const store = await setup();
+    await store.create(MASTER, 'credential');
+    const secret = await store.createSecret({ name: 'Enable', value: 'enable-secret' }, MASTER);
+
+    await expect(store.secretValue(secret.id)).rejects.toThrow(VaultUnlockRequiredError);
+    await expect(store.secretValue(secret.id, 'incorrect-pass')).rejects.toThrow(
+      InvalidMasterPasswordError,
+    );
+    await expect(store.secretValue(secret.id, MASTER)).resolves.toBe('enable-secret');
+    expect(store.status().locked).toBe(true);
+
+    await store.changeUnlockPolicy(MASTER, 'startup');
+    store.lock();
+    await expect(store.secretValue(secret.id)).rejects.toThrow(VaultUnlockRequiredError);
+    await expect(store.secretValue(secret.id, MASTER)).resolves.toBe('enable-secret');
+    // The startup policy keeps the vault unlocked once the master password was given.
+    await expect(store.secretValue(secret.id)).resolves.toBe('enable-secret');
   });
 
   it('accepts eight-character master passwords and rejects seven', async () => {

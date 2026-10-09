@@ -1,3 +1,99 @@
+diff --git a/lib/agent.js b/lib/agent.js
+index bb495d1b191433c1be51929bb551bba1a8b03c1f..5788285d2f5ef5205eb0093d0e1d0a92e2b5df93 100644
+--- a/lib/agent.js
++++ b/lib/agent.js
+@@ -6,7 +6,7 @@ const { resolve } = require('path');
+ const { readFile } = require('fs');
+ const { execFile, spawn } = require('child_process');
+ 
+-const { isParsedKey, parseKey } = require('./protocol/keyParser.js');
++const { isParsedKey, isSkKeyType, parseKey } = require('./protocol/keyParser.js');
+ 
+ const {
+   makeBufferParser,
+@@ -655,13 +655,19 @@ const AgentProtocol = (() => {
+               // TODO: verify signature type based on key and options used
+               // during initial sign request
+               binaryParser.init(signature, 0);
+-              binaryParser.readString(true);
++              const sigFormat = binaryParser.readString(true);
++              const sigBlob = signature;
+               signature = binaryParser.readString();
+               binaryParser.clear();
+ 
+               if (signature === undefined)
+                 return cb(new Error('Malformed OpenSSH signature format'));
+ 
++              // Security key signatures carry flags and a counter after the
++              // signature itself (PROTOCOL.u2f), so they are passed on whole.
++              if (isSkKeyType(sigFormat))
++                signature = sigBlob;
++
+               req.cb(null, signature);
+               break;
+             }
+diff --git a/lib/protocol/Protocol.js b/lib/protocol/Protocol.js
+index 7302488102161b5b627f6f089d502caa6df0f356..795dc20dd463ee1671939c35a0c7796ecc9cce33 100644
+--- a/lib/protocol/Protocol.js
++++ b/lib/protocol/Protocol.js
+@@ -57,6 +57,7 @@ const {
+   onKEXPayload,
+ } = require('./kex.js');
+ const {
++  isSkKeyType,
+   parseKey,
+ } = require('./keyParser.js');
+ const MESSAGE_HANDLERS = require('./handlers.js');
+@@ -697,15 +698,22 @@ class Protocol {
+     }
+ 
+     cbSign(packet, (signature) => {
+-      signature = convertSignature(signature, keyType);
+-      if (signature === false)
+-        throw new Error('Error while converting handshake signature');
++      // A security key signer (an agent) returns the complete signature blob,
++      // which includes flags and a counter after the signature (PROTOCOL.u2f).
++      const sigBlob = (isSkKeyType(keyType) ? signature : undefined);
++      if (sigBlob === undefined) {
++        signature = convertSignature(signature, keyType);
++        if (signature === false)
++          throw new Error('Error while converting handshake signature');
++      }
+ 
+       const sigLen = signature.length;
++      const sigBlobLen =
++        (sigBlob === undefined ? 4 + algoLen + 4 + sigLen : sigBlob.length);
+       p = this._packetRW.write.allocStart;
+       packet = this._packetRW.write.alloc(
+         1 + 4 + userLen + 4 + 14 + 4 + 9 + 1 + 4 + algoLen + 4 + pubKeyLen + 4
+-          + 4 + algoLen + 4 + sigLen
++          + sigBlobLen
+       );
+ 
+       // TODO: simply copy from original "packet" to new `packet` to avoid
+@@ -729,13 +737,17 @@ class Protocol {
+       writeUInt32BE(packet, pubKeyLen, p += algoLen);
+       packet.set(pubKey, p += 4);
+ 
+-      writeUInt32BE(packet, 4 + algoLen + 4 + sigLen, p += pubKeyLen);
++      writeUInt32BE(packet, sigBlobLen, p += pubKeyLen);
+ 
+-      writeUInt32BE(packet, algoLen, p += 4);
+-      packet.utf8Write(keyAlgo, p += 4, algoLen);
++      if (sigBlob === undefined) {
++        writeUInt32BE(packet, algoLen, p += 4);
++        packet.utf8Write(keyAlgo, p += 4, algoLen);
+ 
+-      writeUInt32BE(packet, sigLen, p += algoLen);
+-      packet.set(signature, p += 4);
++        writeUInt32BE(packet, sigLen, p += algoLen);
++        packet.set(signature, p += 4);
++      } else {
++        packet.set(sigBlob, p += 4);
++      }
+ 
+       // Servers shouldn't send packet type 60 in response to signed publickey
+       // attempts, but if they do, interpret as type 60.
 diff --git a/lib/protocol/kex.js b/lib/protocol/kex.js
 index 811e631b8ab78d32776e540919d25aae56d628f7..0c2a1184342d67a539761ef06963def4a56b3e90 100644
 --- a/lib/protocol/kex.js
@@ -31,3 +127,94 @@ index 811e631b8ab78d32776e540919d25aae56d628f7..0c2a1184342d67a539761ef06963def4
          this._public = this._dh.generateKeys();
        }
      }
+diff --git a/lib/protocol/keyParser.js b/lib/protocol/keyParser.js
+index a276c1aed3dca46469b0c566ad12f989c65e92e5..a7e866b4637b461a4884862e69c9c96a41e00ddf 100644
+--- a/lib/protocol/keyParser.js
++++ b/lib/protocol/keyParser.js
+@@ -1192,10 +1192,18 @@ OpenSSH_Public.prototype = BaseKey;
+     regexp = /^(((?:ssh-(?:rsa|dss|ed25519))|ecdsa-sha2-nistp(?:256|384|521))(?:-cert-v0[01]@openssh.com)?) ([A-Z0-9a-z/+=]+)(?:$|\s+([\S].*)?)$/;
+   else
+     regexp = /^(((?:ssh-(?:rsa|dss))|ecdsa-sha2-nistp(?:256|384|521))(?:-cert-v0[01]@openssh.com)?) ([A-Z0-9a-z/+=]+)(?:$|\s+([\S].*)?)$/;
++  const skRegexp = /^((?:sk-ssh-ed25519|sk-ecdsa-sha2-nistp256)(?:-cert-v01)?@openssh\.com) ([A-Z0-9a-z/+=]+)(?:$|\s+([\S].*)?)$/;
+   OpenSSH_Public.parse = (str) => {
+     const m = regexp.exec(str);
+-    if (m === null)
+-      return null;
++    if (m === null) {
++      const sk = skRegexp.exec(str);
++      if (sk === null)
++        return null;
++      const data = Buffer.from(sk[2], 'base64');
++      if (readString(data, 0, true) !== sk[1])
++        return new Error('Malformed OpenSSH public key');
++      return parseDER(data, sk[1], (sk[3] || ''), sk[1]);
++    }
+     // m[1] = full type
+     // m[2] = base type
+     // m[3] = base64-encoded public key
+@@ -1309,7 +1317,57 @@ RFC4716_Public.prototype = BaseKey;
+ }
+ 
+ 
++// FIDO security keys (OpenSSH PROTOCOL.u2f) and their certificates. The
++// private half never leaves the authenticator, so these only exist as public
++// keys, e.g. identities listed by an agent that also does the signing. The
++// SSH blob is kept whole: it carries the application string (and for a
++// certificate, the certificate itself).
++const RE_SK_KEY_TYPE =
++  /^(sk-ssh-ed25519|sk-ecdsa-sha2-nistp256)(-cert-v01)?@openssh\.com$/;
++
++function parseSkDER(data, fullType, comment) {
++  const m = RE_SK_KEY_TYPE.exec(fullType);
++  const start = (data._pos || 0);
++  data._pos = start;
++  if (m[2] && !skipFields(data, 1)) // Skip certificate nonce
++    return new Error('Malformed OpenSSH public key');
++
++  let pubPEM;
++  let algo;
++  if (m[1] === 'sk-ssh-ed25519') {
++    const edpub = readString(data, data._pos);
++    if (edpub === undefined || edpub.length !== 32)
++      return new Error('Malformed OpenSSH public key');
++    pubPEM = genOpenSSLEdPub(edpub);
++    algo = null;
++  } else {
++    const curve = readString(data, data._pos, true);
++    const ecpub = (curve === 'nistp256' ? readString(data, data._pos) : undefined);
++    if (ecpub === undefined)
++      return new Error('Malformed OpenSSH public key');
++    pubPEM = genOpenSSLECDSAPub('1.2.840.10045.3.1.7', ecpub);
++    algo = 'sha256';
++  }
++  if (readString(data, data._pos, true) === undefined) // Application
++    return new Error('Malformed OpenSSH public key');
++
++  const end = (m[2] ? data.length : data._pos);
++  const typeLen = Buffer.byteLength(fullType);
++  const pubSSH = Buffer.allocUnsafe(4 + typeLen + (end - start));
++  writeUInt32BE(pubSSH, typeLen, 0);
++  pubSSH.utf8Write(fullType, 4, typeLen);
++  pubSSH.set(bufferSlice(data, start, end), 4 + typeLen);
++
++  return new OpenSSH_Public(fullType, comment, pubPEM, pubSSH, algo);
++}
++
++function isSkKeyType(type) {
++  return RE_SK_KEY_TYPE.test(type);
++}
++
+ function parseDER(data, baseType, comment, fullType) {
++  if (isSkKeyType(fullType))
++    return parseSkDER(data, fullType, comment);
+   if (!isSupportedKeyType(baseType))
+     return new Error(`Unsupported OpenSSH public key type: ${baseType}`);
+ 
+@@ -1478,6 +1536,7 @@ function parseKey(data, passphrase) {
+ 
+ module.exports = {
+   isParsedKey,
++  isSkKeyType,
+   isSupportedKeyType,
+   parseDERKey: (data, type) => parseDER(data, type, '', type),
+   parseKey,

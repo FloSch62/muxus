@@ -85,6 +85,7 @@ describe('secondary window launch payloads', () => {
         stopBits: 1,
         parity: 'none',
         flowControl: 'hardware',
+        breakDurationMs: 500,
       },
       title: 'COM3',
     };
@@ -127,6 +128,13 @@ describe('secondary window launch payloads', () => {
           host: 'router.local',
           port: 23,
         },
+      }),
+    ).toBe(false);
+    expect(
+      isAppWindowLaunch({
+        kind: 'session',
+        title: 'Invalid break duration',
+        profile: { kind: 'serial', path: 'COM3', breakDurationMs: 0 },
       }),
     ).toBe(false);
     expect(isAppWindowLaunch({ kind: 'sftp', connId: '', title: 'Empty connection' })).toBe(false);

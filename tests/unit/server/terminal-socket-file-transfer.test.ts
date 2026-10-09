@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TERMINAL_SESSION_CLOSE_REASON } from '@muxus/shared/ws-protocol';
+import { TerminalInputs } from '../../../server/src/ws/terminal-inputs.js';
 import { registerTerminalSocket } from '../../../server/src/ws/terminal-socket.js';
 import { SessionRecorder } from '../../../server/src/session-logging/session-recorder.js';
 import { StagedFiles } from '../../../server/src/file-transfer/staged-files.js';
@@ -63,6 +64,7 @@ async function sshTerminal() {
       sessionLoggingPolicy: () => ({ enabled: false, logToFile: false, captureInput: true }),
     },
     transferFiles: new StagedFiles(),
+    terminalInputs: new TerminalInputs(),
   };
   registerTerminalSocket(app as never, ctx as never);
   const socket = new TestSocket();

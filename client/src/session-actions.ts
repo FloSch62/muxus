@@ -151,6 +151,16 @@ export function connectHost(host: SshHostEntry, replaceTabId?: string): string {
   return id;
 }
 
+/** Open a tab for a profile built elsewhere, such as from an ssh:// or telnet:// link. */
+export function openSessionProfile(profile: SessionProfile, title: string, color?: string): string {
+  const id = launchOnce(`profile:${JSON.stringify(profile)}`, () => {
+    const replacedId = replaceActiveEmpty(profile, title);
+    return replacedId ?? useTabsStore.getState().open(profile, title);
+  });
+  if (color) useTabsStore.getState().update(id, { color });
+  return id;
+}
+
 /** Connect any sidebar host, regardless of which source it comes from. */
 export function connectManagedHost(host: ManagedHost, replaceTabId?: string): string {
   return host.kind === 'ssh'

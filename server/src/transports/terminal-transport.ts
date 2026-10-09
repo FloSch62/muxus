@@ -10,7 +10,11 @@ export interface TerminalTransport {
   drained(): Promise<void> | undefined;
   /** Make the line 8-bit clean for a file transfer; resolves to the undo. */
   binaryTransfer?(): Promise<() => void>;
+  /** Settle once everything written so far has left for the remote end. */
+  drain(): Promise<void>;
   resize(cols: number, rows: number): void;
+  /** Signal BREAK: a held break condition on a serial line, IAC BRK on Telnet. */
+  sendBreak(): Promise<void>;
   pause(): void;
   resume(): void;
   close(): void;

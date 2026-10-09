@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SavedHostProfile } from '@muxus/shared';
+import type { SavedHostProfile, SerialProfile } from '@muxus/shared';
 import {
   blankNativeDraft,
   nativeDraftFromProfile,
@@ -21,6 +21,7 @@ const serialHost: SavedHostProfile = {
     stopBits: 2,
     parity: 'even',
     flowControl: 'hardware',
+    breakDurationMs: 600,
   },
   metadata: {
     profileId: 'serial-console',
@@ -29,6 +30,7 @@ const serialHost: SavedHostProfile = {
     terminalFontColor: '#ebdbb2',
     terminalBackgroundColor: '#282828',
     commandButtonGroup: 'command-group-console',
+    pasteLineDelayMs: 300,
     keywordHighlights: {
       inheritGlobal: false,
       profileId: 'nokia-sros',
@@ -54,6 +56,7 @@ describe('blankNativeDraft', () => {
     expect(draft.port).toBe('23');
     expect(draft.baudRate).toBe('115200');
     expect(draft.dataBits).toBe(8);
+    expect(draft.breakDurationMs).toBe('250');
     expect(draft.keywordHighlights).toEqual({ inheritGlobal: true, rules: [] });
   });
 
@@ -90,6 +93,7 @@ describe('nativeDraftFromProfile', () => {
       stopBits: 2,
       parity: 'even',
       flowControl: 'hardware',
+      breakDurationMs: '600',
     });
     expect(draft.keywordHighlights).toMatchObject({
       profileId: 'nokia-sros',
@@ -99,6 +103,11 @@ describe('nativeDraftFromProfile', () => {
 
   it('renames duplicates', () => {
     expect(nativeDraftFromProfile(serialHost, true).name).toBe('Rack console copy');
+  });
+
+  it('gives serial hosts saved before break durations the 250 ms default', () => {
+    const { breakDurationMs: _saved, ...profile } = serialHost.profile as SerialProfile;
+    expect(nativeDraftFromProfile({ ...serialHost, profile }, false).breakDurationMs).toBe('250');
   });
 });
 
@@ -114,6 +123,21 @@ describe('nativeDraftProblem', () => {
     expect(nativeDraftProblem(draft, 'telnet')).toMatch(/Port/);
     // The empty serial path never blocks saving a telnet host.
     expect(nativeDraftProblem({ ...draft, port: '23' }, 'serial')).toMatch(/serial port/);
+  });
+
+  it('bounds the serial break duration', () => {
+    const draft = { ...blankNativeDraft(), name: 'Console', path: '/dev/ttyUSB0' };
+    expect(nativeDraftProblem(draft, 'serial')).toBeNull();
+    for (const value of ['0', '10001', '2.5', '']) {
+      expect(nativeDraftProblem({ ...draft, breakDurationMs: value }, 'serial')).toMatch(
+        /Break duration/,
+      );
+    }
+    expect(nativeDraftProblem({ ...draft, breakDurationMs: '10000' }, 'serial')).toBeNull();
+    // Telnet hosts have no break duration to get wrong.
+    expect(
+      nativeDraftProblem({ ...draft, host: 'router', breakDurationMs: '0' }, 'telnet'),
+    ).toBeNull();
   });
 
   it('rejects empty keywords and invalid regex highlighting rules', () => {
@@ -152,6 +176,21 @@ describe('nativeDraftToInput', () => {
       profile: { kind: 'telnet', host: 'router.example.test', port: 2323 },
     });
   });
+
+  it('saves the serial line settings with the break duration', () => {
+    const draft = nativeDraftFromProfile(serialHost, false);
+    draft.breakDurationMs = '1000';
+    expect(nativeDraftToInput(draft, 'serial', 'serial-console').profile).toEqual({
+      kind: 'serial',
+      path: '/dev/ttyUSB0',
+      baudRate: 9_600,
+      dataBits: 7,
+      stopBits: 2,
+      parity: 'even',
+      flowControl: 'hardware',
+      breakDurationMs: 1000,
+    });
+  });
 });
 
 describe('nativeDraftMetadataPatch', () => {
@@ -163,7 +202,10 @@ describe('nativeDraftMetadataPatch', () => {
       terminalFontColor: null,
       terminalBackgroundColor: null,
       commandButtonGroup: null,
+      pasteLineDelayMs: null,
+      pasteCharDelayMs: null,
       keywordHighlights: null,
+      loginSequence: null,
     });
     const draft = nativeDraftFromProfile(serialHost, false);
     expect(nativeDraftMetadataPatch(draft)).toEqual({
@@ -173,8 +215,50 @@ describe('nativeDraftMetadataPatch', () => {
       terminalFontColor: '#ebdbb2',
       terminalBackgroundColor: '#282828',
       commandButtonGroup: 'command-group-console',
+      pasteLineDelayMs: 300,
+      pasteCharDelayMs: null,
       keywordHighlights: serialHost.metadata.keywordHighlights,
+      loginSequence: null,
     });
+  });
+
+  it('round-trips the login sequence: inherited, none or the own steps of the host', () => {
+    const steps = [
+      { id: 's1', kind: 'send' as const, text: '', enter: true },
+      { id: 's2', kind: 'wait' as const, pattern: 'login:', timeoutSeconds: 20 },
+      { id: 's3', kind: 'secret' as const, secretId: 'vault-1', enter: true },
+    ];
+    const own = nativeDraftFromProfile(
+      { ...serialHost, metadata: { ...serialHost.metadata, loginSequence: { steps } } },
+      false,
+    );
+    expect(own.loginSequence).toEqual({ mode: 'custom', steps });
+    expect(nativeDraftMetadataPatch(own).loginSequence).toEqual({ steps });
+
+    const none = nativeDraftFromProfile(
+      { ...serialHost, metadata: { ...serialHost.metadata, loginSequence: { steps: [] } } },
+      false,
+    );
+    expect(none.loginSequence.mode).toBe('none');
+    expect(nativeDraftMetadataPatch(none).loginSequence).toEqual({ steps: [] });
+    // Steps hidden behind another mode are kept for switching back, but not saved.
+    expect(nativeDraftMetadataPatch({ ...own, loginSequence: { mode: 'inherit', steps } }).loginSequence).toBeNull();
+  });
+
+  it('blocks saving an unfinished login step', () => {
+    const draft = {
+      ...blankNativeDraft(),
+      name: 'Router',
+      host: 'router.example.test',
+      loginSequence: {
+        mode: 'custom' as const,
+        steps: [{ id: 'w', kind: 'wait' as const, pattern: '[', regex: true, timeoutSeconds: 10 }],
+      },
+    };
+    expect(nativeDraftProblem(draft, 'telnet')).toMatch(/^Login sequence step 1: .*Invalid regular expression/);
+    expect(
+      nativeDraftProblem({ ...draft, loginSequence: { mode: 'custom', steps: [] } }, 'telnet'),
+    ).toBe('Add a login step, or choose no login sequence.');
   });
 
   it('carries the row color chosen in the editor', () => {

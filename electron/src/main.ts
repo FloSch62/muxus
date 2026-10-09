@@ -30,6 +30,8 @@ import type {
   AppWindowLaunch,
   CommandLineLaunch,
   DesktopUpdateState,
+  LinkHandlerRegistration,
+  LinkHandlerState,
   LocalOpenApplication,
   LocalOpenResult,
   LocalCopyChange,
@@ -40,6 +42,7 @@ import type {
 } from '@muxus/shared';
 import {
   canHandleCommandLineLaunch,
+  linkLaunch,
   parseCommandLineLaunch,
   parseCommandLineLaunchData,
 } from './command-line.js';
@@ -65,6 +68,7 @@ import {
   startDetached,
   type LocalCopy,
 } from './local-open.js';
+import { LinuxLinkHandlers, SystemLinkHandlers, withoutAppImagePaths } from './link-handlers.js';
 import { importLoginShellEnvironment } from './login-shell-environment.js';
 import { initMainLog, installCrashCapture, mainLog, mainLogPath } from './main-log.js';
 import { readLocalMobaXtermSessions } from './mobaxterm.js';
@@ -115,6 +119,7 @@ const CLIPBOARD_IMAGE_MAX_BYTES = 18 * 1024 * 1024;
 const CLIPBOARD_IMAGE_MAX_PIXELS = 32 * 1024 * 1024;
 
 let primaryWindow: BrowserWindow | undefined;
+let lastFocusedWindow: BrowserWindow | undefined;
 let appUrl: string | undefined;
 const managedWindows = new Set<BrowserWindow>();
 const windowLaunches = new Map<number, AppWindowLaunch>();
@@ -372,6 +377,9 @@ function createWindow(
   if (launch) windowLaunches.set(webContentsId, launch);
   if (commandLineLaunch) commandLineLaunches.set(webContentsId, commandLineLaunch);
   if (isPrimary) primaryWindow = win;
+  win.on('focus', () => {
+    lastFocusedWindow = win;
+  });
   if (state.maximized && isPrimary) win.maximize();
   // The menu stays installed so its accelerators (zoom, reload, devtools,
   // fullscreen) keep working, but the bar itself is macOS-only chrome.
@@ -385,6 +393,7 @@ function createWindow(
     commandLineLaunches.delete(webContentsId);
     activeWorkspaceByWebContents.delete(webContentsId);
     if (primaryWindow === win) primaryWindow = undefined;
+    if (lastFocusedWindow === win) lastFocusedWindow = undefined;
   });
   // A dead renderer looks like "the app won't start" — leave its exit trace.
   win.webContents.on('render-process-gone', (_event, details) => {
@@ -765,6 +774,66 @@ ipcMain.handle(
       properties: ['createDirectory'],
     });
     return result.canceled ? undefined : result.filePath;
+  },
+);
+
+let linkHandlers: LinuxLinkHandlers | SystemLinkHandlers | null | undefined;
+
+function systemLinkHandlers(): LinuxLinkHandlers | SystemLinkHandlers | null {
+  if (linkHandlers !== undefined) return linkHandlers;
+  const development = isDevelopment
+    ? { executable: process.execPath, appPath: app.getAppPath() }
+    : undefined;
+  if (isLinux) {
+    // An AppImage runs from a temporary mount; the file itself is what to start.
+    const appImage = process.env.APPIMAGE;
+    linkHandlers = new LinuxLinkHandlers({
+      env: withoutAppImagePaths(launchEnvironment(process.env)),
+      home: app.getPath('home'),
+      command: appImage
+        ? [appImage]
+        : development
+          ? [
+              development.executable,
+              development.appPath,
+              ...(app.commandLine.hasSwitch('no-sandbox') ? ['--no-sandbox'] : []),
+            ]
+          : [process.execPath],
+      installed: app.isPackaged && !appImage,
+      aliasDirectory: app.getPath('userData'),
+    });
+  } else if (isMac || process.platform === 'win32') {
+    linkHandlers = new SystemLinkHandlers({
+      platform: isMac ? 'darwin' : 'win32',
+      api: app,
+      windowsStore: process.windowsStore === true,
+      development,
+      executable: process.execPath,
+      openDefaultAppsSettings: () => shell.openExternal('ms-settings:defaultapps'),
+    });
+  } else {
+    linkHandlers = null;
+  }
+  return linkHandlers;
+}
+
+ipcMain.handle('muxus:link-handlers:get', async (event): Promise<LinkHandlerState | undefined> => {
+  if (!isManagedWindowSender(event)) return undefined;
+  return systemLinkHandlers()?.state();
+});
+
+ipcMain.handle(
+  'muxus:link-handlers:register',
+  async (event, scheme: unknown): Promise<LinkHandlerRegistration | undefined> => {
+    if (!isManagedWindowSender(event) || (scheme !== 'ssh' && scheme !== 'telnet')) return undefined;
+    const handlers = systemLinkHandlers();
+    if (!handlers) return undefined;
+    const result = await handlers.register(scheme);
+    mainLog(
+      result.error ? 'warn' : 'info',
+      result.error ?? `registered as the ${scheme}:// handler${result.openedSystemSettings ? ' (system settings opened)' : ''}`,
+    );
+    return result;
   },
 );
 
@@ -1250,10 +1319,41 @@ function validProfileId(value: unknown): boolean {
 
 const initialCommandLineLaunch = parseCommandLineLaunch(process.argv);
 
+/** The focused window, else the one used last: where a link click was meant to land. */
 function commandLineLaunchWindow(): BrowserWindow | undefined {
-  return [...managedWindows].find((candidate) =>
-    canHandleCommandLineLaunch(windowLaunches.get(candidate.webContents.id)),
+  return [BrowserWindow.getFocusedWindow(), lastFocusedWindow, ...managedWindows].find(
+    (candidate): candidate is BrowserWindow =>
+      !!candidate &&
+      managedWindows.has(candidate) &&
+      !candidate.isDestroyed() &&
+      canHandleCommandLineLaunch(windowLaunches.get(candidate.webContents.id)),
   );
+}
+
+/** Hand a later launch request to a window, or hold it until the first one exists. */
+function deliverCommandLineLaunch(launch: CommandLineLaunch | undefined): void {
+  const win = launch
+    ? (commandLineLaunchWindow() ?? (appUrl ? createWindow(appUrl) : undefined))
+    : (primaryWindow ?? [...managedWindows][0]);
+  if (!win) {
+    if (launch) deferredCommandLineLaunches.push(launch);
+    return;
+  }
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  if (launch) {
+    const send = () => {
+      if (!win.isDestroyed()) {
+        win.webContents.send('muxus:command-line-launch-requested', launch);
+      }
+    };
+    if (win.webContents.isLoadingMainFrame()) {
+      win.webContents.once('did-finish-load', send);
+    } else {
+      send();
+    }
+  }
 }
 
 // Electron may reorder split-form custom switches in second-instance argv.
@@ -1262,31 +1362,16 @@ if (!app.requestSingleInstanceLock(initialCommandLineLaunch ?? {})) {
   app.quit();
 } else {
   app.on('second-instance', (_event, commandLine, _workingDirectory, additionalData) => {
-    const launch =
-      parseCommandLineLaunchData(additionalData) ??
-      parseCommandLineLaunch(commandLine);
-    const win = launch
-      ? (commandLineLaunchWindow() ?? (appUrl ? createWindow(appUrl) : undefined))
-      : (primaryWindow ?? [...managedWindows][0]);
-    if (!win) {
-      if (launch) deferredCommandLineLaunches.push(launch);
-      return;
-    }
-    if (win.isMinimized()) win.restore();
-    win.show();
-    win.focus();
-    if (launch) {
-      const send = () => {
-        if (!win.isDestroyed()) {
-          win.webContents.send('muxus:command-line-launch-requested', launch);
-        }
-      };
-      if (win.webContents.isLoadingMainFrame()) {
-        win.webContents.once('did-finish-load', send);
-      } else {
-        send();
-      }
-    }
+    deliverCommandLineLaunch(
+      parseCommandLineLaunchData(additionalData) ?? parseCommandLineLaunch(commandLine),
+    );
+  });
+
+  // macOS hands ssh:// and telnet:// links to the running app through Launch
+  // Services, including the link that started it, which may arrive before ready.
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    deliverCommandLineLaunch(linkLaunch(url));
   });
 
   void app.whenReady().then(async () => {

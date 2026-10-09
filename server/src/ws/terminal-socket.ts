@@ -4,11 +4,13 @@ import type { WebSocket } from 'ws';
 import { nanoid } from 'nanoid';
 import type { ConfigForward, TerminalServerMessage } from '@muxus/shared';
 import {
+  DEFAULT_BREAK_DURATION_MS,
   TERMINAL_SESSION_CLOSE_REASON,
   terminalClientMessageSchema,
   type TerminalClientMessage,
 } from '@muxus/shared/ws-protocol';
 import type { AppContext } from '../app.js';
+import { requestChannelBreak } from '../ssh/channel-break.js';
 import type { ConnectIo } from '../ssh/connection-manager.js';
 import {
   localShellPromptReady,
@@ -25,6 +27,9 @@ import {
   SessionRecorder,
   type SessionLoggingState,
 } from '../session-logging/session-recorder.js';
+import { resolveLoginSequence, type LoginSequenceHost } from '../login-sequence/resolve.js';
+import { LoginSequenceSession } from '../login-sequence/session.js';
+import { PastePacer } from './paste-pacer.js';
 
 const CONNECT_TIMEOUT_MS = 30_000;
 const KEEPALIVE_MS = 30_000;
@@ -43,6 +48,8 @@ const REPLAYED_CONTROL_OPS = [
   'logging-state',
   'connection-health',
   'file-transfer',
+  'paste-progress',
+  'login-sequence',
 ] as const;
 const replayedControlOps = new Set<string>(REPLAYED_CONTROL_OPS);
 
@@ -301,7 +308,7 @@ export function registerTerminalSocket(
       sessions.set(terminalId, transferable);
       transferable.once('close', () => sessions.delete(terminalId));
       const stableSocket = transferable as unknown as WebSocket;
-      void handleSession(stableSocket, ctx, app).catch((err) => {
+      void handleSession(stableSocket, ctx, app, terminalId).catch((err) => {
         app.log.warn({ err }, 'terminal session failed');
         sendControl(stableSocket, {
           op: 'exit',
@@ -331,6 +338,9 @@ class ControlChannel {
 
   push(msg: TerminalClientMessage): void {
     if (this.intercept?.(msg)) return;
+    // A BREAK has no line to go to until the session is attached, and must
+    // not be taken as the answer to an auth or host-key prompt.
+    if (msg.op === 'send-break' && !this.onMessage) return;
     const waiter = this.waiters.shift();
     if (waiter) waiter.resolve(msg);
     else this.onMessage?.(msg);
@@ -350,7 +360,12 @@ class ControlChannel {
   }
 }
 
-async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyInstance): Promise<void> {
+async function handleSession(
+  socket: WebSocket,
+  ctx: AppContext,
+  app: FastifyInstance,
+  terminalId: string,
+): Promise<void> {
   const control = new ControlChannel();
   let writeInput: ((data: Buffer) => void) | undefined;
   let recorder: SessionRecorder | undefined;
@@ -467,6 +482,15 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
     return;
   }
 
+  // Input the backend types for the user, such as a vault secret, goes to the
+  // transport directly and never through the recorder below.
+  const unregisterInput = ctx.terminalInputs.register(terminalId, (data) => {
+    if (!socketOpen || !writeInput) return false;
+    writeInput(data);
+    return true;
+  });
+  socket.once('close', unregisterInput);
+
   const { cols, rows } = connectMsg;
   const profile =
     connectMsg.profile.kind === 'ssh'
@@ -499,15 +523,69 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
     );
     return true;
   };
-  control.intercept = handleLoggingControl;
+  // Pasted input the backend paces; each kind of session sets how it is written.
+  let writePastedInput: ((data: Buffer) => Promise<void>) | undefined;
+  const pastePacer = new PastePacer(
+    (data) => {
+      if (!writePastedInput) return;
+      recorder?.input(data);
+      return writePastedInput(data);
+    },
+    (progress) => sendControl(socket, { op: 'paste-progress', ...progress }),
+  );
+  // Closing the tab or losing the connection ends the session and the paste.
+  socket.once('close', () => pastePacer.close());
+  const handlePasteControl = (msg: TerminalClientMessage): boolean => {
+    if (msg.op === 'paste') pastePacer.enqueue(msg);
+    else if (msg.op === 'paste-cancel') pastePacer.cancel();
+    else return false;
+    return true;
+  };
+  let loginSequence: LoginSequenceSession | undefined;
+  control.intercept = (msg) =>
+    handleLoggingControl(msg) ||
+    handlePasteControl(msg) ||
+    (loginSequence?.handleControl(msg) ?? false);
   sendLoggingState();
   socket.once('close', () => recorder?.end('disconnected'));
+
+  // A host's login sequence sees output from the moment the transport is
+  // attached. It belongs to this connect: a reconnect runs it again, a
+  // renderer reattaching to the live session does not.
+  const prepareLoginSequence = (
+    host: () => LoginSequenceHost | undefined,
+  ): LoginSequenceSession | undefined => {
+    const write = ctx.terminalInputs.writer(terminalId);
+    if (!write) return undefined;
+    try {
+      const target = host();
+      const sequence = target && resolveLoginSequence(ctx.database, target);
+      if (!sequence) return undefined;
+      const session = new LoginSequenceSession({
+        sequence,
+        vault: ctx.vault,
+        write,
+        recorder: recorder!,
+        send: (message) => sendControl(socket, message),
+        log: app.log,
+      });
+      socket.once('close', () => session.close());
+      loginSequence = session;
+      return session;
+    } catch (err) {
+      app.log.warn({ err }, 'could not load the login sequence');
+      return undefined;
+    }
+  };
 
   if (profile.kind === 'local') {
     const { pty } = spawnLocalPty(profile, cols, rows);
     let startupInput = localStartupInput(profile.startupCommand);
     let startupOutput = '';
     writeInput = (data) => pty.write(data.toString('utf8'));
+    writePastedInput = async (data) => {
+      pty.write(data.toString('utf8'));
+    };
     control.onMessage = (msg) => {
       if (handleLoggingControl(msg)) return;
       if (msg.op === 'resize') pty.resize(msg.cols, msg.rows);
@@ -555,7 +633,9 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
       recorder,
       handleLoggingControl,
       ctx.transferFiles,
+      prepareLoginSequence(() => (profile.profileId ? { profileId: profile.profileId } : undefined)),
     );
+    writePastedInput = drainedWriter(transport);
     app.log.info(
       { path: profile.path, baudRate: profile.baudRate },
       'serial session established',
@@ -584,7 +664,9 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
       recorder,
       handleLoggingControl,
       ctx.transferFiles,
+      prepareLoginSequence(() => (profile.profileId ? { profileId: profile.profileId } : undefined)),
     );
+    writePastedInput = drainedWriter(transport);
     app.log.info({ host: profile.host, port: profile.port }, 'telnet session established');
     if (profile.profileId) ctx.database.recordSavedHostConnection(profile.profileId);
     return;
@@ -655,11 +737,29 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
   }
 
   writeInput = (data) => stream.write(data);
+  // The callback runs once the channel window has taken the data.
+  writePastedInput = (data) =>
+    new Promise((resolve) => {
+      stream.write(data, () => resolve());
+    });
   control.onMessage = (msg) => {
     if (handleLoggingControl(msg)) return;
     if (transfers?.control(msg)) return;
     if (msg.op === 'resize') stream.setWindow(msg.rows, msg.cols, 0, 0);
+    else if (msg.op === 'send-break') {
+      answerBreak(socket, async () => {
+        const result = await requestChannelBreak(stream, DEFAULT_BREAK_DURATION_MS);
+        if (result === 'refused') return 'The SSH server refused the BREAK request';
+        if (result === 'unanswered') return 'The SSH server did not answer the BREAK request';
+        return undefined;
+      });
+    }
   };
+  const sshLoginSequence = prepareLoginSequence(() => {
+    if (profile.profileId) return { profileId: profile.profileId };
+    const alias = ctx.connections.metadataAliasFor(profile);
+    return alias ? { alias } : undefined;
+  });
 
   // Flow control: a runaway `cat hugefile` must not balloon the ws buffer.
   let paused = false;
@@ -686,6 +786,7 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
     },
     display: (chunk) => {
       recorder?.output(chunk);
+      sshLoginSequence?.output(chunk);
       if (socket.readyState !== socket.OPEN) return;
       socket.send(chunk, { binary: true });
       if (!paused && socket.bufferedAmount > BACKPRESSURE_HIGH) {
@@ -752,6 +853,9 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
       app.log.warn({ err, target: conn.metadataAlias }, 'could not record recent connection');
     }
   }
+  // Started before `ready`, so the tab learns a sequence is running before it
+  // would type anything of its own (a tmux reattach waits for the sequence).
+  sshLoginSequence?.start();
   sendControl(socket, {
     op: 'ready',
     connId: conn.id,
@@ -772,6 +876,7 @@ function attachTerminalTransport(
   recorder: SessionRecorder,
   handleLoggingControl: (msg: TerminalClientMessage) => boolean,
   files: StagedFiles,
+  loginSequence: LoginSequenceSession | undefined,
 ): TerminalFileTransfers {
   setWriteInput((data) => transport.write(data));
 
@@ -801,6 +906,7 @@ function attachTerminalTransport(
     },
     display: (data) => {
       recorder.output(data);
+      loginSequence?.output(data);
       if (socket.readyState !== socket.OPEN) return;
       socket.send(data, { binary: true });
       if (!paused && socket.bufferedAmount > BACKPRESSURE_HIGH) {
@@ -816,6 +922,9 @@ function attachTerminalTransport(
     if (handleLoggingControl(msg)) return;
     if (transfers.control(msg)) return;
     if (msg.op === 'resize') transport.resize(msg.cols, msg.rows);
+    else if (msg.op === 'send-break') {
+      answerBreak(socket, () => transport.sendBreak().then(() => undefined));
+    }
   };
 
   const unsubscribeData = transport.onData((data) => transfers.output(data));
@@ -843,8 +952,34 @@ function attachTerminalTransport(
     transfers.close();
     transport.close();
   });
+  loginSequence?.start();
   sendControl(socket, { op: 'ready', connId });
   return transfers;
+}
+
+/** Write to a byte transport, settling once it has sent the bytes on. */
+function drainedWriter(transport: TerminalTransport): (data: Buffer) => Promise<void> {
+  return (data) => {
+    transport.write(data);
+    return transport.drain();
+  };
+}
+
+/** Send a BREAK and report the outcome; `send` resolves to why it did not go out, if it did not. */
+function answerBreak(socket: WebSocket, send: () => Promise<string | undefined>): void {
+  send().then(
+    (problem) =>
+      sendControl(
+        socket,
+        problem ? { op: 'break-result', ok: false, message: problem } : { op: 'break-result', ok: true },
+      ),
+    (error: unknown) =>
+      sendControl(socket, {
+        op: 'break-result',
+        ok: false,
+        message: `Could not send BREAK: ${error instanceof Error ? error.message : String(error)}`,
+      }),
+  );
 }
 
 function sendControl(socket: WebSocket, msg: TerminalServerMessage): void {

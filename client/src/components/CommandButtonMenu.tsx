@@ -8,11 +8,14 @@ import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
+import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
+import { useQueryClient } from '@tanstack/react-query';
+import { usePasswordVaultStatus } from '../api/password-vault-queries.js';
 import { useActiveCommandButtonGroup } from '../command-button-groups.js';
 import {
-  commandButtonInput,
   commandButtonLabel,
   commandButtonsInGroup,
   filterCommandButtons,
@@ -22,6 +25,7 @@ import { showToast } from '../state/toast.js';
 import { useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
 import { terminalHandle, type TerminalAnchorPosition } from '../terminal/terminal-registry.js';
+import { findVaultSecret, runCommandButton, vaultSecretMissing } from '../vault-secrets.js';
 import { CommandButtonColorDot } from './command-button-style.js';
 
 const menuCenter = (): TerminalAnchorPosition => ({
@@ -43,6 +47,10 @@ export function CommandButtonMenu() {
   );
   const setMenuOpen = useUiStore((state) => state.setCommandButtonMenuOpen);
   const setButtonsOpen = useUiStore((state) => state.setCommandButtonsOpen);
+  const queryClient = useQueryClient();
+  const { data: vault } = usePasswordVaultStatus(
+    buttons.some((button) => button.secretId !== undefined),
+  );
   const [query, setQuery] = useState('');
   const [anchorPosition] = useState(
     () => terminalHandle(activeId)?.cursorAnchorPosition() ?? menuCenter(),
@@ -56,10 +64,14 @@ export function CommandButtonMenu() {
     return ordered
       .map((group) => ({
         group,
-        buttons: filterCommandButtons(commandButtonsInGroup(buttons, groups, group.id), query),
+        buttons: filterCommandButtons(
+          commandButtonsInGroup(buttons, groups, group.id),
+          query,
+          (secretId) => findVaultSecret(vault, secretId)?.name,
+        ),
       }))
       .filter((section) => section.buttons.length > 0);
-  }, [buttons, groups, shownId, query]);
+  }, [buttons, groups, shownId, query, vault]);
   const filteredButtons = useMemo(
     () => sections.flatMap((section) => section.buttons),
     [sections],
@@ -67,9 +79,11 @@ export function CommandButtonMenu() {
   const showSections = groups.length > 1;
   // Keep labels aligned: uncolored commands get an empty slot beside colored ones.
   const anyColor = filteredButtons.some((button) => button.color);
-  const firstEnabledButton = connected
-    ? filteredButtons.find((button) => button.command.trim())
-    : undefined;
+  const usable = (button: CommandButton) =>
+    button.secretId !== undefined
+      ? !!button.secretId && vaultSecretMissing(vault, button.secretId) !== true
+      : !!button.command.trim();
+  const firstEnabledButton = connected ? filteredButtons.find(usable) : undefined;
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => searchRef.current?.focus({ preventScroll: true }));
@@ -85,7 +99,10 @@ export function CommandButtonMenu() {
   };
   const send = (button: CommandButton) => {
     setMenuOpen(false);
-    const sent = terminalHandle(activeId)?.sendInput(commandButtonInput(button)) ?? false;
+    const sent = runCommandButton(activeId, button, {
+      secretName: button.secretId ? findVaultSecret(vault, button.secretId)?.name : undefined,
+      queryClient,
+    });
     if (!sent) showToast('warning', 'The active terminal is not connected.');
     restoreTerminalFocus();
   };
@@ -149,12 +166,23 @@ export function CommandButtonMenu() {
       {sections.flatMap(({ group, buttons: sectionButtons }) => {
         const items: ReactNode[] = sectionButtons.map((button) => {
           const command = button.command.trim();
+          const secretButton = button.secretId !== undefined;
+          const missing = !!button.secretId && vaultSecretMissing(vault, button.secretId) === true;
+          const secretName = button.secretId ? findVaultSecret(vault, button.secretId)?.name : undefined;
           return (
             <MenuItem
               key={button.id}
               ref={button.id === firstEnabledButton?.id ? firstResultRef : undefined}
-              disabled={!connected || !command}
-              title={command || undefined}
+              disabled={!connected || !usable(button)}
+              title={
+                secretButton
+                  ? missing
+                    ? 'Its secret was deleted from the password vault'
+                    : secretName
+                      ? `Types the secret “${secretName}”`
+                      : undefined
+                  : command || undefined
+              }
               onClick={() => send(button)}
               sx={{ gap: 1.25 }}
             >
@@ -165,9 +193,23 @@ export function CommandButtonMenu() {
                   <Box component="span" sx={{ width: 8, flexShrink: 0 }} />
                 )
               ) : null}
-              <Typography variant="body2" noWrap sx={{ maxWidth: 370 }}>
+              <Typography variant="body2" noWrap sx={{ maxWidth: 340 }}>
                 {commandButtonLabel(button)}
               </Typography>
+              {secretButton ? (
+                missing ? (
+                  <WarningAmberOutlinedIcon
+                    aria-label="Secret missing"
+                    color="warning"
+                    sx={{ fontSize: 16, ml: 'auto' }}
+                  />
+                ) : (
+                  <KeyOutlinedIcon
+                    aria-label="Sends a secret"
+                    sx={{ fontSize: 16, ml: 'auto', color: 'text.secondary' }}
+                  />
+                )
+              ) : null}
             </MenuItem>
           );
         });

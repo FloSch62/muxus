@@ -74,6 +74,25 @@ describe('saved host profile routes', () => {
     ).toBe(false);
   });
 
+  it('never stores a link’s host key fingerprint with a saved host', async () => {
+    const create = await app.inject({
+      method: 'PUT',
+      url: '/api/profiles',
+      headers: auth(),
+      payload: {
+        name: 'Pinned',
+        profile: {
+          kind: 'ssh',
+          target: 'router.example.test',
+          useConfig: false,
+          hostKeyFingerprint: 'SHA256:nThbg6kXUpJWGl7E1IGOCspRomTxdCARLviKw6E5SY8',
+        },
+      },
+    });
+    expect(create.statusCode).toBe(200);
+    expect(create.json().profile).not.toHaveProperty('hostKeyFingerprint');
+  });
+
   it('stores RDP and VNC hosts with their gateway and display options', async () => {
     const rdp = await app.inject({
       method: 'PUT',
@@ -181,6 +200,7 @@ describe('saved host profile routes', () => {
           stopBits: 1,
           parity: 'none',
           flowControl: 'software',
+          breakDurationMs: 500,
         },
       },
     });
@@ -188,9 +208,15 @@ describe('saved host profile routes', () => {
     expect(update.json()).toMatchObject({
       id,
       name: 'Updated console',
-      profile: { path: '/dev/ttyUSB1', baudRate: 9600 },
+      profile: { path: '/dev/ttyUSB1', baudRate: 9600, breakDurationMs: 500 },
       metadata: { group: 'Lab/Consoles' },
     });
+    const listed = await app.inject({ method: 'GET', url: '/api/profiles', headers: auth() });
+    expect(
+      listed.json<{ profiles: Array<{ id: string; profile: unknown }> }>().profiles.find(
+        (profile) => profile.id === id,
+      )?.profile,
+    ).toMatchObject({ breakDurationMs: 500 });
   });
 
   it('manages Telnet and serial hosts through the authenticated host API', async () => {

@@ -86,6 +86,12 @@ export function useUpdateSshMetadata(onSuccess?: (metadata: OpenSshProfileMetada
               ...(patch.commandButtonGroup !== undefined
                 ? { commandButtonGroup: patch.commandButtonGroup ?? undefined }
                 : {}),
+              ...(patch.pasteLineDelayMs !== undefined
+                ? { pasteLineDelayMs: patch.pasteLineDelayMs ?? undefined }
+                : {}),
+              ...(patch.pasteCharDelayMs !== undefined
+                ? { pasteCharDelayMs: patch.pasteCharDelayMs ?? undefined }
+                : {}),
               ...(patch.disableSftp !== undefined
                 ? { disableSftp: patch.disableSftp || undefined }
                 : {}),

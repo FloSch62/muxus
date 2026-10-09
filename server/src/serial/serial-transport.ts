@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type { SerialPort } from 'serialport';
 import type { SerialProfile } from '@muxus/shared';
+import { DEFAULT_BREAK_DURATION_MS } from '@muxus/shared/ws-protocol';
 import { writableDrained, type TerminalTransport } from '../transports/terminal-transport.js';
 
 export function serialOpenOptions(profile: SerialProfile): ConstructorParameters<typeof SerialPort>[0] {
@@ -33,8 +34,13 @@ export class SerialTransport extends EventEmitter implements TerminalTransport {
   private closed = false;
   private pendingError: Error | undefined;
   private readonly pendingData: Buffer[] = [];
+  private breaking = false;
+  private releaseBreak: ((then: () => void) => void) | undefined;
 
-  private constructor(private readonly port: SerialPort) {
+  private constructor(
+    private readonly port: SerialPort,
+    private readonly breakDurationMs: number,
+  ) {
     super();
     port.on('data', (data: Buffer) => {
       if (this.listenerCount('data') > 0) this.emit('data', data);
@@ -78,7 +84,7 @@ export class SerialTransport extends EventEmitter implements TerminalTransport {
           reject(error);
           return;
         }
-        resolve(new SerialTransport(port));
+        resolve(new SerialTransport(port, profile.breakDurationMs ?? DEFAULT_BREAK_DURATION_MS));
       });
     });
   }
@@ -95,8 +101,54 @@ export class SerialTransport extends EventEmitter implements TerminalTransport {
     return this.ended || !this.port.isOpen ? undefined : writableDrained(this.port);
   }
 
+  drain(): Promise<void> {
+    if (this.ended || !this.port.isOpen) return Promise.resolve();
+    // Waits for the bytes to be transmitted on the line, not just queued.
+    return new Promise((resolve) => this.port.drain(() => resolve()));
+  }
+
   resize(_cols: number, _rows: number): void {
     // Serial links have no standard window-size negotiation.
+  }
+
+  /** Hold the line in the break state for the host's break duration, then release it. */
+  sendBreak(): Promise<void> {
+    if (this.ended || !this.port.isOpen) {
+      return Promise.reject(new Error('the serial port is not open'));
+    }
+    // A second press while the line is held changes nothing on the wire.
+    if (this.breaking) return Promise.resolve();
+    this.breaking = true;
+    return new Promise((resolve, reject) => {
+      this.port.set({ brk: true }, (error) => {
+        if (error) {
+          // The binding sets the modem lines after the break, so a failed
+          // call may still have left the line in break: release it anyway.
+          this.port.set({ brk: false }, () => {
+            this.breaking = false;
+            reject(error);
+          });
+          return;
+        }
+        if (this.ended) {
+          this.breaking = false;
+          resolve();
+          return;
+        }
+        const release = (then?: () => void) => {
+          clearTimeout(timer);
+          this.releaseBreak = undefined;
+          this.port.set({ brk: false }, (releaseError) => {
+            this.breaking = false;
+            if (releaseError) reject(releaseError);
+            else resolve();
+            then?.();
+          });
+        };
+        const timer = setTimeout(release, this.breakDurationMs);
+        this.releaseBreak = release;
+      });
+    });
   }
 
   pause(): void {
@@ -110,8 +162,13 @@ export class SerialTransport extends EventEmitter implements TerminalTransport {
   close(): void {
     if (this.ended) return;
     this.ended = true;
-    if (this.port.isOpen) this.port.close();
-    else this.port.destroy();
+    const closePort = () => {
+      if (this.port.isOpen) this.port.close();
+      else this.port.destroy();
+    };
+    // Not every driver clears a held break when the port closes.
+    if (this.releaseBreak) this.releaseBreak(closePort);
+    else closePort();
   }
 
   onData(listener: (data: Buffer) => void): () => void {

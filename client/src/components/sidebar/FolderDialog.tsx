@@ -17,7 +17,7 @@ import Typography from '@mui/material/Typography';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import UndoOutlinedIcon from '@mui/icons-material/UndoOutlined';
-import type { FolderAuthSettings } from '@muxus/shared';
+import type { FolderAuthSettings, LoginSequence } from '@muxus/shared';
 import {
   folderSettingsForPath,
   useFolderSettings,
@@ -39,12 +39,21 @@ import {
   normalizeGroupPath,
   sanitizeFolderName,
 } from '../../host-tree.js';
+import {
+  inheritedLoginSequence,
+  loginSequenceDraft,
+  loginSequenceFromDraft,
+  loginSequenceProblem,
+  sameLoginSequence,
+  type LoginSequenceDraft,
+} from '../../login-sequence.js';
 import { managedHostKey } from '../../managed-hosts.js';
 import { showToast } from '../../state/toast.js';
 import { usePrefsStore } from '../../state/prefs.js';
 import { useUiStore } from '../../state/ui.js';
 import { HostColorPicker } from '../HostColorPicker.js';
 import { FolderPathField } from '../FolderPathField.js';
+import { LoginSequenceEditor } from '../LoginSequenceEditor.js';
 import { folderIcon, FOLDER_ICONS } from './folder-icons.js';
 import {
   folderProblemMessage,
@@ -80,6 +89,7 @@ export function FolderDialog() {
   const [authPassword, setAuthPassword] = useState('');
   const [removePassword, setRemovePassword] = useState(false);
   const [masterPassword, setMasterPassword] = useState('');
+  const [loginSequence, setLoginSequence] = useState<LoginSequenceDraft>(() => loginSequenceDraft(undefined));
 
   // Load the folder's current shape once, when the dialog opens on it.
   useEffect(() => {
@@ -121,6 +131,8 @@ export function FolderDialog() {
   const seedUser = settingsRecord?.auth.user ?? '';
   const seedPort = settingsRecord?.auth.port !== undefined ? String(settingsRecord.auth.port) : '';
   const seedKey = settingsRecord?.auth.identityFiles?.[0] ?? '';
+  // Compared as text: a refetch hands back an equal but new object.
+  const seedSequence = JSON.stringify(settingsRecord?.loginSequence ?? null);
   useEffect(() => {
     if (state === false || state.mode === 'move-hosts') return;
     const editing = state.mode === 'edit';
@@ -130,7 +142,10 @@ export function FolderDialog() {
     setAuthPassword('');
     setRemovePassword(false);
     setMasterPassword('');
-  }, [state, seedUser, seedPort, seedKey]);
+    setLoginSequence(
+      loginSequenceDraft(editing ? ((JSON.parse(seedSequence) as LoginSequence | null) ?? undefined) : undefined),
+    );
+  }, [state, seedUser, seedPort, seedKey, seedSequence]);
 
   const target = movingHosts
     ? normalizeGroupPath(parent)
@@ -161,6 +176,8 @@ export function FolderDialog() {
   const vaultConfigured = vaultStatus?.configured ?? false;
   const passwordNeedsMaster =
     vaultConfigured && (vaultStatus?.locked ?? false) && authPassword.length > 0;
+  const sequenceProblem = movingHosts ? null : loginSequenceProblem(loginSequence);
+  const sequenceInherited = inheritedLoginSequence(settingsData?.folders, folderParentPath(target));
 
   if (state === false) return null;
 
@@ -180,7 +197,9 @@ export function FolderDialog() {
       : removePassword && settingsRecord?.hasPassword
         ? null
         : undefined;
-    const dirty = !!settingsRecord || Object.keys(auth).length > 0 || password !== undefined;
+    const sequence = loginSequenceFromDraft(loginSequence);
+    const dirty =
+      !!settingsRecord || Object.keys(auth).length > 0 || password !== undefined || sequence !== null;
     const save = () => {
       if (!dirty) return;
       saveSettings.mutate({
@@ -188,6 +207,10 @@ export function FolderDialog() {
         auth,
         password,
         ...(masterPassword.trim() ? { masterPassword: masterPassword.trim() } : {}),
+        // Left out when unchanged, so a concurrent edit elsewhere is not overwritten.
+        ...(sameLoginSequence(sequence, settingsRecord?.loginSequence ?? null)
+          ? {}
+          : { loginSequence: sequence }),
       });
     };
     if (previousPath) {
@@ -213,7 +236,9 @@ export function FolderDialog() {
       close();
       return;
     }
-    if (problem || portInvalid || (passwordNeedsMaster && !masterPassword.trim())) return;
+    if (problem || portInvalid || sequenceProblem || (passwordNeedsMaster && !masterPassword.trim())) {
+      return;
+    }
 
     if (mode === 'new') {
       folders.addEmptyFolder(target);
@@ -254,7 +279,7 @@ export function FolderDialog() {
   const parentPreview = folderParentPath(target);
 
   return (
-    <Dialog open onClose={close} maxWidth="xs" fullWidth>
+    <Dialog open onClose={close} maxWidth={movingHosts ? 'xs' : 'sm'} fullWidth>
       <Box
         component="form"
         onSubmit={(event) => {
@@ -507,6 +532,29 @@ export function FolderDialog() {
                     fullWidth
                   />
                 )}
+
+                <Divider sx={{ mt: 0.5 }} />
+                <Box>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                    Login sequence
+                  </Typography>
+                  <Typography variant="caption" color="textSecondary">
+                    Runs after every SSH, Telnet or serial session to a host in this folder
+                    connects, unless the host sets its own. The nearest folder beats its parents.
+                  </Typography>
+                </Box>
+                <LoginSequenceEditor
+                  value={loginSequence}
+                  onChange={setLoginSequence}
+                  inherited={sequenceInherited}
+                  inheritLabel="Use the parent folder's sequence"
+                  inheritEmptyText="No parent folder sets a login sequence, so none runs."
+                />
+                {sequenceProblem ? (
+                  <Typography variant="caption" color="warning">
+                    {sequenceProblem}
+                  </Typography>
+                ) : null}
               </>
             )}
 
@@ -528,6 +576,7 @@ export function FolderDialog() {
               (!movingHosts &&
                 (!!problem ||
                   portInvalid ||
+                  !!sequenceProblem ||
                   (passwordNeedsMaster && !masterPassword.trim()))) ||
               applyMoves.isPending
             }

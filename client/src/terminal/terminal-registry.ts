@@ -40,6 +40,10 @@ export interface TerminalHandle {
   paste(text: string): void;
   /** Read and paste the current clipboard, including images in SSH and local terminals. */
   pasteClipboard(): void;
+  /** Paste without a preview, paced by this session's host settings. */
+  sendPaste(text: string): boolean;
+  /** Stop this session's paced paste, if one is running. */
+  cancelPaste(): void;
   /**
    * Start/stop/pause persistence, change input capture, or start/stop the
    * log file (`logFilePath` is appended to; absent uses a generated name).
@@ -53,6 +57,10 @@ export interface TerminalHandle {
   }): boolean;
   /** Open the XMODEM / YMODEM / ZMODEM send or receive dialog; false when unavailable. */
   openFileTransfer(direction: 'send' | 'receive'): boolean;
+  /** Send BREAK to this session alone; false while it is not attached. */
+  sendBreak(): boolean;
+  /** Stop the host's running login sequence; the session stays open. */
+  cancelLoginSequence(): boolean;
 }
 
 const handles = new Map<string, TerminalHandle>();

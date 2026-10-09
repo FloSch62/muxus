@@ -6,6 +6,7 @@ import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import HighlightOutlinedIcon from '@mui/icons-material/HighlightOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
+import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import type { SavedHostProfile } from '@muxus/shared';
@@ -28,6 +29,7 @@ import {
   useUpsertHost,
 } from '../api/ssh-config.js';
 import { confirmDeleteHost, shortenSshPath } from '../host-actions.js';
+import { loginSequenceFromDraft } from '../login-sequence.js';
 import { connectSavedHost, connectTarget } from '../session-actions.js';
 import {
   hostSessionLoggingDraft,
@@ -52,6 +54,7 @@ import { ForwardsSection } from './host-editor/ForwardsSection.js';
 import { GeneralSection } from './host-editor/GeneralSection.js';
 import { HighlightingSection } from './host-editor/HighlightingSection.js';
 import { LoggingSection } from './host-editor/LoggingSection.js';
+import { LoginSequenceSection } from './host-editor/LoginSequenceSection.js';
 import { TerminalAppearanceSection } from './host-editor/TerminalAppearanceSection.js';
 import {
   blankNativeDraft,
@@ -74,6 +77,7 @@ type Section =
   | 'auth'
   | 'route'
   | 'forwards'
+  | 'login'
   | 'logging'
   | 'highlighting'
   | 'advanced';
@@ -317,6 +321,8 @@ function SshHostEditorContent({
         terminalFontColor: draft.terminalFontColor ?? null,
         terminalBackgroundColor: draft.terminalBackgroundColor ?? null,
         commandButtonGroup: draft.commandButtonGroup ?? null,
+        pasteLineDelayMs: draft.pasteLineDelayMs ?? null,
+        pasteCharDelayMs: draft.pasteCharDelayMs ?? null,
         disableSftp: draft.disableSftp,
         consoleCompatibility: draft.consoleCompatibility,
         keywordHighlights:
@@ -325,6 +331,7 @@ function SshHostEditorContent({
           highlights.rules.length === 0
             ? null
             : highlights,
+        loginSequence: loginSequenceFromDraft(draft.loginSequence),
       },
     });
   });
@@ -341,6 +348,8 @@ function SshHostEditorContent({
         terminalFontColor: draft.terminalFontColor ?? null,
         terminalBackgroundColor: draft.terminalBackgroundColor ?? null,
         commandButtonGroup: draft.commandButtonGroup ?? null,
+        pasteLineDelayMs: draft.pasteLineDelayMs ?? null,
+        pasteCharDelayMs: draft.pasteCharDelayMs ?? null,
         disableSftp: draft.disableSftp,
         consoleCompatibility: draft.consoleCompatibility,
         keywordHighlights:
@@ -349,6 +358,7 @@ function SshHostEditorContent({
           highlights.rules.length === 0
             ? null
             : highlights,
+        loginSequence: loginSequenceFromDraft(draft.loginSequence),
       },
     });
   });
@@ -426,6 +436,7 @@ function SshHostEditorContent({
         draft.terminalFontColor,
         draft.terminalBackgroundColor,
         draft.commandButtonGroup,
+        draft.pasteLineDelayMs !== undefined || draft.pasteCharDelayMs !== undefined,
       ].filter(Boolean).length || undefined,
     },
     { value: 'auth', label: 'Authentication', icon: <KeyOutlinedIcon fontSize="small" /> },
@@ -441,6 +452,12 @@ function SshHostEditorContent({
             : undefined,
     },
     { value: 'forwards', label: 'Forwarding', icon: <SwapHorizOutlinedIcon fontSize="small" />, count: draft.forwards.length },
+    {
+      value: 'login',
+      label: 'Login sequence',
+      icon: <LoginOutlinedIcon fontSize="small" />,
+      count: draft.loginSequence.mode === 'custom' ? draft.loginSequence.steps.length : undefined,
+    },
     { value: 'logging', label: 'Session logging', icon: <HistoryOutlinedIcon fontSize="small" /> },
     {
       value: 'highlighting',
@@ -533,6 +550,13 @@ function SshHostEditorContent({
         />
       )}
       {section === 'forwards' && <ForwardsSection draft={draft} set={set} />}
+      {section === 'login' && (
+        <LoginSequenceSection
+          value={draft.loginSequence}
+          onChange={(loginSequence) => set({ loginSequence })}
+          group={draft.group}
+        />
+      )}
       {section === 'logging' && (
         <LoggingSection
           value={draft.sessionLogging}

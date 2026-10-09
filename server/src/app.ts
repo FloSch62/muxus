@@ -20,6 +20,7 @@ import { registerSftpRoutes } from './routes/sftp.js';
 import { registerForwardRoutes } from './routes/forwards.js';
 import { registerTunnelRoutes } from './routes/tunnels.js';
 import { registerTerminalSocket } from './ws/terminal-socket.js';
+import { TerminalInputs } from './ws/terminal-inputs.js';
 import { registerSftpLeaseSocket } from './ws/sftp-lease-socket.js';
 import { registerDesktopSockets } from './remote-desktop/desktop-socket.js';
 import { websocketHeaderHasToken } from './auth.js';
@@ -56,6 +57,8 @@ export interface AppContext {
   x11: LocalX11;
   /** Files on their way into or out of XMODEM, YMODEM and ZMODEM transfers. */
   transferFiles: StagedFiles;
+  /** Live terminal sessions the backend can type into (vault secrets). */
+  terminalInputs: TerminalInputs;
 }
 
 // Not named __dirname: the Electron esbuild bundle defines that identifier
@@ -146,6 +149,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
     vault,
     x11,
     transferFiles: new StagedFiles(),
+    terminalInputs: new TerminalInputs(),
   };
   database.pruneTerminalSnapshots();
 

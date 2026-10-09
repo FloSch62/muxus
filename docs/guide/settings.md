@@ -66,6 +66,9 @@ a running recorder.
 - **Copy on select**, **OSC 52 clipboard writes** from terminal programs such as tmux and
   Zellij, and the **multiline paste confirmation**. OSC 52 reads remain blocked so a
   terminal program cannot retrieve the local clipboard.
+- **Paste pacing**: a delay after each pasted line and, optionally, after each character,
+  for consoles that drop input sent all at once. Hosts can set their own. See
+  [Pasting into slow consoles](terminal.md#pasting-into-slow-consoles).
 - **Scrollback lines** kept per terminal.
 
 ## Local shells
@@ -174,6 +177,11 @@ few times. Turn it off to restore remote tabs without logging in. **Restore term
 history** saves recent output locally every few seconds and replays it above the new
 session after a restore or reconnect.
 
+In the desktop app, **Links** has **Use Muxus for ssh:// links** and **Use Muxus for
+telnet:// links**. Each makes Muxus the system's handler for that kind of link and shows
+which program handles it now. See
+[Opening ssh:// and telnet:// links](hosts.md#opening-ssh-and-telnet-links).
+
 ## X11 forwarding
 
 **Enable X11 forwarding** lets graphical programs started in SSH sessions open their
@@ -216,6 +224,13 @@ the operating-system credential store.
   **Never for saved credentials** stores the vault key in the OS credential store,
   **When Muxus starts** unlocks it into memory once, and **Whenever a saved credential is
   needed** prompts for each use.
+- **Secrets** are passwords and PINs that are not a login, such as an `enable` or `sudo`
+  password; a user name is optional. **Add secret** saves one, and
+  [command buttons](commands.md#buttons-that-send-a-secret), **Send secret…** and
+  [login sequences](adding-hosts.md#login-sequence) type them into a session. Adding, viewing
+  and editing a secret take the master password; typing one follows the prompt policy.
+  Deleting a secret that command buttons or login sequences still use warns first and names
+  them.
 - **View or edit password** asks for the master password before revealing the saved value.
 - **Change master password** changes that management password without rewriting every
   credential.
@@ -225,15 +240,17 @@ the operating-system credential store.
   without removing hosts, keys or other settings. Reset intentionally needs no master
   password, so a forgotten password cannot make the vault impossible to remove.
 
-The master password cannot be recovered. Saved-password ciphertext is local to the
-application database and is not included in Muxus backups. The raw vault key is never
+The master password cannot be recovered. Saved-password and secret ciphertext is local to
+the application database and is not included in Muxus backups; a backed-up command button
+keeps only which secret it types. The raw vault key is never
 stored in the application-data directory.
 
 ## Backup & data
 
 **Create backup** writes the Muxus-side data to a file: folders, colours, saved
-Telnet/serial hosts, workspaces, tunnels and preferences. **Restore a backup** merges a file
-back in; items absent from the file are not deleted.
+Telnet/serial hosts, workspaces, tunnels, login sequences and preferences. **Restore a backup**
+merges a file back in; items absent from the file are not deleted. A login sequence's secret
+steps keep only which vault secret they type.
 
 **Export OpenSSH** writes the SSH hosts out as a standard `ssh_config` for use with another
 client. Non-secret shared folder defaults are copied into each affected host block so the

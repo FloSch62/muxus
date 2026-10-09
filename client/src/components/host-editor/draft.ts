@@ -11,6 +11,11 @@ import {
   blankHostSessionLoggingDraft,
   type HostSessionLoggingDraft,
 } from '../../session-logging-policy.js';
+import {
+  loginSequenceDraft,
+  loginSequenceProblem,
+  type LoginSequenceDraft,
+} from '../../login-sequence.js';
 import { keywordHighlightRulesProblem } from '../../terminal/keyword-matching.js';
 import { parseHostTarget } from './native-draft.js';
 
@@ -38,6 +43,9 @@ export interface HostDraft {
   terminalBackgroundColor?: string;
   /** Command button group the bar switches to in this host's sessions. */
   commandButtonGroup?: string;
+  /** Paste pacing; unset follows the Terminal settings. */
+  pasteLineDelayMs?: number;
+  pasteCharDelayMs?: number;
   /** Muxus-only plain-shell mode: no SFTP or shell integration. */
   disableSftp: boolean;
   /** Muxus-only console mode: also no env requests, with PTY rejection fallback. */
@@ -67,6 +75,8 @@ export interface HostDraft {
   extras: Array<{ keyword: string; value: string }>;
   keywordHighlights: HostKeywordHighlightConfig;
   sessionLogging: HostSessionLoggingDraft;
+  /** Muxus-only login steps, saved with the metadata. */
+  loginSequence: LoginSequenceDraft;
 }
 
 export function blankDraft(
@@ -90,6 +100,8 @@ export function blankDraft(
     terminalFontColor: undefined,
     terminalBackgroundColor: undefined,
     commandButtonGroup: undefined,
+    pasteLineDelayMs: undefined,
+    pasteCharDelayMs: undefined,
     disableSftp: false,
     consoleCompatibility: false,
     file: '',
@@ -117,6 +129,7 @@ export function blankDraft(
     extras: [],
     keywordHighlights: { inheritGlobal: true, rules: [] },
     sessionLogging: blankHostSessionLoggingDraft(),
+    loginSequence: loginSequenceDraft(undefined),
   };
 }
 
@@ -136,6 +149,8 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
     terminalFontColor: entry.metadata?.terminalFontColor,
     terminalBackgroundColor: entry.metadata?.terminalBackgroundColor,
     commandButtonGroup: entry.metadata?.commandButtonGroup,
+    pasteLineDelayMs: entry.metadata?.pasteLineDelayMs,
+    pasteCharDelayMs: entry.metadata?.pasteCharDelayMs,
     disableSftp: entry.metadata?.disableSftp ?? false,
     consoleCompatibility: entry.metadata?.consoleCompatibility ?? false,
     file: entry.file,
@@ -173,6 +188,7 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
       rules: [],
     },
     sessionLogging: blankHostSessionLoggingDraft(),
+    loginSequence: loginSequenceDraft(entry.metadata?.loginSequence),
   };
 }
 
@@ -198,6 +214,8 @@ export function draftFromSavedSshProfile(
     terminalFontColor: saved.metadata.terminalFontColor,
     terminalBackgroundColor: saved.metadata.terminalBackgroundColor,
     commandButtonGroup: saved.metadata.commandButtonGroup,
+    pasteLineDelayMs: saved.metadata.pasteLineDelayMs,
+    pasteCharDelayMs: saved.metadata.pasteCharDelayMs,
     disableSftp: saved.metadata.disableSftp ?? false,
     consoleCompatibility: saved.metadata.consoleCompatibility ?? false,
     file: '',
@@ -235,6 +253,7 @@ export function draftFromSavedSshProfile(
       rules: [],
     },
     sessionLogging: blankHostSessionLoggingDraft(),
+    loginSequence: loginSequenceDraft(saved.metadata.loginSequence),
   };
 }
 
@@ -285,7 +304,10 @@ export function draftProblem(draft: HostDraft): string | null {
   for (const e of draft.extras) {
     if (!/^[A-Za-z][A-Za-z0-9]*$/.test(e.keyword)) return `"${e.keyword}" is not a valid option keyword.`;
   }
-  return keywordHighlightRulesProblem(draft.keywordHighlights.rules);
+  return (
+    loginSequenceProblem(draft.loginSequence) ??
+    keywordHighlightRulesProblem(draft.keywordHighlights.rules)
+  );
 }
 
 /** Serialize a database-backed SSH host without involving ssh_config. */

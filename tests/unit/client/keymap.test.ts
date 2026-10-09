@@ -21,6 +21,10 @@ import {
 import { KEY_COMMANDS, keyCommand } from '../../../client/src/keymap/commands.js';
 import { useTabsStore } from '../../../client/src/state/tabs.js';
 import { useUiStore } from '../../../client/src/state/ui.js';
+import {
+  registerTerminal,
+  type TerminalHandle,
+} from '../../../client/src/terminal/terminal-registry.js';
 
 const keyEvent = (
   key: string,
@@ -136,6 +140,27 @@ describe('default bindings', () => {
     useUiStore.getState().setCommandButtonMenuOpen(false);
   });
 
+  it('opens the Send secret picker with its own chord, only beside a terminal', () => {
+    useUiStore.getState().setSendSecretMenuOpen(false);
+    const commands = commandsForChord('Mod+Shift+P');
+    expect(commands.map((command) => command.id)).toEqual(['terminal.send-secret']);
+    expect(commands[0]?.title).toBe('Send secret…');
+
+    expect(commands[0]?.run()).toBe(false);
+    expect(useUiStore.getState().sendSecretMenuOpen).toBe(false);
+
+    useTabsStore.setState({ activeId: 'tab-secret' });
+    const unregister = registerTerminal('tab-secret', {} as TerminalHandle);
+    try {
+      expect(commands[0]?.run()).toBe(true);
+      expect(useUiStore.getState().sendSecretMenuOpen).toBe(true);
+    } finally {
+      unregister();
+      useUiStore.getState().setSendSecretMenuOpen(false);
+      useTabsStore.setState({ activeId: null });
+    }
+  });
+
   it('switches between the terminal and open files with Control+`', () => {
     useTabsStore.setState({
       tabs: [],
@@ -222,6 +247,15 @@ describe('user overrides', () => {
   it('reports a chord shared with another command', () => {
     const clashing = { 'pane.zoom': ['Mod+Shift+T'] };
     expect([...conflictingCommandIds(clashing)].sort()).toEqual(['pane.zoom', 'tab.new']);
+  });
+
+  it('leaves Send BREAK unbound until a chord is recorded for it', () => {
+    expect(keyCommand('terminal.send-break')?.defaultChords).toEqual([]);
+    const bound = { 'terminal.send-break': ['Ctrl+Alt+KeyB'] };
+    expect(commandsForChord('Ctrl+Alt+KeyB', bound).map((command) => command.id)).toEqual([
+      'terminal.send-break',
+    ]);
+    expect(conflictingCommandIds(bound).has('terminal.send-break')).toBe(false);
   });
 
   it('recognizes an override that only restates the default', () => {

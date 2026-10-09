@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { toggleMultiExec } from '../../../client/src/session-actions.js';
 import {
   broadcastTerminalInput,
+  broadcastTerminalPaste,
   multiExecPaneIds,
   useMultiExecStore,
 } from '../../../client/src/state/multi-exec.js';
+import { cancelPaste } from '../../../client/src/state/paste-progress.js';
 import { useTabsStore } from '../../../client/src/state/tabs.js';
 import { useToastStore } from '../../../client/src/state/toast.js';
 import {
@@ -12,7 +14,10 @@ import {
   type TerminalHandle,
 } from '../../../client/src/terminal/terminal-registry.js';
 
-function handle(sendInput: TerminalHandle['sendInput']): TerminalHandle {
+function handle(
+  sendInput: TerminalHandle['sendInput'],
+  overrides: Partial<TerminalHandle> = {},
+): TerminalHandle {
   return {
     focus: vi.fn(),
     cursorAnchorPosition: () => undefined,
@@ -35,6 +40,11 @@ function handle(sendInput: TerminalHandle['sendInput']): TerminalHandle {
     prepareTransfer: vi.fn(async () => true),
     cancelTransfer: vi.fn(),
     openFileTransfer: vi.fn(() => false),
+    sendPaste: vi.fn(() => true),
+    cancelPaste: vi.fn(),
+    sendBreak: vi.fn(() => true),
+    cancelLoginSequence: vi.fn(() => false),
+    ...overrides,
   };
 }
 
@@ -97,6 +107,40 @@ describe('multi-execution routing', () => {
     expect(broadcastTerminalInput('tab-a', 'uptime\r')).toBe(1);
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledWith('uptime\r');
+    unregister.forEach((dispose) => dispose());
+  });
+
+  it('hands a paste to each other mirrored terminal to pace on its own', () => {
+    const pastes = [vi.fn(() => true), vi.fn(() => true), vi.fn(() => false), vi.fn(() => true)];
+    const unregister = ['tab-a', 'tab-b', 'tab-c', 'tab-d'].map((id, index) =>
+      registerTerminal(id, handle(vi.fn(() => true), { sendPaste: pastes[index]! })),
+    );
+    useMultiExecStore.getState().setSelection(['tab-a', 'tab-b', 'tab-c']);
+
+    // Raw text, not bytes: each terminal applies its own pacing and bracketed paste mode.
+    expect(broadcastTerminalPaste('tab-a', 'conf t\nexit\n')).toBe(1);
+    expect(pastes[0]).not.toHaveBeenCalled();
+    expect(pastes[1]).toHaveBeenCalledWith('conf t\nexit\n');
+    expect(pastes[2]).toHaveBeenCalledWith('conf t\nexit\n');
+    expect(pastes[3]).not.toHaveBeenCalled();
+
+    useMultiExecStore.getState().setSelection(['tab-a']);
+    expect(broadcastTerminalPaste('tab-a', 'uptime\n')).toBe(0);
+    unregister.forEach((dispose) => dispose());
+  });
+
+  it('cancels a paced paste in every mirrored terminal, or only in its own', () => {
+    const cancels = [vi.fn(), vi.fn(), vi.fn()];
+    const unregister = ['tab-a', 'tab-b', 'tab-c'].map((id, index) =>
+      registerTerminal(id, handle(vi.fn(() => true), { cancelPaste: cancels[index]! })),
+    );
+
+    cancelPaste('tab-c');
+    expect(cancels.map((cancel) => cancel.mock.calls.length)).toEqual([0, 0, 1]);
+
+    useMultiExecStore.getState().setSelection(['tab-a', 'tab-b']);
+    cancelPaste('tab-b');
+    expect(cancels.map((cancel) => cancel.mock.calls.length)).toEqual([1, 1, 1]);
     unregister.forEach((dispose) => dispose());
   });
 

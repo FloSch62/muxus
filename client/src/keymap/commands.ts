@@ -13,6 +13,7 @@ import {
 import { usePrefsStore } from '../state/prefs.js';
 import { PANE_RESIZE_STEP, isRemoteSessionTab, useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
+import { sendBreak } from '../terminal/send-break.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
 import type { PaneDirection } from '../state/workspace-layout.js';
 
@@ -309,6 +310,18 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
     },
   },
   {
+    id: 'terminal.send-secret',
+    title: 'Send secret…',
+    category: 'terminal',
+    defaultChords: ['Mod+Shift+P'],
+    keywords: ['password', 'vault', 'enable', 'sudo', 'pin', 'type secret', 'credential'],
+    run: () => {
+      if (!activeTerminal()) return false;
+      useUiStore.getState().setSendSecretMenuOpen(true);
+      return true;
+    },
+  },
+  {
     id: 'terminal.toggle-editor',
     title: 'Switch between terminal and open files',
     category: 'terminal',
@@ -399,6 +412,29 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
       if (!tabs().tabs.some(isRemoteSessionTab)) return false;
       void requestForceReconnectAll();
       return true;
+    },
+  },
+  {
+    id: 'terminal.send-break',
+    title: 'Send BREAK',
+    category: 'terminal',
+    defaultChords: [],
+    keywords: ['break', 'serial', 'telnet', 'ssh', 'console', 'rommon', 'sysrq', 'openboot'],
+    run: () => {
+      const state = tabs();
+      return sendBreak(state.tabs.find((tab) => tab.id === state.activeId));
+    },
+  },
+  {
+    id: 'terminal.cancel-login-sequence',
+    title: 'Cancel login sequence',
+    category: 'terminal',
+    defaultChords: [],
+    keywords: ['login', 'sequence', 'expect', 'stop', 'abort'],
+    run: () => {
+      const id = tabs().activeId;
+      if (!tabs().tabs.find((tab) => tab.id === id)?.loginSequence) return false;
+      return terminalHandle(id)?.cancelLoginSequence() ?? false;
     },
   },
   {

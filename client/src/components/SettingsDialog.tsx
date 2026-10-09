@@ -9,6 +9,7 @@ import DialogTitle from '@mui/material/DialogTitle';
 import FormControl from '@mui/material/FormControl';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
+import InputAdornment from '@mui/material/InputAdornment';
 import MenuItem from '@mui/material/MenuItem';
 import Select from '@mui/material/Select';
 import Skeleton from '@mui/material/Skeleton';
@@ -47,6 +48,7 @@ import {
   sessionLogFileName,
   sessionLogFilePatternError,
 } from '@muxus/shared';
+import { parsePasteDelay, PASTE_DELAY_MAX } from '../terminal/paste-pacing.js';
 import { fetchAppLogs, formatLogEntry } from '../api/logs.js';
 import {
   useSaveSessionHistorySettings,
@@ -115,6 +117,7 @@ import { chordSx } from './chord-style.js';
 import { CustomTerminalSchemeSettings } from './CustomTerminalSchemeSettings.js';
 import { HighlightProfilesSection } from './HighlightProfilesSection.js';
 import { LayoutPreview } from './LayoutPreview.js';
+import { LinkHandlerSettings } from './LinkHandlerSettings.js';
 import { LocalShellProfilesSection } from './LocalShellProfilesSection.js';
 import { SessionLoggingPolicyFields } from './SessionLoggingPolicyFields.js';
 import { RowSelect, SettingRow, SettingsGroup, SettingsPage } from './SettingsLayout.js';
@@ -1005,6 +1008,49 @@ function TerminalSection() {
         />
       </SettingsGroup>
 
+      <SettingsGroup title="Paste pacing">
+        <SettingRow
+          label="Delay after each line"
+          labelFor="settings-paste-line-delay"
+          description="Type pastes in a line at a time, for consoles and network devices that drop input sent all at once. 0 sends pastes at once. Hosts can set their own under Terminal appearance."
+          control={
+            <TextField
+              id="settings-paste-line-delay"
+              type="number"
+              value={prefs.pasteLineDelayMs}
+              onChange={(e) =>
+                prefs.set({ pasteLineDelayMs: parsePasteDelay(e.target.value, 'line') ?? 0 })
+              }
+              slotProps={{
+                input: { endAdornment: <InputAdornment position="end">ms</InputAdornment> },
+                htmlInput: { min: 0, max: PASTE_DELAY_MAX.line, step: 50 },
+              }}
+              sx={{ width: 140 }}
+            />
+          }
+        />
+        <SettingRow
+          label="Delay after each character"
+          labelFor="settings-paste-char-delay"
+          description="Also wait after every character, for devices that cannot keep up within a line."
+          control={
+            <TextField
+              id="settings-paste-char-delay"
+              type="number"
+              value={prefs.pasteCharDelayMs}
+              onChange={(e) =>
+                prefs.set({ pasteCharDelayMs: parsePasteDelay(e.target.value, 'char') ?? 0 })
+              }
+              slotProps={{
+                input: { endAdornment: <InputAdornment position="end">ms</InputAdornment> },
+                htmlInput: { min: 0, max: PASTE_DELAY_MAX.char },
+              }}
+              sx={{ width: 140 }}
+            />
+          }
+        />
+      </SettingsGroup>
+
       <SettingsGroup title="Buffer & rendering">
         <SettingRow
           label="Scrollback lines"
@@ -1181,6 +1227,7 @@ function BehaviorSection() {
           }
         />
       </SettingsGroup>
+      <LinkHandlerSettings />
     </SettingsPage>
   );
 }

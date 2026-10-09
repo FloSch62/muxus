@@ -9,6 +9,7 @@ const DO = 253;
 const WONT = 252;
 const WILL = 251;
 const SB = 250;
+const BRK = 243;
 const SE = 240;
 
 const OPT_BINARY = 0;
@@ -365,8 +366,22 @@ export class TelnetTransport extends EventEmitter implements TerminalTransport {
     };
   }
 
+  drain(): Promise<void> {
+    if (this.ended) return Promise.resolve();
+    // An empty write calls back once every earlier one has been flushed.
+    return new Promise((resolve) => this.socket.write(Buffer.alloc(0), () => resolve()));
+  }
+
   resize(cols: number, rows: number): void {
     this.codec.resize(cols, rows);
+  }
+
+  sendBreak(): Promise<void> {
+    if (this.ended || this.socket.destroyed) {
+      return Promise.reject(new Error('the Telnet connection is closed'));
+    }
+    this.socket.write(Buffer.from([IAC, BRK]));
+    return Promise.resolve();
   }
 
   pause(): void {

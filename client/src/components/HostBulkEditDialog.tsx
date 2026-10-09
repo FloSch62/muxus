@@ -17,6 +17,7 @@ import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import HighlightOutlinedIcon from '@mui/icons-material/HighlightOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
+import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import { useApplyBulkHostEdit } from '../api/host-bulk-edit.js';
 import { useSessionLoggingPolicies, useSessionLoggingPolicy } from '../api/queries.js';
@@ -32,6 +33,7 @@ import {
   type BulkHostField,
   type BulkHostValues,
 } from '../host-bulk-edit.js';
+import { newLoginStep } from '../login-sequence.js';
 import { managedHostDisplayName, managedHostKey } from '../managed-hosts.js';
 import { hostSessionLoggingDraft } from '../session-logging-policy.js';
 import { useCustomTerminalSchemes, usePrefsStore } from '../state/prefs.js';
@@ -41,6 +43,8 @@ import { FolderPathField } from './FolderPathField.js';
 import { HostColorPicker } from './HostColorPicker.js';
 import { EditorShell, type EditorSectionDef } from './host-editor/EditorShell.js';
 import { LoggingSection } from './host-editor/LoggingSection.js';
+import { PasteDelayField } from './host-editor/PasteDelayField.js';
+import { LoginSequenceEditor } from './LoginSequenceEditor.js';
 import {
   ColorOverride,
   commandButtonGroupOptions,
@@ -49,7 +53,7 @@ import {
 import { TerminalSchemeSelect } from './TerminalSchemeSelect.js';
 import { useAllManagedHosts } from './sidebar/useAllManagedHosts.js';
 
-type Section = 'organize' | 'connection' | 'appearance' | 'highlighting' | 'logging';
+type Section = 'organize' | 'connection' | 'appearance' | 'highlighting' | 'logging' | 'login';
 
 const SECTIONS: ReadonlyArray<{
   value: Section;
@@ -76,7 +80,14 @@ const SECTIONS: ReadonlyArray<{
     value: 'appearance',
     label: 'Terminal appearance',
     icon: <PaletteOutlinedIcon fontSize="small" />,
-    fields: ['terminalScheme', 'terminalFontColor', 'terminalBackgroundColor', 'commandButtonGroup'],
+    fields: [
+      'terminalScheme',
+      'terminalFontColor',
+      'terminalBackgroundColor',
+      'commandButtonGroup',
+      'pasteLineDelayMs',
+      'pasteCharDelayMs',
+    ],
   },
   {
     value: 'highlighting',
@@ -85,6 +96,7 @@ const SECTIONS: ReadonlyArray<{
     fields: ['highlightProfileId', 'highlightInheritGlobal'],
   },
   { value: 'logging', label: 'Session logging', icon: <HistoryOutlinedIcon fontSize="small" />, fields: ['sessionLogging'] },
+  { value: 'login', label: 'Login sequence', icon: <LoginOutlinedIcon fontSize="small" />, fields: ['loginSequence'] },
 ];
 
 /** Selected while hosts disagree: a hidden option, so any real choice is a change. */
@@ -249,6 +261,8 @@ function BulkEditBody({ hostKeys, onClose }: { hostKeys: readonly string[]; onCl
           fontColor={field('terminalFontColor')}
           backgroundColor={field('terminalBackgroundColor')}
           commandButtonGroup={field('commandButtonGroup')}
+          pasteLineDelayMs={field('pasteLineDelayMs')}
+          pasteCharDelayMs={field('pasteCharDelayMs')}
         />
       )}
       {section === 'highlighting' && (
@@ -264,6 +278,9 @@ function BulkEditBody({ hostKeys, onClose }: { hostKeys: readonly string[]; onCl
           logging={field('sessionLogging')}
           startingPoint={defaultPolicy ? hostSessionLoggingDraft(defaultPolicy, true) : undefined}
         />
+      )}
+      {section === 'login' && (
+        <BulkLoginSequenceSection total={hosts.length} sequence={field('loginSequence')} />
       )}
     </EditorShell>
   );
@@ -449,15 +466,21 @@ function AppearanceSection({
   fontColor,
   backgroundColor,
   commandButtonGroup,
+  pasteLineDelayMs,
+  pasteCharDelayMs,
 }: {
   total: number;
   scheme: BulkFieldState<string | undefined>;
   fontColor: BulkFieldState<string | undefined>;
   backgroundColor: BulkFieldState<string | undefined>;
   commandButtonGroup: BulkFieldState<string | undefined>;
+  pasteLineDelayMs: BulkFieldState<number | undefined>;
+  pasteCharDelayMs: BulkFieldState<number | undefined>;
 }) {
   const customSchemes = useCustomTerminalSchemes();
   const commandGroups = usePrefsStore((state) => state.commandButtonGroups);
+  const defaultLineDelay = usePrefsStore((state) => state.pasteLineDelayMs);
+  const defaultCharDelay = usePrefsStore((state) => state.pasteCharDelayMs);
   // With mixed schemes the color pickers start from the application's own.
   const defaults = useTerminalColorDefaults(scheme.mixed ? undefined : scheme.value);
 
@@ -515,6 +538,28 @@ function AppearanceSection({
         />
         <FieldStatus state={commandButtonGroup} inset />
       </Box>
+      <Stack direction="row" spacing={1.5}>
+        <Box sx={{ flex: 1 }}>
+          <PasteDelayField
+            kind="line"
+            value={pasteLineDelayMs.value}
+            mixed={pasteLineDelayMs.mixed}
+            defaultValue={defaultLineDelay}
+            onChange={pasteLineDelayMs.set}
+          />
+          <FieldStatus state={pasteLineDelayMs} inset />
+        </Box>
+        <Box sx={{ flex: 1 }}>
+          <PasteDelayField
+            kind="char"
+            value={pasteCharDelayMs.value}
+            mixed={pasteCharDelayMs.mixed}
+            defaultValue={defaultCharDelay}
+            onChange={pasteCharDelayMs.set}
+          />
+          <FieldStatus state={pasteCharDelayMs} inset />
+        </Box>
+      </Stack>
     </Stack>
   );
 }
@@ -634,6 +679,68 @@ function BulkLoggingSection({
         description={description}
       />
       <FieldStatus state={logging} />
+    </Stack>
+  );
+}
+
+function BulkLoginSequenceSection({
+  total,
+  sequence,
+}: {
+  total: number;
+  sequence: BulkFieldState<BulkHostValues['loginSequence']>;
+}) {
+  const intro = (
+    <SectionIntro
+      title="Login sequence"
+      description={describe(
+        applicableCount(sequence.summary),
+        total,
+        'terminal host',
+        'Steps each session runs after it connects. Hosts that use their folder’s sequence follow the folder they are in.',
+      )}
+    />
+  );
+
+  if (!sequence.value) {
+    return (
+      <Stack spacing={2}>
+        {intro}
+        <Alert
+          severity="info"
+          variant="outlined"
+          action={
+            <Stack direction="row" spacing={0.5} sx={{ whiteSpace: 'nowrap' }}>
+              <Button color="inherit" size="small" onClick={() => sequence.set({ mode: 'inherit', steps: [] })}>
+                Use folders
+              </Button>
+              <Button
+                color="inherit"
+                size="small"
+                onClick={() => sequence.set({ mode: 'custom', steps: [newLoginStep('wait')] })}
+              >
+                Set one sequence
+              </Button>
+            </Stack>
+          }
+        >
+          These hosts log in differently. Each keeps its own login sequence until you set one for
+          all of them.
+        </Alert>
+      </Stack>
+    );
+  }
+
+  return (
+    <Stack spacing={2}>
+      {intro}
+      <LoginSequenceEditor
+        value={sequence.value}
+        onChange={sequence.set}
+        inheritLabel="Use the folder's login sequence"
+        inheritEmptyText="Each host runs the sequence of the folder it is in, if that folder sets one."
+      />
+      <FieldStatus state={sequence} />
     </Stack>
   );
 }

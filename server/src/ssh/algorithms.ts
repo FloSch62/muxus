@@ -79,6 +79,19 @@ export function supportedAlgorithms(): Record<string, string[]> {
 }
 
 /** Throws when an exact list leaves no algorithm ssh2 could offer at all. */
+/**
+ * A HostKeyAlgorithms value that asks the server for one key type first and
+ * otherwise keeps the usual order. It is spelled out in full because ssh2
+ * ignores `^` for algorithms it already offers.
+ */
+export function hostKeyAlgorithmsPreferring(keyType: string): string {
+  const preferred = keyType === 'ssh-rsa' ? ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa'] : [keyType];
+  return [
+    ...preferred,
+    ...ssh2Constants.DEFAULT_SERVER_HOST_KEY.filter((name) => !preferred.includes(name)),
+  ].join(',');
+}
+
 export function connectionAlgorithms(
   resolved: Pick<ResolvedTarget, 'ciphers' | 'kexAlgorithms' | 'hostKeyAlgorithms' | 'macs' | 'compression'>,
 ): ConnectionAlgorithms {
