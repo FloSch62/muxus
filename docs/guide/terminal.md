@@ -203,10 +203,10 @@ keeps the sender's padding up to a whole block. Sending with ZMODEM types `rz` f
 
 ### While a transfer runs
 
-Terminal output pauses and keystrokes are held back until the transfer ends. A panel over
-the terminal shows the file, the progress, the transfer rate and **Cancel**. Cancel sends
-the CAN sequence, which stops `sz`, `rz`, `loady` and the like, and then lets the remote
-side's message and prompt through again.
+Terminal output pauses, and keystrokes, pastes and vault secrets are held back until the
+transfer ends. A panel over the terminal shows the file, the progress, the transfer rate
+and **Cancel**. Cancel sends the CAN sequence, which stops `sz`, `rz`, `loady` and the
+like, and then lets the remote side's message and prompt through again.
 
 The transferred bytes are kept out of [session history](session-history.md) and log
 files; a line such as `ZMODEM: received report.tar.gz (12 MiB)` records the transfer

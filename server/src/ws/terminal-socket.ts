@@ -485,7 +485,8 @@ async function handleSession(
   // Input the backend types for the user, such as a vault secret, goes to the
   // transport directly and never through the recorder below.
   const unregisterInput = ctx.terminalInputs.register(terminalId, (data) => {
-    if (!socketOpen || !writeInput) return false;
+    // Like keystrokes, it would corrupt a file transfer that owns the line.
+    if (!socketOpen || !writeInput || transfers?.busy) return false;
     writeInput(data);
     return true;
   });
@@ -527,7 +528,8 @@ async function handleSession(
   let writePastedInput: ((data: Buffer) => Promise<void>) | undefined;
   const pastePacer = new PastePacer(
     (data) => {
-      if (!writePastedInput) return;
+      // Dropped while a file transfer owns the line, as keystrokes are.
+      if (!writePastedInput || transfers?.busy) return;
       recorder?.input(data);
       return writePastedInput(data);
     },

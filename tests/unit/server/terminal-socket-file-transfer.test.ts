@@ -85,7 +85,7 @@ async function sshTerminal() {
 }
 
 describe('file transfers on the terminal socket', () => {
-  it('keeps transfer bytes out of the terminal and the session log, and holds keystrokes', async () => {
+  it('keeps transfer bytes out of the terminal and the session log, and holds input', async () => {
     const recorded: string[] = [];
     vi.spyOn(SessionRecorder.prototype, 'output').mockImplementation((data) => {
       recorded.push(Buffer.from(data).toString('latin1'));
@@ -108,6 +108,16 @@ describe('file transfers on the terminal socket', () => {
     test.stream.emit('data', Buffer.from('MORE-SECRET-DATA'));
     test.stream.write.mockClear();
     test.socket.emit('message', Buffer.from('typed while busy'), true);
+    expect(test.stream.write).not.toHaveBeenCalled();
+    // So do a vault secret and a paced paste the backend would type.
+    const session = test.controls().find((frame) => frame.op === 'session') as { terminalId?: string } | undefined;
+    expect(test.ctx.terminalInputs.writer(session!.terminalId!)?.(Buffer.from('vault-secret'))).toBe(false);
+    test.socket.emit(
+      'message',
+      Buffer.from(JSON.stringify({ op: 'paste', text: 'pasted\r', bracketed: false, lineDelayMs: 0, charDelayMs: 0 })),
+      false,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
     expect(test.stream.write).not.toHaveBeenCalled();
 
     test.socket.emit('message', Buffer.from(JSON.stringify({ op: 'file-transfer-cancel' })), false);
