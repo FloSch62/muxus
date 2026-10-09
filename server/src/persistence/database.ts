@@ -448,6 +448,19 @@ const MIGRATIONS = [
         ADD COLUMN auto_reconnect INTEGER NOT NULL DEFAULT 0 CHECK(auto_reconnect IN (0, 1));
     `,
   },
+  {
+    version: 26,
+    name: 'host-paste-pacing',
+    // NULL follows the Terminal settings; the upper bounds are the API's.
+    sql: `
+      ALTER TABLE connection_profiles
+        ADD COLUMN paste_line_delay_ms INTEGER
+        CHECK(paste_line_delay_ms IS NULL OR paste_line_delay_ms >= 0);
+      ALTER TABLE connection_profiles
+        ADD COLUMN paste_char_delay_ms INTEGER
+        CHECK(paste_char_delay_ms IS NULL OR paste_char_delay_ms >= 0);
+    `,
+  },
 ] as const;
 
 /** Kinds stored as Muxus-owned saved hosts (everything but OpenSSH metadata rows). */
@@ -589,6 +602,8 @@ export interface OpenSshMetadata {
   terminalBackgroundColor?: string;
   keywordHighlights?: HostKeywordHighlightConfig;
   commandButtonGroup?: string;
+  pasteLineDelayMs?: number;
+  pasteCharDelayMs?: number;
   disableSftp?: boolean;
   consoleCompatibility?: boolean;
   lastConnectedAt?: string;
@@ -777,6 +792,8 @@ export class MuxusDatabase {
         profiles.terminal_background_color,
         profiles.keyword_highlights_json,
         profiles.command_button_group,
+        profiles.paste_line_delay_ms,
+        profiles.paste_char_delay_ms,
         profiles.disable_sftp,
         profiles.console_compatibility,
         profiles.last_connected_at,
@@ -886,6 +903,8 @@ export class MuxusDatabase {
             terminal_background_color = ?,
             keyword_highlights_json = ?,
             command_button_group = ?,
+            paste_line_delay_ms = ?,
+            paste_char_delay_ms = ?,
             disable_sftp = ?,
             console_compatibility = ?,
             updated_at = CURRENT_TIMESTAMP
@@ -913,6 +932,12 @@ export class MuxusDatabase {
         patch.commandButtonGroup === undefined
           ? nullableString(current.command_button_group)
           : patch.commandButtonGroup,
+        patch.pasteLineDelayMs === undefined
+          ? nullableNumber(current.paste_line_delay_ms)
+          : patch.pasteLineDelayMs,
+        patch.pasteCharDelayMs === undefined
+          ? nullableNumber(current.paste_char_delay_ms)
+          : patch.pasteCharDelayMs,
         patch.disableSftp === undefined
           ? Number(current.disable_sftp)
           : patch.disableSftp
@@ -1379,6 +1404,8 @@ export class MuxusDatabase {
             terminal_background_color = ?,
             keyword_highlights_json = ?,
             command_button_group = ?,
+            paste_line_delay_ms = ?,
+            paste_char_delay_ms = ?,
             disable_sftp = ?,
             console_compatibility = ?,
             updated_at = CURRENT_TIMESTAMP
@@ -1406,6 +1433,12 @@ export class MuxusDatabase {
         patch.commandButtonGroup === undefined
           ? nullableString(current.command_button_group)
           : patch.commandButtonGroup,
+        patch.pasteLineDelayMs === undefined
+          ? nullableNumber(current.paste_line_delay_ms)
+          : patch.pasteLineDelayMs,
+        patch.pasteCharDelayMs === undefined
+          ? nullableNumber(current.paste_char_delay_ms)
+          : patch.pasteCharDelayMs,
         patch.disableSftp === undefined
           ? Number(current.disable_sftp)
           : patch.disableSftp
@@ -2321,6 +2354,8 @@ function metadataFromRow(row: SqlRow): OpenSshMetadata {
     terminalBackgroundColor: optionalString(row.terminal_background_color),
     keywordHighlights: keywordHighlightsFromJson(row.keyword_highlights_json),
     commandButtonGroup: optionalString(row.command_button_group),
+    pasteLineDelayMs: nullableNumber(row.paste_line_delay_ms) ?? undefined,
+    pasteCharDelayMs: nullableNumber(row.paste_char_delay_ms) ?? undefined,
     ...(Number(row.disable_sftp) === 1 ? { disableSftp: true } : {}),
     ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),
     lastConnectedAt: optionalString(row.last_connected_at),
@@ -2348,6 +2383,8 @@ function savedHostFromRow(row: SqlRow): SavedHostProfile {
       terminalBackgroundColor: optionalString(row.terminal_background_color),
       keywordHighlights: keywordHighlightsFromJson(row.keyword_highlights_json),
       commandButtonGroup: optionalString(row.command_button_group),
+      pasteLineDelayMs: nullableNumber(row.paste_line_delay_ms) ?? undefined,
+      pasteCharDelayMs: nullableNumber(row.paste_char_delay_ms) ?? undefined,
       ...(Number(row.disable_sftp) === 1 ? { disableSftp: true } : {}),
       ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),
       lastConnectedAt: optionalString(row.last_connected_at),
@@ -2384,6 +2421,10 @@ function optionalString(value: unknown): string | undefined {
 
 function nullableString(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
+}
+
+function nullableNumber(value: unknown): number | null {
+  return typeof value === 'number' || typeof value === 'bigint' ? Number(value) : null;
 }
 
 function requireNonEmpty(value: string, name: string): void {

@@ -87,6 +87,12 @@ export class SerialTransport extends EventEmitter implements TerminalTransport {
     if (!this.ended && this.port.isOpen) this.port.write(data);
   }
 
+  drain(): Promise<void> {
+    if (this.ended || !this.port.isOpen) return Promise.resolve();
+    // Waits for the bytes to be transmitted on the line, not just queued.
+    return new Promise((resolve) => this.port.drain(() => resolve()));
+  }
+
   resize(_cols: number, _rows: number): void {
     // Serial links have no standard window-size negotiation.
   }

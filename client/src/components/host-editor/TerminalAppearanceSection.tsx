@@ -18,12 +18,15 @@ import {
   terminalSchemeIdForHost,
 } from '../../terminal/palette.js';
 import { TerminalSchemeSelect } from '../TerminalSchemeSelect.js';
+import { PasteDelayField } from './PasteDelayField.js';
 
 export interface HostTerminalAppearance {
   terminalScheme?: string;
   terminalFontColor?: string;
   terminalBackgroundColor?: string;
   commandButtonGroup?: string;
+  pasteLineDelayMs?: number;
+  pasteCharDelayMs?: number;
 }
 
 /** Terminal colors saved with a host, shared by all three host kinds. */
@@ -36,6 +39,8 @@ export function TerminalAppearanceSection({
 }) {
   const customSchemes = useCustomTerminalSchemes();
   const defaults = useTerminalColorDefaults(value.terminalScheme);
+  const pasteLineDelayMs = usePrefsStore((state) => state.pasteLineDelayMs);
+  const pasteCharDelayMs = usePrefsStore((state) => state.pasteCharDelayMs);
 
   return (
     <Stack spacing={2.5}>
@@ -81,6 +86,29 @@ export function TerminalAppearanceSection({
         value={value.commandButtonGroup}
         onChange={(commandButtonGroup) => onChange({ commandButtonGroup })}
       />
+      <Box sx={{ pt: 1 }}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+          Paste pacing
+        </Typography>
+        <Typography variant="body2" color="textSecondary">
+          Type pastes in slowly for consoles that drop input sent all at once. Empty follows
+          the Terminal settings; 0 sends pastes at once.
+        </Typography>
+      </Box>
+      <Stack direction="row" spacing={1.5}>
+        <PasteDelayField
+          kind="line"
+          value={value.pasteLineDelayMs}
+          defaultValue={pasteLineDelayMs}
+          onChange={(delay) => onChange({ pasteLineDelayMs: delay })}
+        />
+        <PasteDelayField
+          kind="char"
+          value={value.pasteCharDelayMs}
+          defaultValue={pasteCharDelayMs}
+          onChange={(delay) => onChange({ pasteCharDelayMs: delay })}
+        />
+      </Stack>
     </Stack>
   );
 }

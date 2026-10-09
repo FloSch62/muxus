@@ -100,6 +100,10 @@ Multi-execution mirrors keystrokes into several live terminals at once.
 3. Type in any selected terminal. Every selected terminal receives the same input.
 4. **Clear selection** when finished.
 
+A paste is mirrored as well. Each terminal types it in at its own host's
+[paste pace](terminal.md#pasting-into-slow-consoles), so a slow serial console does not
+hold up the others, and cancelling the paste in one terminal stops it in all of them.
+
 !!! danger "Mirrored input reaches every selected session"
 
     This includes any session where a prompt is waiting for confirmation. The control stays

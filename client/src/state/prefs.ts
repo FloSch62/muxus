@@ -23,7 +23,13 @@ import {
   type CustomTerminalScheme,
 } from '../terminal/custom-schemes.js';
 import type { TerminalScheme } from '../terminal/palette.js';
-import type { KeywordHighlightProfile, KeywordHighlightRule } from '@muxus/shared';
+import {
+  MAX_PASTE_CHAR_DELAY_MS,
+  MAX_PASTE_LINE_DELAY_MS,
+  validPasteDelay,
+  type KeywordHighlightProfile,
+  type KeywordHighlightRule,
+} from '@muxus/shared';
 import {
   DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
   MAX_SSH_KEEPALIVE_INTERVAL_SECONDS,
@@ -172,6 +178,10 @@ export interface PrefsState {
   terminalFileLinkActivation: TerminalFileLinkActivation;
   /** Preview multiline pastes before they can run several shell commands. */
   pasteWarnMultiline: boolean;
+  /** Wait after each pasted line, in milliseconds; hosts may set their own. */
+  pasteLineDelayMs: number;
+  /** Wait after each pasted character, in milliseconds; hosts may set their own. */
+  pasteCharDelayMs: number;
   /** Ask before closing a tab with a live session. */
   confirmCloseConnected: boolean;
   /** Dial remote sessions on workspace restore and retry dropped connections. */
@@ -355,6 +365,12 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
     delete state.sshKeepaliveIntervalSeconds;
   }
   if (typeof state.sshSessionSummary !== 'boolean') delete state.sshSessionSummary;
+  if (!validPasteDelay(state.pasteLineDelayMs, MAX_PASTE_LINE_DELAY_MS)) {
+    delete state.pasteLineDelayMs;
+  }
+  if (!validPasteDelay(state.pasteCharDelayMs, MAX_PASTE_CHAR_DELAY_MS)) {
+    delete state.pasteCharDelayMs;
+  }
   if (typeof state.showStatusBar !== 'boolean') delete state.showStatusBar;
   if (!isStatusBarItemList(state.statusBarItems)) delete state.statusBarItems;
   if (typeof state.rememberPasswordsByDefault !== 'boolean') {
@@ -539,6 +555,8 @@ export const usePrefsStore = create<PrefsState>()(
       rightClickAction: 'copy-paste',
       terminalFileLinkActivation: 'alt',
       pasteWarnMultiline: true,
+      pasteLineDelayMs: 0,
+      pasteCharDelayMs: 0,
       confirmCloseConnected: true,
       autoReconnectRemote: true,
       sshKeepaliveIntervalSeconds: DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,

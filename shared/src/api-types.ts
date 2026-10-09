@@ -704,6 +704,9 @@ export interface OpenSshProfileMetadata {
   keywordHighlights?: HostKeywordHighlightConfig;
   /** Command button group the bar switches to while this host's session is active. */
   commandButtonGroup?: string;
+  /** Paste pacing for this host's sessions; absent follows the Terminal settings. */
+  pasteLineDelayMs?: number;
+  pasteCharDelayMs?: number;
   /** Do not open SFTP channels or probe for remote Unix shell integration. */
   disableSftp?: boolean;
   /** Console appliances: also suppress env requests and tolerate a rejected PTY. */
@@ -722,6 +725,8 @@ export interface OpenSshMetadataPatch {
   terminalBackgroundColor?: string | null;
   keywordHighlights?: HostKeywordHighlightConfig | null;
   commandButtonGroup?: string | null;
+  pasteLineDelayMs?: number | null;
+  pasteCharDelayMs?: number | null;
   disableSftp?: boolean;
   consoleCompatibility?: boolean;
 }

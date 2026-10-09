@@ -19,6 +19,11 @@ import type {
   TunnelRecord,
   TunnelsResponse,
 } from '@muxus/shared';
+import {
+  MAX_PASTE_CHAR_DELAY_MS,
+  MAX_PASTE_LINE_DELAY_MS,
+  validPasteDelay,
+} from '@muxus/shared';
 import { apiFetch } from './api/http.js';
 import { fetchHostPreview } from './api/ssh-config.js';
 import {
@@ -85,6 +90,8 @@ const PREFERENCE_KEYS = [
   'rightClickAction',
   'terminalFileLinkActivation',
   'pasteWarnMultiline',
+  'pasteLineDelayMs',
+  'pasteCharDelayMs',
   'confirmCloseConnected',
   'sshSessionSummary',
   'rememberPasswordsByDefault',
@@ -641,6 +648,8 @@ function portableMetadata(
     terminalBackgroundColor: metadata.terminalBackgroundColor,
     keywordHighlights: metadata.keywordHighlights,
     commandButtonGroup: metadata.commandButtonGroup,
+    pasteLineDelayMs: metadata.pasteLineDelayMs,
+    pasteCharDelayMs: metadata.pasteCharDelayMs,
     disableSftp: metadata.disableSftp,
     consoleCompatibility: metadata.consoleCompatibility,
     sortOrder: metadata.sortOrder,
@@ -798,6 +807,8 @@ function metadataPatch(metadata: PortableHostMetadata): OpenSshMetadataPatch {
     terminalBackgroundColor: metadata.terminalBackgroundColor ?? null,
     keywordHighlights: metadata.keywordHighlights ?? null,
     commandButtonGroup: metadata.commandButtonGroup ?? null,
+    pasteLineDelayMs: metadata.pasteLineDelayMs ?? null,
+    pasteCharDelayMs: metadata.pasteCharDelayMs ?? null,
     disableSftp: metadata.disableSftp ?? false,
     consoleCompatibility: metadata.consoleCompatibility ?? false,
   };
@@ -906,6 +917,12 @@ export function sanitizePreferences(
   }
   if (typeof input.pasteWarnMultiline === 'boolean') {
     output.pasteWarnMultiline = input.pasteWarnMultiline;
+  }
+  if (validPasteDelay(input.pasteLineDelayMs, MAX_PASTE_LINE_DELAY_MS)) {
+    output.pasteLineDelayMs = input.pasteLineDelayMs;
+  }
+  if (validPasteDelay(input.pasteCharDelayMs, MAX_PASTE_CHAR_DELAY_MS)) {
+    output.pasteCharDelayMs = input.pasteCharDelayMs;
   }
   if (typeof input.confirmCloseConnected === 'boolean') {
     output.confirmCloseConnected = input.confirmCloseConnected;

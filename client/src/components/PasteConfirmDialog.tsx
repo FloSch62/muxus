@@ -5,10 +5,22 @@ import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
+import InputAdornment from '@mui/material/InputAdornment';
+import Stack from '@mui/material/Stack';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
+import {
+  pastePacingDurationMs,
+  preparePasteText,
+  type PastePacing,
+} from '@muxus/shared';
 import { terminalFontStack, usePrefsStore } from '../state/prefs.js';
 import { pasteLineNumberWindow } from '../terminal/paste-line-numbers.js';
+import {
+  formatPasteDuration,
+  parsePasteDelay,
+  PASTE_DELAY_MAX,
+} from '../terminal/paste-pacing.js';
 import { pasteLineCount } from '../terminal/paste-safety.js';
 
 const EDITOR_PADDING_Y_PX = 8.5;
@@ -30,19 +42,43 @@ function measureEditorLineHeight(textArea: HTMLTextAreaElement, fallback: number
   return Number.isFinite(measured) && measured > 0 ? measured : fallback;
 }
 
+/** What the pace means for this paste, or how to slow it down. */
+function pacingNote(text: string, pacing: PastePacing, mirrored: number): string {
+  const note =
+    pacing.lineDelayMs === 0 && pacing.charDelayMs === 0
+      ? 'Sent all at once. A line delay paces it for consoles that drop input.'
+      : `Takes ${formatPasteDuration(
+          pastePacingDurationMs(preparePasteText(text, false), pacing),
+        )}${pacing.charDelayMs > 0 ? `, with ${pacing.charDelayMs} ms after each character` : ''}.`;
+  return mirrored > 0
+    ? `${note} Mirrored terminals paste at their own host's pace.`
+    : note;
+}
+
 export function PasteConfirmDialog({
   initialText,
+  pacing,
+  mirrored = 0,
   onCancel,
   onConfirm,
 }: {
   initialText: string;
+  /** The host's pacing; the line delay can be changed for this paste. */
+  pacing: PastePacing;
+  /** Other terminals the paste is mirrored into under multi-execution. */
+  mirrored?: number;
   onCancel: () => void;
-  onConfirm: (text: string) => void;
+  onConfirm: (text: string, lineDelayMs: number) => void;
 }) {
   const monoFontSize = usePrefsStore((state) => state.monoFontSize);
   const fontFamily = usePrefsStore((state) => state.fontFamily);
   const lineHeight = usePrefsStore((state) => state.lineHeight);
   const [text, setText] = useState(initialText);
+  const [lineDelay, setLineDelay] = useState(String(pacing.lineDelayMs));
+  const lineDelayMs = parsePasteDelay(lineDelay, 'line') ?? 0;
+  const confirm = () => {
+    if (text.length > 0) onConfirm(text, lineDelayMs);
+  };
   const pasteButtonRef = useRef<HTMLButtonElement>(null);
   const lineNumbersRef = useRef<HTMLPreElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
@@ -133,7 +169,7 @@ export function PasteConfirmDialog({
             onKeyDown={(event) => {
               if (event.key !== 'Enter' || (!event.ctrlKey && !event.metaKey)) return;
               event.preventDefault();
-              if (text.length > 0) onConfirm(text);
+              confirm();
             }}
             multiline
             minRows={8}
@@ -174,6 +210,28 @@ export function PasteConfirmDialog({
         <Typography variant="caption" color="textSecondary" sx={{ display: 'block', mt: 1 }}>
           Enter adds a new line while editing. Press Ctrl+Enter or ⌘Enter to paste.
         </Typography>
+        <Stack direction="row" spacing={2} sx={{ alignItems: 'center', mt: 2 }}>
+          <TextField
+            size="small"
+            label="Delay after each line"
+            type="number"
+            value={lineDelay}
+            onChange={(event) => setLineDelay(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter') return;
+              event.preventDefault();
+              confirm();
+            }}
+            slotProps={{
+              input: { endAdornment: <InputAdornment position="end">ms</InputAdornment> },
+              htmlInput: { min: 0, max: PASTE_DELAY_MAX.line, step: 50 },
+            }}
+            sx={{ width: 200, flexShrink: 0 }}
+          />
+          <Typography variant="caption" color="textSecondary">
+            {pacingNote(text, { ...pacing, lineDelayMs }, mirrored)}
+          </Typography>
+        </Stack>
       </DialogContent>
       <DialogActions>
         <Button onClick={onCancel}>Cancel</Button>
@@ -182,7 +240,7 @@ export function PasteConfirmDialog({
           variant="contained"
           color="warning"
           disabled={text.length === 0}
-          onClick={() => onConfirm(text)}
+          onClick={confirm}
         >
           Paste
         </Button>

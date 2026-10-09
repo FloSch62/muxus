@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MAX_PASTE_CHAR_DELAY_MS, MAX_PASTE_LINE_DELAY_MS } from '@muxus/shared';
 
 const hexColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 
@@ -34,6 +35,9 @@ export const metadataPatchSchema = z
     keywordHighlights: hostKeywordHighlightsSchema.nullable().optional(),
     // The id of a command button group, which lives in the client's preferences.
     commandButtonGroup: z.string().min(1).max(200).nullable().optional(),
+    // Paste pacing in milliseconds; null follows the Terminal settings.
+    pasteLineDelayMs: z.number().int().min(0).max(MAX_PASTE_LINE_DELAY_MS).nullable().optional(),
+    pasteCharDelayMs: z.number().int().min(0).max(MAX_PASTE_CHAR_DELAY_MS).nullable().optional(),
     disableSftp: z.boolean().optional(),
     consoleCompatibility: z.boolean().optional(),
   })

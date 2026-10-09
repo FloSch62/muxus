@@ -255,6 +255,45 @@ describe('bulkEditPlan', () => {
     ]);
   });
 
+  it('sets paste delays on terminal hosts and clears them back to the settings', () => {
+    const hosts = [
+      openSsh('a', {}, { pasteLineDelayMs: 200 }),
+      telnet('t', { pasteLineDelayMs: 0 }),
+      saved('console', {
+        kind: 'serial',
+        path: '/dev/ttyUSB0',
+        baudRate: 9600,
+        dataBits: 8,
+        stopBits: 1,
+        parity: 'none',
+        flowControl: 'none',
+      }),
+      rdp('desk'),
+    ];
+
+    // An explicit 0 differs from following the settings.
+    expect(summarizeBulkValues(hosts, new Map()).pasteLineDelayMs).toEqual({
+      state: 'mixed',
+      count: 3,
+    });
+    expect(summarizeBulkValues(hosts, new Map()).pasteCharDelayMs).toEqual({
+      state: 'same',
+      count: 3,
+      value: undefined,
+    });
+    const set = bulkEditPlan(hosts, { pasteLineDelayMs: 200, pasteCharDelayMs: 2 });
+    expect(set.metadata).toEqual([
+      { host: hosts[0], patch: { pasteCharDelayMs: 2 } },
+      { host: hosts[1], patch: { pasteLineDelayMs: 200, pasteCharDelayMs: 2 } },
+      { host: hosts[2], patch: { pasteLineDelayMs: 200, pasteCharDelayMs: 2 } },
+    ]);
+    const cleared = bulkEditPlan(hosts, { pasteLineDelayMs: undefined });
+    expect(cleared.metadata).toEqual([
+      { host: hosts[0], patch: { pasteLineDelayMs: null } },
+      { host: hosts[1], patch: { pasteLineDelayMs: null } },
+    ]);
+  });
+
   it('applies terminal and SSH settings only where they mean something', () => {
     const hosts = [openSsh('a'), telnet('t'), rdp('desk')];
 

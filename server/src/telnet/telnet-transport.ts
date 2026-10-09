@@ -277,6 +277,12 @@ export class TelnetTransport extends EventEmitter implements TerminalTransport {
     if (!this.ended) this.socket.write(this.codec.encode(data));
   }
 
+  drain(): Promise<void> {
+    if (this.ended) return Promise.resolve();
+    // An empty write calls back once every earlier one has been flushed.
+    return new Promise((resolve) => this.socket.write(Buffer.alloc(0), () => resolve()));
+  }
+
   resize(cols: number, rows: number): void {
     this.codec.resize(cols, rows);
   }

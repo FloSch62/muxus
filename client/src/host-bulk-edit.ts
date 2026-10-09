@@ -44,6 +44,8 @@ export interface BulkHostValues {
   terminalFontColor: string | undefined;
   terminalBackgroundColor: string | undefined;
   commandButtonGroup: string | undefined;
+  pasteLineDelayMs: number | undefined;
+  pasteCharDelayMs: number | undefined;
   highlightProfileId: string | undefined;
   highlightInheritGlobal: boolean;
   sessionLogging: HostSessionLoggingDraft;
@@ -74,6 +76,8 @@ export const BULK_FIELD_AUDIENCE: { readonly [F in BulkHostField]: BulkAudience 
   terminalFontColor: 'terminal',
   terminalBackgroundColor: 'terminal',
   commandButtonGroup: 'terminal',
+  pasteLineDelayMs: 'terminal',
+  pasteCharDelayMs: 'terminal',
   highlightProfileId: 'terminal',
   highlightInheritGlobal: 'terminal',
   sessionLogging: 'terminal',
@@ -136,6 +140,8 @@ export function bulkValuesForHost(
     values.terminalFontColor = metadata?.terminalFontColor;
     values.terminalBackgroundColor = metadata?.terminalBackgroundColor;
     values.commandButtonGroup = metadata?.commandButtonGroup;
+    values.pasteLineDelayMs = metadata?.pasteLineDelayMs;
+    values.pasteCharDelayMs = metadata?.pasteCharDelayMs;
     values.highlightProfileId = highlights?.profileId;
     values.highlightInheritGlobal = highlights?.inheritGlobal ?? true;
     if (logging) values.sessionLogging = hostSessionLoggingDraft(logging, !logging.overridden);
@@ -366,6 +372,8 @@ function metadataPatch(
   if (differs.has('commandButtonGroup')) {
     patch.commandButtonGroup = changes.commandButtonGroup ?? null;
   }
+  if (differs.has('pasteLineDelayMs')) patch.pasteLineDelayMs = changes.pasteLineDelayMs ?? null;
+  if (differs.has('pasteCharDelayMs')) patch.pasteCharDelayMs = changes.pasteCharDelayMs ?? null;
   if (differs.has('consoleCompatibility')) patch.consoleCompatibility = changes.consoleCompatibility;
   if (differs.has('disableSftp')) patch.disableSftp = changes.disableSftp;
   if (differs.has('highlightProfileId') || differs.has('highlightInheritGlobal')) {

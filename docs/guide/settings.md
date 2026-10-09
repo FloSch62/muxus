@@ -66,6 +66,9 @@ a running recorder.
 - **Copy on select**, **OSC 52 clipboard writes** from terminal programs such as tmux and
   Zellij, and the **multiline paste confirmation**. OSC 52 reads remain blocked so a
   terminal program cannot retrieve the local clipboard.
+- **Paste pacing**: a delay after each pasted line and, optionally, after each character,
+  for consoles that drop input sent all at once. Hosts can set their own. See
+  [Pasting into slow consoles](terminal.md#pasting-into-slow-consoles).
 - **Scrollback lines** kept per terminal.
 
 ## Local shells
