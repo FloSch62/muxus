@@ -156,4 +156,71 @@ describe('password vault routes', () => {
       credentialCount: 0,
     });
   }, 15_000);
+
+  it('saves, renames, reveals and forgets named secrets', async () => {
+    const request = (method: 'POST' | 'PUT' | 'DELETE', url: string, payload?: object) =>
+      app.inject({ method, url, headers: auth(), payload });
+    const unconfigured = await request('POST', '/api/password-vault/secrets', {
+      name: 'Core enable',
+      value: 'enable-secret',
+      masterPassword: MASTER,
+    });
+    expect(unconfigured.statusCode).toBe(409);
+    expect(unconfigured.json().code).toBe('vault-not-configured');
+
+    await request('POST', '/api/password-vault/create', { password: MASTER });
+    const missingValue = await request('POST', '/api/password-vault/secrets', {
+      name: 'Core enable',
+      masterPassword: MASTER,
+    });
+    expect(missingValue.statusCode).toBe(400);
+    const wrongMaster = await request('POST', '/api/password-vault/secrets', {
+      name: 'Core enable',
+      value: 'enable-secret',
+      masterPassword: 'incorrect-pass',
+    });
+    expect(wrongMaster.statusCode).toBe(401);
+
+    const created = await request('POST', '/api/password-vault/secrets', {
+      name: 'Core enable',
+      username: 'admin',
+      value: 'enable-secret',
+      masterPassword: MASTER,
+    });
+    expect(created.statusCode).toBe(200);
+    expect(created.body).not.toContain('enable-secret');
+    const { secret, status } = created.json();
+    expect(secret).toMatchObject({ name: 'Core enable', username: 'admin' });
+    expect(status).toMatchObject({ credentialCount: 0, secrets: [secret] });
+
+    const duplicate = await request('POST', '/api/password-vault/secrets', {
+      name: 'core enable',
+      value: 'other',
+      masterPassword: MASTER,
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json().code).toBe('vault-secret-name-taken');
+
+    const renamed = await request('PUT', `/api/password-vault/secrets/${secret.id}`, {
+      name: 'Edge enable',
+      masterPassword: MASTER,
+    });
+    expect(renamed.statusCode).toBe(200);
+    expect(renamed.json().secret).toEqual({ ...secret, name: 'Edge enable', username: undefined });
+    await expect(ctx.vault.secretValue(secret.id)).resolves.toBe('enable-secret');
+
+    const revealed = await request('POST', `/api/password-vault/credentials/${secret.id}/reveal`, {
+      masterPassword: MASTER,
+    });
+    expect(revealed.json()).toEqual({ password: 'enable-secret' });
+
+    const forgotten = await request('DELETE', `/api/password-vault/credentials/${secret.id}`);
+    expect(forgotten.json()).toEqual({ deleted: true });
+    const gone = await request('PUT', `/api/password-vault/secrets/${secret.id}`, {
+      name: 'Edge enable',
+      masterPassword: MASTER,
+    });
+    expect(gone.statusCode).toBe(404);
+    expect(gone.json().code).toBe('vault-secret-missing');
+  }, 15_000);
 });

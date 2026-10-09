@@ -49,7 +49,19 @@ import {
   DEFAULT_AGENT_OPERATION_TIMEOUT_MS,
   DEFAULT_AGENT_WAIT_STATUS_MS,
   ResponsiveAgent,
+  type ResponsiveAgentOptions,
 } from './responsive-agent.js';
+import {
+  describeSecurityKeyError,
+  plainKeyBlob,
+  securityKeyCertificate,
+  SecurityKeyError,
+  securityKeyFile,
+  securityKeyLabel,
+  securityKeyProvider,
+  type SecurityKeyQuestion,
+} from './security-keys.js';
+import { SecurityKeyFileAgent } from './security-key-agent.js';
 import {
   ConnectionLeaseRegistry,
   type ConnectionLeaseOwner,
@@ -140,6 +152,8 @@ interface HandshakeFacts {
   negotiated?: NegotiatedAlgorithms;
   /** Methods the server accepted, in order. */
   authMethods: AuthenticationType[];
+  /** Signature algorithm of the key that logged in, when known. */
+  authKeyAlgorithm?: string;
   /** The config asked for compression (`Compression yes`). */
   compressionRequested: boolean;
   agentForwarding: SshSessionSummary['agentForwarding'];
@@ -574,6 +588,12 @@ export class SshConnectionManager {
     );
   }
 
+  /** The ssh_config alias whose Muxus metadata a session to this profile uses, as `connect` finds it. */
+  metadataAliasFor(profile: SshProfile): string | undefined {
+    if (profile.useConfig === false || profile.profileId) return undefined;
+    return findMetadataAlias(this.loadConfig(), parseHostSpec(profile.target).host);
+  }
+
   resolveProfile(profile: SshProfile): SshProfile {
     if (!profile.profileId) return profile;
     const saved = this.savedSshProfile?.(profile.profileId);
@@ -725,6 +745,7 @@ export class SshConnectionManager {
         shared: transport === 'shared',
         serverSoftware: facts.serverSoftware,
         authMethods: facts.authMethods,
+        authKeyAlgorithm: facts.authKeyAlgorithm,
         cipher: facts.negotiated?.cs.cipher,
         kex: facts.negotiated?.kex,
         compression:
@@ -1096,6 +1117,7 @@ export class SshConnectionManager {
 
   private dial(hop: ChainHop, sock: Duplex | undefined, io: ConnectIo): Promise<Client> {
     const agentSocket = resolveAgentSocket(hop.resolved.identityAgent);
+    const hopName = hop.hopLabel ?? hop.spec.host;
     let readyDeadline: PausableDeadline | undefined;
     const runInteraction: InteractionRunner = async (interaction) => {
       readyDeadline?.pause();
@@ -1105,11 +1127,21 @@ export class SshConnectionManager {
         readyDeadline?.resume();
       }
     };
+    // A security key signs only once touched: user time, like any prompt.
+    const agentHooks: ResponsiveAgentOptions = {
+      pauseDeadline: () => readyDeadline?.pause(),
+      resumeDeadline: () => readyDeadline?.resume(),
+      onSecurityKey: (key) => {
+        const label = securityKeyLabel(key);
+        this.log.info({ host: hop.resolved.hostname, key: label }, 'waiting for a security key touch');
+        io.status(`Touch your security key to log in to ${hopName} (${label})…`, { transient: true });
+      },
+      onSignature: (algorithm) => auth.noteSignature(algorithm),
+    };
     const authAgent =
       agentSocket && !hop.resolved.identitiesOnly
         ? new ResponsiveAgent(ssh2.createAgent(agentSocket) as BaseAgent<ParsedKey>, {
-            pauseDeadline: () => readyDeadline?.pause(),
-            resumeDeadline: () => readyDeadline?.resume(),
+            ...agentHooks,
             onWaiting: (operation) => {
               this.log.info(
                 { host: hop.resolved.hostname, operation, agentSocket },
@@ -1133,6 +1165,7 @@ export class SshConnectionManager {
       runInteraction,
       authAgent,
       this.log,
+      agentHooks,
     );
     const { algorithms, notes } = connectionAlgorithms(pinnedHostKeyPreference(hop));
     for (const note of notes) {
@@ -1201,7 +1234,7 @@ export class SshConnectionManager {
         readyDeadline?.clear();
         auth.dispose();
         proxySocket?.destroy();
-        reject(friendlyConnectError(err, hop));
+        reject(friendlyConnectError(err, hop, auth.securityKeyProblem()));
       };
       readyDeadline = new PausableDeadline(readyTimeoutMs, () => {
         rejectBeforeReady(new Error('Timed out while waiting for SSH readiness.'));
@@ -1222,6 +1255,7 @@ export class SshConnectionManager {
           serverSoftware: (client as Client & { _remoteVer?: string })._remoteVer,
           negotiated,
           authMethods: auth.acceptedMethods(),
+          authKeyAlgorithm: auth.acceptedKeyAlgorithm(),
           compressionRequested: hop.resolved.compression === true,
           agentForwarding: !hop.resolved.forwardAgent ? 'off' : agentSocket ? 'on' : 'no-agent',
         });
@@ -1246,6 +1280,15 @@ export class SshConnectionManager {
         resolve(client);
       });
       client.on('error', (err) => {
+        if (!settled && err.level === 'agent' && err instanceof SecurityKeyError) {
+          // ssh2 moves on to the next key itself; say why this one failed.
+          if (auth.cancelled) return;
+          const message = describeSecurityKeyError(err, hopName);
+          this.log.warn({ err, host: hop.resolved.hostname }, 'security key did not sign');
+          auth.noteSecurityKeyProblem(message);
+          io.status(`${message} — trying other authentication methods`);
+          return;
+        }
         if (!settled && err.level === 'agent') {
           // ssh2 reports an unreachable agent mid-auth and then moves on to
           // the next method itself. This is an expected fallback when a stale
@@ -1729,6 +1772,10 @@ function isKeyboardInteractivePasswordPrompt(prompts: readonly Prompt[]): boolea
 
 type InteractionRunner = <T>(interaction: () => Promise<T>) => Promise<T>;
 
+type LoadedCertificate =
+  | { file: string; certificate: OpenSshCertificate }
+  | { file: string; securityKey: ParsedKey };
+
 class PausableDeadline {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private remainingMs: number;
@@ -1808,6 +1855,11 @@ class AuthLadder {
   /** The method last offered to the server, and those it partially accepted. */
   private lastMethod: AuthenticationType | undefined;
   private readonly partialMethods: AuthenticationType[] = [];
+  /** Signature algorithm of the key in the attempt in flight, and of a partially accepted one. */
+  private keyAlgorithm: string | undefined;
+  private partialKeyAlgorithm: string | undefined;
+  private readonly securityKeyAgents: SecurityKeyFileAgent[] = [];
+  private lastSecurityKeyProblem: string | undefined;
   cancelled = false;
 
   constructor(
@@ -1818,6 +1870,8 @@ class AuthLadder {
       interaction(),
     private readonly agent?: BaseAgent<ParsedKey>,
     private readonly log?: FastifyBaseLogger,
+    /** Deadline and touch-prompt hooks for agents signing on this hop. */
+    private readonly agentHooks: ResponsiveAgentOptions = {},
   ) {
     this.attempts = this.build();
   }
@@ -1834,13 +1888,34 @@ class AuthLadder {
       this.lastPasswordCandidate = undefined;
     }
     if (partialSuccess && this.lastMethod) this.partialMethods.push(this.lastMethod);
+    if (partialSuccess && this.keyAlgorithm) this.partialKeyAlgorithm = this.keyAlgorithm;
     this.lastMethod = undefined;
+    this.keyAlgorithm = undefined;
     this.advance(authsLeft, cb);
   }
 
   /** Once the connection is ready: the methods that logged in, in order. */
   acceptedMethods(): AuthenticationType[] {
     return this.lastMethod ? [...this.partialMethods, this.lastMethod] : [...this.partialMethods];
+  }
+
+  /** Once the connection is ready: the signature algorithm of the key that logged in. */
+  acceptedKeyAlgorithm(): string | undefined {
+    return this.keyAlgorithm ?? this.partialKeyAlgorithm;
+  }
+
+  /** An agent signed for the attempt in flight. */
+  noteSignature(algorithm: string): void {
+    this.keyAlgorithm = algorithm;
+  }
+
+  noteSecurityKeyProblem(message: string): void {
+    this.lastSecurityKeyProblem = message;
+  }
+
+  /** Why a security key could not log in, for the error when nothing else did. */
+  securityKeyProblem(): string | undefined {
+    return this.lastSecurityKeyProblem;
   }
 
   private advance(
@@ -1874,6 +1949,12 @@ class AuthLadder {
         if (method) {
           this.log?.debug({ host, method: attempt.type }, 'trying ssh auth method');
           this.lastMethod = attempt.type;
+          // A key file signs inside ssh2, which picks the RSA hash itself.
+          this.keyAlgorithm =
+            method.type === 'publickey' && typeof method.key === 'object' && !Buffer.isBuffer(method.key)
+              && method.key.type !== 'ssh-rsa'
+              ? method.key.type
+              : undefined;
           cb(method);
         } else {
           this.log?.debug(
@@ -1932,6 +2013,7 @@ class AuthLadder {
     this.privateKeys.clear();
     this.certificateKeys.clear();
     this.agentIdentityPrints = undefined;
+    for (const agent of this.securityKeyAgents.splice(0)) agent.dispose();
   }
 
   private build(): AuthAttempt[] {
@@ -1956,8 +2038,17 @@ class AuthLadder {
       const files = explicit ? resolved.identityFiles : defaultIdentityFiles();
       const certificates = resolved.certificateFiles
         .map((file) => this.loadCertificate(file))
-        .filter((item): item is { file: string; certificate: OpenSshCertificate } => !!item);
-      for (const { file, certificate } of certificates) {
+        .filter((item): item is LoadedCertificate => !!item);
+      for (const loaded of certificates) {
+        const { file } = loaded;
+        if ('securityKey' in loaded) {
+          attempts.push({
+            type: 'publickey',
+            get: () => this.securityKeyCertificateMethod(file, loaded.securityKey, files, agentSocket, label),
+          });
+          continue;
+        }
+        const { certificate } = loaded;
         for (const algorithm of certificateAlgorithms(certificate)) {
           attempts.push({
             type: 'publickey',
@@ -1985,6 +2076,8 @@ class AuthLadder {
         attempts.push({
           type: 'publickey',
           get: async () => {
+            const securityKey = await this.securityKeyMethod(file, agentSocket, label);
+            if (securityKey !== null) return securityKey;
             const key = await this.loadPrivateKey(
               file,
               explicit,
@@ -2311,9 +2404,7 @@ class AuthLadder {
     });
   }
 
-  private loadCertificate(
-    file: string,
-  ): { file: string; certificate: OpenSshCertificate } | undefined {
+  private loadCertificate(file: string): LoadedCertificate | undefined {
     let content: Buffer;
     try {
       content = fs.readFileSync(file);
@@ -2321,6 +2412,8 @@ class AuthLadder {
       this.io.status(`certificate file ${file} not found — skipping`);
       return undefined;
     }
+    const securityKey = securityKeyCertificate(content);
+    if (securityKey) return { file, securityKey };
     const certificate = parseOpenSshCertificate(content);
     if (certificate instanceof Error) {
       this.io.status(
@@ -2389,6 +2482,8 @@ class AuthLadder {
       if (explicit) this.io.status(`identity file ${file} not found — skipping`);
       return undefined;
     }
+    // Security key files are signed through an agent, never parsed here.
+    if (securityKeyFile(content)) return undefined;
     let parsed = parseSshKey(content);
     if (parsed instanceof Error && /passphrase|encrypted/i.test(parsed.message)) {
       // Encrypted. A default (unconfigured) key the agent already holds was
@@ -2436,10 +2531,120 @@ class AuthLadder {
     } catch {
       return false; // no readable .pub — prompt rather than guess
     }
+    return this.agentHoldsFingerprint(fingerprint, agentSocket, agent);
+  }
+
+  private async agentHoldsFingerprint(
+    fingerprint: string,
+    agentSocket: string,
+    agent: BaseAgent<ParsedKey>,
+  ): Promise<boolean> {
     this.agentIdentityPrints ??= listAgentKeys(agentSocket, agent).then(
       (keys) => new Set(keys.map((k) => k.fingerprint)),
     );
     return (await this.agentIdentityPrints).has(fingerprint);
+  }
+
+  /**
+   * A security key IdentityFile signs through a private ssh-agent (see
+   * SecurityKeyFileAgent), offered to ssh2 as agent auth. null when the file
+   * is not a security key.
+   */
+  private async securityKeyMethod(
+    file: string,
+    agentSocket: string | undefined,
+    label: string,
+  ): Promise<AnyAuthMethod | undefined | null> {
+    let content: Buffer;
+    try {
+      content = fs.readFileSync(file);
+    } catch {
+      return null;
+    }
+    const publicKey = securityKeyFile(content);
+    if (!publicKey) return null;
+    return this.securityKeyAgentMethod(file, publicKey, undefined, agentSocket, label);
+  }
+
+  /** A security key CertificateFile, signed by its matching IdentityFile. */
+  private async securityKeyCertificateMethod(
+    certificateFile: string,
+    certificate: ParsedKey,
+    identityFiles: string[],
+    agentSocket: string | undefined,
+    label: string,
+  ): Promise<AnyAuthMethod | undefined> {
+    const keyBlob = plainKeyBlob(certificate.getPublicSSH());
+    for (const file of identityFiles) {
+      let content: Buffer;
+      try {
+        content = fs.readFileSync(file);
+      } catch {
+        continue;
+      }
+      const publicKey = securityKeyFile(content);
+      if (publicKey?.getPublicSSH().equals(keyBlob)) {
+        return this.securityKeyAgentMethod(file, publicKey, certificate, agentSocket, label);
+      }
+    }
+    this.io.status(`certificate ${certificateFile} has no matching identity file — skipping`);
+    return undefined;
+  }
+
+  private async securityKeyAgentMethod(
+    file: string,
+    publicKey: ParsedKey,
+    certificate: ParsedKey | undefined,
+    agentSocket: string | undefined,
+    label: string,
+  ): Promise<AnyAuthMethod | undefined> {
+    // The login agent already offered this identity, and signs it the same way.
+    const fingerprint = fingerprintSha256((certificate ?? publicKey).getPublicSSH());
+    if (agentSocket && this.agent && (await this.agentHoldsFingerprint(fingerprint, agentSocket, this.agent))) {
+      return undefined;
+    }
+    const agent = new SecurityKeyFileAgent({
+      file,
+      publicKey,
+      identity: certificate,
+      provider: securityKeyProvider(this.hop.resolved.securityKeyProvider),
+      ask: (question) => this.securityKeyAnswer(question, file, label),
+      agentOptions: this.agentHooks,
+    });
+    this.securityKeyAgents.push(agent);
+    return { type: 'agent', username: this.hop.user, agent };
+  }
+
+  /** OpenSSH asks for the key file's passphrase or the security key's PIN. */
+  private async securityKeyAnswer(
+    question: SecurityKeyQuestion,
+    file: string,
+    label: string,
+  ): Promise<string | undefined> {
+    const name = path.basename(file);
+    const prompt =
+      question.kind === 'passphrase'
+        ? `${question.retry ? 'Bad passphrase, try again. ' : ''}Passphrase for ${name}`
+        : question.kind === 'pin'
+          ? `PIN for the security key ${name}`
+          : question.text;
+    try {
+      const response = await this.runInteraction(() =>
+        this.io.prompt({
+          host: label,
+          purpose: 'authentication',
+          instructions:
+            question.kind === 'pin' && question.presence
+              ? 'Touch the security key after entering its PIN.'
+              : undefined,
+          prompts: [{ prompt, echo: false }],
+        }),
+      );
+      return response.answers[0] || undefined;
+    } catch (err) {
+      this.cancelled = true;
+      throw err;
+    }
   }
 }
 
@@ -2519,14 +2724,23 @@ function isPtyRejection(err: unknown): boolean {
   return err instanceof Error && /Unable to request a pseudo-terminal/.test(err.message);
 }
 
-/** Translate the common ssh2 failure modes into user-actionable messages. */
-function friendlyConnectError(err: Error, hop: ChainHop): Error {
+/**
+ * Translate the common ssh2 failure modes into user-actionable messages.
+ * `securityKeyProblem` explains why a security key could not take part.
+ */
+function friendlyConnectError(err: Error, hop: ChainHop, securityKeyProblem?: string): Error {
   const msg = err.message;
   const where = `${hop.resolved.hostname}:${hop.port}`;
   if (/ECONNREFUSED/.test(msg)) return new Error(`connection refused by ${where} — is sshd running?`);
   if (/ENOTFOUND|EAI_AGAIN/.test(msg)) return new Error(`could not resolve host ${hop.resolved.hostname}`);
   if (/ETIMEDOUT|Timed out/i.test(msg)) return new Error(`connection to ${where} timed out`);
-  if (/All configured authentication methods failed/.test(msg)) return new Error(`authentication to ${where} failed`);
+  if (/All configured authentication methods failed/.test(msg)) {
+    return new Error(
+      securityKeyProblem
+        ? `authentication to ${where} failed: ${securityKeyProblem}`
+        : `authentication to ${where} failed`,
+    );
+  }
   if (/Handshake failed: no matching/i.test(msg)) {
     return new Error(
       `${msg} — if ${where} only speaks legacy algorithms, add KexAlgorithms/Ciphers/HostKeyAlgorithms lines to this host's ssh config (Advanced options in the host editor)`,

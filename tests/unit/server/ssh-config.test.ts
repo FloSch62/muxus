@@ -331,6 +331,14 @@ describe('resolveHost', () => {
     expect(resolveHost(doc, 'c').identityAgent).toBe('none');
   });
 
+  it('reads SecurityKeyProvider first-obtained, keeping $VAR indirections', () => {
+    const doc = loadConfigDocument(
+      write(['Host fido', '  SecurityKeyProvider $SK_LIB', '', 'Host *', '  SecurityKeyProvider internal'].join('\n')),
+    );
+    expect(resolveHost(doc, 'fido').securityKeyProvider).toBe('$SK_LIB');
+    expect(resolveHost(doc, 'other').securityKeyProvider).toBe('internal');
+  });
+
   it('leaves unset flags undefined and rejects invalid choice values', () => {
     const doc = loadConfigDocument(write(['Host plain', '  RequestTTY sometimes', '  StrictHostKeyChecking maybe'].join('\n')));
     const r = resolveHost(doc, 'plain');

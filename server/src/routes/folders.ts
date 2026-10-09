@@ -17,6 +17,7 @@ import {
   normalizeFolderPath,
 } from '../util/folder-paths.js';
 import { sendError } from '../util/errors.js';
+import { loginSequenceSchema } from './metadata-schema.js';
 import { sendVaultError } from './password-vault.js';
 
 // Mirrors the metadata group cap: a path covers several nested folder names.
@@ -32,7 +33,12 @@ const authSchema = z.object({
   forwardAgent: z.boolean().optional(),
 });
 
-const upsertSchema = z.object({ path: pathSchema, auth: authSchema });
+// A missing loginSequence keeps the folder's current one; null clears it.
+const upsertSchema = z.object({
+  path: pathSchema,
+  auth: authSchema,
+  loginSequence: loginSequenceSchema.nullable().optional(),
+});
 const moveSchema = z.object({ from: pathSchema, to: pathSchema });
 const pathQuerySchema = z.object({ path: pathSchema });
 const passwordSchema = z.object({
@@ -52,6 +58,7 @@ export function registerFolderRoutes(app: FastifyInstance, ctx: AppContext): voi
     path: row.path,
     auth: row.auth,
     hasPassword: ctx.vault.hasSshPassword(folderPasswordAccount(row.id)),
+    ...(row.loginSequence ? { loginSequence: row.loginSequence } : {}),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });
@@ -67,10 +74,15 @@ export function registerFolderRoutes(app: FastifyInstance, ctx: AppContext): voi
     }
     try {
       const auth = cleanAuth(parsed.data.auth);
-      const row = ctx.database.upsertFolderSettings(parsed.data.path, auth);
+      let row = ctx.database.upsertFolderSettings(parsed.data.path, auth);
+      if (parsed.data.loginSequence !== undefined) {
+        ctx.database.setFolderLoginSequence(row.id, parsed.data.loginSequence);
+        row = ctx.database.folderSettingsForPath(row.path) ?? row;
+      }
       // A folder with no settings and no password needs no row at all.
       if (
         Object.keys(auth).length === 0 &&
+        !row.loginSequence &&
         !ctx.vault.hasSshPassword(folderPasswordAccount(row.id))
       ) {
         ctx.database.removeFolderSettingsRow(row.id);
@@ -164,7 +176,7 @@ export function registerFolderRoutes(app: FastifyInstance, ctx: AppContext): voi
       const row = ctx.database.folderSettingsForPath(parsed.data.path);
       if (!row) return { deleted: false };
       const deleted = ctx.vault.deleteSshPassword(folderPasswordAccount(row.id));
-      if (Object.keys(cleanAuth(row.auth)).length === 0) {
+      if (Object.keys(cleanAuth(row.auth)).length === 0 && !row.loginSequence) {
         ctx.database.removeFolderSettingsRow(row.id);
       }
       return { deleted };

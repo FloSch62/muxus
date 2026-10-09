@@ -389,6 +389,8 @@ export interface ResolvedTarget extends ResolvedHostSettings {
   compression?: boolean;
   /** Agent socket override: a path, `$VAR`/`${VAR}`, `SSH_AUTH_SOCK`, or `none`. */
   identityAgent?: string;
+  /** FIDO middleware for security key files: a library path, `$VAR`, or `internal`. */
+  securityKeyProvider?: string;
   /** false ⇒ never try this method (`PasswordAuthentication no`). */
   passwordAuthentication?: boolean;
   kbdInteractiveAuthentication?: boolean;
@@ -533,6 +535,7 @@ export function resolveHost(
     macs: first.get('macs'),
     compression: flag(first.get('compression')),
     identityAgent: parseIdentityAgent(first.get('identityagent'), identityTokens),
+    securityKeyProvider: first.get('securitykeyprovider'),
     passwordAuthentication: flag(first.get('passwordauthentication')),
     kbdInteractiveAuthentication: flag(first.get('kbdinteractiveauthentication')),
     userKnownHostsFiles: parseKnownHostsFiles(first.get('userknownhostsfile'), knownHostsTokens),
@@ -622,6 +625,7 @@ const RESOLVED_KEYS = new Set([
   'remotecommand',
   'requesttty',
   'stricthostkeychecking',
+  'securitykeyprovider',
 ]);
 
 /** Values whose consumers need the complete argument list or command text. */

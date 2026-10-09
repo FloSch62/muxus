@@ -11,6 +11,7 @@ const DO = 253;
 const WONT = 252;
 const WILL = 251;
 const SB = 250;
+const BRK = 243;
 const SE = 240;
 const BINARY = 0;
 const ECHO = 1;
@@ -88,6 +89,14 @@ describe('TelnetCodec', () => {
     expect(test.codec.encode(Buffer.from([13, 255]))).toEqual(Buffer.from([13, 255, 255]));
   });
 
+  it('consumes a BREAK from the far end without passing it to the terminal', () => {
+    const test = codec();
+    test.codec.feed(Buffer.from([65, IAC]));
+    test.codec.feed(Buffer.from([BRK, 66]));
+    expect(Buffer.concat(test.received).toString()).toBe('AB');
+    expect(test.sent).toEqual([]);
+  });
+
   it('decodes NVT CR-NUL while preserving CR-LF', () => {
     const test = codec();
     test.codec.feed(Buffer.from([65, 13]));
@@ -135,6 +144,66 @@ describe('TelnetTransport', () => {
       const wire = Buffer.concat(fromClient);
       expect(wire.includes(Buffer.from([IAC, DO, ECHO]))).toBe(true);
       expect(wire.includes(Buffer.from('admin\r\n'))).toBe(true);
+    } finally {
+      transport?.close();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('settles a drain once earlier writes have been flushed, and at once when closed', async () => {
+    const server = net.createServer((socket) => socket.resume());
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address() as AddressInfo;
+
+    let transport: TelnetTransport | undefined;
+    try {
+      transport = await TelnetTransport.connect(
+        { kind: 'telnet', host: '127.0.0.1', port: address.port },
+        80,
+        24,
+      );
+      transport.write(Buffer.from('x'.repeat(256 * 1024)));
+      await expect(transport.drain()).resolves.toBeUndefined();
+      transport.close();
+      await expect(transport.drain()).resolves.toBeUndefined();
+    } finally {
+      transport?.close();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('sends BREAK as a bare IAC BRK while input keeps its IAC escaping', async () => {
+    const fromClient: Buffer[] = [];
+    let received: (() => void) | undefined;
+    const server = net.createServer((socket) => {
+      socket.on('data', (data) => {
+        fromClient.push(data);
+        if (Buffer.concat(fromClient).includes(Buffer.from('after'))) received?.();
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address() as AddressInfo;
+    const done = new Promise<void>((resolve) => {
+      received = resolve;
+    });
+
+    let transport: TelnetTransport | undefined;
+    try {
+      transport = await TelnetTransport.connect(
+        { kind: 'telnet', host: '127.0.0.1', port: address.port },
+        80,
+        24,
+      );
+      transport.write(Buffer.from([0x62, 0x65, 0x66, IAC]));
+      await transport.sendBreak();
+      transport.write(Buffer.from('after'));
+      await done;
+      expect(Buffer.concat(fromClient)).toEqual(
+        Buffer.from([0x62, 0x65, 0x66, IAC, IAC, IAC, BRK, ...Buffer.from('after')]),
+      );
+
+      transport.close();
+      await expect(transport.sendBreak()).rejects.toThrow('closed');
     } finally {
       transport?.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));

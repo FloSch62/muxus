@@ -5,3 +5,4 @@ export * from './update-version.js';
 export type * from './ws-protocol.js';
 export * from './session-transcript.js';
 export * from './connection-links.js';
+export * from './paste-pacing.js';

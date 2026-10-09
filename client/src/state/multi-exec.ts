@@ -143,6 +143,13 @@ export const useMultiExecStore = create<MultiExecState>()((set) => ({
     }),
 }));
 
+/** The other terminals that input into `sourceTabId` reaches while it is being mirrored. */
+export function multiExecMirrorTabIds(sourceTabId: string): string[] {
+  const { selectedIds } = useMultiExecStore.getState();
+  if (selectedIds.length < 2 || !selectedIds.includes(sourceTabId)) return [];
+  return selectedIds.filter((tabId) => tabId !== sourceTabId);
+}
+
 /**
  * Mirror user input from one selected terminal to every other selected
  * terminal. Direct socket writes avoid re-entering xterm's onData handler.
@@ -151,11 +158,27 @@ export function broadcastTerminalInput(
   sourceTabId: string,
   data: string | Uint8Array<ArrayBuffer>,
 ): number {
-  const { selectedIds } = useMultiExecStore.getState();
-  if (selectedIds.length < 2 || !selectedIds.includes(sourceTabId)) return 0;
   let delivered = 0;
-  for (const tabId of selectedIds) {
-    if (tabId !== sourceTabId && terminalHandle(tabId)?.sendInput(data)) delivered++;
+  for (const tabId of multiExecMirrorTabIds(sourceTabId)) {
+    if (terminalHandle(tabId)?.sendInput(data)) delivered++;
   }
   return delivered;
+}
+
+/**
+ * Paste into every other mirrored terminal. Each one paces the paste by its
+ * own host's settings, in its own backend session, independently of the rest.
+ */
+export function broadcastTerminalPaste(sourceTabId: string, text: string): number {
+  let delivered = 0;
+  for (const tabId of mirroredTabIds(sourceTabId)) {
+    if (tabId !== sourceTabId && terminalHandle(tabId)?.sendPaste(text)) delivered++;
+  }
+  return delivered;
+}
+
+/** The terminals mirroring input with this one, itself included; empty when it mirrors nothing. */
+export function mirroredTabIds(tabId: string): string[] {
+  const { selectedIds } = useMultiExecStore.getState();
+  return selectedIds.length >= 2 && selectedIds.includes(tabId) ? selectedIds : [];
 }

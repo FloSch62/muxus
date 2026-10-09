@@ -255,6 +255,45 @@ describe('bulkEditPlan', () => {
     ]);
   });
 
+  it('sets paste delays on terminal hosts and clears them back to the settings', () => {
+    const hosts = [
+      openSsh('a', {}, { pasteLineDelayMs: 200 }),
+      telnet('t', { pasteLineDelayMs: 0 }),
+      saved('console', {
+        kind: 'serial',
+        path: '/dev/ttyUSB0',
+        baudRate: 9600,
+        dataBits: 8,
+        stopBits: 1,
+        parity: 'none',
+        flowControl: 'none',
+      }),
+      rdp('desk'),
+    ];
+
+    // An explicit 0 differs from following the settings.
+    expect(summarizeBulkValues(hosts, new Map()).pasteLineDelayMs).toEqual({
+      state: 'mixed',
+      count: 3,
+    });
+    expect(summarizeBulkValues(hosts, new Map()).pasteCharDelayMs).toEqual({
+      state: 'same',
+      count: 3,
+      value: undefined,
+    });
+    const set = bulkEditPlan(hosts, { pasteLineDelayMs: 200, pasteCharDelayMs: 2 });
+    expect(set.metadata).toEqual([
+      { host: hosts[0], patch: { pasteCharDelayMs: 2 } },
+      { host: hosts[1], patch: { pasteLineDelayMs: 200, pasteCharDelayMs: 2 } },
+      { host: hosts[2], patch: { pasteLineDelayMs: 200, pasteCharDelayMs: 2 } },
+    ]);
+    const cleared = bulkEditPlan(hosts, { pasteLineDelayMs: undefined });
+    expect(cleared.metadata).toEqual([
+      { host: hosts[0], patch: { pasteLineDelayMs: null } },
+      { host: hosts[1], patch: { pasteLineDelayMs: null } },
+    ]);
+  });
+
   it('applies terminal and SSH settings only where they mean something', () => {
     const hosts = [openSsh('a'), telnet('t'), rdp('desk')];
 
@@ -328,5 +367,52 @@ describe('bulkChangesProblem', () => {
     [{ group: 'x'.repeat(301) }, 'That folder path is longer than 300 characters.'],
   ])('%o → %s', (changes, problem) => {
     expect(bulkChangesProblem(changes)).toBe(problem);
+  });
+});
+
+describe('bulk login sequences', () => {
+  const enable = {
+    steps: [
+      { id: 'a', kind: 'wait' as const, pattern: '>', timeoutSeconds: 10 },
+      { id: 'b', kind: 'send' as const, text: 'enable', enter: true },
+    ],
+  };
+
+  it('compares sequences by their steps, not their ids', () => {
+    const renumbered = { steps: enable.steps.map((step) => ({ ...step, id: `${step.id}-copy` })) };
+    const hosts = [openSsh('a', {}, { loginSequence: enable }), telnet('t', { loginSequence: renumbered })];
+    expect(summarizeBulkValues(hosts, new Map()).loginSequence).toMatchObject({
+      state: 'same',
+      count: 2,
+      value: { mode: 'custom' },
+    });
+    const mixed = summarizeBulkValues([...hosts, telnet('u')], new Map()).loginSequence;
+    expect(mixed).toEqual({ state: 'mixed', count: 3 });
+    expect(summarizeBulkValues([rdp('desk')], new Map()).loginSequence).toEqual({ state: 'none' });
+  });
+
+  it('sets one sequence on terminal hosts and clears it back to the folder', () => {
+    const hosts = [openSsh('a', {}, { loginSequence: enable }), telnet('t'), rdp('desk')];
+
+    const set = bulkEditPlan(hosts, { loginSequence: { mode: 'custom', steps: enable.steps } });
+    expect(set.metadata).toEqual([{ host: hosts[1], patch: { loginSequence: enable } }]);
+
+    const none = bulkEditPlan(hosts, { loginSequence: { mode: 'none', steps: enable.steps } });
+    expect(none.metadata).toEqual([
+      { host: hosts[0], patch: { loginSequence: { steps: [] } } },
+      { host: hosts[1], patch: { loginSequence: { steps: [] } } },
+    ]);
+
+    const inherit = bulkEditPlan(hosts, { loginSequence: { mode: 'inherit', steps: [] } });
+    expect(inherit.metadata).toEqual([{ host: hosts[0], patch: { loginSequence: null } }]);
+  });
+
+  it('blocks a sequence with an unfinished step', () => {
+    expect(
+      bulkChangesProblem({
+        loginSequence: { mode: 'custom', steps: [{ id: 'x', kind: 'wait', pattern: '', timeoutSeconds: 10 }] },
+      }),
+    ).toBe('Login sequence step 1: Enter the text to wait for.');
+    expect(bulkChangesProblem({ loginSequence: { mode: 'custom', steps: enable.steps } })).toBeNull();
   });
 });

@@ -100,6 +100,29 @@ the prompt policy can also be changed or the vault reset. Private-key passphrase
 codes and all other keyboard-interactive answers remain transient and are never
 remembered. See the [security model](../reference/security.md#password-vault).
 
+## Security keys
+
+FIDO2 keys on a YubiKey, SoloKey or similar authenticator (`ssh-keygen -t ed25519-sk` or
+`-t ecdsa-sk`) log in to the target and to every jump host:
+
+- **From the agent**: `sk-ssh-ed25519@openssh.com` and `sk-ecdsa-sha2-nistp256@openssh.com`
+  identities, and certificates for them, are offered like any other agent key. The agent
+  talks to the authenticator, and for a key created with `-O verify-required` it asks for
+  the PIN through its own askpass dialog.
+- **As an `IdentityFile`**: once the server accepts the key, Muxus loads it into a private
+  `ssh-agent` with `ssh-add`, signs through it, and stops it when the login is done. The key
+  file's passphrase and, for `-O verify-required` keys, the PIN are asked for in the usual
+  prompt. This needs the OpenSSH client with FIDO support. The `ssh` that ships with macOS
+  has none built in: install OpenSSH from Homebrew, or set `SecurityKeyProvider` (or
+  `$SSH_SK_PROVIDER`) to a FIDO middleware library, as for `ssh`. Without it, and on
+  Windows, the terminal explains how to load the key into the agent with `ssh-add` instead.
+
+While a signature waits, the terminal shows **Touch your security key to log in to
+*host*** with the key's fingerprint. As with agent approvals, the wait does not count
+against `ConnectTimeout`. When the key is not touched in time, the PIN is wrong or the key
+is not plugged in, the terminal names the key and the hop before trying the next
+authentication method.
+
 ## Jump chains and ProxyCommand
 
 `ProxyJump` chains, including nested and comma-separated ones, are dialled **hop by hop**,
@@ -163,7 +186,9 @@ connection ended up with:
 
 The values are what was negotiated, not what was configured: `Compression yes` against a
 server without compression reads *not supported by the server*, and a host that asks for X11
-when the server refuses it reads *refused by the server*. A session that joins an open
+when the server refuses it reads *refused by the server*. A key login names the key's
+signature algorithm, and a [security key](#security-keys) reads, for example,
+`security key (SSH agent)  (sk-ssh-ed25519@openssh.com)`. A session that joins an open
 connection says so on the Route line. Port forwards from the host's configuration that are
 running on the connection are listed last.
 

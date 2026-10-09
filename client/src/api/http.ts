@@ -63,8 +63,18 @@ async function statusFetch(path: string, init?: RequestInit): Promise<Response> 
     throw new ApiError(0, 'Cannot reach the Muxus backend');
   }
   reportBackendUp();
-  if (res.status === 401) reportAuthInvalid();
+  if (res.status === 401 && !(await isMasterPasswordRejection(res))) reportAuthInvalid();
   return res;
+}
+
+/** A mistyped vault master password is answered with 401 too, but the session token is fine. */
+async function isMasterPasswordRejection(res: Response): Promise<boolean> {
+  try {
+    const body = (await res.clone().json()) as ApiErrorBody | undefined;
+    return body?.code === 'invalid-master-password';
+  } catch {
+    return false;
+  }
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {

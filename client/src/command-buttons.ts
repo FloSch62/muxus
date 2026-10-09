@@ -44,17 +44,31 @@ export function commandButtonInk(
   return mode === 'dark' ? entry.dark : entry.light;
 }
 
-/** Match every search word against a saved command's label or command text. */
+/**
+ * Match every search word against a saved command's label or command text,
+ * or for a secret button, the secret's name.
+ */
 export function filterCommandButtons(
   buttons: readonly CommandButton[],
   query: string,
+  secretName: (secretId: string) => string | undefined = () => undefined,
 ): readonly CommandButton[] {
   const words = query.trim().toLowerCase().split(SEARCH_WORD_SEPARATOR).filter(Boolean);
   if (words.length === 0) return buttons;
   return buttons.filter((button) => {
-    const searchable = `${button.label} ${button.command}`.toLowerCase();
+    const text = isSecretCommandButton(button)
+      ? (secretName(button.secretId) ?? '')
+      : button.command;
+    const searchable = `${button.label} ${text}`.toLowerCase();
     return words.every((word) => searchable.includes(word));
   });
+}
+
+/** A button that types a vault secret rather than its command text. */
+export function isSecretCommandButton(
+  button: CommandButton,
+): button is CommandButton & { secretId: string } {
+  return !!button.secretId;
 }
 
 /** Convert saved, possibly multiline text to terminal Enter characters. */
@@ -77,6 +91,7 @@ export function activateCommandButton(
 
 /** What a button shows: its label, else its command, never nothing. */
 export function commandButtonLabel(button: CommandButton): string {
+  if (isSecretCommandButton(button)) return button.label.trim() || 'Secret';
   return button.label.trim() || button.command.trim() || 'Command';
 }
 
@@ -153,6 +168,7 @@ export function normalizeCommandButtons(
       sendEnter: entry.sendEnter !== false,
       ...(groupId ? { groupId } : {}),
       ...(isCommandButtonColor(entry.color) ? { color: entry.color } : {}),
+      ...(boundedString(entry.secretId, 200) ? { secretId: entry.secretId } : {}),
     });
   }
   return buttons;

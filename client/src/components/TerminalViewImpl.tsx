@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import CircularProgress from '@mui/material/CircularProgress';
 import Divider from '@mui/material/Divider';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
@@ -34,7 +36,12 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 // own async chunk instead of the eager xterm bundle.
 import type { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
-import type { AppInfo, TerminalServerMessage } from '@muxus/shared';
+import type { AppInfo, PastePacing, TerminalServerMessage } from '@muxus/shared';
+import {
+  isPacedPaste,
+  MAX_PACED_PASTE_LENGTH,
+  terminalPasteData,
+} from '@muxus/shared';
 import {
   apiFetch,
   closeTerminalWebSocket,
@@ -51,7 +58,12 @@ import { loadMonacoTextEditor, loadRemoteEditorWorkspace } from '../lazy-feature
 import { IS_MAC } from '../platform.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { showToast } from '../state/toast.js';
-import { broadcastTerminalInput } from '../state/multi-exec.js';
+import {
+  broadcastTerminalInput,
+  broadcastTerminalPaste,
+  mirroredTabIds,
+} from '../state/multi-exec.js';
+import { setPasteProgress, usePasteProgressStore } from '../state/paste-progress.js';
 import {
   TERMINAL_SYMBOL_FONT,
   sshKeepalivePrefField,
@@ -91,6 +103,7 @@ import {
 } from '../terminal/file-link-activation.js';
 import { openTerminalWebLink } from '../terminal/web-links.js';
 import { requiresPasteConfirmation } from '../terminal/paste-safety.js';
+import { hostPastePacing } from '../terminal/paste-pacing.js';
 import { shouldFitTerminal } from '../terminal/terminal-fit.js';
 import { terminalSelectionText } from '../terminal/selection-text.js';
 import { normalizeTerminalKeyboardInput } from '../terminal/keyboard-input.js';
@@ -114,6 +127,7 @@ import {
 } from './AuthPromptDialog.js';
 import { HostKeyDialog, type HostKeyRequest } from './HostKeyDialog.js';
 import { PasteConfirmDialog } from './PasteConfirmDialog.js';
+import { PasteProgressOverlay } from './PasteProgress.js';
 import {
   AUTO_RECONNECT_STABLE_MS,
   autoReconnectDelayMs,
@@ -264,7 +278,18 @@ async function openLinkedTerminalFile(tabId: string, candidate: string): Promise
 interface PendingPaste {
   text: string;
   broadcast: boolean;
+  /** This terminal's pacing; the preview can change the line delay. */
+  pacing: PastePacing;
+  /** Other terminals the paste is mirrored into. */
+  mirrored: number;
   resolve: () => void;
+}
+
+interface SessionPasteOptions {
+  /** The preview's line delay, in place of the host's. */
+  lineDelayMs?: number;
+  /** The paste was made in this terminal rather than mirrored into it. */
+  source?: boolean;
 }
 
 /** One warning per page load: the failure is machine-wide, not per-terminal. */
@@ -297,6 +322,10 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const clipboardPasteQueueRef = useRef<TerminalClipboardPasteQueue | null>(null);
   const clipboardPasteQueue = (clipboardPasteQueueRef.current ??= new TerminalClipboardPasteQueue());
   const pendingPasteResolverRef = useRef<(() => void) | null>(null);
+  /** Pastes into the live session; set while the terminal is mounted. */
+  const sessionPasteRef = useRef<((text: string, options?: SessionPasteOptions) => boolean) | null>(
+    null,
+  );
   /** A log file was asked for here, so its start is worth confirming. */
   const announceLogFileRef = useRef(false);
   const theme = useTheme();
@@ -332,6 +361,10 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   const searchRequest = useTabsStore(
     (s) => s.tabs.find((candidate) => candidate.id === tab.id)?.searchRequest ?? 0,
   );
+  const loginSequence = useTabsStore(
+    (s) => s.tabs.find((candidate) => candidate.id === tab.id)?.loginSequence,
+  );
+  const pasting = usePasteProgressStore((s) => tab.id in s.byTab);
   const monoFontSize = usePrefsStore((s) => s.monoFontSize);
   const fontFamily = usePrefsStore((s) => s.fontFamily);
   const lineHeight = usePrefsStore((s) => s.lineHeight);
@@ -364,6 +397,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     const target = tab.profile.target;
     return sshConfig?.hosts.find((host) => host.aliases.includes(target))?.metadata;
   }, [sshConfig, savedHosts, savedProfileId, tab.profile]);
+  // Pastes read the host's pacing when they happen, not when the session opened.
+  const hostMetadataRef = useRef(hostMetadata);
+  useEffect(() => {
+    hostMetadataRef.current = hostMetadata;
+  }, [hostMetadata]);
+  const currentPastePacing = (): PastePacing =>
+    hostPastePacing(usePrefsStore.getState(), hostMetadataRef.current);
   const schemeId = terminalSchemeIdForHost(
     applicationSchemeId,
     hostMetadata?.terminalScheme,
@@ -411,11 +451,12 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     [searchCase, searchWord, searchRegex],
   );
 
-  const pasteToTerminal = (text: string, broadcast: boolean) => {
-    const term = termRef.current;
-    if (!term) return;
-    if (!broadcast) suppressNextInputBroadcastRef.current = true;
-    term.paste(text);
+  // Mirrored terminals each paste at their own host's pace, not this one's.
+  const pasteToTerminal = (text: string, broadcast: boolean, lineDelayMs?: number) => {
+    const paste = sessionPasteRef.current;
+    if (paste?.(text, { lineDelayMs, source: true }) && broadcast) {
+      broadcastTerminalPaste(tab.id, text);
+    }
   };
 
   const pasteText = (text: string, broadcast = true): Promise<void> => {
@@ -423,7 +464,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       setSearchOpen(false);
       const { promise, resolve } = Promise.withResolvers<void>();
       pendingPasteResolverRef.current = resolve;
-      setPendingPaste({ text, broadcast, resolve });
+      setPendingPaste({
+        text,
+        broadcast,
+        pacing: currentPastePacing(),
+        mirrored: broadcast ? Math.max(0, mirroredTabIds(tab.id).length - 1) : 0,
+        resolve,
+      });
       return promise;
     }
     pasteToTerminal(text, broadcast);
@@ -705,7 +752,8 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     // into a pane that is still connecting wait here and go out the moment it
     // is ready — the type-ahead every real terminal gives you, which matters
     // most right after a split.
-    let pendingInput: Uint8Array<ArrayBuffer>[] = [];
+    // Paced pastes wait here as their JSON frames, in order with the keystrokes.
+    let pendingInput: Array<string | Uint8Array<ArrayBuffer>> = [];
     let pendingInputBytes = 0;
     const flushPendingInput = () => {
       const socket = wsRef.current;
@@ -714,20 +762,55 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       pendingInput = [];
       pendingInputBytes = 0;
     };
-    const sendInput = (data: string | Uint8Array<ArrayBuffer>): boolean => {
+    const sendFrame = (frame: string | Uint8Array<ArrayBuffer>): boolean => {
       const socket = wsRef.current;
       if (!socket || socket.readyState > WebSocket.OPEN) return false;
-      const bytes = typeof data === 'string' ? encoder.encode(data) : data;
       if (ready && socket.readyState === WebSocket.OPEN) {
-        socket.send(bytes);
+        socket.send(frame);
         return true;
       }
-      if (pendingInputBytes + bytes.length <= PENDING_INPUT_LIMIT) {
-        pendingInput.push(bytes);
-        pendingInputBytes += bytes.length;
+      if (pendingInputBytes + frame.length <= PENDING_INPUT_LIMIT) {
+        pendingInput.push(frame);
+        pendingInputBytes += frame.length;
       }
       return true;
     };
+    const sendInput = (data: string | Uint8Array<ArrayBuffer>): boolean =>
+      sendFrame(typeof data === 'string' ? encoder.encode(data) : data);
+
+    // A paste typed in at the host's pace is paced by the backend, whose
+    // timers keep running while this window is hidden. Bracketed paste mode
+    // is this terminal's own, so the markers fit the program reading it.
+    const pasteIntoSession = (
+      text: string,
+      { lineDelayMs, source = false }: SessionPasteOptions = {},
+    ): boolean => {
+      if (!text) return true;
+      const pacing = currentPastePacing();
+      if (lineDelayMs !== undefined) pacing.lineDelayMs = lineDelayMs;
+      const bracketed = term.modes.bracketedPasteMode;
+      if (!isPacedPaste(pacing)) {
+        if (!source) return sendInput(terminalPasteData(text, bracketed));
+        // xterm's own paste, as without pacing; an ended session takes it as
+        // the key that reconnects.
+        const socket = wsRef.current;
+        const live = !!socket && socket.readyState <= WebSocket.OPEN;
+        suppressNextInputBroadcastRef.current = true;
+        term.paste(text);
+        return live;
+      }
+      if (text.length > MAX_PACED_PASTE_LENGTH) {
+        if (source) showToast('error', 'This paste is too long to send with a delay. Paste it in parts.');
+        return false;
+      }
+      if (!sendFrame(JSON.stringify({ op: 'paste', text, bracketed, ...pacing }))) {
+        if (source) reconnectFromTerminalInput();
+        return false;
+      }
+      if (source) term.scrollToBottom();
+      return true;
+    };
+    sessionPasteRef.current = pasteIntoSession;
 
     attachOsc52Clipboard(
       term,
@@ -818,6 +901,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       paste: (text) =>
         pasteFromClipboard(() => Promise.resolve({ kind: 'text', text })),
       pasteClipboard: pasteFromClipboard,
+      sendPaste: (text) => pasteIntoSession(text),
+      cancelPaste: () => {
+        const socket = wsRef.current;
+        if (socket?.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ op: 'paste-cancel' }));
+        }
+      },
       setLogging: (patch) => {
         const socket = wsRef.current;
         if (!socket || socket.readyState !== WebSocket.OPEN) return false;
@@ -825,6 +915,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         socket.send(JSON.stringify({ op: 'set-logging', ...patch }));
         return true;
       },
+      sendBreak: () => {
+        const socket = wsRef.current;
+        if (!ready || !socket || socket.readyState !== WebSocket.OPEN) return false;
+        socket.send(JSON.stringify({ op: 'send-break' }));
+        return true;
+      },
+      cancelLoginSequence,
     });
 
     const onNativePaste = (event: ClipboardEvent) => {
@@ -1009,6 +1106,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       const socket = new WebSocket(wsUrl('/ws/terminal'), wsProtocols());
       const attachingExistingSession = !!attachTerminalId;
       let socketFailed = false;
+      /** A tmux/screen reattach held back until the host's login sequence is done. */
+      let pendingReattach: string | undefined;
+      if (!attachingExistingSession) updateTab(tab.id, { loginSequence: undefined });
       diagnosable = false;
       ws = socket;
       wsRef.current = socket;
@@ -1214,9 +1314,43 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
               current?.profile?.kind === 'ssh' &&
               current.reconnectMode
             ) {
-              socket.send(encoder.encode(reattachCommand(current.reconnectMode)));
+              // The server announces a login sequence before `ready`; the
+              // multiplexer reattaches once the sequence has logged in.
+              if (current.loginSequence) pendingReattach = reattachCommand(current.reconnectMode);
+              else socket.send(encoder.encode(reattachCommand(current.reconnectMode)));
             }
             flushPendingInput();
+            break;
+          }
+          case 'login-sequence': {
+            const wasRunning = !!useTabsStore
+              .getState()
+              .tabs.find((candidate) => candidate.id === tab.id)?.loginSequence;
+            if (ctl.state === 'running') {
+              updateTab(tab.id, {
+                loginSequence: { step: ctl.step, steps: ctl.steps, detail: ctl.detail },
+              });
+              break;
+            }
+            updateTab(tab.id, { loginSequence: undefined });
+            // A vault prompt the sequence opened has nothing left to answer.
+            if (ready) setAuthPrompt(null);
+            const reattach = pendingReattach;
+            pendingReattach = undefined;
+            if (ctl.state === 'done') {
+              if (reattach) socket.send(encoder.encode(reattach));
+              break;
+            }
+            // A renderer that reattaches after the sequence ended has the note on screen already.
+            if (!wasRunning) break;
+            const notice =
+              ctl.state === 'failed'
+                ? `\x1b[33m[login sequence stopped: ${terminalNotice(ctl.message ?? `step ${ctl.step} failed`).replace(/\.$/, '')}]\x1b[0m\r\n`
+                : `\x1b[90m[login sequence cancelled at step ${ctl.step} of ${ctl.steps}]\x1b[0m\r\n`;
+            // Measured after the output already queued, so the note starts on a line of its own.
+            term.write('', () => {
+              term.write(`${term.buffer.active.cursorX === 0 ? '' : '\r\n'}${notice}`);
+            });
             break;
           }
           case 'logging-state':
@@ -1234,8 +1368,22 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             }
             announceLogFileRef.current = false;
             break;
+          case 'break-result':
+            if (!ctl.ok) {
+              const notice = `\x1b[33m[${terminalNotice(ctl.message ?? 'BREAK was not sent')}]\x1b[0m\r\n`;
+              term.write(term.buffer.active.cursorX > 0 ? `\r\n${notice}` : notice);
+            }
+            break;
           case 'exit':
             exitMessage = ctl;
+            break;
+          case 'paste-progress':
+            setPasteProgress(
+              tab.id,
+              ctl.state === 'running'
+                ? { line: ctl.line, lines: ctl.lines, sent: ctl.sent, total: ctl.total }
+                : undefined,
+            );
             break;
         }
       };
@@ -1245,6 +1393,8 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       socket.onclose = (event) => {
         terminalInputReadyRef.current = false;
         if (wsRef.current === socket) wsRef.current = null;
+        // A reattached renderer is sent the progress again.
+        setPasteProgress(tab.id, undefined);
         if (disposed) return;
         clearTransientStatus();
         const reason =
@@ -1330,6 +1480,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             logFilePath: undefined,
             failureReason: reason,
             disconnectReason: reasonKind,
+            loginSequence: undefined,
           });
         };
 
@@ -1345,6 +1496,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           logFilePath: undefined,
           failureReason: reason,
           disconnectReason: reasonKind,
+          loginSequence: undefined,
         });
         interruptionTimer = setTimeout(() => {
           const current = useTabsStore
@@ -1537,6 +1689,8 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         ws.onerror = null;
         closeTerminalWebSocket(ws);
       }
+      if (sessionPasteRef.current === pasteIntoSession) sessionPasteRef.current = null;
+      setPasteProgress(tab.id, undefined);
       term.dispose();
       searchRef.current = null;
       serializeRef.current = null;
@@ -1679,6 +1833,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     if (response === null) ws.close();
     else ws.send(JSON.stringify({ op: 'auth-response', ...response }));
   };
+
+  function cancelLoginSequence(): boolean {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+    ws.send(JSON.stringify({ op: 'cancel-login-sequence' }));
+    return true;
+  }
 
   const answerHostKey = (accept: boolean) => {
     setHostKey(null);
@@ -1939,20 +2100,60 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           </Typography>
         </MenuItem>
       </Menu>
+      <PasteProgressOverlay tabId={tab.id} />
+      {loginSequence ? (
+        <Paper
+          elevation={6}
+          aria-live="polite"
+          sx={{
+            position: 'absolute',
+            zIndex: 5,
+            right: 18,
+            // Above the paced-paste progress when both are showing.
+            bottom: pasting ? 72 : 16,
+            maxWidth: 'calc(100% - 36px)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            pl: 1.25,
+            pr: 0.5,
+            py: 0.375,
+            border: 1,
+            borderColor: 'divider',
+          }}
+        >
+          <CircularProgress size={13} thickness={5} sx={{ flexShrink: 0 }} />
+          <Typography variant="caption" noWrap sx={{ minWidth: 0 }}>
+            Login sequence {loginSequence.step}/{loginSequence.steps} · {loginSequence.detail}
+          </Typography>
+          <Button
+            size="small"
+            onClick={() => {
+              cancelLoginSequence();
+              termRef.current?.focus();
+            }}
+            sx={{ flexShrink: 0, minWidth: 0 }}
+          >
+            Cancel
+          </Button>
+        </Paper>
+      ) : null}
       <AuthPromptDialog request={authPrompt} onSubmit={answerAuth} />
       <HostKeyDialog request={hostKey} onAnswer={answerHostKey} />
       {pendingPaste !== null ? (
         <PasteConfirmDialog
           initialText={pendingPaste.text}
+          pacing={pendingPaste.pacing}
+          mirrored={pendingPaste.mirrored}
           onCancel={() => {
             setPendingPaste(null);
             pendingPasteResolverRef.current = null;
             pendingPaste.resolve();
           }}
-          onConfirm={(text) => {
+          onConfirm={(text, lineDelayMs) => {
             setPendingPaste(null);
             pendingPasteResolverRef.current = null;
-            pasteToTerminal(text, pendingPaste.broadcast);
+            pasteToTerminal(text, pendingPaste.broadcast, lineDelayMs);
             pendingPaste.resolve();
             termRef.current?.focus();
           }}
