@@ -1,10 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AppWindowLaunch } from '@muxus/shared';
 import {
   decodeAppWindowLaunch,
   encodeAppWindowLaunch,
   isAppWindowLaunch,
+  openSettingsWindow,
 } from '../../../client/src/window-management.js';
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('secondary window launch payloads', () => {
   it('round-trips new and existing workspace launches', () => {
@@ -146,5 +151,42 @@ describe('secondary window launch payloads', () => {
       }),
     ).toBe(false);
     expect(decodeAppWindowLaunch('not-base64-json')).toBeUndefined();
+  });
+
+  it('round-trips the settings window and the section it should show', () => {
+    const plain: AppWindowLaunch = { kind: 'settings' };
+    const targeted: AppWindowLaunch = {
+      kind: 'settings',
+      section: 'local-shells',
+      item: 'ubuntu',
+    };
+
+    expect(decodeAppWindowLaunch(encodeAppWindowLaunch(plain))).toEqual(plain);
+    expect(decodeAppWindowLaunch(encodeAppWindowLaunch(targeted))).toEqual(targeted);
+    expect(isAppWindowLaunch({ kind: 'settings', section: '' })).toBe(false);
+    expect(isAppWindowLaunch({ kind: 'settings', section: 42 })).toBe(false);
+    expect(isAppWindowLaunch({ kind: 'settings', section: 'x'.repeat(65) })).toBe(false);
+    expect(isAppWindowLaunch({ kind: 'settings', section: 'passwords', item: '' })).toBe(false);
+  });
+});
+
+describe('settings window', () => {
+  it('asks the desktop shell for the settings window', () => {
+    const openWindow = vi.fn();
+    vi.stubGlobal('window', { muxusDesktop: { openWindow } });
+
+    expect(openSettingsWindow()).toBe(true);
+    expect(openSettingsWindow({ section: 'passwords' })).toBe(true);
+    expect(openSettingsWindow({ section: 'local-shells', item: 'ubuntu' })).toBe(true);
+    expect(openWindow.mock.calls).toEqual([
+      [{ kind: 'settings' }],
+      [{ kind: 'settings', section: 'passwords' }],
+      [{ kind: 'settings', section: 'local-shells', item: 'ubuntu' }],
+    ]);
+  });
+
+  it('leaves a regular browser to its settings dialog', () => {
+    vi.stubGlobal('window', {});
+    expect(openSettingsWindow({ section: 'terminal' })).toBe(false);
   });
 });

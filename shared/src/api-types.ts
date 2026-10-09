@@ -577,6 +577,8 @@ export type CommandLineLaunch =
  * either create a named workspace or open an existing one; session windows
  * start a fresh shell; SFTP windows stay attached to an existing SSH
  * transport and hold their own lease for as long as the window is open.
+ * There is at most one settings window; asking for it again brings it to the
+ * front on the requested section.
  */
 export type AppWindowLaunch =
   | {
@@ -602,6 +604,13 @@ export type AppWindowLaunch =
       connId: string;
       title: string;
       path?: string;
+    }
+  | {
+      kind: 'settings';
+      /** Settings section to show; the window keeps its current one otherwise. */
+      section?: string;
+      /** Entry within that section to bring into view. */
+      item?: string;
     };
 
 /** A LocalForward / RemoteForward / DynamicForward rule declared in ssh config. */

@@ -4,15 +4,21 @@ icon: lucide/settings
 
 # Settings
 
-Settings are opened with ++ctrl+comma++ or the gear control in the top bar. The sections
-are listed on the left. Each one is a list of settings with a short explanation on the left
-and the control on the right, grouped under small headings. In a narrow window the section
-list becomes a picker at the top. Close the dialog with the **:material-close: close**
-button or ++esc++.
+Settings are opened with ++ctrl+comma++ or the gear control in the top bar. In the desktop
+app they open in a window of their own: keep it beside the main window or drag it onto
+another display, and it reopens where you left it, at the size you left it. If that display
+is no longer connected, it opens over the main window instead. Opening settings again
+brings the window to the front. On Linux under Wayland the compositor decides where windows
+open, so only the size is kept there. In a browser, settings open as a dialog over the page.
 
-Most changes apply immediately to open terminals. SSH keepalive changes apply on the next
-connection; session logging saves explicitly because storage policy should not change under
-a running recorder.
+The sections are listed on the left. Each one is a list of settings with a short explanation
+on the left and the control on the right, grouped under small headings. In a narrow window
+the section list becomes a picker at the top. Close the settings window or dialog with ++esc++,
+or with its close button.
+
+Most changes apply immediately to open terminals, in every Muxus window. SSH keepalive
+changes apply on the next connection; session logging saves explicitly because storage
+policy should not change under a running recorder.
 
 <figure markdown="span">
   ![The settings dialog](../assets/screenshots/settings.png#only-light){ .shadow }

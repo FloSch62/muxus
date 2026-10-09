@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   INTERFACE_ZOOM_STEPS,
   MAX_INTERFACE_ZOOM,
@@ -12,7 +12,9 @@ import {
   DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
   MONO_FONT_FALLBACK,
   clampInactivePaneDimStrength,
+  followPrefsFromOtherWindows,
   isLocalShellProfileArray,
+  mergePersistedPrefs,
   migratePrefsState,
   paneFocusOpacity,
   terminalFontStack,
@@ -621,5 +623,93 @@ describe('migratePrefsState folder order', () => {
       4,
     ) as Record<string, unknown>;
     expect(migrated.sidebarFolderOrder).toBeUndefined();
+  });
+});
+
+describe('preferences shared between windows', () => {
+  const version = usePrefsStore.persist.getOptions().version;
+
+  function savedCopy(patch: Record<string, unknown>): string {
+    return JSON.stringify({ state: { ...usePrefsStore.getState(), ...patch }, version });
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    usePrefsStore.setState(usePrefsStore.getInitialState(), true);
+  });
+
+  it('keeps live arrays and maps for values that did not change', () => {
+    const current = usePrefsStore.getState();
+    const merged = mergePersistedPrefs(
+      JSON.parse(savedCopy({ themeMode: 'dark', commandButtons: [] })).state,
+      current,
+    );
+
+    expect(merged.themeMode).toBe('dark');
+    expect(merged.keywordHighlightProfiles).toBe(current.keywordHighlightProfiles);
+    expect(merged.commandButtons).toBe(current.commandButtons);
+    expect(merged.sidebarFolderStyles).toBe(current.sidebarFolderStyles);
+    expect(merged.set).toBe(current.set);
+  });
+
+  it('takes what another desktop window saved, without saving it again', () => {
+    const saved = new Map<string, string>();
+    const listeners = new Set<(name: string) => void>();
+    const setItem = vi.fn();
+    vi.stubGlobal('window', {
+      muxusDesktop: {
+        stateStorage: {
+          getItem: (name: string) => saved.get(name) ?? null,
+          setItem,
+          removeItem: vi.fn(),
+          onChange(callback: (name: string) => void) {
+            listeners.add(callback);
+            return () => listeners.delete(callback);
+          },
+        },
+      },
+    });
+    const before = usePrefsStore.getState();
+    const stop = followPrefsFromOtherWindows();
+
+    saved.set('muxus-prefs', savedCopy({ themeMode: 'dark', monoFontSize: 16 }));
+    for (const listener of listeners) listener('muxus-last-backup');
+    expect(usePrefsStore.getState().themeMode).toBe('os');
+
+    for (const listener of listeners) listener('muxus-prefs');
+    const after = usePrefsStore.getState();
+    expect(after.themeMode).toBe('dark');
+    expect(after.monoFontSize).toBe(16);
+    expect(after.keywordHighlightProfiles).toBe(before.keywordHighlightProfiles);
+    expect(setItem).not.toHaveBeenCalled();
+
+    stop();
+    expect(listeners.size).toBe(0);
+  });
+
+  it('follows other browser tabs through the storage event', () => {
+    const storage = new Map<string, string>();
+    const listeners = new Set<(event: { key: string | null }) => void>();
+    vi.stubGlobal('window', {
+      localStorage: {
+        getItem: (name: string) => storage.get(name) ?? null,
+        setItem: (name: string, value: string) => storage.set(name, value),
+        removeItem: (name: string) => storage.delete(name),
+      },
+      addEventListener: (type: string, listener: (event: { key: string | null }) => void) => {
+        if (type === 'storage') listeners.add(listener);
+      },
+      removeEventListener: (type: string, listener: (event: { key: string | null }) => void) => {
+        if (type === 'storage') listeners.delete(listener);
+      },
+    });
+    const stop = followPrefsFromOtherWindows();
+
+    storage.set('muxus-prefs', savedCopy({ sidebarPosition: 'right' }));
+    for (const listener of listeners) listener({ key: 'muxus-prefs' });
+    expect(usePrefsStore.getState().sidebarPosition).toBe('right');
+
+    stop();
+    expect(listeners.size).toBe(0);
   });
 });

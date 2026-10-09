@@ -36,6 +36,8 @@ declare global {
         getItem(name: string): string | null;
         setItem(name: string, value: string): void;
         removeItem(name: string): void;
+        /** Subscribe to items another window saved or removed; returns unsubscribe. */
+        onChange(callback: (name: string) => void): () => void;
       };
       setTitleBarOverlay(options: { color: string; symbolColor: string; height: number }): void;
       /** Scale the whole window natively (the interface zoom preference). */
@@ -100,11 +102,13 @@ declare global {
       ): void;
       /** Bring this native window to the foreground. */
       focusWindow(): void;
+      /** Settings window: subscribe to sections other windows ask it to show; returns unsubscribe. */
+      onSettingsTarget(callback: (target: { section?: string; item?: string }) => void): () => void;
       /** Subscribe to the OS close-window chord (Cmd/Ctrl+W); returns unsubscribe. */
       onCloseTab(callback: () => void): () => void;
       /** Subscribe to the tab-cycling chords (Ctrl+Tab & friends); backwards=true cycles left. */
       onCycleTab(callback: (backwards: boolean) => void): () => void;
-      /** Close the main window (fallback when no terminal tab is open). */
+      /** Close this window (the main window when no terminal tab is open). */
       closeWindow(): void;
       /** Where a file dropped into the window lives on disk; empty when it is not a file on disk. */
       getPathForFile?(file: File): string;

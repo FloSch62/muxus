@@ -8,11 +8,14 @@ import { MutationCache, QueryClient, QueryClientProvider } from '@tanstack/react
 import { ApiError, initAuthToken } from './api/http.js';
 import { showErrorToast } from './state/toast.js';
 import { installShortcuts } from './shortcuts.js';
+import { followPrefsFromOtherWindows } from './state/prefs.js';
 import { useTabsStore } from './state/tabs.js';
+import { shareQueryChanges } from './query-sync.js';
 import { consumeAppWindowLaunch } from './window-management.js';
 import App from './App.js';
 
 initAuthToken();
+followPrefsFromOtherWindows();
 const windowLaunch = consumeAppWindowLaunch();
 if (windowLaunch?.kind === 'session') {
   const id = useTabsStore.getState().open(windowLaunch.profile, windowLaunch.title);
@@ -24,7 +27,8 @@ if (windowLaunch?.kind === 'tab-transfer') {
     module.receiveTabTransfer(windowLaunch.transferId, paneId),
   );
 }
-if (windowLaunch?.kind !== 'sftp') installShortcuts();
+// SFTP and settings windows hold no tabs or panes for the shortcuts to drive.
+if (windowLaunch?.kind !== 'sftp' && windowLaunch?.kind !== 'settings') installShortcuts();
 
 const queryClient = new QueryClient({
   mutationCache: new MutationCache({
@@ -41,6 +45,7 @@ const queryClient = new QueryClient({
     queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 15_000 },
   },
 });
+shareQueryChanges(queryClient);
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

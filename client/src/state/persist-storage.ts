@@ -60,3 +60,24 @@ export const muxusStateStorage: StateStorage = {
     browserStorage()?.removeItem(name);
   },
 };
+
+/**
+ * Call back when another window saves or removes `name`; returns unsubscribe.
+ * Desktop windows hear it from the main process, browser tabs from the
+ * storage event (which never fires in the tab that wrote).
+ */
+export function onStateItemChange(name: string, callback: () => void): () => void {
+  const desktop = desktopStorage();
+  if (desktop) {
+    return desktop.onChange((changed) => {
+      if (changed === name) callback();
+    });
+  }
+  if (typeof window === 'undefined') return () => undefined;
+  const listener = (event: StorageEvent) => {
+    // A null key means the whole storage was cleared.
+    if (event.key === name || event.key === null) callback();
+  };
+  window.addEventListener('storage', listener);
+  return () => window.removeEventListener('storage', listener);
+}

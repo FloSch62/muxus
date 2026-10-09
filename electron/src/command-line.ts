@@ -166,9 +166,9 @@ export function parseCommandLineLaunchData(
     : undefined;
 }
 
-/** SFTP-only windows do not mount the client-side command request handler. */
+/** SFTP and settings windows do not mount the client-side command request handler. */
 export function canHandleCommandLineLaunch(
   windowLaunch: AppWindowLaunch | undefined,
 ): boolean {
-  return windowLaunch?.kind !== 'sftp';
+  return windowLaunch?.kind !== 'sftp' && windowLaunch?.kind !== 'settings';
 }
