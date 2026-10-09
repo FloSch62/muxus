@@ -511,13 +511,16 @@ export interface HostOrderRequest {
  * One target supplied when the desktop executable is launched from a command
  * line. Names stay unresolved until the renderer has loaded the same host and
  * workspace catalogs used by the rest of the UI. A `connect` name is an
- * already validated ad-hoc "[user@]host[:port]" SSH target instead.
+ * already validated ad-hoc "[user@]host[:port]" SSH target instead. A `url`
+ * name is an ssh:// or telnet:// link as received, which the renderer parses
+ * so that it can report a malformed one.
  */
 export type CommandLineLaunch =
   | { kind: 'host'; name: string }
   | { kind: 'folder'; name: string }
   | { kind: 'workspace'; name: string }
-  | { kind: 'connect'; name: string };
+  | { kind: 'connect'; name: string }
+  | { kind: 'url'; name: string };
 
 /**
  * One extra application window requested by the renderer. Workspace windows
@@ -1186,4 +1189,30 @@ export interface ConnectionDiagnosticsResponse {
   checks: ConnectionCheck[];
   /** Best guess at the cause, read from the lowest layer that failed. */
   conclusion: string;
+}
+
+/** Whether the operating system opens one link scheme with this Muxus. */
+export interface LinkHandlerStatus {
+  isDefault: boolean;
+  /** The program that opens these links now, when the system names one. */
+  currentHandler?: string;
+}
+
+/** Desktop only: which ssh:// and telnet:// links open in Muxus. */
+export interface LinkHandlerState {
+  /** Why Muxus cannot register itself here, when it cannot. */
+  unavailable?: string;
+  ssh: LinkHandlerStatus;
+  telnet: LinkHandlerStatus;
+}
+
+export interface LinkHandlerRegistration {
+  state: LinkHandlerState;
+  /** Set when registering failed. */
+  error?: string;
+  /**
+   * The system keeps this choice itself (Windows default apps, a Store
+   * installation), so its settings were opened for the user to pick Muxus.
+   */
+  openedSystemSettings?: boolean;
 }

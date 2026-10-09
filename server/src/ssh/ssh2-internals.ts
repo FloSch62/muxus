@@ -7,6 +7,7 @@ interface Ssh2Constants {
   SUPPORTED_KEX: string[];
   SUPPORTED_CIPHER: string[];
   SUPPORTED_SERVER_HOST_KEY: string[];
+  DEFAULT_SERVER_HOST_KEY: string[];
   SUPPORTED_MAC: string[];
 }
 

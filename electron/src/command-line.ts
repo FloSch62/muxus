@@ -1,11 +1,19 @@
-import type { AppWindowLaunch, CommandLineLaunch } from '@muxus/shared';
+import {
+  CONNECTION_LINK_MAX_LENGTH,
+  IPV6_ADDRESS_PATTERN,
+  looksLikeConnectionLink,
+  SSH_HOSTNAME_PATTERN,
+  SSH_USER_PATTERN,
+  type AppWindowLaunch,
+  type CommandLineLaunch,
+} from '@muxus/shared';
 
 const TARGET_FLAGS = {
   '--host': 'host',
   '--folder': 'folder',
   '--workspace': 'workspace',
   '--connect': 'connect',
-} as const satisfies Record<string, CommandLineLaunch['kind']>;
+} as const satisfies Record<string, Exclude<CommandLineLaunch['kind'], 'url'>>;
 
 /** Parts of a `--connect` target that may also be given as separate flags. */
 interface ConnectOptions {
@@ -19,12 +27,8 @@ const CONNECT_FLAGS = {
 } as const satisfies Record<string, keyof ConnectOptions>;
 
 const MAX_TARGET_LENGTH = 500;
-
-// The host reaches a configured ProxyCommand through %h and runs in a shell,
-// so like OpenSSH only plain user and host names are accepted from outside.
-const USER_PATTERN = /^(?!-)[\w.@+-]+$/;
-const HOSTNAME_PATTERN = /^(?![-.])[A-Za-z0-9._-]+$/;
-const IPV6_PATTERN = /^[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*(?:%[\w.-]+)?$/;
+// One character past the limit is kept so the renderer can say the link is too long.
+const MAX_LINK_ARGUMENT_LENGTH = CONNECTION_LINK_MAX_LENGTH + 1;
 
 function validPort(value: string): string | undefined {
   if (!/^\d{1,5}$/.test(value)) return undefined;
@@ -52,30 +56,40 @@ export function parseConnectTarget(
   const bracketed = /^\[([^\]]+)\](?::([^:]*))?$/.exec(address);
   if (bracketed) {
     host = bracketed[1]!;
-    if (!IPV6_PATTERN.test(host) && !HOSTNAME_PATTERN.test(host)) return undefined;
+    if (!IPV6_ADDRESS_PATTERN.test(host) && !SSH_HOSTNAME_PATTERN.test(host)) return undefined;
     targetPort = bracketed[2];
   } else if (address.indexOf(':') !== address.lastIndexOf(':')) {
     // Unbracketed IPv6 cannot carry a port, matching how the server reads it.
     host = address;
-    if (!IPV6_PATTERN.test(host)) return undefined;
+    if (!IPV6_ADDRESS_PATTERN.test(host)) return undefined;
   } else {
     const colon = address.indexOf(':');
     host = colon < 0 ? address : address.slice(0, colon);
     targetPort = colon < 0 ? undefined : address.slice(colon + 1);
-    if (!HOSTNAME_PATTERN.test(host)) return undefined;
+    if (!SSH_HOSTNAME_PATTERN.test(host)) return undefined;
   }
 
   if (targetUser !== undefined && options.user !== undefined) return undefined;
   if (targetPort !== undefined && options.port !== undefined) return undefined;
   const user = targetUser ?? options.user;
   const rawPort = targetPort ?? options.port;
-  if (user !== undefined && !USER_PATTERN.test(user)) return undefined;
+  if (user !== undefined && !SSH_USER_PATTERN.test(user)) return undefined;
   const port = rawPort === undefined ? undefined : validPort(rawPort);
   if (rawPort !== undefined && !port) return undefined;
 
   const hostPart = port && host.includes(':') ? `[${host}]` : host;
   const normalized = `${user ? `${user}@` : ''}${hostPart}${port ? `:${port}` : ''}`;
   return normalized.length <= MAX_TARGET_LENGTH ? normalized : undefined;
+}
+
+/**
+ * An ssh:// or telnet:// link as a launch request. It stays unparsed here so
+ * the window that receives it can report a malformed one.
+ */
+export function linkLaunch(url: string): CommandLineLaunch | undefined {
+  return looksLikeConnectionLink(url)
+    ? { kind: 'url', name: url.slice(0, MAX_LINK_ARGUMENT_LENGTH) }
+    : undefined;
 }
 
 /** Parse exactly one desktop launch target from Electron's full argv array. */
@@ -87,6 +101,13 @@ export function parseCommandLineLaunch(
 
   for (let index = 0; index < argv.length; index++) {
     const argument = argv[index]!;
+    // Linux and Windows hand a link to the executable as a plain argument.
+    const link = index > 0 && !argument.startsWith('-') ? linkLaunch(argument) : undefined;
+    if (link) {
+      if (launch) return undefined;
+      launch = link;
+      continue;
+    }
     const separator = argument.indexOf('=');
     const flag = separator < 0 ? argument : argument.slice(0, separator);
     const kind = TARGET_FLAGS[flag as keyof typeof TARGET_FLAGS];
@@ -129,11 +150,13 @@ export function parseCommandLineLaunchData(
     candidate.kind !== 'host' &&
     candidate.kind !== 'folder' &&
     candidate.kind !== 'workspace' &&
-    candidate.kind !== 'connect'
+    candidate.kind !== 'connect' &&
+    candidate.kind !== 'url'
   ) {
     return undefined;
   }
   if (typeof candidate.name !== 'string') return undefined;
+  if (candidate.kind === 'url') return linkLaunch(candidate.name);
   const name =
     candidate.kind === 'connect'
       ? parseConnectTarget(candidate.name.trim())

@@ -74,6 +74,25 @@ describe('saved host profile routes', () => {
     ).toBe(false);
   });
 
+  it('never stores a link’s host key fingerprint with a saved host', async () => {
+    const create = await app.inject({
+      method: 'PUT',
+      url: '/api/profiles',
+      headers: auth(),
+      payload: {
+        name: 'Pinned',
+        profile: {
+          kind: 'ssh',
+          target: 'router.example.test',
+          useConfig: false,
+          hostKeyFingerprint: 'SHA256:nThbg6kXUpJWGl7E1IGOCspRomTxdCARLviKw6E5SY8',
+        },
+      },
+    });
+    expect(create.statusCode).toBe(200);
+    expect(create.json().profile).not.toHaveProperty('hostKeyFingerprint');
+  });
+
   it('stores RDP and VNC hosts with their gateway and display options', async () => {
     const rdp = await app.inject({
       method: 'PUT',

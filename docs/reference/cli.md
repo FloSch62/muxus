@@ -56,6 +56,20 @@ Hosts and users are limited to letters, digits and `.`, `_`, `-` (plus `@` and `
 names, and an IPv6 zone such as `%eth0`), because they can reach a `ProxyCommand` shell. A
 target that does not fit is ignored and Muxus just starts or comes to the front.
 
+## Links
+
+An `ssh://` or `telnet://` link given as an argument opens like a link clicked in a browser
+once Muxus is the [handler for those links](../guide/hosts.md#opening-ssh-and-telnet-links):
+
+```bash
+muxus "ssh://admin@10.0.0.1:2222"
+muxus "telnet://switch-01"
+```
+
+This is how the system passes a clicked link on Linux and Windows; macOS delivers it
+through Launch Services instead. A link counts as the one launch target, and it is checked
+in the window that opens it, so a malformed link shows an error notification there.
+
 ## Server flags
 
 The server is `server/dist/index.js`, started by `pnpm start` or embedded in the desktop

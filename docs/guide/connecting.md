@@ -40,6 +40,24 @@ read-only `/etc/ssh/ssh_known_hosts`, hashed entries included.
 
     If the host was not just rebuilt, determine why the key changed before accepting.
 
+### Fingerprints in ssh:// links
+
+An [`ssh://` link](hosts.md#opening-ssh-and-telnet-links) can name the host key it expects:
+`ssh://admin;fingerprint=SHA256:nThbg6kXUpJWGl7E1IGOCspRomTxdCARLviKw6E5SY8@10.0.0.1`. The
+value is what `ssh-keygen -l` prints. MD5 fingerprints (`MD5:c1:b1:…`) and the URI draft's
+`ssh-rsa-c1-b1-…` form also work; the latter names a key type, and Muxus asks the server for
+a key of that type.
+
+The fingerprint only ever makes the check stricter:
+
+- If the server's key does not match, the connection is refused before `known_hosts` is
+  consulted, even for a host already trusted there or set to `StrictHostKeyChecking no`.
+- If it matches, `known_hosts` applies as usual. A known key connects; for a new host the
+  terminal notes that the key matches the link, and the trust prompt still appears, since
+  a link can come from anywhere. A link never adds or replaces a `known_hosts` entry by
+  itself.
+- A tab opened from such a link never shares a connection whose key it has not checked.
+
 ## Authentication order
 
 Within one connection Muxus follows the OpenSSH order and stops at the first method that
