@@ -310,6 +310,18 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
     },
   },
   {
+    id: 'terminal.send-secret',
+    title: 'Send secret…',
+    category: 'terminal',
+    defaultChords: ['Mod+Shift+P'],
+    keywords: ['password', 'vault', 'enable', 'sudo', 'pin', 'type secret', 'credential'],
+    run: () => {
+      if (!activeTerminal()) return false;
+      useUiStore.getState().setSendSecretMenuOpen(true);
+      return true;
+    },
+  },
+  {
     id: 'terminal.toggle-editor',
     title: 'Switch between terminal and open files',
     category: 'terminal',
@@ -395,6 +407,18 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
     run: () => {
       const state = tabs();
       return sendBreak(state.tabs.find((tab) => tab.id === state.activeId));
+    },
+  },
+  {
+    id: 'terminal.cancel-login-sequence',
+    title: 'Cancel login sequence',
+    category: 'terminal',
+    defaultChords: [],
+    keywords: ['login', 'sequence', 'expect', 'stop', 'abort'],
+    run: () => {
+      const id = tabs().activeId;
+      if (!tabs().tabs.find((tab) => tab.id === id)?.loginSequence) return false;
+      return terminalHandle(id)?.cancelLoginSequence() ?? false;
     },
   },
   {

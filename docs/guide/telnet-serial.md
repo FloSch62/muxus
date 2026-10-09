@@ -99,3 +99,9 @@ Telnet and serial tabs behave as ordinary tabs. They live in panes, take colour 
 [multi-exec](commands.md#multi-execution) groups, are saved in [workspaces](workspaces.md),
 and are recorded by [session history](session-history.md) when it is enabled. Features that
 require SSH do not apply: no file browser, no remote editor, no port forwarding.
+
+A [login sequence](adding-hosts.md#login-sequence) answers the device's own prompts, which
+is how a Telnet or serial login is automated: wait for `login:` or `Username:`, send the
+user name, wait for `Password:`, send a secret from the password vault. Many serial consoles
+stay silent until they receive a key, so such a sequence usually starts with a **Send
+text** step that only presses Enter.

@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import net, { type AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TERMINAL_SESSION_CLOSE_REASON } from '@muxus/shared/ws-protocol';
+import { TerminalInputs } from '../../../server/src/ws/terminal-inputs.js';
 import { registerTerminalSocket } from '../../../server/src/ws/terminal-socket.js';
 
 const requestChannelBreak = vi.hoisted(() => vi.fn());
@@ -82,6 +83,7 @@ describe('Send BREAK over the terminal socket', () => {
       },
       forwards: { stopSessionForConnection: vi.fn() },
       database: loggingOff,
+      terminalInputs: new TerminalInputs(),
     });
     const socket = new TestSocket();
     route(socket);
@@ -111,7 +113,7 @@ describe('Send BREAK over the terminal socket', () => {
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const { port } = server.address() as AddressInfo;
-    const route = terminalRoute({ database: loggingOff });
+    const route = terminalRoute({ database: loggingOff, terminalInputs: new TerminalInputs() });
     const socket = new TestSocket();
     try {
       route(socket);

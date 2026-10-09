@@ -15,6 +15,7 @@ import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
+import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import PasswordOutlinedIcon from '@mui/icons-material/PasswordOutlined';
@@ -24,6 +25,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   DEFAULT_PASSWORD_VAULT_UNLOCK_POLICY,
   type PasswordVaultCredential,
+  type PasswordVaultSecret,
   type PasswordVaultStatus,
   type PasswordVaultUnlockPolicy,
 } from '@muxus/shared';
@@ -42,6 +44,11 @@ import { usePasswordVaultStatus } from '../api/password-vault-queries.js';
 import { confirmAction } from '../state/dialogs.js';
 import { usePrefsStore } from '../state/prefs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
+import { commandButtonLabel } from '../command-buttons.js';
+import { commandButtonsUsingSecret } from '../vault-secrets.js';
+import { fetchLoginSequenceOwners } from '../api/folder-settings.js';
+import { loginSequencesUsingSecret } from '../login-sequence.js';
+import { VaultSecretDialog } from './VaultSecretDialog.js';
 import {
   SettingRow,
   SettingsGroup,
@@ -62,9 +69,11 @@ export function PasswordVaultSection() {
   const result = usePasswordVaultStatus();
   const status = result.data;
   const rememberPasswordsByDefault = usePrefsStore((s) => s.rememberPasswordsByDefault);
+  const commandButtons = usePrefsStore((s) => s.commandButtons);
   const setPrefs = usePrefsStore((s) => s.set);
   const [dialogMode, setDialogMode] = useState<MasterDialogMode>();
   const [editing, setEditing] = useState<PasswordVaultCredential>();
+  const [secretDialog, setSecretDialog] = useState<{ secret?: PasswordVaultSecret }>();
   const [busy, setBusy] = useState(false);
 
   const acceptStatus = (next: PasswordVaultStatus) => {
@@ -88,11 +97,51 @@ export function PasswordVaultSection() {
     }
   };
 
+  const forgetSecret = async (secret: PasswordVaultSecret) => {
+    const users = commandButtonsUsingSecret(usePrefsStore.getState().commandButtons, secret.id);
+    const sequences = loginSequencesUsingSecret(
+      await fetchLoginSequenceOwners().catch(() => []),
+      secret.id,
+    );
+    const confirmed = await confirmAction({
+      title: `Delete “${secret.name}”?`,
+      description: [
+        users.length
+          ? `${users.length === 1 ? 'A saved command still types' : `${users.length} saved commands still type`} it: ${quotedList(users.map(commandButtonLabel))}. ${users.length === 1 ? 'Its button' : 'Their buttons'} will show that the secret is missing.`
+          : sequences.length
+            ? ''
+            : 'The secret is removed from the password vault.',
+        sequences.length
+          ? `The login sequence of ${quotedList(sequences)} types it too and will stop at that step.`
+          : '',
+      ]
+        .filter(Boolean)
+        .join(' '),
+      confirmLabel: 'Delete secret',
+      destructive: true,
+    });
+    if (!confirmed) return;
+    try {
+      await forgetSavedPassword(secret.id);
+      await queryClient.invalidateQueries({ queryKey: ['password-vault'] });
+      showToast('success', `Deleted “${secret.name}”.`);
+    } catch (error) {
+      showErrorToast(error);
+    }
+  };
+
   const removeVault = async () => {
+    const secretIds = new Set(status?.secrets.map((secret) => secret.id));
+    const secretButtons = usePrefsStore
+      .getState()
+      .commandButtons.filter((button) => button.secretId && secretIds.has(button.secretId)).length;
     const confirmed = await confirmAction({
       title: 'Delete the password vault?',
-      description:
-        'Every saved SSH password will be securely removed from the active database. Muxus also removes the OS credential-store copy when that store is available. No master password is required, so deletion remains possible if it is forgotten. Existing backups or filesystem snapshots are not affected. Connection profiles and SSH keys are not affected.',
+      description: `Every saved SSH password and secret will be securely removed from the active database. Muxus also removes the OS credential-store copy when that store is available. No master password is required, so deletion remains possible if it is forgotten. Existing backups or filesystem snapshots are not affected. Connection profiles and SSH keys are not affected.${
+        secretButtons
+          ? ` ${secretButtons === 1 ? 'A saved command types' : `${secretButtons} saved commands type`} one of these secrets and will show it as missing.`
+          : ''
+      }`,
       confirmLabel: 'Delete vault',
       destructive: true,
     });
@@ -198,7 +247,7 @@ export function PasswordVaultSection() {
             />
             <SettingRow
               label="Delete the vault"
-              description="Forgets every saved password; hosts, keys and other settings stay. Needs no master password, so a forgotten one can still be removed."
+              description="Forgets every saved password and secret; hosts, keys and other settings stay. Needs no master password, so a forgotten one can still be removed."
               control={
                 <Button
                   variant="outlined"
@@ -213,6 +262,81 @@ export function PasswordVaultSection() {
           </>
         ) : null}
       </SettingsGroup>
+
+      {status.configured ? (
+        <SettingsGroup
+          title={status.secrets.length ? `Secrets · ${status.secrets.length}` : 'Secrets'}
+          description="Passwords and PINs that are not a login, such as enable or sudo passwords. A command button or Send secret… types one into the focused session without showing it, and it stays out of session history and log files."
+          action={
+            <Button size="small" startIcon={<AddIcon />} onClick={() => setSecretDialog({})}>
+              Add secret
+            </Button>
+          }
+          flush
+        >
+          {status.secrets.length === 0 ? (
+            <Typography
+              variant="body2"
+              color="textSecondary"
+              sx={{ px: 2, py: 2.5, textAlign: 'center' }}
+            >
+              None yet.
+            </Typography>
+          ) : (
+            status.secrets.map((secret) => {
+              const users = commandButtonsUsingSecret(commandButtons, secret.id).length;
+              return (
+                <Box
+                  key={secret.id}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1.5,
+                    px: 2,
+                    py: 1.1,
+                    '& + &': { borderTop: 1, borderColor: 'divider' },
+                  }}
+                >
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Typography variant="body2" noWrap sx={{ fontWeight: 550 }} title={secret.name}>
+                      {secret.name}
+                    </Typography>
+                    <Typography variant="caption" color="textSecondary" component="div" noWrap>
+                      {[
+                        secret.username ? `User ${secret.username}` : undefined,
+                        users ? `Used by ${users} command button${users === 1 ? '' : 's'}` : undefined,
+                        `Updated ${new Date(secret.updatedAt).toLocaleString()}`,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </Typography>
+                  </Box>
+                  <Stack direction="row" spacing={0.25} sx={{ flexShrink: 0 }}>
+                    <Tooltip title="View or edit secret">
+                      <IconButton
+                        size="small"
+                        aria-label={`View or edit ${secret.name}`}
+                        onClick={() => setSecretDialog({ secret })}
+                      >
+                        <EditOutlinedIcon sx={{ fontSize: 18 }} />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Delete secret">
+                      <IconButton
+                        size="small"
+                        aria-label={`Delete ${secret.name}`}
+                        onClick={() => void forgetSecret(secret)}
+                      >
+                        <DeleteOutlineIcon color="error" sx={{ fontSize: 18 }} />
+                      </IconButton>
+                    </Tooltip>
+                  </Stack>
+                </Box>
+              );
+            })
+          )}
+        </SettingsGroup>
+      ) : null}
 
       {status.configured ? (
         <SettingsGroup
@@ -309,6 +433,23 @@ export function PasswordVaultSection() {
         />
       ) : null}
 
+      {secretDialog ? (
+        <VaultSecretDialog
+          secret={secretDialog.secret}
+          onClose={() => setSecretDialog(undefined)}
+          onSaved={(result) => {
+            acceptStatus(result.status);
+            setSecretDialog(undefined);
+            showToast(
+              'success',
+              secretDialog.secret
+                ? `Updated “${result.secret.name}”.`
+                : `Saved “${result.secret.name}”.`,
+            );
+          }}
+        />
+      ) : null}
+
       {editing ? (
         <EditSavedPasswordDialog
           credential={editing}
@@ -325,7 +466,16 @@ export function PasswordVaultSection() {
 }
 
 const DESCRIPTION =
-  'An optional vault for SSH passwords, protected by a master password. Saved passwords stay on this machine and are never part of a backup.';
+  'An optional vault for SSH passwords and other secrets, protected by a master password. Saved values stay on this machine and are never part of a backup.';
+
+/** “a”, “a” and “b”, or “a”, “b” and 2 more. */
+function quotedList(labels: readonly string[]): string {
+  const quoted = labels.slice(0, 3).map((label) => `“${label}”`);
+  const rest = labels.length - quoted.length;
+  if (rest > 0) return `${quoted.join(', ')} and ${rest} more`;
+  if (quoted.length < 2) return quoted.join('');
+  return `${quoted.slice(0, -1).join(', ')} and ${quoted.at(-1)}`;
+}
 
 const UNLOCK_POLICY_LABELS: Record<PasswordVaultUnlockPolicy, string> = {
   never: 'Never for saved credentials: the vault key lives in the OS credential store.',

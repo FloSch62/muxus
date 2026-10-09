@@ -306,6 +306,8 @@ export const terminalClientMessageSchema = z.discriminatedUnion('op', [
    * on Telnet, or an RFC 4335 `break` request on an SSH channel.
    */
   z.object({ op: z.literal('send-break') }),
+  /** Stop the host's login sequence; the session itself stays open. */
+  z.object({ op: z.literal('cancel-login-sequence') }),
 ]);
 export type TerminalClientMessage = z.infer<typeof terminalClientMessageSchema>;
 
@@ -401,6 +403,18 @@ export type TerminalServerMessage =
       message?: string;
       /** Whether the shell ended normally, setup failed, or a live transport was lost. */
       reason: 'completed' | 'failed' | 'disconnected';
+    }
+  /** The host's login sequence started a step, finished, or stopped. */
+  | {
+      op: 'login-sequence';
+      state: 'running' | 'done' | 'failed' | 'cancelled';
+      /** 1-based step that is running, or where the sequence stopped. */
+      step: number;
+      steps: number;
+      /** What the step does, such as Waiting for “Password:”. */
+      detail: string;
+      /** Why a failed sequence stopped. */
+      message?: string;
     };
 
 /**

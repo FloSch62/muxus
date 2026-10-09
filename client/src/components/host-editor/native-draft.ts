@@ -10,6 +10,12 @@ import {
   blankHostSessionLoggingDraft,
   type HostSessionLoggingDraft,
 } from '../../session-logging-policy.js';
+import {
+  loginSequenceDraft,
+  loginSequenceFromDraft,
+  loginSequenceProblem,
+  type LoginSequenceDraft,
+} from '../../login-sequence.js';
 import { keywordHighlightRulesProblem } from '../../terminal/keyword-matching.js';
 
 /**
@@ -40,6 +46,7 @@ export interface NativeHostDraft {
   breakDurationMs: string;
   keywordHighlights: HostKeywordHighlightConfig;
   sessionLogging: HostSessionLoggingDraft;
+  loginSequence: LoginSequenceDraft;
 }
 
 export function blankNativeDraft(prefillTarget = '', group = ''): NativeHostDraft {
@@ -63,6 +70,7 @@ export function blankNativeDraft(prefillTarget = '', group = ''): NativeHostDraf
     breakDurationMs: String(DEFAULT_BREAK_DURATION_MS),
     keywordHighlights: { inheritGlobal: true, rules: [] },
     sessionLogging: blankHostSessionLoggingDraft(),
+    loginSequence: loginSequenceDraft(undefined),
   };
 }
 
@@ -76,6 +84,7 @@ export function nativeDraftFromProfile(saved: SavedHostProfile, duplicate: boole
   draft.terminalBackgroundColor = saved.metadata.terminalBackgroundColor;
   draft.commandButtonGroup = saved.metadata.commandButtonGroup;
   draft.keywordHighlights = saved.metadata.keywordHighlights ?? draft.keywordHighlights;
+  draft.loginSequence = loginSequenceDraft(saved.metadata.loginSequence);
   if (saved.profile.kind === 'telnet') {
     draft.host = saved.profile.host;
     draft.port = String(saved.profile.port);
@@ -108,7 +117,10 @@ export function nativeDraftProblem(draft: NativeHostDraft, kind: 'telnet' | 'ser
       return `Break duration must be between 1 and ${MAX_BREAK_DURATION_MS} ms.`;
     }
   }
-  return keywordHighlightRulesProblem(draft.keywordHighlights.rules);
+  return (
+    loginSequenceProblem(draft.loginSequence) ??
+    keywordHighlightRulesProblem(draft.keywordHighlights.rules)
+  );
 }
 
 export function nativeDraftToInput(
@@ -149,6 +161,7 @@ export function nativeDraftMetadataPatch(draft: NativeHostDraft): OpenSshMetadat
       highlights.inheritGlobal && !highlights.profileId && highlights.rules.length === 0
         ? null
         : highlights,
+    loginSequence: loginSequenceFromDraft(draft.loginSequence),
   };
 }
 

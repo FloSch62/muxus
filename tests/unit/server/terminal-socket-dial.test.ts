@@ -6,6 +6,7 @@ import {
   TERMINAL_REATTACH_GRACE_MS,
   TransferableTerminalSocket,
 } from '../../../server/src/ws/terminal-socket.js';
+import { TerminalInputs } from '../../../server/src/ws/terminal-inputs.js';
 
 afterEach(() => vi.useRealTimers());
 
@@ -308,6 +309,7 @@ describe('terminal socket connect mode', () => {
       database: {
         sessionLoggingPolicy: () => ({ enabled: false, logToFile: false, captureInput: false }),
       },
+      terminalInputs: new TerminalInputs(),
     };
     registerTerminalSocket(app as never, ctx as never);
 

@@ -14,8 +14,8 @@ The SSH editor lets you choose where a new host lives:
 New hosts start in OpenSSH config. To start them in Muxus app data instead, change
 **Settings → Behavior → Save new SSH hosts in**.
 
-Presentation attributes such as folder, colour, highlighting and logging policy always
-live in the Muxus database.
+Presentation attributes such as folder, colour, highlighting, logging policy and the
+[login sequence](#login-sequence) always live in the Muxus database.
 
 Open the editor with **+** at the top of the sidebar, from a host's **Edit host** menu
 entry, or by pressing ++enter++ on a search that matched nothing.
@@ -95,6 +95,52 @@ forwards. Forwards declared here are written into the block as `LocalForward`,
 
 To start a forward on demand instead, without opening a terminal, save it as a
 [tunnel](tunnels.md).
+
+## Login sequence
+
+Many devices need a few interactive steps before a session is usable: pressing RETURN on a
+banner, `enable` and a second password, `terminal length 0`, or picking a port from a console
+server's menu. A **login sequence** types them for you. It runs once each time the session
+connects, and again after every reconnect, for SSH, Telnet and serial hosts alike. The
+**Login sequence** section of the SSH, Telnet and serial editors holds it.
+
+| Step | What it does |
+| --- | --- |
+| **Wait for** | Waits until the text appears in the output. With **.\*** turned on, the text is a JavaScript regular expression. The sequence stops when nothing matches before the timeout, 10 seconds unless changed. |
+| **Send text** | Types the text, then presses Enter unless the ⏎ toggle is off. Empty text with Enter only presses Enter. |
+| **Send secret** | Types a [named secret](settings.md#passwords) from the encrypted password vault, then presses Enter unless the ⏎ toggle is off. The sequence keeps only which secret it types, never the value. |
+
+The arrows on each row reorder the steps. Matching ignores colours and other escape
+sequences, treats every line ending as one newline, and finds text that arrives in several
+pieces. A wait only looks at output after the previous match, so two waits for the same
+prompt wait for it twice. Regular expressions are checked when the host is saved, and they
+run against the newest 8,192 characters of output; a pattern that takes too long stops the
+sequence instead of slowing Muxus down.
+
+The list at the top decides where the host's sequence comes from:
+
+- **Use the folder's login sequence**, the default, runs the sequence of the nearest
+  [folder](hosts.md#shared-login-sequence) that sets one. The section lists those steps and
+  names the folder.
+- **No login sequence** switches an inherited sequence off for this host.
+- **Run these steps** gives the host its own sequence.
+
+While a sequence runs, the tab shows a login icon and the terminal a progress line with
+**Cancel**. The tab's menu and the **Cancel login sequence** command stop it too. When a step
+times out, the terminal names it, for example
+`[login sequence stopped: Step 2 timed out after 10 s waiting for “Password:”]`, and the
+session stays open for you to carry on by hand.
+
+A secret is typed by the backend straight into the connection. It never reaches the window,
+[session history](session-history.md) or log files; only what the remote side echoes back is
+recorded, and a password prompt echoes nothing. **Send text** steps count as typed input, so
+they are recorded when the host's logging captures keystrokes. When the vault asks for its
+master password before each use, the sequence asks when it reaches a secret step, and
+**Stop login sequence** ends it there.
+
+A host with a startup command (`RemoteCommand`) runs the sequence against that command's
+output. When a session reconnects into tmux or screen, the reattach waits until the
+sequence has finished.
 
 ## Session logging & highlighting
 

@@ -143,6 +143,13 @@ export const useMultiExecStore = create<MultiExecState>()((set) => ({
     }),
 }));
 
+/** The other terminals that input into `sourceTabId` reaches while it is being mirrored. */
+export function multiExecMirrorTabIds(sourceTabId: string): string[] {
+  const { selectedIds } = useMultiExecStore.getState();
+  if (selectedIds.length < 2 || !selectedIds.includes(sourceTabId)) return [];
+  return selectedIds.filter((tabId) => tabId !== sourceTabId);
+}
+
 /**
  * Mirror user input from one selected terminal to every other selected
  * terminal. Direct socket writes avoid re-entering xterm's onData handler.
@@ -151,11 +158,9 @@ export function broadcastTerminalInput(
   sourceTabId: string,
   data: string | Uint8Array<ArrayBuffer>,
 ): number {
-  const { selectedIds } = useMultiExecStore.getState();
-  if (selectedIds.length < 2 || !selectedIds.includes(sourceTabId)) return 0;
   let delivered = 0;
-  for (const tabId of selectedIds) {
-    if (tabId !== sourceTabId && terminalHandle(tabId)?.sendInput(data)) delivered++;
+  for (const tabId of multiExecMirrorTabIds(sourceTabId)) {
+    if (terminalHandle(tabId)?.sendInput(data)) delivered++;
   }
   return delivered;
 }

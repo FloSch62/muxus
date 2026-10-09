@@ -76,6 +76,14 @@ interface TabBase {
   disconnectReason?: 'completed' | 'failed' | 'disconnected';
   /** Tab came from a persisted workspace layout, so stored scrollback may exist. */
   restored?: boolean;
+  /** The host's login sequence while it runs: the current step and what it does. */
+  loginSequence?: LoginSequenceProgress;
+}
+
+export interface LoginSequenceProgress {
+  step: number;
+  steps: number;
+  detail: string;
 }
 
 export interface SessionTab extends TabBase {
@@ -114,6 +122,7 @@ type TabUpdate = Partial<{
   failureReason: string | undefined;
   disconnectReason: 'completed' | 'failed' | 'disconnected' | undefined;
   freshTransport: string | undefined;
+  loginSequence: LoginSequenceProgress | undefined;
 }>;
 
 export interface ReconnectOptions {

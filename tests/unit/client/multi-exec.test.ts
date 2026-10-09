@@ -35,6 +35,7 @@ function handle(sendInput: TerminalHandle['sendInput']): TerminalHandle {
     prepareTransfer: vi.fn(async () => true),
     cancelTransfer: vi.fn(),
     sendBreak: vi.fn(() => true),
+    cancelLoginSequence: vi.fn(() => false),
   };
 }
 

@@ -53,6 +53,8 @@ export interface TerminalHandle {
   }): boolean;
   /** Send BREAK to this session alone; false while it is not attached. */
   sendBreak(): boolean;
+  /** Stop the host's running login sequence; the session stays open. */
+  cancelLoginSequence(): boolean;
 }
 
 const handles = new Map<string, TerminalHandle>();

@@ -371,6 +371,30 @@ describe('backing up session log files', () => {
 });
 
 describe('backing up preferences', () => {
+  it('keeps a secret command button as a reference to the vault', async () => {
+    const enable = {
+      id: 'enable',
+      label: 'Enable',
+      command: '',
+      sendEnter: true,
+      secretId: 'vault-secret-1',
+    };
+    usePrefsStore.setState({ commandButtons: [enable] });
+    mockBackupSnapshot();
+
+    const document = await createBackupDocument();
+
+    expect(document.data.preferences.commandButtons).toEqual([enable]);
+    // The backup never asks the vault for anything.
+    expect(apiFetchMock.mock.calls.map(([url]) => String(url))).not.toContainEqual(
+      expect.stringContaining('/api/password-vault'),
+    );
+    expect(
+      sanitizePreferences({ commandButtons: [enable] } as unknown as BackupPreferences).commandButtons,
+    ).toEqual([enable]);
+    usePrefsStore.setState({ commandButtons: [] });
+  });
+
   it('includes display and update-notification choices', async () => {
     usePrefsStore.setState({
       notifyOnNewVersion: false,
@@ -692,6 +716,87 @@ describe('backing up folder credentials', () => {
   });
 });
 
+describe('backing up login sequences', () => {
+  const sequence = {
+    steps: [
+      { id: 'w', kind: 'wait', pattern: 'Password:', timeoutSeconds: 10 },
+      { id: 'k', kind: 'secret', secretId: 'vault-secret-1', enter: true },
+    ],
+  };
+
+  it('exports host and folder sequences as references, including sequence-only folders', async () => {
+    mockBackupSnapshot(
+      [
+        { id: 'a', path: 'Network', auth: {}, hasPassword: true, loginSequence: sequence },
+        { id: 'b', path: 'Lab', auth: { user: 'lab' }, hasPassword: false },
+      ],
+      [
+        {
+          id: 'console',
+          kind: 'telnet',
+          name: 'Console',
+          profile: { kind: 'telnet', host: 'console.example.test', port: 23 },
+          metadata: { profileId: 'console', loginSequence: { steps: [] }, connectCount: 0 },
+          createdAt: '2026-08-10T00:00:00.000Z',
+          updatedAt: '2026-08-10T00:00:00.000Z',
+        },
+      ],
+    );
+
+    const document = await createBackupDocument();
+
+    expect(document.data.folderSettings).toEqual([
+      { path: 'Network', auth: {}, loginSequence: sequence },
+      { path: 'Lab', auth: { user: 'lab' } },
+    ]);
+    expect(document.data.savedHosts[0]?.metadata.loginSequence).toEqual({ steps: [] });
+    // A round trip through the file keeps it, and keeps every secret out of it.
+    const text = JSON.stringify(document);
+    expect(parseTransferDocument(text).data.folderSettings?.[0]?.loginSequence).toEqual(sequence);
+    expect(text).toContain('vault-secret-1');
+  });
+
+  it('restores valid sequences and drops a malformed one rather than the folder', async () => {
+    apiFetchMock
+      .mockResolvedValueOnce({ hosts: [] })
+      .mockResolvedValueOnce({ profiles: [] })
+      .mockResolvedValueOnce({ folders: [] })
+      .mockResolvedValue({ folder: null });
+    const backup = {
+      format: 'muxus-backup',
+      version: 2,
+      createdAt: '2026-08-10T00:00:00.000Z',
+      data: {
+        ...connections,
+        sshHosts: [],
+        hostOrder: [],
+        preferences: {},
+        tunnels: [],
+        loggingPolicies: [],
+        historySettings: { maxTotalBytes: 1, minFreeBytes: 0, minFreePercent: 0 },
+        folderSettings: [
+          { path: 'Network', auth: {}, loginSequence: sequence },
+          { path: 'Broken', auth: { user: 'x' }, loginSequence: { steps: [{ kind: 'wait' }] } },
+        ],
+      },
+    };
+
+    await restoreTransferDocument(
+      parseTransferDocument(JSON.stringify(backup)),
+      { preferences: false, connections: true, tunnels: false, logging: false },
+      'replace',
+    );
+
+    const puts = apiFetchMock.mock.calls
+      .filter(([url, init]) => url === '/api/folders/settings' && init?.method === 'PUT')
+      .map(([, init]) => JSON.parse(init?.body as string) as unknown);
+    expect(puts).toEqual([
+      { path: 'Network', auth: {}, loginSequence: sequence },
+      { path: 'Broken', auth: { user: 'x' } },
+    ]);
+  });
+});
+
 describe('backing up host terminal schemes', () => {
   it('keeps the per-host override in portable metadata', async () => {
     mockBackupSnapshot([], [
@@ -982,6 +1087,7 @@ describe('restoring imported serial hosts', () => {
           commandButtonGroup: null,
           disableSftp: false,
           consoleCompatibility: false,
+          loginSequence: null,
         }),
       }),
     );

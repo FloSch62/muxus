@@ -1,6 +1,10 @@
 import type {
   PasswordVaultStatus,
   PasswordVaultUnlockPolicy,
+  SendVaultSecretRequest,
+  SendVaultSecretResult,
+  VaultSecretInput,
+  VaultSecretSaveResult,
 } from '@muxus/shared';
 import { apiFetch } from './http.js';
 
@@ -114,4 +118,41 @@ export function deletePasswordVault(): Promise<PasswordVaultStatus> {
   return apiFetch<PasswordVaultStatus>('/api/password-vault', {
     method: 'DELETE',
   });
+}
+
+export function createVaultSecret(input: VaultSecretInput): Promise<VaultSecretSaveResult> {
+  return apiFetch<VaultSecretSaveResult>('/api/password-vault/secrets', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateVaultSecret(
+  id: string,
+  input: VaultSecretInput,
+): Promise<VaultSecretSaveResult> {
+  return apiFetch<VaultSecretSaveResult>(
+    `/api/password-vault/secrets/${encodeURIComponent(id)}`,
+    {
+      method: 'PUT',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+/** Have the backend type a secret into live sessions; the value never comes back. */
+export function sendVaultSecret(
+  id: string,
+  request: SendVaultSecretRequest,
+): Promise<SendVaultSecretResult> {
+  return apiFetch<SendVaultSecretResult>(
+    `/api/password-vault/secrets/${encodeURIComponent(id)}/send`,
+    {
+      method: 'POST',
+      headers: JSON_HEADERS,
+      body: JSON.stringify(request),
+    },
+  );
 }
