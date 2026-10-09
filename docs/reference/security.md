@@ -223,6 +223,14 @@ which on Linux means group membership.
   host always connects with its current settings, including this one, even from a tab
   opened before the host was edited.
 
+## Security keys
+
+A security key `IdentityFile` is signed through a private `ssh-agent` that Muxus starts
+for that one login, with its socket in a fresh `0700` directory. It never touches the
+agent in `SSH_AUTH_SOCK`. The agent stops when the login completes or fails, and it exits
+on its own if Muxus does. The key file's passphrase and the security key's PIN are relayed
+from OpenSSH's askpass request to the Muxus prompt and are never stored.
+
 ## The desktop shell
 
 The Electron build embeds the server in-process, uses context isolation with a narrow

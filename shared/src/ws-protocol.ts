@@ -350,6 +350,8 @@ export interface SshSessionSummary {
   serverSoftware?: string;
   /** Methods the server accepted, in order; several for a multi-factor login. */
   authMethods: string[];
+  /** Signature algorithm of the key that logged in, such as "sk-ssh-ed25519@openssh.com". */
+  authKeyAlgorithm?: string;
   cipher?: string;
   kex?: string;
   /** `unsupported`: compression was asked for and the server offered none. */
