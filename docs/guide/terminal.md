@@ -162,6 +162,17 @@ one pair of markers encloses the whole paste rather than each line, and cancelli
 it. With [multi-execution](commands.md#multi-execution), each mirrored terminal gets the
 paste at its own host's pace, independently of the others.
 
+### Dropping files
+
+Files and folders dropped onto a local terminal are typed at the prompt as their full paths,
+quoted for the shell: single quotes for bash, zsh and other POSIX shells, fish's own escapes,
+single quotes for PowerShell and double quotes for `cmd.exe`. A WSL shell gets the path
+inside the distribution, such as `/mnt/c/Users/me/report.pdf`. Nothing runs until you press
+++enter++. Paths are only known in the desktop app; the browser version cannot type them.
+
+Dropping onto an SSH terminal [uploads the files](files.md#dropping-files-onto-the-terminal)
+instead; hold ++shift++ to type the local paths there too.
+
 ## Sending and receiving files
 
 Serial, Telnet and SSH terminals can move files over the session itself with XMODEM,

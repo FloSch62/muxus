@@ -274,6 +274,7 @@ function SidebarFileBrowser({ shown }: { shown: boolean }) {
           key={connId}
           connId={connId}
           inSidebar
+          shown={shown}
           hostLabel={tab.title}
           terminalPath={tab.terminalCwd}
           followTerminalFolder={tab.sftpFollowTerminal !== false}

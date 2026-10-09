@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type {
   AppWindowLaunch,
   CommandLineLaunch,
@@ -281,5 +281,13 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   },
   closeWindow(): void {
     ipcRenderer.send('muxus:close-window');
+  },
+  /** Where a file dropped into the window lives on disk; empty when it is not a file on disk. */
+  getPathForFile(file: File): string {
+    try {
+      return webUtils.getPathForFile(file);
+    } catch {
+      return '';
+    }
   },
 });
