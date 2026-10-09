@@ -111,6 +111,17 @@ function listLocalFontFamilies(): Promise<string[] | undefined> {
   return localFontFamilies;
 }
 
+const stateChangeListeners = new Set<(name: string) => void>();
+
+// Another window saved or removed an item: keep this snapshot current and
+// tell the stores that follow it.
+ipcRenderer.on('muxus:state:changed', (_event, name: unknown, value: unknown) => {
+  if (typeof name !== 'string') return;
+  if (typeof value === 'string') stateSnapshot[name] = value;
+  else delete stateSnapshot[name];
+  for (const listener of stateChangeListeners) listener(name);
+});
+
 // The disk-side write failed in the main process: mirror the snapshot into
 // origin-scoped localStorage so a relaunch on the same origin can migrate it
 // back (muxusStateStorage.getItem reads browser storage when the desktop
@@ -140,6 +151,13 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
     removeItem(name: string): void {
       delete stateSnapshot[name];
       ipcRenderer.send('muxus:state:remove-item', name);
+    },
+    /** Subscribe to items another window saved or removed; returns unsubscribe. */
+    onChange(callback: (name: string) => void): () => void {
+      stateChangeListeners.add(callback);
+      return () => {
+        stateChangeListeners.delete(callback);
+      };
     },
   },
   setTitleBarOverlay(options: { color: string; symbolColor: string; height: number }) {
@@ -263,6 +281,19 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   },
   focusWindow(): void {
     ipcRenderer.send('muxus:focus-window');
+  },
+  // Settings window only: another window asked for a particular section.
+  onSettingsTarget(callback: (target: { section?: string; item?: string }) => void): () => void {
+    const listener = (_event: unknown, value: unknown): void => {
+      if (!value || typeof value !== 'object') return;
+      const { section, item } = value as Record<string, unknown>;
+      callback({
+        section: typeof section === 'string' ? section : undefined,
+        item: typeof item === 'string' ? item : undefined,
+      });
+    };
+    ipcRenderer.on('muxus:settings-target', listener);
+    return () => ipcRenderer.removeListener('muxus:settings-target', listener);
   },
   // Fires when the user presses the OS close-window chord (Cmd/Ctrl+W).
   // Returns an unsubscribe. The renderer closes the focused terminal tab; it

@@ -48,6 +48,16 @@ export function isAppWindowLaunch(value: unknown): value is AppWindowLaunch {
       launch.title.length <= 500
     );
   }
+  if (launch.kind === 'settings') {
+    return (
+      (launch.section === undefined ||
+        (typeof launch.section === 'string' &&
+          launch.section.length > 0 &&
+          launch.section.length <= 64)) &&
+      (launch.item === undefined ||
+        (typeof launch.item === 'string' && launch.item.length > 0 && launch.item.length <= 200))
+    );
+  }
   return (
     launch.kind === 'sftp' &&
     typeof launch.connId === 'string' &&
@@ -182,4 +192,20 @@ export function openAppWindow(launch: AppWindowLaunch): void {
   if (token) fragment.set('token', token);
   url.hash = fragment.toString();
   window.open(url.toString(), '_blank', 'noopener');
+}
+
+/**
+ * The desktop app shows settings in a window of its own, which the user can
+ * move anywhere, even onto another display. False where there is no such
+ * window (a regular browser), so the caller opens the settings dialog instead.
+ */
+export function openSettingsWindow(target?: { section: string; item?: string }): boolean {
+  const desktop = typeof window === 'undefined' ? undefined : window.muxusDesktop;
+  if (!desktop) return false;
+  desktop.openWindow({
+    kind: 'settings',
+    ...(target ? { section: target.section } : {}),
+    ...(target?.item ? { item: target.item } : {}),
+  });
+  return true;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Autocomplete from '@mui/material/Autocomplete';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
@@ -100,7 +100,7 @@ import {
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { confirmAction } from '../state/dialogs.js';
-import { useUiStore, type SettingsSection } from '../state/ui.js';
+import { useUiStore, type SettingsSection, type SettingsTarget } from '../state/ui.js';
 import { terminalScheme } from '../terminal/palette.js';
 import { statusTextColor } from '../theme.js';
 import {
@@ -169,54 +169,213 @@ const NAV_TAB_SX = {
   },
 } as const;
 
+/** Where the settings stand: the open section, the entry they were opened
+ * for, and whether the logging section holds unsaved edits. */
+export interface SettingsNavigation {
+  section: SettingsSection;
+  /** The entry settings were opened for, highlighted until another section is picked. */
+  focusItem?: string;
+  loggingDirty: boolean;
+  setLoggingDirty: (dirty: boolean) => void;
+  /** Run `action` unless that would silently drop unsaved logging edits. */
+  leaveSection: (action: () => void) => void;
+  pick: (section: SettingsSection) => void;
+  /** Bring a section, and optionally one entry in it, into view. */
+  show: (target: SettingsTarget) => void;
+}
+
 /**
- * All preferences, applied live — including already-open terminals. The one
+ * All preferences apply live — including in already-open terminals. The one
  * exception is session logging, whose policies are server-side and commit on
  * an explicit Save; that section reports back when it holds unsaved edits so
  * leaving it cannot throw them away silently.
  */
+export function useSettingsNavigation(initial?: SettingsTarget | null): SettingsNavigation {
+  const [section, setSection] = useState<SettingsSection>(initial?.section ?? 'appearance');
+  const [focusItem, setFocusItem] = useState(initial?.item);
+  const [loggingDirty, setLoggingDirty] = useState(false);
+
+  /** Nothing leaves the logging section behind without the user's say-so. */
+  const leaveSection = useCallback(
+    (run: () => void) => {
+      if (!loggingDirty || section !== 'logging') {
+        run();
+        return;
+      }
+      void confirmAction({
+        title: 'Discard unsaved logging settings?',
+        description:
+          'Session logging changes are not applied until you save them. Leaving now loses your edits.',
+        confirmLabel: 'Discard changes',
+        destructive: true,
+      }).then((confirmed) => {
+        if (!confirmed) return;
+        setLoggingDirty(false);
+        run();
+      });
+    },
+    [loggingDirty, section],
+  );
+  const show = useCallback(
+    (target: SettingsTarget) => {
+      if (target.section === section) {
+        setFocusItem(target.item);
+        return;
+      }
+      leaveSection(() => {
+        setSection(target.section);
+        setFocusItem(target.item);
+      });
+    },
+    [leaveSection, section],
+  );
+  const pick = useCallback(
+    (next: SettingsSection) => {
+      if (next !== section) show({ section: next });
+    },
+    [section, show],
+  );
+  return { section, focusItem, loggingDirty, setLoggingDirty, leaveSection, pick, show };
+}
+
+export type SessionImportSource = 'mobaxterm' | 'securecrt';
+
+/** Bring sessions over from another client, in a dialog of its own. */
+export function ClientSessionImportDialog({
+  source,
+  onClose,
+}: {
+  source: SessionImportSource;
+  onClose: () => void;
+}) {
+  return source === 'mobaxterm' ? (
+    <MobaXtermImportDialog onClose={onClose} />
+  ) : (
+    <SecureCrtImportDialog onClose={onClose} />
+  );
+}
+
+/** The section list beside the open section; fills the dialog or window holding it. */
+export function SettingsBody({
+  navigation,
+  onImport,
+}: {
+  navigation: SettingsNavigation;
+  onImport: (source: SessionImportSource) => void;
+}) {
+  return (
+    <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      <Tabs
+        orientation="vertical"
+        value={navigation.section}
+        onChange={(_event, next: SettingsSection) => navigation.pick(next)}
+        aria-label="Settings sections"
+        variant="scrollable"
+        slotProps={{ indicator: { sx: { display: 'none' } } }}
+        sx={{
+          width: 196,
+          flexShrink: 0,
+          py: 1,
+          borderRight: 1,
+          borderColor: 'divider',
+          bgcolor: (theme) =>
+            theme.palette.mode === 'dark'
+              ? alpha('#000', 0.12)
+              : alpha(theme.palette.text.primary, 0.02),
+          display: { xs: 'none', sm: 'flex' },
+        }}
+      >
+        {SECTIONS.map(({ id, label, icon: Icon }) => (
+          <Tab
+            key={id}
+            value={id}
+            icon={<Icon />}
+            iconPosition="start"
+            sx={NAV_TAB_SX}
+            label={
+              id === 'logging' && navigation.loggingDirty ? (
+                <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                  {label}
+                  <Tooltip title="Unsaved changes">
+                    <Box
+                      component="span"
+                      aria-label="Unsaved changes"
+                      sx={{ ml: 'auto', width: 7, height: 7, borderRadius: '50%', bgcolor: 'warning.main' }}
+                    />
+                  </Tooltip>
+                </Box>
+              ) : (
+                label
+              )
+            }
+          />
+        ))}
+      </Tabs>
+      <Box
+        sx={{
+          flex: 1,
+          minWidth: 0,
+          overflowY: 'auto',
+          px: { xs: 2, sm: 3.5 },
+          py: 3,
+          bgcolor: 'background.default',
+        }}
+      >
+        {/* Narrow windows: the section list becomes a picker above the page. */}
+        <FormControl size="small" fullWidth sx={{ display: { xs: 'flex', sm: 'none' }, mb: 2.5 }}>
+          <Select
+            value={navigation.section}
+            inputProps={{ 'aria-label': 'Settings section' }}
+            onChange={(event) => navigation.pick(event.target.value as SettingsSection)}
+          >
+            {SECTIONS.map((s) => (
+              <MenuItem key={s.id} value={s.id}>
+                {s.label}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <Box sx={{ maxWidth: 760 }}>
+          {navigation.section === 'appearance' && <AppearanceSection />}
+          {navigation.section === 'terminal' && <TerminalSection />}
+          {navigation.section === 'local-shells' && (
+            <LocalShellProfilesSection focusItem={navigation.focusItem} />
+          )}
+          {navigation.section === 'logging' && (
+            <SessionLoggingSection onDirtyChange={navigation.setLoggingDirty} />
+          )}
+          {navigation.section === 'highlighting' && <HighlightProfilesSection />}
+          {navigation.section === 'behavior' && <BehaviorSection />}
+          {navigation.section === 'x11' && <X11Section />}
+          {navigation.section === 'keyboard' && <KeyboardSection />}
+          {navigation.section === 'passwords' && <PasswordVaultSection />}
+          {navigation.section === 'data' && (
+            <DataTransferSection
+              onImportMobaXterm={() => onImport('mobaxterm')}
+              onImportSecureCrt={() => onImport('securecrt')}
+            />
+          )}
+          {navigation.section === 'debug' && <DebugSection />}
+          {navigation.section === 'about' && <AboutSection />}
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+/** Settings as a dialog over the window, as a regular browser shows them. */
 export function SettingsDialog() {
   const open = useUiStore((s) => s.settingsOpen);
   const setOpen = useUiStore((s) => s.setSettingsOpen);
   const [target] = useState(() => useUiStore.getState().settingsTarget);
-  const [section, setSection] = useState<SettingsSection>(target?.section ?? 'appearance');
-  /** The entry the dialog was opened for, highlighted until another section is picked. */
-  const [focusItem, setFocusItem] = useState(target?.item);
-  const [loggingDirty, setLoggingDirty] = useState(false);
-  const [sessionImportOpen, setSessionImportOpen] = useState<'mobaxterm' | 'securecrt' | null>(null);
+  const navigation = useSettingsNavigation(target);
+  const [sessionImport, setSessionImport] = useState<SessionImportSource | null>(null);
+  const close = () => navigation.leaveSection(() => setOpen(false));
 
-  /** Nothing leaves the logging section behind without the user's say-so. */
-  const leaveSection = (run: () => void) => {
-    if (!loggingDirty || section !== 'logging') {
-      run();
-      return;
-    }
-    void confirmAction({
-      title: 'Discard unsaved logging settings?',
-      description:
-        'Session logging changes are not applied until you save them. Leaving now loses your edits.',
-      confirmLabel: 'Discard changes',
-      destructive: true,
-    }).then((confirmed) => {
-      if (!confirmed) return;
-      setLoggingDirty(false);
-      run();
-    });
-  };
-  const pick = (next: SettingsSection) => {
-    if (next === section) return;
-    leaveSection(() => {
-      setSection(next);
-      setFocusItem(undefined);
-    });
-  };
-  const close = () => leaveSection(() => setOpen(false));
-
-  if (sessionImportOpen === 'mobaxterm') {
-    return <MobaXtermImportDialog onClose={() => setSessionImportOpen(null)} />;
-  }
-  if (sessionImportOpen === 'securecrt') {
-    return <SecureCrtImportDialog onClose={() => setSessionImportOpen(null)} />;
+  if (sessionImport) {
+    return (
+      <ClientSessionImportDialog source={sessionImport} onClose={() => setSessionImport(null)} />
+    );
   }
 
   return (
@@ -257,98 +416,7 @@ export function SettingsDialog() {
           </IconButton>
         </Tooltip>
       </DialogTitle>
-      <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
-        <Tabs
-          orientation="vertical"
-          value={section}
-          onChange={(_event, next: SettingsSection) => pick(next)}
-          aria-label="Settings sections"
-          variant="scrollable"
-          slotProps={{ indicator: { sx: { display: 'none' } } }}
-          sx={{
-            width: 196,
-            flexShrink: 0,
-            py: 1,
-            borderRight: 1,
-            borderColor: 'divider',
-            bgcolor: (theme) =>
-              theme.palette.mode === 'dark'
-                ? alpha('#000', 0.12)
-                : alpha(theme.palette.text.primary, 0.02),
-            display: { xs: 'none', sm: 'flex' },
-          }}
-        >
-          {SECTIONS.map(({ id, label, icon: Icon }) => (
-            <Tab
-              key={id}
-              value={id}
-              icon={<Icon />}
-              iconPosition="start"
-              sx={NAV_TAB_SX}
-              label={
-                id === 'logging' && loggingDirty ? (
-                  <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-                    {label}
-                    <Tooltip title="Unsaved changes">
-                      <Box
-                        component="span"
-                        aria-label="Unsaved changes"
-                        sx={{ ml: 'auto', width: 7, height: 7, borderRadius: '50%', bgcolor: 'warning.main' }}
-                      />
-                    </Tooltip>
-                  </Box>
-                ) : (
-                  label
-                )
-              }
-            />
-          ))}
-        </Tabs>
-        <Box
-          sx={{
-            flex: 1,
-            minWidth: 0,
-            overflowY: 'auto',
-            px: { xs: 2, sm: 3.5 },
-            py: 3,
-            bgcolor: 'background.default',
-          }}
-        >
-          {/* Narrow windows: the section list becomes a picker above the page. */}
-          <FormControl size="small" fullWidth sx={{ display: { xs: 'flex', sm: 'none' }, mb: 2.5 }}>
-            <Select
-              value={section}
-              inputProps={{ 'aria-label': 'Settings section' }}
-              onChange={(event) => pick(event.target.value as SettingsSection)}
-            >
-              {SECTIONS.map((s) => (
-                <MenuItem key={s.id} value={s.id}>
-                  {s.label}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <Box sx={{ maxWidth: 760 }}>
-            {section === 'appearance' && <AppearanceSection />}
-            {section === 'terminal' && <TerminalSection />}
-            {section === 'local-shells' && <LocalShellProfilesSection focusItem={focusItem} />}
-            {section === 'logging' && <SessionLoggingSection onDirtyChange={setLoggingDirty} />}
-            {section === 'highlighting' && <HighlightProfilesSection />}
-            {section === 'behavior' && <BehaviorSection />}
-            {section === 'x11' && <X11Section />}
-            {section === 'keyboard' && <KeyboardSection />}
-            {section === 'passwords' && <PasswordVaultSection />}
-            {section === 'data' && (
-              <DataTransferSection
-                onImportMobaXterm={() => setSessionImportOpen('mobaxterm')}
-                onImportSecureCrt={() => setSessionImportOpen('securecrt')}
-              />
-            )}
-            {section === 'debug' && <DebugSection />}
-            {section === 'about' && <AboutSection />}
-          </Box>
-        </Box>
-      </Box>
+      <SettingsBody navigation={navigation} onImport={setSessionImport} />
     </Dialog>
   );
 }

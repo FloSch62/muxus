@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { SavedHostProfile, SshHostEntry } from '@muxus/shared';
+import { openSettingsWindow } from '../window-management.js';
 
 /** Unified editor state for OpenSSH entries and Muxus-owned Telnet/serial/RDP/VNC hosts. */
 export type HostEditorState =
@@ -31,25 +32,32 @@ export type FolderDialogState =
    */
   | { mode: 'move-hosts'; hostKeys: string[]; hostName?: string; currentPath: string };
 
-export type SettingsSection =
-  | 'appearance'
-  | 'terminal'
-  | 'local-shells'
-  | 'logging'
-  | 'highlighting'
-  | 'behavior'
-  | 'x11'
-  | 'keyboard'
-  | 'passwords'
-  | 'data'
-  | 'debug'
-  | 'about';
+export const SETTINGS_SECTIONS = [
+  'appearance',
+  'terminal',
+  'local-shells',
+  'logging',
+  'highlighting',
+  'behavior',
+  'x11',
+  'keyboard',
+  'passwords',
+  'data',
+  'debug',
+  'about',
+] as const;
+
+export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
+
+export function isSettingsSection(value: unknown): value is SettingsSection {
+  return (SETTINGS_SECTIONS as readonly unknown[]).includes(value);
+}
 
 /** What the window sidebar shows while the file browser is docked in it. */
 export type SidebarView = 'hosts' | 'files';
 
-/** Where the settings dialog opens, and the entry in that section to bring
- * into view, such as one local shell profile. */
+/** Where settings open, and the entry in that section to bring into view,
+ * such as one local shell profile. */
 export interface SettingsTarget {
   section: SettingsSection;
   item?: string;
@@ -58,6 +66,7 @@ export interface SettingsTarget {
 interface UiState {
   /** Temporary distraction-free presentation; saved visibility preferences stay untouched. */
   focusMode: boolean;
+  /** The settings dialog of a regular browser; the desktop app opens a window. */
   settingsOpen: boolean;
   /** Read when the dialog opens; null opens its first section. */
   settingsTarget: SettingsTarget | null;
@@ -135,8 +144,15 @@ export const useUiStore = create<UiState>()((set) => ({
   sidebarView: 'hosts',
   logViewerOpen: false,
   setFocusMode: (focusMode) => set({ focusMode }),
-  setSettingsOpen: (settingsOpen) => set({ settingsOpen, settingsTarget: null }),
-  openSettings: (settingsTarget) => set({ settingsOpen: true, settingsTarget }),
+  // The desktop app opens (or raises) the settings window instead of the dialog.
+  setSettingsOpen: (settingsOpen) => {
+    if (settingsOpen && openSettingsWindow()) return;
+    set({ settingsOpen, settingsTarget: null });
+  },
+  openSettings: (settingsTarget) => {
+    if (openSettingsWindow(settingsTarget)) return;
+    set({ settingsOpen: true, settingsTarget });
+  },
   setCommandButtonMenuOpen: (commandButtonMenuOpen) => set({ commandButtonMenuOpen }),
   setCommandButtonsOpen: (commandButtonsOpen) => set({ commandButtonsOpen }),
   setSendSecretMenuOpen: (sendSecretMenuOpen) => set({ sendSecretMenuOpen }),

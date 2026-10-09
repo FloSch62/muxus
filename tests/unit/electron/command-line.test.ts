@@ -211,7 +211,7 @@ describe('desktop link arguments', () => {
 });
 
 describe('desktop command-line window routing', () => {
-  it('excludes SFTP-only windows from launch request delivery', () => {
+  it('excludes SFTP-only and settings windows from launch request delivery', () => {
     expect(canHandleCommandLineLaunch(undefined)).toBe(true);
     expect(
       canHandleCommandLineLaunch({
@@ -230,5 +230,6 @@ describe('desktop command-line window routing', () => {
     expect(
       canHandleCommandLineLaunch({ kind: 'sftp', connId: 'ssh-1', title: 'Files' }),
     ).toBe(false);
+    expect(canHandleCommandLineLaunch({ kind: 'settings', section: 'terminal' })).toBe(false);
   });
 });

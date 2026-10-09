@@ -110,6 +110,9 @@ const WorkspaceDialog = lazy(() =>
 const SftpWindow = lazy(() =>
   import('./layout/SftpWindow.js').then((module) => ({ default: module.SftpWindow })),
 );
+const SettingsWindow = lazy(() =>
+  import('./layout/SettingsWindow.js').then((module) => ({ default: module.SettingsWindow })),
+);
 
 export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const themeMode = usePrefsStore((s) => s.themeMode);
@@ -199,6 +202,10 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
         {launch?.kind === 'sftp' ? (
           <Suspense fallback={null}>
             <SftpWindow launch={launch} />
+          </Suspense>
+        ) : launch?.kind === 'settings' ? (
+          <Suspense fallback={null}>
+            <SettingsWindow launch={launch} />
           </Suspense>
         ) : (
           <AppShell persistWorkspace={startupReady} initialWorkspace={initialWorkspace} />

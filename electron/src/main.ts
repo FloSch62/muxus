@@ -17,6 +17,7 @@ import {
   nativeTheme,
   screen,
   shell,
+  type BrowserWindowConstructorOptions,
   type MenuItemConstructorOptions,
 } from 'electron';
 import electronUpdater from 'electron-updater';
@@ -74,6 +75,7 @@ import { initMainLog, installCrashCapture, mainLog, mainLogPath } from './main-l
 import { readLocalMobaXtermSessions } from './mobaxterm.js';
 import { workspaceOwnershipUpdate } from './workspace-window-state.js';
 import { pointInsideAnyWindow } from './tab-detach.js';
+import { parseWindowPlacement, windowBounds, type WindowPlacement } from './window-placement.js';
 import { checkStoreUpdate, isStoreDistribution, storePageUrl, type DistributionMetadata } from './store-updates.js';
 import { DesktopUpdater, updateDisabledReason } from './updater.js';
 import { StoreUpdater } from './store-updater.js';
@@ -120,6 +122,9 @@ const CLIPBOARD_IMAGE_MAX_PIXELS = 32 * 1024 * 1024;
 
 let primaryWindow: BrowserWindow | undefined;
 let lastFocusedWindow: BrowserWindow | undefined;
+/** The one settings window; it is managed, but not an app window. */
+let settingsWindow: BrowserWindow | undefined;
+let quitting = false;
 let appUrl: string | undefined;
 const managedWindows = new Set<BrowserWindow>();
 const windowLaunches = new Map<number, AppWindowLaunch>();
@@ -158,11 +163,19 @@ interface UpdateManifest {
 }
 
 const windowStateFile = () => path.join(app.getPath('userData'), 'window-state.json');
+const settingsWindowStateFile = () => path.join(app.getPath('userData'), 'settings-window-state.json');
 const clientStateFile = () => path.join(app.getPath('userData'), 'client-state.json');
+
+const SETTINGS_WINDOW_SIZE = { width: 1000, height: 720 };
 
 function senderWindow(event: IpcMainEvent | IpcMainInvokeEvent): BrowserWindow | undefined {
   const win = BrowserWindow.fromWebContents(event.sender) ?? undefined;
   return win && managedWindows.has(win) ? win : undefined;
+}
+
+/** Windows that hold tabs and workspaces: every managed window but settings. */
+function appWindows(): BrowserWindow[] {
+  return [...managedWindows].filter((win) => win !== settingsWindow && !win.isDestroyed());
 }
 
 function isManagedWindowSender(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
@@ -187,6 +200,23 @@ function saveWindowState(win: BrowserWindow): void {
     writeFileSync(windowStateFile(), JSON.stringify(state));
   } catch {
     /* state is a nicety; never block shutdown on it */
+  }
+}
+
+function loadSettingsWindowPlacement(): WindowPlacement | undefined {
+  try {
+    return parseWindowPlacement(JSON.parse(readFileSync(settingsWindowStateFile(), 'utf8')));
+  } catch {
+    return undefined;
+  }
+}
+
+function saveSettingsWindowPlacement(win: BrowserWindow): void {
+  const placement: WindowPlacement = { ...win.getNormalBounds(), maximized: win.isMaximized() };
+  try {
+    writeFileSync(settingsWindowStateFile(), JSON.stringify(placement));
+  } catch {
+    /* placement is a nicety; never block closing on it */
   }
 }
 
@@ -334,30 +364,19 @@ async function checkForUpdate(force = false): Promise<UpdateCheckResult> {
   }
 }
 
-function createWindow(
-  url: string,
-  launch?: AppWindowLaunch,
-  commandLineLaunch?: CommandLineLaunch,
-): BrowserWindow {
-  const state = loadWindowState();
-  const appOrigin = new URL(url).origin;
-  const isPrimary = !primaryWindow;
-  const win = new BrowserWindow({
-    width: launch?.kind === 'sftp' ? Math.max(960, Math.min(state.width, 1280)) : state.width,
-    height: launch?.kind === 'sftp' ? Math.max(640, Math.min(state.height, 900)) : state.height,
-    x: state.x === undefined || isPrimary ? state.x : state.x + 28,
-    y: state.y === undefined || isPrimary ? state.y : state.y + 28,
-    minWidth: 800,
-    minHeight: 500,
-    title: launch ? `${launch.title} — Muxus` : 'Muxus',
+/**
+ * Frameless look on every platform: the client's top bar is the titlebar
+ * (drag region + env(titlebar-area-*) paddings live in the client CSS). The
+ * renderer is sandboxed and isolated from the preload bridge.
+ */
+function appWindowOptions(): BrowserWindowConstructorOptions {
+  return {
     // Restored terminals can keep `ready-to-show` from firing on some Windows
     // GPU paths. Show immediately with the titlebar's background color so the
     // native window can participate in composition while the UI initializes.
     show: true,
     backgroundColor: overlayColors().color,
     icon: windowIcon(),
-    // Frameless look on every platform: the client's TopBar is the titlebar
-    // (drag region + env(titlebar-area-*) paddings live in the client CSS).
     titleBarStyle: 'hidden',
     trafficLightPosition: { x: 16, y: 18 },
     titleBarOverlay: isMac ? true : { ...overlayColors(), height: TITLEBAR_HEIGHT },
@@ -371,30 +390,11 @@ function createWindow(
       webviewTag: false,
       navigateOnDragDrop: false,
     },
-  });
-  managedWindows.add(win);
-  const webContentsId = win.webContents.id;
-  if (launch) windowLaunches.set(webContentsId, launch);
-  if (commandLineLaunch) commandLineLaunches.set(webContentsId, commandLineLaunch);
-  if (isPrimary) primaryWindow = win;
-  win.on('focus', () => {
-    lastFocusedWindow = win;
-  });
-  if (state.maximized && isPrimary) win.maximize();
-  // The menu stays installed so its accelerators (zoom, reload, devtools,
-  // fullscreen) keep working, but the bar itself is macOS-only chrome.
-  if (!isMac) win.setMenuBarVisibility(false);
-  win.on('close', () => {
-    if (win === primaryWindow) saveWindowState(win);
-  });
-  win.on('closed', () => {
-    managedWindows.delete(win);
-    windowLaunches.delete(webContentsId);
-    commandLineLaunches.delete(webContentsId);
-    activeWorkspaceByWebContents.delete(webContentsId);
-    if (primaryWindow === win) primaryWindow = undefined;
-    if (lastFocusedWindow === win) lastFocusedWindow = undefined;
-  });
+  };
+}
+
+/** Keep a window on the app's own origin; anything else opens in the OS, if at all. */
+function confineToAppOrigin(win: BrowserWindow, appOrigin: string): void {
   // A dead renderer looks like "the app won't start" — leave its exit trace.
   win.webContents.on('render-process-gone', (_event, details) => {
     mainLog('error', `window renderer gone (${details.reason}, exit code ${details.exitCode})`);
@@ -421,6 +421,53 @@ function createWindow(
     event.preventDefault();
     openAllowedExternalUrl(destination);
   });
+}
+
+type SettingsWindowLaunch = Extract<AppWindowLaunch, { kind: 'settings' }>;
+
+function createWindow(
+  url: string,
+  launch?: Exclude<AppWindowLaunch, SettingsWindowLaunch>,
+  commandLineLaunch?: CommandLineLaunch,
+): BrowserWindow {
+  const state = loadWindowState();
+  const isPrimary = !primaryWindow;
+  const win = new BrowserWindow({
+    width: launch?.kind === 'sftp' ? Math.max(960, Math.min(state.width, 1280)) : state.width,
+    height: launch?.kind === 'sftp' ? Math.max(640, Math.min(state.height, 900)) : state.height,
+    x: state.x === undefined || isPrimary ? state.x : state.x + 28,
+    y: state.y === undefined || isPrimary ? state.y : state.y + 28,
+    minWidth: 800,
+    minHeight: 500,
+    title: launch ? `${launch.title} — Muxus` : 'Muxus',
+    ...appWindowOptions(),
+  });
+  managedWindows.add(win);
+  const webContentsId = win.webContents.id;
+  if (launch) windowLaunches.set(webContentsId, launch);
+  if (commandLineLaunch) commandLineLaunches.set(webContentsId, commandLineLaunch);
+  if (isPrimary) primaryWindow = win;
+  win.on('focus', () => {
+    lastFocusedWindow = win;
+  });
+  if (state.maximized && isPrimary) win.maximize();
+  // The menu stays installed so its accelerators (zoom, reload, devtools,
+  // fullscreen) keep working, but the bar itself is macOS-only chrome.
+  if (!isMac) win.setMenuBarVisibility(false);
+  win.on('close', () => {
+    if (win === primaryWindow) saveWindowState(win);
+  });
+  win.on('closed', () => {
+    managedWindows.delete(win);
+    windowLaunches.delete(webContentsId);
+    commandLineLaunches.delete(webContentsId);
+    activeWorkspaceByWebContents.delete(webContentsId);
+    if (primaryWindow === win) primaryWindow = undefined;
+    if (lastFocusedWindow === win) lastFocusedWindow = undefined;
+    // Settings outliving every app window would keep Muxus running headless.
+    if (appWindows().length === 0) settingsWindow?.close();
+  });
+  confineToAppOrigin(win, new URL(url).origin);
   // Cmd+W is the macOS "close window" accelerator: hand it to the renderer so
   // it closes the focused terminal tab first, and only closes the whole window
   // when no tab is open. Ctrl+W is left alone everywhere else — the shell uses
@@ -444,6 +491,80 @@ function createWindow(
       win.webContents.send('muxus:cycle-tab', input.code === 'BracketLeft');
     }
   });
+  void win.loadURL(url);
+  return win;
+}
+
+/**
+ * Bring up the one settings window. It is a window of its own so it can sit
+ * beside the app or on another display, and it reopens wherever it was left.
+ */
+function showSettingsWindow(launch: SettingsWindowLaunch, opener: BrowserWindow | undefined): void {
+  const existing = settingsWindow;
+  if (existing && !existing.isDestroyed()) {
+    if (launch.section) {
+      // Also what a reload of the window comes back to.
+      windowLaunches.set(existing.webContents.id, launch);
+      existing.webContents.send('muxus:settings-target', launch);
+    }
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+    return;
+  }
+  if (appUrl) settingsWindow = createSettingsWindow(appUrl, launch, opener ?? primaryWindow);
+}
+
+function createSettingsWindow(
+  url: string,
+  launch: SettingsWindowLaunch,
+  opener: BrowserWindow | undefined,
+): BrowserWindow {
+  const placement = loadSettingsWindowPlacement();
+  const win = new BrowserWindow({
+    ...windowBounds(
+      placement,
+      opener && !opener.isDestroyed() ? opener.getBounds() : undefined,
+      screen.getAllDisplays().map((display) => display.workArea),
+      SETTINGS_WINDOW_SIZE,
+    ),
+    minWidth: 560,
+    minHeight: 420,
+    title: 'Settings — Muxus',
+    ...appWindowOptions(),
+  });
+  managedWindows.add(win);
+  const webContentsId = win.webContents.id;
+  windowLaunches.set(webContentsId, launch);
+  if (placement?.maximized) win.maximize();
+  if (!isMac) win.setMenuBarVisibility(false);
+  win.on('close', () => saveSettingsWindowPlacement(win));
+  win.on('closed', () => {
+    managedWindows.delete(win);
+    windowLaunches.delete(webContentsId);
+    if (settingsWindow === win) settingsWindow = undefined;
+  });
+  // Unsaved session logging edits hold the page (beforeunload). Electron
+  // shows no prompt of its own, so ask here — except when Muxus is quitting
+  // or its last app window has gone, where the window closes regardless.
+  win.webContents.on('will-prevent-unload', (event) => {
+    if (quitting || appWindows().length === 0) {
+      event.preventDefault();
+      return;
+    }
+    const choice = dialog.showMessageBoxSync(win, {
+      type: 'question',
+      buttons: ['Discard changes', 'Keep editing'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+      title: 'Settings',
+      message: 'Discard unsaved logging settings?',
+      detail: 'Session logging changes are not applied until you save them. Leaving now loses your edits.',
+    });
+    if (choice === 0) event.preventDefault();
+  });
+  confineToAppOrigin(win, new URL(url).origin);
   void win.loadURL(url);
   return win;
 }
@@ -540,6 +661,10 @@ ipcMain.on('muxus:open-window', (event, value: unknown) => {
   if (!isManagedWindowSender(event) || !appUrl) return;
   const launch = parseWindowLaunch(value);
   if (!launch) return;
+  if (launch.kind === 'settings') {
+    showSettingsWindow(launch, senderWindow(event));
+    return;
+  }
   if (launch.kind === 'workspace' && launch.workspaceId) {
     const existing = [...managedWindows].find((candidate) => {
       const webContentsId = candidate.webContents.id;
@@ -641,9 +766,22 @@ function flushClientState(): void {
   }
 }
 
+/**
+ * Every window keeps a snapshot of the client state. Tell the others what one
+ * of them saved, so a preference changed in one window (the settings window,
+ * most often) applies in all of them and none writes a stale copy back.
+ */
+function broadcastClientStateChange(sender: WebContents, name: string, value: string | null): void {
+  for (const win of managedWindows) {
+    if (win.isDestroyed() || win.webContents.id === sender.id) continue;
+    win.webContents.send('muxus:state:changed', name, value);
+  }
+}
+
 ipcMain.on('muxus:state:set-item', (event, name: unknown, value: unknown) => {
   if (!isManagedWindowSender(event) || typeof name !== 'string' || typeof value !== 'string') return;
   scheduleClientStateFlush({ ...loadClientState(), [name]: value });
+  broadcastClientStateChange(event.sender, name, value);
 });
 
 ipcMain.on('muxus:state:remove-item', (event, name: unknown) => {
@@ -651,6 +789,7 @@ ipcMain.on('muxus:state:remove-item', (event, name: unknown) => {
   const next = { ...loadClientState() };
   delete next[name];
   scheduleClientStateFlush(next);
+  broadcastClientStateChange(event.sender, name, null);
 });
 
 ipcMain.handle('muxus:get-app-info', (event): AppInfo | undefined => {
@@ -1213,6 +1352,21 @@ ipcMain.handle(
 function parseWindowLaunch(value: unknown): AppWindowLaunch | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const launch = value as Record<string, unknown>;
+  if (launch.kind === 'settings') {
+    const { section, item } = launch;
+    if (
+      (section !== undefined &&
+        (typeof section !== 'string' || section.length === 0 || section.length > 64)) ||
+      (item !== undefined && (typeof item !== 'string' || item.length === 0 || item.length > 200))
+    ) {
+      return undefined;
+    }
+    return {
+      kind: 'settings',
+      ...(section === undefined ? {} : { section }),
+      ...(item === undefined ? {} : { item }),
+    };
+  }
   if (launch.kind === 'workspace') {
     if (
       typeof launch.title !== 'string' ||
@@ -1334,7 +1488,7 @@ function commandLineLaunchWindow(): BrowserWindow | undefined {
 function deliverCommandLineLaunch(launch: CommandLineLaunch | undefined): void {
   const win = launch
     ? (commandLineLaunchWindow() ?? (appUrl ? createWindow(appUrl) : undefined))
-    : (primaryWindow ?? [...managedWindows][0]);
+    : (primaryWindow ?? appWindows()[0]);
   if (!win) {
     if (launch) deferredCommandLineLaunches.push(launch);
     return;
@@ -1451,6 +1605,7 @@ if (!app.requestSingleInstanceLock(initialCommandLineLaunch ?? {})) {
   });
 
   app.on('before-quit', (event) => {
+    quitting = true;
     desktopUpdater?.stop();
     flushClientState();
     if (!server) return;

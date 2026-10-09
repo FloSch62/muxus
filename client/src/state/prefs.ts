@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { DEFAULT_SIDEBAR_WIDTH } from '../sidebar-width.js';
 import { DEFAULT_SFTP_PANEL_WIDTH } from '../sftp-panel-width.js';
-import { muxusStateStorage } from './persist-storage.js';
+import { muxusStateStorage, onStateItemChange } from './persist-storage.js';
 import { isStatusBarItemList, STATUS_BAR_ITEMS, type StatusBarItem } from '../host-stats.js';
 import {
   BUILTIN_HIGHLIGHT_PROFILES,
@@ -535,6 +535,32 @@ export function isLocalShellProfileArray(value: unknown): value is LocalShellPro
   });
 }
 
+/**
+ * Lay persisted preferences over the live ones. Values that did not change
+ * keep their live object, so selectors holding arrays and maps (terminal
+ * schemes, folder styles, key bindings) do not see a change that is not one.
+ */
+export function mergePersistedPrefs(persisted: unknown, current: PrefsState): PrefsState {
+  if (persisted === null || typeof persisted !== 'object') return current;
+  const live = current as unknown as Record<string, unknown>;
+  const next: Record<string, unknown> = { ...live };
+  for (const [key, value] of Object.entries(persisted)) {
+    if (typeof live[key] === 'function') continue;
+    next[key] = sameJson(live[key], value) ? live[key] : value;
+  }
+  return next as unknown as PrefsState;
+}
+
+function sameJson(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object') {
+    return false;
+  }
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+const PREFS_STORAGE_NAME = 'muxus-prefs';
+
 export const usePrefsStore = create<PrefsState>()(
   persist(
     (set) => ({
@@ -603,10 +629,23 @@ export const usePrefsStore = create<PrefsState>()(
       set: (patch) => set(patch),
     }),
     {
-      name: 'muxus-prefs',
+      name: PREFS_STORAGE_NAME,
       version: 17,
       migrate: migratePrefsState,
+      merge: mergePersistedPrefs,
       storage: createJSONStorage(() => muxusStateStorage),
     },
   ),
 );
+
+/**
+ * Preferences are app-wide, but every window holds its own copy. Take the copy
+ * another window saves, so what changes in the settings window applies
+ * everywhere at once and no window later writes its stale copy back over it.
+ * Rehydrating sets the state without saving it again, so nothing echoes.
+ */
+export function followPrefsFromOtherWindows(): () => void {
+  return onStateItemChange(PREFS_STORAGE_NAME, () => {
+    void usePrefsStore.persist.rehydrate();
+  });
+}
