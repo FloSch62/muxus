@@ -63,6 +63,8 @@ interface UiState {
   settingsTarget: SettingsTarget | null;
   commandButtonMenuOpen: boolean;
   commandButtonsOpen: boolean;
+  /** The Send secret… picker beside the active terminal cursor. */
+  sendSecretMenuOpen: boolean;
   /**
    * Command button group picked while a session whose host opens its own
    * group was active, by tab id. Kept per window and never persisted, so
@@ -96,6 +98,7 @@ interface UiState {
   openSettings: (target: SettingsTarget) => void;
   setCommandButtonMenuOpen: (open: boolean) => void;
   setCommandButtonsOpen: (open: boolean) => void;
+  setSendSecretMenuOpen: (open: boolean) => void;
   setCommandButtonGroupForTab: (tabId: string, groupId: string) => void;
   setShortcutsOpen: (open: boolean) => void;
   setQuickLauncherOpen: (open: boolean) => void;
@@ -117,6 +120,7 @@ export const useUiStore = create<UiState>()((set) => ({
   settingsTarget: null,
   commandButtonMenuOpen: false,
   commandButtonsOpen: false,
+  sendSecretMenuOpen: false,
   commandButtonGroupByTab: {},
   shortcutsOpen: false,
   quickLauncherOpen: false,
@@ -135,6 +139,7 @@ export const useUiStore = create<UiState>()((set) => ({
   openSettings: (settingsTarget) => set({ settingsOpen: true, settingsTarget }),
   setCommandButtonMenuOpen: (commandButtonMenuOpen) => set({ commandButtonMenuOpen }),
   setCommandButtonsOpen: (commandButtonsOpen) => set({ commandButtonsOpen }),
+  setSendSecretMenuOpen: (sendSecretMenuOpen) => set({ sendSecretMenuOpen }),
   setCommandButtonGroupForTab: (tabId, groupId) =>
     set((state) => ({
       commandButtonGroupByTab: { ...state.commandButtonGroupByTab, [tabId]: groupId },

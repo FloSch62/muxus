@@ -371,6 +371,30 @@ describe('backing up session log files', () => {
 });
 
 describe('backing up preferences', () => {
+  it('keeps a secret command button as a reference to the vault', async () => {
+    const enable = {
+      id: 'enable',
+      label: 'Enable',
+      command: '',
+      sendEnter: true,
+      secretId: 'vault-secret-1',
+    };
+    usePrefsStore.setState({ commandButtons: [enable] });
+    mockBackupSnapshot();
+
+    const document = await createBackupDocument();
+
+    expect(document.data.preferences.commandButtons).toEqual([enable]);
+    // The backup never asks the vault for anything.
+    expect(apiFetchMock.mock.calls.map(([url]) => String(url))).not.toContainEqual(
+      expect.stringContaining('/api/password-vault'),
+    );
+    expect(
+      sanitizePreferences({ commandButtons: [enable] } as unknown as BackupPreferences).commandButtons,
+    ).toEqual([enable]);
+    usePrefsStore.setState({ commandButtons: [] });
+  });
+
   it('includes display and update-notification choices', async () => {
     usePrefsStore.setState({
       notifyOnNewVersion: false,

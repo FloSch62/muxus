@@ -298,7 +298,7 @@ export function registerTerminalSocket(
       sessions.set(terminalId, transferable);
       transferable.once('close', () => sessions.delete(terminalId));
       const stableSocket = transferable as unknown as WebSocket;
-      void handleSession(stableSocket, ctx, app).catch((err) => {
+      void handleSession(stableSocket, ctx, app, terminalId).catch((err) => {
         app.log.warn({ err }, 'terminal session failed');
         sendControl(stableSocket, {
           op: 'exit',
@@ -347,7 +347,12 @@ class ControlChannel {
   }
 }
 
-async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyInstance): Promise<void> {
+async function handleSession(
+  socket: WebSocket,
+  ctx: AppContext,
+  app: FastifyInstance,
+  terminalId: string,
+): Promise<void> {
   const control = new ControlChannel();
   let writeInput: ((data: Buffer) => void) | undefined;
   let recorder: SessionRecorder | undefined;
@@ -459,6 +464,15 @@ async function handleSession(socket: WebSocket, ctx: AppContext, app: FastifyIns
     });
     return;
   }
+
+  // Input the backend types for the user, such as a vault secret, goes to the
+  // transport directly and never through the recorder below.
+  const unregisterInput = ctx.terminalInputs.register(terminalId, (data) => {
+    if (!socketOpen || !writeInput) return false;
+    writeInput(data);
+    return true;
+  });
+  socket.once('close', unregisterInput);
 
   const { cols, rows } = connectMsg;
   const profile =

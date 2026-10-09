@@ -216,6 +216,12 @@ the operating-system credential store.
   **Never for saved credentials** stores the vault key in the OS credential store,
   **When Muxus starts** unlocks it into memory once, and **Whenever a saved credential is
   needed** prompts for each use.
+- **Secrets** are passwords and PINs that are not a login, such as an `enable` or `sudo`
+  password; a user name is optional. **Add secret** saves one, and
+  [command buttons](commands.md#buttons-that-send-a-secret) and **Send secret…** type them
+  into a session. Adding, viewing and editing a secret take the master password; typing
+  one follows the prompt policy. Deleting a secret that command buttons still use warns
+  first and names them.
 - **View or edit password** asks for the master password before revealing the saved value.
 - **Change master password** changes that management password without rewriting every
   credential.
@@ -225,8 +231,9 @@ the operating-system credential store.
   without removing hosts, keys or other settings. Reset intentionally needs no master
   password, so a forgotten password cannot make the vault impossible to remove.
 
-The master password cannot be recovered. Saved-password ciphertext is local to the
-application database and is not included in Muxus backups. The raw vault key is never
+The master password cannot be recovered. Saved-password and secret ciphertext is local to
+the application database and is not included in Muxus backups; a backed-up command button
+keeps only which secret it types. The raw vault key is never
 stored in the application-data directory.
 
 ## Backup & data

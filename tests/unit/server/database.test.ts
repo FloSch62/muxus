@@ -50,6 +50,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 23, name: 'session-log-files' },
       { version: 24, name: 'host-command-button-group' },
       { version: 25, name: 'tunnel-autostart-reconnect' },
+      { version: 26, name: 'credential-usernames' },
     ]);
   });
 
@@ -141,8 +142,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 25,
-      name: 'tunnel-autostart-reconnect',
+      version: 26,
+      name: 'credential-usernames',
     });
     expect(database.savedHostProfile(telnet.id)).toMatchObject({
       name: 'Core switch',
@@ -301,8 +302,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 25,
-      name: 'tunnel-autostart-reconnect',
+      version: 26,
+      name: 'credential-usernames',
     });
     expect(database.passwordVaultConfig()).toMatchObject({
       formatVersion: 2,

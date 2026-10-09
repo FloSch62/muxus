@@ -33,6 +33,8 @@ capture.
 
     Typed text returns from the remote as output, so a command containing a token is
     recorded even with input capture off. **Pause logging before displaying secrets.**
+    A [vault secret](commands.md#buttons-that-send-a-secret) sent from a command button or
+    **Send secret…** is never recorded as input, even with input capture on.
 
 ## Searching and reading
 

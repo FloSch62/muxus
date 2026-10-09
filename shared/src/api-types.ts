@@ -109,6 +109,55 @@ export interface PasswordVaultStatus {
   osKeyStoreAvailable: boolean;
   credentialCount: number;
   credentials: PasswordVaultCredential[];
+  /** Named secrets not tied to a login, sorted by name. */
+  secrets: PasswordVaultSecret[];
+}
+
+/**
+ * Public metadata for a named secret in the password vault, such as an
+ * `enable` password. Saved commands refer to it by `id`; the value never
+ * leaves the backend except through the master-password reveal.
+ */
+export interface PasswordVaultSecret {
+  id: string;
+  name: string;
+  /** Optional account the secret belongs to; plain metadata, never sent. */
+  username?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Body of POST /api/password-vault/secrets and PUT /api/password-vault/secrets/:id. */
+export interface VaultSecretInput {
+  name: string;
+  username?: string;
+  /** Required when creating; left out on an edit that keeps the saved value. */
+  value?: string;
+  masterPassword: string;
+}
+
+export interface VaultSecretSaveResult {
+  secret: PasswordVaultSecret;
+  status: PasswordVaultStatus;
+}
+
+/**
+ * Body of POST /api/password-vault/secrets/:id/send. The backend types the
+ * secret into each live terminal session itself, so the value never reaches
+ * the renderer, session history or log files.
+ */
+export interface SendVaultSecretRequest {
+  /** Server terminal ids: the focused session first, then its mirrored panes. */
+  terminalIds: string[];
+  /** Press Enter after the secret. */
+  enter: boolean;
+  /** Needed only while the vault's prompt policy keeps it locked. */
+  masterPassword?: string;
+}
+
+export interface SendVaultSecretResult {
+  /** Sessions the secret was typed into. */
+  sent: number;
 }
 
 /** Raw bookmark data discovered from a local Windows MobaXterm installation. */

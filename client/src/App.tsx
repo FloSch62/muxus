@@ -32,6 +32,7 @@ import {
   loadHostOrganizationDialog,
   loadHostBulkEditDialog,
   loadCommandButtonMenu,
+  loadSendSecretMenu,
   loadCommandButtonsDialog,
   loadSettingsDialog,
   loadShortcutsDialog,
@@ -82,6 +83,9 @@ const CommandButtonMenu = lazy(() =>
 const CommandButtonsDialog = lazy(() =>
   loadCommandButtonsDialog().then((module) => ({ default: module.CommandButtonsDialog })),
 );
+const SendSecretMenu = lazy(() =>
+  loadSendSecretMenu().then((module) => ({ default: module.SendSecretMenu })),
+);
 const ShortcutsDialog = lazy(() =>
   loadShortcutsDialog().then((module) => ({ default: module.ShortcutsDialog })),
 );
@@ -116,6 +120,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const settingsOpen = useUiStore((s) => s.settingsOpen);
   const commandButtonMenuOpen = useUiStore((s) => s.commandButtonMenuOpen);
   const commandButtonsOpen = useUiStore((s) => s.commandButtonsOpen);
+  const sendSecretMenuOpen = useUiStore((s) => s.sendSecretMenuOpen);
   const shortcutsOpen = useUiStore((s) => s.shortcutsOpen);
   const historyOpen = useUiStore((s) => s.historyOpen);
   const logViewerOpen = useUiStore((s) => s.logViewerOpen);
@@ -200,6 +205,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
         {settingsOpen ? <SettingsDialog /> : null}
         {commandButtonMenuOpen ? <CommandButtonMenu /> : null}
         {commandButtonsOpen ? <CommandButtonsDialog /> : null}
+        {sendSecretMenuOpen ? <SendSecretMenu /> : null}
         {shortcutsOpen ? <ShortcutsDialog /> : null}
         {historyOpen ? <SessionHistoryDialog /> : null}
         {logViewerOpen ? <LogViewerDialog /> : null}
