@@ -46,6 +46,8 @@ import { usePrefsStore } from '../state/prefs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { commandButtonLabel } from '../command-buttons.js';
 import { commandButtonsUsingSecret } from '../vault-secrets.js';
+import { fetchLoginSequenceOwners } from '../api/folder-settings.js';
+import { loginSequencesUsingSecret } from '../login-sequence.js';
 import { VaultSecretDialog } from './VaultSecretDialog.js';
 import {
   SettingRow,
@@ -97,11 +99,24 @@ export function PasswordVaultSection() {
 
   const forgetSecret = async (secret: PasswordVaultSecret) => {
     const users = commandButtonsUsingSecret(usePrefsStore.getState().commandButtons, secret.id);
+    const sequences = loginSequencesUsingSecret(
+      await fetchLoginSequenceOwners().catch(() => []),
+      secret.id,
+    );
     const confirmed = await confirmAction({
       title: `Delete “${secret.name}”?`,
-      description: users.length
-        ? `${users.length === 1 ? 'A saved command still types' : `${users.length} saved commands still type`} it: ${quotedList(users.map(commandButtonLabel))}. ${users.length === 1 ? 'Its button' : 'Their buttons'} will show that the secret is missing.`
-        : 'The secret is removed from the password vault.',
+      description: [
+        users.length
+          ? `${users.length === 1 ? 'A saved command still types' : `${users.length} saved commands still type`} it: ${quotedList(users.map(commandButtonLabel))}. ${users.length === 1 ? 'Its button' : 'Their buttons'} will show that the secret is missing.`
+          : sequences.length
+            ? ''
+            : 'The secret is removed from the password vault.',
+        sequences.length
+          ? `The login sequence of ${quotedList(sequences)} types it too and will stop at that step.`
+          : '',
+      ]
+        .filter(Boolean)
+        .join(' '),
       confirmLabel: 'Delete secret',
       destructive: true,
     });

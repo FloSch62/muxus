@@ -13,6 +13,13 @@ import {
   MAX_GROUP_PATH,
   normalizeGroupPath,
 } from './host-tree.js';
+import {
+  loginSequenceDraft,
+  loginSequenceFromDraft,
+  loginSequenceProblem,
+  sameLoginSequenceDraft,
+  type LoginSequenceDraft,
+} from './login-sequence.js';
 import { managedHostKey, type ManagedHost } from './managed-hosts.js';
 import {
   hostSessionLoggingDraft,
@@ -47,6 +54,7 @@ export interface BulkHostValues {
   highlightProfileId: string | undefined;
   highlightInheritGlobal: boolean;
   sessionLogging: HostSessionLoggingDraft;
+  loginSequence: LoginSequenceDraft;
 }
 
 export type BulkHostField = keyof BulkHostValues;
@@ -77,6 +85,7 @@ export const BULK_FIELD_AUDIENCE: { readonly [F in BulkHostField]: BulkAudience 
   highlightProfileId: 'terminal',
   highlightInheritGlobal: 'terminal',
   sessionLogging: 'terminal',
+  loginSequence: 'terminal',
 };
 
 const CONNECTION_FIELDS = [
@@ -138,6 +147,7 @@ export function bulkValuesForHost(
     values.commandButtonGroup = metadata?.commandButtonGroup;
     values.highlightProfileId = highlights?.profileId;
     values.highlightInheritGlobal = highlights?.inheritGlobal ?? true;
+    values.loginSequence = loginSequenceDraft(metadata?.loginSequence);
     if (logging) values.sessionLogging = hostSessionLoggingDraft(logging, !logging.overridden);
   }
   const options = sshOptions(host);
@@ -177,6 +187,9 @@ export function sameBulkValue<F extends BulkHostField>(
 ): boolean {
   if (field === 'sessionLogging') {
     return sameSessionLoggingDraft(a as HostSessionLoggingDraft, b as HostSessionLoggingDraft);
+  }
+  if (field === 'loginSequence') {
+    return sameLoginSequenceDraft(a as LoginSequenceDraft, b as LoginSequenceDraft);
   }
   return a === b;
 }
@@ -236,6 +249,7 @@ export function bulkChangesProblem(changes: BulkHostChanges): string | null {
     const port = Number(changes.port);
     if (!Number.isInteger(port) || port < 1 || port > 65_535) return 'Port must be 1–65535.';
   }
+  if (changes.loginSequence) return loginSequenceProblem(changes.loginSequence);
   return null;
 }
 
@@ -368,6 +382,9 @@ function metadataPatch(
   }
   if (differs.has('consoleCompatibility')) patch.consoleCompatibility = changes.consoleCompatibility;
   if (differs.has('disableSftp')) patch.disableSftp = changes.disableSftp;
+  if (differs.has('loginSequence') && changes.loginSequence) {
+    patch.loginSequence = loginSequenceFromDraft(changes.loginSequence);
+  }
   if (differs.has('highlightProfileId') || differs.has('highlightInheritGlobal')) {
     patch.keywordHighlights = patchedHighlights(host.entry.metadata?.keywordHighlights, changes, differs);
   }

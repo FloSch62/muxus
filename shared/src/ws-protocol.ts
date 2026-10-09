@@ -293,6 +293,8 @@ export const terminalClientMessageSchema = z.discriminatedUnion('op', [
   ),
   /** The tab was renamed; the active history record takes the new title. */
   z.object({ op: z.literal('set-title'), title: z.string().trim().min(1).max(500) }),
+  /** Stop the host's login sequence; the session itself stays open. */
+  z.object({ op: z.literal('cancel-login-sequence') }),
 ]);
 export type TerminalClientMessage = z.infer<typeof terminalClientMessageSchema>;
 
@@ -386,6 +388,18 @@ export type TerminalServerMessage =
       message?: string;
       /** Whether the shell ended normally, setup failed, or a live transport was lost. */
       reason: 'completed' | 'failed' | 'disconnected';
+    }
+  /** The host's login sequence started a step, finished, or stopped. */
+  | {
+      op: 'login-sequence';
+      state: 'running' | 'done' | 'failed' | 'cancelled';
+      /** 1-based step that is running, or where the sequence stopped. */
+      step: number;
+      steps: number;
+      /** What the step does, such as Waiting for “Password:”. */
+      detail: string;
+      /** Why a failed sequence stopped. */
+      message?: string;
     };
 
 /**

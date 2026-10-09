@@ -51,6 +51,8 @@ export interface TerminalHandle {
     logToFile?: boolean;
     logFilePath?: string;
   }): boolean;
+  /** Stop the host's running login sequence; the session stays open. */
+  cancelLoginSequence(): boolean;
 }
 
 const handles = new Map<string, TerminalHandle>();

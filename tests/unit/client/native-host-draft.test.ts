@@ -164,6 +164,7 @@ describe('nativeDraftMetadataPatch', () => {
       terminalBackgroundColor: null,
       commandButtonGroup: null,
       keywordHighlights: null,
+      loginSequence: null,
     });
     const draft = nativeDraftFromProfile(serialHost, false);
     expect(nativeDraftMetadataPatch(draft)).toEqual({
@@ -174,7 +175,47 @@ describe('nativeDraftMetadataPatch', () => {
       terminalBackgroundColor: '#282828',
       commandButtonGroup: 'command-group-console',
       keywordHighlights: serialHost.metadata.keywordHighlights,
+      loginSequence: null,
     });
+  });
+
+  it('round-trips the login sequence: inherited, none or the own steps of the host', () => {
+    const steps = [
+      { id: 's1', kind: 'send' as const, text: '', enter: true },
+      { id: 's2', kind: 'wait' as const, pattern: 'login:', timeoutSeconds: 20 },
+      { id: 's3', kind: 'secret' as const, secretId: 'vault-1', enter: true },
+    ];
+    const own = nativeDraftFromProfile(
+      { ...serialHost, metadata: { ...serialHost.metadata, loginSequence: { steps } } },
+      false,
+    );
+    expect(own.loginSequence).toEqual({ mode: 'custom', steps });
+    expect(nativeDraftMetadataPatch(own).loginSequence).toEqual({ steps });
+
+    const none = nativeDraftFromProfile(
+      { ...serialHost, metadata: { ...serialHost.metadata, loginSequence: { steps: [] } } },
+      false,
+    );
+    expect(none.loginSequence.mode).toBe('none');
+    expect(nativeDraftMetadataPatch(none).loginSequence).toEqual({ steps: [] });
+    // Steps hidden behind another mode are kept for switching back, but not saved.
+    expect(nativeDraftMetadataPatch({ ...own, loginSequence: { mode: 'inherit', steps } }).loginSequence).toBeNull();
+  });
+
+  it('blocks saving an unfinished login step', () => {
+    const draft = {
+      ...blankNativeDraft(),
+      name: 'Router',
+      host: 'router.example.test',
+      loginSequence: {
+        mode: 'custom' as const,
+        steps: [{ id: 'w', kind: 'wait' as const, pattern: '[', regex: true, timeoutSeconds: 10 }],
+      },
+    };
+    expect(nativeDraftProblem(draft, 'telnet')).toMatch(/^Login sequence step 1: .*Invalid regular expression/);
+    expect(
+      nativeDraftProblem({ ...draft, loginSequence: { mode: 'custom', steps: [] } }, 'telnet'),
+    ).toBe('Add a login step, or choose no login sequence.');
   });
 
   it('carries the row color chosen in the editor', () => {

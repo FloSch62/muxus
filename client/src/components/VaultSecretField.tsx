@@ -28,6 +28,7 @@ export function VaultSecretField({
   helperText,
   disabled = false,
   fullWidth = true,
+  size,
   sx,
 }: {
   value: string | undefined;
@@ -36,6 +37,7 @@ export function VaultSecretField({
   helperText?: React.ReactNode;
   disabled?: boolean;
   fullWidth?: boolean;
+  size?: 'small' | 'medium';
   sx?: SxProps<Theme>;
 }) {
   const queryClient = useQueryClient();
@@ -71,6 +73,7 @@ export function VaultSecretField({
       <TextField
         select
         label={label}
+        size={size}
         fullWidth={fullWidth}
         disabled={disabled || isLoading || !configured}
         error={missing}

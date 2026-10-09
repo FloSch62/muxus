@@ -23,6 +23,8 @@ import {
   SessionRecorder,
   type SessionLoggingState,
 } from '../session-logging/session-recorder.js';
+import { resolveLoginSequence, type LoginSequenceHost } from '../login-sequence/resolve.js';
+import { LoginSequenceSession } from '../login-sequence/session.js';
 
 const CONNECT_TIMEOUT_MS = 30_000;
 const KEEPALIVE_MS = 30_000;
@@ -40,6 +42,7 @@ const REPLAYED_CONTROL_OPS = [
   'ready',
   'logging-state',
   'connection-health',
+  'login-sequence',
 ] as const;
 const replayedControlOps = new Set<string>(REPLAYED_CONTROL_OPS);
 
@@ -506,9 +509,40 @@ async function handleSession(
     );
     return true;
   };
-  control.intercept = handleLoggingControl;
+  let loginSequence: LoginSequenceSession | undefined;
+  control.intercept = (msg) =>
+    handleLoggingControl(msg) || (loginSequence?.handleControl(msg) ?? false);
   sendLoggingState();
   socket.once('close', () => recorder?.end('disconnected'));
+
+  // A host's login sequence sees output from the moment the transport is
+  // attached. It belongs to this connect: a reconnect runs it again, a
+  // renderer reattaching to the live session does not.
+  const prepareLoginSequence = (
+    host: () => LoginSequenceHost | undefined,
+  ): LoginSequenceSession | undefined => {
+    const write = ctx.terminalInputs.writer(terminalId);
+    if (!write) return undefined;
+    try {
+      const target = host();
+      const sequence = target && resolveLoginSequence(ctx.database, target);
+      if (!sequence) return undefined;
+      const session = new LoginSequenceSession({
+        sequence,
+        vault: ctx.vault,
+        write,
+        recorder: recorder!,
+        send: (message) => sendControl(socket, message),
+        log: app.log,
+      });
+      socket.once('close', () => session.close());
+      loginSequence = session;
+      return session;
+    } catch (err) {
+      app.log.warn({ err }, 'could not load the login sequence');
+      return undefined;
+    }
+  };
 
   if (profile.kind === 'local') {
     const { pty } = spawnLocalPty(profile, cols, rows);
@@ -561,6 +595,7 @@ async function handleSession(
       `serial-${nanoid(10)}`,
       recorder,
       handleLoggingControl,
+      prepareLoginSequence(() => (profile.profileId ? { profileId: profile.profileId } : undefined)),
     );
     app.log.info(
       { path: profile.path, baudRate: profile.baudRate },
@@ -589,6 +624,7 @@ async function handleSession(
       `telnet-${nanoid(10)}`,
       recorder,
       handleLoggingControl,
+      prepareLoginSequence(() => (profile.profileId ? { profileId: profile.profileId } : undefined)),
     );
     app.log.info({ host: profile.host, port: profile.port }, 'telnet session established');
     if (profile.profileId) ctx.database.recordSavedHostConnection(profile.profileId);
@@ -664,6 +700,11 @@ async function handleSession(
     if (handleLoggingControl(msg)) return;
     if (msg.op === 'resize') stream.setWindow(msg.rows, msg.cols, 0, 0);
   };
+  const sshLoginSequence = prepareLoginSequence(() => {
+    if (profile.profileId) return { profileId: profile.profileId };
+    const alias = ctx.connections.metadataAliasFor(profile);
+    return alias ? { alias } : undefined;
+  });
 
   // Flow control: a runaway `cat hugefile` must not balloon the ws buffer.
   let paused = false;
@@ -676,6 +717,7 @@ async function handleSession(
 
   stream.on('data', (chunk: Buffer) => {
     recorder?.output(chunk);
+    sshLoginSequence?.output(chunk);
     if (socket.readyState !== socket.OPEN) return;
     socket.send(chunk, { binary: true });
     if (!paused && socket.bufferedAmount > BACKPRESSURE_HIGH) {
@@ -735,6 +777,9 @@ async function handleSession(
       app.log.warn({ err, target: conn.metadataAlias }, 'could not record recent connection');
     }
   }
+  // Started before `ready`, so the tab learns a sequence is running before it
+  // would type anything of its own (a tmux reattach waits for the sequence).
+  sshLoginSequence?.start();
   sendControl(socket, {
     op: 'ready',
     connId: conn.id,
@@ -754,6 +799,7 @@ function attachTerminalTransport(
   connId: string,
   recorder: SessionRecorder,
   handleLoggingControl: (msg: TerminalClientMessage) => boolean,
+  loginSequence: LoginSequenceSession | undefined,
 ): void {
   setWriteInput((data) => transport.write(data));
   control.onMessage = (msg) => {
@@ -772,6 +818,7 @@ function attachTerminalTransport(
 
   const unsubscribeData = transport.onData((data) => {
     recorder.output(data);
+    loginSequence?.output(data);
     if (socket.readyState !== socket.OPEN) return;
     socket.send(data, { binary: true });
     if (!paused && socket.bufferedAmount > BACKPRESSURE_HIGH) {
@@ -802,6 +849,7 @@ function attachTerminalTransport(
     unsubscribeClose();
     transport.close();
   });
+  loginSequence?.start();
   sendControl(socket, { op: 'ready', connId });
 }
 

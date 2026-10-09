@@ -398,6 +398,18 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
     },
   },
   {
+    id: 'terminal.cancel-login-sequence',
+    title: 'Cancel login sequence',
+    category: 'terminal',
+    defaultChords: [],
+    keywords: ['login', 'sequence', 'expect', 'stop', 'abort'],
+    run: () => {
+      const id = tabs().activeId;
+      if (!tabs().tabs.find((tab) => tab.id === id)?.loginSequence) return false;
+      return terminalHandle(id)?.cancelLoginSequence() ?? false;
+    },
+  },
+  {
     id: 'terminal.zoom-in',
     title: 'Increase terminal font size',
     category: 'terminal',

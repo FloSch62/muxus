@@ -734,6 +734,48 @@ export interface HostKeywordHighlightConfig {
   rules: KeywordHighlightRule[];
 }
 
+/** One step of a login sequence. Ids are client-generated, for editing and reordering. */
+export type LoginSequenceStep =
+  | {
+      id: string;
+      kind: 'wait';
+      /** Literal text, or a JavaScript regular expression source when `regex` is set. */
+      pattern: string;
+      regex?: boolean;
+      /** The sequence stops when nothing matches within this many seconds. */
+      timeoutSeconds: number;
+    }
+  | {
+      id: string;
+      kind: 'send';
+      /** May be empty when the step only presses Enter. */
+      text: string;
+      enter: boolean;
+    }
+  | {
+      id: string;
+      kind: 'secret';
+      /** A named secret in the password vault; the value itself is never stored here. */
+      secretId: string;
+      enter: boolean;
+    };
+
+/**
+ * Steps a terminal session runs once after it connects, and again after every
+ * reconnect: wait for a prompt, then answer it. A host without its own sequence
+ * inherits its nearest folder's; an empty list is an explicit "none" that
+ * stops a folder's sequence from applying.
+ */
+export interface LoginSequence {
+  steps: LoginSequenceStep[];
+}
+
+export const LOGIN_SEQUENCE_MAX_STEPS = 32;
+/** Longest wait pattern or sent text, in characters. */
+export const LOGIN_SEQUENCE_TEXT_MAX_LENGTH = 1024;
+export const LOGIN_SEQUENCE_DEFAULT_TIMEOUT_SECONDS = 10;
+export const LOGIN_SEQUENCE_MAX_TIMEOUT_SECONDS = 3600;
+
 export interface OpenSshProfileMetadata {
   /** Stable local ID survives an OpenSSH alias rename. */
   profileId: string;
@@ -757,6 +799,8 @@ export interface OpenSshProfileMetadata {
   disableSftp?: boolean;
   /** Console appliances: also suppress env requests and tolerate a rejected PTY. */
   consoleCompatibility?: boolean;
+  /** The host's own login sequence; absent inherits the folder's. */
+  loginSequence?: LoginSequence;
   lastConnectedAt?: string;
   connectCount: number;
 }
@@ -773,6 +817,8 @@ export interface OpenSshMetadataPatch {
   commandButtonGroup?: string | null;
   disableSftp?: boolean;
   consoleCompatibility?: boolean;
+  /** Null goes back to the folder's sequence. */
+  loginSequence?: LoginSequence | null;
 }
 
 /**
@@ -801,6 +847,8 @@ export interface FolderSettingsRecord {
   auth: FolderAuthSettings;
   /** A shared password for this folder exists in the password vault. */
   hasPassword: boolean;
+  /** Login sequence for hosts inside that have none of their own; absent inherits the parent's. */
+  loginSequence?: LoginSequence;
   createdAt: string;
   updatedAt: string;
 }
