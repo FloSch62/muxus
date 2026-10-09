@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   canHandleCommandLineLaunch,
+  linkLaunch,
   parseCommandLineLaunch,
   parseCommandLineLaunchData,
   parseConnectTarget,
@@ -147,6 +148,65 @@ describe('desktop command-line ad-hoc connections', () => {
     expect(
       parseCommandLineLaunch(['muxus', '--connect', 'edge', '--user', 'a|b']),
     ).toBeUndefined();
+  });
+});
+
+describe('desktop link arguments', () => {
+  it('takes an ssh:// or telnet:// link from the system URL handler', () => {
+    expect(parseCommandLineLaunch(['/opt/Muxus/muxus', 'ssh://admin@10.0.0.1:2222'])).toEqual({
+      kind: 'url',
+      name: 'ssh://admin@10.0.0.1:2222',
+    });
+    // Windows: "C:\…\Muxus.exe" "%1"; a source checkout: electron <app> <link>.
+    expect(
+      parseCommandLineLaunch(['C:\\Muxus\\Muxus.exe', 'telnet://switch:23']),
+    ).toEqual({ kind: 'url', name: 'telnet://switch:23' });
+    expect(
+      parseCommandLineLaunch(['electron', '/src/muxus/electron', '--no-sandbox', 'ssh://edge']),
+    ).toEqual({ kind: 'url', name: 'ssh://edge' });
+  });
+
+  it('forwards malformed and unsupported links so the window can report them', () => {
+    expect(parseCommandLineLaunch(['muxus', 'ssh://-oProxyCommand=id'])).toEqual({
+      kind: 'url',
+      name: 'ssh://-oProxyCommand=id',
+    });
+    expect(parseCommandLineLaunch(['muxus', 'sftp://host'])).toEqual({
+      kind: 'url',
+      name: 'sftp://host',
+    });
+    expect(parseCommandLineLaunch(['muxus', 'ssh:host'])).toEqual({ kind: 'url', name: 'ssh:host' });
+  });
+
+  it('caps an oversized link one character past the limit', () => {
+    const launch = parseCommandLineLaunch(['muxus', `ssh://${'a'.repeat(5000)}`]);
+    expect(launch?.name).toHaveLength(2049);
+  });
+
+  it('does not mistake the executable, switches or flag values for links', () => {
+    expect(parseCommandLineLaunch(['ssh://not-a-link'])).toBeUndefined();
+    expect(parseCommandLineLaunch(['muxus', '--host', 'ssh://edge'])).toEqual({
+      kind: 'host',
+      name: 'ssh://edge',
+    });
+    expect(parseCommandLineLaunch(['muxus', '--inspect=ssh://x'])).toBeUndefined();
+  });
+
+  it('accepts one launch target at a time', () => {
+    expect(parseCommandLineLaunch(['muxus', 'ssh://a', 'ssh://b'])).toBeUndefined();
+    expect(parseCommandLineLaunch(['muxus', '--host', 'edge', 'ssh://a'])).toBeUndefined();
+    expect(parseCommandLineLaunch(['muxus', 'ssh://a', '--user', 'root'])).toBeUndefined();
+  });
+
+  it('revalidates forwarded and macOS open-url links', () => {
+    expect(parseCommandLineLaunchData({ kind: 'url', name: 'ssh://edge' })).toEqual({
+      kind: 'url',
+      name: 'ssh://edge',
+    });
+    expect(parseCommandLineLaunchData({ kind: 'url', name: '--host=edge' })).toBeUndefined();
+    expect(parseCommandLineLaunchData({ kind: 'url', name: 42 })).toBeUndefined();
+    expect(linkLaunch('telnet://switch')).toEqual({ kind: 'url', name: 'telnet://switch' });
+    expect(linkLaunch('/Users/me/file.txt')).toBeUndefined();
   });
 });
 

@@ -23,6 +23,14 @@ npmRebuild: true
 # prebuild, which treats its internal baton pointer as an event handle.
 buildDependenciesFromSource: true
 appxManifestCreated: scripts/appx-manifest.cjs
+# ssh:// and telnet:// links: CFBundleURLTypes on macOS, windows.protocol in
+# the Store package and MimeType in the Linux desktop file. These only offer
+# Muxus as a handler; Settings → Behavior makes it the default on request.
+protocols:
+  - name: SSH
+    schemes: [ssh]
+  - name: Telnet
+    schemes: [telnet]
 win:
   target:
     - target: nsis
@@ -44,6 +52,8 @@ appx:
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  # Lists Muxus under Default apps for ssh:// and telnet:// links.
+  include: windows/installer.nsh
 mac:
   category: public.app-category.developer-tools
   identity: null

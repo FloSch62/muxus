@@ -8,8 +8,10 @@ import {
   commandButtonInput,
   commandButtonsInGroup,
   duplicateCommandButton,
+  commandButtonLabel,
   filterCommandButtons,
   isCommandButtonColor,
+  isSecretCommandButton,
   moveCommandButton,
   moveCommandButtonGroup,
   moveCommandButtonToGroup,
@@ -35,6 +37,39 @@ describe('filterCommandButtons', () => {
   it('requires every search word and preserves the saved order', () => {
     expect(filterCommandButtons(buttons, 'systemctl edge')).toEqual([buttons[2]]);
     expect(filterCommandButtons(buttons, '   ')).toBe(buttons);
+  });
+
+  it('finds a secret button by the name of its secret, never by stale command text', () => {
+    const enable = { id: 'enable', label: 'Enable', command: 'old text', sendEnter: true, secretId: 's1' };
+    const names = (id: string) => (id === 's1' ? 'Core enable' : undefined);
+    expect(filterCommandButtons([...buttons, enable], 'core', names)).toEqual([enable]);
+    expect(filterCommandButtons([...buttons, enable], 'old text', names)).toEqual([]);
+  });
+});
+
+describe('secret command buttons', () => {
+  it('are told apart by their secret reference and labelled without a command', () => {
+    const secret = { id: 'enable', label: '  ', command: '', sendEnter: true, secretId: 's1' };
+    expect(isSecretCommandButton(secret)).toBe(true);
+    expect(isSecretCommandButton(buttons[0]!)).toBe(false);
+    // An empty reference is a secret button whose secret is not picked yet.
+    expect(isSecretCommandButton({ ...secret, secretId: '' })).toBe(false);
+    expect(commandButtonLabel(secret)).toBe('Secret');
+    expect(commandButtonLabel({ ...secret, label: 'Enable' })).toBe('Enable');
+  });
+
+  it('keep only the reference when stored, imported or restored', () => {
+    const secret = { id: 'enable', label: 'Enable', command: '', sendEnter: false, secretId: 's1' };
+    expect(normalizeCommandButtons([secret], [DEFAULT_COMMAND_GROUP])).toEqual([secret]);
+    expect(
+      normalizeCommandButtons(
+        [{ ...secret, secretId: 42 }, { ...secret, id: 'b', secretId: 'x'.repeat(201) }],
+        [DEFAULT_COMMAND_GROUP],
+      ),
+    ).toEqual([
+      { id: 'enable', label: 'Enable', command: '', sendEnter: false },
+      { id: 'b', label: 'Enable', command: '', sendEnter: false },
+    ]);
   });
 });
 

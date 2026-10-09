@@ -21,7 +21,7 @@ about, and acts on the selected result.
 | **Open tabs** | Switch to it, or reconnect if it dropped |
 | **Editor files** open in a session | Jump to the file |
 | **Workspaces** | Open it |
-| **Saved command buttons**, also by group name | Send the command to the focused terminal |
+| **Saved command buttons**, also by group name | Send the command, or type its secret, in the focused terminal |
 | **Keyboard commands** (the whole keymap) | Run it, with its chord shown |
 | **Tunnels** | Start or stop it in place |
 | **Session history** | Open the retained session |

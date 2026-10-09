@@ -75,7 +75,8 @@ text colour and background colour can override the application defaults. Leave a
 on **Use application default** to keep following the global preference. Host overrides
 apply to open terminals immediately, which makes sessions easy to identify when the tab
 strip and sidebar are hidden in focus mode. The same section chooses the
-[command button group](commands.md#a-group-per-host) the bar shows for the host.
+[command button group](commands.md#a-group-per-host) the bar shows for the host and its
+[paste pacing](#pasting-into-slow-consoles).
 
 Scheme, font family, size and line height are in
 [Settings → Appearance](settings.md#appearance). Cursor style (block, underline, bar),
@@ -124,6 +125,42 @@ expression options. Every match is marked in the scrollbar.
     Pasting text that would run several shell commands opens a preview first, so a stray
     newline in a copied snippet cannot execute part of a script before it is read. It is a
     [setting](settings.md#terminal), and it is on by default.
+
+### Pasting into slow consoles
+
+Serial consoles and older network devices often have small input buffers and no flow
+control, and their command line finishes one line before it reads the next. A long
+configuration pasted all at once then loses characters or whole lines. Muxus can type a
+paste in at a set pace instead:
+
+- **Delay after each line**, in milliseconds.
+- **Delay after each character**, optional, for devices that cannot keep up within a line.
+
+Both are 0 by default, which sends a paste at once. The defaults are under
+[Settings → Terminal](settings.md#terminal), and a host can set its own under **Terminal
+appearance** in its editor: an empty field follows the settings, and 0 turns pacing off for
+that host. The [bulk editor](hosts.md#editing-several-hosts-at-once) sets them on many hosts
+at once. Local terminals use the settings.
+
+The multiline paste preview shows the host's line delay and how long the paste will take;
+a delay changed there applies to that paste only. While a paced paste runs, its progress
+shows over the terminal and as a ring on the tab. **Cancel**, or a click on the ring, stops
+it, and so do closing the tab and losing the connection. A paste made while another is
+running waits for it to finish.
+
+A paste sends each line break as a carriage return, the Enter key, as terminals do: CRLF
+and LF in the copied text both become one CR, and every CR ends a line. The line delay
+follows each one but the last. With a character delay, every character waits that long,
+and a line break waits the line delay on top. Each wait starts once the connection has
+taken the text before it, so on a serial port the delay begins when the line has actually
+been transmitted.
+
+The pacing runs in the Muxus backend, not in the window, so the rate stays steady while
+the window is minimized or in the background, where timers in the window are slowed down.
+When the program reading the paste has turned on bracketed paste mode, as bash and zsh do,
+one pair of markers encloses the whole paste rather than each line, and cancelling closes
+it. With [multi-execution](commands.md#multi-execution), each mirrored terminal gets the
+paste at its own host's pace, independently of the others.
 
 ### Dropping files
 

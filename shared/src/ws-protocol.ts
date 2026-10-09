@@ -1,5 +1,11 @@
 import { z } from 'zod';
 import type { ConfigForward } from './api-types.js';
+import { normalizeHostKeyFingerprint } from './connection-links.js';
+import {
+  MAX_PACED_PASTE_LENGTH,
+  MAX_PASTE_CHAR_DELAY_MS,
+  MAX_PASTE_LINE_DELAY_MS,
+} from './paste-pacing.js';
 
 /** Fixed subprotocol selected by the server for terminal sockets. */
 export const TERMINAL_WS_PROTOCOL = 'muxus.terminal.v1';
@@ -13,6 +19,12 @@ export const MAX_SSH_KEEPALIVE_INTERVAL_SECONDS = 3600;
 
 /** The ServerAliveInterval fallback Muxus uses unless Settings say otherwise. */
 export const DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS = 30;
+
+/** How long Send BREAK holds the line unless a serial host says otherwise (tcsendbreak's length). */
+export const DEFAULT_BREAK_DURATION_MS = 250;
+
+/** Upper bound for a serial host's break duration, in milliseconds. */
+export const MAX_BREAK_DURATION_MS = 10_000;
 
 /** Protocols offered by browser WebSocket clients during the HTTP upgrade. */
 export function terminalWebSocketProtocols(token: string): string[] {
@@ -91,6 +103,15 @@ export const sshProfileSchema = z.object({
   remoteCommand: z.string().min(1).max(32_768).optional(),
   requestTty: z.enum(['no', 'yes', 'force', 'auto']).optional(),
   strictHostKeyChecking: z.enum(['yes', 'no', 'accept-new', 'ask']).optional(),
+  /**
+   * Host key the target must present, from an ssh:// link's fingerprint, in
+   * canonical form. It only tightens verification and is never saved with a host.
+   */
+  hostKeyFingerprint: z
+    .string()
+    .max(200)
+    .refine((value) => normalizeHostKeyFingerprint(value) === value, 'invalid host key fingerprint')
+    .optional(),
 });
 
 export const telnetProfileSchema = z.object({
@@ -112,6 +133,8 @@ export const serialProfileSchema = z.object({
   stopBits: z.union([z.literal(1), z.literal(1.5), z.literal(2)]).default(1),
   parity: z.enum(['none', 'even', 'odd', 'mark', 'space']).default('none'),
   flowControl: z.enum(['none', 'hardware', 'software']).default('none'),
+  /** How long Send BREAK holds the line; absent means DEFAULT_BREAK_DURATION_MS. */
+  breakDurationMs: z.number().int().min(1).max(MAX_BREAK_DURATION_MS).optional(),
 });
 
 /**
@@ -293,6 +316,28 @@ export const terminalClientMessageSchema = z.discriminatedUnion('op', [
   ),
   /** The tab was renamed; the active history record takes the new title. */
   z.object({ op: z.literal('set-title'), title: z.string().trim().min(1).max(500) }),
+  /**
+   * Paste text paced by the backend, whose timers keep running while the
+   * window is hidden. Line breaks go out as CR, the way a terminal pastes;
+   * pastes queue behind one still running.
+   */
+  z.object({
+    op: z.literal('paste'),
+    text: z.string().min(1).max(MAX_PACED_PASTE_LENGTH),
+    /** Enclose the whole paste, not each line, in bracketed-paste markers. */
+    bracketed: z.boolean(),
+    lineDelayMs: z.number().int().min(0).max(MAX_PASTE_LINE_DELAY_MS),
+    charDelayMs: z.number().int().min(0).max(MAX_PASTE_CHAR_DELAY_MS),
+  }),
+  /** Stop the paced paste that is running and drop the queued ones. */
+  z.object({ op: z.literal('paste-cancel') }),
+  /**
+   * Send a BREAK to this session only: a held break on a serial line, IAC BRK
+   * on Telnet, or an RFC 4335 `break` request on an SSH channel.
+   */
+  z.object({ op: z.literal('send-break') }),
+  /** Stop the host's login sequence; the session itself stays open. */
+  z.object({ op: z.literal('cancel-login-sequence') }),
 ]);
 export type TerminalClientMessage = z.infer<typeof terminalClientMessageSchema>;
 
@@ -315,6 +360,8 @@ export interface SshSessionSummary {
   serverSoftware?: string;
   /** Methods the server accepted, in order; several for a multi-factor login. */
   authMethods: string[];
+  /** Signature algorithm of the key that logged in, such as "sk-ssh-ed25519@openssh.com". */
+  authKeyAlgorithm?: string;
   cipher?: string;
   kex?: string;
   /** `unsupported`: compression was asked for and the server offered none. */
@@ -380,12 +427,37 @@ export type TerminalServerMessage =
       /** Plain-text log file this session is being written to, if any. */
       filePath?: string;
     }
+  /** Answer to `send-break`; `message` says why the BREAK did not go out. */
+  | { op: 'break-result'; ok: boolean; message?: string }
   | {
       op: 'exit';
       code?: number;
       message?: string;
       /** Whether the shell ended normally, setup failed, or a live transport was lost. */
       reason: 'completed' | 'failed' | 'disconnected';
+    }
+  /** Paced paste progress over every queued paste, throttled while it runs. */
+  | {
+      op: 'paste-progress';
+      state: 'running' | 'done' | 'cancelled';
+      /** The line being sent, from 1, and the lines of every queued paste. */
+      line: number;
+      lines: number;
+      /** UTF-16 code units sent and queued. */
+      sent: number;
+      total: number;
+    }
+  /** The host's login sequence started a step, finished, or stopped. */
+  | {
+      op: 'login-sequence';
+      state: 'running' | 'done' | 'failed' | 'cancelled';
+      /** 1-based step that is running, or where the sequence stopped. */
+      step: number;
+      steps: number;
+      /** What the step does, such as Waiting for “Password:”. */
+      detail: string;
+      /** Why a failed sequence stopped. */
+      message?: string;
     };
 
 /**

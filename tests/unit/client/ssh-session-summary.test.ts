@@ -108,6 +108,25 @@ describe('SSH session summary', () => {
     );
   });
 
+  it('names the key algorithm, calling a FIDO2 key a security key', () => {
+    expect(lines({ ...summary, authKeyAlgorithm: 'sk-ssh-ed25519@openssh.com' })).toContain(
+      '  • Authentication   : security key (SSH agent)  (sk-ssh-ed25519@openssh.com)',
+    );
+    expect(
+      lines({
+        ...summary,
+        authMethods: ['publickey', 'keyboard-interactive'],
+        authKeyAlgorithm: 'sk-ecdsa-sha2-nistp256@openssh.com',
+      }),
+    ).toContain('  • Authentication   : security key  (sk-ecdsa-sha2-nistp256@openssh.com) + keyboard-interactive');
+    expect(lines({ ...summary, authKeyAlgorithm: 'rsa-sha2-512' })).toContain(
+      '  • Authentication   : public key (SSH agent)  (rsa-sha2-512)',
+    );
+    expect(lines({ ...summary, authMethods: ['password'], authKeyAlgorithm: 'ssh-ed25519' })).toContain(
+      '  • Authentication   : password',
+    );
+  });
+
   it('leaves out what the server did not report', () => {
     const text = lines({
       ...summary,

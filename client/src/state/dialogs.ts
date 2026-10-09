@@ -36,6 +36,8 @@ export interface PromptOptions {
   allowEmpty?: boolean;
   /** Returns a message to block submission, or null when the value is usable. */
   validate?: (value: string) => string | null;
+  /** A password field: the value is hidden and returned exactly as typed, untrimmed. */
+  masked?: boolean;
 }
 
 export type DialogRequest =

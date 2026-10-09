@@ -41,7 +41,7 @@ The local SQLite database holds folders, colours, display names, sidebar order, 
 saved tunnels, Muxus-only SSH/Telnet/serial/RDP/VNC hosts, per-host highlighting and logging
 policy, connection timestamps, the fingerprints of trusted RDP certificates and VNC server
 keys, and encrypted
-passwords when the user opts in. It is created
+passwords and secrets when the user opts in. It is created
 `0600` in a `0700` directory.
 
 **Credential material is rejected from ordinary profile, tunnel and workspace data.**
@@ -109,6 +109,27 @@ the deletion guarantee.
 The portable Muxus backup format deliberately excludes the vault and all password
 ciphertext.
 
+### Named secrets
+
+The vault also holds named secrets that belong to no login, such as an `enable` password.
+They are encrypted like saved passwords; the name and optional user name are plain
+metadata. Saving or editing one, like revealing it, takes the master password.
+
+A command button or **Send secret…** stores and sends only the secret's ID. The backend
+decrypts the value under the vault's prompt policy and writes it straight to each target
+session's transport, the same bytes a keypress would send, but past the session recorder:
+it is never returned to the window and never reaches session history, log files or the
+diagnostic log, even with input capture on. Only output the remote side echoes back is
+recorded. Saved commands, preferences and backups contain the ID alone, so a command
+button restored on another machine shows its secret as missing.
+
+[Login sequences](../guide/adding-hosts.md#login-sequence) work the same way: a secret step
+stores the ID, the backend types the value into the session it runs in, and a sequence in a
+backup or on another machine refers to a secret that is not there and stops at that step.
+Patterns are matched in the backend against a bounded window of output, and a regular
+expression is abandoned after a short time limit, so a pathological pattern cannot stall
+other sessions.
+
 ## Host keys
 
 Verification uses `~/.ssh/known_hosts` and the read-only `/etc/ssh/ssh_known_hosts`, hashed
@@ -118,6 +139,10 @@ entries included, applying the same rules as OpenSSH:
   `known_hosts`;
 - a changed key produces a warning, and accepting performs the `ssh-keygen -R`-style
   replacement.
+
+A fingerprint in an `ssh://` link is an additional check: a key that does not match it is
+refused whatever `known_hosts` says, and a matching key still goes through `known_hosts`
+and the trust prompt. See [Fingerprints in ssh:// links](../guide/connecting.md#fingerprints-in-ssh-links).
 
 Config edits are atomic and leave a `.muxus.bak` of the previous contents.
 
@@ -202,11 +227,23 @@ which on Linux means group membership.
   host always connects with its current settings, including this one, even from a tab
   opened before the host was edited.
 
+## Security keys
+
+A security key `IdentityFile` is signed through a private `ssh-agent` that Muxus starts
+for that one login, with its socket in a fresh `0700` directory. It never touches the
+agent in `SSH_AUTH_SOCK`. The agent stops when the login completes or fails, and it exits
+on its own if Muxus does. The key file's passphrase and the security key's PIN are relayed
+from OpenSSH's askpass request to the Muxus prompt and are never stored.
+
 ## The desktop shell
 
 The Electron build embeds the server in-process, uses context isolation with a narrow
 preload bridge, and blocks unexpected navigation. There is no remote content: everything
 the window loads is served from the local server.
+
+Muxus becomes the handler for `ssh://` and `telnet://` links only when asked in Settings.
+A link is parsed into a host, user and port that are validated like `--connect` targets,
+so it cannot add options or reach a shell, and it never carries a password.
 
 ## What Muxus does not do
 

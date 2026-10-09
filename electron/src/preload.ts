@@ -2,7 +2,10 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type {
   AppWindowLaunch,
   CommandLineLaunch,
+  ConnectionLinkScheme,
   DesktopUpdateState,
+  LinkHandlerRegistration,
+  LinkHandlerState,
   LocalCopyChange,
   LocalOpenApplication,
   LocalOpenResult,
@@ -235,6 +238,12 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
     commandLineLaunchListeners.add(callback);
     for (const launch of queuedCommandLineLaunches.splice(0)) callback(launch);
     return () => commandLineLaunchListeners.delete(callback);
+  },
+  getLinkHandlers(): Promise<LinkHandlerState | undefined> {
+    return ipcRenderer.invoke('muxus:link-handlers:get');
+  },
+  registerLinkHandler(scheme: ConnectionLinkScheme): Promise<LinkHandlerRegistration | undefined> {
+    return ipcRenderer.invoke('muxus:link-handlers:register', scheme);
   },
   /** Detach a tab only when the native cursor is outside every Muxus window. */
   detachTab(launch: Extract<AppWindowLaunch, { kind: 'tab-transfer' }>): Promise<boolean> {

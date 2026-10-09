@@ -23,7 +23,8 @@ const savedProfileSchema = z.object({
   profile: z.discriminatedUnion('kind', [
     // The keepalive fallback is an application preference each connect sends
     // for itself — never a stored connection field that could outvote it.
-    sshProfileSchema.omit({ keepaliveIntervalSeconds: true }),
+    // A link's host key fingerprint belongs to that one connect as well.
+    sshProfileSchema.omit({ keepaliveIntervalSeconds: true, hostKeyFingerprint: true }),
     telnetProfileSchema,
     serialProfileSchema,
     rdpProfileSchema,

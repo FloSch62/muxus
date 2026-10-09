@@ -1,7 +1,10 @@
 import { AgentProtocol, BaseAgent, type ParsedKey, type SigningRequestOptions } from 'ssh2';
+import { isSecurityKeyType, SecurityKeyError, signatureAlgorithm } from './security-keys.js';
 
 export const DEFAULT_AGENT_WAIT_STATUS_MS = 2_000;
 export const DEFAULT_AGENT_OPERATION_TIMEOUT_MS = 30_000;
+/** A security key waits for a touch (and maybe its PIN), which is user time. */
+export const DEFAULT_SECURITY_KEY_TIMEOUT_MS = 120_000;
 
 export interface ResponsiveAgentOptions {
   /** Agent interaction is user time (approval/touch), not network dial time. */
@@ -11,6 +14,12 @@ export interface ResponsiveAgentOptions {
   onWaiting?: (operation: 'identities' | 'sign') => void;
   waitStatusMs?: number;
   operationTimeoutMs?: number;
+  /** Called as a signature with a security key starts; it waits for a touch. */
+  onSecurityKey?: (key: ParsedKey) => void;
+  /** Bound for a security key signature; 0 waits as long as the agent does. */
+  securityKeyTimeoutMs?: number;
+  /** Called with the signature algorithm of every signature the agent made. */
+  onSignature?: (algorithm: string) => void;
 }
 
 /**
@@ -60,12 +69,27 @@ export class ResponsiveAgent extends BaseAgent<ParsedKey> {
       typeof optionsOrCb === 'function' ? undefined : optionsOrCb;
     const cb = typeof optionsOrCb === 'function' ? optionsOrCb : maybeCb;
     if (!cb) return;
-    this.request(
+    const securityKey = isSecurityKeyType(pubKey.type);
+    if (securityKey) this.options.onSecurityKey?.(pubKey);
+    this.request<Buffer>(
       'sign',
       (protocol, done) => {
         protocol.sign(pubKey, data, options, done);
       },
-      cb,
+      (err, signature) => {
+        if (err) {
+          cb(securityKey && !(err instanceof SecurityKeyError) ? new SecurityKeyError(err.message, pubKey) : err);
+          return;
+        }
+        this.options.onSignature?.(signatureAlgorithm(pubKey.type, options?.hash));
+        cb(undefined, signature);
+      },
+      securityKey
+        ? {
+            waitStatusMs: -1,
+            timeoutMs: this.options.securityKeyTimeoutMs ?? DEFAULT_SECURITY_KEY_TIMEOUT_MS,
+          }
+        : undefined,
     );
   }
 
@@ -85,6 +109,7 @@ export class ResponsiveAgent extends BaseAgent<ParsedKey> {
       done: (err?: Error | null, value?: T) => void,
     ) => void,
     cb: (err: Error | undefined, value?: T) => void,
+    limits?: { waitStatusMs: number; timeoutMs: number },
   ): void {
     if (this.unavailableError) {
       queueMicrotask(() => cb(this.unavailableError));
@@ -98,9 +123,9 @@ export class ResponsiveAgent extends BaseAgent<ParsedKey> {
     }
 
     const waitStatusMs =
-      this.options.waitStatusMs ?? DEFAULT_AGENT_WAIT_STATUS_MS;
+      limits?.waitStatusMs ?? this.options.waitStatusMs ?? DEFAULT_AGENT_WAIT_STATUS_MS;
     const operationTimeoutMs =
-      this.options.operationTimeoutMs ?? DEFAULT_AGENT_OPERATION_TIMEOUT_MS;
+      limits?.timeoutMs ?? this.options.operationTimeoutMs ?? DEFAULT_AGENT_OPERATION_TIMEOUT_MS;
     let settled = false;
     let stream: Awaited<Parameters<Parameters<NonNullable<BaseAgent['getStream']>>[0]>[1]>;
     let protocol: AgentProtocol | undefined;
@@ -119,7 +144,7 @@ export class ResponsiveAgent extends BaseAgent<ParsedKey> {
       if (settled) return;
       settled = true;
       if (waitTimer) clearTimeout(waitTimer);
-      clearTimeout(timeoutTimer);
+      if (timeoutTimer) clearTimeout(timeoutTimer);
       if (agentUnavailable && err) this.unavailableError = err;
 
       try {
@@ -134,18 +159,21 @@ export class ResponsiveAgent extends BaseAgent<ParsedKey> {
       cb(err ?? undefined, value);
     };
 
-    const timeoutTimer = setTimeout(() => {
-      finish(
-        new Error(
-          `SSH agent did not respond while ${
-            operation === 'identities' ? 'listing identities' : 'signing'
-          }`,
-        ),
-        undefined,
-        true,
-      );
-    }, operationTimeoutMs);
-    timeoutTimer.unref?.();
+    const timeoutTimer =
+      operationTimeoutMs > 0
+        ? setTimeout(() => {
+            finish(
+              new Error(
+                `SSH agent did not respond while ${
+                  operation === 'identities' ? 'listing identities' : 'signing'
+                }`,
+              ),
+              undefined,
+              true,
+            );
+          }, operationTimeoutMs)
+        : undefined;
+    timeoutTimer?.unref?.();
 
     this.options.pauseDeadline?.();
     try {

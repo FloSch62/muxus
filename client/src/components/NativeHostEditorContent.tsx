@@ -11,11 +11,13 @@ import Typography from '@mui/material/Typography';
 import HighlightOutlinedIcon from '@mui/icons-material/HighlightOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import LanguageOutlinedIcon from '@mui/icons-material/LanguageOutlined';
+import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
 import UsbOutlinedIcon from '@mui/icons-material/UsbOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import type { SavedHostProfile, SerialPortInfo, SerialProfile } from '@muxus/shared';
+import { MAX_BREAK_DURATION_MS } from '@muxus/shared/ws-protocol';
 import { useDeleteHostProfile, useSaveHostProfile, useUpdateHostProfileMetadata } from '../api/profiles.js';
 import { useSaveSessionLoggingPolicy } from '../api/session-history.js';
 import { useSerialPorts, useSessionLoggingPolicy } from '../api/queries.js';
@@ -32,6 +34,7 @@ import { HostColorPicker } from './HostColorPicker.js';
 import { EditorShell, type EditorSectionDef } from './host-editor/EditorShell.js';
 import { HighlightingSection } from './host-editor/HighlightingSection.js';
 import { LoggingSection } from './host-editor/LoggingSection.js';
+import { LoginSequenceSection } from './host-editor/LoginSequenceSection.js';
 import { TerminalAppearanceSection } from './host-editor/TerminalAppearanceSection.js';
 import {
   nativeDraftMetadataPatch,
@@ -46,7 +49,7 @@ const COMMON_BAUD_RATES = [
 ];
 
 type NativeEditorState = Exclude<HostEditorState, false>;
-type NativeSection = 'general' | 'appearance' | 'line' | 'logging' | 'highlighting';
+type NativeSection = 'general' | 'appearance' | 'line' | 'login' | 'logging' | 'highlighting';
 
 /**
  * Telnet/serial editor rendered into the shared host-editor shell, so the
@@ -147,11 +150,18 @@ export function NativeHostEditorContent({
         draft.terminalFontColor,
         draft.terminalBackgroundColor,
         draft.commandButtonGroup,
+        draft.pasteLineDelayMs !== undefined || draft.pasteCharDelayMs !== undefined,
       ].filter(Boolean).length || undefined,
     },
     ...(kind === 'serial'
       ? [{ value: 'line' as const, label: 'Line settings', icon: <TuneOutlinedIcon fontSize="small" /> }]
       : []),
+    {
+      value: 'login',
+      label: 'Login sequence',
+      icon: <LoginOutlinedIcon fontSize="small" />,
+      count: draft.loginSequence.mode === 'custom' ? draft.loginSequence.steps.length : undefined,
+    },
     {
       value: 'logging',
       label: 'Session logging',
@@ -204,6 +214,13 @@ export function NativeHostEditorContent({
         <GeneralSection kind={kind} draft={draft} set={set} />
       )}
       {activeSection === 'line' && <LineSettingsSection draft={draft} set={set} />}
+      {activeSection === 'login' && (
+        <LoginSequenceSection
+          value={draft.loginSequence}
+          onChange={(loginSequence) => set({ loginSequence })}
+          group={draft.group}
+        />
+      )}
       {activeSection === 'appearance' && (
         <TerminalAppearanceSection value={draft} onChange={set} />
       )}
@@ -438,6 +455,18 @@ function LineSettingsSection({
           <MenuItem value="software">Software (XON/XOFF)</MenuItem>
         </TextField>
       </Stack>
+      <TextField
+        label="Break duration"
+        type="number"
+        value={draft.breakDurationMs}
+        onChange={(event) => set({ breakDurationMs: event.target.value })}
+        helperText="How long Send BREAK holds the line."
+        slotProps={{
+          htmlInput: { min: 1, max: MAX_BREAK_DURATION_MS },
+          input: { endAdornment: <Typography color="textSecondary">ms</Typography> },
+        }}
+        sx={{ maxWidth: { sm: 260 } }}
+      />
     </Stack>
   );
 }

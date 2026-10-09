@@ -117,10 +117,11 @@ function PromptBody({
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  const problem = value.trim() ? (request.validate?.(value.trim()) ?? null) : null;
-  const submittable = (request.allowEmpty || !!value.trim()) && !problem;
+  const entered = request.masked ? value : value.trim();
+  const problem = entered ? (request.validate?.(entered) ?? null) : null;
+  const submittable = (request.allowEmpty || !!entered) && !problem;
   const submit = () => {
-    if (submittable) onResolve(value.trim());
+    if (submittable) onResolve(entered);
   };
 
   return (
@@ -137,6 +138,8 @@ function PromptBody({
           fullWidth
           label={request.label}
           placeholder={request.placeholder}
+          type={request.masked ? 'password' : undefined}
+          autoComplete={request.masked ? 'off' : undefined}
           value={value}
           error={!!problem}
           helperText={problem ?? ' '}

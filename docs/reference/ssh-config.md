@@ -72,6 +72,7 @@ but the dialler still applies them the way `ssh` would:
 | `PasswordAuthentication no`, `KbdInteractiveAuthentication no` | Removes that rung from the auth ladder (the legacy `ChallengeResponseAuthentication` spelling works too) |
 | `UserKnownHostsFile`, `GlobalKnownHostsFile` | Host keys verify against these files instead; new keys are recorded into the first user file, `none` disables, and user-file path tokens such as `%h`, `%n`, and `%p` expand per connection |
 | `SetEnv`, `SendEnv` | Session environment, with `-pattern` removals and SetEnv overriding |
+| `SecurityKeyProvider` | FIDO middleware for [security key](../guide/connecting.md#security-keys) files: a library path or `$VARIABLE`; unset follows `$SSH_SK_PROVIDER`, then OpenSSH's built-in support |
 
 The editor's **Advanced** section shows a badge per row: **applied** for the keywords above,
 **kept** for everything Muxus preserves but does not use. A one-click **Legacy device

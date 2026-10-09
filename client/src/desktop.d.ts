@@ -2,7 +2,10 @@ import type {
   AppInfo,
   AppWindowLaunch,
   CommandLineLaunch,
+  ConnectionLinkScheme,
   DesktopUpdateState,
+  LinkHandlerRegistration,
+  LinkHandlerState,
   LocalCopyChange,
   LocalOpenApplication,
   LocalOpenResult,
@@ -81,6 +84,10 @@ declare global {
       openWindow(launch: AppWindowLaunch): void;
       /** Subscribe to launch targets forwarded by later executable invocations. */
       onCommandLineLaunch(callback: (launch: CommandLineLaunch) => void): () => void;
+      /** Whether ssh:// and telnet:// links open in Muxus; undefined where unsupported. */
+      getLinkHandlers?(): Promise<LinkHandlerState | undefined>;
+      /** Make Muxus the system handler for one link scheme. */
+      registerLinkHandler?(scheme: ConnectionLinkScheme): Promise<LinkHandlerRegistration | undefined>;
       /** Open a tab-transfer window when the native cursor is outside every app window. */
       detachTab(
         launch: Extract<AppWindowLaunch, { kind: 'tab-transfer' }>,

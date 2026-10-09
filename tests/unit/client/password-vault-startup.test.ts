@@ -11,6 +11,7 @@ const status = (
   osKeyStoreAvailable: true,
   credentialCount: 1,
   credentials: [],
+  secrets: [],
   ...overrides,
 });
 

@@ -4,6 +4,7 @@ import type {
   FolderSettingsResponse,
   HostBlockOptions,
   HostUpsertRequest,
+  LoginSequence,
   ManagedHostRef,
   OpenSshMetadataPatch,
   SavedHostProfile,
@@ -19,6 +20,11 @@ import type {
   TunnelRecord,
   TunnelsResponse,
 } from '@muxus/shared';
+import {
+  MAX_PASTE_CHAR_DELAY_MS,
+  MAX_PASTE_LINE_DELAY_MS,
+  validPasteDelay,
+} from '@muxus/shared';
 import { apiFetch } from './api/http.js';
 import { fetchHostPreview } from './api/ssh-config.js';
 import {
@@ -28,6 +34,7 @@ import {
 } from './command-buttons.js';
 import { isKeywordHighlightProfileArray } from './highlight-profiles.js';
 import { isStatusBarItemList } from './host-stats.js';
+import { isLoginSequence } from './login-sequence.js';
 import { isCustomTerminalSchemeArray } from './terminal/custom-schemes.js';
 import { saveTextFile } from './save-file.js';
 import { openSshJumpHops } from './saved-hosts.js';
@@ -85,6 +92,8 @@ const PREFERENCE_KEYS = [
   'rightClickAction',
   'terminalFileLinkActivation',
   'pasteWarnMultiline',
+  'pasteLineDelayMs',
+  'pasteCharDelayMs',
   'confirmCloseConnected',
   'sshSessionSummary',
   'rememberPasswordsByDefault',
@@ -150,6 +159,8 @@ export interface BackupLoggingPolicy {
 export interface PortableFolderSettings {
   path: string;
   auth: FolderAuthSettings;
+  /** Steps only: a vault step names its secret, whose value stays in the vault. */
+  loginSequence?: LoginSequence;
 }
 
 export type PortableHistorySettings = Omit<
@@ -273,8 +284,12 @@ export async function createBackupDocument(
       historySettings,
       logFileSettings,
       folderSettings: folderSettings.folders
-        .filter((folder) => Object.keys(folder.auth).length > 0)
-        .map(({ path, auth }) => ({ path, auth })),
+        .filter((folder) => Object.keys(folder.auth).length > 0 || folder.loginSequence)
+        .map(({ path, auth, loginSequence }) => ({
+          path,
+          auth,
+          ...(loginSequence ? { loginSequence } : {}),
+        })),
     },
   };
 }
@@ -641,8 +656,11 @@ function portableMetadata(
     terminalBackgroundColor: metadata.terminalBackgroundColor,
     keywordHighlights: metadata.keywordHighlights,
     commandButtonGroup: metadata.commandButtonGroup,
+    pasteLineDelayMs: metadata.pasteLineDelayMs,
+    pasteCharDelayMs: metadata.pasteCharDelayMs,
     disableSftp: metadata.disableSftp,
     consoleCompatibility: metadata.consoleCompatibility,
+    loginSequence: metadata.loginSequence,
     sortOrder: metadata.sortOrder,
   };
 }
@@ -780,7 +798,12 @@ async function restoreFolderSettings(
     await apiFetch<{ folder: unknown }>('/api/folders/settings', {
       method: 'PUT',
       headers: JSON_HEADERS,
-      body: JSON.stringify({ path: entry.path, auth: entry.auth }),
+      body: JSON.stringify({
+        path: entry.path,
+        auth: entry.auth,
+        // A sequence that does not check out is dropped, not the whole folder.
+        ...(isLoginSequence(entry.loginSequence) ? { loginSequence: entry.loginSequence } : {}),
+      }),
     });
     if (exists) result.updated++;
     else result.added++;
@@ -798,8 +821,11 @@ function metadataPatch(metadata: PortableHostMetadata): OpenSshMetadataPatch {
     terminalBackgroundColor: metadata.terminalBackgroundColor ?? null,
     keywordHighlights: metadata.keywordHighlights ?? null,
     commandButtonGroup: metadata.commandButtonGroup ?? null,
+    pasteLineDelayMs: metadata.pasteLineDelayMs ?? null,
+    pasteCharDelayMs: metadata.pasteCharDelayMs ?? null,
     disableSftp: metadata.disableSftp ?? false,
     consoleCompatibility: metadata.consoleCompatibility ?? false,
+    loginSequence: isLoginSequence(metadata.loginSequence) ? metadata.loginSequence : null,
   };
 }
 
@@ -906,6 +932,12 @@ export function sanitizePreferences(
   }
   if (typeof input.pasteWarnMultiline === 'boolean') {
     output.pasteWarnMultiline = input.pasteWarnMultiline;
+  }
+  if (validPasteDelay(input.pasteLineDelayMs, MAX_PASTE_LINE_DELAY_MS)) {
+    output.pasteLineDelayMs = input.pasteLineDelayMs;
+  }
+  if (validPasteDelay(input.pasteCharDelayMs, MAX_PASTE_CHAR_DELAY_MS)) {
+    output.pasteCharDelayMs = input.pasteCharDelayMs;
   }
   if (typeof input.confirmCloseConnected === 'boolean') {
     output.confirmCloseConnected = input.confirmCloseConnected;

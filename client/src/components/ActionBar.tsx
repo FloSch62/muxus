@@ -13,22 +13,22 @@ import CheckBoxIcon from '@mui/icons-material/CheckBox';
 import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
 import CheckIcon from '@mui/icons-material/Check';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
 import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop';
+import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
+import { useQueryClient } from '@tanstack/react-query';
+import { usePasswordVaultStatus } from '../api/password-vault-queries.js';
 import { useUpdateHostProfileMetadata } from '../api/profiles.js';
 import { useUpdateSshMetadata } from '../api/ssh-config.js';
 import { useActiveCommandButtonGroup } from '../command-button-groups.js';
-import {
-  activateCommandButton,
-  commandButtonGroupOf,
-  commandButtonLabel,
-} from '../command-buttons.js';
-import { usePrefsStore, type CommandBarPosition } from '../state/prefs.js';
+import { commandButtonGroupOf, commandButtonLabel } from '../command-buttons.js';
+import { usePrefsStore, type CommandBarPosition, type CommandButton } from '../state/prefs.js';
 import { showToast } from '../state/toast.js';
 import { useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
-import { terminalHandle } from '../terminal/terminal-registry.js';
+import { findVaultSecret, runCommandButton, vaultSecretMissing } from '../vault-secrets.js';
 import { commandButtonColorSx } from './command-button-style.js';
 
 export const ActionBar = memo(function ActionBar({
@@ -46,6 +46,11 @@ export const ActionBar = memo(function ActionBar({
   const updateProfileMetadata = useUpdateHostProfileMetadata();
   const [menu, setMenu] = useState<{ top: number; left: number } | null>(null);
   const [groupMenu, setGroupMenu] = useState<HTMLElement | null>(null);
+  const queryClient = useQueryClient();
+  // Secret names and missing secrets need the vault; plain commands do not.
+  const { data: vault } = usePasswordVaultStatus(
+    buttons.some((button) => button.secretId !== undefined),
+  );
   const grouped = groups.length > 1;
   if (!showCommandBar || (buttons.length === 0 && !grouped)) return null;
   const connected = activeTab?.status === 'connected';
@@ -149,31 +154,53 @@ export const ActionBar = memo(function ActionBar({
             No commands in this group yet.
           </Typography>
         ) : null}
-        {shownButtons.map((button) => (
-          <Tooltip
-            key={button.id}
-            placement={tooltipPlacement}
-            title={`${button.command || 'No command'}${button.sendEnter ? ' · runs immediately' : ' · inserts only'}`}
-          >
-            <span style={{ flexShrink: 0 }}>
-              <Button
-                size="small"
-                variant="outlined"
-                disabled={!connected || !button.command}
-                onClick={() => {
-                  const sent = activateCommandButton(terminalHandle(activeTab?.id), button);
-                  if (!sent) showToast('warning', 'The active terminal is not connected.');
-                }}
-                sx={[
-                  { minWidth: 0, whiteSpace: 'nowrap', py: 0.25 },
-                  commandButtonColorSx(button.color),
-                ]}
-              >
-                {commandButtonLabel(button)}
-              </Button>
-            </span>
-          </Tooltip>
-        ))}
+        {shownButtons.map((button) => {
+          const secretButton = button.secretId !== undefined;
+          const secret = button.secretId ? findVaultSecret(vault, button.secretId) : undefined;
+          const missing = !!button.secretId && vaultSecretMissing(vault, button.secretId) === true;
+          return (
+            <Tooltip
+              key={button.id}
+              placement={tooltipPlacement}
+              title={buttonTooltip(button, secret?.name, missing)}
+            >
+              <span style={{ flexShrink: 0 }}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  data-muxus-secret={secretButton ? (missing ? 'missing' : 'saved') : undefined}
+                  disabled={!connected || (secretButton ? !button.secretId || missing : !button.command)}
+                  startIcon={
+                    !secretButton ? undefined : missing ? (
+                      <WarningAmberOutlinedIcon aria-label="Secret missing" />
+                    ) : (
+                      <KeyOutlinedIcon aria-label="Sends a secret" />
+                    )
+                  }
+                  onClick={() => {
+                    const sent = runCommandButton(activeTab?.id, button, {
+                      secretName: secret?.name,
+                      queryClient,
+                    });
+                    if (!sent) showToast('warning', 'The active terminal is not connected.');
+                  }}
+                  sx={[
+                    {
+                      minWidth: 0,
+                      whiteSpace: 'nowrap',
+                      py: 0.25,
+                      '& .MuiButton-startIcon': { mr: 0.5, '& svg': { fontSize: 16 } },
+                    },
+                    commandButtonColorSx(button.color),
+                    missing ? { borderStyle: 'dashed' } : {},
+                  ]}
+                >
+                  {commandButtonLabel(button)}
+                </Button>
+              </span>
+            </Tooltip>
+          );
+        })}
       </Box>
       <Tooltip title="Manage command buttons" placement={tooltipPlacement}>
         <IconButton
@@ -294,3 +321,14 @@ export const ActionBar = memo(function ActionBar({
     </Box>
   );
 });
+
+/** What a bar button does, in its tooltip. A secret button names its secret, never its value. */
+function buttonTooltip(button: CommandButton, secretName: string | undefined, missing: boolean): string {
+  if (button.secretId === undefined) {
+    return `${button.command || 'No command'}${button.sendEnter ? ' · runs immediately' : ' · inserts only'}`;
+  }
+  if (missing) return 'Its secret was deleted from the password vault';
+  if (!button.secretId) return 'No secret chosen';
+  if (!secretName) return 'Types a secret from the password vault';
+  return `Types the secret “${secretName}”${button.sendEnter ? ' and presses Enter' : ''}`;
+}
