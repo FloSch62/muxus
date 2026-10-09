@@ -4,11 +4,13 @@ import type { WebSocket } from 'ws';
 import { nanoid } from 'nanoid';
 import type { ConfigForward, TerminalServerMessage } from '@muxus/shared';
 import {
+  DEFAULT_BREAK_DURATION_MS,
   TERMINAL_SESSION_CLOSE_REASON,
   terminalClientMessageSchema,
   type TerminalClientMessage,
 } from '@muxus/shared/ws-protocol';
 import type { AppContext } from '../app.js';
+import { requestChannelBreak } from '../ssh/channel-break.js';
 import type { ConnectIo } from '../ssh/connection-manager.js';
 import {
   localShellPromptReady,
@@ -331,6 +333,9 @@ class ControlChannel {
 
   push(msg: TerminalClientMessage): void {
     if (this.intercept?.(msg)) return;
+    // A BREAK has no line to go to until the session is attached, and must
+    // not be taken as the answer to an auth or host-key prompt.
+    if (msg.op === 'send-break' && !this.onMessage) return;
     const waiter = this.waiters.shift();
     if (waiter) waiter.resolve(msg);
     else this.onMessage?.(msg);
@@ -699,6 +704,14 @@ async function handleSession(
   control.onMessage = (msg) => {
     if (handleLoggingControl(msg)) return;
     if (msg.op === 'resize') stream.setWindow(msg.rows, msg.cols, 0, 0);
+    else if (msg.op === 'send-break') {
+      answerBreak(socket, async () => {
+        const result = await requestChannelBreak(stream, DEFAULT_BREAK_DURATION_MS);
+        if (result === 'refused') return 'The SSH server refused the BREAK request';
+        if (result === 'unanswered') return 'The SSH server did not answer the BREAK request';
+        return undefined;
+      });
+    }
   };
   const sshLoginSequence = prepareLoginSequence(() => {
     if (profile.profileId) return { profileId: profile.profileId };
@@ -805,6 +818,9 @@ function attachTerminalTransport(
   control.onMessage = (msg) => {
     if (handleLoggingControl(msg)) return;
     if (msg.op === 'resize') transport.resize(msg.cols, msg.rows);
+    else if (msg.op === 'send-break') {
+      answerBreak(socket, () => transport.sendBreak().then(() => undefined));
+    }
   };
 
   let paused = false;
@@ -851,6 +867,23 @@ function attachTerminalTransport(
   });
   loginSequence?.start();
   sendControl(socket, { op: 'ready', connId });
+}
+
+/** Send a BREAK and report the outcome; `send` resolves to why it did not go out, if it did not. */
+function answerBreak(socket: WebSocket, send: () => Promise<string | undefined>): void {
+  send().then(
+    (problem) =>
+      sendControl(
+        socket,
+        problem ? { op: 'break-result', ok: false, message: problem } : { op: 'break-result', ok: true },
+      ),
+    (error: unknown) =>
+      sendControl(socket, {
+        op: 'break-result',
+        ok: false,
+        message: `Could not send BREAK: ${error instanceof Error ? error.message : String(error)}`,
+      }),
+  );
 }
 
 function sendControl(socket: WebSocket, msg: TerminalServerMessage): void {

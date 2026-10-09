@@ -13,6 +13,7 @@ import {
 import { usePrefsStore } from '../state/prefs.js';
 import { PANE_RESIZE_STEP, isRemoteSessionTab, useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
+import { sendBreak } from '../terminal/send-break.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
 import type { PaneDirection } from '../state/workspace-layout.js';
 
@@ -395,6 +396,17 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
       if (!tabs().tabs.some(isRemoteSessionTab)) return false;
       void requestForceReconnectAll();
       return true;
+    },
+  },
+  {
+    id: 'terminal.send-break',
+    title: 'Send BREAK',
+    category: 'terminal',
+    defaultChords: [],
+    keywords: ['break', 'serial', 'telnet', 'ssh', 'console', 'rommon', 'sysrq', 'openboot'],
+    run: () => {
+      const state = tabs();
+      return sendBreak(state.tabs.find((tab) => tab.id === state.activeId));
     },
   },
   {

@@ -26,7 +26,7 @@ window controls sit inside it. From left to right:
 | :material-flash: | [Saved command buttons](commands.md) |
 | :material-folder-outline: | The [file browser](files.md) for the active SSH tab, beside the terminal or in the sidebar |
 | :material-swap-horizontal: | The [forwarding panel](tunnels.md); the badge counts forwards and turns amber while a tunnel [reconnects or could not start](tunnels.md#starting-with-muxus-and-reconnecting) |
-| :material-console: | Terminal actions: find, select all, copy all, export, logging, clear, zoom |
+| :material-console: | Terminal actions: find, select all, copy all, export, logging, [Send BREAK](telnet-serial.md#send-break), clear, zoom |
 | :material-history: | [Session history](session-history.md) |
 | :material-weather-night: | Theme: light → dark → follow system |
 | :material-keyboard: | [Keyboard shortcuts](../reference/keyboard-shortcuts.md), searchable and rebindable |

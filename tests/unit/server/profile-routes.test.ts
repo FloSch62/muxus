@@ -181,6 +181,7 @@ describe('saved host profile routes', () => {
           stopBits: 1,
           parity: 'none',
           flowControl: 'software',
+          breakDurationMs: 500,
         },
       },
     });
@@ -188,9 +189,15 @@ describe('saved host profile routes', () => {
     expect(update.json()).toMatchObject({
       id,
       name: 'Updated console',
-      profile: { path: '/dev/ttyUSB1', baudRate: 9600 },
+      profile: { path: '/dev/ttyUSB1', baudRate: 9600, breakDurationMs: 500 },
       metadata: { group: 'Lab/Consoles' },
     });
+    const listed = await app.inject({ method: 'GET', url: '/api/profiles', headers: auth() });
+    expect(
+      listed.json<{ profiles: Array<{ id: string; profile: unknown }> }>().profiles.find(
+        (profile) => profile.id === id,
+      )?.profile,
+    ).toMatchObject({ breakDurationMs: 500 });
   });
 
   it('manages Telnet and serial hosts through the authenticated host API', async () => {

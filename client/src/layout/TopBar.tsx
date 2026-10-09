@@ -38,6 +38,7 @@ import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutlineOutlined';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutlineOutlined';
+import PowerInputOutlinedIcon from '@mui/icons-material/PowerInputOutlined';
 import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
 import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
@@ -56,6 +57,7 @@ import { usePrefsStore, type ThemeMode } from '../state/prefs.js';
 import { useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
 import { useWorkspacesStore } from '../state/workspaces.js';
+import { canSendBreak, sendBreak, supportsBreak } from '../terminal/send-break.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
 import { ChordHint, withChord } from '../components/ChordHint.js';
 import { MultiExecControl } from '../components/MultiExecControl.js';
@@ -125,6 +127,7 @@ export const TopBar = memo(function TopBar() {
   const zoomInChord = useChordLabel('terminal.zoom-in');
   const zoomOutChord = useChordLabel('terminal.zoom-out');
   const zoomResetChord = useChordLabel('terminal.zoom-reset');
+  const sendBreakChord = useChordLabel('terminal.send-break');
   // Re-render hook so the zoom percentage in the open menu stays current.
   const [, setZoomTick] = useState(0);
 
@@ -492,6 +495,22 @@ export const TopBar = memo(function TopBar() {
                 ? 'Suppress sensitive input'
                 : 'Record input (may include secrets)'}
             </ListItemText>
+          </MenuItem>
+        ) : null}
+        {supportsBreak(activeTab) ? <Divider /> : null}
+        {supportsBreak(activeTab) ? (
+          <MenuItem
+            disabled={!canSendBreak(activeTab)}
+            onClick={() => {
+              closeMenu();
+              sendBreak(activeTab);
+            }}
+          >
+            <ListItemIcon>
+              <PowerInputOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Send BREAK</ListItemText>
+            <ChordHint chord={sendBreakChord} />
           </MenuItem>
         ) : null}
         <Divider />

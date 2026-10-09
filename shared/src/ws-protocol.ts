@@ -14,6 +14,12 @@ export const MAX_SSH_KEEPALIVE_INTERVAL_SECONDS = 3600;
 /** The ServerAliveInterval fallback Muxus uses unless Settings say otherwise. */
 export const DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS = 30;
 
+/** How long Send BREAK holds the line unless a serial host says otherwise (tcsendbreak's length). */
+export const DEFAULT_BREAK_DURATION_MS = 250;
+
+/** Upper bound for a serial host's break duration, in milliseconds. */
+export const MAX_BREAK_DURATION_MS = 10_000;
+
 /** Protocols offered by browser WebSocket clients during the HTTP upgrade. */
 export function terminalWebSocketProtocols(token: string): string[] {
   return [TERMINAL_WS_PROTOCOL, `${TERMINAL_WS_AUTH_PREFIX}${token}`];
@@ -112,6 +118,8 @@ export const serialProfileSchema = z.object({
   stopBits: z.union([z.literal(1), z.literal(1.5), z.literal(2)]).default(1),
   parity: z.enum(['none', 'even', 'odd', 'mark', 'space']).default('none'),
   flowControl: z.enum(['none', 'hardware', 'software']).default('none'),
+  /** How long Send BREAK holds the line; absent means DEFAULT_BREAK_DURATION_MS. */
+  breakDurationMs: z.number().int().min(1).max(MAX_BREAK_DURATION_MS).optional(),
 });
 
 /**
@@ -293,6 +301,11 @@ export const terminalClientMessageSchema = z.discriminatedUnion('op', [
   ),
   /** The tab was renamed; the active history record takes the new title. */
   z.object({ op: z.literal('set-title'), title: z.string().trim().min(1).max(500) }),
+  /**
+   * Send a BREAK to this session only: a held break on a serial line, IAC BRK
+   * on Telnet, or an RFC 4335 `break` request on an SSH channel.
+   */
+  z.object({ op: z.literal('send-break') }),
   /** Stop the host's login sequence; the session itself stays open. */
   z.object({ op: z.literal('cancel-login-sequence') }),
 ]);
@@ -382,6 +395,8 @@ export type TerminalServerMessage =
       /** Plain-text log file this session is being written to, if any. */
       filePath?: string;
     }
+  /** Answer to `send-break`; `message` says why the BREAK did not go out. */
+  | { op: 'break-result'; ok: boolean; message?: string }
   | {
       op: 'exit';
       code?: number;

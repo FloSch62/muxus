@@ -249,6 +249,15 @@ describe('user overrides', () => {
     expect([...conflictingCommandIds(clashing)].sort()).toEqual(['pane.zoom', 'tab.new']);
   });
 
+  it('leaves Send BREAK unbound until a chord is recorded for it', () => {
+    expect(keyCommand('terminal.send-break')?.defaultChords).toEqual([]);
+    const bound = { 'terminal.send-break': ['Ctrl+Alt+KeyB'] };
+    expect(commandsForChord('Ctrl+Alt+KeyB', bound).map((command) => command.id)).toEqual([
+      'terminal.send-break',
+    ]);
+    expect(conflictingCommandIds(bound).has('terminal.send-break')).toBe(false);
+  });
+
   it('recognizes an override that only restates the default', () => {
     const zoom = keyCommand('pane.zoom')!;
     expect(chordsAreDefault(zoom, ['Ctrl+Shift+KeyZ'])).toBe(true);
