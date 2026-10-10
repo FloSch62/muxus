@@ -12,10 +12,13 @@ import type {
   HostKeywordHighlightConfig,
   LoginSequence,
   ManagedHostRef,
+  ManagementProtocol,
   OpenSshMetadataPatch,
   PasswordVaultUnlockPolicy,
   SavedHostProfile,
   SavedHostProfileInput,
+  SavedManagementRequest,
+  SavedManagementRequestInput,
   SessionHistorySettings,
   SessionHistorySettingsInput,
   SessionLogFileSettings,
@@ -484,10 +487,15 @@ const MIGRATIONS = [
         CHECK(paste_char_delay_ms IS NULL OR paste_char_delay_ms >= 0);
     `,
   },
+  {
+    version: 29,
+    name: 'management-hosts',
+    run: addManagementHosts,
+  },
 ] as const;
 
 /** Kinds stored as Muxus-owned saved hosts (everything but OpenSSH metadata rows). */
-const SAVED_HOST_KINDS = ['ssh', 'serial', 'telnet', 'rdp', 'vnc'] as const;
+const SAVED_HOST_KINDS = ['ssh', 'serial', 'telnet', 'rdp', 'vnc', 'gnmi', 'netconf'] as const;
 const SAVED_HOST_KINDS_SQL = `(${SAVED_HOST_KINDS.map((kind) => `'${kind}'`).join(', ')})`;
 
 /**
@@ -497,16 +505,77 @@ const SAVED_HOST_KINDS_SQL = `(${SAVED_HOST_KINDS.map((kind) => `'${kind}'`).joi
  * by earlier migrations carries over unchanged.
  */
 function addRemoteDesktopHosts(db: DatabaseSync): void {
+  rebuildConnectionProfileKinds(
+    db,
+    `kind IN ('openssh', 'ssh', 'local', 'serial', 'telnet')`,
+    `kind IN ('openssh', 'ssh', 'local', 'serial', 'telnet', 'rdp', 'vnc')`,
+    'RDP and VNC hosts',
+  );
+  db.exec(`
+    -- Pinned RDP certificates, and VNC RSA-AES keys, per host, port and route.
+    CREATE TABLE remote_desktop_certificates (
+      host TEXT NOT NULL,
+      port INTEGER NOT NULL CHECK(port BETWEEN 1 AND 65535),
+      gateway TEXT NOT NULL DEFAULT '',
+      fingerprint TEXT NOT NULL,
+      subject TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(host, port, gateway)
+    ) STRICT;
+  `);
+}
+
+/**
+ * gNMI and NETCONF hosts join the saved host kinds, and their saved requests
+ * get a table. gNMI certificates are pinned in remote_desktop_certificates,
+ * keyed like RDP's by host, port and route.
+ */
+function addManagementHosts(db: DatabaseSync): void {
+  rebuildConnectionProfileKinds(
+    db,
+    `kind IN ('openssh', 'ssh', 'local', 'serial', 'telnet', 'rdp', 'vnc')`,
+    `kind IN ('openssh', 'ssh', 'local', 'serial', 'telnet', 'rdp', 'vnc', 'gnmi', 'netconf')`,
+    'gNMI and NETCONF hosts',
+  );
+  db.exec(`
+    -- No foreign key: a later rebuild of connection_profiles would cascade
+    -- into it. Deleting a saved host deletes its requests explicitly.
+    CREATE TABLE management_requests (
+      id TEXT PRIMARY KEY,
+      protocol TEXT NOT NULL CHECK(protocol IN ('gnmi', 'netconf')),
+      -- NULL: offered for every host of the protocol.
+      profile_id TEXT,
+      name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 200),
+      request_json TEXT NOT NULL CHECK(json_valid(request_json)),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    ) STRICT;
+    CREATE INDEX management_requests_scope ON management_requests(protocol, profile_id);
+  `);
+}
+
+/**
+ * Admit new kinds in the connection_profiles CHECK constraint, which SQLite
+ * can only change by rebuilding the table. The rebuild reuses the table's
+ * own stored definition so every column added by earlier migrations carries
+ * over unchanged.
+ */
+function rebuildConnectionProfileKinds(
+  db: DatabaseSync,
+  previousKinds: string,
+  nextKinds: string,
+  what: string,
+): void {
   const table = db
     .prepare(`SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'connection_profiles'`)
     .get();
   const definition = String(table?.sql ?? '');
-  const previousKinds = `kind IN ('openssh', 'ssh', 'local', 'serial', 'telnet')`;
   if (!definition.includes(previousKinds)) {
-    throw new Error('connection_profiles has an unexpected definition; cannot add RDP and VNC hosts');
+    throw new Error(`connection_profiles has an unexpected definition; cannot add ${what}`);
   }
   const rebuilt = definition
-    .replace(previousKinds, `kind IN ('openssh', 'ssh', 'local', 'serial', 'telnet', 'rdp', 'vnc')`)
+    .replace(previousKinds, nextKinds)
     .replace(/^CREATE TABLE\s+"?connection_profiles"?/, 'CREATE TABLE connection_profiles_rebuilt');
   const indexes = db
     .prepare(`
@@ -528,18 +597,6 @@ function addRemoteDesktopHosts(db: DatabaseSync): void {
   db.exec(`
     INSERT INTO connection_tags SELECT * FROM connection_tags_rebuild;
     DROP TABLE connection_tags_rebuild;
-
-    -- Pinned RDP certificates, and VNC RSA-AES keys, per host, port and route.
-    CREATE TABLE remote_desktop_certificates (
-      host TEXT NOT NULL,
-      port INTEGER NOT NULL CHECK(port BETWEEN 1 AND 65535),
-      gateway TEXT NOT NULL DEFAULT '',
-      fingerprint TEXT NOT NULL,
-      subject TEXT NOT NULL DEFAULT '',
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY(host, port, gateway)
-    ) STRICT;
   `);
 }
 
@@ -1530,6 +1587,49 @@ export class MuxusDatabase {
       .run(id);
   }
 
+  /** Saved requests offered on a host: its own and the protocol-wide ones. */
+  listManagementRequests(protocol: ManagementProtocol, profileId?: string): SavedManagementRequest[] {
+    const rows = this.db
+      .prepare(`
+        SELECT id, protocol, profile_id, name, request_json, created_at, updated_at
+        FROM management_requests
+        WHERE protocol = ? AND (profile_id IS NULL OR profile_id = ?)
+        ORDER BY name COLLATE NOCASE, created_at
+      `)
+      .all(protocol, profileId ?? null);
+    return rows.map(managementRequestFromRow);
+  }
+
+  saveManagementRequest(input: SavedManagementRequestInput): SavedManagementRequest {
+    requireNonEmpty(input.name, 'name');
+    assertSecretFree(input.request, 'request');
+    const id = input.id ?? nanoid();
+    const json = JSON.stringify(input.request);
+    this.db
+      .prepare(`
+        INSERT INTO management_requests(id, protocol, profile_id, name, request_json)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          protocol = excluded.protocol,
+          profile_id = excluded.profile_id,
+          name = excluded.name,
+          request_json = excluded.request_json,
+          updated_at = CURRENT_TIMESTAMP
+      `)
+      .run(id, input.protocol, input.profileId ?? null, input.name.trim(), json);
+    const row = this.db
+      .prepare(`
+        SELECT id, protocol, profile_id, name, request_json, created_at, updated_at
+        FROM management_requests WHERE id = ?
+      `)
+      .get(id);
+    return managementRequestFromRow(row!);
+  }
+
+  deleteManagementRequest(id: string): boolean {
+    return this.db.prepare('DELETE FROM management_requests WHERE id = ?').run(id).changes > 0;
+  }
+
   deleteSavedHostProfile(id: string): boolean {
     const deleted =
       this.db
@@ -1539,6 +1639,7 @@ export class MuxusDatabase {
       this.db
         .prepare('DELETE FROM session_logging_policies WHERE profile_key = ?')
         .run(`profile:${id}`);
+      this.db.prepare('DELETE FROM management_requests WHERE profile_id = ?').run(id);
     }
     return deleted;
   }
@@ -2465,6 +2566,19 @@ function metadataFromRow(row: SqlRow): OpenSshMetadata {
     loginSequence: loginSequenceFromJson(row.login_sequence_json),
     lastConnectedAt: optionalString(row.last_connected_at),
     connectCount: Number(row.connect_count),
+  };
+}
+
+function managementRequestFromRow(row: SqlRow): SavedManagementRequest {
+  const profileId = optionalString(row.profile_id);
+  return {
+    id: String(row.id),
+    protocol: String(row.protocol) as ManagementProtocol,
+    ...(profileId ? { profileId } : {}),
+    name: String(row.name),
+    request: JSON.parse(String(row.request_json)) as Record<string, unknown>,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
   };
 }
 

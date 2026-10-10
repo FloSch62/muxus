@@ -5,6 +5,7 @@ export type ConnectionLeaseOwner =
   | 'editor'
   | 'dial'
   | 'desktop'
+  | 'management'
   | 'stats';
 
 export interface LeaseableConnection {

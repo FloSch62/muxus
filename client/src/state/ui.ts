@@ -8,6 +8,8 @@ export type HostEditorState =
   | {
       mode: 'new';
       prefillTarget?: string;
+      /** Name for the new host, e.g. when adding a gNMI host for an SSH one. */
+      prefillName?: string;
       group?: string;
       kind?: SavedHostProfile['kind'];
     }

@@ -7,6 +7,8 @@ import type {
   SavedHostProfilesResponse,
 } from '@muxus/shared';
 import {
+  gnmiProfileSchema,
+  netconfProfileSchema,
   rdpProfileSchema,
   serialProfileSchema,
   sshProfileSchema,
@@ -29,10 +31,12 @@ const savedProfileSchema = z.object({
     serialProfileSchema,
     rdpProfileSchema,
     vncProfileSchema,
+    gnmiProfileSchema,
+    netconfProfileSchema,
   ]),
 });
 
-/** Muxus-owned SSH, Telnet, serial, RDP, and VNC hosts. */
+/** Muxus-owned SSH, Telnet, serial, RDP, VNC, gNMI, and NETCONF hosts. */
 export function registerProfileRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/profiles', (): SavedHostProfilesResponse => ({
     profiles: ctx.database.listSavedHostProfiles(),

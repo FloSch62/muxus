@@ -1,4 +1,3 @@
-import net from 'node:net';
 import type { Duplex } from 'node:stream';
 import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
 import { nanoid } from 'nanoid';
@@ -25,6 +24,7 @@ import {
   desktopPasswordLabel,
   type DesktopPasswordTarget,
 } from '../security/password-vault.js';
+import { connectFailureMessage, connectTcp, connectThroughGateway } from '../util/dial.js';
 import { certificateChallenge, type PresentedCertificate } from './certificates.js';
 import { DesktopPasswords, type VaultPasswordRef } from './desktop-passwords.js';
 import { serveRdpCleanPath, type RdpStreamTarget } from './rdp-proxy.js';
@@ -32,7 +32,6 @@ import { serveRdpCleanPath, type RdpStreamTarget } from './rdp-proxy.js';
 const CONNECT_TIMEOUT_MS = 30_000;
 const KEEPALIVE_MS = 30_000;
 const TICKET_TTL_MS = 60_000;
-const TCP_CONNECT_TIMEOUT_MS = 15_000;
 
 type ClientReply<Op extends DesktopClientMessage['op']> = Extract<DesktopClientMessage, { op: Op }>;
 type ResponseOp = 'auth-response' | 'host-key-response' | 'certificate-response';
@@ -64,63 +63,6 @@ export class DesktopTickets {
     if (!ticket || ticket.protocol !== protocol || ticket.expires <= Date.now()) return undefined;
     return ticket.session.closed ? undefined : ticket.session;
   }
-}
-
-/** Give an SSH channel-open failure the errno a direct socket would have reported. */
-function channelOpenError(err: Error): Error {
-  const reason = (err as { reason?: number }).reason;
-  const code =
-    /refused/i.test(err.message) ? 'ECONNREFUSED'
-    : /timed? ?out/i.test(err.message) ? 'ETIMEDOUT'
-    : /resolve|not known|no such host/i.test(err.message) ? 'ENOTFOUND'
-    : reason === 1 ? 'EACCES'
-    : undefined;
-  return Object.assign(new Error(`The SSH gateway could not open the connection: ${err.message}`), {
-    code,
-  });
-}
-
-/** A connect failure as one sentence (WebSocket close reasons cap at 123 bytes). */
-export function connectFailureMessage(err: unknown): string {
-  switch ((err as NodeJS.ErrnoException | undefined)?.code) {
-    case 'ECONNREFUSED':
-      return 'The remote computer refused the connection. Check the port and that the server runs.';
-    case 'ENOTFOUND':
-    case 'EAI_AGAIN':
-      return 'The host name could not be resolved.';
-    case 'ETIMEDOUT':
-      return 'The connection timed out.';
-    case 'EHOSTUNREACH':
-    case 'ENETUNREACH':
-      return 'The remote computer is unreachable.';
-    case 'EACCES':
-      return 'The SSH gateway is not allowed to open this connection.';
-    default:
-      return err instanceof Error ? err.message : String(err);
-  }
-}
-
-function connectTcp(host: string, port: number): Promise<net.Socket> {
-  return new Promise((resolve, reject) => {
-    const socket = net.connect({ host, port });
-    const timer = setTimeout(() => {
-      socket.destroy();
-      reject(Object.assign(new Error(`Timed out connecting to ${host}:${port}`), { code: 'ETIMEDOUT' }));
-    }, TCP_CONNECT_TIMEOUT_MS);
-    socket.once('connect', () => {
-      clearTimeout(timer);
-      socket.off('error', onError);
-      // Pointer and key events are tiny; do not let Nagle hold them back.
-      socket.setNoDelay(true);
-      socket.setKeepAlive(true, 30_000);
-      resolve(socket);
-    });
-    const onError = (err: Error) => {
-      clearTimeout(timer);
-      reject(err);
-    };
-    socket.once('error', onError);
-  });
 }
 
 /**
@@ -529,24 +471,7 @@ export class DesktopSession {
       return connectTcp(profile.host, profile.port);
     }
     this.status(`Connecting to ${target} through ${profile.sshGateway!.target} …`, true);
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      const timer = setTimeout(() => {
-        settled = true;
-        reject(Object.assign(new Error(`Timed out connecting to ${target} through the SSH gateway`), { code: 'ETIMEDOUT' }));
-      }, TCP_CONNECT_TIMEOUT_MS);
-      gateway.connection.client.forwardOut('127.0.0.1', 0, profile.host, profile.port, (err, channel) => {
-        clearTimeout(timer);
-        // A channel that opens after the caller gave up must not linger.
-        if (settled) {
-          channel?.destroy();
-          return;
-        }
-        settled = true;
-        if (err) reject(channelOpenError(err));
-        else resolve(channel);
-      });
-    });
+    return connectThroughGateway(gateway.connection.client, profile.host, profile.port);
   }
 
   private async acceptCertificate(certificate: PresentedCertificate): Promise<boolean> {

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { SessionProfile, WorkspaceLayoutV1 } from '@muxus/shared';
-import { isDesktopProfile } from '@muxus/shared/ws-protocol';
+import { isTerminalProfile } from '@muxus/shared/ws-protocol';
 import type { ReattachMode } from '../connection-recovery.js';
 import {
   equalizeSplits,
@@ -219,11 +219,12 @@ export function isRemoteSessionTab(tab: TerminalTab): tab is SessionTab {
 }
 
 /**
- * Connected terminal sessions, the tabs mirrored input can reach. A remote
- * desktop is connected too, but it has no terminal to type into.
+ * Connected terminal sessions, the tabs mirrored input can reach. Remote
+ * desktops and management sessions are connected too, but have no terminal
+ * to type into.
  */
 export function isMultiExecTarget(tab: TerminalTab): boolean {
-  return !!tab.profile && tab.status === 'connected' && !isDesktopProfile(tab.profile);
+  return !!tab.profile && tab.status === 'connected' && isTerminalProfile(tab.profile);
 }
 
 /**

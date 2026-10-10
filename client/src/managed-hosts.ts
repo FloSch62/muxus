@@ -13,6 +13,7 @@ import {
   type HostGroup,
 } from './host-organization.js';
 import { matchScore, searchTokens } from './host-search.js';
+import { gnmicCommand } from './management/copy-as.js';
 import {
   filterSavedHosts,
   openSshJumpHops,
@@ -227,6 +228,11 @@ export function managedHostCopyCommand(
   }
   if (profile.kind === 'rdp' || profile.kind === 'vnc') {
     return { label: 'Copy address', text: `${profile.host}:${profile.port}` };
+  }
+  if (profile.kind === 'gnmi') return { label: 'Copy gnmic command', text: gnmicCommand(profile) };
+  if (profile.kind === 'netconf') {
+    const user = profile.username ? `${profile.username}@` : '';
+    return { label: 'Copy ssh command', text: `ssh -p ${profile.port} ${user}${profile.host} -s netconf` };
   }
   return profile.kind === 'telnet'
     ? { label: 'Copy telnet command', text: `telnet ${profile.host} ${profile.port}` }
