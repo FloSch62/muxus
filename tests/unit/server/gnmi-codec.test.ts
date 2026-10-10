@@ -127,6 +127,23 @@ describe('gRPC message framing', () => {
     expect(messages[0]!.toString()).toBe('hello');
   });
 
+  it('stays linear when a large message arrives in tiny chunks', () => {
+    const body = Buffer.alloc(512 * 1024);
+    for (let i = 0; i < body.length; i += 1024) body[i] = (i / 1024) % 251;
+    const stream = Buffer.concat([frameMessage(body), frameMessage(Buffer.from('next'))]);
+    const decoder = new GrpcFrameDecoder();
+    const messages: Buffer[] = [];
+    // The header split across chunks, then 65 000 pushes: anything that rejoins
+    // the buffered chunks on each push never finishes.
+    messages.push(...decoder.push(stream.subarray(0, 3)));
+    for (let offset = 3; offset < stream.length; offset += 8) {
+      messages.push(...decoder.push(stream.subarray(offset, offset + 8)));
+    }
+    expect(messages).toHaveLength(2);
+    expect(messages[0]!.equals(body)).toBe(true);
+    expect(messages[1]!.toString()).toBe('next');
+  });
+
   it('refuses compressed messages it never asked for', () => {
     const frame = frameMessage(Buffer.from('x'));
     frame[0] = 1;

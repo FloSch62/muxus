@@ -97,36 +97,60 @@ export function frameMessage(payload: Buffer): Buffer {
 export class GrpcFrameDecoder {
   private chunks: Buffer[] = [];
   private buffered = 0;
+  /** Length of the message whose header was read while its body is still arriving. */
+  private pending: number | undefined;
 
   push(chunk: Buffer): Buffer[] {
     this.chunks.push(chunk);
     this.buffered += chunk.length;
     const messages: Buffer[] = [];
-    while (this.buffered >= 5) {
-      const head = this.peek(5);
-      if (head[0] !== 0) {
-        throw new GrpcError(GrpcCode.INTERNAL, 'The device sent a compressed message, which Muxus did not ask for.');
+    for (;;) {
+      if (this.pending === undefined) {
+        if (this.buffered < 5) break;
+        const head = this.take(5);
+        if (head[0] !== 0) {
+          throw new GrpcError(GrpcCode.INTERNAL, 'The device sent a compressed message, which Muxus did not ask for.');
+        }
+        this.pending = head.readUInt32BE(1);
       }
-      const length = head.readUInt32BE(1);
-      if (this.buffered < 5 + length) break;
-      const frame = this.take(5 + length);
-      messages.push(frame.subarray(5));
+      if (this.buffered < this.pending) break;
+      messages.push(this.take(this.pending));
+      this.pending = undefined;
     }
     return messages;
   }
 
-  private peek(length: number): Buffer {
-    if (this.chunks[0]!.length >= length) return this.chunks[0]!.subarray(0, length);
-    return Buffer.concat(this.chunks).subarray(0, length);
-  }
-
+  /**
+   * The next `length` bytes. Each byte is copied at most once, however small
+   * the chunks a large message arrives in.
+   */
   private take(length: number): Buffer {
-    const all = this.chunks.length === 1 ? this.chunks[0]! : Buffer.concat(this.chunks);
-    const taken = all.subarray(0, length);
-    const rest = all.subarray(length);
-    this.chunks = rest.length ? [rest] : [];
-    this.buffered = rest.length;
-    return taken;
+    this.buffered -= length;
+    if (length === 0) return Buffer.alloc(0);
+    const first = this.chunks[0]!;
+    if (first.length >= length) {
+      if (first.length === length) this.chunks.shift();
+      else this.chunks[0] = first.subarray(length);
+      return first.subarray(0, length);
+    }
+    const out = Buffer.allocUnsafe(length);
+    let filled = 0;
+    let used = 0;
+    while (filled < length) {
+      const chunk = this.chunks[used]!;
+      const need = length - filled;
+      if (chunk.length <= need) {
+        chunk.copy(out, filled);
+        filled += chunk.length;
+        used += 1;
+      } else {
+        chunk.copy(out, filled, 0, need);
+        this.chunks[used] = chunk.subarray(need);
+        filled = length;
+      }
+    }
+    this.chunks.splice(0, used);
+    return out;
   }
 }
 
