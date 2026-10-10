@@ -8,13 +8,15 @@ import Stack from '@mui/material/Stack';
 import Tab from '@mui/material/Tab';
 import Tabs from '@mui/material/Tabs';
 import Typography from '@mui/material/Typography';
+import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import DesktopWindowsOutlinedIcon from '@mui/icons-material/DesktopWindowsOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import LanguageOutlinedIcon from '@mui/icons-material/LanguageOutlined';
 import ScreenShareOutlinedIcon from '@mui/icons-material/ScreenShareOutlined';
+import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined';
 import UsbOutlinedIcon from '@mui/icons-material/UsbOutlined';
 
-export type ConnectionKind = 'ssh' | 'telnet' | 'serial' | 'rdp' | 'vnc';
+export type ConnectionKind = 'ssh' | 'telnet' | 'serial' | 'rdp' | 'vnc' | 'gnmi' | 'netconf';
 
 export interface EditorSectionDef<S extends string> {
   value: S;
@@ -191,13 +193,19 @@ export function ConnectionTypeTabs({
       value={kind}
       onChange={(_event, value: ConnectionKind) => onChange(value)}
       variant="fullWidth"
-      sx={{ borderBottom: 1, borderColor: 'divider' }}
+      sx={{
+        borderBottom: 1,
+        borderColor: 'divider',
+        '& .MuiTab-root': { minWidth: 0, px: 1, gap: 0.5 },
+      }}
     >
       <Tab value="ssh" icon={<DnsOutlinedIcon fontSize="small" />} iconPosition="start" label="SSH" />
       <Tab value="telnet" icon={<LanguageOutlinedIcon fontSize="small" />} iconPosition="start" label="Telnet" />
       <Tab value="serial" icon={<UsbOutlinedIcon fontSize="small" />} iconPosition="start" label="Serial" />
       <Tab value="rdp" icon={<DesktopWindowsOutlinedIcon fontSize="small" />} iconPosition="start" label="RDP" />
       <Tab value="vnc" icon={<ScreenShareOutlinedIcon fontSize="small" />} iconPosition="start" label="VNC" />
+      <Tab value="gnmi" icon={<SensorsOutlinedIcon fontSize="small" />} iconPosition="start" label="gNMI" />
+      <Tab value="netconf" icon={<AccountTreeOutlinedIcon fontSize="small" />} iconPosition="start" label="NETCONF" />
     </Tabs>
   );
 }

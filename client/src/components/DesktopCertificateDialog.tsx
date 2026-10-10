@@ -31,9 +31,12 @@ function Field({ label, value, monospace }: { label: string; value: string; mono
 export function DesktopCertificateDialog({
   request,
   onAnswer,
+  service = 'remote-desktop',
 }: {
   request: DesktopCertificateChallenge | null;
   onAnswer: (accept: boolean) => void;
+  /** What presented the certificate, for the sentence that explains why it may not verify. */
+  service?: 'remote-desktop' | 'gnmi';
 }) {
   if (!request) return null;
   const mismatch = request.state === 'mismatch';
@@ -60,8 +63,11 @@ export function DesktopCertificateDialog({
           ) : (
             <Typography variant="body2">
               {request.host}:{request.port} presented a certificate Muxus cannot verify
-              {request.verificationError ? ` (${request.verificationError})` : ''}. Remote Desktop servers usually use
-              self-signed certificates; compare the fingerprint with the server before trusting it.
+              {request.verificationError ? ` (${request.verificationError})` : ''}.{' '}
+              {service === 'gnmi'
+                ? 'Network devices often use self-signed certificates or one from a private lab CA'
+                : 'Remote Desktop servers usually use self-signed certificates'}
+              ; compare the fingerprint with the server before trusting it.
             </Typography>
           )}
           {request.kind === 'rsa-key' ? (

@@ -1,6 +1,5 @@
-import { useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import Alert from '@mui/material/Alert';
-import Autocomplete from '@mui/material/Autocomplete';
 import Box from '@mui/material/Box';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import Stack from '@mui/material/Stack';
@@ -12,18 +11,15 @@ import DesktopWindowsOutlinedIcon from '@mui/icons-material/DesktopWindowsOutlin
 import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
 import ScreenShareOutlinedIcon from '@mui/icons-material/ScreenShareOutlined';
 import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
-import type { SshGateway } from '@muxus/shared';
-import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
 import { useDeleteHostProfile, useSaveHostProfile, useUpdateHostProfileMetadata } from '../api/profiles.js';
 import { confirmDeleteHost } from '../host-actions.js';
-import { hostDisplayName } from '../host-organization.js';
-import { savedHostAddress, savedHostDisplayName } from '../saved-hosts.js';
 import { connectSavedHost } from '../session-actions.js';
 import type { HostEditorState } from '../state/ui.js';
 import { useUiStore } from '../state/ui.js';
 import { FolderPathField } from './FolderPathField.js';
 import { HostColorPicker } from './HostColorPicker.js';
 import { EditorShell, type EditorSectionDef } from './host-editor/EditorShell.js';
+import { SshGatewayField } from './host-editor/SshGatewayField.js';
 import {
   DEFAULT_DESKTOP_PORTS,
   desktopDraftMetadataPatch,
@@ -35,13 +31,6 @@ import {
 
 type EditorState = Exclude<HostEditorState, false>;
 type Section = 'general' | 'logon' | 'route' | 'options';
-
-interface GatewayOption {
-  key: string;
-  label: string;
-  detail: string;
-  gateway: SshGateway;
-}
 
 /**
  * RDP/VNC editor rendered into the shared host-editor shell, so switching the
@@ -227,40 +216,6 @@ function LogonSection({ kind, draft, set }: SectionProps) {
 }
 
 function RouteSection({ kind, draft, set }: SectionProps) {
-  const { data: config } = useSshConfig();
-  const { data: saved } = useSavedHostProfiles();
-  const options = useMemo<GatewayOption[]>(() => {
-    const fromConfig = (config?.hosts ?? []).map((host) => ({
-      key: `ssh:${host.alias}`,
-      label: hostDisplayName(host),
-      detail: host.alias,
-      gateway: { target: host.alias },
-    }));
-    const fromProfiles = (saved?.profiles ?? []).flatMap((profile) =>
-      profile.profile.kind === 'ssh'
-        ? [
-            {
-              key: `profile:${profile.id}`,
-              label: savedHostDisplayName(profile),
-              detail: savedHostAddress(profile),
-              gateway: { target: profile.profile.target, profileId: profile.id },
-            },
-          ]
-        : [],
-    );
-    return [...fromConfig, ...fromProfiles].sort((a, b) => a.label.localeCompare(b.label));
-  }, [config?.hosts, saved?.profiles]);
-  const selectedKey = draft.sshGateway
-    ? draft.sshGateway.profileId
-      ? `profile:${draft.sshGateway.profileId}`
-      : `ssh:${draft.sshGateway.target}`
-    : undefined;
-  const selected =
-    options.find((option) => option.key === selectedKey) ??
-    (draft.sshGateway
-      ? { key: selectedKey!, label: draft.sshGateway.target, detail: 'Not found', gateway: draft.sshGateway }
-      : null);
-
   return (
     <Stack spacing={2}>
       <Box>
@@ -273,29 +228,7 @@ function RouteSection({ kind, draft, set }: SectionProps) {
           servers behind a bastion or listening only on localhost.
         </Typography>
       </Box>
-      <Autocomplete<GatewayOption>
-        options={options}
-        value={selected}
-        isOptionEqualToValue={(option, value) => option.key === value.key}
-        getOptionLabel={(option) => option.label}
-        onChange={(_event, value) => set({ sshGateway: value?.gateway })}
-        renderOption={(props, option) => {
-          const { key, ...optionProps } = props;
-          return (
-            <Box component="li" key={key} {...optionProps}>
-              <Box sx={{ minWidth: 0 }}>
-                <Typography variant="body2">{option.label}</Typography>
-                <Typography variant="caption" color="textSecondary" noWrap>
-                  {option.detail}
-                </Typography>
-              </Box>
-            </Box>
-          );
-        }}
-        renderInput={(params) => (
-          <TextField {...params} label="SSH gateway" placeholder="Direct connection" />
-        )}
-      />
+      <SshGatewayField value={draft.sshGateway} onChange={(sshGateway) => set({ sshGateway })} />
     </Stack>
   );
 }

@@ -23,6 +23,8 @@ import { registerTerminalSocket } from './ws/terminal-socket.js';
 import { TerminalInputs } from './ws/terminal-inputs.js';
 import { registerSftpLeaseSocket } from './ws/sftp-lease-socket.js';
 import { registerDesktopSockets } from './remote-desktop/desktop-socket.js';
+import { registerManagementSocket } from './management/management-socket.js';
+import { registerManagementRequestRoutes } from './routes/management-requests.js';
 import { websocketHeaderHasToken } from './auth.js';
 import { MuxusDatabase } from './persistence/database.js';
 import { registerWorkspaceRoutes } from './routes/workspaces.js';
@@ -222,6 +224,8 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   registerTerminalSocket(app, ctx);
   registerSftpLeaseSocket(app, ctx);
   registerDesktopSockets(app, ctx);
+  registerManagementSocket(app, ctx);
+  registerManagementRequestRoutes(app, ctx);
 
   // Serve the built client in production (same-origin, no CORS needed).
   const clientDist = config.staticRoot ?? path.resolve(moduleDir, '../../client/dist');

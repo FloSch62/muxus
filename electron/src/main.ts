@@ -886,6 +886,28 @@ ipcMain.handle('muxus:select-private-key', async (event): Promise<string | undef
   return result.canceled ? undefined : result.filePaths[0];
 });
 
+const CERTIFICATE_FILE_TITLES: Record<string, string> = {
+  ca: 'Choose CA certificate',
+  cert: 'Choose client certificate',
+  key: 'Choose client key',
+};
+
+ipcMain.handle('muxus:select-certificate-file', async (event, kind: unknown): Promise<string | undefined> => {
+  const win = senderWindow(event);
+  if (!win || typeof kind !== 'string' || !(kind in CERTIFICATE_FILE_TITLES)) return undefined;
+  const result = await dialog.showOpenDialog(win, {
+    title: CERTIFICATE_FILE_TITLES[kind],
+    defaultPath: app.getPath('home'),
+    buttonLabel: 'Use file',
+    properties: ['openFile', 'showHiddenFiles'],
+    filters: [
+      { name: 'PEM files', extensions: ['pem', 'crt', 'cer', 'key'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  });
+  return result.canceled ? undefined : result.filePaths[0];
+});
+
 ipcMain.handle(
   'muxus:select-log-file',
   async (event, defaultPath: unknown): Promise<string | undefined> => {
@@ -1409,7 +1431,10 @@ function parseWindowLaunch(value: unknown): AppWindowLaunch | undefined {
             Number.isInteger(profile.port) &&
             profile.port >= 1 &&
             profile.port <= 65_535))) ||
-      ((profile.kind === 'rdp' || profile.kind === 'vnc') &&
+      ((profile.kind === 'rdp' ||
+        profile.kind === 'vnc' ||
+        profile.kind === 'gnmi' ||
+        profile.kind === 'netconf') &&
         validProfileId(profile.profileId) &&
         typeof profile.host === 'string' &&
         profile.host.length > 0 &&

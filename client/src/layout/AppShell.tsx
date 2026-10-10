@@ -11,7 +11,7 @@ import {
 } from 'react';
 import Box from '@mui/material/Box';
 import { alpha } from '@mui/material/styles';
-import { isDesktopProfile } from '@muxus/shared/ws-protocol';
+import { isDesktopProfile, isManagementProfile } from '@muxus/shared/ws-protocol';
 import { paneFocusOpacity, usePrefsStore } from '../state/prefs.js';
 import { multiExecPaneIds, useMultiExecStore } from '../state/multi-exec.js';
 import {
@@ -40,6 +40,7 @@ import { EmptyPane } from '../components/EmptyPane.js';
 import { TabStrip } from '../components/TabStrip.js';
 import { TerminalView } from '../components/TerminalView.js';
 import { RemoteDesktopView } from '../components/RemoteDesktopView.js';
+import { ManagementView } from '../components/ManagementView.js';
 import {
   loadForwardingPanel,
   loadRemoteEditorWorkspace,
@@ -269,6 +270,14 @@ function PaneCanvas({
               {tab.profile && isDesktopProfile(tab.profile) ? (
                 <ErrorBoundary label="This remote desktop">
                   <RemoteDesktopView
+                    tab={tab}
+                    profile={tab.profile}
+                    active={visible && pane.id === activePaneId}
+                  />
+                </ErrorBoundary>
+              ) : tab.profile && isManagementProfile(tab.profile) ? (
+                <ErrorBoundary label="This management session">
+                  <ManagementView
                     tab={tab}
                     profile={tab.profile}
                     active={visible && pane.id === activePaneId}

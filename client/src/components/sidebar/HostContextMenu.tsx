@@ -14,6 +14,8 @@ import LibraryAddOutlinedIcon from '@mui/icons-material/LibraryAddOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
+import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
+import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined';
 import { useSavedHostProfiles } from '../../api/queries.js';
 import { copyToClipboard } from '../../clipboard.js';
 import {
@@ -33,6 +35,8 @@ import {
   loadTerminalViewImpl,
 } from '../../lazy-features.js';
 import { showToast } from '../../state/toast.js';
+import { hostDisplayName } from '../../host-organization.js';
+import { savedHostDisplayName } from '../../saved-hosts.js';
 import { useUiStore } from '../../state/ui.js';
 import {
   managedHostSupportsSftp,
@@ -212,6 +216,30 @@ export function HostContextMenu({
         </ListItemIcon>
         Duplicate
       </MenuItem>
+      {menu && isSshHost(menu.host) && !forSelection ? (
+        <>
+          <MenuItem
+            onMouseEnter={() => void loadHostEditorDialog()}
+            onFocus={() => void loadHostEditorDialog()}
+            onClick={run((host) => setHostEditor(managementHostFor(host, 'gnmi')))}
+          >
+            <ListItemIcon>
+              <SensorsOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            Add gNMI host for it…
+          </MenuItem>
+          <MenuItem
+            onMouseEnter={() => void loadHostEditorDialog()}
+            onFocus={() => void loadHostEditorDialog()}
+            onClick={run((host) => setHostEditor(managementHostFor(host, 'netconf')))}
+          >
+            <ListItemIcon>
+              <AccountTreeOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            Add NETCONF host for it…
+          </MenuItem>
+        </>
+      ) : null}
       <MenuItem
         onClick={run(() => {
           if (!copyAction) return;
@@ -237,4 +265,40 @@ export function HostContextMenu({
       </MenuItem>
     </Menu>
   );
+}
+
+function isSshHost(host: ManagedHost): boolean {
+  return host.kind === 'ssh' || host.entry.profile.kind === 'ssh';
+}
+
+/**
+ * A new gNMI or NETCONF host for the device an SSH host reaches: same
+ * address and user, same folder. NETCONF keeps an ssh_config alias as its
+ * host so that config's keys and jump hosts still apply.
+ */
+function managementHostFor(host: ManagedHost, kind: 'gnmi' | 'netconf') {
+  const protocol = kind === 'gnmi' ? 'gNMI' : 'NETCONF';
+  if (host.kind === 'ssh') {
+    const { resolved } = host.entry;
+    const target = kind === 'netconf' ? host.entry.alias : resolved.hostname;
+    return {
+      mode: 'new' as const,
+      kind,
+      prefillTarget: `${resolved.user ? `${resolved.user}@` : ''}${target}`,
+      prefillName: `${hostDisplayName(host.entry)} (${protocol})`,
+      group: host.entry.metadata?.group,
+    };
+  }
+  const profile = host.entry.profile;
+  // The SSH port means nothing to gNMI or NETCONF: keep only the host.
+  const address = profile.kind === 'ssh' ? profile.target.replace(/^[^@]*@/, '') : '';
+  const target = address.split(':').length === 2 ? address.split(':')[0]! : address;
+  const user = profile.kind === 'ssh' ? (profile.user ?? (profile.target.includes('@') ? profile.target.split('@')[0] : undefined)) : undefined;
+  return {
+    mode: 'new' as const,
+    kind,
+    prefillTarget: `${user ? `${user}@` : ''}${target}`,
+    prefillName: `${savedHostDisplayName(host.entry)} (${protocol})`,
+    group: host.entry.metadata.group,
+  };
 }

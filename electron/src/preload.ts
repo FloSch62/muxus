@@ -203,6 +203,10 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   selectPrivateKey(): Promise<string | undefined> {
     return ipcRenderer.invoke('muxus:select-private-key');
   },
+  /** Pick a PEM file for gNMI TLS: a CA bundle, a client certificate or its key. */
+  selectCertificateFile(kind: 'ca' | 'cert' | 'key'): Promise<string | undefined> {
+    return ipcRenderer.invoke('muxus:select-certificate-file', kind);
+  },
   /** Open a native save dialog for a session log file; resolves to the chosen path. */
   selectLogFile(defaultPath: string): Promise<string | undefined> {
     return ipcRenderer.invoke('muxus:select-log-file', defaultPath);

@@ -929,7 +929,7 @@ export function folderPasswordLabel(path: string): string {
  * means a different account in each domain, so both are part of the key.
  */
 export interface DesktopPasswordTarget {
-  protocol: 'rdp' | 'vnc';
+  protocol: 'rdp' | 'vnc' | 'gnmi';
   user: string;
   host: string;
   port: number;
@@ -959,7 +959,8 @@ export function desktopPasswordLabel(input: DesktopPasswordTarget): string {
   const user = input.domain && input.user ? `${input.domain}\\${input.user}` : input.user;
   const name = user ? `${user}@${input.host}` : input.host;
   const route = input.gateway ? ` via ${input.gatewayLabel || input.gateway}` : '';
-  return `${input.protocol.toUpperCase()} ${name}:${input.port}${route}`;
+  const protocol = input.protocol === 'gnmi' ? 'gNMI' : input.protocol.toUpperCase();
+  return `${protocol} ${name}:${input.port}${route}`;
 }
 
 export function validateMasterPassword(password: string): void {

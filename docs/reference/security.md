@@ -227,6 +227,30 @@ which on Linux means group membership.
   host always connects with its current settings, including this one, even from a tab
   opened before the host was edited.
 
+## NETCONF and gNMI
+
+- **NETCONF** runs inside SSH and inherits its protections: host keys are checked, and
+  passwords come from the prompt or the vault.
+- **gNMI TLS ends in the backend**, which verifies the certificate against the system's
+  authorities (or the CA set for the host) and the host name. Anything else is shown with
+  its SHA-256 fingerprint and, once trusted, pinned per host, port and SSH gateway, with a
+  warning when it changes. **TLS, don't verify** and **plain text** turn this off and say
+  so in the host editor and the session header.
+- **gNMI credentials** travel as gRPC metadata with every call, as the protocol requires,
+  so they are only as private as the transport: without TLS or an SSH gateway they cross
+  the network readable. A saved password belongs to the user, host, port and gateway.
+- **Changes are explicit.** gNMI Sets are shown as a diff and sent only after **Apply**;
+  NETCONF changes to running, commits and discards ask first.
+- **gNOI and gNSI calls are limited** to the RPCs the tools use; the backend refuses any
+  other gRPC method. Rebooting asks you to type the host's name; restarting a process,
+  clearing a BGP neighbor and deleting a file ask first.
+- **gNSI rotations stay provisional** until you finalize them: closing the tab or losing
+  the connection rolls the policy, certificate or keys back on the device. A private key
+  chosen for a certificate rotation stays in the tab's memory to be sent and is never
+  written to disk.
+- **Saved requests** are stored in the local database and refused if they contain a field
+  named like a password, passphrase, secret or token.
+
 ## Security keys
 
 A security key `IdentityFile` is signed through a private `ssh-agent` that Muxus starts

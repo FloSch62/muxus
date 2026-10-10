@@ -4,7 +4,7 @@ import type {
   SessionProfile,
   SshHostEntry,
 } from '@muxus/shared';
-import { isDesktopProfile } from '@muxus/shared/ws-protocol';
+import { isTerminalProfile } from '@muxus/shared/ws-protocol';
 import type { ManagedHost } from './managed-hosts.js';
 import { localShellLaunchArguments } from './local-shell-profile.js';
 import { savedHostDisplayName } from './saved-hosts.js';
@@ -267,7 +267,7 @@ export async function requestForceReconnect(tabId: string): Promise<boolean> {
  */
 export async function requestLogSessionToFile(tabId: string): Promise<boolean> {
   const tab = useTabsStore.getState().tabs.find((candidate) => candidate.id === tabId);
-  if (!tab?.profile || isDesktopProfile(tab.profile)) return false;
+  if (!tab?.profile || !isTerminalProfile(tab.profile)) return false;
   let suggested: string;
   try {
     ({ path: suggested } = await apiFetch<{ path: string }>(
