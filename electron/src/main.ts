@@ -16,6 +16,7 @@ import {
   nativeImage,
   nativeTheme,
   screen,
+  session,
   shell,
   type BrowserWindowConstructorOptions,
   type MenuItemConstructorOptions,
@@ -1555,6 +1556,16 @@ if (!app.requestSingleInstanceLock(initialCommandLineLaunch ?? {})) {
 
   void app.whenReady().then(async () => {
     process.env.MUXUS_VERSION = app.getVersion();
+    // Windows only ever load the embedded server on 127.0.0.1 (see the CSP),
+    // yet under the system proxy setting Chromium holds every request,
+    // loopback included, until the proxy configuration is known: a WPAD
+    // lookup ("Automatically detect settings") or a PAC script download, which
+    // VPN clients often set while connected. Either can leave a new window
+    // blank for seconds. electron-updater has its own session and still
+    // follows the system proxy.
+    await session.defaultSession
+      .setProxy({ mode: 'direct' })
+      .catch((err: unknown) => mainLog('warn', 'could not bypass the system proxy for app windows', err));
     try {
       if (isDevelopment) {
         const seed = await seedDevelopmentDatabase(
