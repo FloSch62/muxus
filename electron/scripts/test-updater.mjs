@@ -173,14 +173,18 @@ try {
   console.log('PASS: normal quit and relaunch keep the old version, even with an update already downloaded');
 
   // A dismissed availability notice stays dismissed after relaunch. The user
-  // can still choose to download from Settings → About.
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
-  await page.getByRole('tab', { name: 'About', exact: true }).click();
-  const settings = page.getByRole('dialog', { name: 'Settings' });
+  // can still choose to download from Settings → About, which the desktop app
+  // shows in a window of its own.
+  const [settings] = await Promise.all([
+    app.waitForEvent('window'),
+    page.getByRole('button', { name: 'Settings', exact: true }).click(),
+  ]);
+  await settings.getByRole('tab', { name: 'About', exact: true }).click();
   await settings.getByRole('button', { name: 'Download update' }).click();
   await settings.getByRole('button', { name: 'Restart to update' }).waitFor();
-  await settings.getByRole('button', { name: 'Close', exact: true }).click();
-  await settings.waitFor({ state: 'hidden' });
+  const settingsClosed = settings.waitForEvent('close');
+  await settings.keyboard.press('Escape');
+  await settingsClosed;
   assert.equal(payloadRequests, downloadsBeforeRelaunch, 'Explicit download should reuse the verified cached payload');
   const logLength = (await readFile(path.join(userData, 'logs/main.log'), 'utf8')).length;
   await page.getByRole('button', { name: 'Restart to update' }).first().click();
