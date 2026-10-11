@@ -1,6 +1,6 @@
 {
   "name": "@muxus/server",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -13,8 +13,8 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@fastify/static": "^10.1.5",
-    "@fastify/websocket": "^11.3.3",
+    "@fastify/static": "^10.1.6",
+    "@fastify/websocket": "^11.3.4",
     "@muxus/shared": "workspace:*",
     "@napi-rs/keyring": "^2.1.0",
     "fastify": "^5.12.5",
@@ -28,7 +28,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/node": "^24.19.1",
+    "@types/node": "^24.19.2",
     "@types/ssh2": "^1.15.6",
     "@types/ws": "^8.18.2",
     "pino-pretty": "^13.2.0",
