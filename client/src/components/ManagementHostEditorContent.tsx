@@ -258,7 +258,7 @@ function ModeCard({
         name="gnmi-transport-security"
         checked={selected}
         onChange={onSelect}
-        sx={{ position: 'absolute', opacity: 0, width: 1, height: 1, m: 0, pointerEvents: 'none' }}
+        sx={{ position: 'absolute', opacity: 0, width: '1px', height: '1px', m: 0, pointerEvents: 'none' }}
       />
       <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 0.5, color: selected ? 'primary.main' : 'text.primary' }}>
         {icon}
