@@ -1,8 +1,8 @@
 {
   "name": "muxus",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
-  "packageManager": "pnpm@12.10.1",
+  "packageManager": "pnpm@12.11.2",
   "description": "Free, open-source SSH, Telnet, and serial client — kitty graphics, split-pane sessions, SFTP, port forwarding",
   "license": "MIT",
   "engines": {
@@ -29,7 +29,7 @@
   "devDependencies": {
     "oxlint": "^1.87.0",
     "oxlint-tsgolint": "^7.0.2003",
-    "playwright-core": "^1.63.0",
+    "playwright-core": "^1.64.0",
     "typescript": "^7.0.2"
   }
 }
