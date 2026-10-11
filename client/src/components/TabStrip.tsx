@@ -52,7 +52,7 @@ import TerminalIcon from '@mui/icons-material/Terminal';
 import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined';
 import PodcastsOutlinedIcon from '@mui/icons-material/PodcastsOutlined';
 import PowerInputOutlinedIcon from '@mui/icons-material/PowerInputOutlined';
-import { isDesktopProfile } from '@muxus/shared/ws-protocol';
+import { isTerminalProfile } from '@muxus/shared/ws-protocol';
 import { showFileBrowser } from '../file-browser.js';
 import { useChordLabel } from '../keymap/hints.js';
 import { ChordHint, withChord } from './ChordHint.js';
@@ -365,7 +365,7 @@ export function TabStrip({
     (menuTab.status !== 'closed' || menuTab.profile.kind === 'ssh');
   const menuTabReconnectable = !!menuTab?.profile && menuTab.status === 'closed';
   // Multi-execution and session logging act on terminal input and output.
-  const menuTabIsDesktop = !!menuTab?.profile && isDesktopProfile(menuTab.profile);
+  const menuTabWithoutTerminal = !!menuTab?.profile && !isTerminalProfile(menuTab.profile);
 
   const commitRename = () => {
     if (renaming && renameValue.trim()) update(renaming.id, { title: renameValue.trim() });
@@ -1357,8 +1357,8 @@ export function TabStrip({
             </Tooltip>
           </Stack>
         </Box>
-        {menuTabIsDesktop ? null : <Divider />}
-        {menuTabIsDesktop ? null : (
+        {menuTabWithoutTerminal ? null : <Divider />}
+        {menuTabWithoutTerminal ? null : (
           <MenuItem
             disabled={menuTab?.status !== 'connected'}
             onClick={() => {
@@ -1387,7 +1387,7 @@ export function TabStrip({
             <ListItemText>Cancel login sequence</ListItemText>
           </MenuItem>
         ) : null}
-        {menuTabIsDesktop ? null : (
+        {menuTabWithoutTerminal ? null : (
           <MenuItem
             disabled={
               menuTab?.status !== 'connected' ||
@@ -1416,7 +1416,7 @@ export function TabStrip({
             </ListItemText>
           </MenuItem>
         )}
-        {menuTabIsDesktop ? null : (
+        {menuTabWithoutTerminal ? null : (
           <MenuItem
             disabled={
               menuTab?.status !== 'connected' ||

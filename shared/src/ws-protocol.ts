@@ -2,6 +2,12 @@ import { z } from 'zod';
 import type { ConfigForward } from './api-types.js';
 import { normalizeHostKeyFingerprint } from './connection-links.js';
 import {
+  GNMI_DEFAULT_PORT,
+  NETCONF_DEFAULT_PORT,
+  type ManagementSessionInfo,
+  type ManagementStreamMessage,
+} from './management.js';
+import {
   MAX_PACED_PASTE_LENGTH,
   MAX_PASTE_CHAR_DELAY_MS,
   MAX_PASTE_LINE_DELAY_MS,
@@ -179,6 +185,48 @@ export const vncProfileSchema = z.object({
   shareClipboard: z.boolean().optional(),
 });
 
+const filePathSchema = z.string().trim().min(1).max(4096);
+
+/**
+ * A gNMI target: gRPC over HTTP/2, TLS by default. Passwords travel only in
+ * `auth-response` replies or come from the password vault.
+ */
+export const gnmiProfileSchema = z.object({
+  kind: z.literal('gnmi'),
+  /** Stable Muxus database profile when this is a saved host. */
+  profileId: z.string().min(1).max(200).optional(),
+  host: z.string().trim().min(1).max(253),
+  port: z.number().int().min(1).max(65535).default(GNMI_DEFAULT_PORT),
+  username: z.string().trim().max(256).optional(),
+  /** Absent means `verify`: check the certificate, pin one that does not verify. */
+  tls: z.enum(['verify', 'skip-verify', 'plaintext']).optional(),
+  /** Name the certificate must carry, and the SNI sent, when it differs from `host`. */
+  tlsServerName: z.string().trim().min(1).max(253).optional(),
+  /** PEM bundle of authorities to verify the device certificate against. */
+  caFile: filePathSchema.optional(),
+  /** Client certificate and key for mutual TLS. */
+  certFile: filePathSchema.optional(),
+  keyFile: filePathSchema.optional(),
+  sshGateway: sshGatewaySchema.optional(),
+  /** Preferred encoding; absent picks the best one the device supports. */
+  encoding: z.enum(['json_ietf', 'json', 'proto', 'ascii', 'bytes']).optional(),
+});
+
+/**
+ * A NETCONF server, reached over SSH (RFC 6242). The host resolves through
+ * ssh_config like `ssh -s host netconf`, so keys, users and jump hosts set
+ * there apply.
+ */
+export const netconfProfileSchema = z.object({
+  kind: z.literal('netconf'),
+  /** Stable Muxus database profile when this is a saved host. */
+  profileId: z.string().min(1).max(200).optional(),
+  host: z.string().trim().min(1).max(253),
+  port: z.number().int().min(1).max(65535).default(NETCONF_DEFAULT_PORT),
+  username: z.string().trim().max(256).optional(),
+  sshGateway: sshGatewaySchema.optional(),
+});
+
 /** Sessions rendered by xterm.js over /ws/terminal. */
 export const terminalProfileSchema = z.discriminatedUnion('kind', [
   localProfileSchema,
@@ -193,6 +241,12 @@ export const desktopProfileSchema = z.discriminatedUnion('kind', [
   vncProfileSchema,
 ]);
 
+/** Model-driven management sessions over /ws/management. */
+export const managementProfileSchema = z.discriminatedUnion('kind', [
+  gnmiProfileSchema,
+  netconfProfileSchema,
+]);
+
 export const sessionProfileSchema = z.discriminatedUnion('kind', [
   localProfileSchema,
   sshProfileSchema,
@@ -200,6 +254,8 @@ export const sessionProfileSchema = z.discriminatedUnion('kind', [
   serialProfileSchema,
   rdpProfileSchema,
   vncProfileSchema,
+  gnmiProfileSchema,
+  netconfProfileSchema,
 ]);
 export type SessionProfile = z.infer<typeof sessionProfileSchema>;
 export type SshProfile = Extract<SessionProfile, { kind: 'ssh' }>;
@@ -208,12 +264,24 @@ export type TelnetProfile = Extract<SessionProfile, { kind: 'telnet' }>;
 export type SerialProfile = Extract<SessionProfile, { kind: 'serial' }>;
 export type RdpProfile = Extract<SessionProfile, { kind: 'rdp' }>;
 export type VncProfile = Extract<SessionProfile, { kind: 'vnc' }>;
+export type GnmiProfile = Extract<SessionProfile, { kind: 'gnmi' }>;
+export type NetconfProfile = Extract<SessionProfile, { kind: 'netconf' }>;
 export type SshGateway = z.infer<typeof sshGatewaySchema>;
 export type DesktopProfile = z.infer<typeof desktopProfileSchema>;
 export type TerminalProfile = z.infer<typeof terminalProfileSchema>;
+export type ManagementProfile = z.infer<typeof managementProfileSchema>;
 
 export function isDesktopProfile(profile: SessionProfile): profile is DesktopProfile {
   return profile.kind === 'rdp' || profile.kind === 'vnc';
+}
+
+export function isManagementProfile(profile: SessionProfile): profile is ManagementProfile {
+  return profile.kind === 'gnmi' || profile.kind === 'netconf';
+}
+
+/** Sessions with a terminal: everything but remote desktops and management sessions. */
+export function isTerminalProfile(profile: SessionProfile): profile is TerminalProfile {
+  return !isDesktopProfile(profile) && !isManagementProfile(profile);
 }
 
 export type AuthPromptPurpose =
@@ -563,6 +631,170 @@ export type DesktopServerMessage =
   | { op: 'credentials'; credentials: DesktopCredentials }
   /** Answer to `server-key`: whether the VNC client may continue with this key. */
   | { op: 'server-key-verdict'; accept: boolean }
+  | {
+      op: 'exit';
+      message?: string;
+      reason: 'completed' | 'failed' | 'disconnected';
+    };
+
+/**
+ * /ws/management: one socket per NETCONF or gNMI tab. The client sends
+ * `connect`; the server dials (through any SSH gateway, with the same
+ * auth-prompt/host-key round-trips as a terminal, and certificate trust for
+ * gNMI over TLS), then answers `ready` with what the device advertised.
+ * Requests carry a client-chosen id that their result, error or stream
+ * messages repeat.
+ */
+const requestIdSchema = z.string().min(1).max(64);
+const gnmiPathTextSchema = z.string().max(4096);
+const MAX_MANAGEMENT_PAYLOAD = 16 * 1024 * 1024;
+
+const gnmiSetValueSchema = z.object({
+  path: gnmiPathTextSchema,
+  /** JSON text for json/json_ietf, raw text for ascii. */
+  value: z.string().max(MAX_MANAGEMENT_PAYLOAD),
+  encoding: z.enum(['json_ietf', 'json', 'ascii']),
+});
+
+export const managementClientMessageSchema = z.discriminatedUnion('op', [
+  z.object({ op: z.literal('connect'), profile: managementProfileSchema }),
+  z.object({
+    op: z.literal('auth-response'),
+    answers: z.array(z.string().max(8192)).max(16),
+    rememberPassword: z.boolean().optional(),
+    skipped: z.boolean().optional(),
+  }),
+  z.object({ op: z.literal('host-key-response'), accept: z.boolean() }),
+  z.object({ op: z.literal('certificate-response'), accept: z.boolean() }),
+  z.object({ op: z.literal('gnmi-capabilities'), id: requestIdSchema }),
+  z.object({
+    op: z.literal('gnmi-get'),
+    id: requestIdSchema,
+    prefix: gnmiPathTextSchema.optional(),
+    paths: z.array(gnmiPathTextSchema).min(1).max(128),
+    type: z.enum(['all', 'config', 'state', 'operational']).default('all'),
+    encoding: z.enum(['json_ietf', 'json', 'proto', 'ascii', 'bytes']).optional(),
+    /** gNMI depth extension: levels below each path to return. */
+    depth: z.number().int().min(1).max(64).optional(),
+    /** Abandon the request once the response grows past this many bytes. */
+    maxBytes: z.number().int().min(1024).max(1024 * 1024 * 1024).optional(),
+  }),
+  z.object({
+    op: z.literal('gnmi-set'),
+    id: requestIdSchema,
+    prefix: gnmiPathTextSchema.optional(),
+    updates: z.array(gnmiSetValueSchema).max(512).default([]),
+    replaces: z.array(gnmiSetValueSchema).max(512).default([]),
+    deletes: z.array(gnmiPathTextSchema).max(512).default([]),
+    /** gNMI commit-confirmed extension. */
+    commit: z
+      .discriminatedUnion('action', [
+        z.object({
+          action: z.literal('commit'),
+          id: z.string().min(1).max(200),
+          rollbackSeconds: z.number().int().min(1).max(86_400).optional(),
+        }),
+        z.object({ action: z.literal('confirm'), id: z.string().min(1).max(200) }),
+        z.object({ action: z.literal('cancel'), id: z.string().min(1).max(200) }),
+      ])
+      .optional(),
+  }),
+  z.object({
+    op: z.literal('gnmi-subscribe'),
+    id: requestIdSchema,
+    prefix: gnmiPathTextSchema.optional(),
+    mode: z.enum(['stream', 'once', 'poll']),
+    encoding: z.enum(['json_ietf', 'json', 'proto', 'ascii', 'bytes']).optional(),
+    updatesOnly: z.boolean().optional(),
+    subscriptions: z
+      .array(
+        z.object({
+          path: gnmiPathTextSchema,
+          mode: z.enum(['target-defined', 'on-change', 'sample']).default('target-defined'),
+          sampleIntervalMs: z.number().int().min(1).max(86_400_000).optional(),
+          suppressRedundant: z.boolean().optional(),
+          heartbeatIntervalMs: z.number().int().min(1).max(86_400_000).optional(),
+        }),
+      )
+      .min(1)
+      .max(128),
+  }),
+  /** Ask a POLL subscription for a fresh snapshot. */
+  z.object({ op: z.literal('gnmi-poll'), id: requestIdSchema }),
+  z.object({
+    op: z.literal('netconf-rpc'),
+    id: requestIdSchema,
+    /** The operation element(s) the <rpc> wraps. */
+    xml: z.string().min(1).max(MAX_MANAGEMENT_PAYLOAD),
+    timeoutMs: z.number().int().min(1000).max(3_600_000).optional(),
+  }),
+  /** A unary gNOI/gNSI call on the gNMI connection; `method` must be one Muxus knows. */
+  z.object({
+    op: z.literal('grpc-call'),
+    id: requestIdSchema,
+    method: z.string().min(1).max(200),
+    request: z.record(z.string(), z.unknown()).optional(),
+  }),
+  /** A streaming gNOI/gNSI call; `request` is the first message, if any. */
+  z.object({
+    op: z.literal('grpc-stream'),
+    id: requestIdSchema,
+    method: z.string().min(1).max(200),
+    request: z.record(z.string(), z.unknown()).optional(),
+  }),
+  /** Another message on an open bidirectional call (a Rotate's finalize, say). */
+  z.object({ op: z.literal('grpc-send'), id: requestIdSchema, message: z.record(z.string(), z.unknown()) }),
+  /** No more messages from this side of an open call. */
+  z.object({ op: z.literal('grpc-close-send'), id: requestIdSchema }),
+  z.object({ op: z.literal('gnoi-file-get'), id: requestIdSchema, remoteFile: z.string().min(1).max(4096) }),
+  /** Start an upload; the content follows in `gnoi-file-chunk` messages. */
+  z.object({
+    op: z.literal('gnoi-file-put'),
+    id: requestIdSchema,
+    remoteFile: z.string().min(1).max(4096),
+    /** Octal digits written as a decimal number (644 is rw-r--r--), as devices report them. */
+    permissions: z.number().int().min(0).max(7777).optional(),
+    size: z.number().int().min(0),
+  }),
+  z.object({
+    op: z.literal('gnoi-file-chunk'),
+    id: requestIdSchema,
+    /** Base64, at most a few MiB per chunk. */
+    data: z.string().max(8 * 1024 * 1024),
+    last: z.boolean().optional(),
+  }),
+  /** Open a fresh TLS connection to the device and report its certificate (after a certz rotation). */
+  z.object({ op: z.literal('tls-probe'), id: requestIdSchema }),
+  /** Stop a running request or subscription. */
+  z.object({ op: z.literal('cancel'), id: requestIdSchema }),
+]);
+export type ManagementClientMessage = z.infer<typeof managementClientMessageSchema>;
+export type ManagementRequest = Extract<
+  ManagementClientMessage,
+  {
+    op:
+      | 'gnmi-capabilities'
+      | 'gnmi-get'
+      | 'gnmi-set'
+      | 'gnmi-subscribe'
+      | 'netconf-rpc'
+      | 'grpc-call'
+      | 'grpc-stream'
+      | 'gnoi-file-get'
+      | 'gnoi-file-put'
+      | 'tls-probe';
+  }
+>;
+
+/** Text frames the server sends on /ws/management. */
+export type ManagementServerMessage =
+  | { op: 'status'; message: string; transient?: boolean }
+  | ({ op: 'auth-prompt' } & AuthPromptInfo)
+  | Extract<TerminalServerMessage, { op: 'host-key' }>
+  | ({ op: 'certificate' } & DesktopCertificateChallenge)
+  /** `profile` is what the backend dialed: for a saved host, its current settings. */
+  | { op: 'ready'; info: ManagementSessionInfo; profile: ManagementProfile }
+  | ManagementStreamMessage
   | {
       op: 'exit';
       message?: string;

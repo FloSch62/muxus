@@ -21,6 +21,20 @@ export function hostDetailLines(
       if (profile.shareClipboard === false) lines.push('Clipboard not shared');
       return lines;
     }
+    if (profile.kind === 'gnmi' || profile.kind === 'netconf') {
+      if (profile.sshGateway) lines.push(`via SSH gateway ${profile.sshGateway.target}`);
+      if (profile.kind === 'gnmi') {
+        lines.push(
+          profile.tls === 'plaintext'
+            ? 'Plain text (no TLS)'
+            : profile.tls === 'skip-verify'
+              ? 'TLS, certificate not checked'
+              : 'TLS',
+        );
+        if (profile.certFile) lines.push('Client certificate');
+      }
+      return lines;
+    }
     if (profile.kind !== 'ssh') return lines;
     if (profile.proxyJump?.length) {
       lines.push(

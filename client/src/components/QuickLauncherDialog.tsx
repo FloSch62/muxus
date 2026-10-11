@@ -1101,7 +1101,7 @@ function buildActionResults({
       'shell',
       'local',
     ]),
-    actionResult('new-host', 'Add host', 'Create an SSH, Telnet, serial, RDP, or VNC host', [
+    actionResult('new-host', 'Add host', 'Create an SSH, Telnet, serial, RDP, VNC, gNMI, or NETCONF host', [
       'new',
       'connection',
       'profile',
@@ -1305,6 +1305,8 @@ function profileSummary(profile: SessionProfile): string {
   if (profile.kind === 'serial') return `Serial · ${profile.path}`;
   if (profile.kind === 'rdp') return `RDP · ${profile.host}:${profile.port}`;
   if (profile.kind === 'vnc') return `VNC · ${profile.host}:${profile.port}`;
+  if (profile.kind === 'gnmi') return `gNMI · ${profile.host}:${profile.port}`;
+  if (profile.kind === 'netconf') return `NETCONF · ${profile.host}:${profile.port}`;
   return `Local${profile.cwd ? ` · ${profile.cwd}` : ''}`;
 }
 

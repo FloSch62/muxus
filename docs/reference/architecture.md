@@ -18,6 +18,7 @@ flowchart LR
   Server -->|node-pty| Local["Local shells"]
   Server -->|serialport| Serial["COM / TTY"]
   Server -->|"RDP (TLS) · VNC"| Desktops["Remote desktops"]
+  Server -->|"NETCONF (SSH) · gNMI, gNOI, gNSI (gRPC)"| Devices["Network devices"]
   Server --> DB[("SQLite<br/>metadata · workspaces")]
   Server --> History[("Session history<br/>zstd segments + FTS5")]
   Server -.reads.-> Config[["~/.ssh/config<br/>known_hosts"]]
@@ -108,6 +109,35 @@ control socket (`server-key`) and continues once the server has checked it again
 pinned one or the user has trusted it. The IronRDP client is built from a pinned upstream commit by
 `client/scripts/build-ironrdp.mjs`, because the published package lags fixes that xrdp
 and Windows servers depend on.
+
+## NETCONF and gNMI
+
+Each NETCONF or gNMI tab keeps one control socket (`/ws/management`). The backend speaks the
+device protocol; the renderer sends requests with an id and gets back decoded, JSON-friendly
+results, errors and subscription batches under that id.
+
+- **NETCONF** opens the `netconf` SSH subsystem on a leased transport, so `ssh_config`, jump
+  chains, host keys and the password vault apply as for a terminal. The client handles both
+  RFC 6242 framings, correlates replies by `message-id`, and passes `<rpc-error>`s through
+  for the renderer to show.
+- **gNMI** is gRPC over HTTP/2. Muxus does not use a gRPC library: the backend owns the
+  connection (TCP or an SSH gateway channel), performs TLS itself so certificates can be
+  pinned like RDP's, and runs `node:http2` on top. gRPC framing and the gNMI messages are a
+  few hundred lines, with a protobuf codec driven by descriptors transcribed from
+  `gnmi.proto`, keeping 64-bit counters exact. Subscription updates are batched every
+  100 ms before they reach the renderer.
+- **gNOI and gNSI** share the gNMI connection. The backend holds a fixed table of the RPCs
+  the tools use (method path, call kind, message descriptors) and refuses any other
+  method; the renderer sends and receives those messages as JSON (enums by name, bytes as
+  base64, exact 64-bit values). Streaming calls are batched like subscriptions. File
+  transfers are handled in the backend, which chunks uploads with backpressure and checks
+  both directions against the gNOI hash. gRPC reflection, when the device offers it, tells
+  the workbench which services exist.
+
+The workbench (drafts, results, history, the explorer tree) lives in the renderer per tab,
+so a reconnect loses nothing. Device data from both protocols is merged into one tree;
+list keys are learned from keyed paths the device sends and otherwise guessed from the
+entries.
 
 ## Build
 

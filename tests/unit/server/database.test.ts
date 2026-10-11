@@ -53,6 +53,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 26, name: 'credential-usernames' },
       { version: 27, name: 'login-sequences' },
       { version: 28, name: 'host-paste-pacing' },
+      { version: 29, name: 'management-hosts' },
     ]);
   });
 
@@ -118,7 +119,7 @@ describe('MuxusDatabase migrations', () => {
       legacy.exec('PRAGMA foreign_keys = OFF');
       legacy.exec(`
         ${current.sql
-          .replace(`'telnet', 'rdp', 'vnc')`, `'telnet')`)
+          .replace(`'telnet', 'rdp', 'vnc', 'gnmi', 'netconf')`, `'telnet')`)
           .replace(/^CREATE TABLE "?connection_profiles"?/, 'CREATE TABLE connection_profiles_v21')};
         INSERT INTO connection_profiles_v21 SELECT * FROM connection_profiles;
         DROP TABLE connection_profiles;
@@ -144,8 +145,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 28,
-      name: 'host-paste-pacing',
+      version: 29,
+      name: 'management-hosts',
     });
     expect(database.savedHostProfile(telnet.id)).toMatchObject({
       name: 'Core switch',
@@ -196,6 +197,99 @@ describe('MuxusDatabase migrations', () => {
       expect(indexNames).toEqual(
         expect.arrayContaining(['connection_profiles_recent', 'connection_profiles_group']),
       );
+    } finally {
+      check.close();
+    }
+  });
+
+  it('rebuilds version 28 connection profiles to admit gNMI and NETCONF hosts', () => {
+    temporaryDirectory = mkdtempSync(path.join(os.tmpdir(), 'muxus-v28-migration-'));
+    const filename = path.join(temporaryDirectory, 'muxus.sqlite3');
+    database = new MuxusDatabase(filename);
+    const rdp = database.saveSavedHostProfile({
+      name: 'Build server',
+      profile: { kind: 'rdp', host: 'win-build', port: 3389 },
+    });
+    database.updateSavedHostMetadata(rdp.id, { group: 'Lab' });
+    database.close();
+    database = undefined;
+
+    // Restore the version 28 shape: no management kinds, no saved requests.
+    const legacy = new DatabaseSync(filename);
+    try {
+      const current = legacy
+        .prepare(`SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'connection_profiles'`)
+        .get() as { sql: string };
+      const indexes = legacy
+        .prepare(`SELECT sql FROM sqlite_schema WHERE type = 'index' AND tbl_name = 'connection_profiles' AND sql IS NOT NULL`)
+        .all() as Array<{ sql: string }>;
+      legacy.exec('PRAGMA foreign_keys = OFF');
+      legacy.exec(`
+        ${current.sql
+          .replace(`'vnc', 'gnmi', 'netconf')`, `'vnc')`)
+          .replace(/^CREATE TABLE "?connection_profiles"?/, 'CREATE TABLE connection_profiles_v28')};
+        INSERT INTO connection_profiles_v28 SELECT * FROM connection_profiles;
+        DROP TABLE connection_profiles;
+        ALTER TABLE connection_profiles_v28 RENAME TO connection_profiles;
+        DROP TABLE management_requests;
+        DELETE FROM schema_migrations WHERE version = 29;
+        PRAGMA user_version = 28;
+      `);
+      for (const index of indexes) legacy.exec(index.sql);
+      legacy.exec(`
+        INSERT INTO tags(id, name) VALUES ('tag-1', 'windows');
+        INSERT INTO connection_tags(connection_id, tag_id) VALUES ('${rdp.id}', 'tag-1');
+      `);
+      expect(() =>
+        legacy.exec(`
+          INSERT INTO connection_profiles(id, kind, name, native_config_json)
+          VALUES ('too-early', 'gnmi', 'x', '{}')
+        `),
+      ).toThrow(/CHECK/);
+    } finally {
+      legacy.close();
+    }
+
+    database = new MuxusDatabase(filename);
+    expect(database.appliedMigrations().at(-1)).toEqual({ version: 29, name: 'management-hosts' });
+    expect(database.savedHostProfile(rdp.id)).toMatchObject({ name: 'Build server', metadata: { group: 'Lab' } });
+    const gnmi = database.saveSavedHostProfile({
+      name: 'leaf1',
+      profile: { kind: 'gnmi', host: 'leaf1', port: 57400, username: 'admin', tls: 'skip-verify', caFile: '/lab/ca.pem' },
+    });
+    const netconf = database.saveSavedHostProfile({
+      name: 'leaf1',
+      profile: { kind: 'netconf', host: 'leaf1', port: 830, sshGateway: { target: 'bastion' } },
+    });
+    expect(database.savedHostProfile(gnmi.id)?.profile).toMatchObject({ kind: 'gnmi', tls: 'skip-verify', caFile: '/lab/ca.pem' });
+    expect(database.savedHostProfile(netconf.id)?.profile).toMatchObject({ kind: 'netconf', sshGateway: { target: 'bastion' } });
+
+    const own = database.saveManagementRequest({
+      protocol: 'gnmi',
+      profileId: gnmi.id,
+      name: 'Counters',
+      request: { operation: 'subscribe', paths: ['/interface[name=*]/statistics'] },
+    });
+    database.saveManagementRequest({ protocol: 'gnmi', name: 'System', request: { operation: 'get', paths: ['/system'] } });
+    database.saveManagementRequest({ protocol: 'netconf', name: 'Running', request: { operation: 'get-config' } });
+    expect(database.listManagementRequests('gnmi', gnmi.id).map((request) => request.name)).toEqual(['Counters', 'System']);
+    expect(database.listManagementRequests('gnmi').map((request) => request.name)).toEqual(['System']);
+    expect(database.saveManagementRequest({ ...own, name: 'Interface counters' }).name).toBe('Interface counters');
+    expect(() =>
+      database!.saveManagementRequest({ protocol: 'gnmi', name: 'Leaky', request: { password: 'secret' } }),
+    ).toThrow();
+    // A deleted host takes its own requests along, not the shared ones.
+    expect(database.deleteSavedHostProfile(gnmi.id)).toBe(true);
+    expect(database.listManagementRequests('gnmi', gnmi.id).map((request) => request.name)).toEqual(['System']);
+    database.close();
+    database = undefined;
+
+    const check = new DatabaseSync(filename);
+    try {
+      expect(check.prepare('SELECT connection_id, tag_id FROM connection_tags').all()).toEqual([
+        { connection_id: rdp.id, tag_id: 'tag-1' },
+      ]);
+      expect(check.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
     } finally {
       check.close();
     }
@@ -304,8 +398,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 28,
-      name: 'host-paste-pacing',
+      version: 29,
+      name: 'management-hosts',
     });
     expect(database.passwordVaultConfig()).toMatchObject({
       formatVersion: 2,

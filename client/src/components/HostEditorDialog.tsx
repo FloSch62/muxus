@@ -70,6 +70,12 @@ import {
 import type { ConnectionKind } from './host-editor/EditorShell.js';
 import { NativeHostEditorContent } from './NativeHostEditorContent.js';
 import { RemoteDesktopHostEditorContent } from './RemoteDesktopHostEditorContent.js';
+import { ManagementHostEditorContent } from './ManagementHostEditorContent.js';
+import {
+  blankManagementDraft,
+  managementDraftFromProfile,
+  type ManagementHostDraft,
+} from './host-editor/management-draft.js';
 
 type Section =
   | 'general'
@@ -119,6 +125,9 @@ function HostEditorBody({ state }: { state: OpenState }) {
   const [sshDraft, setSshDraft] = useState<HostDraft>(() => initialSshDraft(state));
   const [nativeDraft, setNativeDraft] = useState<NativeHostDraft>(() => initialNativeDraft(state));
   const [desktopDraft, setDesktopDraft] = useState<DesktopHostDraft>(() => initialDesktopDraft(state));
+  const [managementDraft, setManagementDraft] = useState<ManagementHostDraft>(() =>
+    initialManagementDraft(state),
+  );
   const lastIdentity = useRef(stateIdentity(state));
 
   // Re-seed only when the edited entry itself changes — a connection-type
@@ -130,6 +139,7 @@ function HostEditorBody({ state }: { state: OpenState }) {
     setSshDraft(initialSshDraft(state));
     setNativeDraft(initialNativeDraft(state));
     setDesktopDraft(initialDesktopDraft(state));
+    setManagementDraft(initialManagementDraft(state));
   }, [state]);
 
   const kind = editorKind(state);
@@ -139,6 +149,16 @@ function HostEditorBody({ state }: { state: OpenState }) {
         state={state as SshEditorState}
         draft={sshDraft}
         setDraft={setSshDraft}
+      />
+    );
+  }
+  if (kind === 'gnmi' || kind === 'netconf') {
+    return (
+      <ManagementHostEditorContent
+        state={state}
+        kind={kind}
+        draft={managementDraft}
+        setDraft={setManagementDraft}
       />
     );
   }
@@ -230,6 +250,20 @@ function initialDesktopDraft(state: OpenState): DesktopHostDraft {
     state.mode === 'new' ? state.prefillTarget : undefined,
     state.mode === 'new' ? state.group : undefined,
   );
+}
+
+function initialManagementDraft(state: OpenState): ManagementHostDraft {
+  if (
+    (state.mode === 'edit-profile' || state.mode === 'duplicate-profile') &&
+    (state.entry.profile.kind === 'gnmi' || state.entry.profile.kind === 'netconf')
+  ) {
+    return managementDraftFromProfile(state.entry, state.mode === 'duplicate-profile');
+  }
+  const draft = blankManagementDraft(
+    state.mode === 'new' ? state.prefillTarget : undefined,
+    state.mode === 'new' ? state.group : undefined,
+  );
+  return state.mode === 'new' && state.prefillName ? { ...draft, name: state.prefillName } : draft;
 }
 
 /**

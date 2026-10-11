@@ -27,7 +27,7 @@ export function EmptyPane({
           Start a session
         </Typography>
         <Typography variant="body2" color="textSecondary">
-          Open a shell, connect over SSH, Telnet or serial, or open a remote desktop.
+          Open a shell, connect over SSH, Telnet or serial, open a remote desktop, or manage a device over gNMI or NETCONF.
         </Typography>
       </Box>
       <Box
@@ -56,7 +56,7 @@ export function EmptyPane({
         <EmptyAction
           icon={<AddIcon />}
           title="Add host"
-          description="SSH, Telnet, serial, RDP, VNC"
+          description="SSH, Telnet, serial, RDP, VNC, gNMI, NETCONF"
           onIntent={() => void loadHostEditorDialog()}
           onClick={onAddHost}
         />

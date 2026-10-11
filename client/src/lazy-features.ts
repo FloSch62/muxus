@@ -20,3 +20,4 @@ export const loadRemoteEditorWorkspace = () => import('./components/RemoteEditor
 export const loadTerminalViewImpl = () => import('./components/TerminalViewImpl.js');
 export const loadMonacoTextEditor = () => import('./components/MonacoTextEditor.js');
 export const loadRemoteDesktopViewImpl = () => import('./components/RemoteDesktopViewImpl.js');
+export const loadManagementViewImpl = () => import('./components/ManagementViewImpl.js');

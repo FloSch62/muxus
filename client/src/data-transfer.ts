@@ -1097,7 +1097,9 @@ function validateConnections(
           (version >= 2 &&
             (host.profile.kind === 'ssh' ||
               host.profile.kind === 'rdp' ||
-              host.profile.kind === 'vnc'))) &&
+              host.profile.kind === 'vnc' ||
+              host.profile.kind === 'gnmi' ||
+              host.profile.kind === 'netconf'))) &&
         isRecord(host.metadata),
     ) ||
     !data.hostOrder.every(

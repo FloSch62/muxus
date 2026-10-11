@@ -54,7 +54,12 @@ export function savedHostAddress(profile: SavedHostProfile): string {
       ? `${target}:${connection.port}`
       : target;
   }
-  if (connection.kind === 'rdp' || connection.kind === 'vnc') {
+  if (
+    connection.kind === 'rdp' ||
+    connection.kind === 'vnc' ||
+    connection.kind === 'gnmi' ||
+    connection.kind === 'netconf'
+  ) {
     const address = connection.username
       ? `${connection.username}@${connection.host}:${connection.port}`
       : `${connection.host}:${connection.port}`;

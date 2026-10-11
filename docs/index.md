@@ -94,6 +94,16 @@ use the same local database.
 
     [:octicons-arrow-right-24: Remote desktop](guide/remote-desktop.md)
 
+-   :material-lan: **NETCONF and gNMI**
+
+    ---
+
+    Browse a device's live data, stream telemetry with rates, and review every change as a
+    diff before it is sent or committed. Ping, files and reboots over gNOI; authorization,
+    certificates and SSH keys over gNSI, with safe rotation. Beside the device's CLI.
+
+    [:octicons-arrow-right-24: NETCONF & gNMI](guide/netconf-gnmi.md)
+
 -   :material-swap-horizontal: **Persistent tunnels**
 
     ---
