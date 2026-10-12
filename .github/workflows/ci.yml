@@ -116,6 +116,12 @@ jobs:
       - name: Build unpacked desktop application
         run: pnpm --filter @muxus/electron pack:dir ${{ matrix.pack_args }}
 
+      # The release job runs this too; running it here catches UI changes that
+      # break it before a release is tagged. Nothing is published.
+      - name: Test packaged updater against localhost
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum pnpm --filter @muxus/electron test:updater
+
       - name: Smoke-test bundled X server
         if: runner.os == 'Windows'
         run: node hack/smoke-x11-server.mjs

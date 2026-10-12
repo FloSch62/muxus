@@ -182,8 +182,10 @@ try {
   await settings.getByRole('tab', { name: 'About', exact: true }).click();
   await settings.getByRole('button', { name: 'Download update' }).click();
   await settings.getByRole('button', { name: 'Restart to update' }).waitFor();
+  // Close it as its titlebar button does. Esc would close it on keydown and
+  // leave Playwright's keyup without a page.
   const settingsClosed = settings.waitForEvent('close');
-  await settings.keyboard.press('Escape');
+  await (await app.browserWindow(settings)).evaluate((win) => win.close());
   await settingsClosed;
   assert.equal(payloadRequests, downloadsBeforeRelaunch, 'Explicit download should reuse the verified cached payload');
   const logLength = (await readFile(path.join(userData, 'logs/main.log'), 'utf8')).length;
