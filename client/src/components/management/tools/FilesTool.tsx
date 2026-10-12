@@ -21,7 +21,7 @@ import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import FileUploadOutlinedIcon from '@mui/icons-material/FileUploadOutlined';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { GRPC_METHODS, type ManagementError } from '@muxus/shared';
+import { GRPC_METHODS, type GnmiModel, type ManagementError } from '@muxus/shared';
 import { copyToClipboard } from '../../../clipboard.js';
 import { languageForPath } from '../../../editor/language-detection.js';
 import { permissionString } from '../../../management/tool-format.js';
@@ -30,6 +30,7 @@ import { showToast } from '../../../state/toast.js';
 import { FileTypeIcon } from '../../FileTypeIcon.js';
 import { formatSize } from '../../TransferProgress.js';
 import { CodeEditor } from '../CodeEditor.js';
+import { useWorkbench } from '../context.js';
 import { MONO_FONT } from '../PathText.js';
 import { deviceTime, ErrorAlert, errorOf, Section, ToolHeader, useGrpc, useToolState } from './common.js';
 
@@ -63,24 +64,68 @@ interface FilesState {
   transfers: Transfer[];
 }
 
-const initialFiles = (): FilesState => ({ cwd: '/', entries: [], loading: false, transfers: [] });
+const initialFiles = (cwd: string) => (): FilesState => ({ cwd, entries: [], loading: false, transfers: [] });
 
 /** Files bigger than this are downloaded rather than shown. */
 const PREVIEW_LIMIT = 2 * 1024 * 1024;
 
+/*
+ * Paths are the device's own: `/var/log` on most, `cf3:\config.cfg` on SR OS,
+ * which names its file systems and separates with backslashes.
+ */
+
+/**
+ * Where browsing starts and what an upload is created with: SR OS has no `/`
+ * (its first flash card is cf3:) and takes only 555 or 777 as permissions.
+ */
+function fileSystemOf(models: readonly GnmiModel[] | undefined): { home: string; permissions: number } {
+  return models?.some((model) => model.name === 'nokia-conf')
+    ? { home: 'cf3:\\', permissions: 777 }
+    : { home: '/', permissions: 644 };
+}
+
+function lastSeparator(path: string): number {
+  return Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+}
+
+function trimSeparators(path: string): string {
+  return path.replace(/[/\\]+$/, '');
+}
+
+function isTop(path: string): boolean {
+  return path === '/' || /^[^/\\]+:[/\\]*$/.test(path);
+}
+
 function basename(path: string): string {
-  const trimmed = path.replace(/\/+$/, '');
-  return trimmed.slice(trimmed.lastIndexOf('/') + 1) || '/';
+  const trimmed = trimSeparators(path);
+  return trimmed.slice(lastSeparator(trimmed) + 1) || path;
 }
 
 function joinPath(directory: string, name: string): string {
-  return `${directory.replace(/\/+$/, '')}/${name}`;
+  return `${trimSeparators(directory)}${directory.includes('\\') ? '\\' : '/'}${name}`;
 }
 
 function parentOf(path: string): string {
-  const trimmed = path.replace(/\/+$/, '');
-  const index = trimmed.lastIndexOf('/');
-  return index <= 0 ? '/' : trimmed.slice(0, index);
+  const trimmed = trimSeparators(path);
+  const index = lastSeparator(trimmed);
+  if (index < 0) return path;
+  if (index === 0) return '/';
+  const parent = trimmed.slice(0, index);
+  // The top of a named file system keeps its separator: cf3:\, not cf3:.
+  return parent.endsWith(':') ? trimmed.slice(0, index + 1) : parent;
+}
+
+/** The folders leading to `path`, each with the path that opens it. */
+function crumbsOf(path: string): { label: string; path: string }[] {
+  const separator = path.includes('\\') ? '\\' : '/';
+  const named = /^[^/\\]+:/.test(path);
+  const crumbs: { label: string; path: string }[] = [];
+  for (const label of path.split(/[/\\]/).filter(Boolean)) {
+    const previous = crumbs[crumbs.length - 1]?.path;
+    const next = previous === undefined ? (named ? `${label}${separator}` : `/${label}`) : joinPath(previous, label);
+    crumbs.push({ label, path: next });
+  }
+  return crumbs;
 }
 
 
@@ -93,7 +138,8 @@ function entryFromStat(stat: Record<string, unknown>): Entry {
     ...(size !== undefined ? { size } : {}),
     ...(stat.last_modified !== undefined ? { modified: String(stat.last_modified as string | number) } : {}),
     ...(stat.permissions !== undefined ? { permissions: Number(stat.permissions) } : {}),
-    kind: 'unknown',
+    // SR OS marks folders with a trailing separator; elsewhere a stat tells.
+    kind: /[/\\]$/.test(path) ? 'dir' : 'unknown',
   };
 }
 
@@ -101,7 +147,8 @@ let transferCounter = 0;
 
 export function FilesTool() {
   const grpc = useGrpc();
-  const [state, setState] = useToolState('files', initialFiles);
+  const { home, permissions } = fileSystemOf(useWorkbench().controller.gnmiInfo?.models);
+  const [state, setState] = useToolState('files', initialFiles(home));
   const [pathInput, setPathInput] = useState(state.cwd);
   const [preview, setPreview] = useState<{ path: string; text?: string; loading: boolean; error?: string } | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -145,7 +192,7 @@ export function FilesTool() {
     try {
       const entries = await stat(path);
       if (ticket !== listing.current) return;
-      if (entries.length === 1 && entries[0]!.path === path.replace(/\/+$/, '')) {
+      if (entries.length === 1 && entries[0]!.path === trimSeparators(path)) {
         // A file: show its folder and open it.
         setState({ loading: false });
         void open(parentOf(path));
@@ -244,7 +291,7 @@ export function FilesTool() {
         transfers: [{ id, name: file.name, direction: 'up' as const, bytes: 0, total: file.size, done: false }, ...current.transfers].slice(0, 8),
       }));
       try {
-        const size = await grpc.uploadFile(joinPath(directory, file.name), file, 644, (bytes) => updateTransfer(id, { bytes })).promise;
+        const size = await grpc.uploadFile(joinPath(directory, file.name), file, permissions, (bytes) => updateTransfer(id, { bytes })).promise;
         updateTransfer(id, { bytes: size, done: true, verified: true });
       } catch (err) {
         updateTransfer(id, { done: true, error: errorOf(err).message });
@@ -253,7 +300,7 @@ export function FilesTool() {
     void open(directory);
   };
 
-  const crumbs = state.cwd.split('/').filter(Boolean);
+  const crumbs = crumbsOf(state.cwd);
 
   const onDrop = (event: DragEvent) => {
     event.preventDefault();
@@ -275,7 +322,7 @@ export function FilesTool() {
           <Stack direction="row" spacing={0.5}>
             <Tooltip title="Up">
               <span>
-                <IconButton size="small" aria-label="Up" disabled={state.cwd === '/'} onClick={() => void open(parentOf(state.cwd))}>
+                <IconButton size="small" aria-label="Up" disabled={isTop(state.cwd)} onClick={() => void open(parentOf(state.cwd))}>
                   <ArrowUpwardIcon fontSize="small" />
                 </IconButton>
               </span>
@@ -302,17 +349,19 @@ export function FilesTool() {
         }
       >
         <Stack direction="row" spacing={0.25} sx={{ alignItems: 'center', mb: 1, flexWrap: 'wrap' }}>
-          <Button size="small" onClick={() => void open('/')} sx={{ minWidth: 0, px: 0.75, fontFamily: MONO_FONT }}>
-            /
-          </Button>
+          {state.cwd.startsWith('/') && (
+            <Button size="small" onClick={() => void open('/')} sx={{ minWidth: 0, px: 0.75, fontFamily: MONO_FONT }}>
+              /
+            </Button>
+          )}
           {crumbs.map((crumb, index) => (
             <Stack key={index} direction="row" sx={{ alignItems: 'center' }}>
               <Button
                 size="small"
-                onClick={() => void open(`/${crumbs.slice(0, index + 1).join('/')}`)}
+                onClick={() => void open(crumb.path)}
                 sx={{ minWidth: 0, px: 0.75, fontFamily: MONO_FONT, textTransform: 'none' }}
               >
-                {crumb}
+                {crumb.label}
               </Button>
               {index < crumbs.length - 1 && <Typography color="textSecondary">/</Typography>}
             </Stack>
@@ -322,7 +371,7 @@ export function FilesTool() {
             value={pathInput}
             onChange={(event) => setPathInput(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Enter') void open(pathInput.trim() || '/');
+              if (event.key === 'Enter') void open(pathInput.trim() || home);
             }}
             placeholder="Go to path"
             inputProps={{ 'aria-label': 'Path', spellCheck: false }}

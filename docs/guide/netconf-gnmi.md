@@ -65,10 +65,13 @@ requests, results and history: they belong to the tab, not the connection.
 ### Explore
 
 The navigator browses the device's data as a tree. gNMI fetches two levels at a time with
-the depth extension, so even large devices open instantly; NETCONF loads the configuration
-whole, or with **Config + state** fetches each branch with a subtree filter as you open it.
-List entries are labelled by their keys, which Muxus learns from the paths the device
-sends.
+the depth extension, so even large devices open instantly, then looks deeper in the
+background: the extension returns only values at its last level, so branches whose first
+values sit further down (SR OS's whole top level, an SR Linux network instance's
+protocols) would not show otherwise. A branch small enough to fetch whole loads complete.
+NETCONF loads the configuration whole, or with **Config + state** fetches each branch with
+a subtree filter as you open it. List entries are labelled by their keys, which Muxus
+learns from the paths the device sends.
 
 Hover a node to **Get** it or (gNMI) **Watch** it. Right-click for more: **Set value…**,
 **Delete…**, **Edit configuration…** and **Use as filter** (NETCONF), and copying the path,
@@ -128,7 +131,7 @@ services through gRPC reflection) are greyed out.
 | --- | --- |
 | **Ping** | Pings from the device, in any network instance. Replies stream in with a round-trip chart, loss and min/avg/max. |
 | **Traceroute** | The path from the device, hop by hop, with ICMP, UDP or TCP probes, AS paths and MPLS labels where reported. |
-| **Files** | Browses the device's file system. Click a file to preview it, download it, drop files to upload them, or delete. Every transfer is checked against the hash gNOI carries. |
+| **Files** | Browses the device's file system (on SR OS from `cf3:\`). Click a file to preview it, download it, drop files to upload them, or delete. Every transfer is checked against the hash gNOI carries. |
 | **Health** | A component's health, past unhealthy events with their debug artifacts, and acknowledging them. |
 | **Processes** | Restarts or signals a daemon by name or PID. |
 | **BGP** | Resets a BGP neighbor, hard or soft. |

@@ -59,7 +59,6 @@ import { GnmiForm } from './GnmiForm.js';
 import { NetconfForm } from './NetconfForm.js';
 import { MONO_FONT } from './PathText.js';
 import { ReviewDialog, type ReviewSection } from './ReviewDialog.js';
-import { useLatest } from './CodeEditor.js';
 
 export const REQUESTS_QUERY_KEY = 'management-requests';
 
@@ -169,19 +168,14 @@ export function RequestEditor({ active }: { active: boolean }) {
   };
 
   // Ctrl/Cmd+Enter anywhere in the editor runs; the path fields and Monaco handle it themselves too.
-  const runRef = useLatest(run);
-  useEffect(() => {
-    const element = rootRef.current;
-    if (!element || !active) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.defaultPrevented) {
-        event.preventDefault();
-        void runRef.current();
-      }
-    };
-    element.addEventListener('keydown', onKeyDown);
-    return () => element.removeEventListener('keydown', onKeyDown);
-  }, [active, runRef]);
+  // A React handler, so it runs after theirs and sees that they did; dialogs
+  // portaled out of the editor keep the keystroke to themselves.
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    if (!active || event.defaultPrevented || event.key !== 'Enter' || !(event.ctrlKey || event.metaKey)) return;
+    if (!rootRef.current?.contains(event.target as Node)) return;
+    event.preventDefault();
+    void run();
+  };
 
   const runLabel =
     draft.protocol === 'gnmi'
@@ -202,7 +196,11 @@ export function RequestEditor({ active }: { active: boolean }) {
         : 'Send';
 
   return (
-    <Box ref={rootRef} sx={{ flex: '1 1 auto', minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+    <Box
+      ref={rootRef}
+      onKeyDown={onKeyDown}
+      sx={{ flex: '1 1 auto', minHeight: 0, minWidth: 0, display: 'flex', flexDirection: 'column' }}
+    >
       <Stack
         direction="row"
         spacing={1}

@@ -114,6 +114,29 @@ describe('device data tree', () => {
     expect(nodeToJson(root)).toMatchObject({ 'srl_nokia-interfaces:interface': [{ name: 'ethernet-1/1' }, { name: 'mgmt0' }] });
   });
 
+  it('names a module in paths only where it changes', () => {
+    // SR OS writes its paths bare and rejects a module name anywhere in one.
+    const sros = createRoot();
+    mergeJson(nodeAt(sros, parseGnmiPath('/state')), {
+      'nokia-state:system': { 'oper-name': 'sr1' },
+      'nokia-li-state:li': { 'mirror-dest': 0 },
+    });
+    expect(collectLeaves(sros).map((leaf) => leaf.path)).toEqual([
+      '/state/system/oper-name',
+      '/state/li/mirror-dest',
+    ]);
+    // SR Linux names the module; an augmenting one keeps its prefix, the same one goes.
+    const srl = createRoot();
+    mergeJson(nodeAt(srl, parseGnmiPath('/srl_nokia-system:system')), {
+      'srl_nokia-system-name:name': { 'host-name': 'srl1' },
+      'srl_nokia-system:features': ['a'],
+    });
+    expect(collectLeaves(srl).map((leaf) => leaf.path)).toEqual([
+      '/srl_nokia-system:system/features',
+      '/srl_nokia-system:system/srl_nokia-system-name:name/host-name',
+    ]);
+  });
+
   it('guesses compound keys when one leaf is not unique', () => {
     expect(
       guessListKeys([
