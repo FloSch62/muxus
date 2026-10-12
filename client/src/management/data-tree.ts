@@ -138,6 +138,30 @@ function elemIdentity(elem: GnmiPathElem): string {
   return formatGnmiElem({ name: stripModulePrefix(elem.name), ...(elem.keys ? { keys: elem.keys } : {}) });
 }
 
+function moduleOf(name: string): string | undefined {
+  const colon = name.indexOf(':');
+  return colon > 0 ? name.slice(0, colon) : undefined;
+}
+
+/**
+ * The path element for a child the device named `name` below `parent`.
+ * RFC 7951 qualifies every member at the top of a JSON value, but a path
+ * needs the module only where it changes: SR OS rejects a qualified name
+ * anywhere in a path, SR Linux takes either. The prefix stays on the first
+ * element, which names the model, and where it differs from the module the
+ * parent's path names; below a path that names none, it goes.
+ */
+function elemName(parent: DataNode, name: string): string {
+  const module = moduleOf(name);
+  const elems = parent.path.elems;
+  if (!module || elems.length === 0) return name;
+  for (let index = elems.length - 1; index >= 0; index--) {
+    const parentModule = moduleOf(elems[index]!.name);
+    if (parentModule) return parentModule === module ? stripModulePrefix(name) : name;
+  }
+  return stripModulePrefix(name);
+}
+
 function childId(parent: DataNode, elem: GnmiPathElem): string {
   return `${parent.kind === 'root' ? '' : parent.id}/${elemIdentity(elem)}`;
 }
@@ -157,7 +181,7 @@ function addChild(parent: DataNode, child: DataNode): DataNode {
 
 /** The list node `name` under `parent`, created on first use. */
 function listNode(parent: DataNode, name: string): DataNode {
-  const elem = { name };
+  const elem = { name: elemName(parent, name) };
   const id = childId(parent, elem);
   const existing = findChild(parent, id);
   if (existing) {
@@ -174,7 +198,7 @@ function listNode(parent: DataNode, name: string): DataNode {
 }
 
 function entryNode(list: DataNode, keys: Record<string, string>, guessed: boolean): DataNode {
-  const elem = { name: list.name, keys };
+  const elem = { name: list.path.elems[list.path.elems.length - 1]!.name, keys };
   const parentPath = { ...list.path, elems: list.path.elems.slice(0, -1) };
   const id = `${list.id.slice(0, list.id.lastIndexOf('/'))}/${elemIdentity(elem)}`;
   const existing = findChild(list, id);
@@ -194,7 +218,7 @@ function entryNode(list: DataNode, keys: Record<string, string>, guessed: boolea
 }
 
 function containerNode(parent: DataNode, name: string): DataNode {
-  const elem = { name };
+  const elem = { name: elemName(parent, name) };
   const id = childId(parent, elem);
   const existing = findChild(parent, id);
   if (existing) return existing;
@@ -226,7 +250,7 @@ export function nodeAt(root: DataNode, path: GnmiPath, registry?: KeyRegistry): 
 }
 
 function setLeaf(parent: DataNode, name: string, value: unknown): void {
-  const elem = { name };
+  const elem = { name: elemName(parent, name) };
   const id = childId(parent, elem);
   const existing = findChild(parent, id);
   const kind: DataNodeKind = Array.isArray(value) ? 'leaf-list' : 'leaf';

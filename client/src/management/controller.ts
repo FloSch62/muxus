@@ -9,7 +9,7 @@ import {
   type ManagementSessionInfo,
   type NetconfSessionInfo,
 } from '@muxus/shared';
-import { mergeJson, mergeXml, namespaceChain, nodeAt, type DataNode, type KeyRegistry } from './data-tree.js';
+import { createRoot, findNode, mergeJson, mergeXml, namespaceChain, nodeAt, type DataNode, type KeyRegistry } from './data-tree.js';
 import { LiveTable } from './live-table.js';
 import {
   defaultGnmiDraft,
@@ -61,10 +61,23 @@ export function runLabel(draft: ManagementDraft): string {
 
 /** Explorer requests stop once a response grows past this; the user narrows the path instead. */
 const EXPLORER_MAX_BYTES = 24 * 1024 * 1024;
+/**
+ * Depths the explorer looks at a gNMI node with, in turn; 0 is everything
+ * below it. The depth extension returns only leaves at its last level, so a
+ * branch whose first values sit deeper does not show at all: SR OS hides its
+ * whole top level at depth 2, SR Linux a network instance's protocols.
+ */
+const EXPLORER_DEPTHS = [2, 3, 4, 0];
+/** A deeper look at a node gives up past this, keeping what is shown. */
+const EXPLORER_DEEPER_BYTES = 4 * 1024 * 1024;
+/** A deeper look this large that turns up nothing new is the last one. */
+const EXPLORER_ENOUGH_BYTES = 1024 * 1024;
 
 export class WorkbenchController {
   private readonly pending = new Map<string, PendingRequest>();
   private readonly live = new Map<string, LiveSubscription>();
+  /** The latest look at each explorer node, so an older deeper look stands down. */
+  private readonly looks = new WeakMap<DataNode, number>();
   private candidateCheck = 0;
 
   constructor(
@@ -320,50 +333,118 @@ export class WorkbenchController {
   }
 
   private async loadGnmiNode(node: DataNode): Promise<void> {
-    const explorer = this.store.getState().explorer;
-    const path = formatGnmiPath(node.path);
-    const base: GnmiDraft = {
-      ...defaultGnmiDraft(),
-      paths: [path],
-      dataType: explorer.scope === 'config' ? 'config' : 'all',
-      depth: explorer.noDepth ? undefined : 2,
-    };
-    let result: ManagementResult;
+    const look = (this.looks.get(node) ?? 0) + 1;
+    this.looks.set(node, look);
+    if (this.store.getState().explorer.noDepth) {
+      await this.layOutGnmi(node, (await this.explorerGet(node, 0, EXPLORER_MAX_BYTES)).notifications, true);
+      return;
+    }
+    let reply: { notifications: GnmiNotification[]; bytes: number };
     try {
-      result = await this.request(base, EXPLORER_MAX_BYTES);
+      reply = await this.explorerGet(node, EXPLORER_DEPTHS[0]!, EXPLORER_MAX_BYTES);
     } catch (err) {
       // Devices without the depth extension reject it; browse whole subtrees instead.
       if (
-        !explorer.noDepth &&
         err instanceof ManagementRequestError &&
         /depth|extension|unimplemented|not supported/i.test(`${err.error.code ?? ''} ${err.error.message}`)
       ) {
-        explorer.noDepth = true;
-        result = await this.request({ ...base, depth: undefined }, EXPLORER_MAX_BYTES);
-      } else {
-        throw err;
+        this.store.getState().touchExplorer((current) => (current.noDepth = true));
+        await this.layOutGnmi(node, (await this.explorerGet(node, 0, EXPLORER_MAX_BYTES)).notifications, true);
+        return;
+      }
+      throw err;
+    }
+    await this.layOutGnmi(node, reply.notifications, false);
+    // An empty first look usually means everything was left out, as SR OS
+    // does with its top level: look deeper before showing nothing.
+    let step = 1;
+    for (; node.children.length === 0 && step < EXPLORER_DEPTHS.length; step++) {
+      const depth = EXPLORER_DEPTHS[step]!;
+      try {
+        reply = await this.explorerGet(node, depth, EXPLORER_DEEPER_BYTES);
+      } catch {
+        return;
+      }
+      await this.layOutGnmi(node, reply.notifications, depth === 0);
+    }
+    if (step < EXPLORER_DEPTHS.length) void this.lookDeeper(node, look, step);
+  }
+
+  /**
+   * Look below a shown node again, deeper each time. Each look adds the
+   * branches a shallower one left out; once everything below the node fits
+   * in one reply, that reply replaces what is shown, complete. It stops at
+   * the first look that grows too large or fails, and at one that is already
+   * large but turns up nothing new.
+   */
+  private async lookDeeper(node: DataNode, look: number, from: number): Promise<void> {
+    const root = this.store.getState().explorer.root;
+    const current = () => this.looks.get(node) === look && this.store.getState().explorer.root === root;
+    for (const depth of EXPLORER_DEPTHS.slice(from)) {
+      let reply: { notifications: GnmiNotification[]; bytes: number };
+      try {
+        reply = await this.explorerGet(node, depth, EXPLORER_DEEPER_BYTES);
+      } catch {
+        return;
+      }
+      if (!current()) return;
+      if (depth === 0) {
+        await this.layOutGnmi(node, reply.notifications, true);
+        return;
+      }
+      this.learnKeys(reply.notifications);
+      const known = new Set(node.children.map((child) => child.id));
+      const added = this.replyNode(node, reply.notifications).children.filter((child) => !known.has(child.id));
+      if (added.length) this.store.getState().touchExplorer(() => node.children.push(...added));
+      else if (reply.bytes > EXPLORER_ENOUGH_BYTES) return;
+    }
+  }
+
+  private async explorerGet(
+    node: DataNode,
+    depth: number,
+    maxBytes: number,
+  ): Promise<{ notifications: GnmiNotification[]; bytes: number }> {
+    const connection = this.connection;
+    if (!connection || connection.closed) throw new Error('Not connected.');
+    const draft: GnmiDraft = {
+      ...defaultGnmiDraft(),
+      paths: [formatGnmiPath(node.path)],
+      dataType: this.store.getState().explorer.scope === 'config' ? 'config' : 'all',
+      ...(depth ? { depth } : {}),
+    };
+    const { result, bytes } = await connection.request({ ...gnmiGetMessage(draft), maxBytes }).promise;
+    return { notifications: result.op === 'gnmi-get' ? result.notifications : [], bytes };
+  }
+
+  /** `node` as a tree built from `notifications` alone shows it. */
+  private replyNode(node: DataNode, notifications: readonly GnmiNotification[]): DataNode {
+    const registry = this.store.getState().explorer.registry;
+    const scratch = createRoot();
+    for (const notification of notifications) {
+      for (const update of notification.updates) {
+        mergeJson(nodeAt(scratch, parseGnmiPath(update.path), registry), update.value.value, registry);
       }
     }
-    if (result.op !== 'gnmi-get') return;
-    const notifications = result.notifications;
+    return findNode(scratch, node.id) ?? nodeAt(scratch, node.path);
+  }
+
+  /** Show what a reply holds below `node`; `complete` when it holds everything there is. */
+  private async layOutGnmi(node: DataNode, notifications: readonly GnmiNotification[], complete: boolean): Promise<void> {
+    const explorer = this.store.getState().explorer;
     this.learnKeys(notifications);
-    const merge = () => {
-      // A depth-limited reply only lists the next level: forget what was there.
-      node.children = [];
-      for (const notification of notifications) {
-        for (const update of notification.updates) {
-          const target = nodeAt(explorer.root, parseGnmiPath(update.path), explorer.registry);
-          mergeJson(target, update.value.value, explorer.registry);
-        }
-      }
-    };
-    merge();
+    const layOut = () =>
+      this.store.getState().touchExplorer(() => {
+        node.children = this.replyNode(node, notifications).children;
+        if (complete) markLoaded(node);
+      });
+    layOut();
     // JSON does not say which leaves key a list. Ask the device for keyed
     // paths of the lists it has not shown us yet, then lay the data out again.
     const unkeyed = unkeyedLists(node, explorer.registry).slice(0, 8);
     if (unkeyed.length === 0) return;
     const learned = await Promise.all(unkeyed.map((list) => this.discoverKeys(list)));
-    if (learned.some(Boolean)) merge();
+    if (learned.some(Boolean)) layOut();
   }
 
   /** Learn a list's key leaves from the paths a one-shot subscription returns. */
