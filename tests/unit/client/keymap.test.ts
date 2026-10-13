@@ -17,6 +17,7 @@ import {
   isBindableChord,
   isModifierCode,
   parseChord,
+  sendsControlCharacter,
 } from '../../../client/src/keymap/chords.js';
 import { KEY_COMMANDS, keyCommand } from '../../../client/src/keymap/commands.js';
 import { useTabsStore } from '../../../client/src/state/tabs.js';
@@ -92,6 +93,41 @@ describe('chords', () => {
     expect(isBindableChord(parseChord('F5')!)).toBe(true);
     expect(isBindableChord(parseChord('Alt+ArrowLeft')!)).toBe(true);
     expect(isModifierCode('ShiftLeft')).toBe(true);
+  });
+
+  it('knows the chords the shell owns', () => {
+    const owned = (text: string) => sendsControlCharacter(parseChord(text)!);
+    for (const chord of [
+      'Ctrl+KeyC',
+      'Ctrl+KeyW',
+      'Ctrl+Space',
+      // xterm.js sends nothing for it, but the keymap leaves Ctrl+2…8 to the terminal.
+      'Ctrl+Digit2',
+      'Ctrl+Digit3',
+      'Ctrl+Digit8',
+      'Ctrl+BracketLeft',
+      'Ctrl+Backslash',
+      'Ctrl+Slash',
+      'Ctrl+Backspace',
+      'Ctrl+Shift+Backspace',
+      'Ctrl+Shift+Digit2',
+      'Ctrl+Shift+Digit6',
+      'Ctrl+Shift+Minus',
+    ]) {
+      expect(owned(chord), chord).toBe(true);
+    }
+    // Ctrl+Shift with a letter is where the defaults live; Alt, Cmd and other keys stay free.
+    for (const chord of [
+      'Ctrl+Shift+KeyC',
+      'Ctrl+Alt+KeyC',
+      'Ctrl+Alt+Backspace',
+      'Meta+KeyC',
+      'Ctrl+Digit1',
+      'Ctrl+PageDown',
+      'Alt+KeyC',
+    ]) {
+      expect(owned(chord), chord).toBe(false);
+    }
   });
 
   it('renders keys the way the shortcut list shows them', () => {

@@ -1,8 +1,10 @@
+import type { QueryClient } from '@tanstack/react-query';
 import { commandsForEvent } from './keymap/bindings.js';
 import { isModifierCode } from './keymap/chords.js';
-import { runKeyCommand } from './keymap/commands.js';
+import { commandButtonCommands } from './keymap/command-buttons.js';
+import { runKeyCommand, type KeyCommand } from './keymap/commands.js';
 import { requestClosePane } from './session-actions.js';
-import { usePrefsStore } from './state/prefs.js';
+import { usePrefsStore, type CommandButton } from './state/prefs.js';
 import { useTabsStore } from './state/tabs.js';
 
 let capturing = false;
@@ -13,6 +15,30 @@ let capturing = false;
  */
 export function setChordCaptureActive(active: boolean): void {
   capturing = active;
+}
+
+/**
+ * The keyup of a key the recorder or a button shortcut took still reaches the
+ * focused control, and a focused chip deletes itself on a Backspace or Delete
+ * keyup. Keep that keyup away from the page. It may never come (macOS sends
+ * none for a key released while Cmd is held), so a later press of the key
+ * ends the wait rather than leaving its own keyup swallowed.
+ */
+export function swallowKeyUp(code: string): void {
+  const done = () => {
+    window.removeEventListener('keyup', onKeyUp, true);
+    window.removeEventListener('keydown', onKeyDown, true);
+  };
+  const onKeyUp = (event: KeyboardEvent) => {
+    if (event.code !== code) return;
+    event.stopImmediatePropagation();
+    done();
+  };
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.code === code && !event.repeat) done();
+  };
+  window.addEventListener('keyup', onKeyUp, true);
+  window.addEventListener('keydown', onKeyDown, true);
 }
 
 /**
@@ -38,8 +64,24 @@ function typingTarget(target: EventTarget | null): 'text' | 'editor' | undefined
  *
  * Desktop chords the OS claims first (Cmd/Ctrl+W, Ctrl+Tab) arrive over the
  * Electron bridge instead, and run the same commands.
+ *
+ * Command button shortcuts are tried after the app's commands, and run
+ * buttons with the `queryClient` a click would use.
  */
-export function installShortcuts(): () => void {
+export function installShortcuts(queryClient?: QueryClient): () => void {
+  // Rebuilt only when the buttons change, so the binding index stays cached.
+  let buttons: readonly CommandButton[] | undefined;
+  let buttonCommands: KeyCommand[] = [];
+  const shortcutCommands = (current: readonly CommandButton[]) => {
+    if (current !== buttons) {
+      buttons = current;
+      buttonCommands = commandButtonCommands(current, queryClient);
+    }
+    return buttonCommands;
+  };
+  // A click never repeats, so a held button chord runs once; its auto-repeats
+  // are swallowed rather than typed into the shell.
+  let heldButtonId: string | undefined;
   const updateTabNumberReveal = (event: KeyboardEvent) => {
     if (!isModifierCode(event.code)) return;
     document.documentElement.classList.toggle(
@@ -49,13 +91,22 @@ export function installShortcuts(): () => void {
   };
   const onKeyDown = (event: KeyboardEvent) => {
     updateTabNumberReveal(event);
+    if (!event.repeat) heldButtonId = undefined;
     if (capturing || event.defaultPrevented || event.isComposing) return;
     if (isModifierCode(event.code)) return;
     const typing = typingTarget(event.target);
     if (typing === 'text') return;
-    for (const command of commandsForEvent(event, usePrefsStore.getState().keybindings)) {
+    const { keybindings, commandButtons } = usePrefsStore.getState();
+    for (const command of commandsForEvent(event, keybindings, shortcutCommands(commandButtons))) {
       if (typing === 'editor' && !command.inEditor) continue;
-      if (!command.run()) continue;
+      const button = command.category === 'buttons';
+      const handled = button && event.repeat ? command.id === heldButtonId : command.run();
+      if (!handled) continue;
+      if (button) {
+        heldButtonId = command.id;
+        // The page saw no press, so it gets no release either.
+        if (!event.repeat) swallowKeyUp(event.code);
+      }
       event.preventDefault();
       event.stopImmediatePropagation();
       return;

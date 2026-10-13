@@ -52,6 +52,13 @@ describe('command button groups preference', () => {
     expect(migratePrefsState({ commandButtons: [uptime] }, 16)).toEqual({ commandButtons: [uptime] });
   });
 
+  it('keeps button shortcuts, one button per chord', () => {
+    const bound = { ...uptime, shortcut: 'Ctrl+Alt+KeyU' };
+    expect(
+      migratePrefsState({ commandButtons: [bound, { ...bound, id: 'again' }] }, 16),
+    ).toEqual({ commandButtons: [bound, { ...uptime, id: 'again' }] });
+  });
+
   it('repairs groups and buttons instead of discarding them', () => {
     expect(
       migratePrefsState(

@@ -108,6 +108,8 @@ export interface CommandButton {
    * stored; the backend types the value, and `sendEnter` adds Enter after it.
    */
   secretId?: string;
+  /** Chord that runs the button in the focused session; absent leaves it unbound. */
+  shortcut?: string;
 }
 
 /** A named set of command buttons the bar shows one at a time. */

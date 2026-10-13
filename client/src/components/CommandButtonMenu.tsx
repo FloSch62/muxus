@@ -20,12 +20,15 @@ import {
   commandButtonsInGroup,
   filterCommandButtons,
 } from '../command-buttons.js';
+import { formatChordString } from '../keymap/chords.js';
+import { commandButtonShortcut } from '../keymap/command-buttons.js';
 import { usePrefsStore, type CommandButton } from '../state/prefs.js';
 import { showToast } from '../state/toast.js';
 import { useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
 import { terminalHandle, type TerminalAnchorPosition } from '../terminal/terminal-registry.js';
 import { findVaultSecret, runCommandButton, vaultSecretMissing } from '../vault-secrets.js';
+import { ChordHint } from './ChordHint.js';
 import { CommandButtonColorDot } from './command-button-style.js';
 
 const menuCenter = (): TerminalAnchorPosition => ({
@@ -169,6 +172,7 @@ export function CommandButtonMenu() {
           const secretButton = button.secretId !== undefined;
           const missing = !!button.secretId && vaultSecretMissing(vault, button.secretId) === true;
           const secretName = button.secretId ? findVaultSecret(vault, button.secretId)?.name : undefined;
+          const shortcut = commandButtonShortcut(button);
           return (
             <MenuItem
               key={button.id}
@@ -196,6 +200,12 @@ export function CommandButtonMenu() {
               <Typography variant="body2" noWrap sx={{ maxWidth: 340 }}>
                 {commandButtonLabel(button)}
               </Typography>
+              {shortcut ? (
+                <>
+                  <Box component="span" sx={{ flex: 1 }} />
+                  <ChordHint chord={formatChordString(shortcut)} />
+                </>
+              ) : null}
               {secretButton ? (
                 missing ? (
                   <WarningAmberOutlinedIcon

@@ -17,7 +17,7 @@ import { sendBreak } from '../terminal/send-break.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
 import type { PaneDirection } from '../state/workspace-layout.js';
 
-export type CommandCategory = 'panes' | 'tabs' | 'terminal' | 'app';
+export type CommandCategory = 'panes' | 'tabs' | 'terminal' | 'app' | 'buttons';
 
 export interface KeyCommand {
   id: string;
@@ -44,6 +44,7 @@ export const COMMAND_CATEGORY_LABELS: Record<CommandCategory, string> = {
   tabs: 'Tabs',
   terminal: 'Terminal',
   app: 'Application',
+  buttons: 'Command buttons',
 };
 
 /** Chords only offered where Command is the modifier — Ctrl belongs to the shell. */
