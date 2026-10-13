@@ -231,30 +231,17 @@ export function SessionImportDialog<T extends ImportedSession>({
     setError(null);
     try {
       const summary: string[] = [];
-      if (bars.length > 0) {
-        const merged = mergeImportedCommandBars(
-          usePrefsStore.getState(),
-          bars,
-          conflicts,
-          vendorName,
-        );
-        setPrefs({
-          commandButtonGroups: merged.commandButtonGroups,
-          commandButtons: merged.commandButtons,
-        });
-        const groups = merged.added + merged.replaced;
-        if (groups) summary.push(`${groups} button ${groups === 1 ? 'group' : 'groups'}`);
-        if (merged.droppedButtons > 0) {
-          showToast(
-            'warning',
-            `${merged.droppedButtons} imported ${merged.droppedButtons === 1 ? 'command' : 'commands'} did not fit within the command button limits.`,
-          );
-        }
-      }
+      // Work out the button groups first but save them only after the hosts
+      // were stored, so a failed host import leaves nothing half-imported.
+      const current = usePrefsStore.getState();
+      const merged =
+        bars.length > 0
+          ? mergeImportedCommandBars(current, bars, conflicts, vendorName)
+          : undefined;
       if (included.length > 0) {
-        // Point each host at wherever its bar ended up: its own group, the
-        // Default group, or nowhere when the bar was not imported.
-        const state = usePrefsStore.getState();
+        // Point each host at wherever its bar ends up: its own group, the
+        // Default group, or nowhere when the bar is not imported.
+        const state = merged ?? current;
         const barGroups = new Map(
           commandBars.map((bar) => [bar.id, importedCommandBarGroup(bar, state)]),
         );
@@ -273,13 +260,27 @@ export function SessionImportDialog<T extends ImportedSession>({
           queryClient.invalidateQueries({ queryKey: ['saved-host-profiles'] }),
           queryClient.invalidateQueries({ queryKey: ['data-transfer-summary'] }),
         ]);
-        summary.unshift(
+        summary.push(
           ...[
             result.added ? `${result.added} added` : '',
             result.updated ? `${result.updated} replaced` : '',
             result.skipped ? `${result.skipped} kept` : '',
           ].filter(Boolean),
         );
+      }
+      if (merged) {
+        setPrefs({
+          commandButtonGroups: merged.commandButtonGroups,
+          commandButtons: merged.commandButtons,
+        });
+        const groups = merged.added + merged.replaced;
+        if (groups) summary.push(`${groups} button ${groups === 1 ? 'group' : 'groups'}`);
+        if (merged.droppedButtons > 0) {
+          showToast(
+            'warning',
+            `${merged.droppedButtons} imported ${merged.droppedButtons === 1 ? 'command' : 'commands'} did not fit within the command button limits.`,
+          );
+        }
       }
       const text = summary.join(' · ');
       showToast('success', `${vendorName} import complete${text ? ` — ${text}` : ''}.`);
