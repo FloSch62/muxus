@@ -32,8 +32,8 @@ const status = { secrets } as unknown as PasswordVaultStatus;
 
 function handle() {
   const focus = vi.fn();
-  const sendInput = vi.fn(() => true);
-  return { focus, sendInput, terminal: { focus, sendInput } as unknown as TerminalHandle };
+  const typeText = vi.fn(() => true);
+  return { focus, typeText, terminal: { focus, typeText } as unknown as TerminalHandle };
 }
 
 /** A connected terminal tab whose backend session has `terminalId`. */
@@ -172,7 +172,7 @@ describe('sending a secret', () => {
 
   it('runs a secret button through the backend and a text button through the terminal', async () => {
     const tab = connectTab('one', 'terminal-1');
-    const { focus, sendInput, terminal } = handle();
+    const { focus, typeText, terminal } = handle();
     const unregister = registerTerminal(tab, terminal);
     sendMock.mockResolvedValue({ sent: 1 });
     try {
@@ -180,19 +180,45 @@ describe('sending a secret', () => {
       const secret: CommandButton = { id: 's', label: 'Enable', command: '', sendEnter: true, secretId: 's1' };
 
       expect(runCommandButton(tab, text)).toBe(true);
-      expect(sendInput).toHaveBeenCalledExactlyOnceWith('show version\r');
+      expect(typeText).toHaveBeenCalledExactlyOnceWith('show version\r');
 
       expect(runCommandButton(tab, secret, { secretName: 'Core enable' })).toBe(true);
       await vi.waitFor(() =>
         expect(sendMock).toHaveBeenCalledWith('s1', { terminalIds: ['terminal-1'], enter: true }),
       );
-      expect(sendInput).toHaveBeenCalledOnce();
+      expect(typeText).toHaveBeenCalledOnce();
       await vi.waitFor(() => expect(focus).toHaveBeenCalledTimes(2));
 
       useTabsStore.getState().update(tab, { status: 'closed' });
       expect(runCommandButton(tab, secret)).toBe(false);
     } finally {
       unregister();
+    }
+  });
+
+  it('mirrors a text button into the sessions selected for multi-execution', () => {
+    const first = connectTab('one', 'terminal-1');
+    const second = connectTab('two', 'terminal-2');
+    const other = connectTab('three', 'terminal-3');
+    const handles = [handle(), handle(), handle()];
+    const unregister = [first, second, other].map((tab, index) => registerTerminal(tab, handles[index]!.terminal));
+    try {
+      const text: CommandButton = { id: 't', label: 'Config', command: 'conf t\nend', sendEnter: true };
+      useMultiExecStore.getState().setSelection([first, second]);
+
+      expect(runCommandButton(first, text)).toBe(true);
+      expect(handles[0]!.typeText).toHaveBeenCalledExactlyOnceWith('conf t\rend\r');
+      expect(handles[1]!.typeText).toHaveBeenCalledExactlyOnceWith('conf t\rend\r');
+      expect(handles[2]!.typeText).not.toHaveBeenCalled();
+
+      // Without mirroring, a button types into its own session only.
+      useMultiExecStore.getState().setSelection([]);
+      expect(runCommandButton(second, text)).toBe(true);
+      expect(handles[1]!.typeText).toHaveBeenCalledTimes(2);
+      expect(handles[0]!.typeText).toHaveBeenCalledOnce();
+    } finally {
+      unregister.forEach((dispose) => dispose());
+      useMultiExecStore.getState().setSelection([]);
     }
   });
 });

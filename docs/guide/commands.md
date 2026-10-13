@@ -35,6 +35,14 @@ Buttons are disabled while the focused tab is not connected. The arrows reorder 
 the copy button duplicates one right below itself as a starting point for a similar
 command.
 
+A button types its command the way the keyboard would, never as a bracketed paste, so a
+shell runs it when the button presses Enter. A host with a
+[paste pace](terminal.md#pasting-into-slow-consoles) gets the command at that pace, so a
+multi-line command reaches a slow console intact. Pressed while a paced paste is running,
+the button waits for that paste to finish, and cancelling the paste drops it too. With
+[multi-execution](#multi-execution) on, the selected sessions receive the command too, each
+at its own host's pace.
+
 ### Buttons that send a secret
 
 An `enable` or configure-mode password, a `sudo` password or a PIN does not belong in a
@@ -133,7 +141,8 @@ Multi-execution mirrors keystrokes into several live terminals at once.
 2. Select at least **two** connected sessions, either individually or with the presets
    **This split**, **Visible splits** and **All live**. The control turns **Active**.
 3. Type in any selected terminal. Every selected terminal receives the same input, and so
-   does a [secret](#buttons-that-send-a-secret) sent into one of them.
+   do a [command button](#command-buttons) and a [secret](#buttons-that-send-a-secret)
+   sent into one of them.
 4. **Clear selection** when finished.
 
 A paste is mirrored as well. Each terminal types it in at its own host's

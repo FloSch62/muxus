@@ -2,10 +2,11 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { PasswordVaultSecret, PasswordVaultStatus } from '@muxus/shared';
 import {
   activateCommandButton,
+  commandButtonInput,
   commandButtonLabel,
   isSecretCommandButton,
 } from './command-buttons.js';
-import { multiExecMirrorTabIds } from './state/multi-exec.js';
+import { broadcastTerminalTyping, multiExecMirrorTabIds } from './state/multi-exec.js';
 import type { CommandButton } from './state/prefs.js';
 import { isMultiExecTarget, useTabsStore, type TerminalTab } from './state/tabs.js';
 import { terminalHandle } from './terminal/terminal-registry.js';
@@ -99,14 +100,16 @@ export function typeSecretIntoTab(
   return true;
 }
 
-/** Run a saved command in a tab: its text through the terminal, or its secret through the backend. */
+/** Run a saved command (text or vault secret) in a tab and the sessions mirroring it. */
 export function runCommandButton(
   tabId: string | null | undefined,
   button: CommandButton,
   options: { secretName?: string; queryClient?: QueryClient } = {},
 ): boolean {
   if (!isSecretCommandButton(button)) {
-    return activateCommandButton(terminalHandle(tabId), button);
+    const sent = activateCommandButton(terminalHandle(tabId), button);
+    if (sent && tabId) broadcastTerminalTyping(tabId, commandButtonInput(button));
+    return sent;
   }
   return typeSecretIntoTab(
     tabId,
