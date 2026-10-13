@@ -21,6 +21,11 @@ interface ImportedSessionBase {
   id: string;
   name: string;
   folder?: string;
+  /**
+   * Id of the imported command button group the bar switches to for this host.
+   * Only set when the source file also carries that group.
+   */
+  commandButtonGroup?: string;
 }
 
 /**
@@ -76,11 +81,45 @@ export interface ImportedSerialSession extends ImportedSessionBase {
   flowControl: SerialProfile['flowControl'];
 }
 
+export interface ImportedTelnetSession extends ImportedSessionBase {
+  kind: 'telnet';
+  host: string;
+  port: number;
+  /** Telnet hosts have no user or gateway in Muxus; never set. */
+  username?: undefined;
+  jumpHost?: undefined;
+}
+
 export type ImportedSession =
   | ImportedSshSession
   | ImportedSerialSession
-  | ImportedDesktopSession;
+  | ImportedDesktopSession
+  | ImportedTelnetSession;
 export type ImportedSshStorage = 'openssh' | 'muxus';
+
+/** A saved command converted from another client's button bar or command list. */
+export interface ImportedCommandButton {
+  label: string;
+  /** Literal text to type; line breaks become Enter when sent. */
+  command: string;
+  sendEnter: boolean;
+  /** Source features that could not be carried over, shown in the review. */
+  warnings: string[];
+}
+
+export interface SkippedImportedCommand {
+  label: string;
+  reason: string;
+}
+
+/** One source button bar, imported as one command button group. */
+export interface ImportedCommandBar {
+  /** Deterministic group id, so a second import can keep or replace it. */
+  id: string;
+  name: string;
+  buttons: ImportedCommandButton[];
+  skipped: SkippedImportedCommand[];
+}
 
 export interface SkippedImportedSession {
   /** Stable inside one parsed file and used as the React list key. */
@@ -97,6 +136,8 @@ export interface ImportedSessionParseResult<T extends ImportedSession = Imported
   ignoredCount: number;
   /** Every ignored session together with the reason it cannot be imported. */
   skippedSessions: SkippedImportedSession[];
+  /** Button bars found next to the sessions; absent when the source has none. */
+  commandBars?: ImportedCommandBar[];
 }
 
 /**
@@ -133,9 +174,13 @@ export function importedConnections(
   };
 
   for (const session of sessions) {
+    const commandGroup: PortableHostMetadata = session.commandButtonGroup
+      ? { commandButtonGroup: session.commandButtonGroup }
+      : {};
     const metadata: PortableHostMetadata = {
       ...(session.kind === 'ssh' ? { displayName: session.name } : {}),
       ...(session.folder ? { group: session.folder } : {}),
+      ...commandGroup,
     };
     if (session.kind === 'ssh') {
       const route = {
@@ -154,7 +199,7 @@ export function importedConnections(
           id: stableImportId(`${idPrefix}-ssh`, session.id),
           name: session.name,
           profile: { kind: 'ssh', target: session.host, useConfig: false, ...route },
-          metadata: session.folder ? { group: session.folder } : {},
+          metadata: { ...(session.folder ? { group: session.folder } : {}), ...commandGroup },
         });
         continue;
       }
@@ -163,6 +208,16 @@ export function importedConnections(
         aliases: [session.alias],
         description: `Imported from ${sourceName}.`,
         options: { hostname: session.host, ...route },
+        metadata,
+      });
+      continue;
+    }
+
+    if (session.kind === 'telnet') {
+      savedHosts.push({
+        id: stableImportId(`${idPrefix}-telnet`, session.id),
+        name: session.name,
+        profile: { kind: 'telnet', host: session.host, port: session.port },
         metadata,
       });
       continue;

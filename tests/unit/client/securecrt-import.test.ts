@@ -2,8 +2,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DOMParser as XmlDomParser } from '@xmldom/xmldom';
 import {
   MAX_SECURECRT_IMPORT_BYTES,
+  parseSecureCrtButton,
   parseSecureCrtSessions,
   secureCrtConnections,
+  secureCrtSendString,
 } from '../../../client/src/securecrt-import.js';
 
 const NativeDomParser = globalThis.DOMParser;
@@ -166,7 +168,7 @@ describe('SecureCRT session parsing', () => {
   it('rejects dangerous, oversized and unrelated XML', () => {
     expect(() => parseSecureCrtSessions('<!DOCTYPE x><VanDyke/>')).toThrow(/declarations or entities/);
     expect(() => parseSecureCrtSessions('<Other/>')).toThrow(/valid SecureCRT/);
-    expect(() => parseSecureCrtSessions('<VanDyke/>')).toThrow(/Sessions section/);
+    expect(() => parseSecureCrtSessions('<VanDyke/>')).toThrow(/Sessions or Button Bars section/);
     expect(() => parseSecureCrtSessions('<VanDyke><key></VanDyke>')).toThrow(/malformed/);
     expect(() => parseSecureCrtSessions('x'.repeat(MAX_SECURECRT_IMPORT_BYTES + 1))).toThrow(/20 MB/);
   });
@@ -179,7 +181,7 @@ describe('SecureCRT session parsing', () => {
           <string name="Protocol Name">Local Shell</string>
         </key></key></VanDyke>
       `),
-    ).toThrow(/No supported SSH or serial sessions/);
+    ).toThrow(/No supported SSH, Telnet or serial sessions/);
   });
 });
 
@@ -263,5 +265,190 @@ describe('SecureCRT connection conversion', () => {
         }),
       ]),
     );
+  });
+});
+
+// Shaped like a SecureCRT 9.7 export: templates at the root, Telnet and SSH
+// sessions naming their bar, and a ButtonBarV5 key with one array per bar.
+const BAR_EXPORT = String.raw`<?xml version="1.0" encoding="UTF-8"?>
+<VanDyke version="3.0">
+  <key name="Sessions">
+    <key name="Edge">
+      <key name="PE1">
+        <dword name="Is Session">1</dword>
+        <string name="Protocol Name">SSH2</string>
+        <string name="Hostname">pe1.example.test</string>
+        <dword name="[SSH2] Port">22</dword>
+        <string name="User Button Bar Name">Junos</string>
+      </key>
+      <key name="Looking glass">
+        <dword name="Is Session">1</dword>
+        <string name="Protocol Name">Telnet</string>
+        <string name="Hostname">lg.example.test</string>
+        <dword name="Port">2323</dword>
+        <string name="User Button Bar Name">Deleted bar</string>
+        <array name="Login Script V4"><string>03:encrypted-step</string></array>
+      </key>
+    </key>
+    <key name="Default">
+      <dword name="Is Session">1</dword>
+      <string name="Protocol Name">SSH2</string>
+    </key>
+    <key name="Default_Serial">
+      <dword name="Is Session">1</dword>
+      <string name="Protocol Name">Serial</string>
+    </key>
+  </key>
+  <key name="ButtonBarV5">
+    <array name="Junos">
+      <string>SEND,show config | display set | match ,show config,,,0,1,</string>
+      <string>SEND,deactivate term A\\n\r\ndeactivate term B\\n,Disable,,,0,1,Turns both terms off,</string>
+      <string>SEND,ena\r\pSECRET\r,enable,,,0,5,</string>
+      <string>MENU_TOGGLE_KEYWORD_HIGHLIGHTING,,Highlight on/off,,,0,0,</string>
+    </array>
+    <array name="Tools">
+      <string>SEND,echo a,b\r,echo,,,0,2,</string>
+    </array>
+  </key>
+</VanDyke>`;
+
+describe('SecureCRT Telnet sessions and button bars', () => {
+  it('imports Telnet, skips templates silently and links hosts to bars in the file', () => {
+    const parsed = parseSecureCrtSessions(BAR_EXPORT);
+
+    expect(parsed.ignoredCount).toBe(0);
+    expect(parsed.sessions).toEqual([
+      expect.objectContaining({
+        kind: 'ssh',
+        name: 'PE1',
+        folder: 'Edge',
+        commandButtonGroup: parsed.commandBars?.[0]?.id,
+      }),
+      {
+        id: expect.stringMatching(/^securecrt-telnet-/),
+        kind: 'telnet',
+        name: 'Looking glass',
+        host: 'lg.example.test',
+        port: 2323,
+        folder: 'Edge',
+      },
+    ]);
+    expect(parsed.commandBars?.map((bar) => bar.name)).toEqual(['Junos', 'Tools']);
+    expect(parsed.commandBars?.[0]?.id).toMatch(/^securecrt-bar-/);
+    expect(parseSecureCrtSessions(BAR_EXPORT).commandBars?.[0]?.id).toBe(
+      parsed.commandBars?.[0]?.id,
+    );
+  });
+
+  it('converts Send String buttons and explains what cannot be carried over', () => {
+    const [junos, tools] = parseSecureCrtSessions(BAR_EXPORT).commandBars ?? [];
+
+    expect(junos?.buttons).toEqual([
+      {
+        label: 'show config',
+        command: 'show config | display set | match ',
+        sendEnter: false,
+        warnings: [],
+      },
+      {
+        label: 'Disable',
+        command: 'deactivate term A\\n\ndeactivate term B\\n',
+        sendEnter: false,
+        warnings: [],
+      },
+      {
+        label: 'enable',
+        command: 'ena\nSECRET',
+        sendEnter: true,
+        warnings: ['One-second pauses (\\p) were removed'],
+      },
+    ]);
+    expect(junos?.skipped).toEqual([
+      {
+        label: 'Highlight on/off',
+        reason: 'Menu function MENU_TOGGLE_KEYWORD_HIGHLIGHTING has no Muxus equivalent',
+      },
+    ]);
+    expect(tools?.buttons).toEqual([
+      {
+        label: 'echo',
+        command: 'echo a,b',
+        sendEnter: true,
+        warnings: ['The command contains commas; check that the label was read correctly'],
+      },
+    ]);
+  });
+
+  it('writes Telnet hosts and bar links into the portable restore format', () => {
+    const parsed = parseSecureCrtSessions(BAR_EXPORT);
+    const barId = parsed.commandBars?.[0]?.id;
+    const portable = secureCrtConnections(parsed.sessions, 'muxus');
+
+    expect(portable.savedHosts).toEqual([
+      expect.objectContaining({
+        name: 'PE1',
+        metadata: { group: 'Edge', commandButtonGroup: barId },
+      }),
+      {
+        id: expect.stringMatching(/^securecrt-telnet-/),
+        name: 'Looking glass',
+        profile: { kind: 'telnet', host: 'lg.example.test', port: 2323 },
+        metadata: { group: 'Edge' },
+      },
+    ]);
+    expect(JSON.stringify(portable)).not.toContain('encrypted-step');
+  });
+
+  it('accepts an export that only carries button bars', () => {
+    const parsed = parseSecureCrtSessions(
+      '<VanDyke><key name="ButtonBarV5"><array name="Only"><string>SEND,uptime\\r,up,,,0,1,</string></array></key></VanDyke>',
+    );
+    expect(parsed.sessions).toEqual([]);
+    expect(parsed.commandBars?.[0]?.buttons).toEqual([
+      { label: 'up', command: 'uptime', sendEnter: true, warnings: [] },
+    ]);
+  });
+});
+
+describe('SecureCRT Send String conversion', () => {
+  it('expands control escapes, octal codes and literal backslashes', () => {
+    expect(secureCrtSendString(String.raw`a\tb\ec\bd\134e\\f\r\n`)).toEqual({
+      command: 'a\tb\u001bc\bd\\e\\f',
+      sendEnter: true,
+      warnings: [],
+    });
+    expect(secureCrtSendString(String.raw`one\rtwo\r`)).toEqual({
+      command: 'one\ntwo',
+      sendEnter: true,
+      warnings: [],
+    });
+  });
+
+  it('drops client placeholders, clipboard paste and unknown escapes with a warning', () => {
+    expect(secureCrtSendString(String.raw`\u@\c \v\q`)).toEqual({
+      command: '@ ',
+      sendEnter: false,
+      warnings: [
+        'The session username placeholder (\\u) was removed',
+        'The computer name placeholder (\\c) was removed',
+        'Clipboard paste (\\v) was removed',
+        'Unknown escape \\q was removed',
+      ],
+    });
+  });
+
+  it('rejects malformed and empty buttons', () => {
+    expect(parseSecureCrtButton('SEND,only two')).toEqual({
+      label: 'SEND',
+      reason: 'Unrecognized button format',
+    });
+    expect(parseSecureCrtButton('SEND,,blank,,,0,1,')).toEqual({
+      label: 'blank',
+      reason: 'Button sends nothing',
+    });
+    expect(parseSecureCrtButton('RUN_SCRIPT,/tmp/x.py,run,,,0,1,')).toEqual({
+      label: 'run',
+      reason: '“RUN_SCRIPT” buttons are not supported',
+    });
   });
 });

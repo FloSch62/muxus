@@ -26,21 +26,25 @@ import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import ArrowBackOutlinedIcon from '@mui/icons-material/ArrowBackOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
+import FlashOnOutlinedIcon from '@mui/icons-material/FlashOnOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import SearchOutlinedIcon from '@mui/icons-material/SearchOutlined';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
+import { mergeImportedCommandBars } from '../command-button-import.js';
 import {
   restoreImportedConnections,
   type PortableConnections,
   type TransferConflictStrategy,
 } from '../data-transfer.js';
 import type {
+  ImportedCommandBar,
   ImportedSession,
   ImportedSessionParseResult,
   ImportedSshStorage,
   SkippedImportedSession,
 } from '../session-import.js';
+import { usePrefsStore } from '../state/prefs.js';
 import { errorDetails, showToast } from '../state/toast.js';
 import { hostKindIcon } from './host-kind-icon.js';
 
@@ -101,6 +105,9 @@ export function SessionImportDialog<T extends ImportedSession>({
   const fileInput = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<PendingImport<T> | null>(null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [selectedBars, setSelectedBars] = useState<ReadonlySet<string>>(new Set());
+  const commandButtonGroups = usePrefsStore((state) => state.commandButtonGroups);
+  const setPrefs = usePrefsStore((state) => state.set);
   const [conflicts, setConflicts] = useState<TransferConflictStrategy>('keep');
   const [sshStorage, setSshStorage] = useState<ImportedSshStorage>('muxus');
   const [search, setSearch] = useState('');
@@ -129,6 +136,12 @@ export function SessionImportDialog<T extends ImportedSession>({
     () => pending?.parsed.sessions.filter(isConflict) ?? [],
     [isConflict, pending?.parsed.sessions],
   );
+  const existingGroupIds = useMemo(
+    () => new Set(commandButtonGroups.map((group) => group.id)),
+    [commandButtonGroups],
+  );
+  const commandBars = pending?.parsed.commandBars ?? [];
+  const conflictingBars = commandBars.filter((bar) => existingGroupIds.has(bar.id));
   const filteredSessions = useMemo(() => {
     const needle = search.trim().toLowerCase();
     if (!pending || !needle) return pending?.parsed.sessions ?? [];
@@ -146,6 +159,7 @@ export function SessionImportDialog<T extends ImportedSession>({
     const parsed = parse(content);
     setPending({ source, parsed });
     setSelected(new Set(parsed.sessions.map((session) => session.id)));
+    setSelectedBars(new Set(parsed.commandBars?.map((bar) => bar.id) ?? []));
     setSearch('');
     setError(null);
   };
@@ -189,30 +203,74 @@ export function SessionImportDialog<T extends ImportedSession>({
     });
   };
 
+  const toggleBar = (bar: ImportedCommandBar) => {
+    setSelectedBars((current) => {
+      const next = new Set(current);
+      if (next.has(bar.id)) next.delete(bar.id);
+      else next.add(bar.id);
+      return next;
+    });
+  };
+
   const importSessions = async () => {
     if (!pending) return;
     const included = pending.parsed.sessions.filter((session) => selected.has(session.id));
-    if (included.length === 0) return;
+    const bars = commandBars.filter((bar) => selectedBars.has(bar.id));
+    if (included.length === 0 && bars.length === 0) return;
     setBusy('import');
     setError(null);
     try {
-      const result = await restoreImportedConnections(
-        connections(included, sshStorage),
-        conflicts,
-      );
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['ssh-config'] }),
-        queryClient.invalidateQueries({ queryKey: ['saved-host-profiles'] }),
-        queryClient.invalidateQueries({ queryKey: ['data-transfer-summary'] }),
-      ]);
-      const summary = [
-        result.added ? `${result.added} added` : '',
-        result.updated ? `${result.updated} replaced` : '',
-        result.skipped ? `${result.skipped} kept` : '',
-      ]
-        .filter(Boolean)
-        .join(' · ');
-      showToast('success', `${vendorName} import complete${summary ? ` — ${summary}` : ''}.`);
+      const summary: string[] = [];
+      let groupIds: ReadonlySet<string> = existingGroupIds;
+      if (bars.length > 0) {
+        const merged = mergeImportedCommandBars(
+          usePrefsStore.getState(),
+          bars,
+          conflicts,
+          vendorName,
+        );
+        setPrefs({
+          commandButtonGroups: merged.commandButtonGroups,
+          commandButtons: merged.commandButtons,
+        });
+        groupIds = new Set(merged.commandButtonGroups.map((group) => group.id));
+        const groups = merged.added + merged.replaced;
+        if (groups) summary.push(`${groups} button ${groups === 1 ? 'group' : 'groups'}`);
+        if (merged.droppedButtons > 0) {
+          showToast(
+            'warning',
+            `${merged.droppedButtons} imported ${merged.droppedButtons === 1 ? 'command' : 'commands'} did not fit within the command button limits.`,
+          );
+        }
+      }
+      if (included.length > 0) {
+        // A host only names a button group that exists once the bars are in.
+        const linked = included.map((session) => {
+          if (!session.commandButtonGroup || groupIds.has(session.commandButtonGroup)) {
+            return session;
+          }
+          const { commandButtonGroup: _missing, ...rest } = session;
+          return rest as T;
+        });
+        const result = await restoreImportedConnections(
+          connections(linked, sshStorage),
+          conflicts,
+        );
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['ssh-config'] }),
+          queryClient.invalidateQueries({ queryKey: ['saved-host-profiles'] }),
+          queryClient.invalidateQueries({ queryKey: ['data-transfer-summary'] }),
+        ]);
+        summary.unshift(
+          ...[
+            result.added ? `${result.added} added` : '',
+            result.updated ? `${result.updated} replaced` : '',
+            result.skipped ? `${result.skipped} kept` : '',
+          ].filter(Boolean),
+        );
+      }
+      const text = summary.join(' · ');
+      showToast('success', `${vendorName} import complete${text ? ` — ${text}` : ''}.`);
       onClose();
     } catch (importError) {
       const message = messageFrom(
@@ -227,6 +285,7 @@ export function SessionImportDialog<T extends ImportedSession>({
   };
 
   const selectedCount = selected.size;
+  const selectedBarCount = commandBars.filter((bar) => selectedBars.has(bar.id)).length;
   const close = busy ? undefined : onClose;
 
   return (
@@ -304,103 +363,118 @@ export function SessionImportDialog<T extends ImportedSession>({
               </FormControl>
             ) : null}
 
-            <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
-              <TextField
-                size="small"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Filter sessions"
-                sx={{ flex: 1 }}
-                slotProps={{
-                  input: {
-                    startAdornment: (
-                      <SearchOutlinedIcon sx={{ mr: 1, fontSize: 19, color: 'text.secondary' }} />
-                    ),
-                  },
-                }}
-              />
-              <Button
-                size="small"
-                onClick={() =>
-                  setSelected(
-                    selected.size === pending.parsed.sessions.length
-                      ? new Set()
-                      : new Set(pending.parsed.sessions.map((session) => session.id)),
-                  )
-                }
-              >
-                {selected.size === pending.parsed.sessions.length
-                  ? 'Clear selection'
-                  : 'Select all'}
-              </Button>
-            </Stack>
+            {pending.parsed.sessions.length > 0 ? (
+              <>
+              <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+                <TextField
+                  size="small"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Filter sessions"
+                  sx={{ flex: 1 }}
+                  slotProps={{
+                    input: {
+                      startAdornment: (
+                        <SearchOutlinedIcon sx={{ mr: 1, fontSize: 19, color: 'text.secondary' }} />
+                      ),
+                    },
+                  }}
+                />
+                <Button
+                  size="small"
+                  onClick={() =>
+                    setSelected(
+                      selected.size === pending.parsed.sessions.length
+                        ? new Set()
+                        : new Set(pending.parsed.sessions.map((session) => session.id)),
+                    )
+                  }
+                >
+                  {selected.size === pending.parsed.sessions.length
+                    ? 'Clear selection'
+                    : 'Select all'}
+                </Button>
+              </Stack>
 
-            <Paper variant="outlined" sx={{ maxHeight: 330, overflowY: 'auto' }}>
-              <List disablePadding>
-                {filteredSessions.map((session, index) => {
-                  const conflict = isConflict(session);
-                  return (
-                    <Box key={session.id}>
-                      {index > 0 ? <Divider /> : null}
-                      <ListItem
-                        secondaryAction={
-                          conflict ? <Chip size="small" color="warning" label="Already exists" /> : null
-                        }
-                        sx={{
-                          pr: conflict ? 16 : 2,
-                          contentVisibility: 'auto',
-                          containIntrinsicSize: '56px',
-                        }}
-                      >
-                        <ListItemIcon sx={{ minWidth: 38 }}>
-                          <Checkbox
-                            edge="start"
-                            checked={selected.has(session.id)}
-                            onChange={() => toggleSession(session)}
-                            slotProps={{ input: { 'aria-label': `Import ${session.name}` } }}
-                          />
-                        </ListItemIcon>
-                        <ListItemText
-                          primary={
-                            <Stack
-                              component="span"
-                              direction="row"
-                              spacing={1}
-                              sx={{ alignItems: 'center' }}
-                            >
-                              <Typography component="span" variant="body2" sx={{ fontWeight: 650 }}>
-                                {session.name}
-                              </Typography>
-                              {session.kind !== 'ssh' ? (
-                                <SessionKindChip kind={session.kind} />
-                              ) : null}
-                              {session.folder ? (
-                                <Chip
-                                  size="small"
-                                  variant="outlined"
-                                  icon={<FolderOutlinedIcon />}
-                                  label={session.folder}
-                                />
-                              ) : null}
-                            </Stack>
+              <Paper variant="outlined" sx={{ maxHeight: 330, overflowY: 'auto' }}>
+                <List disablePadding>
+                  {filteredSessions.map((session, index) => {
+                    const conflict = isConflict(session);
+                    return (
+                      <Box key={session.id}>
+                        {index > 0 ? <Divider /> : null}
+                        <ListItem
+                          secondaryAction={
+                            conflict ? <Chip size="small" color="warning" label="Already exists" /> : null
                           }
-                          secondary={sessionDetails(session)}
-                        />
-                      </ListItem>
-                    </Box>
-                  );
-                })}
-              </List>
-              {filteredSessions.length === 0 ? (
-                <Typography variant="body2" color="textSecondary" sx={{ p: 3, textAlign: 'center' }}>
-                  No sessions match that filter.
-                </Typography>
-              ) : null}
-            </Paper>
+                          sx={{
+                            pr: conflict ? 16 : 2,
+                            contentVisibility: 'auto',
+                            containIntrinsicSize: '56px',
+                          }}
+                        >
+                          <ListItemIcon sx={{ minWidth: 38 }}>
+                            <Checkbox
+                              edge="start"
+                              checked={selected.has(session.id)}
+                              onChange={() => toggleSession(session)}
+                              slotProps={{ input: { 'aria-label': `Import ${session.name}` } }}
+                            />
+                          </ListItemIcon>
+                          <ListItemText
+                            primary={
+                              <Stack
+                                component="span"
+                                direction="row"
+                                spacing={1}
+                                sx={{ alignItems: 'center' }}
+                              >
+                                <Typography component="span" variant="body2" sx={{ fontWeight: 650 }}>
+                                  {session.name}
+                                </Typography>
+                                {session.kind !== 'ssh' ? (
+                                  <SessionKindChip kind={session.kind} />
+                                ) : null}
+                                {session.folder ? (
+                                  <Chip
+                                    size="small"
+                                    variant="outlined"
+                                    icon={<FolderOutlinedIcon />}
+                                    label={session.folder}
+                                  />
+                                ) : null}
+                              </Stack>
+                            }
+                            secondary={sessionDetails(session)}
+                          />
+                        </ListItem>
+                      </Box>
+                    );
+                  })}
+                </List>
+                {filteredSessions.length === 0 ? (
+                  <Typography variant="body2" color="textSecondary" sx={{ p: 3, textAlign: 'center' }}>
+                    No sessions match that filter.
+                  </Typography>
+                ) : null}
+              </Paper>
+              </>
+            ) : null}
 
-            {conflictingSessions.length > 0 ? (
+            {commandBars.length > 0 ? (
+              <CommandBarList
+                bars={commandBars}
+                selected={selectedBars}
+                existing={existingGroupIds}
+                onToggle={toggleBar}
+              />
+            ) : null}
+
+            {conflictingSessions.length > 0 || conflictingBars.length > 0 ? (
               <FormControl>
-                <FormLabel>When a Muxus host already matches an imported session</FormLabel>
+                <FormLabel>
+                  When Muxus already has a matching host or button group from {vendorName}
+                </FormLabel>
                 <RadioGroup
                   row
                   value={conflicts}
@@ -409,7 +483,7 @@ export function SessionImportDialog<T extends ImportedSession>({
                   <FormControlLabel
                     value="keep"
                     control={<Radio />}
-                    label={`Keep existing (${conflictingSessions.length})`}
+                    label={`Keep existing (${conflictingSessions.length + conflictingBars.length})`}
                   />
                   <FormControlLabel value="replace" control={<Radio />} label="Replace existing" />
                 </RadioGroup>
@@ -505,12 +579,10 @@ export function SessionImportDialog<T extends ImportedSession>({
             startIcon={
               busy === 'import' ? <CircularProgress size={15} color="inherit" /> : <DnsOutlinedIcon />
             }
-            disabled={busy !== null || selectedCount === 0}
+            disabled={busy !== null || selectedCount + selectedBarCount === 0}
             onClick={() => void importSessions()}
           >
-            {busy === 'import'
-              ? 'Importing…'
-              : `Import ${selectedCount} ${selectedCount === 1 ? 'session' : 'sessions'}`}
+            {busy === 'import' ? 'Importing…' : importLabel(selectedCount, selectedBarCount)}
           </Button>
         ) : null}
       </DialogActions>
@@ -532,7 +604,109 @@ function searchableSessionValues(session: ImportedSession): Array<string | undef
   ];
 }
 
-const SESSION_KIND_LABELS = { serial: 'Serial', rdp: 'RDP', vnc: 'VNC' } as const;
+const SESSION_KIND_LABELS = {
+  serial: 'Serial',
+  rdp: 'RDP',
+  vnc: 'VNC',
+  telnet: 'Telnet',
+} as const;
+
+function importLabel(sessions: number, bars: number): string {
+  const parts = [
+    sessions || !bars ? `${sessions} ${sessions === 1 ? 'session' : 'sessions'}` : '',
+    bars ? `${bars} button ${bars === 1 ? 'bar' : 'bars'}` : '',
+  ].filter(Boolean);
+  return `Import ${parts.join(' and ')}`;
+}
+
+function commandBarDetails(bar: ImportedCommandBar): string {
+  const notes = bar.buttons.filter((button) => button.warnings.length > 0).length;
+  return [
+    `${bar.buttons.length} ${bar.buttons.length === 1 ? 'command' : 'commands'}`,
+    bar.skipped.length ? `${bar.skipped.length} skipped` : '',
+    notes ? `${notes} with notes` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** Bars with their skipped buttons and conversion notes, one checkbox per bar. */
+function CommandBarList({
+  bars,
+  selected,
+  existing,
+  onToggle,
+}: {
+  bars: readonly ImportedCommandBar[];
+  selected: ReadonlySet<string>;
+  existing: ReadonlySet<string>;
+  onToggle: (bar: ImportedCommandBar) => void;
+}) {
+  return (
+    <Box>
+      <FormLabel component="div" sx={{ mb: 0.75 }}>
+        Button bars → command button groups
+      </FormLabel>
+      <Paper variant="outlined" sx={{ maxHeight: 260, overflowY: 'auto' }}>
+        <List disablePadding aria-label="Button bars">
+          {bars.map((bar, index) => {
+            const notes = [
+              ...bar.skipped.map((skipped) => `${skipped.label || 'Button'}: ${skipped.reason}`),
+              ...bar.buttons.flatMap((button) =>
+                button.warnings.map((warning) => `${button.label || 'Button'}: ${warning}`),
+              ),
+            ];
+            const conflict = existing.has(bar.id);
+            return (
+              <Box key={bar.id}>
+                {index > 0 ? <Divider /> : null}
+                <ListItem
+                  secondaryAction={
+                    conflict ? <Chip size="small" color="warning" label="Already exists" /> : null
+                  }
+                  sx={{ pr: conflict ? 16 : 2, alignItems: 'flex-start' }}
+                >
+                  <ListItemIcon sx={{ minWidth: 38 }}>
+                    <Checkbox
+                      edge="start"
+                      checked={selected.has(bar.id)}
+                      onChange={() => onToggle(bar)}
+                      slotProps={{ input: { 'aria-label': `Import button bar ${bar.name}` } }}
+                    />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={
+                      <Stack component="span" direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                        <FlashOnOutlinedIcon fontSize="small" color="action" />
+                        <Typography component="span" variant="body2" sx={{ fontWeight: 650 }}>
+                          {bar.name}
+                        </Typography>
+                      </Stack>
+                    }
+                    secondary={
+                      <>
+                        {commandBarDetails(bar)}
+                        {notes.length > 0 ? (
+                          <Box component="ul" sx={{ m: 0, mt: 0.5, pl: 2 }}>
+                            {notes.slice(0, 20).map((note, noteIndex) => (
+                              <li key={noteIndex}>{note}</li>
+                            ))}
+                            {notes.length > 20 ? <li>…and {notes.length - 20} more</li> : null}
+                          </Box>
+                        ) : null}
+                      </>
+                    }
+                    slotProps={{ secondary: { component: 'div' } }}
+                  />
+                </ListItem>
+              </Box>
+            );
+          })}
+        </List>
+      </Paper>
+    </Box>
+  );
+}
 
 function SessionKindChip({ kind }: { kind: keyof typeof SESSION_KIND_LABELS }) {
   const Icon = hostKindIcon(kind);
