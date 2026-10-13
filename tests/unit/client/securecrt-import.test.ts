@@ -346,6 +346,50 @@ describe('SecureCRT Telnet sessions and button bars', () => {
     );
   });
 
+  it('keeps root sessions that only look like templates and leaves the Default bar unlinked', () => {
+    const parsed = parseSecureCrtSessions(String.raw`<VanDyke>
+      <key name="Sessions">
+        <key name="Default_gw">
+          <dword name="Is Session">1</dword>
+          <string name="Protocol Name">SSH2</string>
+          <string name="Hostname">gw.example.test</string>
+          <string name="User Button Bar Name">Default</string>
+        </key>
+        <key name="Default_Local Shell">
+          <dword name="Is Session">1</dword>
+          <string name="Protocol Name">LocalShell</string>
+        </key>
+      </key>
+      <key name="ButtonBarV5">
+        <array name="Default"><string>SEND,uptime,uptime,,,0,1,</string></array>
+      </key>
+    </VanDyke>`);
+
+    expect(parsed.sessions).toEqual([
+      expect.objectContaining({ kind: 'ssh', name: 'Default_gw', host: 'gw.example.test' }),
+    ]);
+    expect(parsed.sessions[0]?.commandButtonGroup).toBeUndefined();
+    expect(parsed.skippedSessions).toEqual([]);
+  });
+
+  it('links sessions to bars whose names were shortened', () => {
+    const long = 'B'.repeat(90);
+    const parsed = parseSecureCrtSessions(`<VanDyke>
+      <key name="Sessions">
+        <key name="r1">
+          <dword name="Is Session">1</dword>
+          <string name="Protocol Name">Telnet</string>
+          <string name="Hostname">r1.example.test</string>
+          <string name="User Button Bar Name">${long}</string>
+        </key>
+      </key>
+      <key name="ButtonBarV5"><array name="${long}"><string>SEND,x,x,,,0,1,</string></array></key>
+    </VanDyke>`);
+
+    expect(parsed.commandBars?.[0]?.name).toHaveLength(80);
+    expect(parsed.sessions[0]?.commandButtonGroup).toBe(parsed.commandBars?.[0]?.id);
+  });
+
   it('converts Send String buttons and explains what cannot be carried over', () => {
     const [junos, tools] = parseSecureCrtSessions(BAR_EXPORT).commandBars ?? [];
 

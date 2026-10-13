@@ -57,8 +57,8 @@ same name; if a group of that name already exists, the import is named *Name (Se
 SecureCRT's own **Default** bar is the exception: while the Muxus **Default** group has no
 buttons of yours, its commands go straight into that group. Otherwise it becomes a
 *Default (SecureCRT)* group, so your commands and the imported ones stay apart.
-A host whose session used a bar shows that group in the command bar, as if
-[a group per host](commands.md#a-group-per-host) had been set.
+A host whose session used a bar other than **Default** shows that group in the command bar,
+as if [a group per host](commands.md#a-group-per-host) had been set.
 
 **Send String** buttons are converted to the literal text they type:
 

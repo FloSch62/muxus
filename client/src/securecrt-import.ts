@@ -81,11 +81,10 @@ export function parseSecureCrtSessions(text: string): SecureCrtParseResult {
       return;
     }
 
-    // Default, Default_RDP, Default_Serial… are the templates new sessions copy.
-    if (folders.length === 0 && /^Default(?:_|$)/.test(rawName)) return;
-
     const protocol = directValue(key, 'string', ['Protocol Name']);
-    const buttonBar = cleanImportName(directValue(key, 'string', ['User Button Bar Name']));
+    if (folders.length === 0 && isSessionTemplate(rawName, protocol)) return;
+
+    const buttonBar = secureCrtBarName(directValue(key, 'string', ['User Button Bar Name']));
     const add = (session: SecureCrtSession) => {
       sessions.push(session);
       if (buttonBar) sessionBars.set(session.id, buttonBar);
@@ -227,8 +226,12 @@ export function parseSecureCrtSessions(text: string): SecureCrtParseResult {
       'No supported SSH, Telnet or serial sessions were found in this SecureCRT file.',
     );
   }
-  // A session can name a bar that was deleted since; only link bars this file carries.
-  const barIds = new Map(commandBars.map((bar) => [bar.name, bar.id]));
+  // A session can name a bar that was deleted since; only link bars this file
+  // carries. Default is the bar sessions show until another one is picked, so
+  // it says nothing about the host and leaves the bar choice to the user.
+  const barIds = new Map(
+    commandBars.filter((bar) => !bar.isDefault).map((bar) => [bar.name, bar.id]),
+  );
   for (const session of sessions) {
     const barId = barIds.get(sessionBars.get(session.id) ?? '');
     if (barId) session.commandButtonGroup = barId;
@@ -267,6 +270,25 @@ const CLIENT_VALUE_ESCAPES: Readonly<Record<string, string>> = {
 };
 
 /**
+ * SecureCRT's templates for new sessions: `Default` and `Default_<protocol>`,
+ * such as Default_Serial. A session of the user's named Default_gw is not one.
+ */
+function isSessionTemplate(name: string, protocol: string): boolean {
+  if (name === 'Default') return true;
+  const suffix = /^Default_(.+)$/.exec(name)?.[1];
+  return suffix !== undefined && comparableName(suffix) === comparableName(protocol);
+}
+
+function comparableName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/** A bar name as both the bar and the sessions naming it are read. */
+function secureCrtBarName(value: string): string {
+  return cleanImportName(value).slice(0, MAX_GROUP_NAME_LENGTH).trim();
+}
+
+/**
  * Button bars from the export's `ButtonBarV<n>` key: one `<array name="Bar">`
  * per bar and one `<string>ACTION,argument,label,…</string>` per button.
  */
@@ -283,9 +305,7 @@ export function parseSecureCrtButtonBars(root: Element): ImportedCommandBar[] {
   const bars: ImportedCommandBar[] = [];
   const ids = new Set<string>();
   for (const array of directElements(section, 'array')) {
-    const name = cleanImportName(array.getAttribute('name') ?? '')
-      .slice(0, MAX_GROUP_NAME_LENGTH)
-      .trim();
+    const name = secureCrtBarName(array.getAttribute('name') ?? '');
     if (!name) continue;
     const id = uniqueStableId(stableImportId('securecrt-bar', name), ids);
     ids.add(id);

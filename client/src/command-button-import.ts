@@ -102,13 +102,19 @@ export function mergeImportedCommandBars(
       }
       result.added++;
     }
+    // A button moved out of an earlier import of this bar keeps its id, so a
+    // new copy gets a suffix; it still starts with the bar id for a later replace.
+    const taken = new Set(buttons.map((button) => button.id));
     bar.buttons.forEach((button, index) => {
       if (buttons.length >= MAX_COMMAND_BUTTONS) {
         result.droppedButtons++;
         return;
       }
+      const base = importedCommandButtonId(bar, index);
+      let id = base;
+      for (let copy = 2; taken.has(id); copy++) id = `${base}-${copy}`;
       buttons.push({
-        id: importedCommandButtonId(bar, index),
+        id,
         label: button.label,
         command: button.command,
         sendEnter: button.sendEnter,

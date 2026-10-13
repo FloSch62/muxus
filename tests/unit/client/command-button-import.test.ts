@@ -121,6 +121,33 @@ describe('mergeImportedCommandBars', () => {
     expect(replaced.replaced).toBe(1);
   });
 
+  it('gives a re-imported bar new ids when a button of the earlier import was moved away', () => {
+    const groups: CommandButtonGroup[] = [DEFAULT_COMMAND_GROUP, { id: 'ops', name: 'Ops' }];
+    // The bar's group was deleted after its first button was moved to Ops.
+    const moved = imported('bar-j', 0, 'show bgp summary', 'ops');
+    const merged = mergeImportedCommandBars(
+      { commandButtonGroups: groups, commandButtons: [moved] },
+      [bar('bar-j', 'Junos', ['show bgp summary', 'show route'])],
+      'keep',
+      'SecureCRT',
+    );
+
+    expect(merged.commandButtons).toEqual([
+      moved,
+      { ...imported('bar-j', 0, 'show bgp summary', 'bar-j'), id: 'bar-j/button-0-2' },
+      imported('bar-j', 1, 'show route', 'bar-j'),
+    ]);
+    expect(merged).toMatchObject({ added: 1, kept: 0 });
+
+    const replaced = mergeImportedCommandBars(
+      merged,
+      [bar('bar-j', 'Junos', ['show version'])],
+      'replace',
+      'SecureCRT',
+    );
+    expect(replaced.commandButtons).toEqual([imported('bar-j', 0, 'show version', 'bar-j')]);
+  });
+
   it('renames other clashing groups and reports bars that were never imported', () => {
     const merged = mergeImportedCommandBars(
       { commandButtonGroups: [...onlyDefault, { id: 'g', name: 'Junos' }], commandButtons: [] },
