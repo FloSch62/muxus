@@ -289,7 +289,13 @@ export function parseSecureCrtButtonBars(root: Element): ImportedCommandBar[] {
     if (!name) continue;
     const id = uniqueStableId(stableImportId('securecrt-bar', name), ids);
     ids.add(id);
-    const bar: ImportedCommandBar = { id, name, buttons: [], skipped: [] };
+    const bar: ImportedCommandBar = {
+      id,
+      name,
+      ...(name === 'Default' ? { isDefault: true } : {}),
+      buttons: [],
+      skipped: [],
+    };
     for (const element of directElements(array, 'string')) {
       const parsed = parseSecureCrtButton(element.textContent ?? '');
       if ('reason' in parsed) bar.skipped.push(parsed);

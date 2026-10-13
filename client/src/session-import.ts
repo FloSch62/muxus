@@ -117,6 +117,11 @@ export interface ImportedCommandBar {
   /** Deterministic group id, so a second import can keep or replace it. */
   id: string;
   name: string;
+  /**
+   * The source app's own default bar. It fills Muxus's Default group when
+   * that group has no buttons of the user's, instead of becoming a group.
+   */
+  isDefault?: boolean;
   buttons: ImportedCommandButton[];
   skipped: SkippedImportedCommand[];
 }

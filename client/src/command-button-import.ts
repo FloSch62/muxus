@@ -1,16 +1,22 @@
 import {
+  commandButtonGroupOf,
+  DEFAULT_COMMAND_GROUP_ID,
   MAX_COMMAND_BUTTON_GROUPS,
   MAX_COMMAND_BUTTONS,
-  newPreferenceId,
 } from './command-buttons.js';
 import type { TransferConflictStrategy } from './data-transfer.js';
 import type { ImportedCommandBar } from './session-import.js';
 import type { CommandButton, CommandButtonGroup } from './state/prefs.js';
 
+export interface CommandButtonState {
+  commandButtonGroups: readonly CommandButtonGroup[];
+  commandButtons: readonly CommandButton[];
+}
+
 export interface CommandBarMergeResult {
   commandButtonGroups: CommandButtonGroup[];
   commandButtons: CommandButton[];
-  /** Groups created, replaced or left as they were. */
+  /** Bars imported, replaced or left as they were. */
   added: number;
   replaced: number;
   kept: number;
@@ -20,57 +26,95 @@ export interface CommandBarMergeResult {
 }
 
 /**
- * Add imported button bars as command button groups. A bar whose group id is
- * already present (an earlier import of the same bar) is kept or replaced as a
- * whole; a new bar whose name is taken by another group gets the source name
- * appended so the two stay distinguishable.
+ * Imported buttons get ids derived from their bar, so a later import can find
+ * them again, even when they were filed under the Default group.
+ */
+export function importedCommandButtonId(bar: ImportedCommandBar, index: number): string {
+  return `${bar.id}/button-${index}`;
+}
+
+function isFromBar(button: CommandButton, bar: ImportedCommandBar): boolean {
+  return button.id.startsWith(`${bar.id}/`);
+}
+
+/**
+ * The group an earlier import of this bar lives in: its own group, or the
+ * Default group when it was imported there. Undefined if it was never imported.
+ */
+export function importedCommandBarGroup(
+  bar: ImportedCommandBar,
+  state: CommandButtonState,
+): string | undefined {
+  if (state.commandButtonGroups.some((group) => group.id === bar.id)) return bar.id;
+  const inDefault = state.commandButtons.some(
+    (button) =>
+      isFromBar(button, bar) &&
+      commandButtonGroupOf(button, state.commandButtonGroups) === DEFAULT_COMMAND_GROUP_ID,
+  );
+  return inDefault ? DEFAULT_COMMAND_GROUP_ID : undefined;
+}
+
+/**
+ * Add imported button bars as command button groups.
+ *
+ * The source's default bar fills Muxus's Default group when that group holds
+ * none of the user's own buttons; otherwise every bar becomes a group of its
+ * own. A bar imported before is kept or replaced as a whole, and replacing
+ * removes only the buttons that came from it. A new group whose name is taken
+ * gets the source name appended.
  */
 export function mergeImportedCommandBars(
-  current: {
-    commandButtonGroups: readonly CommandButtonGroup[];
-    commandButtons: readonly CommandButton[];
-  },
+  current: CommandButtonState,
   bars: readonly ImportedCommandBar[],
   conflicts: TransferConflictStrategy,
   sourceName: string,
-  newId: (prefix: string) => string = newPreferenceId,
 ): CommandBarMergeResult {
   const groups = [...current.commandButtonGroups];
   let buttons = [...current.commandButtons];
   const result = { added: 0, replaced: 0, kept: 0, droppedBars: 0, droppedButtons: 0 };
 
   for (const bar of bars) {
-    const existing = groups.findIndex((group) => group.id === bar.id);
-    if (existing >= 0 && conflicts === 'keep') {
+    let target = importedCommandBarGroup(bar, { commandButtonGroups: groups, commandButtons: buttons });
+    if (target && conflicts === 'keep') {
       result.kept++;
       continue;
     }
-    if (existing >= 0) {
-      // The group keeps its place and any name the user gave it.
-      buttons = buttons.filter((button) => button.groupId !== bar.id);
+    if (target) {
+      // A replaced group keeps its place and any name the user gave it.
+      buttons = buttons.filter(
+        (button) =>
+          !isFromBar(button, bar) && (target === DEFAULT_COMMAND_GROUP_ID || button.groupId !== bar.id),
+      );
       result.replaced++;
     } else {
-      if (groups.length >= MAX_COMMAND_BUTTON_GROUPS) {
+      const defaultHasOwnButtons = buttons.some(
+        (button) => commandButtonGroupOf(button, groups) === DEFAULT_COMMAND_GROUP_ID,
+      );
+      if (bar.isDefault && !defaultHasOwnButtons) {
+        target = DEFAULT_COMMAND_GROUP_ID;
+      } else if (groups.length >= MAX_COMMAND_BUTTON_GROUPS) {
         result.droppedBars++;
         result.droppedButtons += bar.buttons.length;
         continue;
+      } else {
+        target = bar.id;
+        groups.push({ id: bar.id, name: uniqueGroupName(bar.name, sourceName, groups) });
       }
-      groups.push({ id: bar.id, name: uniqueGroupName(bar.name, sourceName, groups) });
       result.added++;
     }
-    for (const button of bar.buttons) {
+    bar.buttons.forEach((button, index) => {
       if (buttons.length >= MAX_COMMAND_BUTTONS) {
         result.droppedButtons++;
-        continue;
+        return;
       }
       buttons.push({
-        id: newId('command'),
+        id: importedCommandButtonId(bar, index),
         label: button.label,
         command: button.command,
         sendEnter: button.sendEnter,
-        groupId: bar.id,
+        ...(target === DEFAULT_COMMAND_GROUP_ID ? {} : { groupId: target }),
       });
-    }
+    });
   }
   return { commandButtonGroups: groups, commandButtons: buttons, ...result };
 }

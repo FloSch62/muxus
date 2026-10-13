@@ -54,6 +54,9 @@ cannot represent are listed as skipped.
 
 Each SecureCRT button bar becomes a [command button group](commands.md#groups) with the
 same name; if a group of that name already exists, the import is named *Name (SecureCRT)*.
+SecureCRT's own **Default** bar is the exception: while the Muxus **Default** group has no
+buttons of yours, its commands go straight into that group. Otherwise it becomes a
+*Default (SecureCRT)* group, so your commands and the imported ones stay apart.
 A host whose session used a bar shows that group in the command bar, as if
 [a group per host](commands.md#a-group-per-host) had been set.
 
@@ -66,8 +69,9 @@ A host whose session used a bar shows that group in the command bar, as if
 | `\p` (pause), `\v` (clipboard), `\u`, `\c`, `\i`, `\a`, `\m`, `\l` (client values) | Removed, with a note in the review |
 
 Menu functions, scripts, applications and other button types have no Muxus equivalent and
-are listed as skipped under their bar. Importing the same bar again keeps or replaces the
-group as a whole.
+are listed as skipped under their bar. Importing the same bar again keeps or replaces its
+commands as a whole; replacing removes only commands that came from that bar, so buttons you
+added to the Default group yourself stay.
 
 Only connection metadata under the XML export's `Sessions` section and the `ButtonBarV5`
 bars are read. Encrypted password fields and logon actions, private-key paths, embedded

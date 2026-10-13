@@ -334,6 +334,12 @@ describe('SecureCRT Telnet sessions and button bars', () => {
       },
     ]);
     expect(parsed.commandBars?.map((bar) => bar.name)).toEqual(['Junos', 'Tools']);
+    expect(parsed.commandBars?.some((bar) => bar.isDefault)).toBe(false);
+    expect(
+      parseSecureCrtSessions(
+        '<VanDyke><key name="ButtonBarV5"><array name="Default"><string>SEND,x,x,,,0,1,</string></array></key></VanDyke>',
+      ).commandBars?.[0]?.isDefault,
+    ).toBe(true);
     expect(parsed.commandBars?.[0]?.id).toMatch(/^securecrt-bar-/);
     expect(parseSecureCrtSessions(BAR_EXPORT).commandBars?.[0]?.id).toBe(
       parsed.commandBars?.[0]?.id,

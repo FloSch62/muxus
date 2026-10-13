@@ -31,7 +31,10 @@ import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import SearchOutlinedIcon from '@mui/icons-material/SearchOutlined';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
-import { mergeImportedCommandBars } from '../command-button-import.js';
+import {
+  importedCommandBarGroup,
+  mergeImportedCommandBars,
+} from '../command-button-import.js';
 import {
   restoreImportedConnections,
   type PortableConnections,
@@ -107,6 +110,7 @@ export function SessionImportDialog<T extends ImportedSession>({
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [selectedBars, setSelectedBars] = useState<ReadonlySet<string>>(new Set());
   const commandButtonGroups = usePrefsStore((state) => state.commandButtonGroups);
+  const commandButtons = usePrefsStore((state) => state.commandButtons);
   const setPrefs = usePrefsStore((state) => state.set);
   const [conflicts, setConflicts] = useState<TransferConflictStrategy>('keep');
   const [sshStorage, setSshStorage] = useState<ImportedSshStorage>('muxus');
@@ -136,12 +140,18 @@ export function SessionImportDialog<T extends ImportedSession>({
     () => pending?.parsed.sessions.filter(isConflict) ?? [],
     [isConflict, pending?.parsed.sessions],
   );
-  const existingGroupIds = useMemo(
-    () => new Set(commandButtonGroups.map((group) => group.id)),
-    [commandButtonGroups],
+  const commandBars = useMemo(() => pending?.parsed.commandBars ?? [], [pending]);
+  /** Bars an earlier import already brought in, whether as a group or into Default. */
+  const importedBarIds = useMemo(
+    () =>
+      new Set(
+        commandBars
+          .filter((bar) => importedCommandBarGroup(bar, { commandButtonGroups, commandButtons }))
+          .map((bar) => bar.id),
+      ),
+    [commandBars, commandButtonGroups, commandButtons],
   );
-  const commandBars = pending?.parsed.commandBars ?? [];
-  const conflictingBars = commandBars.filter((bar) => existingGroupIds.has(bar.id));
+  const conflictingBars = commandBars.filter((bar) => importedBarIds.has(bar.id));
   const filteredSessions = useMemo(() => {
     const needle = search.trim().toLowerCase();
     if (!pending || !needle) return pending?.parsed.sessions ?? [];
@@ -221,7 +231,6 @@ export function SessionImportDialog<T extends ImportedSession>({
     setError(null);
     try {
       const summary: string[] = [];
-      let groupIds: ReadonlySet<string> = existingGroupIds;
       if (bars.length > 0) {
         const merged = mergeImportedCommandBars(
           usePrefsStore.getState(),
@@ -233,7 +242,6 @@ export function SessionImportDialog<T extends ImportedSession>({
           commandButtonGroups: merged.commandButtonGroups,
           commandButtons: merged.commandButtons,
         });
-        groupIds = new Set(merged.commandButtonGroups.map((group) => group.id));
         const groups = merged.added + merged.replaced;
         if (groups) summary.push(`${groups} button ${groups === 1 ? 'group' : 'groups'}`);
         if (merged.droppedButtons > 0) {
@@ -244,13 +252,17 @@ export function SessionImportDialog<T extends ImportedSession>({
         }
       }
       if (included.length > 0) {
-        // A host only names a button group that exists once the bars are in.
+        // Point each host at wherever its bar ended up: its own group, the
+        // Default group, or nowhere when the bar was not imported.
+        const state = usePrefsStore.getState();
+        const barGroups = new Map(
+          commandBars.map((bar) => [bar.id, importedCommandBarGroup(bar, state)]),
+        );
         const linked = included.map((session) => {
-          if (!session.commandButtonGroup || groupIds.has(session.commandButtonGroup)) {
-            return session;
-          }
-          const { commandButtonGroup: _missing, ...rest } = session;
-          return rest as T;
+          if (!session.commandButtonGroup) return session;
+          const { commandButtonGroup: barId, ...rest } = session;
+          const groupId = barGroups.get(barId);
+          return (groupId ? { ...rest, commandButtonGroup: groupId } : rest) as T;
         });
         const result = await restoreImportedConnections(
           connections(linked, sshStorage),
@@ -465,7 +477,7 @@ export function SessionImportDialog<T extends ImportedSession>({
               <CommandBarList
                 bars={commandBars}
                 selected={selectedBars}
-                existing={existingGroupIds}
+                existing={importedBarIds}
                 onToggle={toggleBar}
               />
             ) : null}
