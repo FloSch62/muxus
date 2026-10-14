@@ -44,8 +44,9 @@ function measureEditorLineHeight(textArea: HTMLTextAreaElement, fallback: number
 
 /** What the pace means for this paste, or how to slow it down. */
 function pacingNote(text: string, pacing: PastePacing, mirrored: number): string {
-  const note =
-    pacing.lineDelayMs === 0 && pacing.charDelayMs === 0
+  const note = pacing.prompt
+    ? 'Each line waits for the prompt, and the paste stops at the first line the device rejects.'
+    : pacing.lineDelayMs === 0 && pacing.charDelayMs === 0
       ? 'Sent all at once. A line delay paces it for consoles that drop input.'
       : `Takes ${formatPasteDuration(
           pastePacingDurationMs(preparePasteText(text, false), pacing),

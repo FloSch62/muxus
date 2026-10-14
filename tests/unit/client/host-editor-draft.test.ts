@@ -318,4 +318,39 @@ describe('SSH host editor draft', () => {
       draftProblem({ ...fromConfig, loginSequence: { mode: 'custom', steps: [{ id: 'x', kind: 'secret', secretId: '', enter: true }] } }),
     ).toBe('Login sequence step 1: Choose a secret from the password vault.');
   });
+
+  it('loads prompt waiting from either host source and keeps it out of ssh_config', () => {
+    const pastePromptWait = { promptPattern: 'core-sw\\d#\\s*$', timeoutMs: 15_000 };
+    expect(blankDraft().pastePromptWait.enabled).toBe(false);
+    const fromConfig = draftFromEntry(
+      { ...entry, metadata: { profileId: 'p', connectCount: 0, pastePromptWait } },
+      false,
+    );
+    expect(fromConfig.pastePromptWait).toEqual({
+      enabled: true,
+      promptPattern: 'core-sw\\d#\\s*$',
+      timeoutMs: '15000',
+      errorPattern: '',
+    });
+    expect(draftProblem(fromConfig)).toBeNull();
+    expect(JSON.stringify(draftToRequest(fromConfig))).not.toContain('core-sw');
+
+    const fromProfile = draftFromSavedSshProfile(
+      {
+        id: 'r',
+        kind: 'ssh',
+        name: 'Router',
+        profile: { kind: 'ssh', profileId: 'r', target: 'router.test', useConfig: false },
+        metadata: { profileId: 'r', connectCount: 0, pastePromptWait: {} },
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+      },
+      false,
+    );
+    expect(fromProfile.pastePromptWait.enabled).toBe(true);
+    expect(JSON.stringify(draftToSavedSshInput(fromProfile))).not.toContain('pastePromptWait');
+    expect(
+      draftProblem({ ...fromConfig, pastePromptWait: { ...fromConfig.pastePromptWait, timeoutMs: '99' } }),
+    ).toBe('Prompt timeout: Between 100 and 60000 ms.');
+  });
 });

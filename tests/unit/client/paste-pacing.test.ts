@@ -24,6 +24,23 @@ describe('paste pacing for a session', () => {
     });
   });
 
+  it('waits for the prompt only on a host that turns it on, with the defaults it leaves empty', () => {
+    expect(hostPastePacing(settings, { pasteLineDelayMs: 300 })).not.toHaveProperty('prompt');
+    expect(hostPastePacing(settings, { pastePromptWait: {} })).toEqual({
+      lineDelayMs: 150,
+      charDelayMs: 2,
+      prompt: {
+        promptPattern: '[>#$]\\s*$',
+        timeoutMs: 5000,
+        errorPattern: '^%\\s*(Invalid|Incomplete|Ambiguous)',
+      },
+    });
+    expect(
+      hostPastePacing(settings, { pastePromptWait: { promptPattern: '\\]\\s*$', timeoutMs: 800 } })
+        .prompt,
+    ).toMatchObject({ promptPattern: '\\]\\s*$', timeoutMs: 800 });
+  });
+
   it('rounds the running time for reading', () => {
     expect(formatPasteDuration(400)).toBe('under a second');
     expect(formatPasteDuration(12_400)).toBe('about 12 s');

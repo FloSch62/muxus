@@ -17,6 +17,12 @@ import {
   type LoginSequenceDraft,
 } from '../../login-sequence.js';
 import { keywordHighlightRulesProblem } from '../../terminal/keyword-matching.js';
+import {
+  pastePromptWaitDraft,
+  pastePromptWaitFromDraft,
+  pastePromptWaitProblem,
+  type PastePromptWaitDraft,
+} from '../../terminal/paste-prompt.js';
 
 /**
  * Form state for Muxus-owned Telnet/serial hosts. One draft carries both
@@ -37,6 +43,8 @@ export interface NativeHostDraft {
   /** Paste pacing; unset follows the Terminal settings. */
   pasteLineDelayMs?: number;
   pasteCharDelayMs?: number;
+  /** Pastes wait for the prompt after each line. */
+  pastePromptWait: PastePromptWaitDraft;
   host: string;
   port: string;
   path: string;
@@ -64,6 +72,7 @@ export function blankNativeDraft(prefillTarget = '', group = ''): NativeHostDraf
     commandButtonGroup: undefined,
     pasteLineDelayMs: undefined,
     pasteCharDelayMs: undefined,
+    pastePromptWait: pastePromptWaitDraft(undefined),
     host,
     port: port ?? '23',
     path: '',
@@ -90,6 +99,7 @@ export function nativeDraftFromProfile(saved: SavedHostProfile, duplicate: boole
   draft.commandButtonGroup = saved.metadata.commandButtonGroup;
   draft.pasteLineDelayMs = saved.metadata.pasteLineDelayMs;
   draft.pasteCharDelayMs = saved.metadata.pasteCharDelayMs;
+  draft.pastePromptWait = pastePromptWaitDraft(saved.metadata.pastePromptWait);
   draft.keywordHighlights = saved.metadata.keywordHighlights ?? draft.keywordHighlights;
   draft.loginSequence = loginSequenceDraft(saved.metadata.loginSequence);
   if (saved.profile.kind === 'telnet') {
@@ -125,6 +135,7 @@ export function nativeDraftProblem(draft: NativeHostDraft, kind: 'telnet' | 'ser
     }
   }
   return (
+    pastePromptWaitProblem(draft.pastePromptWait) ??
     loginSequenceProblem(draft.loginSequence) ??
     keywordHighlightRulesProblem(draft.keywordHighlights.rules)
   );
@@ -166,6 +177,7 @@ export function nativeDraftMetadataPatch(draft: NativeHostDraft): OpenSshMetadat
     commandButtonGroup: draft.commandButtonGroup ?? null,
     pasteLineDelayMs: draft.pasteLineDelayMs ?? null,
     pasteCharDelayMs: draft.pasteCharDelayMs ?? null,
+    pastePromptWait: pastePromptWaitFromDraft(draft.pastePromptWait),
     keywordHighlights:
       highlights.inheritGlobal && !highlights.profileId && highlights.rules.length === 0
         ? null

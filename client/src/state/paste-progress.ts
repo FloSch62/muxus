@@ -1,6 +1,8 @@
 import { create } from 'zustand';
+import { terminalNotice } from '../connection-recovery.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
 import { mirroredTabIds } from './multi-exec.js';
+import { useTabsStore } from './tabs.js';
 
 /** A paced paste the backend is typing into a terminal. */
 export interface PasteProgress {
@@ -34,6 +36,25 @@ export function pasteProgressLabel(progress: PasteProgress): string {
 
 export function pasteProgressPercent(progress: PasteProgress): number {
   return progress.total > 0 ? Math.min(100, (progress.sent / progress.total) * 100) : 0;
+}
+
+/**
+ * Mark a stop of the tab's paste as noted; false when the tab noted it
+ * already. A window the session returns to or moves to is sent the last stop
+ * again, and the tab carries the stop it noted with it.
+ */
+export function markPasteStopNoted(tabId: string, stopId: number | undefined): boolean {
+  const tabs = useTabsStore.getState();
+  const noted = tabs.tabs.find((tab) => tab.id === tabId)?.pasteStopNoted;
+  if (stopId !== undefined && noted === stopId) return false;
+  tabs.update(tabId, { pasteStopNoted: stopId });
+  return true;
+}
+
+/** The note a terminal shows when a paste waiting for the prompt stopped by itself. */
+export function pasteStoppedNotice(message: string | undefined): string {
+  const reason = terminalNotice(message ?? 'a line was rejected').replace(/\.$/, '');
+  return `\x1b[33m[paste stopped: ${reason}]\x1b[0m\r\n`;
 }
 
 /**

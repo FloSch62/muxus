@@ -15,6 +15,7 @@ import type {
   ManagementProtocol,
   OpenSshMetadataPatch,
   PasswordVaultUnlockPolicy,
+  PastePromptWait,
   SavedHostProfile,
   SavedHostProfileInput,
   SavedManagementRequest,
@@ -492,6 +493,16 @@ const MIGRATIONS = [
     name: 'management-hosts',
     run: addManagementHosts,
   },
+  {
+    version: 30,
+    name: 'host-paste-prompt-wait',
+    // NULL is off; the bounds and patterns are the API's.
+    sql: `
+      ALTER TABLE connection_profiles
+        ADD COLUMN paste_prompt_wait_json TEXT
+        CHECK(paste_prompt_wait_json IS NULL OR json_valid(paste_prompt_wait_json));
+    `,
+  },
 ] as const;
 
 /** Kinds stored as Muxus-owned saved hosts (everything but OpenSSH metadata rows). */
@@ -684,6 +695,7 @@ export interface OpenSshMetadata {
   commandButtonGroup?: string;
   pasteLineDelayMs?: number;
   pasteCharDelayMs?: number;
+  pastePromptWait?: Partial<PastePromptWait>;
   disableSftp?: boolean;
   consoleCompatibility?: boolean;
   loginSequence?: LoginSequence;
@@ -878,6 +890,7 @@ export class MuxusDatabase {
         profiles.command_button_group,
         profiles.paste_line_delay_ms,
         profiles.paste_char_delay_ms,
+        profiles.paste_prompt_wait_json,
         profiles.disable_sftp,
         profiles.console_compatibility,
         profiles.login_sequence_json,
@@ -990,6 +1003,7 @@ export class MuxusDatabase {
             command_button_group = ?,
             paste_line_delay_ms = ?,
             paste_char_delay_ms = ?,
+            paste_prompt_wait_json = ?,
             disable_sftp = ?,
             console_compatibility = ?,
             login_sequence_json = ?,
@@ -1024,6 +1038,11 @@ export class MuxusDatabase {
         patch.pasteCharDelayMs === undefined
           ? nullableNumber(current.paste_char_delay_ms)
           : patch.pasteCharDelayMs,
+        patch.pastePromptWait === undefined
+          ? nullableString(current.paste_prompt_wait_json)
+          : patch.pastePromptWait === null
+            ? null
+            : JSON.stringify(patch.pastePromptWait),
         patch.disableSftp === undefined
           ? Number(current.disable_sftp)
           : patch.disableSftp
@@ -1525,6 +1544,7 @@ export class MuxusDatabase {
             command_button_group = ?,
             paste_line_delay_ms = ?,
             paste_char_delay_ms = ?,
+            paste_prompt_wait_json = ?,
             disable_sftp = ?,
             console_compatibility = ?,
             login_sequence_json = ?,
@@ -1559,6 +1579,11 @@ export class MuxusDatabase {
         patch.pasteCharDelayMs === undefined
           ? nullableNumber(current.paste_char_delay_ms)
           : patch.pasteCharDelayMs,
+        patch.pastePromptWait === undefined
+          ? nullableString(current.paste_prompt_wait_json)
+          : patch.pastePromptWait === null
+            ? null
+            : JSON.stringify(patch.pastePromptWait),
         patch.disableSftp === undefined
           ? Number(current.disable_sftp)
           : patch.disableSftp
@@ -2561,6 +2586,7 @@ function metadataFromRow(row: SqlRow): OpenSshMetadata {
     commandButtonGroup: optionalString(row.command_button_group),
     pasteLineDelayMs: nullableNumber(row.paste_line_delay_ms) ?? undefined,
     pasteCharDelayMs: nullableNumber(row.paste_char_delay_ms) ?? undefined,
+    pastePromptWait: pastePromptWaitFromJson(row.paste_prompt_wait_json),
     ...(Number(row.disable_sftp) === 1 ? { disableSftp: true } : {}),
     ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),
     loginSequence: loginSequenceFromJson(row.login_sequence_json),
@@ -2604,6 +2630,7 @@ function savedHostFromRow(row: SqlRow): SavedHostProfile {
       commandButtonGroup: optionalString(row.command_button_group),
       pasteLineDelayMs: nullableNumber(row.paste_line_delay_ms) ?? undefined,
       pasteCharDelayMs: nullableNumber(row.paste_char_delay_ms) ?? undefined,
+      pastePromptWait: pastePromptWaitFromJson(row.paste_prompt_wait_json),
       ...(Number(row.disable_sftp) === 1 ? { disableSftp: true } : {}),
       ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),
       loginSequence: loginSequenceFromJson(row.login_sequence_json),
@@ -2641,6 +2668,22 @@ function loginSequenceFromJson(value: unknown): LoginSequence | undefined {
   try {
     const parsed = JSON.parse(value) as Partial<LoginSequence>;
     return Array.isArray(parsed.steps) ? (parsed as LoginSequence) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Stored settings were validated when written; a field of another type uses the default. */
+function pastePromptWaitFromJson(value: unknown): Partial<PastePromptWait> | undefined {
+  if (typeof value !== 'string') return undefined;
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown> | null;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+    return {
+      ...(typeof parsed.promptPattern === 'string' ? { promptPattern: parsed.promptPattern } : {}),
+      ...(typeof parsed.timeoutMs === 'number' ? { timeoutMs: parsed.timeoutMs } : {}),
+      ...(typeof parsed.errorPattern === 'string' ? { errorPattern: parsed.errorPattern } : {}),
+    };
   } catch {
     return undefined;
   }

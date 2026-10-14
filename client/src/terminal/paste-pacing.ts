@@ -1,6 +1,7 @@
 import {
   MAX_PASTE_CHAR_DELAY_MS,
   MAX_PASTE_LINE_DELAY_MS,
+  resolvePastePromptWait,
   type OpenSshProfileMetadata,
   type PastePacing,
 } from '@muxus/shared';
@@ -25,15 +26,22 @@ interface PastePacingDefaults {
   pasteCharDelayMs: number;
 }
 
-/** A host's own paste delays where it sets them, the Terminal settings' otherwise. */
+/**
+ * A host's own paste delays where it sets them, the Terminal settings'
+ * otherwise, and its prompt waiting, which only a host turns on.
+ */
 export function hostPastePacing(
   defaults: PastePacingDefaults,
-  host: Pick<OpenSshProfileMetadata, 'pasteLineDelayMs' | 'pasteCharDelayMs'> | undefined,
+  host:
+    | Pick<OpenSshProfileMetadata, 'pasteLineDelayMs' | 'pasteCharDelayMs' | 'pastePromptWait'>
+    | undefined,
 ): PastePacing {
-  return {
+  const pacing: PastePacing = {
     lineDelayMs: host?.pasteLineDelayMs ?? defaults.pasteLineDelayMs,
     charDelayMs: host?.pasteCharDelayMs ?? defaults.pasteCharDelayMs,
   };
+  if (host?.pastePromptWait) pacing.prompt = resolvePastePromptWait(host.pastePromptWait);
+  return pacing;
 }
 
 /** A paste's running time, rounded for reading: "under a second", "about 12 s", "about 4 min". */
