@@ -95,6 +95,25 @@ describe('AntiIdleTimer', () => {
     antiIdle.close();
   });
 
+  it('can wait for the first input before it starts counting', async () => {
+    const typed: string[] = [];
+    const antiIdle = new AntiIdleTimer(
+      { intervalSeconds: 10, text: ' ', enter: false },
+      { write: (data) => typed.push(data.toString('utf8')), busy: () => false },
+    );
+    antiIdle.startAfterFirstInput();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(typed).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
+
+    antiIdle.input();
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(typed).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(typed).toEqual([' ']);
+    antiIdle.close();
+  });
+
   it('stops for good once closed', async () => {
     const { antiIdle, typed } = timer();
     await vi.advanceTimersByTimeAsync(10_000);

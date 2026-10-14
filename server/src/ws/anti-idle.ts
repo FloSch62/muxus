@@ -27,6 +27,7 @@ export class AntiIdleTimer {
   private readonly intervalMs: number;
   private lastInputAt = 0;
   private held = false;
+  private startOnInput = false;
   private timer: NodeJS.Timeout | undefined;
   private closed = false;
 
@@ -40,12 +41,27 @@ export class AntiIdleTimer {
 
   start(): void {
     if (this.closed || this.timer) return;
+    this.startOnInput = false;
     this.lastInputAt = performance.now();
     this.schedule(this.intervalMs);
   }
 
+  /**
+   * Start the first wait at the session's first input rather than now, for
+   * sessions that log in after they open: one left at a login prompt must not
+   * get the text as a username.
+   */
+  startAfterFirstInput(): void {
+    if (this.closed || this.timer) return;
+    this.startOnInput = true;
+  }
+
   /** Input reached the session. */
   input(): void {
+    if (this.startOnInput) {
+      this.start();
+      return;
+    }
     this.lastInputAt = performance.now();
   }
 

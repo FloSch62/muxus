@@ -580,7 +580,12 @@ async function handleSession(
 
   // A host's anti-idle text is typed here rather than by the tab, so multi-exec
   // never mirrors it; it is recorded like typed input. SSH, Telnet and serial only.
-  const startAntiIdle = (host: () => LoginSequenceHost | undefined): void => {
+  // Telnet and serial log in inside the session, so there the first wait starts
+  // at the first input, never at a login prompt nobody has answered.
+  const startAntiIdle = (
+    host: () => LoginSequenceHost | undefined,
+    { afterFirstInput = false } = {},
+  ): void => {
     try {
       const target = host();
       const setting = target && ctx.database.hostAntiIdle(target);
@@ -594,7 +599,8 @@ async function handleSession(
         },
         busy: () => pastePacer.running || (loginSequence?.running ?? false),
       });
-      antiIdle.start();
+      if (afterFirstInput) antiIdle.startAfterFirstInput();
+      else antiIdle.start();
     } catch (err) {
       app.log.warn({ err }, 'could not load the anti-idle setting');
     }
@@ -658,7 +664,7 @@ async function handleSession(
       prepareLoginSequence(savedHost),
     );
     writePastedInput = drainedWriter(transport);
-    startAntiIdle(savedHost);
+    startAntiIdle(savedHost, { afterFirstInput: true });
     app.log.info(
       { path: profile.path, baudRate: profile.baudRate },
       'serial session established',
@@ -690,7 +696,7 @@ async function handleSession(
       prepareLoginSequence(savedHost),
     );
     writePastedInput = drainedWriter(transport);
-    startAntiIdle(savedHost);
+    startAntiIdle(savedHost, { afterFirstInput: true });
     app.log.info({ host: profile.host, port: profile.port }, 'telnet session established');
     if (profile.profileId) ctx.database.recordSavedHostConnection(profile.profileId);
     return;

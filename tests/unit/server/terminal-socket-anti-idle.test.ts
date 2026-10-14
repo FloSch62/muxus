@@ -298,7 +298,7 @@ describe('anti-idle over the terminal socket', () => {
     }
   });
 
-  it('types into a saved Telnet host', async () => {
+  it('waits for the first input on a saved Telnet host, which logs in after it opens', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'] });
     const fromClient: Buffer[] = [];
     const server = net.createServer((connection) => {
@@ -323,8 +323,14 @@ describe('anti-idle over the terminal socket', () => {
       });
       await vi.waitFor(() => expect(socket.frames().some((frame) => frame.op === 'ready')).toBe(true));
 
+      // Left at the login prompt: nothing is typed as a username.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(Buffer.concat(fromClient).toString('utf8')).toBe('');
+
+      socket.emit('message', Buffer.from('admin'), true);
+      await vi.waitFor(() => expect(Buffer.concat(fromClient).toString('utf8')).toBe('admin'));
       await vi.advanceTimersByTimeAsync(10_000);
-      await vi.waitFor(() => expect(Buffer.concat(fromClient).toString('utf8')).toBe(' '));
+      await vi.waitFor(() => expect(Buffer.concat(fromClient).toString('utf8')).toBe('admin '));
     } finally {
       socket.close(1000, TERMINAL_SESSION_CLOSE_REASON);
       database.close();

@@ -178,6 +178,10 @@ host can have Muxus type into its idle sessions instead:
    a reload, and runs a command left half-typed for longer than the interval. In a
    full-screen editor or pager, the text and Enter land there.
 
+On Telnet and serial hosts, where you log in after the session opens, the first wait starts
+at the first input, yours or a login sequence's, so a session left at a login prompt never
+gets the text as a username.
+
 Any input starts the wait over: keystrokes, pastes, command buttons, vault secrets and login
 sequence steps. [Send BREAK](telnet-serial.md#send-break) is a signal, not input, so it does
 not. While a paced paste or a login sequence runs, the wait is held, and a full interval
