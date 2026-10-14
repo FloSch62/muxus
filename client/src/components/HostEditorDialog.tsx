@@ -264,6 +264,7 @@ function initialManagementDraft(state: OpenState): ManagementHostDraft {
   const draft = blankManagementDraft(
     state.mode === 'new' ? state.prefillTarget : undefined,
     state.mode === 'new' ? state.group : undefined,
+    state.mode === 'new' ? state.prefillGateway : undefined,
   );
   return state.mode === 'new' && state.prefillName ? { ...draft, name: state.prefillName } : draft;
 }
