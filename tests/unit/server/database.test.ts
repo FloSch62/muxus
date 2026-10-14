@@ -54,7 +54,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 27, name: 'login-sequences' },
       { version: 28, name: 'host-paste-pacing' },
       { version: 29, name: 'management-hosts' },
-      { version: 30, name: 'host-anti-idle' },
+      { version: 31, name: 'host-anti-idle' },
     ]);
   });
 
@@ -146,7 +146,7 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 30,
+      version: 31,
       name: 'host-anti-idle',
     });
     expect(database.savedHostProfile(telnet.id)).toMatchObject({
@@ -252,7 +252,7 @@ describe('MuxusDatabase migrations', () => {
     }
 
     database = new MuxusDatabase(filename);
-    expect(database.appliedMigrations().at(-1)).toEqual({ version: 30, name: 'host-anti-idle' });
+    expect(database.appliedMigrations().at(-1)).toEqual({ version: 31, name: 'host-anti-idle' });
     expect(database.savedHostProfile(rdp.id)).toMatchObject({ name: 'Build server', metadata: { group: 'Lab' } });
     const gnmi = database.saveSavedHostProfile({
       name: 'leaf1',
@@ -341,7 +341,7 @@ describe('MuxusDatabase migrations', () => {
     const legacy = new DatabaseSync(filename);
     try {
       legacy.exec(`
-        DELETE FROM schema_migrations WHERE version = 30;
+        DELETE FROM schema_migrations WHERE version = 31;
         ALTER TABLE connection_profiles DROP COLUMN anti_idle_json;
         PRAGMA user_version = 29;
       `);
@@ -430,7 +430,7 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 30,
+      version: 31,
       name: 'host-anti-idle',
     });
     expect(database.passwordVaultConfig()).toMatchObject({

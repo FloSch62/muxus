@@ -494,7 +494,7 @@ const MIGRATIONS = [
     run: addManagementHosts,
   },
   {
-    version: 30,
+    version: 31,
     name: 'host-anti-idle',
     // NULL is off; the bounds are the API's.
     sql: `
