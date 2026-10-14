@@ -7,7 +7,11 @@ import {
   type SavedHostProfile,
   type SavedHostProfileInput,
   type SshGateway,
+  savedHostHopId,
 } from '@muxus/shared';
+import { hostDisplayName } from '../../host-organization.js';
+import type { ManagedHost } from '../../managed-hosts.js';
+import { savedHostDisplayName } from '../../saved-hosts.js';
 import { parseHostTarget } from './native-draft.js';
 
 export type ManagementKind = 'gnmi' | 'netconf';
@@ -39,7 +43,11 @@ export interface ManagementHostDraft {
   encoding: '' | GnmiEncoding;
 }
 
-export function blankManagementDraft(prefillTarget = '', group = ''): ManagementHostDraft {
+export function blankManagementDraft(
+  prefillTarget = '',
+  group = '',
+  sshGateway?: SshGateway,
+): ManagementHostDraft {
   const { host, port, user } = parseHostTarget(prefillTarget);
   return {
     name: '',
@@ -48,7 +56,7 @@ export function blankManagementDraft(prefillTarget = '', group = ''): Management
     host,
     port: port ?? '',
     username: user ?? '',
-    sshGateway: undefined,
+    sshGateway,
     tls: 'verify',
     tlsServerName: '',
     caFile: '',
@@ -134,4 +142,66 @@ export function managementDraftMetadataPatch(draft: ManagementHostDraft): OpenSs
     group: draft.group.trim() || null,
     color: draft.color ?? null,
   };
+}
+
+/** What the host editor opens with when adding a gNMI or NETCONF host for an SSH one. */
+export interface ManagementHostPrefill {
+  mode: 'new';
+  kind: ManagementKind;
+  prefillTarget: string;
+  prefillName: string;
+  prefillGateway?: SshGateway;
+  group?: string;
+}
+
+/**
+ * A new gNMI or NETCONF host for the device an SSH host reaches: same
+ * address and user, same folder, through the same jump host. NETCONF keeps an
+ * ssh_config alias as its host so that config's keys and jump hosts still
+ * apply; otherwise the last jump hop becomes the SSH gateway, which reaches
+ * its own earlier hops when it is a saved host or ssh_config alias.
+ */
+export function managementHostPrefill(
+  host: ManagedHost,
+  kind: ManagementKind,
+  savedProfiles: readonly SavedHostProfile[],
+): ManagementHostPrefill {
+  const protocol = kind === 'gnmi' ? 'gNMI' : 'NETCONF';
+  if (host.kind === 'ssh') {
+    const { resolved } = host.entry;
+    const target = kind === 'netconf' ? host.entry.alias : resolved.hostname;
+    const gateway = kind === 'gnmi' ? jumpGateway(resolved.proxyJump, savedProfiles) : undefined;
+    return {
+      mode: 'new',
+      kind,
+      prefillTarget: `${resolved.user ? `${resolved.user}@` : ''}${target}`,
+      prefillName: `${hostDisplayName(host.entry)} (${protocol})`,
+      ...(gateway ? { prefillGateway: gateway } : {}),
+      group: host.entry.metadata?.group,
+    };
+  }
+  const profile = host.entry.profile;
+  // The SSH port means nothing to gNMI or NETCONF: keep only the host.
+  const address = profile.kind === 'ssh' ? profile.target.replace(/^[^@]*@/, '') : '';
+  const target = address.split(':').length === 2 ? address.split(':')[0]! : address;
+  const user = profile.kind === 'ssh' ? (profile.user ?? (profile.target.includes('@') ? profile.target.split('@')[0] : undefined)) : undefined;
+  const gateway = profile.kind === 'ssh' ? jumpGateway(profile.proxyJump ?? [], savedProfiles) : undefined;
+  return {
+    mode: 'new',
+    kind,
+    prefillTarget: `${user ? `${user}@` : ''}${target}`,
+    prefillName: `${savedHostDisplayName(host.entry)} (${protocol})`,
+    ...(gateway ? { prefillGateway: gateway } : {}),
+    group: host.entry.metadata.group,
+  };
+}
+
+/** The SSH gateway standing in for a jump list: its last hop, as a saved host when it names one. */
+function jumpGateway(hops: readonly string[], savedProfiles: readonly SavedHostProfile[]): SshGateway | undefined {
+  const last = hops.at(-1);
+  if (!last || last.toLowerCase() === 'none') return undefined;
+  const id = savedHostHopId(last);
+  if (id === undefined) return { target: last };
+  const saved = savedProfiles.find((candidate) => candidate.id === id)?.profile;
+  return saved?.kind === 'ssh' ? { target: saved.target, profileId: id } : undefined;
 }

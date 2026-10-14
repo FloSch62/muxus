@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { SavedHostProfile, SshHostEntry } from '@muxus/shared';
+import type { SavedHostProfile, SshGateway, SshHostEntry } from '@muxus/shared';
 import { openSettingsWindow } from '../window-management.js';
 
 /** Unified editor state for OpenSSH entries and Muxus-owned Telnet/serial/RDP/VNC hosts. */
@@ -10,6 +10,8 @@ export type HostEditorState =
       prefillTarget?: string;
       /** Name for the new host, e.g. when adding a gNMI host for an SSH one. */
       prefillName?: string;
+      /** SSH gateway for a new gNMI or NETCONF host, e.g. the jump host of the SSH one it is for. */
+      prefillGateway?: SshGateway;
       group?: string;
       kind?: SavedHostProfile['kind'];
     }
