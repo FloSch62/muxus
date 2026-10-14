@@ -109,14 +109,14 @@ describe('commandButtonInput', () => {
 });
 
 describe('activateCommandButton', () => {
-  it('returns focus to the terminal after sending the command', () => {
+  it('types the command and returns focus to the terminal', () => {
     const events: string[] = [];
 
     const sent = activateCommandButton(
       {
-        sendInput: (input) => {
+        typeText: (input) => {
           expect(input).toBe('uptime\r');
-          events.push('send');
+          events.push('type');
           return true;
         },
         focus: () => events.push('focus'),
@@ -130,7 +130,24 @@ describe('activateCommandButton', () => {
     );
 
     expect(sent).toBe(true);
-    expect(events).toEqual(['send', 'focus']);
+    expect(events).toEqual(['type', 'focus']);
+  });
+
+  it('types a multiline command as one input so the host can pace it', () => {
+    const typed: string[] = [];
+
+    activateCommandButton(
+      { typeText: (input) => typed.push(input) > 0, focus: () => undefined },
+      { id: 'cfg', label: 'Config', command: 'conf t\ninterface Gi0/1\nend', sendEnter: true },
+    );
+
+    expect(typed).toEqual(['conf t\rinterface Gi0/1\rend\r']);
+  });
+
+  it('does nothing without a terminal', () => {
+    expect(
+      activateCommandButton(undefined, { id: 'u', label: 'Uptime', command: 'uptime', sendEnter: true }),
+    ).toBe(false);
   });
 });
 

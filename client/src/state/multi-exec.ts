@@ -177,6 +177,15 @@ export function broadcastTerminalPaste(sourceTabId: string, text: string): numbe
   return delivered;
 }
 
+/** Type saved text into every other mirrored terminal, each at its own host's pace. */
+export function broadcastTerminalTyping(sourceTabId: string, text: string): number {
+  let delivered = 0;
+  for (const tabId of multiExecMirrorTabIds(sourceTabId)) {
+    if (terminalHandle(tabId)?.typeText(text)) delivered++;
+  }
+  return delivered;
+}
+
 /** The terminals mirroring input with this one, itself included; empty when it mirrors nothing. */
 export function mirroredTabIds(tabId: string): string[] {
   const { selectedIds } = useMultiExecStore.getState();

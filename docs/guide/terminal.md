@@ -140,7 +140,8 @@ Both are 0 by default, which sends a paste at once. The defaults are under
 [Settings → Terminal](settings.md#terminal), and a host can set its own under **Terminal
 appearance** in its editor: an empty field follows the settings, and 0 turns pacing off for
 that host. The [bulk editor](hosts.md#editing-several-hosts-at-once) sets them on many hosts
-at once. Local terminals use the settings.
+at once. Local terminals use the settings. [Command buttons](commands.md#command-buttons) are
+typed at the same pace.
 
 The multiline paste preview shows the host's line delay and how long the paste will take;
 a delay changed there applies to that paste only. While a paced paste runs, its progress

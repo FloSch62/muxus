@@ -78,13 +78,13 @@ export function commandButtonInput(button: CommandButton): string {
   return `${command}\r`;
 }
 
-/** Send a saved command and return keyboard focus to its terminal. */
+/** Type a saved command at the host's paste pace and refocus its terminal. */
 export function activateCommandButton(
-  terminal: Pick<TerminalHandle, 'focus' | 'sendInput'> | undefined,
+  terminal: Pick<TerminalHandle, 'focus' | 'typeText'> | undefined,
   button: CommandButton,
 ): boolean {
   if (!terminal) return false;
-  const sent = terminal.sendInput(commandButtonInput(button));
+  const sent = terminal.typeText(commandButtonInput(button));
   terminal.focus();
   return sent;
 }

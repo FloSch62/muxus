@@ -94,6 +94,7 @@ import {
   type KeywordHighlighter,
 } from '../terminal/keyword-highlighting.js';
 import { registerTerminal } from '../terminal/terminal-registry.js';
+import { typedInput } from '../terminal/typed-input.js';
 import { formatSshSessionSummary } from '../terminal/ssh-session-summary.js';
 import {
   DIAGNOSIS_PROGRESS,
@@ -765,6 +766,8 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
 
     const encoder = new TextEncoder();
     let ready = false;
+    // A paced paste went out and the backend has not reported it finished.
+    let pacedPastePending = false;
     // The server ignores input until the session exists, so keystrokes typed
     // into a pane that is still connecting wait here and go out the moment it
     // is ready — the type-ahead every real terminal gives you, which matters
@@ -824,10 +827,21 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         if (source) reconnectFromTerminalInput();
         return false;
       }
+      pacedPastePending = true;
       if (source) term.scrollToBottom();
       return true;
     };
     sessionPasteRef.current = pasteIntoSession;
+
+    // Saved commands are typed, never bracketed, at the host's paste pace.
+    const typeIntoSession = (text: string): boolean => {
+      const behindPaste = pacedPastePending || tab.id in usePasteProgressStore.getState().byTab;
+      const input = typedInput(text, currentPastePacing(), behindPaste);
+      if (input.kind === 'direct') return input.data ? sendInput(input.data) : true;
+      if (!sendFrame(JSON.stringify(input.message))) return false;
+      if (isPacedPaste(input.message)) pacedPastePending = true;
+      return true;
+    };
 
     attachOsc52Clipboard(
       term,
@@ -867,6 +881,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         };
       },
       sendInput,
+      typeText: typeIntoSession,
       clear: () => term.clear(),
       selectAll: () => term.selectAll(),
       hasSelection: () => term.hasSelection(),
@@ -1397,6 +1412,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             exitMessage = ctl;
             break;
           case 'paste-progress':
+            if (ctl.state !== 'running') pacedPastePending = false;
             setPasteProgress(
               tab.id,
               ctl.state === 'running'
@@ -1421,6 +1437,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         terminalInputReadyRef.current = false;
         if (wsRef.current === socket) wsRef.current = null;
         // A reattached renderer is sent the progress again.
+        pacedPastePending = false;
         setPasteProgress(tab.id, undefined);
         if (disposed) return;
         clearTransientStatus();

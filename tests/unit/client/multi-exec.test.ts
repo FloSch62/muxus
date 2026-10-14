@@ -3,6 +3,7 @@ import { toggleMultiExec } from '../../../client/src/session-actions.js';
 import {
   broadcastTerminalInput,
   broadcastTerminalPaste,
+  broadcastTerminalTyping,
   multiExecPaneIds,
   useMultiExecStore,
 } from '../../../client/src/state/multi-exec.js';
@@ -22,6 +23,7 @@ function handle(
     focus: vi.fn(),
     cursorAnchorPosition: () => undefined,
     sendInput,
+    typeText: vi.fn(() => true),
     clear: vi.fn(),
     selectAll: vi.fn(),
     hasSelection: () => false,
@@ -125,6 +127,27 @@ describe('multi-execution routing', () => {
 
     useMultiExecStore.getState().setSelection(['tab-a']);
     expect(broadcastTerminalPaste('tab-a', 'uptime\n')).toBe(0);
+    unregister.forEach((dispose) => dispose());
+  });
+
+  it('types a saved command into each other mirrored terminal at its own pace', () => {
+    const typed = [vi.fn(() => true), vi.fn(() => true), vi.fn(() => false), vi.fn(() => true)];
+    const unregister = ['tab-a', 'tab-b', 'tab-c', 'tab-d'].map((id, index) =>
+      registerTerminal(id, handle(vi.fn(() => true), { typeText: typed[index]! })),
+    );
+    useMultiExecStore.getState().setSelection(['tab-a', 'tab-b', 'tab-c']);
+
+    // Typed, not pasted: each terminal paces it by its host, without bracketed-paste markers.
+    expect(broadcastTerminalTyping('tab-a', 'show version\r')).toBe(1);
+    expect(typed[0]).not.toHaveBeenCalled();
+    expect(typed[1]).toHaveBeenCalledWith('show version\r');
+    expect(typed[2]).toHaveBeenCalledWith('show version\r');
+    expect(typed[3]).not.toHaveBeenCalled();
+
+    // A terminal outside the selection mirrors nothing, and neither does a lone selection.
+    expect(broadcastTerminalTyping('tab-d', 'uptime\r')).toBe(0);
+    useMultiExecStore.getState().setSelection(['tab-a']);
+    expect(broadcastTerminalTyping('tab-a', 'uptime\r')).toBe(0);
     unregister.forEach((dispose) => dispose());
   });
 

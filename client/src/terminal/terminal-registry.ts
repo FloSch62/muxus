@@ -15,6 +15,8 @@ export interface TerminalHandle {
   cursorAnchorPosition(): TerminalAnchorPosition | undefined;
   /** Write raw input directly to this terminal's PTY transport. */
   sendInput(data: string | Uint8Array<ArrayBuffer>): boolean;
+  /** Type text as keyboard input (never bracketed), paced like the host's pastes. */
+  typeText(text: string): boolean;
   /** Clear screen + scrollback. */
   clear(): void;
   selectAll(): void;
