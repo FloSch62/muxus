@@ -123,6 +123,12 @@ average in place of CPU usage, and BSD hosts leave out memory. A host that canno
 script, such as a network device or a Windows server, shows **This host does not report
 statistics** and is not asked again on that connection.
 
+Muxus only opens that extra channel when the server already ran a command for it while the
+session opened. Routers and console servers that offer just their CLI are never asked, and
+neither are hosts with **Disable SFTP and shell integration only** or console compatibility
+mode turned on: some of them drop the whole connection when a second channel asks to run a
+command.
+
 **Local terminals** show the computer they run on. Windows reports neither logged-in users
 nor network traffic.
 

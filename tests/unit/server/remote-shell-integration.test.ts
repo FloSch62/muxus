@@ -186,15 +186,91 @@ describe('remote shell integration', () => {
         callback: (error: Error | undefined, channel: StubChannel) => void,
       ) => callback(undefined, plainChannel),
     );
+    const probe = { ranCommand: false, execRefused: false };
     const result = await openRemoteShell(
       Object.assign(stubClient(exec), { shell }),
       getSftp,
       { term: 'xterm-256color', cols: 80, rows: 24 },
+      undefined,
+      undefined,
+      undefined,
+      probe,
     );
 
     expect(result).toBe(plainChannel);
     expect(getSftp).not.toHaveBeenCalled();
     expect(shell).toHaveBeenCalledOnce();
+    expect(probe).toEqual({ ranCommand: false, execRefused: false });
+  });
+
+  it('records a server that ran the probe, even in a shell it does not integrate', async () => {
+    const probe = { ranCommand: false, execRefused: false };
+    const exec = (
+      _command: string,
+      callback: (error: Error | undefined, channel: StubChannel) => void,
+    ) => {
+      const probeChannel = new StubChannel();
+      callback(undefined, probeChannel);
+      setImmediate(() => {
+        probeChannel.emit('data', Buffer.from('__MUXUS_SHELL__=/usr/bin/fish\n__MUXUS_HOME__=/home/u\n'));
+        probeChannel.emit('close');
+      });
+    };
+    await openRemoteShell(
+      Object.assign(stubClient(exec), {
+        shell: (_pty: unknown, _options: unknown, callback: (e: undefined, c: StubChannel) => void) =>
+          callback(undefined, new StubChannel()),
+      }),
+      vi.fn(),
+      { term: 'xterm-256color', cols: 80, rows: 24 },
+      undefined,
+      undefined,
+      undefined,
+      probe,
+    );
+    expect(probe).toEqual({ ranCommand: true, execRefused: false });
+  });
+
+  it('probes a transport that refused exec only once', async () => {
+    // Nokia SR OS keeps a refused exec channel's slot until the connection
+    // closes; a probe per shell would use up the few slots it allows.
+    const probe = { ranCommand: false, execRefused: false };
+    const exec = vi.fn((_command: string, callback: (error: Error) => void) =>
+      callback(new Error('Unable to exec')),
+    );
+    const shell = vi.fn(
+      (_pty: unknown, _options: unknown, callback: (e: undefined, c: StubChannel) => void) =>
+        callback(undefined, new StubChannel()),
+    );
+    const client = Object.assign(stubClient(exec), { shell });
+    const pty = { term: 'xterm-256color', cols: 80, rows: 24 };
+
+    await openRemoteShell(client, vi.fn(), pty, undefined, undefined, undefined, probe);
+    expect(probe).toEqual({ ranCommand: false, execRefused: true });
+    await openRemoteShell(client, vi.fn(), pty, undefined, undefined, undefined, probe);
+
+    expect(exec).toHaveBeenCalledOnce();
+    expect(shell).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps probing after a channel open failure, such as a full MaxSessions', async () => {
+    const probe = { ranCommand: false, execRefused: false };
+    const exec = vi.fn((_command: string, callback: (error: Error) => void) =>
+      callback(new Error('(SSH) Channel open failure: open failed')),
+    );
+    await openRemoteShell(
+      Object.assign(stubClient(exec), {
+        shell: (_pty: unknown, _options: unknown, callback: (e: undefined, c: StubChannel) => void) =>
+          callback(undefined, new StubChannel()),
+      }),
+      vi.fn(),
+      { term: 'xterm-256color', cols: 80, rows: 24 },
+      undefined,
+      undefined,
+      undefined,
+      probe,
+    );
+    expect(probe.execRefused).toBe(false);
   });
 
   it('surfaces a transport lost during the optional shell probe', async () => {
