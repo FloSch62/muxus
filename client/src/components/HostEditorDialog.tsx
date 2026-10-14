@@ -28,6 +28,7 @@ import {
   useUpdateSshMetadata,
   useUpsertHost,
 } from '../api/ssh-config.js';
+import { antiIdleFromDraft } from '../anti-idle.js';
 import { confirmDeleteHost, shortenSshPath } from '../host-actions.js';
 import { loginSequenceFromDraft } from '../login-sequence.js';
 import { connectSavedHost, connectTarget } from '../session-actions.js';
@@ -359,6 +360,7 @@ function SshHostEditorContent({
         pasteLineDelayMs: draft.pasteLineDelayMs ?? null,
         pasteCharDelayMs: draft.pasteCharDelayMs ?? null,
         pastePromptWait: pastePromptWaitFromDraft(draft.pastePromptWait),
+        antiIdle: antiIdleFromDraft(draft.antiIdle),
         disableSftp: draft.disableSftp,
         consoleCompatibility: draft.consoleCompatibility,
         keywordHighlights:
@@ -387,6 +389,7 @@ function SshHostEditorContent({
         pasteLineDelayMs: draft.pasteLineDelayMs ?? null,
         pasteCharDelayMs: draft.pasteCharDelayMs ?? null,
         pastePromptWait: pastePromptWaitFromDraft(draft.pastePromptWait),
+        antiIdle: antiIdleFromDraft(draft.antiIdle),
         disableSftp: draft.disableSftp,
         consoleCompatibility: draft.consoleCompatibility,
         keywordHighlights:
@@ -475,6 +478,7 @@ function SshHostEditorContent({
         draft.commandButtonGroup,
         draft.pasteLineDelayMs !== undefined || draft.pasteCharDelayMs !== undefined,
         draft.pastePromptWait.enabled,
+        draft.antiIdle.enabled,
       ].filter(Boolean).length || undefined,
     },
     { value: 'auth', label: 'Authentication', icon: <KeyOutlinedIcon fontSize="small" /> },

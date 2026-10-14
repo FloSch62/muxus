@@ -27,6 +27,7 @@ import {
 } from '../session-logging/session-recorder.js';
 import { resolveLoginSequence, type LoginSequenceHost } from '../login-sequence/resolve.js';
 import { LoginSequenceSession } from '../login-sequence/session.js';
+import { AntiIdleTimer } from './anti-idle.js';
 import { PastePacer } from './paste-pacer.js';
 
 const CONNECT_TIMEOUT_MS = 30_000;
@@ -366,12 +367,14 @@ async function handleSession(
   const control = new ControlChannel();
   let writeInput: ((data: Buffer) => void) | undefined;
   let recorder: SessionRecorder | undefined;
+  let antiIdle: AntiIdleTimer | undefined;
   let socketOpen = true;
 
   socket.on('message', (data: Buffer, isBinary: boolean) => {
     if (isBinary) {
       if (writeInput) recorder?.input(data);
       writeInput?.(data);
+      antiIdle?.input();
       return;
     }
     try {
@@ -382,11 +385,13 @@ async function handleSession(
       const input = Buffer.from(data.toString('utf8'), 'utf8');
       if (writeInput) recorder?.input(input);
       writeInput?.(input);
+      antiIdle?.input();
     }
   });
   socket.on('close', () => {
     socketOpen = false;
     control.close();
+    antiIdle?.close();
   });
 
   let connectTimer: NodeJS.Timeout | undefined;
@@ -480,6 +485,7 @@ async function handleSession(
   const unregisterInput = ctx.terminalInputs.register(terminalId, (data) => {
     if (!socketOpen || !writeInput) return false;
     writeInput(data);
+    antiIdle?.input();
     return true;
   });
   socket.once('close', unregisterInput);
@@ -522,6 +528,7 @@ async function handleSession(
     (data) => {
       if (!writePastedInput) return;
       recorder?.input(data);
+      antiIdle?.input();
       return writePastedInput(data);
     },
     (progress) => {
@@ -574,6 +581,34 @@ async function handleSession(
     }
   };
 
+  // A host's anti-idle text is typed here rather than by the tab, so multi-exec
+  // never mirrors it; it is recorded like typed input. SSH, Telnet and serial only.
+  // Telnet and serial log in inside the session, so there the first wait starts
+  // at the first input, never at a login prompt nobody has answered.
+  const startAntiIdle = (
+    host: () => LoginSequenceHost | undefined,
+    { afterFirstInput = false } = {},
+  ): void => {
+    try {
+      const target = host();
+      const setting = target && ctx.database.hostAntiIdle(target);
+      if (!setting || !socketOpen) return;
+      // Closed with the session by the close handler at the top.
+      antiIdle = new AntiIdleTimer(setting, {
+        write: (data) => {
+          if (!writeInput) return;
+          recorder?.input(data);
+          writeInput(data);
+        },
+        busy: () => pastePacer.running || (loginSequence?.running ?? false),
+      });
+      if (afterFirstInput) antiIdle.startAfterFirstInput();
+      else antiIdle.start();
+    } catch (err) {
+      app.log.warn({ err }, 'could not load the anti-idle setting');
+    }
+  };
+
   if (profile.kind === 'local') {
     const { pty } = spawnLocalPty(profile, cols, rows);
     let startupInput = localStartupInput(profile.startupCommand);
@@ -618,6 +653,7 @@ async function handleSession(
       transport.close();
       return;
     }
+    const savedHost = () => (profile.profileId ? { profileId: profile.profileId } : undefined);
     attachTerminalTransport(
       socket,
       control,
@@ -628,10 +664,11 @@ async function handleSession(
       `serial-${nanoid(10)}`,
       recorder,
       handleLoggingControl,
-      prepareLoginSequence(() => (profile.profileId ? { profileId: profile.profileId } : undefined)),
+      prepareLoginSequence(savedHost),
     );
     socket.once('close', transport.onData((data) => pastePacer.output(data)));
     writePastedInput = drainedWriter(transport);
+    startAntiIdle(savedHost, { afterFirstInput: true });
     app.log.info(
       { path: profile.path, baudRate: profile.baudRate },
       'serial session established',
@@ -649,6 +686,7 @@ async function handleSession(
       transport.close();
       return;
     }
+    const savedHost = () => (profile.profileId ? { profileId: profile.profileId } : undefined);
     attachTerminalTransport(
       socket,
       control,
@@ -659,10 +697,11 @@ async function handleSession(
       `telnet-${nanoid(10)}`,
       recorder,
       handleLoggingControl,
-      prepareLoginSequence(() => (profile.profileId ? { profileId: profile.profileId } : undefined)),
+      prepareLoginSequence(savedHost),
     );
     socket.once('close', transport.onData((data) => pastePacer.output(data)));
     writePastedInput = drainedWriter(transport);
+    startAntiIdle(savedHost, { afterFirstInput: true });
     app.log.info({ host: profile.host, port: profile.port }, 'telnet session established');
     if (profile.profileId) ctx.database.recordSavedHostConnection(profile.profileId);
     return;
@@ -750,11 +789,12 @@ async function handleSession(
       });
     }
   };
-  const sshLoginSequence = prepareLoginSequence(() => {
+  const sshHost = (): LoginSequenceHost | undefined => {
     if (profile.profileId) return { profileId: profile.profileId };
     const alias = ctx.connections.metadataAliasFor(profile);
     return alias ? { alias } : undefined;
-  });
+  };
+  const sshLoginSequence = prepareLoginSequence(sshHost);
 
   // Flow control: a runaway `cat hugefile` must not balloon the ws buffer.
   let paused = false;
@@ -839,6 +879,7 @@ async function handleSession(
     sftpAvailable: conn.sftpAvailable,
     summary: { ...summary, forwards: runningForwards },
   });
+  startAntiIdle(sshHost);
 }
 
 /** Attach a byte transport to the terminal socket with shared flow control. */

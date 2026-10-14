@@ -27,7 +27,8 @@ makes exact replay possible.
 
 **Input is not recorded** unless input capture is enabled for that session. The
 terminal-actions menu can start, pause and stop logging mid-session and toggle input
-capture.
+capture. Text a host's [anti-idle](terminal.md#keeping-idle-sessions-open) types counts as
+input.
 
 !!! warning "Echoed commands are still output"
 

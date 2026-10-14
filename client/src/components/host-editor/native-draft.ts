@@ -11,6 +11,12 @@ import {
   type HostSessionLoggingDraft,
 } from '../../session-logging-policy.js';
 import {
+  antiIdleDraft,
+  antiIdleFromDraft,
+  antiIdleProblem,
+  type AntiIdleDraft,
+} from '../../anti-idle.js';
+import {
   loginSequenceDraft,
   loginSequenceFromDraft,
   loginSequenceProblem,
@@ -45,6 +51,8 @@ export interface NativeHostDraft {
   pasteCharDelayMs?: number;
   /** Pastes wait for the prompt after each line. */
   pastePromptWait: PastePromptWaitDraft;
+  /** Text typed into idle sessions. */
+  antiIdle: AntiIdleDraft;
   host: string;
   port: string;
   path: string;
@@ -73,6 +81,7 @@ export function blankNativeDraft(prefillTarget = '', group = ''): NativeHostDraf
     pasteLineDelayMs: undefined,
     pasteCharDelayMs: undefined,
     pastePromptWait: pastePromptWaitDraft(undefined),
+    antiIdle: antiIdleDraft(undefined),
     host,
     port: port ?? '23',
     path: '',
@@ -100,6 +109,7 @@ export function nativeDraftFromProfile(saved: SavedHostProfile, duplicate: boole
   draft.pasteLineDelayMs = saved.metadata.pasteLineDelayMs;
   draft.pasteCharDelayMs = saved.metadata.pasteCharDelayMs;
   draft.pastePromptWait = pastePromptWaitDraft(saved.metadata.pastePromptWait);
+  draft.antiIdle = antiIdleDraft(saved.metadata.antiIdle);
   draft.keywordHighlights = saved.metadata.keywordHighlights ?? draft.keywordHighlights;
   draft.loginSequence = loginSequenceDraft(saved.metadata.loginSequence);
   if (saved.profile.kind === 'telnet') {
@@ -136,6 +146,7 @@ export function nativeDraftProblem(draft: NativeHostDraft, kind: 'telnet' | 'ser
   }
   return (
     pastePromptWaitProblem(draft.pastePromptWait) ??
+    antiIdleProblem(draft.antiIdle) ??
     loginSequenceProblem(draft.loginSequence) ??
     keywordHighlightRulesProblem(draft.keywordHighlights.rules)
   );
@@ -178,6 +189,7 @@ export function nativeDraftMetadataPatch(draft: NativeHostDraft): OpenSshMetadat
     pasteLineDelayMs: draft.pasteLineDelayMs ?? null,
     pasteCharDelayMs: draft.pasteCharDelayMs ?? null,
     pastePromptWait: pastePromptWaitFromDraft(draft.pastePromptWait),
+    antiIdle: antiIdleFromDraft(draft.antiIdle),
     keywordHighlights:
       highlights.inheritGlobal && !highlights.profileId && highlights.rules.length === 0
         ? null

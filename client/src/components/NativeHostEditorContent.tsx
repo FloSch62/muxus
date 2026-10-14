@@ -152,6 +152,7 @@ export function NativeHostEditorContent({
         draft.commandButtonGroup,
         draft.pasteLineDelayMs !== undefined || draft.pasteCharDelayMs !== undefined,
         draft.pastePromptWait.enabled,
+        draft.antiIdle.enabled,
       ].filter(Boolean).length || undefined,
     },
     ...(kind === 'serial'

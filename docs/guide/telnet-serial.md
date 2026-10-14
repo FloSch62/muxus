@@ -77,6 +77,13 @@ Platform naming:
     [wait for the prompt](terminal.md#waiting-for-the-prompt), so the paste goes as fast as
     the device answers and stops at the first line it rejects.
 
+!!! tip "Idle timeouts"
+
+    A console port or console server that closes idle lines ends the session after a quiet
+    spell. Turn on [anti-idle](terminal.md#keeping-idle-sessions-open) under the host's
+    **Terminal appearance** with an interval shorter than that timeout, and Muxus types into
+    the session before it runs out.
+
 ## Send BREAK
 
 Some consoles act on a BREAK signal rather than on any key: Cisco ROMMON and password

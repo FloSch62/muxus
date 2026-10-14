@@ -7,6 +7,7 @@ import {
 } from 'node:sqlite';
 import { nanoid } from 'nanoid';
 import type {
+  AntiIdle,
   FolderAuthSettings,
   ForwardType,
   HostKeywordHighlightConfig,
@@ -503,6 +504,16 @@ const MIGRATIONS = [
         CHECK(paste_prompt_wait_json IS NULL OR json_valid(paste_prompt_wait_json));
     `,
   },
+  {
+    version: 31,
+    name: 'host-anti-idle',
+    // NULL is off; the bounds are the API's.
+    sql: `
+      ALTER TABLE connection_profiles
+        ADD COLUMN anti_idle_json TEXT
+        CHECK(anti_idle_json IS NULL OR json_valid(anti_idle_json));
+    `,
+  },
 ] as const;
 
 /** Kinds stored as Muxus-owned saved hosts (everything but OpenSSH metadata rows). */
@@ -696,6 +707,7 @@ export interface OpenSshMetadata {
   pasteLineDelayMs?: number;
   pasteCharDelayMs?: number;
   pastePromptWait?: Partial<PastePromptWait>;
+  antiIdle?: AntiIdle;
   disableSftp?: boolean;
   consoleCompatibility?: boolean;
   loginSequence?: LoginSequence;
@@ -891,6 +903,7 @@ export class MuxusDatabase {
         profiles.paste_line_delay_ms,
         profiles.paste_char_delay_ms,
         profiles.paste_prompt_wait_json,
+        profiles.anti_idle_json,
         profiles.disable_sftp,
         profiles.console_compatibility,
         profiles.login_sequence_json,
@@ -1004,6 +1017,7 @@ export class MuxusDatabase {
             paste_line_delay_ms = ?,
             paste_char_delay_ms = ?,
             paste_prompt_wait_json = ?,
+            anti_idle_json = ?,
             disable_sftp = ?,
             console_compatibility = ?,
             login_sequence_json = ?,
@@ -1043,6 +1057,11 @@ export class MuxusDatabase {
           : patch.pastePromptWait === null
             ? null
             : JSON.stringify(patch.pastePromptWait),
+        patch.antiIdle === undefined
+          ? nullableString(current.anti_idle_json)
+          : patch.antiIdle === null
+            ? null
+            : JSON.stringify(patch.antiIdle),
         patch.disableSftp === undefined
           ? Number(current.disable_sftp)
           : patch.disableSftp
@@ -1545,6 +1564,7 @@ export class MuxusDatabase {
             paste_line_delay_ms = ?,
             paste_char_delay_ms = ?,
             paste_prompt_wait_json = ?,
+            anti_idle_json = ?,
             disable_sftp = ?,
             console_compatibility = ?,
             login_sequence_json = ?,
@@ -1584,6 +1604,11 @@ export class MuxusDatabase {
           : patch.pastePromptWait === null
             ? null
             : JSON.stringify(patch.pastePromptWait),
+        patch.antiIdle === undefined
+          ? nullableString(current.anti_idle_json)
+          : patch.antiIdle === null
+            ? null
+            : JSON.stringify(patch.antiIdle),
         patch.disableSftp === undefined
           ? Number(current.disable_sftp)
           : patch.disableSftp
@@ -2296,6 +2321,20 @@ export class MuxusDatabase {
     };
   }
 
+  /** What an OpenSSH alias or a Muxus-owned host types into its idle sessions, if anything. */
+  hostAntiIdle(host: { alias: string } | { profileId: string }): AntiIdle | undefined {
+    const row =
+      'alias' in host
+        ? this.metadataByAlias.get(host.alias)
+        : this.db
+            .prepare(
+              `SELECT anti_idle_json FROM connection_profiles
+               WHERE id = ? AND kind IN ${SAVED_HOST_KINDS_SQL}`,
+            )
+            .get(host.profileId);
+    return antiIdleFromJson(row?.anti_idle_json);
+  }
+
   /** Remove one settings row only — descendants keep their own settings. */
   removeFolderSettingsRow(id: string): void {
     this.db.prepare('DELETE FROM folder_settings WHERE id = ?').run(id);
@@ -2587,6 +2626,7 @@ function metadataFromRow(row: SqlRow): OpenSshMetadata {
     pasteLineDelayMs: nullableNumber(row.paste_line_delay_ms) ?? undefined,
     pasteCharDelayMs: nullableNumber(row.paste_char_delay_ms) ?? undefined,
     pastePromptWait: pastePromptWaitFromJson(row.paste_prompt_wait_json),
+    antiIdle: antiIdleFromJson(row.anti_idle_json),
     ...(Number(row.disable_sftp) === 1 ? { disableSftp: true } : {}),
     ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),
     loginSequence: loginSequenceFromJson(row.login_sequence_json),
@@ -2631,6 +2671,7 @@ function savedHostFromRow(row: SqlRow): SavedHostProfile {
       pasteLineDelayMs: nullableNumber(row.paste_line_delay_ms) ?? undefined,
       pasteCharDelayMs: nullableNumber(row.paste_char_delay_ms) ?? undefined,
       pastePromptWait: pastePromptWaitFromJson(row.paste_prompt_wait_json),
+      antiIdle: antiIdleFromJson(row.anti_idle_json),
       ...(Number(row.disable_sftp) === 1 ? { disableSftp: true } : {}),
       ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),
       loginSequence: loginSequenceFromJson(row.login_sequence_json),
@@ -2684,6 +2725,21 @@ function pastePromptWaitFromJson(value: unknown): Partial<PastePromptWait> | und
       ...(typeof parsed.timeoutMs === 'number' ? { timeoutMs: parsed.timeoutMs } : {}),
       ...(typeof parsed.errorPattern === 'string' ? { errorPattern: parsed.errorPattern } : {}),
     };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Stored settings were validated when written; anything unreadable counts as off. */
+function antiIdleFromJson(value: unknown): AntiIdle | undefined {
+  if (typeof value !== 'string') return undefined;
+  try {
+    const parsed = JSON.parse(value) as Partial<AntiIdle>;
+    return typeof parsed.intervalSeconds === 'number' &&
+      typeof parsed.text === 'string' &&
+      typeof parsed.enter === 'boolean'
+      ? (parsed as AntiIdle)
+      : undefined;
   } catch {
     return undefined;
   }

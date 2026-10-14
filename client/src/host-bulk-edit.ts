@@ -8,6 +8,13 @@ import type {
   SshProfile,
 } from '@muxus/shared';
 import {
+  antiIdleDraft,
+  antiIdleFromDraft,
+  antiIdleProblem,
+  sameAntiIdleDraft,
+  type AntiIdleDraft,
+} from './anti-idle.js';
+import {
   folderDepth,
   MAX_FOLDER_DEPTH,
   MAX_GROUP_PATH,
@@ -61,6 +68,7 @@ export interface BulkHostValues {
   pasteLineDelayMs: number | undefined;
   pasteCharDelayMs: number | undefined;
   pastePromptWait: PastePromptWaitDraft;
+  antiIdle: AntiIdleDraft;
   highlightProfileId: string | undefined;
   highlightInheritGlobal: boolean;
   sessionLogging: HostSessionLoggingDraft;
@@ -95,6 +103,7 @@ export const BULK_FIELD_AUDIENCE: { readonly [F in BulkHostField]: BulkAudience 
   pasteLineDelayMs: 'terminal',
   pasteCharDelayMs: 'terminal',
   pastePromptWait: 'terminal',
+  antiIdle: 'terminal',
   highlightProfileId: 'terminal',
   highlightInheritGlobal: 'terminal',
   sessionLogging: 'terminal',
@@ -161,6 +170,7 @@ export function bulkValuesForHost(
     values.pasteLineDelayMs = metadata?.pasteLineDelayMs;
     values.pasteCharDelayMs = metadata?.pasteCharDelayMs;
     values.pastePromptWait = pastePromptWaitDraft(metadata?.pastePromptWait);
+    values.antiIdle = antiIdleDraft(metadata?.antiIdle);
     values.highlightProfileId = highlights?.profileId;
     values.highlightInheritGlobal = highlights?.inheritGlobal ?? true;
     values.loginSequence = loginSequenceDraft(metadata?.loginSequence);
@@ -210,6 +220,7 @@ export function sameBulkValue<F extends BulkHostField>(
   if (field === 'pastePromptWait') {
     return samePastePromptWaitDraft(a as PastePromptWaitDraft, b as PastePromptWaitDraft);
   }
+  if (field === 'antiIdle') return sameAntiIdleDraft(a as AntiIdleDraft, b as AntiIdleDraft);
   return a === b;
 }
 
@@ -270,6 +281,10 @@ export function bulkChangesProblem(changes: BulkHostChanges): string | null {
   }
   if (changes.pastePromptWait) {
     const problem = pastePromptWaitProblem(changes.pastePromptWait);
+    if (problem) return problem;
+  }
+  if (changes.antiIdle) {
+    const problem = antiIdleProblem(changes.antiIdle);
     if (problem) return problem;
   }
   if (changes.loginSequence) return loginSequenceProblem(changes.loginSequence);
@@ -407,6 +422,9 @@ function metadataPatch(
   if (differs.has('pasteCharDelayMs')) patch.pasteCharDelayMs = changes.pasteCharDelayMs ?? null;
   if (differs.has('pastePromptWait') && changes.pastePromptWait) {
     patch.pastePromptWait = pastePromptWaitFromDraft(changes.pastePromptWait);
+  }
+  if (differs.has('antiIdle') && changes.antiIdle) {
+    patch.antiIdle = antiIdleFromDraft(changes.antiIdle);
   }
   if (differs.has('consoleCompatibility')) patch.consoleCompatibility = changes.consoleCompatibility;
   if (differs.has('disableSftp')) patch.disableSftp = changes.disableSftp;

@@ -18,7 +18,9 @@ import {
   terminalSchemeIdForHost,
 } from '../../terminal/palette.js';
 import type { PastePromptWaitDraft } from '../../terminal/paste-prompt.js';
+import type { AntiIdleDraft } from '../../anti-idle.js';
 import { TerminalSchemeSelect } from '../TerminalSchemeSelect.js';
+import { AntiIdleFields, AntiIdleIntro } from './AntiIdleFields.js';
 import { PasteDelayField } from './PasteDelayField.js';
 import { PastePromptFields } from './PastePromptFields.js';
 
@@ -30,6 +32,7 @@ export interface HostTerminalAppearance {
   pasteLineDelayMs?: number;
   pasteCharDelayMs?: number;
   pastePromptWait: PastePromptWaitDraft;
+  antiIdle: AntiIdleDraft;
 }
 
 /** Terminal colors saved with a host, shared by all three host kinds. */
@@ -116,6 +119,8 @@ export function TerminalAppearanceSection({
         value={value.pastePromptWait}
         onChange={(pastePromptWait) => onChange({ pastePromptWait })}
       />
+      <AntiIdleIntro sx={{ pt: 1 }} />
+      <AntiIdleFields value={value.antiIdle} onChange={(antiIdle) => onChange({ antiIdle })} />
     </Stack>
   );
 }

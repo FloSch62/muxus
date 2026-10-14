@@ -455,4 +455,39 @@ describe('SSH host editor draft', () => {
       draftProblem({ ...fromConfig, pastePromptWait: { ...fromConfig.pastePromptWait, timeoutMs: '99' } }),
     ).toBe('Prompt timeout: Between 100 and 60000 ms.');
   });
+
+  it('loads anti-idle from either host source and keeps it out of ssh_config', () => {
+    const antiIdle = { intervalSeconds: 240, text: 'show clock', enter: true };
+    expect(blankDraft().antiIdle.enabled).toBe(false);
+    const fromConfig = draftFromEntry(
+      { ...entry, metadata: { profileId: 'p', connectCount: 0, antiIdle } },
+      false,
+    );
+    expect(fromConfig.antiIdle).toEqual({
+      enabled: true,
+      intervalSeconds: '240',
+      text: 'show clock',
+      enter: true,
+    });
+    expect(draftProblem(fromConfig)).toBeNull();
+    expect(JSON.stringify(draftToRequest(fromConfig))).not.toContain('show clock');
+
+    const fromProfile = draftFromSavedSshProfile(
+      {
+        id: 'r',
+        kind: 'ssh',
+        name: 'Router',
+        profile: { kind: 'ssh', profileId: 'r', target: 'router.test', useConfig: false },
+        metadata: { profileId: 'r', connectCount: 0, antiIdle },
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+      },
+      false,
+    );
+    expect(fromProfile.antiIdle.enabled).toBe(true);
+    expect(JSON.stringify(draftToSavedSshInput(fromProfile))).not.toContain('show clock');
+    expect(draftProblem({ ...fromConfig, antiIdle: { ...fromConfig.antiIdle, text: '', enter: false } })).toBe(
+      'Anti-idle: enter text to type, or press Enter.',
+    );
+  });
 });
