@@ -12,7 +12,7 @@ import type {
 import type { AppContext } from '../app.js';
 import { sendError } from '../util/errors.js';
 import { metadataPatchSchema } from './metadata-schema.js';
-import { defaultSshConfigPath, listHosts, loadConfigDocument } from '../ssh/ssh-config.js';
+import { defaultSshConfigPath, listHosts, loadConfigDocument, sortHostList } from '../ssh/ssh-config.js';
 import { batchFolderAuthResolver } from '../ssh/folder-auth.js';
 import { deleteHost, deleteHosts, patchHosts, previewHost, upsertHost } from '../ssh/ssh-config-edit.js';
 import { listSshKeys } from '../ssh/key-scan.js';
@@ -82,9 +82,7 @@ export function registerSshRoutes(app: FastifyInstance, ctx: AppContext): void {
     // Resolved values include folder defaults, so the list and the editor show
     // exactly what connect will use.
     const folderAuth = batchFolderAuthResolver(ctx.database);
-    const hosts = listHosts(doc, (alias) => folderAuth(alias)?.optionLines).sort(
-      (a, b) => a.alias.localeCompare(b.alias),
-    );
+    const hosts = sortHostList(listHosts(doc, (alias) => folderAuth(alias)?.optionLines));
     const metadata = ctx.database.openSshMetadata(hosts.map((host) => host.alias));
     return {
       path: defaultSshConfigPath(),

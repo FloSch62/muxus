@@ -39,6 +39,7 @@ import { managedHostDisplayName, managedHostKey } from '../managed-hosts.js';
 import { hostSessionLoggingDraft } from '../session-logging-policy.js';
 import { useCustomTerminalSchemes, usePrefsStore } from '../state/prefs.js';
 import { useUiStore } from '../state/ui.js';
+import { BACKSPACE_KEY_OPTIONS, ENTER_KEY_OPTIONS } from '../terminal/input-modes.js';
 import { isTerminalSchemeId } from '../terminal/palette.js';
 import { pastePromptWaitDraft } from '../terminal/paste-prompt.js';
 import { FolderPathField } from './FolderPathField.js';
@@ -93,6 +94,10 @@ const SECTIONS: ReadonlyArray<{
       'pasteCharDelayMs',
       'pastePromptWait',
       'antiIdle',
+      'backspaceKey',
+      'enterKey',
+      'implicitCr',
+      'localEcho',
     ],
   },
   {
@@ -271,6 +276,10 @@ function BulkEditBody({ hostKeys, onClose }: { hostKeys: readonly string[]; onCl
           pasteCharDelayMs={field('pasteCharDelayMs')}
           pastePromptWait={field('pastePromptWait')}
           antiIdle={field('antiIdle')}
+          backspaceKey={field('backspaceKey')}
+          enterKey={field('enterKey')}
+          implicitCr={field('implicitCr')}
+          localEcho={field('localEcho')}
         />
       )}
       {section === 'highlighting' && (
@@ -478,6 +487,10 @@ function AppearanceSection({
   pasteCharDelayMs,
   pastePromptWait,
   antiIdle,
+  backspaceKey,
+  enterKey,
+  implicitCr,
+  localEcho,
 }: {
   total: number;
   scheme: BulkFieldState<string | undefined>;
@@ -488,6 +501,10 @@ function AppearanceSection({
   pasteCharDelayMs: BulkFieldState<number | undefined>;
   pastePromptWait: BulkFieldState<BulkHostValues['pastePromptWait']>;
   antiIdle: BulkFieldState<BulkHostValues['antiIdle']>;
+  backspaceKey: BulkFieldState<BulkHostValues['backspaceKey']>;
+  enterKey: BulkFieldState<BulkHostValues['enterKey']>;
+  implicitCr: BulkFieldState<boolean>;
+  localEcho: BulkFieldState<boolean>;
 }) {
   const customSchemes = useCustomTerminalSchemes();
   const commandGroups = usePrefsStore((state) => state.commandButtonGroups);
@@ -621,6 +638,32 @@ function AppearanceSection({
           </Alert>
         )}
         <FieldStatus state={antiIdle} />
+      </Box>
+      <Stack direction="row" spacing={1.5}>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <BulkSelect label="Backspace sends" state={backspaceKey} options={BACKSPACE_KEY_OPTIONS} />
+          <FieldStatus state={backspaceKey} inset />
+        </Box>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <BulkSelect label="Enter sends" state={enterKey} options={ENTER_KEY_OPTIONS} />
+          <FieldStatus state={enterKey} inset />
+        </Box>
+      </Stack>
+      <Box>
+        <BulkCheckbox
+          state={implicitCr}
+          label="Implicit CR in every received LF"
+          description="For devices that end output lines with LF alone."
+        />
+        <FieldStatus state={implicitCr} />
+      </Box>
+      <Box>
+        <BulkCheckbox
+          state={localEcho}
+          label="Local echo"
+          description="Shows what is typed, pasted or sent with a button, for devices that do not echo it."
+        />
+        <FieldStatus state={localEcho} />
       </Box>
     </Stack>
   );

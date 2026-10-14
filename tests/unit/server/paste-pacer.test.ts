@@ -76,6 +76,41 @@ describe('paced pastes', () => {
     ]);
   });
 
+  it("types line breaks as the host's Enter key, a line at a time as with CR", async () => {
+    const { pacer, writes, reports } = recordingPacer();
+
+    pacer.enqueue({ ...paste('one\ntwo\n', 100), enterKey: 'crlf' });
+    await vi.runAllTimersAsync();
+
+    expect(writes).toEqual([
+      { at: 0, data: 'one\r\n' },
+      { at: 100, data: 'two\r\n' },
+    ]);
+    expect(reports.at(-1)).toMatchObject({ state: 'done', line: 2, lines: 2 });
+  });
+
+  it('sends an LF Enter key as one keystroke with a character delay', async () => {
+    const { pacer, writes } = recordingPacer();
+
+    pacer.enqueue({ ...paste('a\r\nb', 100, 10), enterKey: 'lf' });
+    await vi.runAllTimersAsync();
+
+    expect(writes).toEqual([
+      { at: 0, data: 'a' },
+      { at: 10, data: '\n' },
+      { at: 120, data: 'b' },
+    ]);
+  });
+
+  it('keeps CR inside a bracketed paste whatever the Enter key', async () => {
+    const { pacer, writes } = recordingPacer();
+
+    pacer.enqueue({ ...paste('one\ntwo', 100, 0, true), enterKey: 'lf' });
+    await vi.runAllTimersAsync();
+
+    expect(writes.map((write) => write.data)).toEqual(['\x1b[200~one\r', 'two\x1b[201~']);
+  });
+
   it('encloses the whole paste in one pair of bracketed-paste markers', async () => {
     const { pacer, writes } = recordingPacer();
 
@@ -234,14 +269,20 @@ const prompted = (overrides: Partial<PastePromptWait> = {}) => ({
  * starts with "bogus". `answer` replaces that reply, in chunks.
  */
 function consolePacer(
-  options: { answerMs?: number; answer?: (line: string) => string[] | undefined } = {},
+  options: {
+    answerMs?: number;
+    /** The line end the console takes as Enter; CR by default. */
+    enter?: string;
+    answer?: (line: string) => string[] | undefined;
+  } = {},
 ) {
   const answerMs = options.answerMs ?? 30;
+  const enter = options.enter ?? '\r';
   let pacer!: PastePacer;
   const harness = recordingPacer((data) => {
     const text = data.toString('utf8');
-    if (!text.endsWith('\r')) return;
-    const line = text.slice(0, -1);
+    if (!text.endsWith(enter)) return;
+    const line = text.slice(0, -enter.length);
     const reply = options.answer?.(line) ?? [
       `${line}\r\n`,
       line.startsWith('bogus') ? `        ^\r\n${REJECTED}\r\n\r\n${PROMPT}` : PROMPT,
@@ -315,6 +356,31 @@ describe('pastes that wait for the prompt', () => {
       state: 'stopped',
       line: 2,
       message: `Line 2 of 2 (“bogus command”) was answered with “${REJECTED}”`,
+    });
+  });
+
+  it("waits for the prompt and stops at a rejected line with the host's LF Enter key", async () => {
+    const { pacer, writes, reports } = consolePacer({ enter: '\n' });
+
+    pacer.enqueue({
+      ...paste('interface ge-0/0/1\nbogus command\nshutdown\n', 5000),
+      enterKey: 'lf',
+      prompt: prompted(),
+    });
+    pacer.enqueue({ ...paste('queued\n', 100), enterKey: 'lf' });
+    await vi.runAllTimersAsync();
+
+    // Each line ends in LF and goes once the prompt is back, not after the line delay.
+    expect(writes).toEqual([
+      { at: 0, data: 'interface ge-0/0/1\n' },
+      { at: 61, data: 'bogus command\n' },
+    ]);
+    expect(reports.at(-1)).toMatchObject({
+      state: 'stopped',
+      line: 2,
+      lines: 4,
+      message: `Line 2 of 3 (“bogus command”) was answered with “${REJECTED}”`,
+      stopId: 1,
     });
   });
 

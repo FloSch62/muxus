@@ -96,6 +96,14 @@ export function useUpdateSshMetadata(onSuccess?: (metadata: OpenSshProfileMetada
                 ? { pastePromptWait: patch.pastePromptWait ?? undefined }
                 : {}),
               ...(patch.antiIdle !== undefined ? { antiIdle: patch.antiIdle ?? undefined } : {}),
+              ...(patch.backspaceKey !== undefined
+                ? { backspaceKey: patch.backspaceKey ?? undefined }
+                : {}),
+              ...(patch.enterKey !== undefined ? { enterKey: patch.enterKey ?? undefined } : {}),
+              ...(patch.implicitCr !== undefined
+                ? { implicitCr: patch.implicitCr || undefined }
+                : {}),
+              ...(patch.localEcho !== undefined ? { localEcho: patch.localEcho || undefined } : {}),
               ...(patch.disableSftp !== undefined
                 ? { disableSftp: patch.disableSftp || undefined }
                 : {}),

@@ -830,6 +830,9 @@ describe('backing up host terminal schemes', () => {
           pasteCharDelayMs: 0,
           pastePromptWait: { timeoutMs: 20_000 },
           antiIdle: { intervalSeconds: 120, text: ' ', enter: false },
+          backspaceKey: 'ctrl-h',
+          enterKey: 'crlf',
+          localEcho: true,
           connectCount: 0,
         },
         createdAt: '2026-08-10T00:00:00.000Z',
@@ -848,6 +851,9 @@ describe('backing up host terminal schemes', () => {
       pasteCharDelayMs: 0,
       pastePromptWait: { timeoutMs: 20_000 },
       antiIdle: { intervalSeconds: 120, text: ' ', enter: false },
+      backspaceKey: 'ctrl-h',
+      enterKey: 'crlf',
+      localEcho: true,
     });
   });
 });
@@ -1116,6 +1122,10 @@ describe('restoring imported serial hosts', () => {
           pasteCharDelayMs: null,
           pastePromptWait: null,
           antiIdle: null,
+          backspaceKey: null,
+          enterKey: null,
+          implicitCr: false,
+          localEcho: false,
           disableSftp: false,
           consoleCompatibility: false,
           loginSequence: null,
@@ -1176,6 +1186,36 @@ describe('restoring imported serial hosts', () => {
     expect(await restoredAntiIdle({ intervalSeconds: 120, text: '', enter: false })).toBeNull();
     // A hidden Enter or Ctrl+C in the text is not restored.
     expect(await restoredAntiIdle({ intervalSeconds: 120, text: 'a\rb\u0003', enter: false })).toBeNull();
+  });
+
+  it('restores keys and echo, and drops values this release does not know', async () => {
+    const restoredModes = async (modes: Record<string, unknown>) => {
+      apiFetchMock.mockReset();
+      apiFetchMock
+        .mockResolvedValueOnce({ hosts: [] })
+        .mockResolvedValueOnce({ profiles: [] })
+        .mockResolvedValueOnce({ id: 'securecrt-serial-console' })
+        .mockResolvedValueOnce({ id: 'securecrt-serial-console' });
+      const host = importedSerial.savedHosts[0]!;
+      await restoreImportedConnections(
+        { ...importedSerial, savedHosts: [{ ...host, metadata: { ...host.metadata, ...modes } as never }] },
+        'replace',
+      );
+      const patch = JSON.parse(apiFetchMock.mock.calls[3]?.[1]?.body as string) as Record<string, unknown>;
+      return {
+        backspaceKey: patch.backspaceKey,
+        enterKey: patch.enterKey,
+        implicitCr: patch.implicitCr,
+        localEcho: patch.localEcho,
+      };
+    };
+    const modes = { backspaceKey: 'ctrl-h', enterKey: 'lf', implicitCr: true, localEcho: true };
+    const defaults = { backspaceKey: null, enterKey: null, implicitCr: false, localEcho: false };
+
+    expect(await restoredModes(modes)).toEqual(modes);
+    expect(
+      await restoredModes({ backspaceKey: 'bs', enterKey: '\r\n', implicitCr: 1, localEcho: 'yes' }),
+    ).toEqual(defaults);
   });
 });
 

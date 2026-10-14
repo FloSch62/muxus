@@ -37,7 +37,8 @@ the copy button duplicates one right below itself as a starting point for a simi
 command.
 
 A button types its command the way the keyboard would, never as a bracketed paste, so a
-shell runs it when the button presses Enter. A host with a
+shell runs it when the button presses Enter. Its line breaks and Enter go out as the host's
+[Enter key](terminal.md#keys-and-echo). A host with a
 [paste pace](terminal.md#pasting-into-slow-consoles) gets the command at that pace, so a
 multi-line command reaches a slow console intact. Pressed while a paced paste is running,
 the button waits for that paste to finish, and cancelling the paste drops it too. With
@@ -58,7 +59,8 @@ command, where it would be saved in plain text and copied into backups. Save it 
 The button stores only which secret it types, never the value, and carries a
 :material-key-outline: key so it is clear what it does. Muxus types the secret into the
 focused session exactly like typed input, and [multi-execution](#multi-execution) mirrors
-it to the selected sessions like any other input. The value never passes through the
+it to the selected sessions like any other input. Each session presses Enter as its host's
+[Enter key](terminal.md#keys-and-echo) sends it. The value never passes through the
 window, the quick launcher, [session history](session-history.md) or log files; only what
 the remote side echoes back can be recorded, and a password prompt echoes nothing.
 
@@ -178,6 +180,8 @@ Multi-execution mirrors keystrokes into several live terminals at once.
 A paste is mirrored as well. Each terminal types it in at its own host's
 [paste pace](terminal.md#pasting-into-slow-consoles), so a slow serial console does not
 hold up the others, and cancelling the paste in one terminal stops it in all of them.
+Each terminal also sends ++backspace++ and ++enter++ as its own host's
+[keys](terminal.md#keys-and-echo) say, whichever terminal they were typed in.
 
 !!! danger "Mirrored input reaches every selected session"
 

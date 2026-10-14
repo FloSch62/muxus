@@ -490,4 +490,35 @@ describe('SSH host editor draft', () => {
       'Anti-idle: enter text to type, or press Enter.',
     );
   });
+
+  it('loads keys and echo from either host source and keeps them out of ssh_config', () => {
+    const modes = { backspaceKey: 'ctrl-h', enterKey: 'lf', implicitCr: true, localEcho: true } as const;
+    expect(blankDraft().inputModes).toEqual({
+      backspaceKey: 'del',
+      enterKey: 'cr',
+      implicitCr: false,
+      localEcho: false,
+    });
+    const fromConfig = draftFromEntry(
+      { ...entry, metadata: { profileId: 'p', connectCount: 0, ...modes } },
+      false,
+    );
+    expect(fromConfig.inputModes).toEqual(modes);
+    expect(JSON.stringify(draftToRequest(fromConfig))).not.toMatch(/ctrl-h|localEcho/);
+
+    const fromProfile = draftFromSavedSshProfile(
+      {
+        id: 'r',
+        kind: 'ssh',
+        name: 'Router',
+        profile: { kind: 'ssh', profileId: 'r', target: 'router.test', useConfig: false },
+        metadata: { profileId: 'r', connectCount: 0, enterKey: 'crlf' },
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+      },
+      false,
+    );
+    expect(fromProfile.inputModes).toMatchObject({ backspaceKey: 'del', enterKey: 'crlf' });
+    expect(JSON.stringify(draftToSavedSshInput(fromProfile))).not.toContain('crlf');
+  });
 });

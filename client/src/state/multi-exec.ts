@@ -153,6 +153,8 @@ export function multiExecMirrorTabIds(sourceTabId: string): string[] {
 /**
  * Mirror user input from one selected terminal to every other selected
  * terminal. Direct socket writes avoid re-entering xterm's onData handler.
+ * The keystrokes go as xterm.js encoded them, so each terminal sends
+ * Backspace and Enter as its own host expects.
  */
 export function broadcastTerminalInput(
   sourceTabId: string,
@@ -160,7 +162,7 @@ export function broadcastTerminalInput(
 ): number {
   let delivered = 0;
   for (const tabId of multiExecMirrorTabIds(sourceTabId)) {
-    if (terminalHandle(tabId)?.sendInput(data)) delivered++;
+    if (terminalHandle(tabId)?.sendKeyboardInput(data)) delivered++;
   }
   return delivered;
 }

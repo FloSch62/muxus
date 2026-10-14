@@ -348,6 +348,41 @@ describe('bulkEditPlan', () => {
     );
   });
 
+  it('sets keys and echo on terminal hosts and stores the defaults as unset', () => {
+    const hosts = [
+      openSsh('a', {}, { backspaceKey: 'ctrl-h', localEcho: true }),
+      telnet('t'),
+      savedSsh('s', {}, { backspaceKey: 'del' }),
+      rdp('desk'),
+    ];
+
+    const summary = summarizeBulkValues(hosts, new Map());
+    expect(summary.backspaceKey).toEqual({ state: 'mixed', count: 3 });
+    // A stored DEL is the same as nothing stored.
+    expect(summarizeBulkValues(hosts.slice(1), new Map()).backspaceKey).toEqual({
+      state: 'same',
+      count: 2,
+      value: 'del',
+    });
+    expect(summary.enterKey).toEqual({ state: 'same', count: 3, value: 'cr' });
+    expect(summary.implicitCr).toEqual({ state: 'same', count: 3, value: false });
+    expect(summary.localEcho).toEqual({ state: 'mixed', count: 3 });
+
+    expect(bulkEditPlan(hosts, { backspaceKey: 'ctrl-h', enterKey: 'crlf' }).metadata).toEqual([
+      { host: hosts[0], patch: { enterKey: 'crlf' } },
+      { host: hosts[1], patch: { backspaceKey: 'ctrl-h', enterKey: 'crlf' } },
+      { host: hosts[2], patch: { backspaceKey: 'ctrl-h', enterKey: 'crlf' } },
+    ]);
+    expect(bulkEditPlan(hosts, { backspaceKey: 'del', localEcho: false }).metadata).toEqual([
+      { host: hosts[0], patch: { backspaceKey: null, localEcho: false } },
+    ]);
+    expect(bulkEditPlan(hosts, { implicitCr: true }).metadata.map(({ patch }) => patch)).toEqual([
+      { implicitCr: true },
+      { implicitCr: true },
+      { implicitCr: true },
+    ]);
+  });
+
   it('applies terminal and SSH settings only where they mean something', () => {
     const hosts = [openSsh('a'), telnet('t'), rdp('desk')];
 

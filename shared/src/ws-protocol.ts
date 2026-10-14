@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { ConfigForward } from './api-types.js';
+import { TERMINAL_ENTER_KEYS, type ConfigForward } from './api-types.js';
 import { normalizeHostKeyFingerprint } from './connection-links.js';
 import {
   GNMI_DEFAULT_PORT,
@@ -410,6 +410,8 @@ export const terminalClientMessageSchema = z.discriminatedUnion('op', [
         errorPattern: z.string().min(1).max(MAX_PASTE_PATTERN_LENGTH),
       })
       .optional(),
+    /** The host's Enter key for line breaks outside a bracket; absent is CR. */
+    enterKey: z.enum(TERMINAL_ENTER_KEYS).optional(),
   }),
   /** Stop the paced paste that is running and drop the queued ones. */
   z.object({ op: z.literal('paste-cancel') }),

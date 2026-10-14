@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import type net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { Server, type ServerConfig } from 'ssh2';
+import { Client, Server, type ServerConfig } from 'ssh2';
 import { afterEach, afterAll, describe, expect, it, vi } from 'vitest';
 import type { SshProfile } from '@muxus/shared/ws-protocol';
 import { SshConnectionManager, type ConnectIo } from '../../../server/src/ssh/connection-manager.js';
@@ -344,6 +344,36 @@ describe('session settings from ssh config', () => {
     expect(started.capture.ptyRequested).toBe(true);
     shell.stream.close();
     shell.lease.release();
+  }, 15_000);
+
+  it("advertises the host's Backspace as the erase character of each session's pty", async () => {
+    // ssh2's server skips the first terminal mode when it parses pty-req, so
+    // the request is read where the client makes it.
+    const shellRequests = vi.spyOn(Client.prototype, 'shell');
+    const started = await startCapturingServer();
+    server = started.server;
+    manager = makeManager(writeConfig(started.port, []));
+
+    try {
+      const del = await manager.connectShell(profile, makeIo(), 80, 24, 'xterm-256color');
+      expect(await firstData(del.stream)).toContain('shell ok');
+      expect(started.capture.ptyRequested).toBe(true);
+      expect(shellRequests.mock.calls.at(-1)?.[0]).toMatchObject({ modes: { VERASE: 0x7f } });
+
+      // A second session on the same connection asks for its own erase character.
+      const ctrlH = await manager.connectShell(profile, makeIo(), 80, 24, 'xterm-256color', {
+        backspaceKey: 'ctrl-h',
+      });
+      expect(await firstData(ctrlH.stream)).toContain('shell ok');
+      expect(ctrlH.transport).toBe('shared');
+      expect(shellRequests.mock.calls.at(-1)?.[0]).toMatchObject({ modes: { VERASE: 0x08 } });
+      for (const shell of [del, ctrlH]) {
+        shell.stream.close();
+        shell.lease.release();
+      }
+    } finally {
+      shellRequests.mockRestore();
+    }
   }, 15_000);
 
   it('StrictHostKeyChecking accept-new records into UserKnownHostsFile without prompting', async () => {

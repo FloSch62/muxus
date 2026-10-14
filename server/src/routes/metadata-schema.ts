@@ -11,6 +11,8 @@ import {
   MAX_PASTE_PROMPT_TIMEOUT_MS,
   MIN_PASTE_PROMPT_TIMEOUT_MS,
   pastePatternProblem,
+  TERMINAL_BACKSPACE_KEYS,
+  TERMINAL_ENTER_KEYS,
 } from '@muxus/shared';
 
 const hexColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/);
@@ -137,6 +139,11 @@ export const metadataPatchSchema = z
     pastePromptWait: pastePromptWaitSchema.nullable().optional(),
     // Null turns anti-idle off.
     antiIdle: antiIdleSchema.nullable().optional(),
+    // Keys and echo; null goes back to what xterm.js does.
+    backspaceKey: z.enum(TERMINAL_BACKSPACE_KEYS).nullable().optional(),
+    enterKey: z.enum(TERMINAL_ENTER_KEYS).nullable().optional(),
+    implicitCr: z.boolean().nullable().optional(),
+    localEcho: z.boolean().nullable().optional(),
     disableSftp: z.boolean().optional(),
     consoleCompatibility: z.boolean().optional(),
     loginSequence: loginSequenceSchema.nullable().optional(),

@@ -718,6 +718,18 @@ export interface SshHostEntry {
   metadata?: OpenSshProfileMetadata;
 }
 
+/**
+ * The host whose Muxus settings a tab dialing the ssh_config alias `target`
+ * uses: the first in host list order naming it. The window and the server
+ * both pick it this way, from the list in the order the server sorts it.
+ */
+export function listedHostFor<T extends Pick<SshHostEntry, 'aliases'>>(
+  hosts: readonly T[],
+  target: string,
+): T | undefined {
+  return hosts.find((host) => host.aliases.includes(target));
+}
+
 /** One terminal keyword or pattern and the colors used to render every match. */
 export interface KeywordHighlightRule {
   /** Stable client-generated id used while editing and reordering rules. */
@@ -808,6 +820,14 @@ export const ANTI_IDLE_MIN_INTERVAL_SECONDS = 10;
 export const ANTI_IDLE_MAX_INTERVAL_SECONDS = 3600;
 export const ANTI_IDLE_TEXT_MAX_LENGTH = 256;
 
+/** What a host's Backspace key sends: DEL (0x7f), as xterm.js does, or ^H (0x08). */
+export const TERMINAL_BACKSPACE_KEYS = ['del', 'ctrl-h'] as const;
+export type TerminalBackspaceKey = (typeof TERMINAL_BACKSPACE_KEYS)[number];
+
+/** What a host's Enter key sends: CR, as xterm.js does, CR LF, or LF. */
+export const TERMINAL_ENTER_KEYS = ['cr', 'crlf', 'lf'] as const;
+export type TerminalEnterKey = (typeof TERMINAL_ENTER_KEYS)[number];
+
 export interface OpenSshProfileMetadata {
   /** Stable local ID survives an OpenSSH alias rename. */
   profileId: string;
@@ -834,6 +854,13 @@ export interface OpenSshProfileMetadata {
   pastePromptWait?: Partial<PastePromptWait>;
   /** Typed into this host's idle sessions; absent sends nothing. */
   antiIdle?: AntiIdle;
+  /** Keys and echo for this host's sessions; absent keeps what xterm.js does. */
+  backspaceKey?: TerminalBackspaceKey;
+  enterKey?: TerminalEnterKey;
+  /** Received LF also returns the cursor to the start of the line. */
+  implicitCr?: boolean;
+  /** Show typed input in the terminal for devices that do not echo it. */
+  localEcho?: boolean;
   /** Do not open SFTP channels or probe for remote Unix shell integration. */
   disableSftp?: boolean;
   /** Console appliances: also suppress env requests and tolerate a rejected PTY. */
@@ -860,6 +887,11 @@ export interface OpenSshMetadataPatch {
   pastePromptWait?: Partial<PastePromptWait> | null;
   /** Null turns anti-idle off. */
   antiIdle?: AntiIdle | null;
+  /** Null goes back to what xterm.js does. */
+  backspaceKey?: TerminalBackspaceKey | null;
+  enterKey?: TerminalEnterKey | null;
+  implicitCr?: boolean | null;
+  localEcho?: boolean | null;
   disableSftp?: boolean;
   consoleCompatibility?: boolean;
   /** Null goes back to the folder's sequence. */

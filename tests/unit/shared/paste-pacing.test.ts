@@ -13,6 +13,7 @@ import {
   terminalPasteData,
   validPasteDelay,
   validPastePromptTimeout,
+  withEnterKey,
 } from '@muxus/shared';
 import { terminalClientMessageSchema } from '@muxus/shared/ws-protocol';
 
@@ -33,6 +34,23 @@ describe('paste text preparation', () => {
   it('sends an unpaced paste exactly as xterm.js would', () => {
     expect(terminalPasteData('ls\nexit\n', false)).toBe('ls\rexit\r');
     expect(terminalPasteData('ls\nexit\n', true)).toBe('\x1b[200~ls\rexit\r\x1b[201~');
+  });
+
+  it('keeps the bytes of CR, the default Enter key, exactly as before', () => {
+    const text = 'conf t\nhostname r1\r\nend\r';
+    expect(terminalPasteData(text, false, 'cr')).toBe(terminalPasteData(text, false));
+    expect(terminalPasteData(text, false)).toBe('conf t\rhostname r1\rend\r');
+    expect(withEnterKey('a\rb', 'cr')).toBe('a\rb');
+  });
+
+  it("sends every line break of an unbracketed paste as the host's Enter key", () => {
+    expect(terminalPasteData('a\nb\r\nc\rd', false, 'crlf')).toBe('a\r\nb\r\nc\r\nd');
+    expect(terminalPasteData('a\nb\r\nc\rd', false, 'lf')).toBe('a\nb\nc\nd');
+  });
+
+  it('keeps CR inside a bracketed paste, which the program reads as text, not keys', () => {
+    expect(terminalPasteData('ls\nexit\n', true, 'crlf')).toBe('\x1b[200~ls\rexit\r\x1b[201~');
+    expect(terminalPasteData('ls\nexit\n', true, 'lf')).toBe('\x1b[200~ls\rexit\r\x1b[201~');
   });
 
   it('counts the lines a paste types in', () => {
@@ -193,5 +211,12 @@ describe('paced paste protocol', () => {
     ]) {
       expect(terminalClientMessageSchema.safeParse({ ...paste, prompt: bad }).success).toBe(false);
     }
+  });
+
+  it("accepts the host's Enter key by name only", () => {
+    const paste = { op: 'paste', text: 'x', bracketed: false, lineDelayMs: 100, charDelayMs: 0 };
+    expect(terminalClientMessageSchema.safeParse({ ...paste, enterKey: 'crlf' }).success).toBe(true);
+    expect(terminalClientMessageSchema.safeParse({ ...paste, enterKey: 'lf' }).success).toBe(true);
+    expect(terminalClientMessageSchema.safeParse({ ...paste, enterKey: '\n' }).success).toBe(false);
   });
 });

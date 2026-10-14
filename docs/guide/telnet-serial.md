@@ -84,6 +84,11 @@ Platform naming:
     **Terminal appearance** with an interval shorter than that timeout, and Muxus types into
     the session before it runs out.
 
+!!! tip "Backspace, Enter and echo"
+
+    A board that erases on ^H, ends lines on LF or does not echo input works with the
+    host's [keys and echo](terminal.md#keys-and-echo), in the same section.
+
 ## Send BREAK
 
 Some consoles act on a BREAK signal rather than on any key: Cisco ROMMON and password

@@ -22,6 +22,11 @@ import {
   loginSequenceProblem,
   type LoginSequenceDraft,
 } from '../../login-sequence.js';
+import {
+  hostTerminalInputModes,
+  terminalInputModesPatch,
+  type TerminalInputModes,
+} from '../../terminal/input-modes.js';
 import { keywordHighlightRulesProblem } from '../../terminal/keyword-matching.js';
 import {
   pastePromptWaitDraft,
@@ -53,6 +58,8 @@ export interface NativeHostDraft {
   pastePromptWait: PastePromptWaitDraft;
   /** Text typed into idle sessions. */
   antiIdle: AntiIdleDraft;
+  /** Backspace and Enter keys, implicit CR and local echo. */
+  inputModes: TerminalInputModes;
   host: string;
   port: string;
   path: string;
@@ -82,6 +89,7 @@ export function blankNativeDraft(prefillTarget = '', group = ''): NativeHostDraf
     pasteCharDelayMs: undefined,
     pastePromptWait: pastePromptWaitDraft(undefined),
     antiIdle: antiIdleDraft(undefined),
+    inputModes: hostTerminalInputModes(undefined),
     host,
     port: port ?? '23',
     path: '',
@@ -110,6 +118,7 @@ export function nativeDraftFromProfile(saved: SavedHostProfile, duplicate: boole
   draft.pasteCharDelayMs = saved.metadata.pasteCharDelayMs;
   draft.pastePromptWait = pastePromptWaitDraft(saved.metadata.pastePromptWait);
   draft.antiIdle = antiIdleDraft(saved.metadata.antiIdle);
+  draft.inputModes = hostTerminalInputModes(saved.metadata);
   draft.keywordHighlights = saved.metadata.keywordHighlights ?? draft.keywordHighlights;
   draft.loginSequence = loginSequenceDraft(saved.metadata.loginSequence);
   if (saved.profile.kind === 'telnet') {
@@ -190,6 +199,7 @@ export function nativeDraftMetadataPatch(draft: NativeHostDraft): OpenSshMetadat
     pasteCharDelayMs: draft.pasteCharDelayMs ?? null,
     pastePromptWait: pastePromptWaitFromDraft(draft.pastePromptWait),
     antiIdle: antiIdleFromDraft(draft.antiIdle),
+    ...terminalInputModesPatch(draft.inputModes),
     keywordHighlights:
       highlights.inheritGlobal && !highlights.profileId && highlights.rules.length === 0
         ? null

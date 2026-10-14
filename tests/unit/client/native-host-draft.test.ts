@@ -206,6 +206,10 @@ describe('nativeDraftMetadataPatch', () => {
       pasteCharDelayMs: null,
       pastePromptWait: null,
       antiIdle: null,
+      backspaceKey: null,
+      enterKey: null,
+      implicitCr: false,
+      localEcho: false,
       keywordHighlights: null,
       loginSequence: null,
     });
@@ -221,6 +225,10 @@ describe('nativeDraftMetadataPatch', () => {
       pasteCharDelayMs: null,
       pastePromptWait: null,
       antiIdle: null,
+      backspaceKey: null,
+      enterKey: null,
+      implicitCr: false,
+      localEcho: false,
       keywordHighlights: serialHost.metadata.keywordHighlights,
       loginSequence: null,
     });
@@ -249,6 +257,22 @@ describe('nativeDraftMetadataPatch', () => {
     expect(
       nativeDraftProblem({ ...draft, pastePromptWait: { ...draft.pastePromptWait, promptPattern: '#*' } }, 'serial'),
     ).toBe('Prompt pattern: This pattern matches empty text, so it would match any output.');
+  });
+
+  it('round-trips keys and echo', () => {
+    const modes = { backspaceKey: 'ctrl-h', enterKey: 'crlf', implicitCr: true, localEcho: true } as const;
+    const own = nativeDraftFromProfile(
+      { ...serialHost, metadata: { ...serialHost.metadata, ...modes } },
+      false,
+    );
+    expect(own.inputModes).toEqual(modes);
+    expect(nativeDraftMetadataPatch(own)).toMatchObject(modes);
+    expect(blankNativeDraft().inputModes).toEqual({
+      backspaceKey: 'del',
+      enterKey: 'cr',
+      implicitCr: false,
+      localEcho: false,
+    });
   });
 
   it('round-trips the login sequence: inherited, none or the own steps of the host', () => {

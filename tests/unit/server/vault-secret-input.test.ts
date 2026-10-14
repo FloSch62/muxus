@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
+import type { TerminalEnterKey } from '@muxus/shared';
 import {
   TERMINAL_SESSION_CLOSE_REASON,
   terminalWebSocketProtocols,
@@ -216,6 +217,40 @@ describe('typing vault secrets into sessions', () => {
     }
   });
 
+  it("presses Enter as each session's host sends it", async () => {
+    const secretId = await createSecret();
+    const written = new Map<string, string>();
+    const hosts = [
+      ['terminal-lf', 'lf'],
+      ['terminal-crlf', 'crlf'],
+      ['terminal-cr', undefined],
+    ] as const;
+    for (const [terminalId, enterKey] of hosts) {
+      built.ctx.terminalInputs.register(
+        terminalId,
+        (data) => {
+          written.set(terminalId, data.toString('utf8'));
+          return true;
+        },
+        enterKey && (() => enterKey),
+      );
+    }
+
+    const send = (enter: boolean) =>
+      api<{ sent: number }>('POST', `/api/password-vault/secrets/${secretId}/send`, {
+        terminalIds: hosts.map(([terminalId]) => terminalId),
+        enter,
+      });
+    expect(await send(true)).toMatchObject({ status: 200, body: { sent: 3 } });
+    expect(Object.fromEntries(written)).toEqual({
+      'terminal-lf': `${SECRET}\n`,
+      'terminal-crlf': `${SECRET}\r\n`,
+      'terminal-cr': `${SECRET}\r`,
+    });
+    expect(await send(false)).toMatchObject({ status: 200, body: { sent: 3 } });
+    expect(new Set(written.values())).toEqual(new Set([SECRET]));
+  });
+
   it('asks for the master password under the per-use policy and reports what went wrong', async () => {
     const secretId = await createSecret('credential');
     const session = await openPromptSession();
@@ -260,6 +295,10 @@ describe('vault secret keystrokes', () => {
   it('types the value and an optional Enter', async () => {
     expect(secretKeystrokes('pa ss', false).toString()).toBe('pa ss');
     expect(secretKeystrokes('pa ss', true).toString()).toBe('pa ss\r');
+    expect(secretKeystrokes('pa ss', true, 'cr').toString()).toBe('pa ss\r');
+    expect(secretKeystrokes('pa ss', true, 'crlf').toString()).toBe('pa ss\r\n');
+    expect(secretKeystrokes('pa ss', true, 'lf').toString()).toBe('pa ss\n');
+    expect(secretKeystrokes('pa ss', false, 'lf').toString()).toBe('pa ss');
 
     const database = new MuxusDatabase(':memory:');
     const vault = new PasswordVault(database, {
@@ -276,13 +315,28 @@ describe('vault secret keystrokes', () => {
         written.push(data.toString());
         return true;
       });
+      let enterKey: TerminalEnterKey = 'lf';
+      inputs.register(
+        'console',
+        (data) => {
+          written.push(data.toString());
+          return true;
+        },
+        () => enterKey,
+      );
       const closed = inputs.register('closed', () => false);
       closed();
 
-      const writers = ['live', 'closed'].flatMap((id) => inputs.writer(id) ?? []);
-      await expect(typeVaultSecret(vault, secret.id, writers, { enter: true })).resolves.toBe(1);
-      expect(written).toEqual([`${SECRET}\r`]);
-      await expect(typeVaultSecret(vault, 'gone', writers, { enter: true })).resolves.toBeUndefined();
+      const targets = () => ['live', 'console', 'closed'].flatMap((id) => inputs.target(id) ?? []);
+      await expect(typeVaultSecret(vault, secret.id, targets(), { enter: true })).resolves.toBe(2);
+      expect(written).toEqual([`${SECRET}\r`, `${SECRET}\n`]);
+      // A host change reaches the open session the next time it is typed into.
+      enterKey = 'crlf';
+      await expect(typeVaultSecret(vault, secret.id, targets(), { enter: true })).resolves.toBe(2);
+      expect(written.slice(2)).toEqual([`${SECRET}\r`, `${SECRET}\r\n`]);
+      expect(inputs.writer('console')).toBeDefined();
+      expect(inputs.target('closed')).toBeUndefined();
+      await expect(typeVaultSecret(vault, 'gone', targets(), { enter: true })).resolves.toBeUndefined();
     } finally {
       vault.dispose();
       database.close();

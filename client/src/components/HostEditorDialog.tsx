@@ -38,6 +38,7 @@ import {
 } from '../session-logging-policy.js';
 import { usePrefsStore } from '../state/prefs.js';
 import { useUiStore, type HostEditorState } from '../state/ui.js';
+import { customTerminalInputModes, terminalInputModesPatch } from '../terminal/input-modes.js';
 import { pastePromptWaitFromDraft } from '../terminal/paste-prompt.js';
 import { AdvancedSection } from './host-editor/AdvancedSection.js';
 import { AuthSection } from './host-editor/AuthSection.js';
@@ -362,6 +363,7 @@ function SshHostEditorContent({
         pasteCharDelayMs: draft.pasteCharDelayMs ?? null,
         pastePromptWait: pastePromptWaitFromDraft(draft.pastePromptWait),
         antiIdle: antiIdleFromDraft(draft.antiIdle),
+        ...terminalInputModesPatch(draft.inputModes),
         disableSftp: draft.disableSftp,
         consoleCompatibility: draft.consoleCompatibility,
         keywordHighlights:
@@ -391,6 +393,7 @@ function SshHostEditorContent({
         pasteCharDelayMs: draft.pasteCharDelayMs ?? null,
         pastePromptWait: pastePromptWaitFromDraft(draft.pastePromptWait),
         antiIdle: antiIdleFromDraft(draft.antiIdle),
+        ...terminalInputModesPatch(draft.inputModes),
         disableSftp: draft.disableSftp,
         consoleCompatibility: draft.consoleCompatibility,
         keywordHighlights:
@@ -480,6 +483,7 @@ function SshHostEditorContent({
         draft.pasteLineDelayMs !== undefined || draft.pasteCharDelayMs !== undefined,
         draft.pastePromptWait.enabled,
         draft.antiIdle.enabled,
+        customTerminalInputModes(draft.inputModes),
       ].filter(Boolean).length || undefined,
     },
     { value: 'auth', label: 'Authentication', icon: <KeyOutlinedIcon fontSize="small" /> },

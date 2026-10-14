@@ -17,6 +17,10 @@ import {
   loginSequenceProblem,
   type LoginSequenceDraft,
 } from '../../login-sequence.js';
+import {
+  hostTerminalInputModes,
+  type TerminalInputModes,
+} from '../../terminal/input-modes.js';
 import { keywordHighlightRulesProblem } from '../../terminal/keyword-matching.js';
 import {
   pastePromptWaitDraft,
@@ -56,6 +60,8 @@ export interface HostDraft {
   pastePromptWait: PastePromptWaitDraft;
   /** Text typed into idle sessions. */
   antiIdle: AntiIdleDraft;
+  /** Backspace and Enter keys, implicit CR and local echo. */
+  inputModes: TerminalInputModes;
   /** Muxus-only plain-shell mode: no SFTP or shell integration. */
   disableSftp: boolean;
   /** Muxus-only console mode: also no env requests, with PTY rejection fallback. */
@@ -115,6 +121,7 @@ export function blankDraft(
     pasteCharDelayMs: undefined,
     pastePromptWait: pastePromptWaitDraft(undefined),
     antiIdle: antiIdleDraft(undefined),
+    inputModes: hostTerminalInputModes(undefined),
     disableSftp: false,
     consoleCompatibility: false,
     file: '',
@@ -166,6 +173,7 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
     pasteCharDelayMs: entry.metadata?.pasteCharDelayMs,
     pastePromptWait: pastePromptWaitDraft(entry.metadata?.pastePromptWait),
     antiIdle: antiIdleDraft(entry.metadata?.antiIdle),
+    inputModes: hostTerminalInputModes(entry.metadata),
     disableSftp: entry.metadata?.disableSftp ?? false,
     consoleCompatibility: entry.metadata?.consoleCompatibility ?? false,
     file: entry.file,
@@ -233,6 +241,7 @@ export function draftFromSavedSshProfile(
     pasteCharDelayMs: saved.metadata.pasteCharDelayMs,
     pastePromptWait: pastePromptWaitDraft(saved.metadata.pastePromptWait),
     antiIdle: antiIdleDraft(saved.metadata.antiIdle),
+    inputModes: hostTerminalInputModes(saved.metadata),
     disableSftp: saved.metadata.disableSftp ?? false,
     consoleCompatibility: saved.metadata.consoleCompatibility ?? false,
     file: '',

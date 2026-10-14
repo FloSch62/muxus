@@ -6,6 +6,8 @@ import type {
   SessionLoggingPolicy,
   SessionLoggingPolicyInput,
   SshProfile,
+  TerminalBackspaceKey,
+  TerminalEnterKey,
 } from '@muxus/shared';
 import {
   antiIdleDraft,
@@ -28,6 +30,7 @@ import {
   type LoginSequenceDraft,
 } from './login-sequence.js';
 import { managedHostKey, type ManagedHost } from './managed-hosts.js';
+import { hostTerminalInputModes } from './terminal/input-modes.js';
 import {
   hostSessionLoggingDraft,
   sameSessionLoggingDraft,
@@ -69,6 +72,10 @@ export interface BulkHostValues {
   pasteCharDelayMs: number | undefined;
   pastePromptWait: PastePromptWaitDraft;
   antiIdle: AntiIdleDraft;
+  backspaceKey: TerminalBackspaceKey;
+  enterKey: TerminalEnterKey;
+  implicitCr: boolean;
+  localEcho: boolean;
   highlightProfileId: string | undefined;
   highlightInheritGlobal: boolean;
   sessionLogging: HostSessionLoggingDraft;
@@ -104,6 +111,10 @@ export const BULK_FIELD_AUDIENCE: { readonly [F in BulkHostField]: BulkAudience 
   pasteCharDelayMs: 'terminal',
   pastePromptWait: 'terminal',
   antiIdle: 'terminal',
+  backspaceKey: 'terminal',
+  enterKey: 'terminal',
+  implicitCr: 'terminal',
+  localEcho: 'terminal',
   highlightProfileId: 'terminal',
   highlightInheritGlobal: 'terminal',
   sessionLogging: 'terminal',
@@ -171,6 +182,7 @@ export function bulkValuesForHost(
     values.pasteCharDelayMs = metadata?.pasteCharDelayMs;
     values.pastePromptWait = pastePromptWaitDraft(metadata?.pastePromptWait);
     values.antiIdle = antiIdleDraft(metadata?.antiIdle);
+    Object.assign(values, hostTerminalInputModes(metadata));
     values.highlightProfileId = highlights?.profileId;
     values.highlightInheritGlobal = highlights?.inheritGlobal ?? true;
     values.loginSequence = loginSequenceDraft(metadata?.loginSequence);
@@ -426,6 +438,13 @@ function metadataPatch(
   if (differs.has('antiIdle') && changes.antiIdle) {
     patch.antiIdle = antiIdleFromDraft(changes.antiIdle);
   }
+  // The keys' defaults are stored as unset, as the host editors store them.
+  if (differs.has('backspaceKey')) {
+    patch.backspaceKey = changes.backspaceKey === 'del' ? null : changes.backspaceKey;
+  }
+  if (differs.has('enterKey')) patch.enterKey = changes.enterKey === 'cr' ? null : changes.enterKey;
+  if (differs.has('implicitCr')) patch.implicitCr = changes.implicitCr;
+  if (differs.has('localEcho')) patch.localEcho = changes.localEcho;
   if (differs.has('consoleCompatibility')) patch.consoleCompatibility = changes.consoleCompatibility;
   if (differs.has('disableSftp')) patch.disableSftp = changes.disableSftp;
   if (differs.has('loginSequence') && changes.loginSequence) {

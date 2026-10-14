@@ -1,4 +1,4 @@
-import type { AuthPromptResponse, LoginSequence } from '@muxus/shared';
+import type { AuthPromptResponse, LoginSequence, TerminalEnterKey } from '@muxus/shared';
 import type {
   TerminalClientMessage,
   TerminalServerMessage,
@@ -25,6 +25,8 @@ export interface LoginSequenceSessionOptions {
   vault: PasswordVault;
   /** Types into the session's transport directly, never through session logging. */
   write: TerminalInputWriter;
+  /** What Enter sends on the session's host, read when a step presses it. */
+  enterKey(): TerminalEnterKey;
   recorder: { input(data: Buffer): void; system(message: string): void };
   send(message: TerminalServerMessage): void;
   log?: { warn(details: object, message: string): void };
@@ -50,6 +52,7 @@ export class LoginSequenceSession {
       {
         write: options.write,
         typed: (data) => options.recorder.input(data),
+        enterKey: () => options.enterKey(),
         typeSecret: (secretId, enter, signal) => this.typeSecret(secretId, enter, signal),
         progress: (update) => this.report(update),
       },
@@ -120,7 +123,8 @@ export class LoginSequenceSession {
     let error: string | undefined;
     for (let attempt = 0; ; attempt++) {
       try {
-        const typed = await typeVaultSecret(this.options.vault, secretId, [this.options.write], {
+        const target = { write: this.options.write, enterKey: this.options.enterKey() };
+        const typed = await typeVaultSecret(this.options.vault, secretId, [target], {
           enter,
           masterPassword,
         });

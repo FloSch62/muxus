@@ -11,6 +11,10 @@ import { cancelPaste } from '../../../client/src/state/paste-progress.js';
 import { useTabsStore } from '../../../client/src/state/tabs.js';
 import { useToastStore } from '../../../client/src/state/toast.js';
 import {
+  hostTerminalInputModes,
+  keyboardInputData,
+} from '../../../client/src/terminal/input-modes.js';
+import {
   registerTerminal,
   type TerminalHandle,
 } from '../../../client/src/terminal/terminal-registry.js';
@@ -23,6 +27,7 @@ function handle(
     focus: vi.fn(),
     cursorAnchorPosition: () => undefined,
     sendInput,
+    sendKeyboardInput: sendInput,
     typeText: vi.fn(() => true),
     clear: vi.fn(),
     selectAll: vi.fn(),
@@ -108,6 +113,37 @@ describe('multi-execution routing', () => {
     expect(broadcastTerminalInput('tab-a', 'uptime\r')).toBe(1);
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledWith('uptime\r');
+    unregister.forEach((dispose) => dispose());
+  });
+
+  it("mirrors keystrokes as xterm.js encoded them, for each terminal to send its host's keys", () => {
+    const hosts = {
+      'tab-a': hostTerminalInputModes({ backspaceKey: 'ctrl-h', enterKey: 'crlf' }),
+      'tab-b': hostTerminalInputModes(undefined),
+      'tab-c': hostTerminalInputModes({ enterKey: 'lf' }),
+    };
+    const sent = new Map<string, unknown[]>();
+    const unregister = Object.entries(hosts).map(([id, modes]) => {
+      const bytes: unknown[] = [];
+      sent.set(id, bytes);
+      const sendInput = vi.fn((data: string | Uint8Array<ArrayBuffer>) => bytes.push(data) > 0);
+      // What TerminalViewImpl does with keystrokes: translate by this host, then send.
+      return registerTerminal(
+        id,
+        handle(sendInput, {
+          sendKeyboardInput: (data) =>
+            sendInput(typeof data === 'string' ? keyboardInputData(data, modes) : data),
+        }),
+      );
+    });
+    useMultiExecStore.getState().setSelection(['tab-a', 'tab-b', 'tab-c']);
+
+    // Backspace and Enter typed into the ^H, CR LF host.
+    expect(broadcastTerminalInput('tab-a', '\x7f')).toBe(2);
+    expect(broadcastTerminalInput('tab-a', '\r')).toBe(2);
+    expect(sent.get('tab-a')).toEqual([]);
+    expect(sent.get('tab-b')).toEqual(['\x7f', '\r']);
+    expect(sent.get('tab-c')).toEqual(['\x7f', '\n']);
     unregister.forEach((dispose) => dispose());
   });
 

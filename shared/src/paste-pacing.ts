@@ -1,3 +1,5 @@
+import type { TerminalEnterKey } from './api-types.js';
+
 /** Longest wait after each pasted line, in milliseconds. */
 export const MAX_PASTE_LINE_DELAY_MS = 10_000;
 /** Longest wait after each pasted character, in milliseconds. */
@@ -106,10 +108,31 @@ export function preparePasteText(text: string, bracketed: boolean): string {
   return bracketed ? normalized.replaceAll('\x1b', '\u241b') : normalized;
 }
 
-/** Everything an unpaced paste sends, markers included: what xterm.js's own paste sends. */
-export function terminalPasteData(text: string, bracketed: boolean): string {
+const ENTER_KEY_DATA: Record<TerminalEnterKey, string> = { cr: '\r', crlf: '\r\n', lf: '\n' };
+
+/**
+ * Prepared text typed with a host's Enter key: every CR, which is Enter in
+ * prepared text, goes out as CR LF or LF instead. Bracketed pastes keep CR:
+ * the program reading them takes the text as a paste, not as keys, and
+ * expects the CR every terminal sends there.
+ */
+export function withEnterKey(prepared: string, enterKey: TerminalEnterKey): string {
+  return enterKey === 'cr' ? prepared : prepared.replaceAll('\r', ENTER_KEY_DATA[enterKey]);
+}
+
+/**
+ * Everything an unpaced paste sends, markers included: what xterm.js's own
+ * paste sends, with the host's Enter key when the paste is not bracketed.
+ */
+export function terminalPasteData(
+  text: string,
+  bracketed: boolean,
+  enterKey: TerminalEnterKey = 'cr',
+): string {
   const prepared = preparePasteText(text, bracketed);
-  return bracketed ? `${BRACKETED_PASTE_START}${prepared}${BRACKETED_PASTE_END}` : prepared;
+  return bracketed
+    ? `${BRACKETED_PASTE_START}${prepared}${BRACKETED_PASTE_END}`
+    : withEnterKey(prepared, enterKey);
 }
 
 /** Lines in prepared paste text: every CR ends one, and trailing text is one more. */

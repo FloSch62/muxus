@@ -1,9 +1,14 @@
-import type { TerminalInputWriter } from '../ws/terminal-inputs.js';
+import { withEnterKey, type TerminalEnterKey } from '@muxus/shared';
+import type { TerminalInputTarget } from '../ws/terminal-inputs.js';
 import type { PasswordVault } from './password-vault.js';
 
-/** A secret as keystrokes: its text, then Enter (a carriage return, as the key sends) when asked. */
-export function secretKeystrokes(value: string, enter: boolean): Buffer {
-  return Buffer.from(enter ? `${value}\r` : value, 'utf8');
+/** A secret as keystrokes: its text, then Enter as the host's key sends it when asked. */
+export function secretKeystrokes(
+  value: string,
+  enter: boolean,
+  enterKey: TerminalEnterKey = 'cr',
+): Buffer {
+  return Buffer.from(enter ? `${value}${withEnterKey('\r', enterKey)}` : value, 'utf8');
 }
 
 /**
@@ -20,14 +25,14 @@ export function secretKeystrokes(value: string, enter: boolean): Buffer {
 export async function typeVaultSecret(
   vault: PasswordVault,
   secretId: string,
-  writers: readonly TerminalInputWriter[],
+  targets: readonly TerminalInputTarget[],
   options: { enter: boolean; masterPassword?: string },
 ): Promise<number | undefined> {
   const value = await vault.secretValue(secretId, options.masterPassword);
   if (value === undefined) return undefined;
   let typed = 0;
-  for (const write of writers) {
-    if (write(secretKeystrokes(value, options.enter))) typed++;
+  for (const { write, enterKey } of targets) {
+    if (write(secretKeystrokes(value, options.enter, enterKey))) typed++;
   }
   return typed;
 }
