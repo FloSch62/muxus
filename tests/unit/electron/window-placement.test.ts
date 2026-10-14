@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { parseWindowPlacement, windowBounds } from '../../../electron/src/window-placement.js';
+import {
+  parseWindowPlacement,
+  windowBounds,
+  type WindowPlacement,
+} from '../../../electron/src/window-placement.js';
 
 const laptop = { x: 0, y: 0, width: 1920, height: 1080 };
 const monitor = { x: 1920, y: -200, width: 2560, height: 1400 };
@@ -18,7 +22,8 @@ describe('settings window placement', () => {
 
   it('opens at the size it was left, still centered over the app window', () => {
     const owner = { x: 100, y: 100, width: 1400, height: 900 };
-    expect(windowBounds({ width: 900, height: 700, maximized: true }, owner, [laptop])).toEqual({
+    const placement: WindowPlacement = { width: 900, height: 700, maximized: true };
+    expect(windowBounds(placement, owner, [laptop])).toEqual({
       x: 350,
       y: 200,
       width: 900,
@@ -42,7 +47,8 @@ describe('settings window placement', () => {
   });
 
   it('leaves the position to the system when there is nothing to place against', () => {
-    expect(windowBounds({ ...size, maximized: true }, undefined, [laptop])).toEqual(size);
+    const placement: WindowPlacement = { ...size, maximized: true };
+    expect(windowBounds(placement, undefined, [laptop])).toEqual(size);
   });
 
   it('reads only well-formed stored placements', () => {
