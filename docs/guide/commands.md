@@ -125,7 +125,8 @@ The shortcut is rebindable under **Terminal → Show saved command menu** in the
 A button can have a key combination of its own that runs it in the focused session, exactly
 as clicking it does. Buttons have none until one is recorded:
 
-1. In the command-button manager, click **Add shortcut** on the button.
+1. In the command-button manager, click the keyboard icon (**Add shortcut**) next to the
+   button's move and delete icons.
 2. Press the combination, for example ++alt+shift+1++. It needs ++ctrl++, ++alt++ or
    ++cmd++, or a function key, so ordinary typing never runs a button. ++esc++ cancels.
 

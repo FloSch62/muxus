@@ -542,7 +542,43 @@ function CommandButtonCard({
               slotProps={{ htmlInput: { spellCheck: false } }}
             />
           )}
-          <Stack direction="row" spacing={0} sx={{ pt: 0.25 }}>
+          <Stack direction="row" spacing={0} sx={{ pt: 0.25, alignItems: 'center' }}>
+            {button.shortcut || recordingShortcut ? (
+              <Tooltip title={recordingShortcut ? 'Press the new shortcut' : 'Change the shortcut'}>
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  color={shellShortcut ? 'warning' : 'default'}
+                  label={
+                    recordingShortcut || !button.shortcut
+                      ? 'Press keys…'
+                      : formatChordString(button.shortcut)
+                  }
+                  onClick={onRecordShortcut}
+                  onDelete={
+                    button.shortcut && !recordingShortcut
+                      ? () => onChange({ shortcut: undefined })
+                      : undefined
+                  }
+                  sx={{
+                    mr: 0.5,
+                    flexShrink: 0,
+                    ...(button.shortcut && !recordingShortcut ? chordSx() : {}),
+                    ...(recordingShortcut ? { borderColor: 'primary.main', color: 'primary.main' } : {}),
+                  }}
+                />
+              </Tooltip>
+            ) : (
+              <Tooltip title="Add shortcut">
+                <IconButton
+                  size="small"
+                  aria-label={`Add shortcut to ${name}`}
+                  onClick={onRecordShortcut}
+                >
+                  <KeyboardOutlinedIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
             <Tooltip title="Move up">
               <span>
                 <IconButton
@@ -617,7 +653,7 @@ function CommandButtonCard({
             </ToggleButton>
           </ToggleButtonGroup>
           <FormControlLabel
-            sx={{ m: 0, flex: '1 1 240px' }}
+            sx={{ m: 0, flex: '1 1 160px', minWidth: 0 }}
             control={
               <Switch
                 size="small"
@@ -643,33 +679,6 @@ function CommandButtonCard({
               )
             }
           />
-          <Tooltip
-            title={button.shortcut ? 'Change the shortcut' : 'Run this button with a key combination'}
-          >
-            <Chip
-              variant="outlined"
-              color={shellShortcut ? 'warning' : 'default'}
-              icon={<KeyboardOutlinedIcon />}
-              label={
-                recordingShortcut
-                  ? 'Press keys…'
-                  : button.shortcut
-                    ? formatChordString(button.shortcut)
-                    : 'Add shortcut'
-              }
-              onClick={onRecordShortcut}
-              onDelete={
-                button.shortcut && !recordingShortcut
-                  ? () => onChange({ shortcut: undefined })
-                  : undefined
-              }
-              sx={{
-                flexShrink: 0,
-                ...(button.shortcut && !recordingShortcut ? chordSx() : {}),
-                ...(recordingShortcut ? { borderColor: 'primary.main', color: 'primary.main' } : {}),
-              }}
-            />
-          </Tooltip>
           {groups.length > 1 ? (
             <TextField
               select
