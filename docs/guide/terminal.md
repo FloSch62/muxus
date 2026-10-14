@@ -234,10 +234,11 @@ host can have Muxus type into its idle sessions instead:
 3. Set **After**: the seconds without input, from 10 to 3600.
 4. Enter the **Text**. It is typed exactly as entered, spaces included, with nothing added;
    control characters such as a tab are not accepted.
-5. Tick **Press Enter afterwards** only when the device needs it. The editor warns that Enter
-   also answers whatever the device is asking at that moment, such as a confirmation before
-   a reload, and runs a command left half-typed for longer than the interval. In a
-   full-screen editor or pager, the text and Enter land there.
+5. Tick **Press Enter afterwards** only when the device needs it; it presses the host's
+   [Enter key](#keys-and-echo). The editor warns that Enter also answers whatever the device
+   is asking at that moment, such as a confirmation before a reload, and runs a command left
+   half-typed for longer than the interval. In a full-screen editor or pager, the text and
+   Enter land there.
 
 On Telnet and serial hosts, where you log in after the session opens, the first wait starts
 at the first input, yours or a login sequence's, so a session left at a login prompt never
@@ -278,7 +279,7 @@ Telnet or serial host, changes four things for that host's sessions:
 | Setting | Choices | Effect |
 | --- | --- | --- |
 | **Backspace sends** | DEL (default), ^H | The byte ++backspace++ sends. SSH sessions also announce it to the server as the erase character (`VERASE`) when they open |
-| **Enter sends** | CR (default), CR LF, LF | What ++enter++ sends, what line breaks in pastes and [command buttons](commands.md#command-buttons) become, and the Enter that [secrets](commands.md#buttons-that-send-a-secret) and [login sequences](adding-hosts.md#login-sequence) press |
+| **Enter sends** | CR (default), CR LF, LF | What ++enter++ sends, what line breaks in pastes and [command buttons](commands.md#command-buttons) become, and the Enter that [secrets](commands.md#buttons-that-send-a-secret), [login sequences](adding-hosts.md#login-sequence) and [anti-idle](#keeping-idle-sessions-open) press |
 | **Implicit CR in every received LF** | Off (default), on | A line feed from the device also returns to the start of the line, for output that ends lines with LF alone |
 | **Local echo** | Off (default), on | Shows what you type in the terminal, without sending anything more |
 

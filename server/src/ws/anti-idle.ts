@@ -1,4 +1,4 @@
-import type { AntiIdle } from '@muxus/shared';
+import { withEnterKey, type AntiIdle, type TerminalEnterKey } from '@muxus/shared';
 
 /** How soon a wait that ended while something else was typing looks again. */
 const BUSY_RECHECK_MS = 1_000;
@@ -8,11 +8,16 @@ export interface AntiIdleIo {
   write(data: Buffer): void;
   /** A paced paste or a login sequence is typing into the session. */
   busy(): boolean;
+  /** What Enter sends on the host, read at each send; CR when absent. */
+  enterKey?(): TerminalEnterKey;
 }
 
-/** What a setting types: its text as is, then Enter only when asked for. */
-export function antiIdleInput(setting: AntiIdle): Buffer {
-  return Buffer.from(setting.enter ? `${setting.text}\r` : setting.text, 'utf8');
+/** What a setting types: its text as is, then the host's Enter only when asked for. */
+export function antiIdleInput(setting: AntiIdle, enterKey: TerminalEnterKey = 'cr'): Buffer {
+  return Buffer.from(
+    setting.enter ? `${setting.text}${withEnterKey('\r', enterKey)}` : setting.text,
+    'utf8',
+  );
 }
 
 /**
@@ -23,7 +28,6 @@ export function antiIdleInput(setting: AntiIdle): Buffer {
  * monotonic, so a wall-clock change cannot delay or hasten a send.
  */
 export class AntiIdleTimer {
-  private readonly data: Buffer;
   private readonly intervalMs: number;
   private lastInputAt = 0;
   private held = false;
@@ -32,10 +36,9 @@ export class AntiIdleTimer {
   private closed = false;
 
   constructor(
-    setting: AntiIdle,
+    private readonly setting: AntiIdle,
     private readonly io: AntiIdleIo,
   ) {
-    this.data = antiIdleInput(setting);
     this.intervalMs = setting.intervalSeconds * 1000;
   }
 
@@ -97,7 +100,7 @@ export class AntiIdleTimer {
       this.schedule(this.intervalMs - idleMs);
       return;
     }
-    this.io.write(this.data);
+    this.io.write(antiIdleInput(this.setting, this.io.enterKey?.()));
     this.lastInputAt = now;
     this.schedule(this.intervalMs);
   };

@@ -31,6 +31,13 @@ describe('antiIdleInput', () => {
     );
     expect(antiIdleInput({ intervalSeconds: 60, text: '', enter: true })).toEqual(Buffer.from('\r'));
   });
+
+  it("presses the host's Enter key", () => {
+    const setting = { intervalSeconds: 60, text: 'show clock', enter: true };
+    expect(antiIdleInput(setting, 'crlf')).toEqual(Buffer.from('show clock\r\n'));
+    expect(antiIdleInput(setting, 'lf')).toEqual(Buffer.from('show clock\n'));
+    expect(antiIdleInput({ ...setting, enter: false }, 'lf')).toEqual(Buffer.from('show clock'));
+  });
 });
 
 describe('AntiIdleTimer', () => {

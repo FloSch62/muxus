@@ -115,6 +115,7 @@ async function sshSession(database: MuxusDatabase, history = historyStore().stor
       }),
       resolveProfile: (profile: unknown) => profile,
       metadataAliasFor: (profile: { target: string }) => profile.target,
+      listedMetadataAliasFor: (profile: { target: string }) => profile.target,
       leaseCount: () => 0,
     },
     forwards: { startConfig: vi.fn(), stop: vi.fn(), stopSessionForConnection: vi.fn() },
@@ -146,6 +147,26 @@ describe('anti-idle over the terminal socket', () => {
       expect(writes()).toEqual([]);
       await vi.advanceTimersByTimeAsync(10_200);
       expect(writes()).toEqual(['show clock\r', 'show clock\r']);
+      socket.close(1000, TERMINAL_SESSION_CLOSE_REASON);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("presses the host's Enter key, read at each send", async () => {
+    vi.useFakeTimers();
+    const database = new MuxusDatabase(':memory:');
+    try {
+      database.updateOpenSshMetadata('router', {
+        antiIdle: { ...space, text: 'show clock', enter: true },
+        enterKey: 'lf',
+      });
+      const { socket, writes } = await sshSession(database);
+
+      await vi.advanceTimersByTimeAsync(10_000);
+      database.updateOpenSshMetadata('router', { enterKey: 'crlf' });
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(writes()).toEqual(['show clock\n', 'show clock\r\n']);
       socket.close(1000, TERMINAL_SESSION_CLOSE_REASON);
     } finally {
       database.close();

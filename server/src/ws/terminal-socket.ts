@@ -626,6 +626,7 @@ async function handleSession(
           writeInput(data);
         },
         busy: () => pastePacer.running || (loginSequence?.running ?? false),
+        enterKey: hostEnterKey,
       });
       if (afterFirstInput) antiIdle.startAfterFirstInput();
       else antiIdle.start();
