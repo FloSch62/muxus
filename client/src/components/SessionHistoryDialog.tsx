@@ -32,6 +32,7 @@ import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import { alpha, type Theme } from '@mui/material/styles';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
+import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
@@ -55,10 +56,12 @@ import {
 import { useSetSessionLabel, useSetSessionPinned } from '../api/session-history.js';
 import { apiFetch, apiFetchRaw } from '../api/http.js';
 import { copyToClipboard } from '../clipboard.js';
+import { historyCompareText } from '../compare-sources.js';
 import { confirmAction, promptForText } from '../state/dialogs.js';
+import { loadCompareDialog } from '../lazy-features.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { findTranscriptMatchesInChunks } from '../session-history-matches.js';
-import { showToast } from '../state/toast.js';
+import { showErrorToast, showToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
 
 const MAX_PREVIEW_EVENTS = 5_000;
@@ -357,6 +360,21 @@ export function SessionHistoryDialog() {
                     onClick={() => void copyCleanLog(selected, showTimestamps)}
                   >
                     <ContentCopyOutlinedIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Compare with…">
+                  <IconButton
+                    size="small"
+                    aria-label="Compare with…"
+                    onMouseEnter={() => void loadCompareDialog()}
+                    onFocus={() => void loadCompareDialog()}
+                    onClick={() =>
+                      void historyCompareText(selected)
+                        .then(useUiStore.getState().setCompareSource)
+                        .catch(showErrorToast)
+                    }
+                  >
+                    <CompareArrowsIcon fontSize="small" />
                   </IconButton>
                 </Tooltip>
                 <RenameSessionButton session={selected} />

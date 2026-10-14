@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { SavedHostProfile, SshGateway, SshHostEntry } from '@muxus/shared';
+import type { CompareText } from '../compare-sources.js';
 import { openSettingsWindow } from '../window-management.js';
 
 /** Unified editor state for OpenSSH entries and Muxus-owned Telnet/serial/RDP/VNC hosts. */
@@ -89,6 +90,8 @@ interface UiState {
   historyOpen: boolean;
   historyQuery: string;
   historySelectedId?: string;
+  /** The compare dialog, opened with the side it was invoked from. */
+  compareSource: CompareText | false;
   workspacesOpen: boolean;
   hostEditor: HostEditorState;
   /** Host whose Muxus-only display metadata is being organized. */
@@ -117,6 +120,7 @@ interface UiState {
   setQuickLauncherOpen: (open: boolean) => void;
   setHistoryOpen: (open: boolean) => void;
   openHistory: (query?: string, selectedId?: string) => void;
+  setCompareSource: (source: CompareText | false) => void;
   setWorkspacesOpen: (open: boolean) => void;
   setHostEditor: (value: HostEditorState) => void;
   setHostOrganizer: (value: SshHostEntry | SavedHostProfile | false) => void;
@@ -139,6 +143,7 @@ export const useUiStore = create<UiState>()((set) => ({
   quickLauncherOpen: false,
   historyOpen: false,
   historyQuery: '',
+  compareSource: false,
   workspacesOpen: false,
   hostEditor: false,
   hostOrganizer: false,
@@ -173,6 +178,7 @@ export const useUiStore = create<UiState>()((set) => ({
     }),
   openHistory: (historyQuery = '', historySelectedId) =>
     set({ historyOpen: true, historyQuery, historySelectedId }),
+  setCompareSource: (compareSource) => set({ compareSource }),
   setWorkspacesOpen: (workspacesOpen) => set({ workspacesOpen }),
   setHostEditor: (hostEditor) => set({ hostEditor }),
   setHostOrganizer: (hostOrganizer) => set({ hostOrganizer }),

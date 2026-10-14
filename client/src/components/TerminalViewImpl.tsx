@@ -17,6 +17,7 @@ import Typography from '@mui/material/Typography';
 import { useTheme } from '@mui/material/styles';
 import CloseIcon from '@mui/icons-material/Close';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
+import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import DeleteSweepOutlinedIcon from '@mui/icons-material/DeleteSweepOutlined';
@@ -57,7 +58,8 @@ import {
   copyToClipboard,
   readClipboardContent,
 } from '../clipboard.js';
-import { loadMonacoTextEditor, loadRemoteEditorWorkspace } from '../lazy-features.js';
+import { terminalCompareText } from '../compare-sources.js';
+import { loadCompareDialog, loadMonacoTextEditor, loadRemoteEditorWorkspace } from '../lazy-features.js';
 import { IS_MAC } from '../platform.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { showToast } from '../state/toast.js';
@@ -82,6 +84,7 @@ import {
   usePrefsStore,
 } from '../state/prefs.js';
 import { useTabsStore, type SessionTab } from '../state/tabs.js';
+import { useUiStore } from '../state/ui.js';
 import {
   terminalColorForHost,
   terminalSchemeIdForHost,
@@ -2193,6 +2196,25 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             <CodeOutlinedIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>Export as HTML</ListItemText>
+        </MenuItem>
+        <MenuItem
+          onMouseEnter={() => void loadCompareDialog()}
+          onFocus={() => void loadCompareDialog()}
+          onClick={() => {
+            const term = termRef.current;
+            const selection = ctxMenu?.selection;
+            if (term) {
+              useUiStore
+                .getState()
+                .setCompareSource(terminalCompareText(tab.title, selection || bufferText(term), !!selection));
+            }
+            setCtxMenu(null);
+          }}
+        >
+          <ListItemIcon>
+            <CompareArrowsIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Compare with…</ListItemText>
         </MenuItem>
         <Divider />
         <MenuItem

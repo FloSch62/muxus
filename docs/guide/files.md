@@ -90,8 +90,11 @@ managers. Dropping onto a [local terminal](terminal.md#dropping-files) always ty
 ## Managing
 
 The row menu, opened with right-click, has **Open in editor**, **Open with default
-program**, **Open with…**, **Download**, **Rename** and **Delete**. The toolbar adds **New
-folder**. Deleting a directory removes its contents and is confirmed first.
+program**, **Open with…**, **Download**, **Compare with…**, **Rename** and **Delete**. The
+toolbar adds **New folder**. Deleting a directory removes its contents and is confirmed first.
+
+**Compare with…** compares the file with another file on a connected session, a local file,
+a terminal's output or a history record. See [Comparing](session-history.md#comparing).
 
 ## Opening files with local programs
 

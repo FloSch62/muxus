@@ -39,6 +39,7 @@ import {
   loadShortcutsDialog,
   loadSessionHistoryDialog,
   loadLogViewerDialog,
+  loadCompareDialog,
   loadQuickLauncherDialog,
   loadWorkspaceDialog,
 } from './lazy-features.js';
@@ -101,6 +102,9 @@ const SessionHistoryDialog = lazy(() =>
 const LogViewerDialog = lazy(() =>
   loadLogViewerDialog().then((module) => ({ default: module.LogViewerDialog })),
 );
+const CompareDialog = lazy(() =>
+  loadCompareDialog().then((module) => ({ default: module.CompareDialog })),
+);
 const QuickLauncherDialog = lazy(() =>
   loadQuickLauncherDialog().then((module) => ({ default: module.QuickLauncherDialog })),
 );
@@ -133,6 +137,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const shortcutsOpen = useUiStore((s) => s.shortcutsOpen);
   const historyOpen = useUiStore((s) => s.historyOpen);
   const logViewerOpen = useUiStore((s) => s.logViewerOpen);
+  const compareSource = useUiStore((s) => s.compareSource);
   const quickLauncherOpen = useUiStore((s) => s.quickLauncherOpen);
   const workspacesOpen = useUiStore((s) => s.workspacesOpen);
   const commandLineLaunch = window.muxusDesktop?.commandLineLaunch;
@@ -223,6 +228,12 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
         {shortcutsOpen ? <ShortcutsDialog /> : null}
         {historyOpen ? <SessionHistoryDialog /> : null}
         {logViewerOpen ? <LogViewerDialog /> : null}
+        {/* Its own boundary: loading Monaco must not hide the dialog it opens from. */}
+        {compareSource ? (
+          <Suspense fallback={null}>
+            <CompareDialog source={compareSource} />
+          </Suspense>
+        ) : null}
         {quickLauncherOpen ? <QuickLauncherDialog /> : null}
         {workspacesOpen ? <WorkspaceDialog /> : null}
         {!launch || launch.kind === 'workspace' ? (

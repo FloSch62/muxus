@@ -124,6 +124,9 @@ expression options. Every match is marked in the scrollbar.
 - **Select all** ++ctrl+shift+a++, **copy all output** and **clear scrollback**
   ++ctrl+shift+k++ are in the terminal-actions menu.
 - **Export** writes the buffer as plain text, or as **HTML that preserves the colours**.
+- **Compare with…** in the context menu compares the selection, or the whole buffer when
+  nothing is selected, with another terminal, a history record or a file. See
+  [Comparing](session-history.md#comparing).
 
 !!! warning "Multiline paste is confirmed first"
 
