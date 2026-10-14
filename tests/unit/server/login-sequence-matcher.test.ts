@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  execWithTimeout,
   LoginOutputBuffer,
   PatternTimeoutError,
   TerminalTextStream,
@@ -91,5 +92,15 @@ describe('LoginOutputBuffer', () => {
     expect(Date.now() - started).toBeLessThan(2000);
     // The buffer is still usable afterwards.
     expect(buffer.find(/a!$/)).toEqual({ end: 41 });
+  });
+});
+
+describe('execWithTimeout', () => {
+  it('runs a regex from the start of the text, whatever it last matched', () => {
+    const pattern = /R\d#/g;
+    expect(execWithTimeout(pattern, 'R1# R2#', 50)?.index).toBe(0);
+    expect(execWithTimeout(pattern, 'R1# R2#', 50)?.index).toBe(0);
+    expect(execWithTimeout(/^%/m, 'echo\n% Invalid', 50)?.index).toBe(5);
+    expect(() => execWithTimeout(/^(a+)+$/, `${'a'.repeat(40)}!`, 50)).toThrow(PatternTimeoutError);
   });
 });

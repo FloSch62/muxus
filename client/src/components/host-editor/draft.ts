@@ -17,6 +17,11 @@ import {
   type LoginSequenceDraft,
 } from '../../login-sequence.js';
 import { keywordHighlightRulesProblem } from '../../terminal/keyword-matching.js';
+import {
+  pastePromptWaitDraft,
+  pastePromptWaitProblem,
+  type PastePromptWaitDraft,
+} from '../../terminal/paste-prompt.js';
 import { parseHostTarget } from './native-draft.js';
 
 export type IdentityAgentMode = 'default' | 'environment' | 'custom' | 'none';
@@ -46,6 +51,8 @@ export interface HostDraft {
   /** Paste pacing; unset follows the Terminal settings. */
   pasteLineDelayMs?: number;
   pasteCharDelayMs?: number;
+  /** Pastes wait for the prompt after each line. */
+  pastePromptWait: PastePromptWaitDraft;
   /** Muxus-only plain-shell mode: no SFTP or shell integration. */
   disableSftp: boolean;
   /** Muxus-only console mode: also no env requests, with PTY rejection fallback. */
@@ -102,6 +109,7 @@ export function blankDraft(
     commandButtonGroup: undefined,
     pasteLineDelayMs: undefined,
     pasteCharDelayMs: undefined,
+    pastePromptWait: pastePromptWaitDraft(undefined),
     disableSftp: false,
     consoleCompatibility: false,
     file: '',
@@ -151,6 +159,7 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
     commandButtonGroup: entry.metadata?.commandButtonGroup,
     pasteLineDelayMs: entry.metadata?.pasteLineDelayMs,
     pasteCharDelayMs: entry.metadata?.pasteCharDelayMs,
+    pastePromptWait: pastePromptWaitDraft(entry.metadata?.pastePromptWait),
     disableSftp: entry.metadata?.disableSftp ?? false,
     consoleCompatibility: entry.metadata?.consoleCompatibility ?? false,
     file: entry.file,
@@ -216,6 +225,7 @@ export function draftFromSavedSshProfile(
     commandButtonGroup: saved.metadata.commandButtonGroup,
     pasteLineDelayMs: saved.metadata.pasteLineDelayMs,
     pasteCharDelayMs: saved.metadata.pasteCharDelayMs,
+    pastePromptWait: pastePromptWaitDraft(saved.metadata.pastePromptWait),
     disableSftp: saved.metadata.disableSftp ?? false,
     consoleCompatibility: saved.metadata.consoleCompatibility ?? false,
     file: '',
@@ -305,6 +315,7 @@ export function draftProblem(draft: HostDraft): string | null {
     if (!/^[A-Za-z][A-Za-z0-9]*$/.test(e.keyword)) return `"${e.keyword}" is not a valid option keyword.`;
   }
   return (
+    pastePromptWaitProblem(draft.pastePromptWait) ??
     loginSequenceProblem(draft.loginSequence) ??
     keywordHighlightRulesProblem(draft.keywordHighlights.rules)
   );

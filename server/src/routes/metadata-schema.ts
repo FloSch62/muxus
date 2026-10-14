@@ -5,6 +5,9 @@ import {
   LOGIN_SEQUENCE_TEXT_MAX_LENGTH,
   MAX_PASTE_CHAR_DELAY_MS,
   MAX_PASTE_LINE_DELAY_MS,
+  MAX_PASTE_PROMPT_TIMEOUT_MS,
+  MIN_PASTE_PROMPT_TIMEOUT_MS,
+  pastePatternProblem,
 } from '@muxus/shared';
 
 const hexColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/);
@@ -65,6 +68,22 @@ export const loginSequenceSchema = z.object({
   steps: z.array(loginSequenceStepSchema).max(LOGIN_SEQUENCE_MAX_STEPS),
 });
 
+const pastePatternSchema = z
+  .string()
+  .refine((pattern) => pastePatternProblem(pattern) === undefined, 'unusable regular expression');
+
+/** A paste's prompt waiting; a field left out uses the default. */
+const pastePromptWaitSchema = z.object({
+  promptPattern: pastePatternSchema.optional(),
+  timeoutMs: z
+    .number()
+    .int()
+    .min(MIN_PASTE_PROMPT_TIMEOUT_MS)
+    .max(MAX_PASTE_PROMPT_TIMEOUT_MS)
+    .optional(),
+  errorPattern: pastePatternSchema.optional(),
+});
+
 function validRegex(pattern: string): boolean {
   try {
     new RegExp(pattern);
@@ -92,6 +111,8 @@ export const metadataPatchSchema = z
     // Paste pacing in milliseconds; null follows the Terminal settings.
     pasteLineDelayMs: z.number().int().min(0).max(MAX_PASTE_LINE_DELAY_MS).nullable().optional(),
     pasteCharDelayMs: z.number().int().min(0).max(MAX_PASTE_CHAR_DELAY_MS).nullable().optional(),
+    // Null turns waiting for the prompt off.
+    pastePromptWait: pastePromptWaitSchema.nullable().optional(),
     disableSftp: z.boolean().optional(),
     consoleCompatibility: z.boolean().optional(),
     loginSequence: loginSequenceSchema.nullable().optional(),

@@ -37,6 +37,7 @@ import {
 } from '../session-logging-policy.js';
 import { usePrefsStore } from '../state/prefs.js';
 import { useUiStore, type HostEditorState } from '../state/ui.js';
+import { pastePromptWaitFromDraft } from '../terminal/paste-prompt.js';
 import { AdvancedSection } from './host-editor/AdvancedSection.js';
 import { AuthSection } from './host-editor/AuthSection.js';
 import {
@@ -357,6 +358,7 @@ function SshHostEditorContent({
         commandButtonGroup: draft.commandButtonGroup ?? null,
         pasteLineDelayMs: draft.pasteLineDelayMs ?? null,
         pasteCharDelayMs: draft.pasteCharDelayMs ?? null,
+        pastePromptWait: pastePromptWaitFromDraft(draft.pastePromptWait),
         disableSftp: draft.disableSftp,
         consoleCompatibility: draft.consoleCompatibility,
         keywordHighlights:
@@ -384,6 +386,7 @@ function SshHostEditorContent({
         commandButtonGroup: draft.commandButtonGroup ?? null,
         pasteLineDelayMs: draft.pasteLineDelayMs ?? null,
         pasteCharDelayMs: draft.pasteCharDelayMs ?? null,
+        pastePromptWait: pastePromptWaitFromDraft(draft.pastePromptWait),
         disableSftp: draft.disableSftp,
         consoleCompatibility: draft.consoleCompatibility,
         keywordHighlights:
@@ -471,6 +474,7 @@ function SshHostEditorContent({
         draft.terminalBackgroundColor,
         draft.commandButtonGroup,
         draft.pasteLineDelayMs !== undefined || draft.pasteCharDelayMs !== undefined,
+        draft.pastePromptWait.enabled,
       ].filter(Boolean).length || undefined,
     },
     { value: 'auth', label: 'Authentication', icon: <KeyOutlinedIcon fontSize="small" /> },

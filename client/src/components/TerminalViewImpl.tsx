@@ -40,6 +40,7 @@ import type { AppInfo, PastePacing, TerminalServerMessage } from '@muxus/shared'
 import {
   isPacedPaste,
   MAX_PACED_PASTE_LENGTH,
+  pastePacingFor,
   terminalPasteData,
 } from '@muxus/shared';
 import {
@@ -63,7 +64,12 @@ import {
   broadcastTerminalPaste,
   mirroredTabIds,
 } from '../state/multi-exec.js';
-import { setPasteProgress, usePasteProgressStore } from '../state/paste-progress.js';
+import {
+  markPasteStopNoted,
+  pasteStoppedNotice,
+  setPasteProgress,
+  usePasteProgressStore,
+} from '../state/paste-progress.js';
 import {
   TERMINAL_SYMBOL_FONT,
   sshKeepalivePrefField,
@@ -468,7 +474,10 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       setPendingPaste({
         text,
         broadcast,
-        pacing: currentPastePacing(),
+        pacing: pastePacingFor(
+          currentPastePacing(),
+          termRef.current?.modes.bracketedPasteMode ?? false,
+        ),
         mirrored: broadcast ? Math.max(0, mirroredTabIds(tab.id).length - 1) : 0,
         resolve,
       });
@@ -794,7 +803,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       { lineDelayMs, source = false }: SessionPasteOptions = {},
     ): boolean => {
       if (!text) return true;
-      const pacing = currentPastePacing();
+      const pacing = pastePacingFor(currentPastePacing(), term.modes.bracketedPasteMode);
       if (lineDelayMs !== undefined) pacing.lineDelayMs = lineDelayMs;
       const bracketed = term.modes.bracketedPasteMode;
       if (!isPacedPaste(pacing)) {
@@ -1116,7 +1125,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       let socketFailed = false;
       /** A tmux/screen reattach held back until the host's login sequence is done. */
       let pendingReattach: string | undefined;
-      if (!attachingExistingSession) updateTab(tab.id, { loginSequence: undefined });
+      if (!attachingExistingSession) {
+        updateTab(tab.id, { loginSequence: undefined, pasteStopNoted: undefined });
+      }
       diagnosable = false;
       ws = socket;
       wsRef.current = socket;
@@ -1392,6 +1403,14 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
                 ? { line: ctl.line, lines: ctl.lines, sent: ctl.sent, total: ctl.total }
                 : undefined,
             );
+            // Noted once, also when no window was attached at the stop: a returning one is sent it again.
+            if (ctl.state === 'stopped' && markPasteStopNoted(tab.id, ctl.stopId)) {
+              const notice = pasteStoppedNotice(ctl.message);
+              // Measured after the output already queued, so the note starts on a line of its own.
+              term.write('', () => {
+                term.write(`${term.buffer.active.cursorX === 0 ? '' : '\r\n'}${notice}`);
+              });
+            }
             break;
         }
       };

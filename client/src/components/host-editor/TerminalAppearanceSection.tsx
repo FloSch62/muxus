@@ -17,8 +17,10 @@ import {
   terminalScheme,
   terminalSchemeIdForHost,
 } from '../../terminal/palette.js';
+import type { PastePromptWaitDraft } from '../../terminal/paste-prompt.js';
 import { TerminalSchemeSelect } from '../TerminalSchemeSelect.js';
 import { PasteDelayField } from './PasteDelayField.js';
+import { PastePromptFields } from './PastePromptFields.js';
 
 export interface HostTerminalAppearance {
   terminalScheme?: string;
@@ -27,6 +29,7 @@ export interface HostTerminalAppearance {
   commandButtonGroup?: string;
   pasteLineDelayMs?: number;
   pasteCharDelayMs?: number;
+  pastePromptWait: PastePromptWaitDraft;
 }
 
 /** Terminal colors saved with a host, shared by all three host kinds. */
@@ -109,6 +112,10 @@ export function TerminalAppearanceSection({
           onChange={(delay) => onChange({ pasteCharDelayMs: delay })}
         />
       </Stack>
+      <PastePromptFields
+        value={value.pastePromptWait}
+        onChange={(pastePromptWait) => onChange({ pastePromptWait })}
+      />
     </Stack>
   );
 }

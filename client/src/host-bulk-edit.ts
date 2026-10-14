@@ -27,6 +27,13 @@ import {
   sessionLoggingPolicyInput,
   type HostSessionLoggingDraft,
 } from './session-logging-policy.js';
+import {
+  pastePromptWaitDraft,
+  pastePromptWaitFromDraft,
+  pastePromptWaitProblem,
+  samePastePromptWaitDraft,
+  type PastePromptWaitDraft,
+} from './terminal/paste-prompt.js';
 
 /** An optional flag: unset follows the defaults, otherwise on or off. */
 export type BulkTriState = 'inherit' | 'yes' | 'no';
@@ -53,6 +60,7 @@ export interface BulkHostValues {
   commandButtonGroup: string | undefined;
   pasteLineDelayMs: number | undefined;
   pasteCharDelayMs: number | undefined;
+  pastePromptWait: PastePromptWaitDraft;
   highlightProfileId: string | undefined;
   highlightInheritGlobal: boolean;
   sessionLogging: HostSessionLoggingDraft;
@@ -86,6 +94,7 @@ export const BULK_FIELD_AUDIENCE: { readonly [F in BulkHostField]: BulkAudience 
   commandButtonGroup: 'terminal',
   pasteLineDelayMs: 'terminal',
   pasteCharDelayMs: 'terminal',
+  pastePromptWait: 'terminal',
   highlightProfileId: 'terminal',
   highlightInheritGlobal: 'terminal',
   sessionLogging: 'terminal',
@@ -151,6 +160,7 @@ export function bulkValuesForHost(
     values.commandButtonGroup = metadata?.commandButtonGroup;
     values.pasteLineDelayMs = metadata?.pasteLineDelayMs;
     values.pasteCharDelayMs = metadata?.pasteCharDelayMs;
+    values.pastePromptWait = pastePromptWaitDraft(metadata?.pastePromptWait);
     values.highlightProfileId = highlights?.profileId;
     values.highlightInheritGlobal = highlights?.inheritGlobal ?? true;
     values.loginSequence = loginSequenceDraft(metadata?.loginSequence);
@@ -196,6 +206,9 @@ export function sameBulkValue<F extends BulkHostField>(
   }
   if (field === 'loginSequence') {
     return sameLoginSequenceDraft(a as LoginSequenceDraft, b as LoginSequenceDraft);
+  }
+  if (field === 'pastePromptWait') {
+    return samePastePromptWaitDraft(a as PastePromptWaitDraft, b as PastePromptWaitDraft);
   }
   return a === b;
 }
@@ -254,6 +267,10 @@ export function bulkChangesProblem(changes: BulkHostChanges): string | null {
   if (changes.port !== undefined && changes.port.trim()) {
     const port = Number(changes.port);
     if (!Number.isInteger(port) || port < 1 || port > 65_535) return 'Port must be 1–65535.';
+  }
+  if (changes.pastePromptWait) {
+    const problem = pastePromptWaitProblem(changes.pastePromptWait);
+    if (problem) return problem;
   }
   if (changes.loginSequence) return loginSequenceProblem(changes.loginSequence);
   return null;
@@ -388,6 +405,9 @@ function metadataPatch(
   }
   if (differs.has('pasteLineDelayMs')) patch.pasteLineDelayMs = changes.pasteLineDelayMs ?? null;
   if (differs.has('pasteCharDelayMs')) patch.pasteCharDelayMs = changes.pasteCharDelayMs ?? null;
+  if (differs.has('pastePromptWait') && changes.pastePromptWait) {
+    patch.pastePromptWait = pastePromptWaitFromDraft(changes.pastePromptWait);
+  }
   if (differs.has('consoleCompatibility')) patch.consoleCompatibility = changes.consoleCompatibility;
   if (differs.has('disableSftp')) patch.disableSftp = changes.disableSftp;
   if (differs.has('loginSequence') && changes.loginSequence) {

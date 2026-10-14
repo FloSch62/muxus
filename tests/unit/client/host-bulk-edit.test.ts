@@ -294,6 +294,33 @@ describe('bulkEditPlan', () => {
     ]);
   });
 
+  it('turns prompt waiting on for terminal hosts and off again', () => {
+    const hosts = [openSsh('a', {}, { pastePromptWait: {} }), telnet('t'), rdp('desk')];
+    const on = { enabled: true, promptPattern: '', timeoutMs: '20000', errorPattern: '' };
+    const off = { enabled: false, promptPattern: '', timeoutMs: '', errorPattern: '' };
+
+    expect(summarizeBulkValues(hosts, new Map()).pastePromptWait).toEqual({ state: 'mixed', count: 2 });
+    expect(summarizeBulkValues([hosts[1]!], new Map()).pastePromptWait).toEqual({
+      state: 'same',
+      count: 1,
+      value: off,
+    });
+    expect(bulkEditPlan(hosts, { pastePromptWait: on }).metadata).toEqual([
+      { host: hosts[0], patch: { pastePromptWait: { timeoutMs: 20_000 } } },
+      { host: hosts[1], patch: { pastePromptWait: { timeoutMs: 20_000 } } },
+    ]);
+    // Values kept while switched off are not a difference.
+    expect(bulkEditPlan(hosts, { pastePromptWait: { ...on, enabled: false } }).metadata).toEqual([
+      { host: hosts[0], patch: { pastePromptWait: null } },
+    ]);
+    expect(bulkChangesProblem({ pastePromptWait: { ...on, timeoutMs: '50' } })).toBe(
+      'Prompt timeout: Between 100 and 60000 ms.',
+    );
+    expect(bulkChangesProblem({ pastePromptWait: { ...on, errorPattern: '(' } })).toMatch(
+      /^Error pattern: .*Invalid regular expression/,
+    );
+  });
+
   it('applies terminal and SSH settings only where they mean something', () => {
     const hosts = [openSsh('a'), telnet('t'), rdp('desk')];
 
