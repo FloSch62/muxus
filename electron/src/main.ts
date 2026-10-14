@@ -213,7 +213,8 @@ function loadSettingsWindowPlacement(): WindowPlacement | undefined {
 }
 
 function saveSettingsWindowPlacement(win: BrowserWindow): void {
-  const placement: WindowPlacement = { ...win.getNormalBounds(), maximized: win.isMaximized() };
+  const { width, height } = win.getNormalBounds();
+  const placement: WindowPlacement = { width, height, maximized: win.isMaximized() };
   try {
     writeFileSync(settingsWindowStateFile(), JSON.stringify(placement));
   } catch {
@@ -524,10 +525,9 @@ function createSettingsWindow(
   const placement = loadSettingsWindowPlacement();
   const win = new BrowserWindow({
     ...windowBounds(
-      placement,
+      placement ?? SETTINGS_WINDOW_SIZE,
       opener && !opener.isDestroyed() ? opener.getBounds() : undefined,
       screen.getAllDisplays().map((display) => display.workArea),
-      SETTINGS_WINDOW_SIZE,
     ),
     minWidth: 560,
     minHeight: 420,
