@@ -39,8 +39,10 @@ import '@xterm/xterm/css/xterm.css';
 import type { AppInfo, PastePacing, TerminalServerMessage } from '@muxus/shared';
 import {
   isPacedPaste,
+  listedHostFor,
   MAX_PACED_PASTE_LENGTH,
   terminalPasteData,
+  withEnterKey,
 } from '@muxus/shared';
 import {
   apiFetch,
@@ -105,6 +107,12 @@ import {
 import { openTerminalWebLink } from '../terminal/web-links.js';
 import { requiresPasteConfirmation } from '../terminal/paste-safety.js';
 import { hostPastePacing } from '../terminal/paste-pacing.js';
+import {
+  hostTerminalInputModes,
+  keyboardInputData,
+  localEchoText,
+  type TerminalInputModes,
+} from '../terminal/input-modes.js';
 import { shouldFitTerminal } from '../terminal/terminal-fit.js';
 import { terminalSelectionText } from '../terminal/selection-text.js';
 import { normalizeTerminalKeyboardInput } from '../terminal/keyboard-input.js';
@@ -396,8 +404,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         ?.metadata;
     }
     if (tab.profile.kind !== 'ssh' || tab.profile.useConfig === false) return undefined;
-    const target = tab.profile.target;
-    return sshConfig?.hosts.find((host) => host.aliases.includes(target))?.metadata;
+    return listedHostFor(sshConfig?.hosts ?? [], tab.profile.target)?.metadata;
   }, [sshConfig, savedHosts, savedProfileId, tab.profile]);
   // Pastes read the host's pacing when they happen, not when the session opened.
   const hostMetadataRef = useRef(hostMetadata);
@@ -406,6 +413,10 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   }, [hostMetadata]);
   const currentPastePacing = (): PastePacing =>
     hostPastePacing(usePrefsStore.getState(), hostMetadataRef.current);
+  // Keys and echo follow the host's setting live, like its pacing.
+  const currentInputModes = (): TerminalInputModes =>
+    hostTerminalInputModes(hostMetadataRef.current);
+  const implicitCr = hostMetadata?.implicitCr === true;
   const schemeId = terminalSchemeIdForHost(
     applicationSchemeId,
     hostMetadata?.terminalScheme,
@@ -789,6 +800,21 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     const sendInput = (data: string | Uint8Array<ArrayBuffer>): boolean =>
       sendFrame(typeof data === 'string' ? encoder.encode(data) : data);
 
+    // Shows what was sent when the host does not echo it; nothing extra is sent.
+    const echoInput = (text: string) => {
+      if (!currentInputModes().localEcho) return;
+      const shown = localEchoText(text);
+      if (shown) term.write(shown);
+    };
+
+    // Keystrokes typed here or mirrored from another terminal, with this host's keys.
+    const sendKeyboardInput = (data: string | Uint8Array<ArrayBuffer>): boolean => {
+      if (typeof data !== 'string') return sendInput(data);
+      if (!sendInput(keyboardInputData(data, currentInputModes()))) return false;
+      echoInput(data);
+      return true;
+    };
+
     // A paste typed in at the host's pace is paced by the backend, whose
     // timers keep running while this window is hidden. Bracketed paste mode
     // is this terminal's own, so the markers fit the program reading it.
@@ -800,25 +826,39 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       const pacing = currentPastePacing();
       if (lineDelayMs !== undefined) pacing.lineDelayMs = lineDelayMs;
       const bracketed = term.modes.bracketedPasteMode;
+      const { enterKey } = currentInputModes();
       if (!isPacedPaste(pacing)) {
-        if (!source) return sendInput(terminalPasteData(text, bracketed));
+        if (!source) {
+          if (!sendInput(terminalPasteData(text, bracketed, enterKey))) return false;
+          echoInput(text);
+          return true;
+        }
         // xterm's own paste, as without pacing; an ended session takes it as
         // the key that reconnects.
         const socket = wsRef.current;
         const live = !!socket && socket.readyState <= WebSocket.OPEN;
         suppressNextInputBroadcastRef.current = true;
         term.paste(text);
+        if (live) echoInput(text);
         return live;
       }
       if (text.length > MAX_PACED_PASTE_LENGTH) {
         if (source) showToast('error', 'This paste is too long to send with a delay. Paste it in parts.');
         return false;
       }
-      if (!sendFrame(JSON.stringify({ op: 'paste', text, bracketed, ...pacing }))) {
+      const message = {
+        op: 'paste',
+        text,
+        bracketed,
+        ...pacing,
+        ...(enterKey === 'cr' ? {} : { enterKey }),
+      };
+      if (!sendFrame(JSON.stringify(message))) {
         if (source) reconnectFromTerminalInput();
         return false;
       }
       pacedPastePending = true;
+      echoInput(text);
       if (source) term.scrollToBottom();
       return true;
     };
@@ -827,10 +867,15 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     // Saved commands are typed, never bracketed, at the host's paste pace.
     const typeIntoSession = (text: string): boolean => {
       const behindPaste = pacedPastePending || tab.id in usePasteProgressStore.getState().byTab;
-      const input = typedInput(text, currentPastePacing(), behindPaste);
-      if (input.kind === 'direct') return input.data ? sendInput(input.data) : true;
-      if (!sendFrame(JSON.stringify(input.message))) return false;
-      if (isPacedPaste(input.message)) pacedPastePending = true;
+      const input = typedInput(text, currentPastePacing(), behindPaste, currentInputModes().enterKey);
+      if (input.kind === 'direct') {
+        if (!input.data) return true;
+        if (!sendInput(input.data)) return false;
+      } else {
+        if (!sendFrame(JSON.stringify(input.message))) return false;
+        if (isPacedPaste(input.message)) pacedPastePending = true;
+      }
+      echoInput(text);
       return true;
     };
 
@@ -872,6 +917,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         };
       },
       sendInput,
+      sendKeyboardInput,
       typeText: typeIntoSession,
       clear: () => term.clear(),
       selectAll: () => term.selectAll(),
@@ -1625,10 +1671,18 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     const onData = term.onData((data) => {
       const normalized = normalizeTerminalKeyboardInput(data, inputKeyEvent, IS_MAC);
       inputKeyEvent = undefined;
-      const broadcast = !suppressNextInputBroadcastRef.current;
+      // xterm's own paste of an unpaced paste, which mirrored terminals paste themselves.
+      const pasted = suppressNextInputBroadcastRef.current;
       suppressNextInputBroadcastRef.current = false;
-      if (sendInput(normalized)) {
-        if (broadcast) broadcastTerminalInput(tab.id, normalized);
+      const sent = pasted
+        ? sendInput(
+            term.modes.bracketedPasteMode
+              ? normalized
+              : withEnterKey(normalized, currentInputModes().enterKey),
+          )
+        : sendKeyboardInput(normalized);
+      if (sent) {
+        if (!pasted) broadcastTerminalInput(tab.id, normalized);
       } else {
         handleEndedSessionInput(normalized);
       }
@@ -1728,6 +1782,12 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab.id, generation]);
+
+  // Implicit CR is xterm's convertEol: live like the keys, and a device can still switch it with LNM.
+  useEffect(() => {
+    const term = termRef.current;
+    if (term) term.options.convertEol = implicitCr;
+  }, [implicitCr, generation]);
 
   // Preferences apply live to the running terminal — no reopen needed.
   useEffect(() => {

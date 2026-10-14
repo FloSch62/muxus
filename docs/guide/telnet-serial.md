@@ -75,6 +75,11 @@ Platform naming:
     [delay after each line](terminal.md#pasting-into-slow-consoles) under the host's
     **Terminal appearance**, and Muxus types pastes in a line at a time.
 
+!!! tip "Backspace, Enter and echo"
+
+    A board that erases on ^H, ends lines on LF or does not echo input works with the
+    host's [keys and echo](terminal.md#keys-and-echo), in the same section.
+
 ## Send BREAK
 
 Some consoles act on a BREAK signal rather than on any key: Cisco ROMMON and password

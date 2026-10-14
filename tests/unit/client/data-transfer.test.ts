@@ -827,6 +827,9 @@ describe('backing up host terminal schemes', () => {
           terminalBackgroundColor: '#002b36',
           pasteLineDelayMs: 200,
           pasteCharDelayMs: 0,
+          backspaceKey: 'ctrl-h',
+          enterKey: 'crlf',
+          localEcho: true,
           connectCount: 0,
         },
         createdAt: '2026-08-10T00:00:00.000Z',
@@ -843,6 +846,9 @@ describe('backing up host terminal schemes', () => {
     expect(document.data.savedHosts[0]?.metadata).toMatchObject({
       pasteLineDelayMs: 200,
       pasteCharDelayMs: 0,
+      backspaceKey: 'ctrl-h',
+      enterKey: 'crlf',
+      localEcho: true,
     });
   });
 });
@@ -1109,12 +1115,46 @@ describe('restoring imported serial hosts', () => {
           commandButtonGroup: null,
           pasteLineDelayMs: null,
           pasteCharDelayMs: null,
+          backspaceKey: null,
+          enterKey: null,
+          implicitCr: false,
+          localEcho: false,
           disableSftp: false,
           consoleCompatibility: false,
           loginSequence: null,
         }),
       }),
     );
+  });
+
+  it('restores keys and echo, and drops values this release does not know', async () => {
+    const restoredModes = async (modes: Record<string, unknown>) => {
+      apiFetchMock.mockReset();
+      apiFetchMock
+        .mockResolvedValueOnce({ hosts: [] })
+        .mockResolvedValueOnce({ profiles: [] })
+        .mockResolvedValueOnce({ id: 'securecrt-serial-console' })
+        .mockResolvedValueOnce({ id: 'securecrt-serial-console' });
+      const host = importedSerial.savedHosts[0]!;
+      await restoreImportedConnections(
+        { ...importedSerial, savedHosts: [{ ...host, metadata: { ...host.metadata, ...modes } as never }] },
+        'replace',
+      );
+      const patch = JSON.parse(apiFetchMock.mock.calls[3]?.[1]?.body as string) as Record<string, unknown>;
+      return {
+        backspaceKey: patch.backspaceKey,
+        enterKey: patch.enterKey,
+        implicitCr: patch.implicitCr,
+        localEcho: patch.localEcho,
+      };
+    };
+    const modes = { backspaceKey: 'ctrl-h', enterKey: 'lf', implicitCr: true, localEcho: true };
+    const defaults = { backspaceKey: null, enterKey: null, implicitCr: false, localEcho: false };
+
+    expect(await restoredModes(modes)).toEqual(modes);
+    expect(
+      await restoredModes({ backspaceKey: 'bs', enterKey: '\r\n', implicitCr: 1, localEcho: 'yes' }),
+    ).toEqual(defaults);
   });
 });
 

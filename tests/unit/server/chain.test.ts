@@ -8,6 +8,7 @@ import {
   buildChain,
   expandProxyCommand,
   findMetadataAlias,
+  listedMetadataAlias,
   muxKey,
   observeSshTransportHealth,
   SshConnectionManager,
@@ -15,7 +16,7 @@ import {
   terminalPtyOptions,
 } from '../../../server/src/ssh/connection-manager.js';
 import { folderAuthOptionLines } from '../../../server/src/ssh/folder-auth.js';
-import { loadConfigDocument } from '../../../server/src/ssh/ssh-config.js';
+import { listHosts, loadConfigDocument, sortHostList } from '../../../server/src/ssh/ssh-config.js';
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'muxus-chain-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -436,6 +437,80 @@ describe('findMetadataAlias', () => {
   });
 });
 
+describe('listedMetadataAlias', () => {
+  /** The window's lookup: the first host, in the order the host list is served, naming the target. */
+  const windowAlias = (doc: ReturnType<typeof docOf>, target: string) =>
+    sortHostList(listHosts(doc)).find((host) => host.aliases.includes(target))?.alias;
+  const targets = (doc: ReturnType<typeof docOf>) =>
+    listHosts(doc).flatMap((host) =>
+      host.aliases.flatMap((alias) => [alias, `admin@${alias}`, `${alias}:2222`]),
+    );
+
+  it('finds the alias the host list shows a plain alias under, as the window does', () => {
+    const doc = docOf([
+      'Host production prod',
+      '  HostName 203.0.113.10',
+      '',
+      'Host prod staging',
+      '  User deploy',
+      '',
+      'Host *.internal',
+      '  User deploy',
+    ].join('\n'));
+
+    expect(listedMetadataAlias(doc, 'production')).toBe('production');
+    expect(listedMetadataAlias(doc, 'prod')).toBe('production');
+    expect(listedMetadataAlias(doc, 'staging')).toBe('staging');
+    for (const target of targets(doc)) {
+      expect(listedMetadataAlias(doc, target)).toBe(windowAlias(doc, target));
+    }
+    for (const target of ['admin@production', 'production:2222', '[prod]:22', 'web.internal', 'unknown']) {
+      expect(listedMetadataAlias(doc, target)).toBeUndefined();
+    }
+  });
+
+  it('takes the first host in host list order when Host blocks repeat an alias', () => {
+    const repeated = docOf(['Host db', '  HostName 203.0.113.20', '', 'Host app db', '  User deploy'].join('\n'));
+    const grouped = docOf([
+      'Host web',
+      '  HostName 203.0.113.30',
+      '',
+      'Host db',
+      '  HostName 203.0.113.20',
+      '',
+      'Host web db cache',
+      '  User deploy',
+    ].join('\n'));
+
+    // The host list sorts by alias, so the later block's entry comes first.
+    expect(listedMetadataAlias(repeated, 'db')).toBe('app');
+    expect(listedMetadataAlias(repeated, 'app')).toBe('app');
+    expect(listedMetadataAlias(grouped, 'web')).toBe('cache');
+    expect(listedMetadataAlias(grouped, 'db')).toBe('cache');
+    expect(listedMetadataAlias(grouped, 'cache')).toBe('cache');
+    for (const doc of [repeated, grouped]) {
+      for (const target of targets(doc)) {
+        expect(listedMetadataAlias(doc, target)).toBe(windowAlias(doc, target));
+      }
+    }
+  });
+
+  it('is only looked up for profiles that use ssh_config', () => {
+    const doc = docOf(['Host production prod', '  HostName 203.0.113.10'].join('\n'));
+    const manager = new SshConnectionManager({} as never, { loadConfig: () => doc });
+
+    expect(manager.listedMetadataAliasFor({ kind: 'ssh', target: 'prod' })).toBe('production');
+    expect(manager.listedMetadataAliasFor({ kind: 'ssh', target: 'admin@prod' })).toBeUndefined();
+    expect(manager.metadataAliasFor({ kind: 'ssh', target: 'admin@prod' })).toBe('prod');
+    expect(
+      manager.listedMetadataAliasFor({ kind: 'ssh', target: 'prod', useConfig: false }),
+    ).toBeUndefined();
+    expect(
+      manager.listedMetadataAliasFor({ kind: 'ssh', target: 'prod', profileId: 'saved-1' }),
+    ).toBeUndefined();
+  });
+});
+
 describe('terminalPtyOptions', () => {
   it('negotiates DEL as the remote erase character to match xterm Backspace', () => {
     expect(terminalPtyOptions(132, 42, 'xterm-256color')).toEqual({
@@ -444,6 +519,11 @@ describe('terminalPtyOptions', () => {
       term: 'xterm-256color',
       modes: { VERASE: 0x7f },
     });
+    expect(terminalPtyOptions(132, 42, 'xterm-256color', 'del').modes).toEqual({ VERASE: 0x7f });
+  });
+
+  it('negotiates ^H as the erase character for a host whose Backspace sends it', () => {
+    expect(terminalPtyOptions(80, 24, 'xterm-256color', 'ctrl-h').modes).toEqual({ VERASE: 0x08 });
   });
 });
 

@@ -65,12 +65,16 @@ function sshSession(database: MuxusDatabase) {
       connectShell,
       resolveProfile: (profile: unknown) => profile,
       metadataAliasFor: (profile: { target: string }) => profile.target,
+      listedMetadataAliasFor: (profile: { target: string }) => profile.target,
       leaseCount: () => 0,
     },
     forwards: { startConfig: vi.fn(), stop: vi.fn(), stopSessionForConnection: vi.fn() },
     database,
     history: { append: vi.fn() },
-    vault: { secrets: () => [] },
+    vault: {
+      secrets: () => [{ id: 'enable-secret', name: 'Enable' }],
+      secretValue: async (id: string) => (id === 'enable-secret' ? 'Enable-4711' : undefined),
+    },
     terminalInputs: new TerminalInputs(),
   };
   registerTerminalSocket(app as never, ctx as never);
@@ -117,6 +121,43 @@ describe('login sequences on SSH sessions', () => {
       stream.emit('data', Buffer.from('router>'));
       await new Promise((resolve) => setImmediate(resolve));
       expect(stream.write.mock.calls.map(([data]) => String(data))).toEqual(['enable\r', 'show run\r']);
+      socket.close(1000, TERMINAL_SESSION_CLOSE_REASON);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("presses Enter after text and secrets as the host's Enter key sends it", async () => {
+    const database = new MuxusDatabase(':memory:');
+    try {
+      database.updateOpenSshMetadata('router', {
+        enterKey: 'lf',
+        loginSequence: {
+          steps: [
+            ...enable.steps,
+            { id: '3', kind: 'wait', pattern: 'Password:', timeoutSeconds: 5 },
+            { id: '4', kind: 'secret', secretId: 'enable-secret', enter: true },
+          ],
+        },
+      });
+      const { socket, stream, frames } = sshSession(database);
+      await vi.waitFor(() => expect(frames().some((frame) => frame.op === 'ready')).toBe(true));
+
+      stream.emit('data', Buffer.from('router>'));
+      await vi.waitFor(() => expect(stream.write).toHaveBeenCalledWith(Buffer.from('enable\n')));
+      // A change to the host reaches the running sequence at its next Enter.
+      database.updateOpenSshMetadata('router', { enterKey: 'crlf' });
+      stream.emit('data', Buffer.from('Password: '));
+      await vi.waitFor(() =>
+        expect(frames().filter((frame) => frame.op === 'login-sequence').at(-1)).toMatchObject({
+          state: 'done',
+          step: 4,
+        }),
+      );
+      expect(stream.write.mock.calls.map(([data]) => String(data))).toEqual([
+        'enable\n',
+        'Enable-4711\r\n',
+      ]);
       socket.close(1000, TERMINAL_SESSION_CLOSE_REASON);
     } finally {
       database.close();

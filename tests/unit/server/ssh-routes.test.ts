@@ -2,17 +2,19 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { listedHostFor, type SshConfigResponse } from '@muxus/shared';
 import { buildApp } from '../../../server/src/app.js';
 import { resolveConfig } from '../../../server/src/config.js';
 
 const TOKEN = 'ssh-route-test-token';
 let app: Awaited<ReturnType<typeof buildApp>>['app'];
+let ctx: Awaited<ReturnType<typeof buildApp>>['ctx'];
 let home: string;
 
 beforeEach(async () => {
   home = mkdtempSync(path.join(os.tmpdir(), 'muxus-ssh-routes-'));
   vi.stubEnv('HOME', home);
-  ({ app } = await buildApp(
+  ({ app, ctx } = await buildApp(
     resolveConfig({
       token: TOKEN,
       databasePath: ':memory:',
@@ -113,6 +115,33 @@ describe('OpenSSH host keyword metadata', () => {
     expect(response.statusCode).toBe(400);
   });
 
+  it('persists per-host keys and echo, refuses unknown keys, and clears them with null', async () => {
+    const patch = (payload: Record<string, unknown>) =>
+      app.inject({
+        method: 'PATCH',
+        url: '/api/ssh/config/hosts/console/metadata',
+        headers: auth(),
+        payload,
+      });
+    const modes = { backspaceKey: 'ctrl-h', enterKey: 'lf', implicitCr: true, localEcho: true };
+
+    const set = await patch(modes);
+    expect(set.statusCode).toBe(200);
+    expect(set.json()).toMatchObject(modes);
+    expect((await patch({ backspaceKey: 'bs' })).statusCode).toBe(400);
+    expect((await patch({ enterKey: '\r\n' })).statusCode).toBe(400);
+    expect((await patch({ localEcho: 'yes' })).statusCode).toBe(400);
+
+    const cleared = await patch({
+      backspaceKey: null,
+      enterKey: null,
+      implicitCr: null,
+      localEcho: null,
+    });
+    expect(cleared.statusCode).toBe(200);
+    for (const key of Object.keys(modes)) expect(cleared.json()).not.toHaveProperty(key);
+  });
+
   it('rejects malformed per-host terminal colors', async () => {
     const response = await app.inject({
       method: 'PATCH',
@@ -139,6 +168,42 @@ describe('OpenSSH host keyword metadata', () => {
     });
 
     expect(response.statusCode).toBe(400);
+  });
+});
+
+describe('OpenSSH host list order', () => {
+  it('lists hosts in the order the server finds a tab host in, as the window does', async () => {
+    mkdirSync(path.join(home, '.ssh'), { recursive: true });
+    writeFileSync(
+      path.join(home, '.ssh', 'config'),
+      [
+        'Host web',
+        '  HostName 203.0.113.30',
+        'Host db',
+        '  HostName 203.0.113.20',
+        'Host web db cache',
+        '  User deploy',
+        'Host console',
+        '  HostName 203.0.113.10',
+        'Host app console',
+        '  User deploy',
+        '',
+      ].join('\n'),
+    );
+
+    const response = await app.inject({ method: 'GET', url: '/api/ssh/config', headers: auth() });
+    const { hosts } = response.json() as SshConfigResponse;
+
+    expect(hosts.map((host) => host.alias)).toEqual(['app', 'cache', 'console', 'db', 'web']);
+    for (const alias of hosts.flatMap((host) => host.aliases)) {
+      for (const target of [alias, `admin@${alias}`, `${alias}:2222`]) {
+        expect(ctx.connections.listedMetadataAliasFor({ kind: 'ssh', target })).toBe(
+          listedHostFor(hosts, target)?.alias,
+        );
+      }
+    }
+    expect(ctx.connections.listedMetadataAliasFor({ kind: 'ssh', target: 'db' })).toBe('cache');
+    expect(ctx.connections.listedMetadataAliasFor({ kind: 'ssh', target: 'console' })).toBe('app');
   });
 });
 

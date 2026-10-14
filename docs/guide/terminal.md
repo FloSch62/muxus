@@ -75,8 +75,8 @@ text colour and background colour can override the application defaults. Leave a
 on **Use application default** to keep following the global preference. Host overrides
 apply to open terminals immediately, which makes sessions easy to identify when the tab
 strip and sidebar are hidden in focus mode. The same section chooses the
-[command button group](commands.md#a-group-per-host) the bar shows for the host and its
-[paste pacing](#pasting-into-slow-consoles).
+[command button group](commands.md#a-group-per-host) the bar shows for the host, its
+[paste pacing](#pasting-into-slow-consoles), and its [keys and echo](#keys-and-echo).
 
 Scheme, font family, size and line height are in
 [Settings → Appearance](settings.md#appearance). Cursor style (block, underline, bar),
@@ -150,7 +150,8 @@ it, and so do closing the tab and losing the connection. A paste made while anot
 running waits for it to finish.
 
 A paste sends each line break as a carriage return, the Enter key, as terminals do: CRLF
-and LF in the copied text both become one CR, and every CR ends a line. The line delay
+and LF in the copied text both become one CR, and every CR ends a line. A host whose
+[Enter key](#keys-and-echo) sends CR LF or LF gets that instead. The line delay
 follows each one but the last. With a character delay, every character waits that long,
 and a line break waits the line delay on top. Each wait starts once the connection has
 taken the text before it, so on a serial port the delay begins when the line has actually
@@ -173,6 +174,43 @@ inside the distribution, such as `/mnt/c/Users/me/report.pdf`. Nothing runs unti
 
 Dropping onto an SSH terminal [uploads the files](files.md#dropping-files-onto-the-terminal)
 instead; hold ++shift++ to type the local paths there too.
+
+## Keys and echo
+
+By default Muxus sends DEL (0x7F) for ++backspace++ and a carriage return for ++enter++, as
+xterm does, and shows only what the far end echoes. Some consoles expect otherwise: a bootloader or
+embedded board that erases on ^H or ends lines on LF, or a device that does not echo what
+it receives. **Keyboard and echo**, under **Terminal appearance** in the editor of an SSH,
+Telnet or serial host, changes four things for that host's sessions:
+
+| Setting | Choices | Effect |
+| --- | --- | --- |
+| **Backspace sends** | DEL (default), ^H | The byte ++backspace++ sends. SSH sessions also announce it to the server as the erase character (`VERASE`) when they open |
+| **Enter sends** | CR (default), CR LF, LF | What ++enter++ sends, what line breaks in pastes and [command buttons](commands.md#command-buttons) become, and the Enter that [secrets](commands.md#buttons-that-send-a-secret) and [login sequences](adding-hosts.md#login-sequence) press |
+| **Implicit CR in every received LF** | Off (default), on | A line feed from the device also returns to the start of the line, for output that ends lines with LF alone |
+| **Local echo** | Off (default), on | Shows what you type in the terminal, without sending anything more |
+
+Only the plain keys change: ++ctrl+backspace++ still sends ^H and ++alt+backspace++ ESC DEL,
+as before. A program that has turned on bracketed paste mode, such as bash or zsh, reads a
+paste as text rather than keys, so inside the markers line breaks stay CR. Telnet sends every
+line end as the Telnet newline, CR LF, unless the server switches the session to binary
+mode, so **Enter sends** only changes a Telnet session in binary mode.
+
+Local echo shows printable characters as they are typed, moves to a new line on ++enter++
+and erases the character before the cursor on ++backspace++. Pastes and command buttons are
+shown the same way when they are sent; a paced paste appears at once while the device still
+receives it at its pace. Other control keys, ++tab++, the arrows and function keys are sent
+but not shown, and neither are [secrets](commands.md#buttons-that-send-a-secret), which the
+window never sees. A device that does echo shows everything twice.
+
+Open sessions follow a change as soon as it is saved, except the SSH erase character, which
+a session announces when it opens. An OpenSSH host's settings apply to sessions opened by its
+alias; a session opened as `user@alias` or `alias:port`, from quick connect or a link, keeps
+the defaults. When more than one Host block in `~/.ssh/config` names the alias, the settings
+come from the host among them whose name sorts first. With
+[multi-execution](commands.md#multi-execution), each mirrored terminal sends ++backspace++
+and ++enter++ as its own host's settings say. The
+[bulk editor](hosts.md#editing-several-hosts-at-once) sets them on many hosts at once.
 
 ## Keyword highlighting
 

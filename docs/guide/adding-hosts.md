@@ -110,6 +110,9 @@ connects, and again after every reconnect, for SSH, Telnet and serial hosts alik
 | **Send text** | Types the text, then presses Enter unless the ⏎ toggle is off. Empty text with Enter only presses Enter. |
 | **Send secret** | Types a [named secret](settings.md#passwords) from the encrypted password vault, then presses Enter unless the ⏎ toggle is off. The sequence keeps only which secret it types, never the value. |
 
+Both send steps press Enter as the host's [Enter key](terminal.md#keys-and-echo) sends it, a
+carriage return unless the host says otherwise.
+
 The arrows on each row reorder the steps. Matching ignores colours and other escape
 sequences, treats every line ending as one newline, and finds text that arrives in several
 pieces. A wait only looks at output after the previous match, so two waits for the same

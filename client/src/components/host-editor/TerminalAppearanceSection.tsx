@@ -1,10 +1,13 @@
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
+import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { useTheme } from '@mui/material/styles';
+import type { TerminalBackspaceKey, TerminalEnterKey } from '@muxus/shared';
 import {
   terminalSchemeIdForMode,
   useCustomTerminalSchemes,
@@ -17,6 +20,11 @@ import {
   terminalScheme,
   terminalSchemeIdForHost,
 } from '../../terminal/palette.js';
+import {
+  BACKSPACE_KEY_OPTIONS,
+  ENTER_KEY_OPTIONS,
+  type TerminalInputModes,
+} from '../../terminal/input-modes.js';
 import { TerminalSchemeSelect } from '../TerminalSchemeSelect.js';
 import { PasteDelayField } from './PasteDelayField.js';
 
@@ -27,6 +35,7 @@ export interface HostTerminalAppearance {
   commandButtonGroup?: string;
   pasteLineDelayMs?: number;
   pasteCharDelayMs?: number;
+  inputModes: TerminalInputModes;
 }
 
 /** Terminal colors saved with a host, shared by all three host kinds. */
@@ -109,6 +118,95 @@ export function TerminalAppearanceSection({
           onChange={(delay) => onChange({ pasteCharDelayMs: delay })}
         />
       </Stack>
+      <Box sx={{ pt: 1 }}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+          Keyboard and echo
+        </Typography>
+        <Typography variant="body2" color="textSecondary">
+          For consoles that expect other keys than a terminal sends, or do not echo input. Open
+          sessions follow a change at once; an SSH session takes a new Backspace when it opens.
+        </Typography>
+      </Box>
+      <TerminalInputModesFields
+        value={value.inputModes}
+        onChange={(inputModes) => onChange({ inputModes })}
+      />
+    </Stack>
+  );
+}
+
+/** What Backspace and Enter send, implicit CR and local echo. */
+function TerminalInputModesFields({
+  value,
+  onChange,
+}: {
+  value: TerminalInputModes;
+  onChange: (value: TerminalInputModes) => void;
+}) {
+  return (
+    <Stack spacing={1}>
+      <Stack direction="row" spacing={1.5}>
+        <TextField
+          select
+          fullWidth
+          label="Backspace sends"
+          value={value.backspaceKey}
+          onChange={(event) =>
+            onChange({ ...value, backspaceKey: event.target.value as TerminalBackspaceKey })
+          }
+        >
+          {BACKSPACE_KEY_OPTIONS.map((option) => (
+            <MenuItem key={option.value} value={option.value}>
+              {option.label}
+            </MenuItem>
+          ))}
+        </TextField>
+        <TextField
+          select
+          fullWidth
+          label="Enter sends"
+          value={value.enterKey}
+          onChange={(event) =>
+            onChange({ ...value, enterKey: event.target.value as TerminalEnterKey })
+          }
+        >
+          {ENTER_KEY_OPTIONS.map((option) => (
+            <MenuItem key={option.value} value={option.value}>
+              {option.label}
+            </MenuItem>
+          ))}
+        </TextField>
+      </Stack>
+      <Box>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={value.implicitCr}
+              onChange={(event) => onChange({ ...value, implicitCr: event.target.checked })}
+            />
+          }
+          label="Implicit CR in every received LF"
+        />
+        <Typography variant="body2" color="textSecondary">
+          For devices that end output lines with LF alone, which otherwise run down the screen
+          like stairs.
+        </Typography>
+      </Box>
+      <Box>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={value.localEcho}
+              onChange={(event) => onChange({ ...value, localEcho: event.target.checked })}
+            />
+          }
+          label="Local echo"
+        />
+        <Typography variant="body2" color="textSecondary">
+          Shows what you type, paste or send with a button, for devices that do not echo it.
+          Control keys, arrows and function keys are sent without being shown.
+        </Typography>
+      </Box>
     </Stack>
   );
 }

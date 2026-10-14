@@ -4,7 +4,9 @@ import {
   pastedLineCount,
   pastePacingSteps,
   preparePasteText,
+  withEnterKey,
   type PastePacing,
+  type TerminalEnterKey,
 } from '@muxus/shared';
 
 /** Least time between two progress reports of a running paste. */
@@ -13,6 +15,8 @@ const PROGRESS_INTERVAL_MS = 200;
 export interface PasteRequest extends PastePacing {
   text: string;
   bracketed: boolean;
+  /** The host's Enter key for line breaks outside a bracket; CR when absent. */
+  enterKey?: TerminalEnterKey;
 }
 
 export interface PasteProgress {
@@ -26,6 +30,7 @@ export interface PasteProgress {
 interface QueuedPaste extends PastePacing {
   prepared: string;
   bracketed: boolean;
+  enterKey: TerminalEnterKey;
   lines: number;
 }
 
@@ -59,6 +64,7 @@ export class PastePacer {
     this.queue.push({
       prepared,
       bracketed: request.bracketed,
+      enterKey: request.bracketed ? 'cr' : (request.enterKey ?? 'cr'),
       lines,
       lineDelayMs: request.lineDelayMs,
       charDelayMs: request.charDelayMs,
@@ -92,7 +98,8 @@ export class PastePacer {
         let step = steps.next();
         while (!step.done && !signal.aborted) {
           const next = steps.next();
-          let data = step.value.data;
+          // Steps split prepared text at CR; the Enter key only changes what goes out.
+          let data = withEnterKey(step.value.data, paste.enterKey);
           if (paste.bracketed && !bracketOpen) {
             data = BRACKETED_PASTE_START + data;
             bracketOpen = true;

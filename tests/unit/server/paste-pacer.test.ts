@@ -56,6 +56,41 @@ describe('paced pastes', () => {
     ]);
   });
 
+  it("types line breaks as the host's Enter key, a line at a time as with CR", async () => {
+    const { pacer, writes, reports } = recordingPacer();
+
+    pacer.enqueue({ ...paste('one\ntwo\n', 100), enterKey: 'crlf' });
+    await vi.runAllTimersAsync();
+
+    expect(writes).toEqual([
+      { at: 0, data: 'one\r\n' },
+      { at: 100, data: 'two\r\n' },
+    ]);
+    expect(reports.at(-1)).toMatchObject({ state: 'done', line: 2, lines: 2 });
+  });
+
+  it('sends an LF Enter key as one keystroke with a character delay', async () => {
+    const { pacer, writes } = recordingPacer();
+
+    pacer.enqueue({ ...paste('a\r\nb', 100, 10), enterKey: 'lf' });
+    await vi.runAllTimersAsync();
+
+    expect(writes).toEqual([
+      { at: 0, data: 'a' },
+      { at: 10, data: '\n' },
+      { at: 120, data: 'b' },
+    ]);
+  });
+
+  it('keeps CR inside a bracketed paste whatever the Enter key', async () => {
+    const { pacer, writes } = recordingPacer();
+
+    pacer.enqueue({ ...paste('one\ntwo', 100, 0, true), enterKey: 'lf' });
+    await vi.runAllTimersAsync();
+
+    expect(writes.map((write) => write.data)).toEqual(['\x1b[200~one\r', 'two\x1b[201~']);
+  });
+
   it('encloses the whole paste in one pair of bracketed-paste markers', async () => {
     const { pacer, writes } = recordingPacer();
 

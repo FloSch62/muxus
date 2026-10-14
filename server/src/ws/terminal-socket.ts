@@ -475,20 +475,44 @@ async function handleSession(
     return;
   }
 
-  // Input the backend types for the user, such as a vault secret, goes to the
-  // transport directly and never through the recorder below.
-  const unregisterInput = ctx.terminalInputs.register(terminalId, (data) => {
-    if (!socketOpen || !writeInput) return false;
-    writeInput(data);
-    return true;
-  });
-  socket.once('close', unregisterInput);
-
   const { cols, rows } = connectMsg;
   const profile =
     connectMsg.profile.kind === 'ssh'
       ? ctx.connections.resolveProfile(connectMsg.profile)
       : connectMsg.profile;
+  // The host whose keys this session uses, found as the window finds it: by
+  // saved-host id, or by the plain ssh_config alias the tab dialed.
+  const keysHost = (): LoginSequenceHost | undefined => {
+    if (profile.kind === 'local') return undefined;
+    if (profile.profileId) return { profileId: profile.profileId };
+    const alias =
+      profile.kind === 'ssh' ? ctx.connections.listedMetadataAliasFor(profile) : undefined;
+    return alias ? { alias } : undefined;
+  };
+  const hostKeys = () => {
+    try {
+      const host = keysHost();
+      return host ? ctx.database.hostInputKeys(host) : {};
+    } catch (err) {
+      app.log.warn({ err }, 'could not load the host keys');
+      return {};
+    }
+  };
+  const hostEnterKey = () => hostKeys().enterKey ?? 'cr';
+
+  // Input the backend types for the user, such as a vault secret, goes to the
+  // transport directly and never through the recorder below. Its Enter is the host's.
+  const unregisterInput = ctx.terminalInputs.register(
+    terminalId,
+    (data) => {
+      if (!socketOpen || !writeInput) return false;
+      writeInput(data);
+      return true;
+    },
+    hostEnterKey,
+  );
+  socket.once('close', unregisterInput);
+
   recorder = SessionRecorder.start(
     ctx.database,
     ctx.history,
@@ -558,6 +582,7 @@ async function handleSession(
         sequence,
         vault: ctx.vault,
         write,
+        enterKey: hostEnterKey,
         recorder: recorder!,
         send: (message) => sendControl(socket, message),
         log: app.log,
@@ -670,7 +695,12 @@ async function handleSession(
     cols,
     rows,
     DEFAULT_TERM,
-    { freshTransport: connectMsg.freshTransport, cwd: connectMsg.cwd },
+    {
+      freshTransport: connectMsg.freshTransport,
+      cwd: connectMsg.cwd,
+      // The pty advertises the Backspace the window sends as its erase character.
+      backspaceKey: hostKeys().backspaceKey,
+    },
   );
   const conn = terminalLease.connection;
   // Session forwards belong to the terminal sessions using this transport;

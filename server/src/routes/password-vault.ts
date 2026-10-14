@@ -23,7 +23,7 @@ import {
   VaultUnlockRequiredError,
 } from '../security/password-vault.js';
 import { typeVaultSecret } from '../security/vault-secret-input.js';
-import type { TerminalInputWriter } from '../ws/terminal-inputs.js';
+import type { TerminalInputTarget } from '../ws/terminal-inputs.js';
 import { VaultKeyStoreUnavailableError } from '../security/vault-key-store.js';
 import { HttpProblem, sendError } from '../util/errors.js';
 
@@ -244,17 +244,18 @@ export function registerPasswordVaultRoutes(
       return reply.code(400).send({ message: 'A valid secret and terminal session are required.' });
     }
     if (!ctx.vault.hasSecret(id)) return sendSecretMissing(reply);
-    const writers = [...new Set(parsed.data.terminalIds)]
-      .map((terminalId) => ctx.terminalInputs.writer(terminalId))
-      .filter((writer): writer is TerminalInputWriter => writer !== undefined);
-    if (writers.length === 0) {
+    // Each session presses Enter as its own host's key sends it.
+    const targets = [...new Set(parsed.data.terminalIds)]
+      .map((terminalId) => ctx.terminalInputs.target(terminalId))
+      .filter((target): target is TerminalInputTarget => target !== undefined);
+    if (targets.length === 0) {
       return sendError(
         reply,
         new HttpProblem(409, 'The session is no longer connected.', 'terminal-unavailable'),
       );
     }
     try {
-      const sent = await typeVaultSecret(ctx.vault, id, writers, {
+      const sent = await typeVaultSecret(ctx.vault, id, targets, {
         enter: parsed.data.enter,
         masterPassword: parsed.data.masterPassword,
       });

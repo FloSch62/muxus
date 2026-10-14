@@ -24,11 +24,17 @@ import type {
   SessionLogFileSettings,
   SessionLoggingPolicy,
   SessionLoggingPolicyInput,
+  TerminalBackspaceKey,
+  TerminalEnterKey,
   TunnelInput,
   TunnelRecord,
   WorkspaceMultiExecGroup,
 } from '@muxus/shared';
-import { sessionLogFilePatternError } from '@muxus/shared';
+import {
+  sessionLogFilePatternError,
+  TERMINAL_BACKSPACE_KEYS,
+  TERMINAL_ENTER_KEYS,
+} from '@muxus/shared';
 import {
   folderPathKey,
   folderPathSegments,
@@ -492,6 +498,23 @@ const MIGRATIONS = [
     name: 'management-hosts',
     run: addManagementHosts,
   },
+  {
+    version: 30,
+    name: 'host-terminal-input-modes',
+    // NULL keys and 0 flags keep what xterm.js does; the key names are the API's.
+    sql: `
+      ALTER TABLE connection_profiles
+        ADD COLUMN backspace_key TEXT;
+      ALTER TABLE connection_profiles
+        ADD COLUMN enter_key TEXT;
+      ALTER TABLE connection_profiles
+        ADD COLUMN implicit_cr INTEGER NOT NULL DEFAULT 0
+        CHECK(implicit_cr IN (0, 1));
+      ALTER TABLE connection_profiles
+        ADD COLUMN local_echo INTEGER NOT NULL DEFAULT 0
+        CHECK(local_echo IN (0, 1));
+    `,
+  },
 ] as const;
 
 /** Kinds stored as Muxus-owned saved hosts (everything but OpenSSH metadata rows). */
@@ -684,6 +707,10 @@ export interface OpenSshMetadata {
   commandButtonGroup?: string;
   pasteLineDelayMs?: number;
   pasteCharDelayMs?: number;
+  backspaceKey?: TerminalBackspaceKey;
+  enterKey?: TerminalEnterKey;
+  implicitCr?: boolean;
+  localEcho?: boolean;
   disableSftp?: boolean;
   consoleCompatibility?: boolean;
   loginSequence?: LoginSequence;
@@ -878,6 +905,10 @@ export class MuxusDatabase {
         profiles.command_button_group,
         profiles.paste_line_delay_ms,
         profiles.paste_char_delay_ms,
+        profiles.backspace_key,
+        profiles.enter_key,
+        profiles.implicit_cr,
+        profiles.local_echo,
         profiles.disable_sftp,
         profiles.console_compatibility,
         profiles.login_sequence_json,
@@ -990,6 +1021,10 @@ export class MuxusDatabase {
             command_button_group = ?,
             paste_line_delay_ms = ?,
             paste_char_delay_ms = ?,
+            backspace_key = ?,
+            enter_key = ?,
+            implicit_cr = ?,
+            local_echo = ?,
             disable_sftp = ?,
             console_compatibility = ?,
             login_sequence_json = ?,
@@ -1024,6 +1059,12 @@ export class MuxusDatabase {
         patch.pasteCharDelayMs === undefined
           ? nullableNumber(current.paste_char_delay_ms)
           : patch.pasteCharDelayMs,
+        patch.backspaceKey === undefined
+          ? nullableString(current.backspace_key)
+          : patch.backspaceKey,
+        patch.enterKey === undefined ? nullableString(current.enter_key) : patch.enterKey,
+        patch.implicitCr === undefined ? Number(current.implicit_cr) : patch.implicitCr ? 1 : 0,
+        patch.localEcho === undefined ? Number(current.local_echo) : patch.localEcho ? 1 : 0,
         patch.disableSftp === undefined
           ? Number(current.disable_sftp)
           : patch.disableSftp
@@ -1525,6 +1566,10 @@ export class MuxusDatabase {
             command_button_group = ?,
             paste_line_delay_ms = ?,
             paste_char_delay_ms = ?,
+            backspace_key = ?,
+            enter_key = ?,
+            implicit_cr = ?,
+            local_echo = ?,
             disable_sftp = ?,
             console_compatibility = ?,
             login_sequence_json = ?,
@@ -1559,6 +1604,12 @@ export class MuxusDatabase {
         patch.pasteCharDelayMs === undefined
           ? nullableNumber(current.paste_char_delay_ms)
           : patch.pasteCharDelayMs,
+        patch.backspaceKey === undefined
+          ? nullableString(current.backspace_key)
+          : patch.backspaceKey,
+        patch.enterKey === undefined ? nullableString(current.enter_key) : patch.enterKey,
+        patch.implicitCr === undefined ? Number(current.implicit_cr) : patch.implicitCr ? 1 : 0,
+        patch.localEcho === undefined ? Number(current.local_echo) : patch.localEcho ? 1 : 0,
         patch.disableSftp === undefined
           ? Number(current.disable_sftp)
           : patch.disableSftp
@@ -2271,6 +2322,23 @@ export class MuxusDatabase {
     };
   }
 
+  /** What Backspace and Enter send on an OpenSSH alias or a Muxus-owned host, where it sets them. */
+  hostInputKeys(
+    host: { alias: string } | { profileId: string },
+  ): Pick<OpenSshMetadata, 'backspaceKey' | 'enterKey'> {
+    const row =
+      'alias' in host
+        ? this.metadataByAlias.get(host.alias)
+        : this.db
+            .prepare(
+              `SELECT backspace_key, enter_key FROM connection_profiles
+               WHERE id = ? AND kind IN ${SAVED_HOST_KINDS_SQL}`,
+            )
+            .get(host.profileId);
+    const { backspaceKey, enterKey } = terminalInputModesFromRow(row ?? {});
+    return { ...(backspaceKey ? { backspaceKey } : {}), ...(enterKey ? { enterKey } : {}) };
+  }
+
   /** Remove one settings row only — descendants keep their own settings. */
   removeFolderSettingsRow(id: string): void {
     this.db.prepare('DELETE FROM folder_settings WHERE id = ?').run(id);
@@ -2561,6 +2629,7 @@ function metadataFromRow(row: SqlRow): OpenSshMetadata {
     commandButtonGroup: optionalString(row.command_button_group),
     pasteLineDelayMs: nullableNumber(row.paste_line_delay_ms) ?? undefined,
     pasteCharDelayMs: nullableNumber(row.paste_char_delay_ms) ?? undefined,
+    ...terminalInputModesFromRow(row),
     ...(Number(row.disable_sftp) === 1 ? { disableSftp: true } : {}),
     ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),
     loginSequence: loginSequenceFromJson(row.login_sequence_json),
@@ -2604,6 +2673,7 @@ function savedHostFromRow(row: SqlRow): SavedHostProfile {
       commandButtonGroup: optionalString(row.command_button_group),
       pasteLineDelayMs: nullableNumber(row.paste_line_delay_ms) ?? undefined,
       pasteCharDelayMs: nullableNumber(row.paste_char_delay_ms) ?? undefined,
+      ...terminalInputModesFromRow(row),
       ...(Number(row.disable_sftp) === 1 ? { disableSftp: true } : {}),
       ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),
       loginSequence: loginSequenceFromJson(row.login_sequence_json),
@@ -2612,6 +2682,20 @@ function savedHostFromRow(row: SqlRow): SavedHostProfile {
     },
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
+  };
+}
+
+/** Stored keys were validated when written; anything else keeps what xterm.js does. */
+function terminalInputModesFromRow(
+  row: SqlRow,
+): Pick<OpenSshMetadata, 'backspaceKey' | 'enterKey' | 'implicitCr' | 'localEcho'> {
+  const backspaceKey = TERMINAL_BACKSPACE_KEYS.find((key) => key === row.backspace_key);
+  const enterKey = TERMINAL_ENTER_KEYS.find((key) => key === row.enter_key);
+  return {
+    ...(backspaceKey ? { backspaceKey } : {}),
+    ...(enterKey ? { enterKey } : {}),
+    ...(Number(row.implicit_cr) === 1 ? { implicitCr: true } : {}),
+    ...(Number(row.local_echo) === 1 ? { localEcho: true } : {}),
   };
 }
 

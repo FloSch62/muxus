@@ -1,4 +1,4 @@
-import type { LoginSequenceStep } from '@muxus/shared';
+import { withEnterKey, type LoginSequenceStep, type TerminalEnterKey } from '@muxus/shared';
 import {
   compileWaitPattern,
   LoginOutputBuffer,
@@ -29,6 +29,8 @@ export interface LoginSequenceIo {
   write(data: Buffer): boolean;
   /** Plain text a send step typed, for input capture. Secrets never pass through here. */
   typed(data: Buffer): void;
+  /** What Enter sends on the session's host, when a send step presses it. */
+  enterKey(): TerminalEnterKey;
   /** Type a vault secret, asking for the master password when the vault needs it. */
   typeSecret(secretId: string, enter: boolean, signal: AbortSignal): Promise<SecretStepResult>;
   progress(update: LoginSequenceProgress): void;
@@ -159,7 +161,8 @@ export class LoginSequenceRunner {
       case 'wait':
         return this.waitFor(step, number);
       case 'send': {
-        const data = Buffer.from(step.enter ? `${step.text}\r` : step.text, 'utf8');
+        const enter = step.enter ? withEnterKey('\r', this.io.enterKey()) : '';
+        const data = Buffer.from(`${step.text}${enter}`, 'utf8');
         if (data.length === 0) return;
         if (!this.io.write(data)) throw new StepStopped({ state: 'closed' });
         this.io.typed(data);

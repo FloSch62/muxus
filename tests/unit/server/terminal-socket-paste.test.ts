@@ -127,6 +127,26 @@ describe('paced pastes over the terminal socket', () => {
     socket.close(1000, TERMINAL_SESSION_CLOSE_REASON);
   });
 
+  it('types line breaks as the Enter key the paste carries', async () => {
+    const { socket, written } = await sshSession();
+
+    socket.control({
+      op: 'paste',
+      text: 'one\ntwo\n',
+      bracketed: false,
+      lineDelayMs: 300,
+      charDelayMs: 0,
+      enterKey: 'lf',
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(written()).toEqual([
+      { at: 0, data: 'one\n' },
+      { at: 300, data: 'two\n' },
+    ]);
+    socket.close(1000, TERMINAL_SESSION_CLOSE_REASON);
+  });
+
   it('closes the bracketed paste when the paste is cancelled', async () => {
     const { socket, written } = await sshSession();
 

@@ -5,6 +5,8 @@ import {
   LOGIN_SEQUENCE_TEXT_MAX_LENGTH,
   MAX_PASTE_CHAR_DELAY_MS,
   MAX_PASTE_LINE_DELAY_MS,
+  TERMINAL_BACKSPACE_KEYS,
+  TERMINAL_ENTER_KEYS,
 } from '@muxus/shared';
 
 const hexColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/);
@@ -92,6 +94,11 @@ export const metadataPatchSchema = z
     // Paste pacing in milliseconds; null follows the Terminal settings.
     pasteLineDelayMs: z.number().int().min(0).max(MAX_PASTE_LINE_DELAY_MS).nullable().optional(),
     pasteCharDelayMs: z.number().int().min(0).max(MAX_PASTE_CHAR_DELAY_MS).nullable().optional(),
+    // Keys and echo; null goes back to what xterm.js does.
+    backspaceKey: z.enum(TERMINAL_BACKSPACE_KEYS).nullable().optional(),
+    enterKey: z.enum(TERMINAL_ENTER_KEYS).nullable().optional(),
+    implicitCr: z.boolean().nullable().optional(),
+    localEcho: z.boolean().nullable().optional(),
     disableSftp: z.boolean().optional(),
     consoleCompatibility: z.boolean().optional(),
     loginSequence: loginSequenceSchema.nullable().optional(),

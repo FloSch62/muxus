@@ -27,6 +27,8 @@ import {
   type ConnectionInfo,
   type SshProfile,
   type SshSessionSummary,
+  type TerminalBackspaceKey,
+  listedHostFor,
   savedHostHopId,
 } from '@muxus/shared';
 import {
@@ -86,10 +88,12 @@ import { VaultKeyStoreUnavailableError } from '../security/vault-key-store.js';
 import {
   expandIdentityPath,
   isConcreteAlias,
+  listedHosts,
   loadConfigDocument,
   parseHostSpec,
   resolveHost,
   sessionEnvironment,
+  sortHostList,
   type ConfigDocument,
   type ResolvedTarget,
 } from './ssh-config.js';
@@ -197,7 +201,8 @@ export interface ManagedConnection {
   facts: TransportFacts;
   /**
    * Session defaults come from the dialed target when none are passed. `cwd`
-   * is a best-effort start directory, honoured only by integrated shells.
+   * is a best-effort start directory, honoured only by integrated shells;
+   * `backspaceKey` sets the erase character the pty request advertises.
    */
   shell(
     cols: number,
@@ -205,6 +210,7 @@ export interface ManagedConnection {
     term: string,
     session?: SessionSettings,
     cwd?: string,
+    backspaceKey?: TerminalBackspaceKey,
   ): Promise<ClientChannel>;
   sftp(): Promise<SFTPWrapper>;
   /** Subscribe to passive keepalive health; returns an unsubscribe function. */
@@ -301,12 +307,18 @@ export function observeSshTransportHealth(
 }
 
 /**
- * xterm sends DEL for Backspace. Advertising the same erase character while
- * requesting the remote PTY prevents DEL from being echoed as visible input
- * (and advancing the cursor) on hosts with a different login default.
+ * xterm sends DEL for Backspace, or ^H when the host asks for it. Advertising
+ * the same erase character while requesting the remote PTY prevents it from
+ * being echoed as visible input (and advancing the cursor) on hosts with a
+ * different login default.
  */
-export function terminalPtyOptions(cols: number, rows: number, term: string): PseudoTtyOptions {
-  return { term, cols, rows, modes: { VERASE: 0x7f } };
+export function terminalPtyOptions(
+  cols: number,
+  rows: number,
+  term: string,
+  backspaceKey: TerminalBackspaceKey = 'del',
+): PseudoTtyOptions {
+  return { term, cols, rows, modes: { VERASE: backspaceKey === 'ctrl-h' ? 0x08 : 0x7f } };
 }
 
 /** One node of the dial plan: the final target or a ProxyJump hop before it. */
@@ -594,6 +606,12 @@ export class SshConnectionManager {
     return findMetadataAlias(this.loadConfig(), parseHostSpec(profile.target).host);
   }
 
+  /** The ssh_config alias whose Muxus metadata the window applies to a tab dialing this profile. */
+  listedMetadataAliasFor(profile: SshProfile): string | undefined {
+    if (profile.useConfig === false || profile.profileId) return undefined;
+    return listedMetadataAlias(this.loadConfig(), profile.target);
+  }
+
   resolveProfile(profile: SshProfile): SshProfile {
     if (!profile.profileId) return profile;
     const saved = this.savedSshProfile?.(profile.profileId);
@@ -668,9 +686,9 @@ export class SshConnectionManager {
     cols: number,
     rows: number,
     term: string,
-    opts: { freshTransport?: string; cwd?: string } = {},
+    opts: { freshTransport?: string; cwd?: string; backspaceKey?: TerminalBackspaceKey } = {},
   ): Promise<TerminalShell> {
-    const { cwd, ...connectOpts } = opts;
+    const { cwd, backspaceKey, ...connectOpts } = opts;
     const lease = await this.connect(profile, io, 'terminal', connectOpts);
     try {
       const stream = await lease.connection.shell(
@@ -679,12 +697,13 @@ export class SshConnectionManager {
         term,
         sessionSettings(lease.target.resolved),
         cwd,
+        backspaceKey,
       );
       return this.opened(lease, stream, lease.reused ? 'shared' : 'new', io);
     } catch (err) {
       lease.release();
       if (err instanceof RemoteShellTransportLostError) {
-        return this.retryPlainShell(profile, io, cols, rows, term, lease, 'new', err);
+        return this.retryPlainShell(profile, io, cols, rows, term, lease, 'new', err, backspaceKey);
       }
       if (!lease.reused) throw err;
       this.log.info(
@@ -700,6 +719,7 @@ export class SshConnectionManager {
           term,
           sessionSettings(dedicated.target.resolved),
           cwd,
+          backspaceKey,
         );
         return this.opened(dedicated, stream, 'overflow', io);
       } catch (retryErr) {
@@ -714,6 +734,7 @@ export class SshConnectionManager {
             dedicated,
             'overflow',
             retryErr,
+            backspaceKey,
           );
         }
         throw retryErr;
@@ -799,6 +820,7 @@ export class SshConnectionManager {
     failed: MuxedConnectionLease,
     transport: TerminalShell['transport'],
     error: RemoteShellTransportLostError,
+    backspaceKey: TerminalBackspaceKey | undefined,
   ): Promise<TerminalShell> {
     // A probe-triggered disconnect can happen for config aliases and direct
     // profiles alike. The non-compatibility mux key is therefore the stable
@@ -822,6 +844,8 @@ export class SshConnectionManager {
         rows,
         term,
         sessionSettings(compatible.target.resolved),
+        undefined,
+        backspaceKey,
       );
       return this.opened(compatible, stream, transport, io);
     } catch (retryError) {
@@ -999,9 +1023,16 @@ export class SshConnectionManager {
         jumpHosts: chain.slice(0, -1).map((hop) => hop.spec.host),
         proxyCommand: chain[0]!.resolved.proxyCommand !== undefined,
       },
-      shell: async (cols, rows, term, session = sessionSettings(target.resolved), cwd) => {
+      shell: async (
+        cols,
+        rows,
+        term,
+        session = sessionSettings(target.resolved),
+        cwd,
+        backspaceKey,
+      ) => {
         const pty = wantsPty(session.requestTty, !!session.remoteCommand)
-          ? terminalPtyOptions(cols, rows, term)
+          ? terminalPtyOptions(cols, rows, term, backspaceKey)
           : undefined;
         const env = consoleCompatibility ? undefined : session.env;
         const open = (x11Request?: X11Options) => {
@@ -1705,6 +1736,15 @@ export function findMetadataAlias(doc: ConfigDocument, requestedHost: string): s
   )
     ? requestedHost
     : undefined;
+}
+
+/**
+ * The alias of the host the window reads a tab's host metadata from: the
+ * host list's first entry naming `target`, in the order the list is served.
+ * Only a plain alias names one, not `user@alias` or `alias:port`.
+ */
+export function listedMetadataAlias(doc: ConfigDocument, target: string): string | undefined {
+  return listedHostFor(sortHostList(listedHosts(doc)), target)?.alias;
 }
 
 /** direct-tcpip channel from a jump host to the next hop — the `ssh -W` equivalent. */

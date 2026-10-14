@@ -37,6 +37,39 @@ describe('typedInput', () => {
     });
   });
 
+  it("types line breaks as the host's Enter key, written at once or paced", () => {
+    const unpaced = { lineDelayMs: 0, charDelayMs: 0 };
+    expect(typedInput('conf t\rend\r', unpaced, false, 'crlf')).toEqual({
+      kind: 'direct',
+      data: 'conf t\r\nend\r\n',
+    });
+    expect(typedInput('conf t\rend\r', unpaced, false, 'lf')).toEqual({
+      kind: 'direct',
+      data: 'conf t\nend\n',
+    });
+
+    const message = {
+      op: 'paste',
+      text: 'conf t\rend\r',
+      bracketed: false,
+      lineDelayMs: 250,
+      charDelayMs: 0,
+      enterKey: 'lf',
+    } as const;
+    expect(typedInput(message.text, paced, false, 'lf')).toEqual({ kind: 'paced', message });
+    expect(terminalClientMessageSchema.parse(message)).toEqual(message);
+  });
+
+  it('sends what it sent before for the default CR Enter key', () => {
+    expect(typedInput('show version\r', { lineDelayMs: 0, charDelayMs: 0 }, false, 'cr')).toEqual(
+      typedInput('show version\r', { lineDelayMs: 0, charDelayMs: 0 }),
+    );
+    expect(typedInput('uptime\r', paced, false, 'cr')).toEqual({
+      kind: 'paced',
+      message: { op: 'paste', text: 'uptime\r', bracketed: false, lineDelayMs: 250, charDelayMs: 0 },
+    });
+  });
+
   it('keeps escape characters intact', () => {
     expect(typedInput('\x1bq', paced)).toMatchObject({ message: { text: '\x1bq' } });
   });

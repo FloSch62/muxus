@@ -23,6 +23,8 @@ import type {
 import {
   MAX_PASTE_CHAR_DELAY_MS,
   MAX_PASTE_LINE_DELAY_MS,
+  TERMINAL_BACKSPACE_KEYS,
+  TERMINAL_ENTER_KEYS,
   validPasteDelay,
 } from '@muxus/shared';
 import { apiFetch } from './api/http.js';
@@ -36,6 +38,11 @@ import { isKeywordHighlightProfileArray } from './highlight-profiles.js';
 import { isStatusBarItemList } from './host-stats.js';
 import { isLoginSequence } from './login-sequence.js';
 import { isCustomTerminalSchemeArray } from './terminal/custom-schemes.js';
+import {
+  hostTerminalInputModes,
+  terminalInputModesPatch,
+  type TerminalInputModes,
+} from './terminal/input-modes.js';
 import { saveTextFile } from './save-file.js';
 import { openSshJumpHops } from './saved-hosts.js';
 import {
@@ -658,6 +665,10 @@ function portableMetadata(
     commandButtonGroup: metadata.commandButtonGroup,
     pasteLineDelayMs: metadata.pasteLineDelayMs,
     pasteCharDelayMs: metadata.pasteCharDelayMs,
+    backspaceKey: metadata.backspaceKey,
+    enterKey: metadata.enterKey,
+    implicitCr: metadata.implicitCr,
+    localEcho: metadata.localEcho,
     disableSftp: metadata.disableSftp,
     consoleCompatibility: metadata.consoleCompatibility,
     loginSequence: metadata.loginSequence,
@@ -823,10 +834,21 @@ function metadataPatch(metadata: PortableHostMetadata): OpenSshMetadataPatch {
     commandButtonGroup: metadata.commandButtonGroup ?? null,
     pasteLineDelayMs: metadata.pasteLineDelayMs ?? null,
     pasteCharDelayMs: metadata.pasteCharDelayMs ?? null,
+    ...terminalInputModesPatch(restoredInputModes(metadata)),
     disableSftp: metadata.disableSftp ?? false,
     consoleCompatibility: metadata.consoleCompatibility ?? false,
     loginSequence: isLoginSequence(metadata.loginSequence) ? metadata.loginSequence : null,
   };
+}
+
+/** A backup without keys or echo, or with values this release does not know, keeps xterm.js's. */
+function restoredInputModes(metadata: PortableHostMetadata): TerminalInputModes {
+  return hostTerminalInputModes({
+    backspaceKey: TERMINAL_BACKSPACE_KEYS.find((key) => key === metadata.backspaceKey),
+    enterKey: TERMINAL_ENTER_KEYS.find((key) => key === metadata.enterKey),
+    implicitCr: metadata.implicitCr === true,
+    localEcho: metadata.localEcho === true,
+  });
 }
 
 function portableTunnelInput(tunnel: TunnelRecord): Omit<TunnelRecord, 'createdAt' | 'updatedAt'> {

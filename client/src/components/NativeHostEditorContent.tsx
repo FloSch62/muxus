@@ -30,6 +30,7 @@ import {
 } from '../session-logging-policy.js';
 import type { HostEditorState } from '../state/ui.js';
 import { useUiStore } from '../state/ui.js';
+import { customTerminalInputModes } from '../terminal/input-modes.js';
 import { HostColorPicker } from './HostColorPicker.js';
 import { EditorShell, type EditorSectionDef } from './host-editor/EditorShell.js';
 import { HighlightingSection } from './host-editor/HighlightingSection.js';
@@ -151,6 +152,7 @@ export function NativeHostEditorContent({
         draft.terminalBackgroundColor,
         draft.commandButtonGroup,
         draft.pasteLineDelayMs !== undefined || draft.pasteCharDelayMs !== undefined,
+        customTerminalInputModes(draft.inputModes),
       ].filter(Boolean).length || undefined,
     },
     ...(kind === 'serial'

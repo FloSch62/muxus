@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { LoginSequenceStep } from '@muxus/shared';
+import type { LoginSequenceStep, TerminalEnterKey } from '@muxus/shared';
 import {
   describeLoginStep,
   LoginSequenceRunner,
@@ -11,7 +11,11 @@ const bytes = (text: string) => Buffer.from(text, 'utf8');
 
 function harness(
   steps: LoginSequenceStep[],
-  options: { typeSecret?: LoginSequenceIo['typeSecret']; writable?: boolean } = {},
+  options: {
+    typeSecret?: LoginSequenceIo['typeSecret'];
+    writable?: boolean;
+    enterKey?: () => TerminalEnterKey;
+  } = {},
 ) {
   const written: string[] = [];
   const typed: string[] = [];
@@ -23,6 +27,7 @@ function harness(
       return true;
     },
     typed: (data) => typed.push(data.toString('utf8')),
+    enterKey: options.enterKey ?? (() => 'cr'),
     typeSecret:
       options.typeSecret ??
       (async (_secretId, enter) => {
@@ -88,6 +93,21 @@ describe('LoginSequenceRunner', () => {
     runner.output(bytes('\x1b[1mlogin:\x1b[0m '));
     await expect(runner.run()).resolves.toEqual({ state: 'done' });
     expect(written).toEqual(['root\r']);
+  });
+
+  it("presses Enter as the host's key sends it, read when the step runs", async () => {
+    let enterKey: TerminalEnterKey = 'lf';
+    const { runner, written, typed } = harness(
+      [send('admin'), wait('Password:'), send('', true), send('show', false)],
+      { enterKey: () => enterKey },
+    );
+    const done = runner.run();
+    await vi.waitFor(() => expect(written).toEqual(['admin\n']));
+    enterKey = 'crlf';
+    runner.output(bytes('Password: '));
+    await expect(done).resolves.toEqual({ state: 'done' });
+    expect(written).toEqual(['admin\n', '\r\n', 'show']);
+    expect(typed).toEqual(written);
   });
 
   it('matches regular expressions', async () => {

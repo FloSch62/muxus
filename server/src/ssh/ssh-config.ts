@@ -880,23 +880,44 @@ export function blockToOptions(block: HostBlock): HostBlockOptions {
   return out;
 }
 
-export function listHosts(
-  doc: ConfigDocument,
-  /** Folder defaults per alias — resolved values then match what connect uses. */
-  fallbackFor?: (alias: string) => readonly OptionLine[] | undefined,
-): SshHostEntry[] {
+/** A host list entry before its settings are resolved. */
+export interface ListedHost extends Pick<SshHostEntry, 'alias' | 'aliases'> {
+  block: HostBlock;
+}
+
+/**
+ * The host list's entries in config order: one per Host block that names a
+ * new concrete alias, listed under the first one.
+ */
+export function listedHosts(doc: ConfigDocument): ListedHost[] {
   const seen = new Set<string>();
-  const entries: SshHostEntry[] = [];
+  const entries: ListedHost[] = [];
   for (const block of doc.blocks) {
     const concrete = block.patterns.filter(isConcreteAlias);
     const fresh = concrete.filter((a) => !seen.has(a));
     if (!fresh.length) continue;
     for (const a of concrete) seen.add(a);
-    const alias = fresh[0]!;
+    entries.push({ alias: fresh[0]!, aliases: concrete, block });
+  }
+  return entries;
+}
+
+/** The order the host list is served in, which the window searches for a tab's host. */
+export function sortHostList<T extends Pick<SshHostEntry, 'alias'>>(hosts: T[]): T[] {
+  return hosts.sort((a, b) => a.alias.localeCompare(b.alias));
+}
+
+export function listHosts(
+  doc: ConfigDocument,
+  /** Folder defaults per alias — resolved values then match what connect uses. */
+  fallbackFor?: (alias: string) => readonly OptionLine[] | undefined,
+): SshHostEntry[] {
+  const entries: SshHostEntry[] = [];
+  for (const { alias, aliases, block } of listedHosts(doc)) {
     const resolved = resolveHost(doc, alias, fallbackFor?.(alias));
     entries.push({
       alias,
-      aliases: concrete,
+      aliases,
       description: block.description,
       file: block.file,
       options: blockToOptions(block),

@@ -54,6 +54,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 27, name: 'login-sequences' },
       { version: 28, name: 'host-paste-pacing' },
       { version: 29, name: 'management-hosts' },
+      { version: 30, name: 'host-terminal-input-modes' },
     ]);
   });
 
@@ -145,8 +146,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 29,
-      name: 'management-hosts',
+      version: 30,
+      name: 'host-terminal-input-modes',
     });
     expect(database.savedHostProfile(telnet.id)).toMatchObject({
       name: 'Core switch',
@@ -251,7 +252,10 @@ describe('MuxusDatabase migrations', () => {
     }
 
     database = new MuxusDatabase(filename);
-    expect(database.appliedMigrations().at(-1)).toEqual({ version: 29, name: 'management-hosts' });
+    expect(database.appliedMigrations().at(-1)).toEqual({
+      version: 30,
+      name: 'host-terminal-input-modes',
+    });
     expect(database.savedHostProfile(rdp.id)).toMatchObject({ name: 'Build server', metadata: { group: 'Lab' } });
     const gnmi = database.saveSavedHostProfile({
       name: 'leaf1',
@@ -323,6 +327,45 @@ describe('MuxusDatabase migrations', () => {
     );
     expect(database.sftpDisabledForAlias('legacy')).toBe(true);
     expect(database.consoleCompatibilityForAlias('legacy')).toBe(false);
+  });
+
+  it("keeps version 29 hosts, with xterm.js's keys and no echo, when adding input modes", () => {
+    temporaryDirectory = mkdtempSync(path.join(os.tmpdir(), 'muxus-v29-migration-'));
+    const filename = path.join(temporaryDirectory, 'muxus.sqlite3');
+    database = new MuxusDatabase(filename);
+    database.updateOpenSshMetadata('legacy', { group: 'Core', pasteLineDelayMs: 250 });
+    const telnet = database.saveSavedHostProfile({
+      name: 'Core switch',
+      profile: { kind: 'telnet', host: 'switch.lab', port: 23 },
+    });
+    database.close();
+    database = undefined;
+
+    const legacy = new DatabaseSync(filename);
+    try {
+      legacy.exec(`
+        DELETE FROM schema_migrations WHERE version = 30;
+        ALTER TABLE connection_profiles DROP COLUMN backspace_key;
+        ALTER TABLE connection_profiles DROP COLUMN enter_key;
+        ALTER TABLE connection_profiles DROP COLUMN implicit_cr;
+        ALTER TABLE connection_profiles DROP COLUMN local_echo;
+        PRAGMA user_version = 29;
+      `);
+    } finally {
+      legacy.close();
+    }
+
+    database = new MuxusDatabase(filename);
+    const metadata = database.openSshMetadata(['legacy']).get('legacy');
+    expect(metadata).toMatchObject({ group: 'Core', pasteLineDelayMs: 250 });
+    for (const host of [metadata, database.savedHostProfile(telnet.id)?.metadata]) {
+      expect(host).not.toHaveProperty('backspaceKey');
+      expect(host).not.toHaveProperty('enterKey');
+      expect(host).not.toHaveProperty('implicitCr');
+      expect(host).not.toHaveProperty('localEcho');
+    }
+    expect(database.hostInputKeys({ alias: 'legacy' })).toEqual({});
+    expect(database.hostInputKeys({ profileId: telnet.id })).toEqual({});
   });
 
   it('upgrades the draft version 13 vault without deleting credentials', () => {
@@ -398,8 +441,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 29,
-      name: 'management-hosts',
+      version: 30,
+      name: 'host-terminal-input-modes',
     });
     expect(database.passwordVaultConfig()).toMatchObject({
       formatVersion: 2,
@@ -763,6 +806,57 @@ describe('hybrid OpenSSH metadata', () => {
     expect(cleared?.pasteLineDelayMs).toBeUndefined();
     expect(cleared?.pasteCharDelayMs).toBeUndefined();
     expect(database.savedHostProfile(telnet.id)?.metadata.pasteCharDelayMs).toBeUndefined();
+  });
+
+  it('stores, looks up and clears the input modes of OpenSSH and saved hosts', () => {
+    database = new MuxusDatabase(':memory:');
+    const serial = database.saveSavedHostProfile({
+      name: 'Rack console',
+      profile: {
+        kind: 'serial',
+        path: '/dev/ttyUSB0',
+        baudRate: 9_600,
+        dataBits: 8,
+        stopBits: 1,
+        parity: 'none',
+        flowControl: 'none',
+      },
+    });
+    const modes = { backspaceKey: 'ctrl-h', enterKey: 'crlf', implicitCr: true, localEcho: true } as const;
+
+    expect(database.updateOpenSshMetadata('core-01', modes)).toMatchObject(modes);
+    expect(
+      database.updateSavedHostMetadata(serial.id, { enterKey: 'lf', localEcho: true }).metadata,
+    ).toMatchObject({ enterKey: 'lf', localEcho: true });
+    expect(database.savedHostProfile(serial.id)?.metadata).not.toHaveProperty('backspaceKey');
+    expect(database.hostInputKeys({ alias: 'core-01' })).toEqual({
+      backspaceKey: 'ctrl-h',
+      enterKey: 'crlf',
+    });
+    expect(database.hostInputKeys({ profileId: serial.id })).toEqual({ enterKey: 'lf' });
+    expect(database.hostInputKeys({ alias: 'unknown' })).toEqual({});
+
+    // Other metadata edits leave them alone; null goes back to xterm.js's keys and no echo.
+    database.updateOpenSshMetadata('core-01', { color: '#ef4444' });
+    expect(database.openSshMetadata(['core-01']).get('core-01')).toMatchObject(modes);
+    database.updateOpenSshMetadata('core-01', {
+      backspaceKey: null,
+      enterKey: null,
+      implicitCr: null,
+      localEcho: null,
+    });
+    database.updateSavedHostMetadata(serial.id, { enterKey: null, localEcho: false });
+    for (const host of [
+      database.openSshMetadata(['core-01']).get('core-01'),
+      database.savedHostProfile(serial.id)?.metadata,
+    ]) {
+      expect(host).not.toHaveProperty('backspaceKey');
+      expect(host).not.toHaveProperty('enterKey');
+      expect(host).not.toHaveProperty('implicitCr');
+      expect(host).not.toHaveProperty('localEcho');
+    }
+    expect(database.hostInputKeys({ alias: 'core-01' })).toEqual({});
+    expect(database.hostInputKeys({ profileId: serial.id })).toEqual({});
   });
 
   it('moves hosts between case-insensitive groups and can clear organization', () => {

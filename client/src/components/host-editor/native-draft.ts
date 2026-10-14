@@ -16,6 +16,11 @@ import {
   loginSequenceProblem,
   type LoginSequenceDraft,
 } from '../../login-sequence.js';
+import {
+  hostTerminalInputModes,
+  terminalInputModesPatch,
+  type TerminalInputModes,
+} from '../../terminal/input-modes.js';
 import { keywordHighlightRulesProblem } from '../../terminal/keyword-matching.js';
 
 /**
@@ -37,6 +42,8 @@ export interface NativeHostDraft {
   /** Paste pacing; unset follows the Terminal settings. */
   pasteLineDelayMs?: number;
   pasteCharDelayMs?: number;
+  /** Backspace and Enter keys, implicit CR and local echo. */
+  inputModes: TerminalInputModes;
   host: string;
   port: string;
   path: string;
@@ -64,6 +71,7 @@ export function blankNativeDraft(prefillTarget = '', group = ''): NativeHostDraf
     commandButtonGroup: undefined,
     pasteLineDelayMs: undefined,
     pasteCharDelayMs: undefined,
+    inputModes: hostTerminalInputModes(undefined),
     host,
     port: port ?? '23',
     path: '',
@@ -90,6 +98,7 @@ export function nativeDraftFromProfile(saved: SavedHostProfile, duplicate: boole
   draft.commandButtonGroup = saved.metadata.commandButtonGroup;
   draft.pasteLineDelayMs = saved.metadata.pasteLineDelayMs;
   draft.pasteCharDelayMs = saved.metadata.pasteCharDelayMs;
+  draft.inputModes = hostTerminalInputModes(saved.metadata);
   draft.keywordHighlights = saved.metadata.keywordHighlights ?? draft.keywordHighlights;
   draft.loginSequence = loginSequenceDraft(saved.metadata.loginSequence);
   if (saved.profile.kind === 'telnet') {
@@ -166,6 +175,7 @@ export function nativeDraftMetadataPatch(draft: NativeHostDraft): OpenSshMetadat
     commandButtonGroup: draft.commandButtonGroup ?? null,
     pasteLineDelayMs: draft.pasteLineDelayMs ?? null,
     pasteCharDelayMs: draft.pasteCharDelayMs ?? null,
+    ...terminalInputModesPatch(draft.inputModes),
     keywordHighlights:
       highlights.inheritGlobal && !highlights.profileId && highlights.rules.length === 0
         ? null
