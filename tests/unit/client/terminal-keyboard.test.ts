@@ -47,4 +47,40 @@ describe('terminal keyboard input', () => {
     );
     expect(normalizeTerminalKeyboardInput('\ue046', undefined, true)).toBe('\ue046');
   });
+
+  it('turns Option+Left/Right into word motions on macOS', () => {
+    expect(
+      normalizeTerminalKeyboardInput('\x1b[1;3D', keyEvent('ArrowLeft', { altKey: true }), true),
+    ).toBe('\x1bb');
+    expect(
+      normalizeTerminalKeyboardInput('\x1b[1;3C', keyEvent('ArrowRight', { altKey: true }), true),
+    ).toBe('\x1bf');
+  });
+
+  it('leaves other arrow chords and non-macOS Alt+Arrow untouched', () => {
+    expect(
+      normalizeTerminalKeyboardInput('\x1b[1;3D', keyEvent('ArrowLeft', { altKey: true }), false),
+    ).toBe('\x1b[1;3D');
+    expect(
+      normalizeTerminalKeyboardInput(
+        '\x1b[1;4D',
+        keyEvent('ArrowLeft', { altKey: true, shiftKey: true }),
+        true,
+      ),
+    ).toBe('\x1b[1;4D');
+    expect(normalizeTerminalKeyboardInput('\x1b[D', keyEvent('ArrowLeft'), true)).toBe('\x1b[D');
+    expect(normalizeTerminalKeyboardInput('\x1b[1;3D', undefined, true)).toBe('\x1b[1;3D');
+  });
+
+  it('preserves Kitty encodings that report key event types', () => {
+    const kittyOptionLeftPress = '\x1b[1;3:1D';
+
+    expect(
+      normalizeTerminalKeyboardInput(
+        kittyOptionLeftPress,
+        keyEvent('ArrowLeft', { altKey: true }),
+        true,
+      ),
+    ).toBe(kittyOptionLeftPress);
+  });
 });
