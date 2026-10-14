@@ -197,6 +197,29 @@ export function isBindableChord(chord: Chord): boolean {
   return chord.ctrl || chord.alt || chord.meta;
 }
 
+const CONTROL_CHARACTER_CODES = new Set(['Space', 'Slash', 'BracketLeft', 'Backslash', 'BracketRight']);
+/** ^@, ^^ and ^_ are typed with Shift. */
+const SHIFTED_CONTROL_CHARACTER_CODES = new Set(['Digit2', 'Digit6', 'Minus']);
+
+/**
+ * Chords the shell owns. xterm.js types a control character for Ctrl without
+ * Alt or Cmd on a letter, Space, Backspace, 3–8, / [ \ or ], and for
+ * Ctrl+Shift on 2, 6, - or Backspace. Plain Ctrl+2 sends nothing there, but
+ * the keymap leaves Ctrl+2…8 to the terminal as a row. Ctrl+Shift with a
+ * letter stays free, as the defaults use it.
+ */
+export function sendsControlCharacter(chord: Chord): boolean {
+  if (!chord.ctrl || chord.alt || chord.meta) return false;
+  // ^H, with or without Shift.
+  if (chord.code === 'Backspace') return true;
+  if (chord.shift) return SHIFTED_CONTROL_CHARACTER_CODES.has(chord.code);
+  return (
+    /^Key[A-Z]$/.test(chord.code) ||
+    /^Digit[2-8]$/.test(chord.code) ||
+    CONTROL_CHARACTER_CODES.has(chord.code)
+  );
+}
+
 function keyLabel(code: string): string {
   if (code.startsWith('Key')) return code.slice(3);
   if (code.startsWith('Digit')) return code.slice(5);

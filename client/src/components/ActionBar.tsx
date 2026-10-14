@@ -24,11 +24,14 @@ import { useUpdateHostProfileMetadata } from '../api/profiles.js';
 import { useUpdateSshMetadata } from '../api/ssh-config.js';
 import { useActiveCommandButtonGroup } from '../command-button-groups.js';
 import { commandButtonGroupOf, commandButtonLabel } from '../command-buttons.js';
+import { formatChordString } from '../keymap/chords.js';
+import { commandButtonShortcut } from '../keymap/command-buttons.js';
 import { usePrefsStore, type CommandBarPosition, type CommandButton } from '../state/prefs.js';
 import { showToast } from '../state/toast.js';
 import { useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
 import { findVaultSecret, runCommandButton, vaultSecretMissing } from '../vault-secrets.js';
+import { withChord } from './ChordHint.js';
 import { commandButtonColorSx } from './command-button-style.js';
 
 export const ActionBar = memo(function ActionBar({
@@ -158,11 +161,15 @@ export const ActionBar = memo(function ActionBar({
           const secretButton = button.secretId !== undefined;
           const secret = button.secretId ? findVaultSecret(vault, button.secretId) : undefined;
           const missing = !!button.secretId && vaultSecretMissing(vault, button.secretId) === true;
+          const shortcut = commandButtonShortcut(button);
           return (
             <Tooltip
               key={button.id}
               placement={tooltipPlacement}
-              title={buttonTooltip(button, secret?.name, missing)}
+              title={withChord(
+                buttonTooltip(button, secret?.name, missing),
+                shortcut ? formatChordString(shortcut) : undefined,
+              )}
             >
               <span style={{ flexShrink: 0 }}>
                 <Button

@@ -220,6 +220,31 @@ describe('normalizeCommandButtons', () => {
     ).toEqual([buttons[0], buttons[1]]);
     expect(normalizeCommandButtons('uptime', groups)).toBeUndefined();
   });
+
+  it('keeps a shortcut only while it is a bindable chord the shell does not own and no earlier button holds', () => {
+    expect(
+      normalizeCommandButtons(
+        [
+          { ...buttons[0], shortcut: 'Ctrl+Alt+KeyS' },
+          { ...buttons[1], shortcut: 'Alt+Ctrl+S' },
+          { ...buttons[2], shortcut: 'Shift+KeyR' },
+          { ...buttons[0], id: 'typo', shortcut: 'Hyper+KeyR' },
+          { ...buttons[0], id: 'number', shortcut: 7 },
+          { ...buttons[0], id: 'interrupt', shortcut: 'Ctrl+KeyC' },
+          { ...buttons[0], id: 'f5', shortcut: 'F5' },
+        ],
+        groups,
+      ),
+    ).toEqual([
+      { ...buttons[0], shortcut: 'Ctrl+Alt+KeyS' },
+      buttons[1],
+      buttons[2],
+      { ...buttons[0], id: 'typo' },
+      { ...buttons[0], id: 'number' },
+      { ...buttons[0], id: 'interrupt' },
+      { ...buttons[0], id: 'f5', shortcut: 'F5' },
+    ]);
+  });
 });
 
 describe('command button groups', () => {
@@ -272,6 +297,16 @@ describe('command button groups', () => {
       groupId: 'juniper',
       color: 'purple',
     });
+  });
+
+  it('leaves the shortcut with the original when duplicating', () => {
+    const copied = duplicateCommandButton(
+      filed.map((button) => (button.id === 'disk' ? { ...button, shortcut: 'Ctrl+Alt+KeyD' } : button)),
+      'disk',
+      'copy',
+    );
+    expect(copied.find((button) => button.id === 'disk')?.shortcut).toBe('Ctrl+Alt+KeyD');
+    expect(copied.find((button) => button.id === 'copy')).not.toHaveProperty('shortcut');
   });
 
   it('never moves a group above the default group', () => {

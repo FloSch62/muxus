@@ -38,16 +38,20 @@ function sameChord(left: string, right: string | undefined): boolean {
   return chordSignature(parsedLeft) === chordSignature(parsedRight);
 }
 
+const NO_COMMANDS: readonly KeyCommand[] = [];
+
 /**
- * Signature → commands, in catalog order. Several commands can share a
- * signature after rebinding; the dispatcher tries each until one applies and
- * the shortcut settings surface them as a conflict.
+ * Signature → commands, in catalog order, then `extra` (command buttons with
+ * a shortcut). Several commands can share a signature after rebinding; the
+ * dispatcher tries each until one applies and the shortcut settings surface
+ * them as a conflict.
  */
 export function buildBindingIndex(
   overrides: KeybindingOverrides = NO_OVERRIDES,
+  extra: readonly KeyCommand[] = NO_COMMANDS,
 ): Map<string, KeyCommand[]> {
   const index = new Map<string, KeyCommand[]>();
-  for (const command of KEY_COMMANDS) {
+  for (const command of [...KEY_COMMANDS, ...extra]) {
     for (const text of commandChords(command, overrides)) {
       const chord = parseChord(text);
       if (!chord) continue;
@@ -64,18 +68,20 @@ export function buildBindingIndex(
 export function commandsForChord(
   text: string,
   overrides: KeybindingOverrides = NO_OVERRIDES,
+  extra: readonly KeyCommand[] = NO_COMMANDS,
 ): KeyCommand[] {
   const chord = parseChord(text);
   if (!chord) return [];
-  return buildBindingIndex(overrides).get(chordSignature(chord)) ?? [];
+  return buildBindingIndex(overrides, extra).get(chordSignature(chord)) ?? [];
 }
 
 /** Command ids that share at least one chord with another command. */
 export function conflictingCommandIds(
   overrides: KeybindingOverrides = NO_OVERRIDES,
+  extra: readonly KeyCommand[] = NO_COMMANDS,
 ): Set<string> {
   const conflicts = new Set<string>();
-  for (const commands of buildBindingIndex(overrides).values()) {
+  for (const commands of buildBindingIndex(overrides, extra).values()) {
     if (commands.length < 2) continue;
     for (const command of commands) conflicts.add(command.id);
   }
@@ -83,16 +89,19 @@ export function conflictingCommandIds(
 }
 
 let cachedOverrides: KeybindingOverrides | undefined;
+let cachedExtra: readonly KeyCommand[] | undefined;
 let cachedIndex: Map<string, KeyCommand[]> = new Map();
 
 /** Cached lookup for the hot keydown path; rebuilt when preferences change. */
 export function commandsForEvent(
   event: ChordEvent,
   overrides: KeybindingOverrides,
+  extra: readonly KeyCommand[] = NO_COMMANDS,
 ): KeyCommand[] {
-  if (cachedOverrides !== overrides) {
+  if (cachedOverrides !== overrides || cachedExtra !== extra) {
     cachedOverrides = overrides;
-    cachedIndex = buildBindingIndex(overrides);
+    cachedExtra = extra;
+    cachedIndex = buildBindingIndex(overrides, extra);
   }
   return cachedIndex.get(eventSignature(event)) ?? [];
 }

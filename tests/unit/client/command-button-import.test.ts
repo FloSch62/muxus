@@ -8,6 +8,7 @@ import {
   DEFAULT_COMMAND_GROUP,
   MAX_COMMAND_BUTTON_GROUPS,
   MAX_COMMAND_BUTTONS,
+  normalizeCommandButtons,
 } from '../../../client/src/command-buttons.js';
 import type { ImportedCommandBar } from '../../../client/src/session-import.js';
 import type { CommandButton, CommandButtonGroup } from '../../../client/src/state/prefs.js';
@@ -87,6 +88,21 @@ describe('mergeImportedCommandBars', () => {
     expect(replaced.commandButtonGroups).toEqual(onlyDefault);
     expect(replaced.commandButtons).toEqual([mine, imported('bar-d', 0, 'new')]);
     expect(replaced.replaced).toBe(1);
+  });
+
+  it('imports buttons unbound and leaves the user’s shortcuts in place', () => {
+    const bound: CommandButton = { ...mine, shortcut: 'Ctrl+Alt+KeyU' };
+    const merged = mergeImportedCommandBars(
+      { commandButtonGroups: onlyDefault, commandButtons: [bound] },
+      [bar('bar-d', 'Default', ['show version'], true)],
+      'replace',
+      'SecureCRT',
+    );
+
+    expect(merged.commandButtons).toEqual([bound, imported('bar-d', 0, 'show version', 'bar-d')]);
+    expect(normalizeCommandButtons(merged.commandButtons, merged.commandButtonGroups)).toEqual(
+      merged.commandButtons,
+    );
   });
 
   it('keeps or replaces a bar imported as its own group, without touching other groups', () => {

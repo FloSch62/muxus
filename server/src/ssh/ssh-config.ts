@@ -407,6 +407,8 @@ export interface ResolvedTarget extends ResolvedHostSettings {
 }
 
 const yes = (v: string | undefined): boolean => (v ?? '').toLowerCase() === 'yes';
+/** OpenSSH reads IdentitiesOnly as a flag, where `true` (any case) also means yes. */
+const yesOrTrue = (v: string | undefined): boolean => ['yes', 'true'].includes((v ?? '').toLowerCase());
 
 /**
  * Resolve every option for `host` in ssh's sequential first-obtained-wins
@@ -517,7 +519,7 @@ export function resolveHost(
     port,
     identityFiles: identityFiles.map((f) => expandIdentityPath(f, identityTokens)),
     certificateFiles: certificateFiles.map((f) => expandIdentityPath(f, identityTokens)),
-    identitiesOnly: yes(first.get('identitiesonly')),
+    identitiesOnly: yesOrTrue(first.get('identitiesonly')),
     forwardAgent: yes(first.get('forwardagent')),
     forwardX11: flag(first.get('forwardx11')),
     proxyJump: parseProxyJumpList(first.get('proxyjump')),
@@ -806,7 +808,8 @@ export function blockToOptions(block: HostBlock): HostBlockOptions {
         if (opt.args[0]) (out.certificateFiles ??= []).push(opt.args[0]);
         break;
       case 'identitiesonly':
-        out.identitiesOnly = yes(opt.args[0]);
+        // Read as resolveHost does. Only the first line ever applies, so a save drops the rest.
+        if (out.identitiesOnly === undefined && opt.args[0]) out.identitiesOnly = yesOrTrue(opt.args[0]);
         break;
       case 'identityagent':
         if (out.identityAgent === undefined && opt.args[0]) out.identityAgent = opt.args[0];

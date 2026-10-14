@@ -378,6 +378,7 @@ describe('backing up preferences', () => {
       command: '',
       sendEnter: true,
       secretId: 'vault-secret-1',
+      shortcut: 'Ctrl+Alt+KeyE',
     };
     usePrefsStore.setState({ commandButtons: [enable] });
     mockBackupSnapshot();
@@ -1399,6 +1400,23 @@ describe('restoring command button groups', () => {
     ]);
     expect(restored.commandButtonGroups).toBeUndefined();
     expect(restored.selectedCommandButtonGroup).toBeUndefined();
+  });
+
+  it('restores button shortcuts, and buttons from backups made before them unbound', () => {
+    const bound = { ...bgp, shortcut: 'Ctrl+Alt+KeyB' };
+    expect(
+      sanitizePreferences(prefs({ commandButtonGroups: [juniper], commandButtons: [bound] }))
+        .commandButtons,
+    ).toEqual([bound]);
+    expect(
+      sanitizePreferences(prefs({ commandButtonGroups: [juniper], commandButtons: [bgp] }))
+        .commandButtons,
+    ).toEqual([bgp]);
+    expect(
+      sanitizePreferences(
+        prefs({ commandButtonGroups: [juniper], commandButtons: [{ ...bgp, shortcut: 'KeyB' }] }),
+      ).commandButtons,
+    ).toEqual([bgp]);
   });
 
   it('drops a malformed button without losing the rest', () => {

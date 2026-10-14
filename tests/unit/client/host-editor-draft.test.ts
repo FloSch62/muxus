@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { savedHostHop, type SavedHostProfile, type SshHostEntry } from '@muxus/shared';
 import {
+  authChoice,
   blankDraft,
   draftFromEntry,
   draftFromSavedSshProfile,
@@ -8,6 +9,8 @@ import {
   draftToRequest,
   draftToSavedSshInput,
   identityAgentForDetection,
+  keyFilesCaption,
+  keyModeHelp,
 } from '../../../client/src/components/host-editor/draft.js';
 
 const entry: SshHostEntry = {
@@ -130,7 +133,7 @@ describe('SSH host editor draft', () => {
     expect(draftToRequest(draft, 'cloud').options).toMatchObject({
       identityFiles: ['~/.ssh/cloud'],
       certificateFiles: ['~/.ssh/cloud-cert.pub'],
-      identitiesOnly: true,
+      identitiesOnly: undefined,
       identityAgent: '${ONEPASSWORD_SSH_AUTH_SOCK}',
       proxyCommand: 'cloudflared access ssh --hostname %h',
       remoteCommand: 'tmux new -A -s main',
@@ -183,17 +186,116 @@ describe('SSH host editor draft', () => {
   });
 
   it('makes the specific-key promise independent of the SSH agent', () => {
-    const draft = blankDraft();
-    draft.authMode = 'key';
-    draft.identityFiles = ['~/.ssh/id_ed25519'];
-    // Old v0.3.0 drafts could carry false here. Saving the explicit editor
-    // mode must repair them instead of writing IdentityFile alone.
-    draft.identitiesOnly = false;
-
-    expect(draftToRequest(draft).options).toMatchObject({
+    const created = {
+      ...blankDraft(),
+      ...authChoice({ authMode: 'key' }),
+      ...authChoice({ identityFiles: ['~/.ssh/id_ed25519'] }),
+    };
+    expect(draftToRequest(created).options).toMatchObject({
       identityFiles: ['~/.ssh/id_ed25519'],
       identitiesOnly: true,
     });
+    const savedProfile = draftToSavedSshInput({ ...created, storage: 'muxus' }).profile;
+    if (savedProfile.kind !== 'ssh') throw new Error('Expected an SSH profile');
+    expect(savedProfile.identitiesOnly).toBe(true);
+
+    // Hosts saved by v0.3.0 list IdentityFile alone. Choosing their keys
+    // again makes the promise, so the save repairs them.
+    const loaded = draftFromEntry(entry, false);
+    for (const choice of [
+      authChoice({ identityFiles: [...loaded.identityFiles, '~/.ssh/backup'] }),
+      authChoice({ certificateFiles: [] }),
+    ]) {
+      expect(draftToRequest({ ...loaded, ...choice }, 'cloud').options.identitiesOnly).toBe(true);
+    }
+
+    const agentOnly = draftFromEntry(
+      { ...entry, options: { hostname: 'cloud.example.test', identitiesOnly: false } },
+      false,
+    );
+    expect(agentOnly.authMode).toBe('default');
+    const switched = {
+      ...agentOnly,
+      ...authChoice({ authMode: 'key' }),
+      ...authChoice({ identityFiles: ['~/.ssh/cloud'] }),
+    };
+    expect(draftToRequest(switched, 'cloud').options.identitiesOnly).toBe(true);
+  });
+
+  it('keeps IdentitiesOnly as the config has it when other fields change', () => {
+    // A hand-written IdentityFile without IdentitiesOnly still offers agent
+    // keys; saving an unrelated field must not take them away.
+    const draft = { ...draftFromEntry(entry, false), terminalScheme: 'nord' };
+    expect(draft.authMode).toBe('key');
+    expect(draftToRequest(draft, 'cloud').options.identitiesOnly).toBeUndefined();
+    expect(draftToRequest(draftFromEntry(entry, true)).options.identitiesOnly).toBeUndefined();
+
+    const explicitNo = draftFromEntry(
+      { ...entry, options: { ...entry.options, identitiesOnly: false } },
+      false,
+    );
+    expect(
+      draftToRequest({ ...explicitNo, user: 'ops' }, 'cloud').options.identitiesOnly,
+    ).toBe(false);
+  });
+
+  it('keeps IdentitiesOnly as a saved Muxus host has it when other fields change', () => {
+    const saved = (identitiesOnly?: boolean): SavedHostProfile => ({
+      id: 'imported-router',
+      kind: 'ssh',
+      name: 'Imported router',
+      profile: {
+        kind: 'ssh',
+        profileId: 'imported-router',
+        target: 'router.example.test',
+        useConfig: false,
+        identityFiles: ['~/.ssh/router'],
+        identitiesOnly,
+      },
+      metadata: { profileId: 'imported-router', connectCount: 0 },
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    });
+    for (const identitiesOnly of [undefined, false]) {
+      const draft = {
+        ...draftFromSavedSshProfile(saved(identitiesOnly), false),
+        terminalBackgroundColor: '#101820',
+      };
+      const profile = draftToSavedSshInput(draft, 'imported-router').profile;
+      if (profile.kind !== 'ssh') throw new Error('Expected an SSH profile');
+      expect(profile.identityFiles).toEqual(['~/.ssh/router']);
+      expect(profile.identitiesOnly).toBe(identitiesOnly);
+    }
+  });
+
+  it('promises exactly these keys only where the draft sets IdentitiesOnly yes', () => {
+    // IdentityFile alone, as listed or as kept with IdentitiesOnly no.
+    const loaded = draftFromEntry(entry, false);
+    const explicitNo = draftFromEntry(
+      { ...entry, options: { ...entry.options, identitiesOnly: false } },
+      false,
+    );
+    for (const draft of [loaded, explicitNo, { ...loaded, storage: 'muxus' as const }]) {
+      expect(keyModeHelp(draft)).not.toMatch(/exactly/i);
+      // Host *, folder credentials or the agent source may still turn agent keys off.
+      expect(keyFilesCaption(draft)).toBe(
+        'IdentitiesOnly yes is not set here, so keys in the SSH agent are offered too unless another setting turns that off. Changing the key or certificate files sets it.',
+      );
+    }
+    expect(keyModeHelp(loaded)).toBe('Writes IdentityFile');
+
+    // Choosing keys, or the mode from another one, makes the promise.
+    const chosen = { ...loaded, ...authChoice({ identityFiles: ['~/.ssh/cloud'] }) };
+    expect(keyModeHelp(chosen)).toBe('Writes IdentityFile — exactly these keys are offered');
+    expect(keyFilesCaption(chosen)).toMatch(/^Only these key files are offered/);
+    const agentOnly = draftFromEntry(
+      { ...entry, options: { hostname: 'cloud.example.test', identitiesOnly: false } },
+      false,
+    );
+    expect(keyModeHelp(agentOnly)).toBe('Writes IdentityFile — exactly these keys are offered');
+    expect(keyModeHelp({ ...blankDraft(), storage: 'muxus' })).toBe(
+      'Exactly these keys are offered for this Muxus connection',
+    );
   });
 
   it('round-trips explicit agent and login-shell choices', () => {

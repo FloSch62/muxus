@@ -138,6 +138,34 @@ describe('listHosts', () => {
     expect(console!.resolved.forwardX11).toBe(false);
   });
 
+  it('reads a block IdentitiesOnly as OpenSSH does, in the listing and at connect', () => {
+    const hosts = hostsOf(
+      [
+        'Host spelled',
+        '  IdentitiesOnly TRUE',
+        'Host off',
+        '  IdentitiesOnly False',
+        'Host repeated',
+        '  IdentitiesOnly yes',
+        '  IdentitiesOnly no',
+        'Host reversed',
+        '  IdentitiesOnly no',
+        '  IdentitiesOnly yes',
+        'Host unknown',
+        '  IdentitiesOnly maybe',
+        '  IdentitiesOnly yes',
+      ].join('\n'),
+    );
+    // The first line wins; later ones never apply, so none is kept as an extra.
+    expect(hosts.map((h) => [h.alias, h.options.identitiesOnly, h.resolved.identitiesOnly, h.options.extras])).toEqual([
+      ['spelled', true, true, undefined],
+      ['off', false, false, undefined],
+      ['repeated', true, true, undefined],
+      ['reversed', false, false, undefined],
+      ['unknown', false, false, undefined],
+    ]);
+  });
+
   it('resolves a single-quoted Windows identity path with spaces', () => {
     const windowsKey = String.raw`C:\Users\toweber\OneDrive - Nokia\NPI\SSH Key\keypair\securecrt_created\toweber`;
     const app = hostsOf(['Host windows', `  IdentityFile '${windowsKey}'`].join('\n'))[0]!;
@@ -203,6 +231,13 @@ describe('resolveHost', () => {
     expect(r.user).toBe('global-user'); // top-level option read first
     expect(r.port).toBe(2222); // first block wins
     expect(r.hostname).toBe('real.example.com'); // first obtained anywhere
+  });
+
+  it('reads the first IdentitiesOnly obtained, with true meaning yes', () => {
+    const doc = loadConfigDocument(
+      write(['Host web', '  IdentityFile /a', '', 'Host *', '  IdentitiesOnly True', '  IdentitiesOnly no'].join('\n')),
+    );
+    expect(resolveHost(doc, 'web').identitiesOnly).toBe(true);
   });
 
   it('accumulates IdentityFile across blocks and dedupes', () => {
