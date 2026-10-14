@@ -147,6 +147,31 @@ describe('paced pastes', () => {
     expect(reports.at(-1)).toMatchObject({ state: 'done', lines: 2, total: 4 });
   });
 
+  it('keeps a paste sent in the same tick as a cancel', async () => {
+    const { pacer, writes, reports } = recordingPacer();
+
+    pacer.enqueue(paste('a\nb\nc\n', 100, 0, true));
+    await vi.advanceTimersByTimeAsync(150);
+    // The ws library emits frames that arrive together in one tick.
+    pacer.cancel();
+    pacer.enqueue(paste('d\ne\n', 100));
+    await vi.runAllTimersAsync();
+
+    expect(writes.map((write) => write.data)).toEqual([
+      '\x1b[200~a\r',
+      'b\r',
+      '\x1b[201~',
+      'd\r',
+      'e\r',
+    ]);
+    expect(reports.find((report) => report.state === 'cancelled')).toMatchObject({
+      lines: 3,
+      sent: 4,
+      total: 6,
+    });
+    expect(reports.at(-1)).toMatchObject({ state: 'done', lines: 2, sent: 4, total: 4 });
+  });
+
   it('stops without writing or reporting anything more once the session is gone', async () => {
     const { pacer, writes, reports } = recordingPacer();
 
