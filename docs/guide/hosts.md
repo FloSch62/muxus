@@ -37,19 +37,45 @@ Muxus asks for credentials when you connect.
 
 ## Import from SecureCRT
 
-In SecureCRT, choose **Tools → Export Settings**, include **Sessions**, and save the XML
-export. Then open **Settings → Backup & data → SecureCRT import** in Muxus and choose that
-file. The review preserves nested folders, offers Muxus-only or OpenSSH storage for SSH
-sessions, and lets you select individual sessions or keep and replace matching hosts.
+In SecureCRT, choose **Tools → Export Settings**, include **Sessions** and **Button Bars**,
+and save the XML export. Excluding saved credentials, keys and session passwords there is
+recommended, since Muxus does not read them anyway. Then open **Settings → Backup & data →
+SecureCRT import** in Muxus and choose that file. The review preserves nested folders,
+offers Muxus-only or OpenSSH storage for SSH sessions, and lets you select individual
+sessions and button bars, or keep and replace matching hosts and groups.
 
 Muxus imports SSH names, hosts, ports, usernames and password-vs-key authentication intent.
-Serial sessions include their device path, baud rate, data bits, stop bits, parity and flow
-control. Local-shell sessions, incomplete entries and protocols Muxus cannot represent are
-listed as skipped.
+Telnet sessions keep their host and port. Serial sessions include their device path, baud
+rate, data bits, stop bits, parity and flow control. SecureCRT's `Default` session templates
+are not hosts and are left out. Local-shell sessions, incomplete entries and protocols Muxus
+cannot represent are listed as skipped.
 
-Only connection metadata under the XML export's `Sessions` section is read. Encrypted
-password fields, private-key paths, embedded files, scripts, terminal appearance and global
-SecureCRT settings are never imported.
+### Button bars
+
+Each SecureCRT button bar becomes a [command button group](commands.md#groups) with the
+same name; if a group of that name already exists, the import is named *Name (SecureCRT)*.
+SecureCRT's own **Default** bar is the exception: while the Muxus **Default** group has no
+buttons of yours, its commands go straight into that group. Otherwise it becomes a
+*Default (SecureCRT)* group, so your commands and the imported ones stay apart.
+A host whose session used a bar other than **Default** shows that group in the command bar,
+as if [a group per host](commands.md#a-group-per-host) had been set.
+
+**Send String** buttons are converted to the literal text they type:
+
+| SecureCRT | Muxus |
+| --- | --- |
+| `\r`, `\n`, `\r\n` | A line break, sent as Enter. A final one turns on **Run immediately**; without it the command is only inserted at the prompt. |
+| `\t`, `\b`, `\e`, `\\`, `\nnn` (octal) | The tab, backspace, escape, backslash or octal character itself |
+| `\p` (pause), `\v` (clipboard), `\u`, `\c`, `\i`, `\a`, `\m`, `\l` (client values) | Removed, with a note in the review |
+
+Menu functions, scripts, applications and other button types have no Muxus equivalent and
+are listed as skipped under their bar. Importing the same bar again keeps or replaces its
+commands as a whole; replacing removes only commands that came from that bar, so buttons you
+added to the Default group yourself stay.
+
+Only connection metadata under the XML export's `Sessions` section and the `ButtonBarV5`
+bars are read. Encrypted password fields and logon actions, private-key paths, embedded
+files, scripts, terminal appearance and global SecureCRT settings are never imported.
 
 <figure markdown="span">
   ![The hosts sidebar with folders and colours](../assets/screenshots/sidebar.png#only-light){ .shadow }

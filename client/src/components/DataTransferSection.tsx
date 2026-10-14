@@ -310,7 +310,7 @@ export function DataTransferSection({
         />
         <SettingRow
           label="SecureCRT"
-          description="Review and import SSH and serial sessions from a SecureCRT XML settings export."
+          description="Review and import SSH, Telnet and serial sessions and button bars from a SecureCRT XML settings export."
           control={
             <Button
               variant="outlined"
