@@ -218,13 +218,29 @@ describe('recording a button shortcut', () => {
   });
 });
 
+/**
+ * A stand-in window that, like a browser, reads `true` as the capture flag when
+ * a listener is removed. Node 24's EventTarget only reads `{ capture: true }`
+ * there, so the app's capture listeners would never come off.
+ */
+class StandInWindow extends EventTarget {
+  override removeEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
+    options?: boolean | EventListenerOptions,
+  ): void {
+    const flattened = typeof options === 'boolean' ? { capture: options } : options;
+    super.removeEventListener(type, listener, flattened);
+  }
+}
+
 describe('pressing a button shortcut', () => {
   let uninstall: (() => void) | undefined;
   let target: EventTarget;
 
   /** The app's keydown listener on a stand-in window; returns whether the key was taken. */
   function install() {
-    target = new EventTarget();
+    target = new StandInWindow();
     vi.stubGlobal('window', target);
     vi.stubGlobal('document', { documentElement: { classList: { toggle() {}, remove() {} } } });
     vi.stubGlobal('Element', class {});
@@ -341,7 +357,7 @@ describe('recording a chord', () => {
 
   /** Records on a stand-in window. Page listeners are added after it, as they run after its capture phase. */
   function record() {
-    page = new EventTarget();
+    page = new StandInWindow();
     vi.stubGlobal('window', page);
     stop = captureChords(() => handlers);
   }
