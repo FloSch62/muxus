@@ -1,3 +1,9 @@
+import {
+  chordSignature,
+  isBindableChord,
+  parseChord,
+  sendsControlCharacter,
+} from './keymap/chords.js';
 import type { CommandButton, CommandButtonGroup } from './state/prefs.js';
 import type { TerminalHandle } from './terminal/terminal-registry.js';
 
@@ -131,7 +137,9 @@ export function normalizeCommandButtonGroups(value: unknown): CommandButtonGroup
 /**
  * Stored buttons, repaired against their groups: malformed entries dropped,
  * unknown colors cleared, and a button whose group is gone (or is the default
- * one) left unfiled. Anything but an array is undefined.
+ * one) left unfiled. A shortcut that is not a bindable chord, belongs to the
+ * shell, or that an earlier button already holds, is dropped. Anything but an
+ * array is undefined.
  */
 export function normalizeCommandButtons(
   value: unknown,
@@ -140,6 +148,7 @@ export function normalizeCommandButtons(
   if (!Array.isArray(value)) return undefined;
   const groupIds = new Set(groups.map((group) => group.id));
   const ids = new Set<string>();
+  const shortcuts = new Set<string>();
   const buttons: CommandButton[] = [];
   for (const entry of value) {
     if (buttons.length >= MAX_COMMAND_BUTTONS) break;
@@ -161,6 +170,14 @@ export function normalizeCommandButtons(
       groupIds.has(entry.groupId)
         ? entry.groupId
         : undefined;
+    const shortcut = boundedString(entry.shortcut, 100) ? entry.shortcut : undefined;
+    const chord = shortcut === undefined ? undefined : parseChord(shortcut);
+    const signature =
+      chord && isBindableChord(chord) && !sendsControlCharacter(chord)
+        ? chordSignature(chord)
+        : undefined;
+    const free = signature !== undefined && !shortcuts.has(signature);
+    if (signature) shortcuts.add(signature);
     buttons.push({
       id: entry.id,
       label: entry.label,
@@ -169,6 +186,7 @@ export function normalizeCommandButtons(
       ...(groupId ? { groupId } : {}),
       ...(isCommandButtonColor(entry.color) ? { color: entry.color } : {}),
       ...(boundedString(entry.secretId, 200) ? { secretId: entry.secretId } : {}),
+      ...(shortcut && free ? { shortcut } : {}),
     });
   }
   return buttons;
@@ -236,7 +254,10 @@ export function moveCommandButtonToGroup(
   return [...remaining.slice(0, at), moved, ...remaining.slice(at)];
 }
 
-/** A copy of a button right below the original, as a start for a similar command. */
+/**
+ * A copy of a button right below the original, as a start for a similar
+ * command. The shortcut stays with the original, since one chord runs one button.
+ */
 export function duplicateCommandButton(
   buttons: readonly CommandButton[],
   id: string,
@@ -244,7 +265,7 @@ export function duplicateCommandButton(
 ): CommandButton[] {
   const index = buttons.findIndex((button) => button.id === id);
   if (index < 0) return [...buttons];
-  const original = buttons[index]!;
+  const { shortcut: _shortcut, ...original } = buttons[index]!;
   const copy: CommandButton = {
     ...original,
     id: newId,

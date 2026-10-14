@@ -25,15 +25,12 @@ import {
   conflictingCommandIds,
   isCommandCustomized,
 } from '../keymap/bindings.js';
+import { chordSignature, chordToString, formatChordString, parseChord } from '../keymap/chords.js';
 import {
-  chordFromEvent,
-  chordSignature,
-  chordToString,
-  formatChordString,
-  isBindableChord,
-  isModifierCode,
-  parseChord,
-} from '../keymap/chords.js';
+  commandButtonCommandId,
+  commandButtonCommands,
+  commandButtonShortcutConflict,
+} from '../keymap/command-buttons.js';
 import {
   COMMAND_CATEGORY_LABELS,
   KEY_COMMANDS,
@@ -41,12 +38,12 @@ import {
   type KeyCommand,
 } from '../keymap/commands.js';
 import { IS_MAC } from '../platform.js';
-import { setChordCaptureActive } from '../shortcuts.js';
 import { usePrefsStore } from '../state/prefs.js';
 import { useUiStore } from '../state/ui.js';
 import { chordSx } from './chord-style.js';
+import { useChordCapture } from './useChordCapture.js';
 
-const CATEGORY_ORDER: CommandCategory[] = ['panes', 'tabs', 'terminal', 'app'];
+const CATEGORY_ORDER: CommandCategory[] = ['panes', 'tabs', 'terminal', 'app', 'buttons'];
 
 /** Interactions worth documenting that no keymap entry can express. */
 const EXTRAS: Array<[string, string]> = [
@@ -85,6 +82,7 @@ export function ShortcutsDialog() {
   const open = useUiStore((state) => state.shortcutsOpen);
   const setOpen = useUiStore((state) => state.setShortcutsOpen);
   const keybindings = usePrefsStore((state) => state.keybindings);
+  const buttons = usePrefsStore((state) => state.commandButtons);
   const setPrefs = usePrefsStore((state) => state.set);
   const [query, setQuery] = useState('');
   const [recording, setRecording] = useState<Recording | null>(null);
@@ -97,7 +95,12 @@ export function ShortcutsDialog() {
     return () => cancelAnimationFrame(frame);
   }, [open]);
 
-  const conflicts = useMemo(() => conflictingCommandIds(keybindings), [keybindings]);
+  // Buttons with a shortcut follow the app's commands, in a section of their own.
+  const buttonCommands = useMemo(() => commandButtonCommands(buttons), [buttons]);
+  const conflicts = useMemo(
+    () => conflictingCommandIds(keybindings, buttonCommands),
+    [keybindings, buttonCommands],
+  );
   const customized = useMemo(
     () => KEY_COMMANDS.some((command) => isCommandCustomized(command, keybindings)),
     [keybindings],
@@ -109,7 +112,7 @@ export function ShortcutsDialog() {
     const needle = query.trim().toLocaleLowerCase();
     const byCategory = new Map<CommandCategory, KeyCommand[]>();
     let count = 0;
-    for (const command of KEY_COMMANDS) {
+    for (const command of [...KEY_COMMANDS, ...buttonCommands]) {
       if (needle) {
         const haystack = [
           command.title,
@@ -127,7 +130,7 @@ export function ShortcutsDialog() {
       count++;
     }
     return { matchesByCategory: byCategory, matchCount: count };
-  }, [keybindings, query]);
+  }, [buttonCommands, keybindings, query]);
 
   const applyChords = (command: KeyCommand, chords: string[]) => {
     const next = { ...keybindings };
@@ -136,22 +139,37 @@ export function ShortcutsDialog() {
     setPrefs({ keybindings: next });
   };
 
-  // While recording, the dispatcher stands down so the chord being captured
-  // cannot fire the command it is about to replace.
-  useEffect(() => {
-    if (!recording) return;
-    setChordCaptureActive(true);
-    const onKeyDown = (event: KeyboardEvent) => {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      if (isModifierCode(event.code)) return;
-      if (event.code === 'Escape') {
+  // A button row edits the button's own shortcut; unbound is its default.
+  const setButtonShortcut = (commandId: string, shortcut: string | undefined) => {
+    setPrefs({
+      commandButtons: buttons.map((button) =>
+        commandButtonCommandId(button.id) === commandId ? { ...button, shortcut } : button,
+      ),
+    });
+  };
+
+  useChordCapture(!!recording, {
+    onCancel: () => setRecording(null),
+    onRefused: setCaptureError,
+    onChord: (chord) => {
+      if (!recording) return;
+      const text = chordToString(chord);
+      const button = buttons.find(
+        (candidate) => commandButtonCommandId(candidate.id) === recording.commandId,
+      );
+      if (button) {
+        // A chord the shell owns, or one already in use, is refused.
+        const conflict = commandButtonShortcutConflict(text, button.id, {
+          keybindings,
+          commandButtons: buttons,
+        });
+        if (conflict) {
+          setCaptureError(conflict);
+          return;
+        }
+        setButtonShortcut(recording.commandId, text);
         setRecording(null);
-        return;
-      }
-      const chord = chordFromEvent(event);
-      if (!isBindableChord(chord)) {
-        setCaptureError('Add Ctrl, Alt, or Cmd — Shift alone would swallow ordinary typing.');
+        setCaptureError(undefined);
         return;
       }
       const command = KEY_COMMANDS.find((candidate) => candidate.id === recording.commandId);
@@ -159,7 +177,6 @@ export function ShortcutsDialog() {
         setRecording(null);
         return;
       }
-      const text = chordToString(chord);
       const current = commandChords(command, keybindings);
       const signature = chordSignature(chord);
       const kept = current.filter((existing, index) => {
@@ -174,14 +191,8 @@ export function ShortcutsDialog() {
       applyChords(command, chords);
       setRecording(null);
       setCaptureError(undefined);
-    };
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => {
-      window.removeEventListener('keydown', onKeyDown, true);
-      setChordCaptureActive(false);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recording, keybindings]);
+    },
+  });
 
   const close = () => {
     setRecording(null);
@@ -236,31 +247,43 @@ export function ShortcutsDialog() {
               >
                 {COMMAND_CATEGORY_LABELS[category]}
               </Typography>
-              {commands.map((command) => (
-                <CommandRow
-                  key={command.id}
-                  command={command}
-                  chords={commandChords(command, keybindings)}
-                  conflicting={conflicts.has(command.id)}
-                  customized={isCommandCustomized(command, keybindings)}
-                  recording={recording?.commandId === command.id ? recording : undefined}
-                  onRecord={(index) => {
-                    setCaptureError(undefined);
-                    setRecording({ commandId: command.id, index });
-                  }}
-                  onRemove={(index) =>
-                    applyChords(
-                      command,
-                      commandChords(command, keybindings).filter((_, position) => position !== index),
-                    )
-                  }
-                  onReset={() => {
-                    const next = { ...keybindings };
-                    delete next[command.id];
-                    setPrefs({ keybindings: next });
-                  }}
-                />
-              ))}
+              {commands.map((command) => {
+                const isButton = command.category === 'buttons';
+                return (
+                  <CommandRow
+                    key={command.id}
+                    command={command}
+                    chords={commandChords(command, keybindings)}
+                    conflicting={conflicts.has(command.id)}
+                    customized={isButton || isCommandCustomized(command, keybindings)}
+                    single={isButton}
+                    recording={recording?.commandId === command.id ? recording : undefined}
+                    onRecord={(index) => {
+                      setCaptureError(undefined);
+                      setRecording({ commandId: command.id, index });
+                    }}
+                    onRemove={(index) =>
+                      isButton
+                        ? setButtonShortcut(command.id, undefined)
+                        : applyChords(
+                            command,
+                            commandChords(command, keybindings).filter(
+                              (_, position) => position !== index,
+                            ),
+                          )
+                    }
+                    onReset={() => {
+                      if (isButton) {
+                        setButtonShortcut(command.id, undefined);
+                        return;
+                      }
+                      const next = { ...keybindings };
+                      delete next[command.id];
+                      setPrefs({ keybindings: next });
+                    }}
+                  />
+                );
+              })}
             </Box>
           );
         })}
@@ -297,6 +320,7 @@ function CommandRow({
   chords,
   conflicting,
   customized,
+  single = false,
   recording,
   onRecord,
   onRemove,
@@ -306,6 +330,8 @@ function CommandRow({
   chords: string[];
   conflicting: boolean;
   customized: boolean;
+  /** Takes one chord, changed by clicking it: a command button's shortcut. */
+  single?: boolean;
   recording?: Recording;
   onRecord: (index?: number) => void;
   onRemove: (index: number) => void;
@@ -376,10 +402,17 @@ function CommandRow({
         className="muxus-chord-actions"
         sx={{ visibility: recording ? 'visible' : 'hidden' }}
       >
-        <Tooltip title="Add a chord">
-          <IconButton size="small" aria-label={`Add a chord for ${command.title}`} onClick={() => onRecord()}>
-            <AddIcon sx={{ fontSize: 16 }} />
-          </IconButton>
+        <Tooltip title={single ? 'A command button takes one chord' : 'Add a chord'}>
+          <span>
+            <IconButton
+              size="small"
+              disabled={single}
+              aria-label={`Add a chord for ${command.title}`}
+              onClick={() => onRecord()}
+            >
+              <AddIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          </span>
         </Tooltip>
         <Tooltip title={customized ? 'Restore the default' : 'Default chord'}>
           <span>

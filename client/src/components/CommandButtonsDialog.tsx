@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import ButtonBase from '@mui/material/ButtonBase';
+import Chip from '@mui/material/Chip';
 import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
@@ -28,6 +30,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
+import KeyboardOutlinedIcon from '@mui/icons-material/KeyboardOutlined';
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
 import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop';
@@ -50,6 +53,8 @@ import {
   withoutCommandButtonGroup,
   type CommandButtonColor,
 } from '../command-buttons.js';
+import { chordToString, formatChordString } from '../keymap/chords.js';
+import { commandButtonShortcutConflict, shellOwns } from '../keymap/command-buttons.js';
 import { confirmAction } from '../state/dialogs.js';
 import {
   usePrefsStore,
@@ -58,8 +63,10 @@ import {
   type CommandButtonGroup,
 } from '../state/prefs.js';
 import { useUiStore } from '../state/ui.js';
+import { chordSx } from './chord-style.js';
 import { CommandButtonColorDot } from './command-button-style.js';
 import { useAllManagedHosts } from './sidebar/useAllManagedHosts.js';
+import { useChordCapture } from './useChordCapture.js';
 import { VaultSecretField } from './VaultSecretField.js';
 
 export function CommandButtonsDialog() {
@@ -82,11 +89,47 @@ export function CommandButtonsDialog() {
   const isDefault = group.id === DEFAULT_COMMAND_GROUP_ID;
   const groupIndex = groups.indexOf(group);
   const groupNameRef = useSelectWhen(focusId === group.id, () => setFocusId(null));
+  // The button whose shortcut is being recorded; one card at a time.
+  const [recordingId, setRecordingId] = useState<string | null>(null);
+  const [shortcutProblem, setShortcutProblem] = useState<string>();
 
   const setButtons = (commandButtons: CommandButton[]) => setPrefs({ commandButtons });
   const update = (id: string, patch: Partial<CommandButton>) => {
     setButtons(buttons.map((button) => (button.id === id ? { ...button, ...patch } : button)));
   };
+  const stopRecording = () => {
+    setRecordingId(null);
+    setShortcutProblem(undefined);
+  };
+  // Recording ends once its card leaves the view: another group shown, the
+  // button moved to another group, or deleted. Keys are never taken unseen.
+  const recordingShown =
+    recordingId !== null && groupButtons.some((button) => button.id === recordingId);
+  useEffect(() => {
+    if (recordingShown) return;
+    setRecordingId(null);
+    setShortcutProblem(undefined);
+  }, [recordingShown]);
+  useChordCapture(recordingShown, {
+    onCancel: stopRecording,
+    onRefused: setShortcutProblem,
+    onChord: (chord) => {
+      if (recordingId === null) return;
+      const shortcut = chordToString(chord);
+      // A chord the shell owns, or one already in use, is refused.
+      const conflict = commandButtonShortcutConflict(
+        shortcut,
+        recordingId,
+        usePrefsStore.getState(),
+      );
+      if (conflict) {
+        setShortcutProblem(conflict);
+        return;
+      }
+      update(recordingId, { shortcut });
+      stopRecording();
+    },
+  });
   const renameGroup = (name: string) => {
     setPrefs({
       commandButtonGroups: groups.map((candidate) =>
@@ -349,6 +392,12 @@ export function CommandButtonsDialog() {
                   last={index === groupButtons.length - 1}
                   focusRequested={focusId === button.id}
                   onFocused={() => setFocusId(null)}
+                  recordingShortcut={recordingId === button.id}
+                  shortcutProblem={recordingId === button.id ? shortcutProblem : undefined}
+                  onRecordShortcut={() => {
+                    setShortcutProblem(undefined);
+                    setRecordingId(button.id);
+                  }}
                   onChange={(patch) => update(button.id, patch)}
                   onMove={(offset) => setButtons(moveCommandButton(buttons, groups, button.id, offset))}
                   onMoveToGroup={(groupId) =>
@@ -415,6 +464,9 @@ function CommandButtonCard({
   last,
   focusRequested,
   onFocused,
+  recordingShortcut,
+  shortcutProblem,
+  onRecordShortcut,
   onChange,
   onMove,
   onMoveToGroup,
@@ -429,6 +481,10 @@ function CommandButtonCard({
   /** Just created: select the label so typing replaces it. */
   focusRequested: boolean;
   onFocused: () => void;
+  recordingShortcut: boolean;
+  /** Why the last chord pressed was refused, while recording. */
+  shortcutProblem?: string;
+  onRecordShortcut: () => void;
   onChange: (patch: Partial<CommandButton>) => void;
   onMove: (offset: -1 | 1) => void;
   onMoveToGroup: (groupId: string) => void;
@@ -440,6 +496,11 @@ function CommandButtonCard({
   const labelRef = useSelectWhen(focusRequested, onFocused);
   // An empty id is a secret button whose secret is not picked yet.
   const sendsSecret = button.secretId !== undefined;
+  // Saved by an earlier build or a hand edit; the dispatcher skips it.
+  const shellShortcut =
+    button.shortcut && !recordingShortcut && shellOwns(button.shortcut)
+      ? button.shortcut
+      : undefined;
   return (
     <Paper variant="outlined" sx={{ p: 1.5 }}>
       <Stack spacing={1.25}>
@@ -481,7 +542,43 @@ function CommandButtonCard({
               slotProps={{ htmlInput: { spellCheck: false } }}
             />
           )}
-          <Stack direction="row" spacing={0} sx={{ pt: 0.25 }}>
+          <Stack direction="row" spacing={0} sx={{ pt: 0.25, alignItems: 'center' }}>
+            {button.shortcut || recordingShortcut ? (
+              <Tooltip title={recordingShortcut ? 'Press the new shortcut' : 'Change the shortcut'}>
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  color={shellShortcut ? 'warning' : 'default'}
+                  label={
+                    recordingShortcut || !button.shortcut
+                      ? 'Press keys…'
+                      : formatChordString(button.shortcut)
+                  }
+                  onClick={onRecordShortcut}
+                  onDelete={
+                    button.shortcut && !recordingShortcut
+                      ? () => onChange({ shortcut: undefined })
+                      : undefined
+                  }
+                  sx={{
+                    mr: 0.5,
+                    flexShrink: 0,
+                    ...(button.shortcut && !recordingShortcut ? chordSx() : {}),
+                    ...(recordingShortcut ? { borderColor: 'primary.main', color: 'primary.main' } : {}),
+                  }}
+                />
+              </Tooltip>
+            ) : (
+              <Tooltip title="Add shortcut">
+                <IconButton
+                  size="small"
+                  aria-label={`Add shortcut to ${name}`}
+                  onClick={onRecordShortcut}
+                >
+                  <KeyboardOutlinedIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
             <Tooltip title="Move up">
               <span>
                 <IconButton
@@ -530,7 +627,7 @@ function CommandButtonCard({
             </Tooltip>
           </Stack>
         </Stack>
-        <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
+        <Stack direction="row" spacing={2} useFlexGap sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
           <ToggleButtonGroup
             exclusive
             size="small"
@@ -556,7 +653,7 @@ function CommandButtonCard({
             </ToggleButton>
           </ToggleButtonGroup>
           <FormControlLabel
-            sx={{ m: 0, flex: 1 }}
+            sx={{ m: 0, flex: '1 1 160px', minWidth: 0 }}
             control={
               <Switch
                 size="small"
@@ -598,6 +695,16 @@ function CommandButtonCard({
             </TextField>
           ) : null}
         </Stack>
+        {recordingShortcut ? (
+          <Alert severity="info" icon={<KeyboardOutlinedIcon fontSize="small" />}>
+            {shortcutProblem ?? 'Press the key combination you want. Esc cancels.'}
+          </Alert>
+        ) : shellShortcut ? (
+          <Alert severity="warning">
+            {formatChordString(shellShortcut)} is kept for the shell, so it never runs this button.
+            Replace or remove it.
+          </Alert>
+        ) : null}
       </Stack>
     </Paper>
   );

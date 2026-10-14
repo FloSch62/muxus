@@ -25,7 +25,8 @@ Buttons are managed with the :material-flash: control in the top bar. Each butto
 - a **label**, which is displayed, and a **command**, which is sent;
 - a **Run immediately** switch. On, the command runs. Off, it is inserted at the prompt for
   review and submitted with ++enter++;
-- an optional **colour**, picked from the dot in the label field.
+- an optional **colour**, picked from the dot in the label field;
+- an optional [**shortcut**](#button-shortcuts) that runs it from the keyboard.
 
 Insert-only is the appropriate mode for destructive commands, and a colour such as red
 marks them at a glance. Colours are a fixed palette with a darker shade on light themes and
@@ -126,6 +127,35 @@ reaching for the mouse.
 
 The shortcut is rebindable under **Terminal → Show saved command menu** in the
 [keyboard sheet](../reference/keyboard-shortcuts.md).
+
+### Button shortcuts
+
+A button can have a key combination of its own that runs it in the focused session, exactly
+as clicking it does. Buttons have none until one is recorded:
+
+1. In the command-button manager, click the keyboard icon (**Add shortcut**) next to the
+   button's move and delete icons.
+2. Press the combination, for example ++alt+shift+1++. It needs ++ctrl++, ++alt++ or
+   ++cmd++, or a function key, so ordinary typing never runs a button. ++esc++ cancels.
+
+A combination is refused, with the reason, when it already runs a Muxus command or another
+button, or when the shell keeps it: ++ctrl++ with a letter, such as ++ctrl+c++ or
+++ctrl+w++, other keys the terminal sends as control characters, such as ++ctrl+space++,
+and ++ctrl+2++ … ++ctrl+8++. On Windows, avoid ++ctrl+alt++ combinations: layouts that
+type characters such as `@` with ++altgr++ report them as ++ctrl+alt++, so typing the
+character would run the button. Click a recorded shortcut to replace it, or its delete icon
+to remove it. Duplicating a button leaves the shortcut with the original.
+
+The shortcut appears in the button's tooltip, in the ++ctrl+space++ menu and under
+**Command buttons** in the [keyboard sheet](../reference/keyboard-shortcuts.md), which can
+also replace or remove it. It works whichever group the bar shows, and backups keep it.
+Muxus only takes the combination while a connected terminal has focus and the button has
+something to send; otherwise the key passes through as usual. Holding the combination
+runs the button once, as a click does.
+
+If a Muxus command is later bound to the same combination in the keyboard sheet, both are
+flagged as a conflict, and the command wins whenever it applies. **Restore defaults** in the
+sheet leaves button shortcuts alone.
 
 ## Multi-execution
 

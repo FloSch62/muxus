@@ -27,8 +27,6 @@ if (windowLaunch?.kind === 'tab-transfer') {
     module.receiveTabTransfer(windowLaunch.transferId, paneId),
   );
 }
-// SFTP and settings windows hold no tabs or panes for the shortcuts to drive.
-if (windowLaunch?.kind !== 'sftp' && windowLaunch?.kind !== 'settings') installShortcuts();
 
 const queryClient = new QueryClient({
   mutationCache: new MutationCache({
@@ -46,6 +44,10 @@ const queryClient = new QueryClient({
   },
 });
 shareQueryChanges(queryClient);
+// SFTP and settings windows hold no tabs or panes for the shortcuts to drive.
+if (windowLaunch?.kind !== 'sftp' && windowLaunch?.kind !== 'settings') {
+  installShortcuts(queryClient);
+}
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
