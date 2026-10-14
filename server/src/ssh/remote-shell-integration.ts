@@ -86,11 +86,22 @@ export class RemoteShellTransportLostError extends Error {
 }
 
 /**
+ * What the shell probe learned about one transport, shared by its shells.
+ * `ranCommand`: the server ran the probe, so it runs commands at all.
+ * `execRefused`: it answered the probe's exec with failure. Nokia SR OS then
+ * holds that channel's slot until the connection closes, so later shells on
+ * the transport skip the probe instead of spending another slot on it.
+ */
+export interface ShellProbeMemo {
+  ranCommand: boolean;
+  execRefused: boolean;
+}
+
+/**
  * Open a remote shell, adding OSC 133 integration for supported zsh/bash
  * hosts and falling back to a normal shell everywhere else. Transport-loss
  * observation spans both phases: some console servers close the probe channel
  * first and only disconnect the SSH transport while the plain shell opens.
- * `onCommandRan` fires when the probe shows the server runs commands at all.
  */
 export async function openRemoteShell(
   client: Client,
@@ -99,7 +110,7 @@ export async function openRemoteShell(
   env?: Record<string, string>,
   x11?: X11Options,
   cwd?: string,
-  onCommandRan?: () => void,
+  probe?: ShellProbeMemo,
 ): Promise<ClientChannel> {
   let transportLost = false;
   let transportError: Error | undefined;
@@ -114,15 +125,9 @@ export async function openRemoteShell(
   client.once('close', onTransportClose);
   client.once('end', onTransportClose);
   try {
-    const integrated = await tryOpenIntegratedRemoteShell(
-      client,
-      getSftp,
-      pty,
-      env,
-      x11,
-      cwd,
-      onCommandRan,
-    );
+    const integrated = probe?.execRefused
+      ? undefined
+      : await tryOpenIntegratedRemoteShell(client, getSftp, pty, env, x11, cwd, probe);
     if (integrated) return integrated;
     if (transportLost) throw new RemoteShellTransportLostError(transportError);
 
@@ -150,13 +155,13 @@ async function tryOpenIntegratedRemoteShell(
   env?: Record<string, string>,
   x11?: X11Options,
   cwd?: string,
-  onCommandRan?: () => void,
+  probe?: ShellProbeMemo,
 ): Promise<ClientChannel | undefined> {
   try {
     // Do not speculatively open SFTP against console appliances. Many expose
     // only a plain shell channel and some disconnect the whole transport when
     // an unsupported subsystem is requested.
-    const shell = await probeShell(client, onCommandRan);
+    const shell = await probeShell(client, probe);
     if (!shell) return undefined;
     const sftp = await getSftp();
     const root = await installIntegration(sftp, shell);
@@ -168,6 +173,11 @@ async function tryOpenIntegratedRemoteShell(
   } catch {
     return undefined;
   }
+}
+
+/** ssh2's error when the server answers an exec request with failure. */
+function isExecRejection(error: unknown): boolean {
+  return error instanceof Error && /Unable to exec/.test(error.message);
 }
 
 function isDisconnectedError(error: unknown): boolean {
@@ -207,12 +217,13 @@ export function remoteShellCommand(shell: SupportedShell, root: string, cwd?: st
 
 async function probeShell(
   client: Client,
-  onCommandRan?: () => void,
+  memo?: ShellProbeMemo,
 ): Promise<SupportedShell | undefined> {
   let channel: ClientChannel;
   try {
     channel = await openExec(client, SHELL_PROBE);
-  } catch {
+  } catch (error) {
+    if (memo && isExecRejection(error)) memo.execRefused = true;
     return undefined;
   }
 
@@ -224,7 +235,7 @@ async function probeShell(
       settled = true;
       clearTimeout(timer);
       // Any shell printed the marker, even one Muxus does not integrate.
-      if (/^__MUXUS_SHELL__=/m.test(output)) onCommandRan?.();
+      if (memo && /^__MUXUS_SHELL__=/m.test(output)) memo.ranCommand = true;
       resolve(parseShellProbe(output));
     };
     const timer = setTimeout(() => {

@@ -72,6 +72,7 @@ import { JumpHopRegistry, type JumpHop } from './jump-hops.js';
 import {
   openRemoteShell,
   RemoteShellTransportLostError,
+  type ShellProbeMemo,
 } from './remote-shell-integration.js';
 import {
   CredentialVaultCorruptError,
@@ -962,7 +963,7 @@ export class SshConnectionManager {
     const closeListeners = new Set<(reason?: string) => void>();
     const postAuthSettled = Promise.all(postAuth).then(() => undefined);
     let sftpPromise: Promise<SFTPWrapper> | undefined;
-    let ranCommand = false;
+    const shellProbe: ShellProbeMemo = { ranCommand: false, execRefused: false };
     let closed = false;
     let ending = false;
 
@@ -997,7 +998,7 @@ export class SshConnectionManager {
       muxKey: key,
       metadataAlias,
       sftpAvailable: !disableSftp,
-      ranCommand: () => ranCommand,
+      ranCommand: () => shellProbe.ranCommand,
       health: () => transportHealth,
       configForwards: target.resolved.forwards,
       x11Refused: () => x11?.refused ?? false,
@@ -1024,9 +1025,7 @@ export class SshConnectionManager {
             );
           }
           if (pty && !disableSftp) {
-            return openRemoteShell(client, getSftp, pty, env, x11Request, cwd, () => {
-              ranCommand = true;
-            });
+            return openRemoteShell(client, getSftp, pty, env, x11Request, cwd, shellProbe);
           }
           // Console compatibility drops SendEnv/SetEnv: ssh2 can only send env
           // requests before pty-req, an order some appliances answer with a
