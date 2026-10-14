@@ -254,14 +254,20 @@ const prompted = (overrides: Partial<PastePromptWait> = {}) => ({
  * starts with "bogus". `answer` replaces that reply, in chunks.
  */
 function consolePacer(
-  options: { answerMs?: number; answer?: (line: string) => string[] | undefined } = {},
+  options: {
+    answerMs?: number;
+    /** The line end the console takes as Enter; CR by default. */
+    enter?: string;
+    answer?: (line: string) => string[] | undefined;
+  } = {},
 ) {
   const answerMs = options.answerMs ?? 30;
+  const enter = options.enter ?? '\r';
   let pacer!: PastePacer;
   const harness = recordingPacer((data) => {
     const text = data.toString('utf8');
-    if (!text.endsWith('\r')) return;
-    const line = text.slice(0, -1);
+    if (!text.endsWith(enter)) return;
+    const line = text.slice(0, -enter.length);
     const reply = options.answer?.(line) ?? [
       `${line}\r\n`,
       line.startsWith('bogus') ? `        ^\r\n${REJECTED}\r\n\r\n${PROMPT}` : PROMPT,
@@ -335,6 +341,31 @@ describe('pastes that wait for the prompt', () => {
       state: 'stopped',
       line: 2,
       message: `Line 2 of 2 (“bogus command”) was answered with “${REJECTED}”`,
+    });
+  });
+
+  it("waits for the prompt and stops at a rejected line with the host's LF Enter key", async () => {
+    const { pacer, writes, reports } = consolePacer({ enter: '\n' });
+
+    pacer.enqueue({
+      ...paste('interface ge-0/0/1\nbogus command\nshutdown\n', 5000),
+      enterKey: 'lf',
+      prompt: prompted(),
+    });
+    pacer.enqueue({ ...paste('queued\n', 100), enterKey: 'lf' });
+    await vi.runAllTimersAsync();
+
+    // Each line ends in LF and goes once the prompt is back, not after the line delay.
+    expect(writes).toEqual([
+      { at: 0, data: 'interface ge-0/0/1\n' },
+      { at: 61, data: 'bogus command\n' },
+    ]);
+    expect(reports.at(-1)).toMatchObject({
+      state: 'stopped',
+      line: 2,
+      lines: 4,
+      message: `Line 2 of 3 (“bogus command”) was answered with “${REJECTED}”`,
+      stopId: 1,
     });
   });
 
