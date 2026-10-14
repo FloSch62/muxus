@@ -73,7 +73,7 @@ function StatusBarContent() {
     content = (
       <Tooltip
         placement="top"
-        title="Muxus reads statistics with a short sh script over the SSH connection. This host did not run it; network devices and Windows servers have no POSIX shell."
+        title="Muxus reads statistics with a short sh script over the SSH connection. This host did not run it, or never runs commands, so it was not asked; network devices and Windows servers have no POSIX shell."
       >
         <Box component="span" sx={mutedSx}>
           This host does not report statistics

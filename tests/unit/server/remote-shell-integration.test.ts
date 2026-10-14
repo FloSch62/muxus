@@ -186,15 +186,59 @@ describe('remote shell integration', () => {
         callback: (error: Error | undefined, channel: StubChannel) => void,
       ) => callback(undefined, plainChannel),
     );
+    const onCommandRan = vi.fn();
     const result = await openRemoteShell(
       Object.assign(stubClient(exec), { shell }),
       getSftp,
       { term: 'xterm-256color', cols: 80, rows: 24 },
+      undefined,
+      undefined,
+      undefined,
+      onCommandRan,
     );
 
     expect(result).toBe(plainChannel);
     expect(getSftp).not.toHaveBeenCalled();
     expect(shell).toHaveBeenCalledOnce();
+    expect(onCommandRan).not.toHaveBeenCalled();
+  });
+
+  it('reports a server that ran the probe, even in a shell it does not integrate', async () => {
+    const plainShell = (callback: (error: Error | undefined, channel: StubChannel) => void) =>
+      callback(undefined, new StubChannel());
+    const open = async (exec: unknown) => {
+      const onCommandRan = vi.fn();
+      await openRemoteShell(
+        Object.assign(stubClient(exec), {
+          shell: (_pty: unknown, _options: unknown, callback: never) => plainShell(callback),
+        }),
+        vi.fn(),
+        { term: 'xterm-256color', cols: 80, rows: 24 },
+        undefined,
+        undefined,
+        undefined,
+        onCommandRan,
+      );
+      return onCommandRan;
+    };
+
+    const fish = await open(
+      (_command: string, callback: (error: Error | undefined, channel: StubChannel) => void) => {
+        const probe = new StubChannel();
+        callback(undefined, probe);
+        setImmediate(() => {
+          probe.emit('data', Buffer.from('__MUXUS_SHELL__=/usr/bin/fish\n__MUXUS_HOME__=/home/u\n'));
+          probe.emit('close');
+        });
+      },
+    );
+    expect(fish).toHaveBeenCalledOnce();
+
+    // SR OS answers exec with a channel failure: a CLI that runs no commands.
+    const router = await open((_command: string, callback: (error: Error) => void) =>
+      callback(new Error('Unable to exec')),
+    );
+    expect(router).not.toHaveBeenCalled();
   });
 
   it('surfaces a transport lost during the optional shell probe', async () => {

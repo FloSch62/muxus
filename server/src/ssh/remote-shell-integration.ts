@@ -90,6 +90,7 @@ export class RemoteShellTransportLostError extends Error {
  * hosts and falling back to a normal shell everywhere else. Transport-loss
  * observation spans both phases: some console servers close the probe channel
  * first and only disconnect the SSH transport while the plain shell opens.
+ * `onCommandRan` fires when the probe shows the server runs commands at all.
  */
 export async function openRemoteShell(
   client: Client,
@@ -98,6 +99,7 @@ export async function openRemoteShell(
   env?: Record<string, string>,
   x11?: X11Options,
   cwd?: string,
+  onCommandRan?: () => void,
 ): Promise<ClientChannel> {
   let transportLost = false;
   let transportError: Error | undefined;
@@ -112,7 +114,15 @@ export async function openRemoteShell(
   client.once('close', onTransportClose);
   client.once('end', onTransportClose);
   try {
-    const integrated = await tryOpenIntegratedRemoteShell(client, getSftp, pty, env, x11, cwd);
+    const integrated = await tryOpenIntegratedRemoteShell(
+      client,
+      getSftp,
+      pty,
+      env,
+      x11,
+      cwd,
+      onCommandRan,
+    );
     if (integrated) return integrated;
     if (transportLost) throw new RemoteShellTransportLostError(transportError);
 
@@ -140,12 +150,13 @@ async function tryOpenIntegratedRemoteShell(
   env?: Record<string, string>,
   x11?: X11Options,
   cwd?: string,
+  onCommandRan?: () => void,
 ): Promise<ClientChannel | undefined> {
   try {
     // Do not speculatively open SFTP against console appliances. Many expose
     // only a plain shell channel and some disconnect the whole transport when
     // an unsupported subsystem is requested.
-    const shell = await probeShell(client);
+    const shell = await probeShell(client, onCommandRan);
     if (!shell) return undefined;
     const sftp = await getSftp();
     const root = await installIntegration(sftp, shell);
@@ -194,7 +205,10 @@ export function remoteShellCommand(shell: SupportedShell, root: string, cwd?: st
   return `${restoreCwd}${userZdotdir}export ZDOTDIR=${quoteShellWord(path.posix.join(root, 'zsh'))}; exec ${executable} -l`;
 }
 
-async function probeShell(client: Client): Promise<SupportedShell | undefined> {
+async function probeShell(
+  client: Client,
+  onCommandRan?: () => void,
+): Promise<SupportedShell | undefined> {
   let channel: ClientChannel;
   try {
     channel = await openExec(client, SHELL_PROBE);
@@ -209,6 +223,8 @@ async function probeShell(client: Client): Promise<SupportedShell | undefined> {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      // Any shell printed the marker, even one Muxus does not integrate.
+      if (/^__MUXUS_SHELL__=/m.test(output)) onCommandRan?.();
       resolve(parseShellProbe(output));
     };
     const timer = setTimeout(() => {
