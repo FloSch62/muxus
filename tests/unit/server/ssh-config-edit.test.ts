@@ -20,7 +20,7 @@ import {
   previewHost,
   upsertHost,
 } from '../../../server/src/ssh/ssh-config-edit.js';
-import { listHosts, loadConfigDocument } from '../../../server/src/ssh/ssh-config.js';
+import { listHosts, loadConfigDocument, resolveHost } from '../../../server/src/ssh/ssh-config.js';
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'muxus-sshedit-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -127,6 +127,122 @@ describe('upsertHost', () => {
     upsertHost({ aliases: before.aliases, description: before.description, options: before.options, previousAlias: before.alias }, root);
     const after = listHosts(loadConfigDocument(root))[0]!;
     expect(after).toEqual(before);
+  });
+
+  it('saves an IdentityFile block without adding IdentitiesOnly, other bytes unchanged', () => {
+    const before = [
+      '# laptop',
+      'Host *',
+      '\tServerAliveInterval 60',
+      '',
+      '# cloud box',
+      'Host cloud',
+      '\tHostName cloud.example.test',
+      '\tUser ops',
+      '\tIdentityFile ~/.ssh/cloud',
+      '',
+      'Host db',
+      '\tUser b',
+      '',
+    ].join('\n');
+    const root = seed(before);
+    const listed = listHosts(loadConfigDocument(root)).find((host) => host.alias === 'cloud')!;
+    expect(listed.options.identitiesOnly).toBeUndefined();
+
+    // The editor's save after changing only the user.
+    upsertHost(
+      {
+        aliases: listed.aliases,
+        description: listed.description,
+        previousAlias: listed.alias,
+        options: { ...listed.options, certificateFiles: [], user: 'deploy' },
+      },
+      root,
+    );
+
+    expect(readFileSync(root, 'utf8')).toBe(before.replace('\tUser ops', '\tUser deploy'));
+    expect(readFileSync(`${root}.muxus.bak`, 'utf8')).toBe(before);
+  });
+
+  it('keeps the first IdentitiesOnly meaning when a key-mode save changes another field', () => {
+    const root = seed(
+      [
+        'Host spelled',
+        '  IdentityFile ~/.ssh/spelled',
+        '  IdentitiesOnly true',
+        '',
+        'Host repeated',
+        '  IdentityFile ~/.ssh/repeated',
+        '  IdentitiesOnly yes',
+        '  IdentitiesOnly no',
+        '',
+        'Host reversed',
+        '  IdentityFile ~/.ssh/reversed',
+        '  IdentitiesOnly no',
+        '  IdentitiesOnly yes',
+        '',
+      ].join('\n'),
+    );
+    const aliases = ['spelled', 'repeated', 'reversed'];
+    const effective = () => aliases.map((alias) => resolveHost(loadConfigDocument(root), alias).identitiesOnly);
+    const before = effective();
+    // The editor's save after changing only the user.
+    for (const alias of aliases) {
+      const listed = listHosts(loadConfigDocument(root)).find((host) => host.alias === alias)!;
+      upsertHost({ aliases: listed.aliases, previousAlias: alias, options: { ...listed.options, user: 'deploy' } }, root);
+    }
+
+    expect(before).toEqual([true, true, false]);
+    expect(effective()).toEqual(before);
+    expect(readFileSync(root, 'utf8')).toBe(
+      [
+        'Host spelled',
+        '  User deploy',
+        '  IdentityFile ~/.ssh/spelled',
+        '  IdentitiesOnly yes',
+        '',
+        'Host repeated',
+        '  User deploy',
+        '  IdentityFile ~/.ssh/repeated',
+        '  IdentitiesOnly yes',
+        '',
+        'Host reversed',
+        '  User deploy',
+        '  IdentityFile ~/.ssh/reversed',
+        '  IdentitiesOnly no',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('writes no IdentitiesOnly from the agent mode, even where a later line said yes', () => {
+    const root = seed(
+      [
+        'Host agent',
+        '  User ops',
+        '  IdentitiesOnly no',
+        '  IdentitiesOnly yes',
+        '',
+        'Host switched',
+        '  User ops',
+        '  IdentityFile ~/.ssh/switched',
+        '  IdentitiesOnly no',
+        '  IdentitiesOnly yes',
+        '',
+      ].join('\n'),
+    );
+    // Outside the specific-key mode the editor sends no key options: "agent" is
+    // loaded in Agent & default keys mode, and "switched" is moved to it.
+    for (const alias of ['agent', 'switched']) {
+      const listed = listHosts(loadConfigDocument(root)).find((host) => host.alias === alias)!;
+      const options = { ...listed.options, identityFiles: undefined, certificateFiles: undefined, identitiesOnly: undefined };
+      upsertHost({ aliases: listed.aliases, previousAlias: alias, options }, root);
+    }
+
+    expect(readFileSync(root, 'utf8')).toBe(['Host agent', '  User ops', '', 'Host switched', '  User ops', ''].join('\n'));
+    for (const alias of ['agent', 'switched']) {
+      expect(resolveHost(loadConfigDocument(root), alias).identitiesOnly).toBe(false);
+    }
   });
 
   it('moves a host to a new include file and wires the Include into the root', () => {

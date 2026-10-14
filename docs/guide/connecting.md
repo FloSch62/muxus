@@ -73,8 +73,8 @@ succeeds:
 
 Agent approval time does not consume `ConnectTimeout`. If an agent accepts a request but
 never answers, Muxus shows what it is waiting for and moves to the next authentication
-method after a bounded wait. The host editor's **Specific key file** mode writes
-`IdentitiesOnly yes` and therefore skips the login agent entirely.
+method after a bounded wait. Choosing the host editor's **Specific key file** mode, or
+changing its key files, writes `IdentitiesOnly yes`, which skips the login agent entirely.
 
 <figure markdown="span">
   ![A keyboard-interactive prompt](../assets/screenshots/auth-prompt.png#only-light){ .shadow }

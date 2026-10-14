@@ -22,7 +22,14 @@ import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import VerifiedUserOutlinedIcon from '@mui/icons-material/VerifiedUserOutlined';
 import type { SshKeysResponse } from '@muxus/shared';
-import type { HostDraft, IdentityAgentMode, StrictHostKeyCheckingMode } from './draft.js';
+import {
+  authChoice,
+  keyFilesCaption,
+  keyModeHelp,
+  type HostDraft,
+  type IdentityAgentMode,
+  type StrictHostKeyCheckingMode,
+} from './draft.js';
 
 /**
  * How to authenticate: OpenSSH default order (agent, then id_* keys), a
@@ -45,7 +52,7 @@ export function AuthSection({
   const addKey = (value: string) => {
     const v = value.trim();
     if (!v) return;
-    set({ identityFiles: [...draft.identityFiles, v] });
+    set(authChoice({ identityFiles: [...draft.identityFiles, v] }));
     setPending('');
   };
 
@@ -53,13 +60,13 @@ export function AuthSection({
   const addCertificate = () => {
     const file = pendingCertificate.trim();
     if (!file || draft.certificateFiles.includes(file)) return;
-    set({ certificateFiles: [...draft.certificateFiles, file] });
+    set(authChoice({ certificateFiles: [...draft.certificateFiles, file] }));
     setPendingCertificate('');
   };
 
   return (
     <Stack spacing={2}>
-      <RadioGroup value={draft.authMode} onChange={(e) => set({ authMode: e.target.value as HostDraft['authMode'] })}>
+      <RadioGroup value={draft.authMode} onChange={(e) => set(authChoice({ authMode: e.target.value as HostDraft['authMode'] }))}>
         <FormControlLabel
           value="default"
           control={<Radio size="small" />}
@@ -70,16 +77,7 @@ export function AuthSection({
         <FormControlLabel
           value="key"
           control={<Radio size="small" />}
-          label={
-            <Labeled
-              title="Specific key file"
-              sub={
-                draft.storage === 'openssh'
-                  ? 'Writes IdentityFile — exactly these keys are offered'
-                  : 'Exactly these keys are offered for this Muxus connection'
-              }
-            />
-          }
+          label={<Labeled title="Specific key file" sub={keyModeHelp(draft)} />}
         />
         <FormControlLabel
           value="password"
@@ -106,7 +104,7 @@ export function AuthSection({
                     <LockOutlinedIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
                   </Tooltip>
                 )}
-                <IconButton size="small" aria-label={`Remove ${file}`} onClick={() => set({ identityFiles: draft.identityFiles.filter((_, j) => j !== i) })}>
+                <IconButton size="small" aria-label={`Remove ${file}`} onClick={() => set(authChoice({ identityFiles: draft.identityFiles.filter((_, j) => j !== i) }))}>
                   <DeleteOutlineIcon fontSize="small" />
                 </IconButton>
               </Stack>
@@ -187,7 +185,7 @@ export function AuthSection({
                 <IconButton
                   size="small"
                   aria-label={`Remove certificate ${file}`}
-                  onClick={() => set({ certificateFiles: draft.certificateFiles.filter((_, j) => j !== i) })}
+                  onClick={() => set(authChoice({ certificateFiles: draft.certificateFiles.filter((_, j) => j !== i) }))}
                 >
                   <DeleteOutlineIcon fontSize="small" />
                 </IconButton>
@@ -218,8 +216,7 @@ export function AuthSection({
             </Stack>
           </Stack>
           <Typography variant="caption" color="textSecondary">
-            Only these key files are offered for login (IdentitiesOnly yes). The
-            agent can still be forwarded after connecting.
+            {keyFilesCaption(draft)}
           </Typography>
         </Stack>
       )}
@@ -230,7 +227,7 @@ export function AuthSection({
         <Box>
           <Typography variant="subtitle2">SSH agent</Typography>
           <Typography variant="caption" color="textSecondary">
-            {draft.authMode === 'key'
+            {draft.authMode === 'key' && draft.identitiesOnly
               ? 'Specific-key login does not use the agent. This source is still available for forwarding.'
               : 'Choose which local agent supplies keys for this host.'}
           </Typography>

@@ -65,7 +65,8 @@ export interface HostDraft {
   authMode: 'default' | 'key' | 'password';
   identityFiles: string[];
   certificateFiles: string[];
-  identitiesOnly: boolean;
+  /** As the host has it (unset when absent); `authChoice` sets it. */
+  identitiesOnly?: boolean;
   identityAgentMode: IdentityAgentMode;
   /** Custom agent socket path or environment indirection. */
   identityAgent: string;
@@ -174,7 +175,7 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
           : 'default',
     identityFiles: o.identityFiles ?? [],
     certificateFiles: o.certificateFiles ?? [],
-    identitiesOnly: o.identitiesOnly ?? false,
+    identitiesOnly: o.identitiesOnly,
     identityAgentMode: identityAgent.mode,
     identityAgent: identityAgent.value,
     forwardAgent: o.forwardAgent ?? false,
@@ -240,7 +241,7 @@ export function draftFromSavedSshProfile(
           : 'default',
     identityFiles: profile.identityFiles ?? [],
     certificateFiles: profile.certificateFiles ?? [],
-    identitiesOnly: profile.identitiesOnly ?? false,
+    identitiesOnly: profile.identitiesOnly,
     identityAgentMode: identityAgent.mode,
     identityAgent: identityAgent.value,
     forwardAgent: profile.forwardAgent ?? false,
@@ -344,7 +345,7 @@ export function draftToSavedSshInput(
         draft.authMode === 'key'
           ? draft.certificateFiles.map((file) => file.trim()).filter(Boolean)
           : undefined,
-      identitiesOnly: draft.authMode === 'key' ? true : undefined,
+      identitiesOnly: draft.authMode === 'key' ? draft.identitiesOnly : undefined,
       identityAgent:
         draft.identityAgentMode === 'environment'
           ? 'SSH_AUTH_SOCK'
@@ -397,10 +398,8 @@ export function draftToRequest(draft: HostDraft, previousAlias?: string): HostUp
         draft.authMode === 'key'
           ? draft.certificateFiles.map((f) => f.trim()).filter(Boolean)
           : undefined,
-      // This editor mode promises that only the selected files are offered.
-      // OpenSSH still tries the agent first for IdentityFile alone, so the
-      // promise requires IdentitiesOnly yes.
-      identitiesOnly: draft.authMode === 'key' ? true : undefined,
+      // Set by authChoice when the user picks keys; otherwise as the block has it.
+      identitiesOnly: draft.authMode === 'key' ? draft.identitiesOnly : undefined,
       identityAgent:
         draft.identityAgentMode === 'environment'
           ? 'SSH_AUTH_SOCK'
@@ -433,6 +432,42 @@ export function draftToRequest(draft: HostDraft, previousAlias?: string): HostUp
       extras: draft.extras.length ? draft.extras : undefined,
     },
   };
+}
+
+/**
+ * A change from the authentication controls. Picking the specific-key mode or
+ * its files promises that only those files are offered, and OpenSSH still
+ * tries the agent first for IdentityFile alone, so the choice also sets
+ * IdentitiesOnly yes. A host saved without such a change keeps its own value.
+ */
+export function authChoice(
+  patch: Partial<Pick<HostDraft, 'authMode' | 'identityFiles' | 'certificateFiles'>>,
+): Partial<HostDraft> {
+  return { ...patch, identitiesOnly: true };
+}
+
+/**
+ * Sub-label of the specific-key choice. Choosing it sets IdentitiesOnly yes,
+ * but a host loaded in key mode without it only lists its files.
+ */
+export function keyModeHelp(draft: Pick<HostDraft, 'storage' | 'authMode' | 'identitiesOnly'>): string {
+  const exact = draft.authMode !== 'key' || draft.identitiesOnly === true;
+  if (draft.storage === 'openssh') {
+    return exact ? 'Writes IdentityFile — exactly these keys are offered' : 'Writes IdentityFile';
+  }
+  return exact
+    ? 'Exactly these keys are offered for this Muxus connection'
+    : 'These keys are offered for this Muxus connection';
+}
+
+/**
+ * Caption under the key files. Without the host's own IdentitiesOnly yes,
+ * Host *, folder credentials or the agent source may still decide.
+ */
+export function keyFilesCaption(draft: Pick<HostDraft, 'identitiesOnly'>): string {
+  return draft.identitiesOnly
+    ? 'Only these key files are offered for login (IdentitiesOnly yes). The agent can still be forwarded after connecting.'
+    : 'IdentitiesOnly yes is not set here, so keys in the SSH agent are offered too unless another setting turns that off. Changing the key or certificate files sets it.';
 }
 
 /** Agent source represented by the current editor state, for live key detection. */
