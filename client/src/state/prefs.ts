@@ -192,6 +192,8 @@ export interface PrefsState {
   terminalFileLinkActivation: TerminalFileLinkActivation;
   /** Preview multiline pastes before they can run several shell commands. */
   pasteWarnMultiline: boolean;
+  /** Preview any paste with invisible or look-alike characters, even a single line. */
+  pasteWarnLookalikes: boolean;
   /** Wait after each pasted line, in milliseconds; hosts may set their own. */
   pasteLineDelayMs: number;
   /** Wait after each pasted character, in milliseconds; hosts may set their own. */
@@ -595,6 +597,7 @@ export const usePrefsStore = create<PrefsState>()(
       rightClickAction: 'copy-paste',
       terminalFileLinkActivation: 'alt',
       pasteWarnMultiline: true,
+      pasteWarnLookalikes: true,
       pasteLineDelayMs: 0,
       pasteCharDelayMs: 0,
       confirmCloseConnected: true,

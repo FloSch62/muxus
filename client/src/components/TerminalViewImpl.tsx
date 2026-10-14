@@ -112,7 +112,7 @@ import {
   terminalFileLinkActivationForPlatform,
 } from '../terminal/file-link-activation.js';
 import { openTerminalWebLink } from '../terminal/web-links.js';
-import { requiresPasteConfirmation } from '../terminal/paste-safety.js';
+import { flagPasteCharacters, requiresPasteConfirmation } from '../terminal/paste-safety.js';
 import { hostPastePacing } from '../terminal/paste-pacing.js';
 import {
   hostTerminalInputModes,
@@ -480,7 +480,11 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   };
 
   const pasteText = (text: string, broadcast = true): Promise<void> => {
-    if (usePrefsStore.getState().pasteWarnMultiline && requiresPasteConfirmation(text)) {
+    const { pasteWarnMultiline, pasteWarnLookalikes } = usePrefsStore.getState();
+    if (
+      (pasteWarnMultiline && requiresPasteConfirmation(text)) ||
+      (pasteWarnLookalikes && flagPasteCharacters(text).length > 0)
+    ) {
       setSearchOpen(false);
       const { promise, resolve } = Promise.withResolvers<void>();
       pendingPasteResolverRef.current = resolve;

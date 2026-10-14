@@ -133,6 +133,14 @@ describe('paste pacing preferences', () => {
   });
 });
 
+describe('look-alike paste preference', () => {
+  it('is on by default, also for preferences saved before it existed', () => {
+    const initial = usePrefsStore.getInitialState();
+    expect(initial.pasteWarnLookalikes).toBe(true);
+    expect(mergePersistedPrefs({ pasteWarnMultiline: false }, initial).pasteWarnLookalikes).toBe(true);
+  });
+});
+
 describe('appearance preference', () => {
   it('defaults new installations to the system appearance', () => {
     expect(usePrefsStore.getInitialState().themeMode).toBe('os');
