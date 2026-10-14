@@ -63,8 +63,11 @@ export class PastePacer {
       lineDelayMs: request.lineDelayMs,
       charDelayMs: request.charDelayMs,
     });
-    this.total += prepared.length;
-    this.lines += lines;
+    // A cancelled run still winding down recounts the queue for the run after it.
+    if (!this.controller?.signal.aborted) {
+      this.total += prepared.length;
+      this.lines += lines;
+    }
     if (!this.controller) void this.run();
   }
 
@@ -87,7 +90,10 @@ export class PastePacer {
     let bracketOpen = false;
     let failed = false;
     try {
-      for (let paste = this.queue.shift(); paste && !signal.aborted; paste = this.queue.shift()) {
+      // A paste sent in the same tick as a cancel stays queued for the next run.
+      while (!signal.aborted) {
+        const paste = this.queue.shift();
+        if (!paste) break;
         const steps = pastePacingSteps(paste.prepared, paste);
         let step = steps.next();
         while (!step.done && !signal.aborted) {
