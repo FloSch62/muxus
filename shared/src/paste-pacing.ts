@@ -10,16 +10,87 @@ export const MAX_PACED_PASTE_LENGTH = 1_000_000;
 export const BRACKETED_PASTE_START = '\x1b[200~';
 export const BRACKETED_PASTE_END = '\x1b[201~';
 
+/** The prompt a paste waits for after each line, unless the host sets its own. */
+export const DEFAULT_PASTE_PROMPT_PATTERN = '[>#$]\\s*$';
+/** An output line that stops a paste, unless the host sets its own: an IOS-style rejection. */
+export const DEFAULT_PASTE_ERROR_PATTERN = '^%\\s*(Invalid|Incomplete|Ambiguous)';
+/** Longest wait for the prompt after each line, unless the host sets its own. */
+export const DEFAULT_PASTE_PROMPT_TIMEOUT_MS = 5_000;
+export const MIN_PASTE_PROMPT_TIMEOUT_MS = 100;
+export const MAX_PASTE_PROMPT_TIMEOUT_MS = 60_000;
+/** Longest prompt or error pattern, in characters. */
+export const MAX_PASTE_PATTERN_LENGTH = 500;
+
+/**
+ * Pacing a paste by the device's answers: after each line, wait for the
+ * prompt instead of the line delay, and stop at the first rejected line.
+ */
+export interface PastePromptWait {
+  /** Regex the line the device is on matches once it is ready for the next line. */
+  promptPattern: string;
+  /** Longest wait for the prompt after a line, in milliseconds; then the line delay applies. */
+  timeoutMs: number;
+  /** Regex an output line matches when the device rejected the line sent. */
+  errorPattern: string;
+}
+
 /** How slowly a paste is typed into a session. Zero for both sends it at once. */
 export interface PastePacing {
   /** Wait after each line, in milliseconds. */
   lineDelayMs: number;
   /** Wait after each character, in milliseconds. */
   charDelayMs: number;
+  /** Wait for the prompt after each line; absent paces by the delays alone. */
+  prompt?: PastePromptWait;
 }
 
 export function isPacedPaste(pacing: PastePacing): boolean {
-  return pacing.lineDelayMs > 0 || pacing.charDelayMs > 0;
+  return pacing.lineDelayMs > 0 || pacing.charDelayMs > 0 || pacing.prompt !== undefined;
+}
+
+/**
+ * The pacing a paste goes out with. A bracketed paste reaches the program
+ * whole, with no prompt after each line, so it keeps the delays alone.
+ */
+export function pastePacingFor(pacing: PastePacing, bracketed: boolean): PastePacing {
+  if (!bracketed || !pacing.prompt) return pacing;
+  const { prompt: _prompt, ...delays } = pacing;
+  return delays;
+}
+
+/** A host's prompt waiting, with the defaults where it sets nothing. */
+export function resolvePastePromptWait(setting: Partial<PastePromptWait>): PastePromptWait {
+  return {
+    promptPattern: setting.promptPattern || DEFAULT_PASTE_PROMPT_PATTERN,
+    timeoutMs: setting.timeoutMs ?? DEFAULT_PASTE_PROMPT_TIMEOUT_MS,
+    errorPattern: setting.errorPattern || DEFAULT_PASTE_ERROR_PATTERN,
+  };
+}
+
+/** Why a prompt or error pattern cannot be used, or undefined when it can. */
+export function pastePatternProblem(pattern: string): string | undefined {
+  if (pattern.length > MAX_PASTE_PATTERN_LENGTH) {
+    return `Use at most ${MAX_PASTE_PATTERN_LENGTH} characters.`;
+  }
+  let regex: RegExp;
+  try {
+    regex = new RegExp(pattern);
+  } catch (error) {
+    return error instanceof Error ? error.message : 'Invalid regular expression.';
+  }
+  // Such a pattern matches any output at all, so it could never tell anything apart.
+  if (regex.test('')) return 'This pattern matches empty text, so it would match any output.';
+  return undefined;
+}
+
+/** A whole number of milliseconds the prompt wait may take. */
+export function validPastePromptTimeout(value: unknown): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= MIN_PASTE_PROMPT_TIMEOUT_MS &&
+    value <= MAX_PASTE_PROMPT_TIMEOUT_MS
+  );
 }
 
 /** A delay a host or the settings may store: a whole number of milliseconds in range. */

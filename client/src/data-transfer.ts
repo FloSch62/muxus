@@ -43,6 +43,7 @@ import {
   terminalInputModesPatch,
   type TerminalInputModes,
 } from './terminal/input-modes.js';
+import { isPastePromptWait } from './terminal/paste-prompt.js';
 import { saveTextFile } from './save-file.js';
 import { openSshJumpHops } from './saved-hosts.js';
 import {
@@ -665,6 +666,7 @@ function portableMetadata(
     commandButtonGroup: metadata.commandButtonGroup,
     pasteLineDelayMs: metadata.pasteLineDelayMs,
     pasteCharDelayMs: metadata.pasteCharDelayMs,
+    pastePromptWait: metadata.pastePromptWait,
     backspaceKey: metadata.backspaceKey,
     enterKey: metadata.enterKey,
     implicitCr: metadata.implicitCr,
@@ -834,6 +836,8 @@ function metadataPatch(metadata: PortableHostMetadata): OpenSshMetadataPatch {
     commandButtonGroup: metadata.commandButtonGroup ?? null,
     pasteLineDelayMs: metadata.pasteLineDelayMs ?? null,
     pasteCharDelayMs: metadata.pasteCharDelayMs ?? null,
+    // Off for a backup without one; a setting that does not check out is dropped, not the host.
+    pastePromptWait: isPastePromptWait(metadata.pastePromptWait) ? metadata.pastePromptWait : null,
     ...terminalInputModesPatch(restoredInputModes(metadata)),
     disableSftp: metadata.disableSftp ?? false,
     consoleCompatibility: metadata.consoleCompatibility ?? false,

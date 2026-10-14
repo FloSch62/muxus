@@ -1,3 +1,5 @@
+import type { PastePromptWait } from './paste-pacing.js';
+
 /** Shape of every REST error body ({ message, code? }). */
 export interface ApiErrorBody {
   message: string;
@@ -833,6 +835,8 @@ export interface OpenSshProfileMetadata {
   /** Paste pacing for this host's sessions; absent follows the Terminal settings. */
   pasteLineDelayMs?: number;
   pasteCharDelayMs?: number;
+  /** Pastes wait for the prompt after each line; fields left out use the defaults. Absent is off. */
+  pastePromptWait?: Partial<PastePromptWait>;
   /** Keys and echo for this host's sessions; absent keeps what xterm.js does. */
   backspaceKey?: TerminalBackspaceKey;
   enterKey?: TerminalEnterKey;
@@ -862,6 +866,8 @@ export interface OpenSshMetadataPatch {
   commandButtonGroup?: string | null;
   pasteLineDelayMs?: number | null;
   pasteCharDelayMs?: number | null;
+  /** Null turns prompt waiting off. */
+  pastePromptWait?: Partial<PastePromptWait> | null;
   /** Null goes back to what xterm.js does. */
   backspaceKey?: TerminalBackspaceKey | null;
   enterKey?: TerminalEnterKey | null;

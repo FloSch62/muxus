@@ -152,6 +152,7 @@ export function NativeHostEditorContent({
         draft.terminalBackgroundColor,
         draft.commandButtonGroup,
         draft.pasteLineDelayMs !== undefined || draft.pasteCharDelayMs !== undefined,
+        draft.pastePromptWait.enabled,
         customTerminalInputModes(draft.inputModes),
       ].filter(Boolean).length || undefined,
     },

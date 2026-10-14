@@ -289,7 +289,11 @@ describe('host statistics route', () => {
   it('reads a live connection under its own lease and releases it', async () => {
     const release = vi.fn();
     const { client, exec } = stubClient(LINUX_OUTPUT);
-    const acquire = vi.fn(() => ({ connection: { client }, owner: 'stats', release }));
+    const acquire = vi.fn(() => ({
+      connection: { client, ranCommand: () => true },
+      owner: 'stats',
+      release,
+    }));
     const handler = captureRoutes(acquire).get('/api/host-stats/ssh/:connId')!;
 
     const response = await handler({ params: { connId: 'conn-1' } }, fakeReply());
@@ -303,7 +307,7 @@ describe('host statistics route', () => {
 
   it('shares one reading between requests for the same connection', async () => {
     const { client, exec } = stubClient(LINUX_OUTPUT);
-    const handler = captureRoutes(() => ({ connection: { client }, release: vi.fn() })).get(
+    const handler = captureRoutes(() => ({ connection: { client, ranCommand: () => true }, release: vi.fn() })).get(
       '/api/host-stats/ssh/:connId',
     )!;
     const [first, second] = await Promise.all([
@@ -316,12 +320,27 @@ describe('host statistics route', () => {
 
   it('answers unsupported for a host without a POSIX shell', async () => {
     const { client } = stubClient('Invalid command\r\n');
-    const handler = captureRoutes(() => ({ connection: { client }, release: vi.fn() })).get(
+    const handler = captureRoutes(() => ({ connection: { client, ranCommand: () => true }, release: vi.fn() })).get(
       '/api/host-stats/ssh/:connId',
     )!;
     await expect(handler({ params: { connId: 'conn-1' } }, fakeReply())).resolves.toMatchObject({
       status: 'unsupported',
     });
+  });
+
+  it('never opens a channel on a connection whose server has not run a command', async () => {
+    // Old SR OS releases drop the whole transport when a second channel asks to exec.
+    const release = vi.fn();
+    const { client, exec } = stubClient(LINUX_OUTPUT);
+    const handler = captureRoutes(() => ({
+      connection: { client, ranCommand: () => false },
+      release,
+    })).get('/api/host-stats/ssh/:connId')!;
+    await expect(handler({ params: { connId: 'conn-1' } }, fakeReply())).resolves.toMatchObject({
+      status: 'unsupported',
+    });
+    expect(exec).not.toHaveBeenCalled();
+    expect(release).toHaveBeenCalledTimes(1);
   });
 
   it('answers 404 for a connection that is gone', async () => {

@@ -204,6 +204,7 @@ describe('nativeDraftMetadataPatch', () => {
       commandButtonGroup: null,
       pasteLineDelayMs: null,
       pasteCharDelayMs: null,
+      pastePromptWait: null,
       backspaceKey: null,
       enterKey: null,
       implicitCr: false,
@@ -221,6 +222,7 @@ describe('nativeDraftMetadataPatch', () => {
       commandButtonGroup: 'command-group-console',
       pasteLineDelayMs: 300,
       pasteCharDelayMs: null,
+      pastePromptWait: null,
       backspaceKey: null,
       enterKey: null,
       implicitCr: false,
@@ -228,6 +230,31 @@ describe('nativeDraftMetadataPatch', () => {
       keywordHighlights: serialHost.metadata.keywordHighlights,
       loginSequence: null,
     });
+  });
+
+  it('round-trips prompt waiting and blocks saving an unusable pattern', () => {
+    const pastePromptWait = { errorPattern: '^Error:' };
+    const own = nativeDraftFromProfile(
+      { ...serialHost, metadata: { ...serialHost.metadata, pastePromptWait } },
+      false,
+    );
+    expect(own.pastePromptWait).toEqual({
+      enabled: true,
+      promptPattern: '',
+      timeoutMs: '',
+      errorPattern: '^Error:',
+    });
+    expect(nativeDraftMetadataPatch(own).pastePromptWait).toEqual(pastePromptWait);
+    expect(
+      nativeDraftMetadataPatch({ ...own, pastePromptWait: { ...own.pastePromptWait, enabled: false } })
+        .pastePromptWait,
+    ).toBeNull();
+
+    const draft = { ...own, name: 'Console', path: '/dev/ttyUSB0' };
+    expect(nativeDraftProblem(draft, 'serial')).toBeNull();
+    expect(
+      nativeDraftProblem({ ...draft, pastePromptWait: { ...draft.pastePromptWait, promptPattern: '#*' } }, 'serial'),
+    ).toBe('Prompt pattern: This pattern matches empty text, so it would match any output.');
   });
 
   it('round-trips keys and echo', () => {

@@ -11,6 +11,9 @@ import {
   MAX_PACED_PASTE_LENGTH,
   MAX_PASTE_CHAR_DELAY_MS,
   MAX_PASTE_LINE_DELAY_MS,
+  MAX_PASTE_PATTERN_LENGTH,
+  MAX_PASTE_PROMPT_TIMEOUT_MS,
+  MIN_PASTE_PROMPT_TIMEOUT_MS,
 } from './paste-pacing.js';
 
 /** Fixed subprotocol selected by the server for terminal sockets. */
@@ -396,6 +399,17 @@ export const terminalClientMessageSchema = z.discriminatedUnion('op', [
     bracketed: z.boolean(),
     lineDelayMs: z.number().int().min(0).max(MAX_PASTE_LINE_DELAY_MS),
     charDelayMs: z.number().int().min(0).max(MAX_PASTE_CHAR_DELAY_MS),
+    /**
+     * Wait for the prompt after each line and stop at a rejected one; absent
+     * paces by the delays alone. Ignored for a bracketed paste.
+     */
+    prompt: z
+      .object({
+        promptPattern: z.string().min(1).max(MAX_PASTE_PATTERN_LENGTH),
+        timeoutMs: z.number().int().min(MIN_PASTE_PROMPT_TIMEOUT_MS).max(MAX_PASTE_PROMPT_TIMEOUT_MS),
+        errorPattern: z.string().min(1).max(MAX_PASTE_PATTERN_LENGTH),
+      })
+      .optional(),
     /** The host's Enter key for line breaks outside a bracket; absent is CR. */
     enterKey: z.enum(TERMINAL_ENTER_KEYS).optional(),
   }),
@@ -509,13 +523,18 @@ export type TerminalServerMessage =
   /** Paced paste progress over every queued paste, throttled while it runs. */
   | {
       op: 'paste-progress';
-      state: 'running' | 'done' | 'cancelled';
-      /** The line being sent, from 1, and the lines of every queued paste. */
+      /** `stopped`: a line the device rejected, or a pattern that failed, ended the paste. */
+      state: 'running' | 'done' | 'cancelled' | 'stopped';
+      /** The line being sent, from 1, and the lines of every queued paste; the last one sent once stopped. */
       line: number;
       lines: number;
       /** UTF-16 code units sent and queued. */
       sent: number;
       total: number;
+      /** Why a stopped paste stopped: its line, the line sent and the output that rejected it. */
+      message?: string;
+      /** Numbers the session's stopped pastes, so a returning window can tell a stop it has noted. */
+      stopId?: number;
     }
   /** The host's login sequence started a step, finished, or stopped. */
   | {

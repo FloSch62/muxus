@@ -827,6 +827,7 @@ describe('backing up host terminal schemes', () => {
           terminalBackgroundColor: '#002b36',
           pasteLineDelayMs: 200,
           pasteCharDelayMs: 0,
+          pastePromptWait: { timeoutMs: 20_000 },
           backspaceKey: 'ctrl-h',
           enterKey: 'crlf',
           localEcho: true,
@@ -846,6 +847,7 @@ describe('backing up host terminal schemes', () => {
     expect(document.data.savedHosts[0]?.metadata).toMatchObject({
       pasteLineDelayMs: 200,
       pasteCharDelayMs: 0,
+      pastePromptWait: { timeoutMs: 20_000 },
       backspaceKey: 'ctrl-h',
       enterKey: 'crlf',
       localEcho: true,
@@ -1115,6 +1117,7 @@ describe('restoring imported serial hosts', () => {
           commandButtonGroup: null,
           pasteLineDelayMs: null,
           pasteCharDelayMs: null,
+          pastePromptWait: null,
           backspaceKey: null,
           enterKey: null,
           implicitCr: false,
@@ -1125,6 +1128,35 @@ describe('restoring imported serial hosts', () => {
         }),
       }),
     );
+  });
+
+  it('restores prompt waiting, and drops a setting that does not check out', async () => {
+    const restoredPromptWait = async (pastePromptWait: unknown) => {
+      apiFetchMock.mockReset();
+      apiFetchMock
+        .mockResolvedValueOnce({ hosts: [] })
+        .mockResolvedValueOnce({ profiles: [] })
+        .mockResolvedValueOnce({ id: 'securecrt-serial-console' })
+        .mockResolvedValueOnce({ id: 'securecrt-serial-console' });
+      const host = importedSerial.savedHosts[0]!;
+      await restoreImportedConnections(
+        {
+          ...importedSerial,
+          savedHosts: [{ ...host, metadata: { ...host.metadata, pastePromptWait } as never }],
+        },
+        'replace',
+      );
+      const patch = apiFetchMock.mock.calls[3]?.[1]?.body as string;
+      return (JSON.parse(patch) as { pastePromptWait: unknown }).pastePromptWait;
+    };
+    const own = { promptPattern: '[>#\\]]\\s*$', timeoutMs: 20_000 };
+
+    expect(await restoredPromptWait(own)).toEqual(own);
+    expect(await restoredPromptWait({})).toEqual({});
+    expect(await restoredPromptWait({ promptPattern: '([' })).toBeNull();
+    expect(await restoredPromptWait({ errorPattern: '' })).toBeNull();
+    expect(await restoredPromptWait({ timeoutMs: 10 })).toBeNull();
+    expect(await restoredPromptWait([])).toBeNull();
   });
 
   it('restores keys and echo, and drops values this release does not know', async () => {

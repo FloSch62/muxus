@@ -548,7 +548,10 @@ async function handleSession(
       recorder?.input(data);
       return writePastedInput(data);
     },
-    (progress) => sendControl(socket, { op: 'paste-progress', ...progress }),
+    (progress) => {
+      if (progress.state === 'stopped') recorder?.system(`Paste stopped: ${progress.message}`);
+      sendControl(socket, { op: 'paste-progress', ...progress });
+    },
   );
   // Closing the tab or losing the connection ends the session and the paste.
   socket.once('close', () => pastePacer.close());
@@ -652,6 +655,7 @@ async function handleSession(
       handleLoggingControl,
       prepareLoginSequence(() => (profile.profileId ? { profileId: profile.profileId } : undefined)),
     );
+    socket.once('close', transport.onData((data) => pastePacer.output(data)));
     writePastedInput = drainedWriter(transport);
     app.log.info(
       { path: profile.path, baudRate: profile.baudRate },
@@ -682,6 +686,7 @@ async function handleSession(
       handleLoggingControl,
       prepareLoginSequence(() => (profile.profileId ? { profileId: profile.profileId } : undefined)),
     );
+    socket.once('close', transport.onData((data) => pastePacer.output(data)));
     writePastedInput = drainedWriter(transport);
     app.log.info({ host: profile.host, port: profile.port }, 'telnet session established');
     if (profile.profileId) ctx.database.recordSavedHostConnection(profile.profileId);
@@ -793,6 +798,7 @@ async function handleSession(
   stream.on('data', (chunk: Buffer) => {
     recorder?.output(chunk);
     sshLoginSequence?.output(chunk);
+    pastePacer.output(chunk);
     if (socket.readyState !== socket.OPEN) return;
     socket.send(chunk, { binary: true });
     if (!paused && socket.bufferedAmount > BACKPRESSURE_HIGH) {

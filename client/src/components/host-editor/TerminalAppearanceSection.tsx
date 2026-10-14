@@ -25,8 +25,10 @@ import {
   ENTER_KEY_OPTIONS,
   type TerminalInputModes,
 } from '../../terminal/input-modes.js';
+import type { PastePromptWaitDraft } from '../../terminal/paste-prompt.js';
 import { TerminalSchemeSelect } from '../TerminalSchemeSelect.js';
 import { PasteDelayField } from './PasteDelayField.js';
+import { PastePromptFields } from './PastePromptFields.js';
 
 export interface HostTerminalAppearance {
   terminalScheme?: string;
@@ -35,6 +37,7 @@ export interface HostTerminalAppearance {
   commandButtonGroup?: string;
   pasteLineDelayMs?: number;
   pasteCharDelayMs?: number;
+  pastePromptWait: PastePromptWaitDraft;
   inputModes: TerminalInputModes;
 }
 
@@ -118,6 +121,10 @@ export function TerminalAppearanceSection({
           onChange={(delay) => onChange({ pasteCharDelayMs: delay })}
         />
       </Stack>
+      <PastePromptFields
+        value={value.pastePromptWait}
+        onChange={(pastePromptWait) => onChange({ pastePromptWait })}
+      />
       <Box sx={{ pt: 1 }}>
         <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
           Keyboard and echo

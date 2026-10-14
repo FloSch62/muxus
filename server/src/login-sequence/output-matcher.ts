@@ -88,7 +88,12 @@ export class PatternTimeoutError extends Error {
 const regexSandbox = vm.createContext({});
 const regexRun = new vm.Script('pattern.lastIndex = 0; match = pattern.exec(text);');
 
-function execWithTimeout(pattern: RegExp, text: string, timeoutMs: number): RegExpExecArray | null {
+/** Run a regex once from the start of `text`; throws PatternTimeoutError past `timeoutMs`. */
+export function execWithTimeout(
+  pattern: RegExp,
+  text: string,
+  timeoutMs: number,
+): RegExpExecArray | null {
   const scope = regexSandbox as { pattern?: RegExp; text?: string; match?: RegExpExecArray | null };
   scope.pattern = pattern;
   scope.text = text;
