@@ -1,5 +1,8 @@
 import { z } from 'zod';
 import {
+  ANTI_IDLE_MAX_INTERVAL_SECONDS,
+  ANTI_IDLE_MIN_INTERVAL_SECONDS,
+  ANTI_IDLE_TEXT_MAX_LENGTH,
   LOGIN_SEQUENCE_MAX_STEPS,
   LOGIN_SEQUENCE_MAX_TIMEOUT_SECONDS,
   LOGIN_SEQUENCE_TEXT_MAX_LENGTH,
@@ -85,6 +88,25 @@ const pastePromptWaitSchema = z.object({
     .optional(),
   errorPattern: pastePatternSchema.optional(),
 });
+/** Typed into an idle session as is; Enter only when the user asked for it. */
+const antiIdleSchema = z
+  .object({
+    intervalSeconds: z
+      .number()
+      .int()
+      .min(ANTI_IDLE_MIN_INTERVAL_SECONDS)
+      .max(ANTI_IDLE_MAX_INTERVAL_SECONDS),
+    // No control characters, so a hidden Enter or Ctrl+C cannot ride along.
+    text: z
+      .string()
+      .max(ANTI_IDLE_TEXT_MAX_LENGTH)
+      .refine((text) => !/\p{Cc}/u.test(text), 'control characters are not allowed'),
+    enter: z.boolean(),
+  })
+  .refine((setting) => setting.text.length > 0 || setting.enter, {
+    message: 'anti-idle needs text or Enter',
+    path: ['text'],
+  });
 
 function validRegex(pattern: string): boolean {
   try {
@@ -115,6 +137,8 @@ export const metadataPatchSchema = z
     pasteCharDelayMs: z.number().int().min(0).max(MAX_PASTE_CHAR_DELAY_MS).nullable().optional(),
     // Null turns waiting for the prompt off.
     pastePromptWait: pastePromptWaitSchema.nullable().optional(),
+    // Null turns anti-idle off.
+    antiIdle: antiIdleSchema.nullable().optional(),
     // Keys and echo; null goes back to what xterm.js does.
     backspaceKey: z.enum(TERMINAL_BACKSPACE_KEYS).nullable().optional(),
     enterKey: z.enum(TERMINAL_ENTER_KEYS).nullable().optional(),

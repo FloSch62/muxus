@@ -28,6 +28,7 @@ import {
   useUpdateSshMetadata,
   useUpsertHost,
 } from '../api/ssh-config.js';
+import { antiIdleFromDraft } from '../anti-idle.js';
 import { confirmDeleteHost, shortenSshPath } from '../host-actions.js';
 import { loginSequenceFromDraft } from '../login-sequence.js';
 import { connectSavedHost, connectTarget } from '../session-actions.js';
@@ -360,6 +361,7 @@ function SshHostEditorContent({
         pasteLineDelayMs: draft.pasteLineDelayMs ?? null,
         pasteCharDelayMs: draft.pasteCharDelayMs ?? null,
         pastePromptWait: pastePromptWaitFromDraft(draft.pastePromptWait),
+        antiIdle: antiIdleFromDraft(draft.antiIdle),
         ...terminalInputModesPatch(draft.inputModes),
         disableSftp: draft.disableSftp,
         consoleCompatibility: draft.consoleCompatibility,
@@ -389,6 +391,7 @@ function SshHostEditorContent({
         pasteLineDelayMs: draft.pasteLineDelayMs ?? null,
         pasteCharDelayMs: draft.pasteCharDelayMs ?? null,
         pastePromptWait: pastePromptWaitFromDraft(draft.pastePromptWait),
+        antiIdle: antiIdleFromDraft(draft.antiIdle),
         ...terminalInputModesPatch(draft.inputModes),
         disableSftp: draft.disableSftp,
         consoleCompatibility: draft.consoleCompatibility,
@@ -478,6 +481,7 @@ function SshHostEditorContent({
         draft.commandButtonGroup,
         draft.pasteLineDelayMs !== undefined || draft.pasteCharDelayMs !== undefined,
         draft.pastePromptWait.enabled,
+        draft.antiIdle.enabled,
         customTerminalInputModes(draft.inputModes),
       ].filter(Boolean).length || undefined,
     },

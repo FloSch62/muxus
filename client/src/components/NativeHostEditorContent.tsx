@@ -153,6 +153,7 @@ export function NativeHostEditorContent({
         draft.commandButtonGroup,
         draft.pasteLineDelayMs !== undefined || draft.pasteCharDelayMs !== undefined,
         draft.pastePromptWait.enabled,
+        draft.antiIdle.enabled,
         customTerminalInputModes(draft.inputModes),
       ].filter(Boolean).length || undefined,
     },

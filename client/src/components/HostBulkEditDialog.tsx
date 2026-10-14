@@ -21,6 +21,7 @@ import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import { useApplyBulkHostEdit } from '../api/host-bulk-edit.js';
 import { useSessionLoggingPolicies, useSessionLoggingPolicy } from '../api/queries.js';
+import { antiIdleDraft } from '../anti-idle.js';
 import {
   bulkChangesProblem,
   bulkEditPlan,
@@ -43,6 +44,7 @@ import { isTerminalSchemeId } from '../terminal/palette.js';
 import { pastePromptWaitDraft } from '../terminal/paste-prompt.js';
 import { FolderPathField } from './FolderPathField.js';
 import { HostColorPicker } from './HostColorPicker.js';
+import { AntiIdleFields, AntiIdleIntro } from './host-editor/AntiIdleFields.js';
 import { EditorShell, type EditorSectionDef } from './host-editor/EditorShell.js';
 import { LoggingSection } from './host-editor/LoggingSection.js';
 import { PasteDelayField } from './host-editor/PasteDelayField.js';
@@ -91,6 +93,7 @@ const SECTIONS: ReadonlyArray<{
       'pasteLineDelayMs',
       'pasteCharDelayMs',
       'pastePromptWait',
+      'antiIdle',
       'backspaceKey',
       'enterKey',
       'implicitCr',
@@ -272,6 +275,7 @@ function BulkEditBody({ hostKeys, onClose }: { hostKeys: readonly string[]; onCl
           pasteLineDelayMs={field('pasteLineDelayMs')}
           pasteCharDelayMs={field('pasteCharDelayMs')}
           pastePromptWait={field('pastePromptWait')}
+          antiIdle={field('antiIdle')}
           backspaceKey={field('backspaceKey')}
           enterKey={field('enterKey')}
           implicitCr={field('implicitCr')}
@@ -482,6 +486,7 @@ function AppearanceSection({
   pasteLineDelayMs,
   pasteCharDelayMs,
   pastePromptWait,
+  antiIdle,
   backspaceKey,
   enterKey,
   implicitCr,
@@ -495,6 +500,7 @@ function AppearanceSection({
   pasteLineDelayMs: BulkFieldState<number | undefined>;
   pasteCharDelayMs: BulkFieldState<number | undefined>;
   pastePromptWait: BulkFieldState<BulkHostValues['pastePromptWait']>;
+  antiIdle: BulkFieldState<BulkHostValues['antiIdle']>;
   backspaceKey: BulkFieldState<BulkHostValues['backspaceKey']>;
   enterKey: BulkFieldState<BulkHostValues['enterKey']>;
   implicitCr: BulkFieldState<boolean>;
@@ -606,6 +612,32 @@ function AppearanceSection({
           </Alert>
         )}
         <FieldStatus state={pastePromptWait} />
+      </Box>
+
+      <Box>
+        <AntiIdleIntro sx={{ mb: 1 }} />
+        {antiIdle.value ? (
+          <AntiIdleFields value={antiIdle.value} onChange={antiIdle.set} />
+        ) : (
+          <Alert
+            severity="info"
+            variant="outlined"
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                onClick={() => antiIdle.set(antiIdleDraft(undefined))}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                Set one for all
+              </Button>
+            }
+          >
+            These hosts handle idle sessions differently. Each keeps its own setting until you set
+            one for all of them.
+          </Alert>
+        )}
+        <FieldStatus state={antiIdle} />
       </Box>
       <Stack direction="row" spacing={1.5}>
         <Box sx={{ flex: 1, minWidth: 0 }}>

@@ -7,6 +7,7 @@ import {
 } from 'node:sqlite';
 import { nanoid } from 'nanoid';
 import type {
+  AntiIdle,
   FolderAuthSettings,
   ForwardType,
   HostKeywordHighlightConfig,
@@ -511,6 +512,16 @@ const MIGRATIONS = [
   },
   {
     version: 31,
+    name: 'host-anti-idle',
+    // NULL is off; the bounds are the API's.
+    sql: `
+      ALTER TABLE connection_profiles
+        ADD COLUMN anti_idle_json TEXT
+        CHECK(anti_idle_json IS NULL OR json_valid(anti_idle_json));
+    `,
+  },
+  {
+    version: 32,
     name: 'host-terminal-input-modes',
     // NULL keys and 0 flags keep what xterm.js does; the key names are the API's.
     sql: `
@@ -719,6 +730,7 @@ export interface OpenSshMetadata {
   pasteLineDelayMs?: number;
   pasteCharDelayMs?: number;
   pastePromptWait?: Partial<PastePromptWait>;
+  antiIdle?: AntiIdle;
   backspaceKey?: TerminalBackspaceKey;
   enterKey?: TerminalEnterKey;
   implicitCr?: boolean;
@@ -918,6 +930,7 @@ export class MuxusDatabase {
         profiles.paste_line_delay_ms,
         profiles.paste_char_delay_ms,
         profiles.paste_prompt_wait_json,
+        profiles.anti_idle_json,
         profiles.backspace_key,
         profiles.enter_key,
         profiles.implicit_cr,
@@ -1035,6 +1048,7 @@ export class MuxusDatabase {
             paste_line_delay_ms = ?,
             paste_char_delay_ms = ?,
             paste_prompt_wait_json = ?,
+            anti_idle_json = ?,
             backspace_key = ?,
             enter_key = ?,
             implicit_cr = ?,
@@ -1078,6 +1092,11 @@ export class MuxusDatabase {
           : patch.pastePromptWait === null
             ? null
             : JSON.stringify(patch.pastePromptWait),
+        patch.antiIdle === undefined
+          ? nullableString(current.anti_idle_json)
+          : patch.antiIdle === null
+            ? null
+            : JSON.stringify(patch.antiIdle),
         patch.backspaceKey === undefined
           ? nullableString(current.backspace_key)
           : patch.backspaceKey,
@@ -1586,6 +1605,7 @@ export class MuxusDatabase {
             paste_line_delay_ms = ?,
             paste_char_delay_ms = ?,
             paste_prompt_wait_json = ?,
+            anti_idle_json = ?,
             backspace_key = ?,
             enter_key = ?,
             implicit_cr = ?,
@@ -1629,6 +1649,11 @@ export class MuxusDatabase {
           : patch.pastePromptWait === null
             ? null
             : JSON.stringify(patch.pastePromptWait),
+        patch.antiIdle === undefined
+          ? nullableString(current.anti_idle_json)
+          : patch.antiIdle === null
+            ? null
+            : JSON.stringify(patch.antiIdle),
         patch.backspaceKey === undefined
           ? nullableString(current.backspace_key)
           : patch.backspaceKey,
@@ -2347,6 +2372,20 @@ export class MuxusDatabase {
     };
   }
 
+  /** What an OpenSSH alias or a Muxus-owned host types into its idle sessions, if anything. */
+  hostAntiIdle(host: { alias: string } | { profileId: string }): AntiIdle | undefined {
+    const row =
+      'alias' in host
+        ? this.metadataByAlias.get(host.alias)
+        : this.db
+            .prepare(
+              `SELECT anti_idle_json FROM connection_profiles
+               WHERE id = ? AND kind IN ${SAVED_HOST_KINDS_SQL}`,
+            )
+            .get(host.profileId);
+    return antiIdleFromJson(row?.anti_idle_json);
+  }
+
   /** What Backspace and Enter send on an OpenSSH alias or a Muxus-owned host, where it sets them. */
   hostInputKeys(
     host: { alias: string } | { profileId: string },
@@ -2655,6 +2694,7 @@ function metadataFromRow(row: SqlRow): OpenSshMetadata {
     pasteLineDelayMs: nullableNumber(row.paste_line_delay_ms) ?? undefined,
     pasteCharDelayMs: nullableNumber(row.paste_char_delay_ms) ?? undefined,
     pastePromptWait: pastePromptWaitFromJson(row.paste_prompt_wait_json),
+    antiIdle: antiIdleFromJson(row.anti_idle_json),
     ...terminalInputModesFromRow(row),
     ...(Number(row.disable_sftp) === 1 ? { disableSftp: true } : {}),
     ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),
@@ -2700,6 +2740,7 @@ function savedHostFromRow(row: SqlRow): SavedHostProfile {
       pasteLineDelayMs: nullableNumber(row.paste_line_delay_ms) ?? undefined,
       pasteCharDelayMs: nullableNumber(row.paste_char_delay_ms) ?? undefined,
       pastePromptWait: pastePromptWaitFromJson(row.paste_prompt_wait_json),
+      antiIdle: antiIdleFromJson(row.anti_idle_json),
       ...terminalInputModesFromRow(row),
       ...(Number(row.disable_sftp) === 1 ? { disableSftp: true } : {}),
       ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),
@@ -2768,6 +2809,21 @@ function pastePromptWaitFromJson(value: unknown): Partial<PastePromptWait> | und
       ...(typeof parsed.timeoutMs === 'number' ? { timeoutMs: parsed.timeoutMs } : {}),
       ...(typeof parsed.errorPattern === 'string' ? { errorPattern: parsed.errorPattern } : {}),
     };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Stored settings were validated when written; anything unreadable counts as off. */
+function antiIdleFromJson(value: unknown): AntiIdle | undefined {
+  if (typeof value !== 'string') return undefined;
+  try {
+    const parsed = JSON.parse(value) as Partial<AntiIdle>;
+    return typeof parsed.intervalSeconds === 'number' &&
+      typeof parsed.text === 'string' &&
+      typeof parsed.enter === 'boolean'
+      ? (parsed as AntiIdle)
+      : undefined;
   } catch {
     return undefined;
   }

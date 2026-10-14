@@ -205,6 +205,7 @@ describe('nativeDraftMetadataPatch', () => {
       pasteLineDelayMs: null,
       pasteCharDelayMs: null,
       pastePromptWait: null,
+      antiIdle: null,
       backspaceKey: null,
       enterKey: null,
       implicitCr: false,
@@ -223,6 +224,7 @@ describe('nativeDraftMetadataPatch', () => {
       pasteLineDelayMs: 300,
       pasteCharDelayMs: null,
       pastePromptWait: null,
+      antiIdle: null,
       backspaceKey: null,
       enterKey: null,
       implicitCr: false,
@@ -310,6 +312,23 @@ describe('nativeDraftMetadataPatch', () => {
     expect(
       nativeDraftProblem({ ...draft, loginSequence: { mode: 'custom', steps: [] } }, 'telnet'),
     ).toBe('Add a login step, or choose no login sequence.');
+  });
+
+  it('round-trips anti-idle and blocks saving an incomplete one', () => {
+    const antiIdle = { intervalSeconds: 300, text: ' ', enter: false };
+    const own = nativeDraftFromProfile(
+      { ...serialHost, metadata: { ...serialHost.metadata, antiIdle } },
+      false,
+    );
+    expect(own.antiIdle).toEqual({ enabled: true, intervalSeconds: '300', text: ' ', enter: false });
+    expect(nativeDraftMetadataPatch(own).antiIdle).toEqual(antiIdle);
+    expect(nativeDraftMetadataPatch({ ...own, antiIdle: { ...own.antiIdle, enabled: false } }).antiIdle).toBeNull();
+
+    const draft = { ...own, name: 'Console', path: '/dev/ttyUSB0' };
+    expect(nativeDraftProblem(draft, 'serial')).toBeNull();
+    expect(
+      nativeDraftProblem({ ...draft, antiIdle: { ...draft.antiIdle, intervalSeconds: '5' } }, 'serial'),
+    ).toBe('Anti-idle interval: Between 10 and 3600 seconds.');
   });
 
   it('carries the row color chosen in the editor', () => {

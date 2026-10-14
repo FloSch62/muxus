@@ -11,6 +11,7 @@ import {
   blankHostSessionLoggingDraft,
   type HostSessionLoggingDraft,
 } from '../../session-logging-policy.js';
+import { antiIdleDraft, antiIdleProblem, type AntiIdleDraft } from '../../anti-idle.js';
 import {
   loginSequenceDraft,
   loginSequenceProblem,
@@ -57,6 +58,8 @@ export interface HostDraft {
   pasteCharDelayMs?: number;
   /** Pastes wait for the prompt after each line. */
   pastePromptWait: PastePromptWaitDraft;
+  /** Text typed into idle sessions. */
+  antiIdle: AntiIdleDraft;
   /** Backspace and Enter keys, implicit CR and local echo. */
   inputModes: TerminalInputModes;
   /** Muxus-only plain-shell mode: no SFTP or shell integration. */
@@ -117,6 +120,7 @@ export function blankDraft(
     pasteLineDelayMs: undefined,
     pasteCharDelayMs: undefined,
     pastePromptWait: pastePromptWaitDraft(undefined),
+    antiIdle: antiIdleDraft(undefined),
     inputModes: hostTerminalInputModes(undefined),
     disableSftp: false,
     consoleCompatibility: false,
@@ -168,6 +172,7 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
     pasteLineDelayMs: entry.metadata?.pasteLineDelayMs,
     pasteCharDelayMs: entry.metadata?.pasteCharDelayMs,
     pastePromptWait: pastePromptWaitDraft(entry.metadata?.pastePromptWait),
+    antiIdle: antiIdleDraft(entry.metadata?.antiIdle),
     inputModes: hostTerminalInputModes(entry.metadata),
     disableSftp: entry.metadata?.disableSftp ?? false,
     consoleCompatibility: entry.metadata?.consoleCompatibility ?? false,
@@ -235,6 +240,7 @@ export function draftFromSavedSshProfile(
     pasteLineDelayMs: saved.metadata.pasteLineDelayMs,
     pasteCharDelayMs: saved.metadata.pasteCharDelayMs,
     pastePromptWait: pastePromptWaitDraft(saved.metadata.pastePromptWait),
+    antiIdle: antiIdleDraft(saved.metadata.antiIdle),
     inputModes: hostTerminalInputModes(saved.metadata),
     disableSftp: saved.metadata.disableSftp ?? false,
     consoleCompatibility: saved.metadata.consoleCompatibility ?? false,
@@ -326,6 +332,7 @@ export function draftProblem(draft: HostDraft): string | null {
   }
   return (
     pastePromptWaitProblem(draft.pastePromptWait) ??
+    antiIdleProblem(draft.antiIdle) ??
     loginSequenceProblem(draft.loginSequence) ??
     keywordHighlightRulesProblem(draft.keywordHighlights.rules)
   );

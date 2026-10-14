@@ -95,6 +95,7 @@ export function useUpdateSshMetadata(onSuccess?: (metadata: OpenSshProfileMetada
               ...(patch.pastePromptWait !== undefined
                 ? { pastePromptWait: patch.pastePromptWait ?? undefined }
                 : {}),
+              ...(patch.antiIdle !== undefined ? { antiIdle: patch.antiIdle ?? undefined } : {}),
               ...(patch.backspaceKey !== undefined
                 ? { backspaceKey: patch.backspaceKey ?? undefined }
                 : {}),

@@ -805,6 +805,21 @@ export const LOGIN_SEQUENCE_TEXT_MAX_LENGTH = 1024;
 export const LOGIN_SEQUENCE_DEFAULT_TIMEOUT_SECONDS = 10;
 export const LOGIN_SEQUENCE_MAX_TIMEOUT_SECONDS = 3600;
 
+/**
+ * Text a session types after a stretch without input, so a device that
+ * closes idle lines keeps it open. Enter is pressed only when `enter` is set.
+ */
+export interface AntiIdle {
+  intervalSeconds: number;
+  /** Typed as is; may be empty when only Enter is pressed. */
+  text: string;
+  enter: boolean;
+}
+
+export const ANTI_IDLE_MIN_INTERVAL_SECONDS = 10;
+export const ANTI_IDLE_MAX_INTERVAL_SECONDS = 3600;
+export const ANTI_IDLE_TEXT_MAX_LENGTH = 256;
+
 /** What a host's Backspace key sends: DEL (0x7f), as xterm.js does, or ^H (0x08). */
 export const TERMINAL_BACKSPACE_KEYS = ['del', 'ctrl-h'] as const;
 export type TerminalBackspaceKey = (typeof TERMINAL_BACKSPACE_KEYS)[number];
@@ -837,6 +852,8 @@ export interface OpenSshProfileMetadata {
   pasteCharDelayMs?: number;
   /** Pastes wait for the prompt after each line; fields left out use the defaults. Absent is off. */
   pastePromptWait?: Partial<PastePromptWait>;
+  /** Typed into this host's idle sessions; absent sends nothing. */
+  antiIdle?: AntiIdle;
   /** Keys and echo for this host's sessions; absent keeps what xterm.js does. */
   backspaceKey?: TerminalBackspaceKey;
   enterKey?: TerminalEnterKey;
@@ -868,6 +885,8 @@ export interface OpenSshMetadataPatch {
   pasteCharDelayMs?: number | null;
   /** Null turns prompt waiting off. */
   pastePromptWait?: Partial<PastePromptWait> | null;
+  /** Null turns anti-idle off. */
+  antiIdle?: AntiIdle | null;
   /** Null goes back to what xterm.js does. */
   backspaceKey?: TerminalBackspaceKey | null;
   enterKey?: TerminalEnterKey | null;

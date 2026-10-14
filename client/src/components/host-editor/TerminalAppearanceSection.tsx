@@ -26,7 +26,9 @@ import {
   type TerminalInputModes,
 } from '../../terminal/input-modes.js';
 import type { PastePromptWaitDraft } from '../../terminal/paste-prompt.js';
+import type { AntiIdleDraft } from '../../anti-idle.js';
 import { TerminalSchemeSelect } from '../TerminalSchemeSelect.js';
+import { AntiIdleFields, AntiIdleIntro } from './AntiIdleFields.js';
 import { PasteDelayField } from './PasteDelayField.js';
 import { PastePromptFields } from './PastePromptFields.js';
 
@@ -38,6 +40,7 @@ export interface HostTerminalAppearance {
   pasteLineDelayMs?: number;
   pasteCharDelayMs?: number;
   pastePromptWait: PastePromptWaitDraft;
+  antiIdle: AntiIdleDraft;
   inputModes: TerminalInputModes;
 }
 
@@ -125,6 +128,8 @@ export function TerminalAppearanceSection({
         value={value.pastePromptWait}
         onChange={(pastePromptWait) => onChange({ pastePromptWait })}
       />
+      <AntiIdleIntro sx={{ pt: 1 }} />
+      <AntiIdleFields value={value.antiIdle} onChange={(antiIdle) => onChange({ antiIdle })} />
       <Box sx={{ pt: 1 }}>
         <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
           Keyboard and echo

@@ -44,6 +44,7 @@ export class LoginSequenceSession {
   private readonly runner: LoginSequenceRunner;
   private answer: ((response: AuthPromptResponse | undefined) => void) | undefined;
   private started = false;
+  private finished = false;
 
   constructor(private readonly options: LoginSequenceSessionOptions) {
     this.runner = new LoginSequenceRunner(
@@ -63,13 +64,23 @@ export class LoginSequenceSession {
     this.runner.output(data);
   }
 
+  /** Started and not yet done, stopped or closed. */
+  get running(): boolean {
+    return this.started && !this.finished;
+  }
+
   /** Run the steps; output received since the session attached already counts. */
   start(): void {
     if (this.started) return;
     this.started = true;
-    void this.runner.run().catch((err: unknown) => {
-      this.options.log?.warn({ err }, 'login sequence failed');
-    });
+    void this.runner
+      .run()
+      .catch((err: unknown) => {
+        this.options.log?.warn({ err }, 'login sequence failed');
+      })
+      .finally(() => {
+        this.finished = true;
+      });
   }
 
   close(): void {
