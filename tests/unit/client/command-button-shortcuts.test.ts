@@ -223,6 +223,16 @@ describe('recording a button shortcut', () => {
  * a listener is removed. Node 24's EventTarget only reads `{ capture: true }`
  * there, so the app's capture listeners would never come off.
  */
+/** A focused element: inside the terminal, or a control elsewhere (a dialog button, a sidebar row). */
+class StandInElement {
+  constructor(private readonly inTerminal: boolean) {}
+  closest(selector: string): StandInElement | null {
+    return selector === '.xterm' && this.inTerminal ? this : null;
+  }
+}
+const terminalFocus = new StandInElement(true);
+const elsewhereFocus = new StandInElement(false);
+
 class StandInWindow extends EventTarget {
   override removeEventListener(
     type: string,
@@ -243,9 +253,15 @@ describe('pressing a button shortcut', () => {
     target = new StandInWindow();
     vi.stubGlobal('window', target);
     vi.stubGlobal('document', { documentElement: { classList: { toggle() {}, remove() {} } } });
-    vi.stubGlobal('Element', class {});
+    vi.stubGlobal('Element', StandInElement);
     uninstall = installShortcuts();
-    return (key: string, code: string, modifiers: { ctrlKey?: boolean; altKey?: boolean }, repeat = false) => {
+    return (
+      key: string,
+      code: string,
+      modifiers: { ctrlKey?: boolean; altKey?: boolean },
+      repeat = false,
+      focus = terminalFocus,
+    ) => {
       const event = Object.assign(new Event('keydown', { cancelable: true }), {
         key,
         code,
@@ -257,6 +273,7 @@ describe('pressing a button shortcut', () => {
         repeat,
         ...modifiers,
       });
+      Object.defineProperty(event, 'target', { value: focus });
       target.dispatchEvent(event);
       return event.defaultPrevented;
     };
@@ -295,6 +312,19 @@ describe('pressing a button shortcut', () => {
     // A new press runs it again.
     expect(press('v', 'KeyV', { ctrlKey: true, altKey: true })).toBe(true);
     expect(runMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves the key alone while focus is outside the terminal, as in a dialog or the sidebar', () => {
+    openTab({ kind: 'local' });
+    usePrefsStore.setState({ commandButtons: buttons });
+    const press = install();
+
+    expect(press('v', 'KeyV', { ctrlKey: true, altKey: true }, false, elsewhereFocus)).toBe(false);
+    expect(release('v', 'KeyV')).toBe(true);
+    expect(runMock).not.toHaveBeenCalled();
+    // App commands still answer from there.
+    expect(press(' ', 'Space', { ctrlKey: true }, false, elsewhereFocus)).toBe(true);
+    expect(useUiStore.getState().commandButtonMenuOpen).toBe(true);
   });
 
   it('leaves the key and its repeats to the shell when the press did not run the button', () => {

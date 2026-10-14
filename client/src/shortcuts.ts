@@ -96,10 +96,14 @@ export function installShortcuts(queryClient?: QueryClient): () => void {
     if (isModifierCode(event.code)) return;
     const typing = typingTarget(event.target);
     if (typing === 'text') return;
+    const inTerminal = event.target instanceof Element && event.target.closest('.xterm') !== null;
     const { keybindings, commandButtons } = usePrefsStore.getState();
     for (const command of commandsForEvent(event, keybindings, shortcutCommands(commandButtons))) {
       if (typing === 'editor' && !command.inEditor) continue;
       const button = command.category === 'buttons';
+      // A button types into the active session, so it only answers keys the
+      // terminal itself would have taken, never one aimed at a dialog or the sidebar.
+      if (button && !inTerminal) continue;
       const handled = button && event.repeat ? command.id === heldButtonId : command.run();
       if (!handled) continue;
       if (button) {
