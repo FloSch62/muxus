@@ -73,6 +73,7 @@ import {
   usePasteProgressStore,
 } from '../state/paste-progress.js';
 import {
+  TERMINAL_BOX_FONT,
   TERMINAL_SYMBOL_FONT,
   sshKeepalivePrefField,
   terminalFontStack,
@@ -752,14 +753,15 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     // first real size; until then the session keeps xterm's own default.
     let fitted = fitTerminal();
     keywordHighlighterRef.current = attachKeywordHighlighter(term, keywordHighlights);
-    // Webfonts load lazily. Wait for both the selected text face and bundled
-    // symbol face, then recalculate cells and repaint anything that arrived
-    // while Chromium was still showing a fallback.
+    // Webfonts load lazily. Wait for the selected text face and the bundled
+    // box-drawing and symbol faces, then recalculate cells and repaint anything
+    // that arrived while Chromium was still showing a fallback.
     void Promise.all([
       document.fonts.load(
         `${initialFontSize}px ${initialFontStack}`,
         '[15:58:10] root@rocker1:~',
       ),
+      document.fonts.load(`${initialFontSize}px ${TERMINAL_BOX_FONT}`, '\u2500\u2588'),
       document.fonts.load(
         `${initialFontSize}px ${TERMINAL_SYMBOL_FONT}`,
         '\ue0b0\uf015\uf31b\u276f',

@@ -1,0 +1,8 @@
+/* Box Drawing and Block Elements cut to the terminal cell; see hack/box-drawing-font.py. */
+@font-face {
+  font-family: 'Muxus Box Drawing';
+  src: url(./muxus-box-drawing.woff2) format('woff2');
+  unicode-range: U+2500-259F;
+  /* One face for every weight, so bold text never synthesizes thicker blocks. */
+  font-weight: 100 900;
+}

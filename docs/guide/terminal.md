@@ -34,12 +34,12 @@ correctly and low-contrast remote colour choices stay readable.
 
 ## Fonts and colours
 
-The bundled stack is JetBrains Mono plus a **Nerd Font / Powerline** symbol face, so
-Starship prompts, `lsd`, `eza` icons and TUI box drawing render without a local font
-install. In the desktop app, the font selector reads the families installed for the
-current operating-system user. `fontFamily` also accepts a custom family name; the
-bundled text and symbol faces remain as fallbacks when it is unavailable or lacks a
-glyph.
+The bundled stack is JetBrains Mono, a box-drawing face cut to the same cell, and a
+**Nerd Font / Powerline** symbol face, so Starship prompts, `lsd`, `eza` icons, TUI
+frames and block-character art render without a local font install. In the desktop
+app, the font selector reads the families installed for the current operating-system
+user. `fontFamily` also accepts a custom family name; the bundled text, box-drawing and
+symbol faces remain as fallbacks when it is unavailable or lacks a glyph.
 
 <figure markdown="span">
   ![The colour scheme and font settings](../assets/screenshots/settings.png#only-light){ .shadow }

@@ -132,8 +132,15 @@ export interface LocalShellProfileConfig {
 /** Bundled icon-only fallback covering Nerd Font and Powerline glyphs. */
 export const TERMINAL_SYMBOL_FONT = '"Pure Nerd Font"';
 
+/**
+ * Bundled Box Drawing and Block Elements cut to the JetBrains Mono cell. The
+ * bundled JetBrains Mono subsets leave that range out, and the symbol font's
+ * glyphs for it are an em wide, which breaks block art and frame lines.
+ */
+export const TERMINAL_BOX_FONT = '"Muxus Box Drawing"';
+
 /** Fallback stack appended after the user's chosen family. */
-export const MONO_FONT_FALLBACK = `"JetBrains Mono", ${TERMINAL_SYMBOL_FONT}, "Noto Sans Mono", "DejaVu Sans Mono", "Liberation Mono", monospace`;
+export const MONO_FONT_FALLBACK = `"JetBrains Mono", ${TERMINAL_BOX_FONT}, ${TERMINAL_SYMBOL_FONT}, "Noto Sans Mono", "DejaVu Sans Mono", "Liberation Mono", monospace`;
 
 /** CSS font-family stack for the terminal given the fontFamily pref. */
 export function terminalFontStack(family: string): string {
