@@ -294,6 +294,33 @@ describe('bulkEditPlan', () => {
     ]);
   });
 
+  it('sets anti-idle on terminal hosts and turns it off again', () => {
+    const space = { intervalSeconds: 240, text: ' ', enter: false };
+    const hosts = [openSsh('a', {}, { antiIdle: space }), telnet('t'), rdp('desk')];
+    const on = { enabled: true, intervalSeconds: '240', text: ' ', enter: false };
+    const off = { enabled: false, intervalSeconds: '60', text: '', enter: false };
+
+    expect(summarizeBulkValues(hosts, new Map()).antiIdle).toEqual({ state: 'mixed', count: 2 });
+    expect(summarizeBulkValues([hosts[1]!], new Map()).antiIdle).toEqual({
+      state: 'same',
+      count: 1,
+      value: off,
+    });
+    expect(bulkEditPlan(hosts, { antiIdle: on }).metadata).toEqual([
+      { host: hosts[1], patch: { antiIdle: space } },
+    ]);
+    // Text kept while switched off is not a difference.
+    expect(bulkEditPlan(hosts, { antiIdle: { ...on, enabled: false } }).metadata).toEqual([
+      { host: hosts[0], patch: { antiIdle: null } },
+    ]);
+    expect(bulkChangesProblem({ antiIdle: { ...on, intervalSeconds: '5' } })).toBe(
+      'Anti-idle interval: Between 10 and 3600 seconds.',
+    );
+    expect(bulkChangesProblem({ antiIdle: { ...on, text: '' } })).toBe(
+      'Anti-idle: enter text to type, or press Enter.',
+    );
+  });
+
   it('applies terminal and SSH settings only where they mean something', () => {
     const hosts = [openSsh('a'), telnet('t'), rdp('desk')];
 

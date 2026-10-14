@@ -51,6 +51,11 @@ export class PastePacer {
     private readonly report: (progress: PasteProgress) => void,
   ) {}
 
+  /** A paste is being typed. */
+  get running(): boolean {
+    return this.controller !== undefined;
+  }
+
   enqueue(request: PasteRequest): void {
     if (this.closed) return;
     const prepared = preparePasteText(request.text, request.bracketed);

@@ -21,6 +21,7 @@ import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import { useApplyBulkHostEdit } from '../api/host-bulk-edit.js';
 import { useSessionLoggingPolicies, useSessionLoggingPolicy } from '../api/queries.js';
+import { antiIdleDraft } from '../anti-idle.js';
 import {
   bulkChangesProblem,
   bulkEditPlan,
@@ -41,6 +42,7 @@ import { useUiStore } from '../state/ui.js';
 import { isTerminalSchemeId } from '../terminal/palette.js';
 import { FolderPathField } from './FolderPathField.js';
 import { HostColorPicker } from './HostColorPicker.js';
+import { AntiIdleFields, AntiIdleIntro } from './host-editor/AntiIdleFields.js';
 import { EditorShell, type EditorSectionDef } from './host-editor/EditorShell.js';
 import { LoggingSection } from './host-editor/LoggingSection.js';
 import { PasteDelayField } from './host-editor/PasteDelayField.js';
@@ -87,6 +89,7 @@ const SECTIONS: ReadonlyArray<{
       'commandButtonGroup',
       'pasteLineDelayMs',
       'pasteCharDelayMs',
+      'antiIdle',
     ],
   },
   {
@@ -263,6 +266,7 @@ function BulkEditBody({ hostKeys, onClose }: { hostKeys: readonly string[]; onCl
           commandButtonGroup={field('commandButtonGroup')}
           pasteLineDelayMs={field('pasteLineDelayMs')}
           pasteCharDelayMs={field('pasteCharDelayMs')}
+          antiIdle={field('antiIdle')}
         />
       )}
       {section === 'highlighting' && (
@@ -468,6 +472,7 @@ function AppearanceSection({
   commandButtonGroup,
   pasteLineDelayMs,
   pasteCharDelayMs,
+  antiIdle,
 }: {
   total: number;
   scheme: BulkFieldState<string | undefined>;
@@ -476,6 +481,7 @@ function AppearanceSection({
   commandButtonGroup: BulkFieldState<string | undefined>;
   pasteLineDelayMs: BulkFieldState<number | undefined>;
   pasteCharDelayMs: BulkFieldState<number | undefined>;
+  antiIdle: BulkFieldState<BulkHostValues['antiIdle']>;
 }) {
   const customSchemes = useCustomTerminalSchemes();
   const commandGroups = usePrefsStore((state) => state.commandButtonGroups);
@@ -560,6 +566,31 @@ function AppearanceSection({
           <FieldStatus state={pasteCharDelayMs} inset />
         </Box>
       </Stack>
+      <Box>
+        <AntiIdleIntro sx={{ mb: 1 }} />
+        {antiIdle.value ? (
+          <AntiIdleFields value={antiIdle.value} onChange={antiIdle.set} />
+        ) : (
+          <Alert
+            severity="info"
+            variant="outlined"
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                onClick={() => antiIdle.set(antiIdleDraft(undefined))}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                Set one for all
+              </Button>
+            }
+          >
+            These hosts handle idle sessions differently. Each keeps its own setting until you set
+            one for all of them.
+          </Alert>
+        )}
+        <FieldStatus state={antiIdle} />
+      </Box>
     </Stack>
   );
 }

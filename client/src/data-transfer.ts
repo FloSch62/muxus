@@ -27,6 +27,7 @@ import {
 } from '@muxus/shared';
 import { apiFetch } from './api/http.js';
 import { fetchHostPreview } from './api/ssh-config.js';
+import { isAntiIdle } from './anti-idle.js';
 import {
   DEFAULT_COMMAND_GROUP,
   normalizeCommandButtonGroups,
@@ -658,6 +659,7 @@ function portableMetadata(
     commandButtonGroup: metadata.commandButtonGroup,
     pasteLineDelayMs: metadata.pasteLineDelayMs,
     pasteCharDelayMs: metadata.pasteCharDelayMs,
+    antiIdle: metadata.antiIdle,
     disableSftp: metadata.disableSftp,
     consoleCompatibility: metadata.consoleCompatibility,
     loginSequence: metadata.loginSequence,
@@ -823,6 +825,8 @@ function metadataPatch(metadata: PortableHostMetadata): OpenSshMetadataPatch {
     commandButtonGroup: metadata.commandButtonGroup ?? null,
     pasteLineDelayMs: metadata.pasteLineDelayMs ?? null,
     pasteCharDelayMs: metadata.pasteCharDelayMs ?? null,
+    // Off for a backup without one; a setting that does not check out is dropped, not the host.
+    antiIdle: isAntiIdle(metadata.antiIdle) ? metadata.antiIdle : null,
     disableSftp: metadata.disableSftp ?? false,
     consoleCompatibility: metadata.consoleCompatibility ?? false,
     loginSequence: isLoginSequence(metadata.loginSequence) ? metadata.loginSequence : null,

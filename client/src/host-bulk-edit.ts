@@ -8,6 +8,13 @@ import type {
   SshProfile,
 } from '@muxus/shared';
 import {
+  antiIdleDraft,
+  antiIdleFromDraft,
+  antiIdleProblem,
+  sameAntiIdleDraft,
+  type AntiIdleDraft,
+} from './anti-idle.js';
+import {
   folderDepth,
   MAX_FOLDER_DEPTH,
   MAX_GROUP_PATH,
@@ -53,6 +60,7 @@ export interface BulkHostValues {
   commandButtonGroup: string | undefined;
   pasteLineDelayMs: number | undefined;
   pasteCharDelayMs: number | undefined;
+  antiIdle: AntiIdleDraft;
   highlightProfileId: string | undefined;
   highlightInheritGlobal: boolean;
   sessionLogging: HostSessionLoggingDraft;
@@ -86,6 +94,7 @@ export const BULK_FIELD_AUDIENCE: { readonly [F in BulkHostField]: BulkAudience 
   commandButtonGroup: 'terminal',
   pasteLineDelayMs: 'terminal',
   pasteCharDelayMs: 'terminal',
+  antiIdle: 'terminal',
   highlightProfileId: 'terminal',
   highlightInheritGlobal: 'terminal',
   sessionLogging: 'terminal',
@@ -151,6 +160,7 @@ export function bulkValuesForHost(
     values.commandButtonGroup = metadata?.commandButtonGroup;
     values.pasteLineDelayMs = metadata?.pasteLineDelayMs;
     values.pasteCharDelayMs = metadata?.pasteCharDelayMs;
+    values.antiIdle = antiIdleDraft(metadata?.antiIdle);
     values.highlightProfileId = highlights?.profileId;
     values.highlightInheritGlobal = highlights?.inheritGlobal ?? true;
     values.loginSequence = loginSequenceDraft(metadata?.loginSequence);
@@ -197,6 +207,7 @@ export function sameBulkValue<F extends BulkHostField>(
   if (field === 'loginSequence') {
     return sameLoginSequenceDraft(a as LoginSequenceDraft, b as LoginSequenceDraft);
   }
+  if (field === 'antiIdle') return sameAntiIdleDraft(a as AntiIdleDraft, b as AntiIdleDraft);
   return a === b;
 }
 
@@ -254,6 +265,10 @@ export function bulkChangesProblem(changes: BulkHostChanges): string | null {
   if (changes.port !== undefined && changes.port.trim()) {
     const port = Number(changes.port);
     if (!Number.isInteger(port) || port < 1 || port > 65_535) return 'Port must be 1–65535.';
+  }
+  if (changes.antiIdle) {
+    const problem = antiIdleProblem(changes.antiIdle);
+    if (problem) return problem;
   }
   if (changes.loginSequence) return loginSequenceProblem(changes.loginSequence);
   return null;
@@ -388,6 +403,9 @@ function metadataPatch(
   }
   if (differs.has('pasteLineDelayMs')) patch.pasteLineDelayMs = changes.pasteLineDelayMs ?? null;
   if (differs.has('pasteCharDelayMs')) patch.pasteCharDelayMs = changes.pasteCharDelayMs ?? null;
+  if (differs.has('antiIdle') && changes.antiIdle) {
+    patch.antiIdle = antiIdleFromDraft(changes.antiIdle);
+  }
   if (differs.has('consoleCompatibility')) patch.consoleCompatibility = changes.consoleCompatibility;
   if (differs.has('disableSftp')) patch.disableSftp = changes.disableSftp;
   if (differs.has('loginSequence') && changes.loginSequence) {

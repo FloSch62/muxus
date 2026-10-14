@@ -42,6 +42,21 @@ describe('paced pastes', () => {
     expect(reports.at(-1)).toEqual({ state: 'done', line: 3, lines: 3, sent: 43, total: 43 });
   });
 
+  it('reports running from the first write until the queue is done or cancelled', async () => {
+    const { pacer } = recordingPacer();
+    expect(pacer.running).toBe(false);
+
+    pacer.enqueue(paste('one\ntwo\n', 250));
+    expect(pacer.running).toBe(true);
+    await vi.runAllTimersAsync();
+    expect(pacer.running).toBe(false);
+
+    pacer.enqueue(paste('one\ntwo\n', 250));
+    pacer.cancel();
+    await vi.runAllTimersAsync();
+    expect(pacer.running).toBe(false);
+  });
+
   it('types a character at a time with a character delay', async () => {
     const { pacer, writes } = recordingPacer();
 

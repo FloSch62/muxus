@@ -75,6 +75,13 @@ Platform naming:
     [delay after each line](terminal.md#pasting-into-slow-consoles) under the host's
     **Terminal appearance**, and Muxus types pastes in a line at a time.
 
+!!! tip "Idle timeouts"
+
+    A console port or console server that closes idle lines ends the session after a quiet
+    spell. Turn on [anti-idle](terminal.md#keeping-idle-sessions-open) under the host's
+    **Terminal appearance** with an interval shorter than that timeout, and Muxus types into
+    the session before it runs out.
+
 ## Send BREAK
 
 Some consoles act on a BREAK signal rather than on any key: Cisco ROMMON and password

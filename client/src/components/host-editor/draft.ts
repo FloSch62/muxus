@@ -11,6 +11,7 @@ import {
   blankHostSessionLoggingDraft,
   type HostSessionLoggingDraft,
 } from '../../session-logging-policy.js';
+import { antiIdleDraft, antiIdleProblem, type AntiIdleDraft } from '../../anti-idle.js';
 import {
   loginSequenceDraft,
   loginSequenceProblem,
@@ -46,6 +47,8 @@ export interface HostDraft {
   /** Paste pacing; unset follows the Terminal settings. */
   pasteLineDelayMs?: number;
   pasteCharDelayMs?: number;
+  /** Text typed into idle sessions. */
+  antiIdle: AntiIdleDraft;
   /** Muxus-only plain-shell mode: no SFTP or shell integration. */
   disableSftp: boolean;
   /** Muxus-only console mode: also no env requests, with PTY rejection fallback. */
@@ -102,6 +105,7 @@ export function blankDraft(
     commandButtonGroup: undefined,
     pasteLineDelayMs: undefined,
     pasteCharDelayMs: undefined,
+    antiIdle: antiIdleDraft(undefined),
     disableSftp: false,
     consoleCompatibility: false,
     file: '',
@@ -151,6 +155,7 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
     commandButtonGroup: entry.metadata?.commandButtonGroup,
     pasteLineDelayMs: entry.metadata?.pasteLineDelayMs,
     pasteCharDelayMs: entry.metadata?.pasteCharDelayMs,
+    antiIdle: antiIdleDraft(entry.metadata?.antiIdle),
     disableSftp: entry.metadata?.disableSftp ?? false,
     consoleCompatibility: entry.metadata?.consoleCompatibility ?? false,
     file: entry.file,
@@ -216,6 +221,7 @@ export function draftFromSavedSshProfile(
     commandButtonGroup: saved.metadata.commandButtonGroup,
     pasteLineDelayMs: saved.metadata.pasteLineDelayMs,
     pasteCharDelayMs: saved.metadata.pasteCharDelayMs,
+    antiIdle: antiIdleDraft(saved.metadata.antiIdle),
     disableSftp: saved.metadata.disableSftp ?? false,
     consoleCompatibility: saved.metadata.consoleCompatibility ?? false,
     file: '',
@@ -305,6 +311,7 @@ export function draftProblem(draft: HostDraft): string | null {
     if (!/^[A-Za-z][A-Za-z0-9]*$/.test(e.keyword)) return `"${e.keyword}" is not a valid option keyword.`;
   }
   return (
+    antiIdleProblem(draft.antiIdle) ??
     loginSequenceProblem(draft.loginSequence) ??
     keywordHighlightRulesProblem(draft.keywordHighlights.rules)
   );

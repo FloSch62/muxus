@@ -17,7 +17,9 @@ import {
   terminalScheme,
   terminalSchemeIdForHost,
 } from '../../terminal/palette.js';
+import type { AntiIdleDraft } from '../../anti-idle.js';
 import { TerminalSchemeSelect } from '../TerminalSchemeSelect.js';
+import { AntiIdleFields, AntiIdleIntro } from './AntiIdleFields.js';
 import { PasteDelayField } from './PasteDelayField.js';
 
 export interface HostTerminalAppearance {
@@ -27,6 +29,7 @@ export interface HostTerminalAppearance {
   commandButtonGroup?: string;
   pasteLineDelayMs?: number;
   pasteCharDelayMs?: number;
+  antiIdle: AntiIdleDraft;
 }
 
 /** Terminal colors saved with a host, shared by all three host kinds. */
@@ -109,6 +112,8 @@ export function TerminalAppearanceSection({
           onChange={(delay) => onChange({ pasteCharDelayMs: delay })}
         />
       </Stack>
+      <AntiIdleIntro sx={{ pt: 1 }} />
+      <AntiIdleFields value={value.antiIdle} onChange={(antiIdle) => onChange({ antiIdle })} />
     </Stack>
   );
 }

@@ -75,8 +75,8 @@ text colour and background colour can override the application defaults. Leave a
 on **Use application default** to keep following the global preference. Host overrides
 apply to open terminals immediately, which makes sessions easy to identify when the tab
 strip and sidebar are hidden in focus mode. The same section chooses the
-[command button group](commands.md#a-group-per-host) the bar shows for the host and its
-[paste pacing](#pasting-into-slow-consoles).
+[command button group](commands.md#a-group-per-host) the bar shows for the host, its
+[paste pacing](#pasting-into-slow-consoles) and its [anti-idle](#keeping-idle-sessions-open).
 
 Scheme, font family, size and line height are in
 [Settings → Appearance](settings.md#appearance). Cursor style (block, underline, bar),
@@ -161,6 +161,35 @@ When the program reading the paste has turned on bracketed paste mode, as bash a
 one pair of markers encloses the whole paste rather than each line, and cancelling closes
 it. With [multi-execution](commands.md#multi-execution), each mirrored terminal gets the
 paste at its own host's pace, independently of the others.
+
+### Keeping idle sessions open
+
+Network devices and console servers close a line that has had no input for a while, such as
+a VTY or console port with an `exec-timeout`. SSH keepalives do not count as input there. A
+host can have Muxus type into its idle sessions instead:
+
+1. Open the host's editor and go to **Terminal appearance**.
+2. Under **Anti-idle**, switch on **Type into idle sessions**.
+3. Set **After**: the seconds without input, from 10 to 3600.
+4. Enter the **Text**. It is typed exactly as entered, spaces included, with nothing added;
+   control characters such as a tab are not accepted.
+5. Tick **Press Enter afterwards** only when the device needs it. The editor warns that Enter
+   also answers whatever the device is asking at that moment, such as a confirmation before
+   a reload, and runs a command left half-typed for longer than the interval. In a
+   full-screen editor or pager, the text and Enter land there.
+
+Any input starts the wait over: keystrokes, pastes, command buttons, vault secrets and login
+sequence steps. [Send BREAK](telnet-serial.md#send-break) is a signal, not input, so it does
+not. While a paced paste or a login sequence runs, the wait is held, and a full interval
+starts once it has finished. The Muxus backend types the text into that session only, so
+[multi-execution](commands.md#multi-execution) never mirrors it, and it keeps going while
+the window is minimized. [Session history](session-history.md) records it like typed input,
+that is, only when input capture is on.
+
+Anti-idle is off by default and is available for SSH, Telnet and serial hosts. The setting
+is read when a session connects, so a change applies to sessions opened or reconnected after
+saving. The [bulk editor](hosts.md#editing-several-hosts-at-once) sets it on many hosts at
+once, and it is part of a [backup](settings.md#backup-data).
 
 ### Dropping files
 

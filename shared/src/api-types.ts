@@ -791,6 +791,21 @@ export const LOGIN_SEQUENCE_TEXT_MAX_LENGTH = 1024;
 export const LOGIN_SEQUENCE_DEFAULT_TIMEOUT_SECONDS = 10;
 export const LOGIN_SEQUENCE_MAX_TIMEOUT_SECONDS = 3600;
 
+/**
+ * Text a session types after a stretch without input, so a device that
+ * closes idle lines keeps it open. Enter is pressed only when `enter` is set.
+ */
+export interface AntiIdle {
+  intervalSeconds: number;
+  /** Typed as is; may be empty when only Enter is pressed. */
+  text: string;
+  enter: boolean;
+}
+
+export const ANTI_IDLE_MIN_INTERVAL_SECONDS = 10;
+export const ANTI_IDLE_MAX_INTERVAL_SECONDS = 3600;
+export const ANTI_IDLE_TEXT_MAX_LENGTH = 256;
+
 export interface OpenSshProfileMetadata {
   /** Stable local ID survives an OpenSSH alias rename. */
   profileId: string;
@@ -813,6 +828,8 @@ export interface OpenSshProfileMetadata {
   /** Paste pacing for this host's sessions; absent follows the Terminal settings. */
   pasteLineDelayMs?: number;
   pasteCharDelayMs?: number;
+  /** Typed into this host's idle sessions; absent sends nothing. */
+  antiIdle?: AntiIdle;
   /** Do not open SFTP channels or probe for remote Unix shell integration. */
   disableSftp?: boolean;
   /** Console appliances: also suppress env requests and tolerate a rejected PTY. */
@@ -835,6 +852,8 @@ export interface OpenSshMetadataPatch {
   commandButtonGroup?: string | null;
   pasteLineDelayMs?: number | null;
   pasteCharDelayMs?: number | null;
+  /** Null turns anti-idle off. */
+  antiIdle?: AntiIdle | null;
   disableSftp?: boolean;
   consoleCompatibility?: boolean;
   /** Null goes back to the folder's sequence. */

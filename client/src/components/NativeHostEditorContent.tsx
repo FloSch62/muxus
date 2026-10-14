@@ -151,6 +151,7 @@ export function NativeHostEditorContent({
         draft.terminalBackgroundColor,
         draft.commandButtonGroup,
         draft.pasteLineDelayMs !== undefined || draft.pasteCharDelayMs !== undefined,
+        draft.antiIdle.enabled,
       ].filter(Boolean).length || undefined,
     },
     ...(kind === 'serial'

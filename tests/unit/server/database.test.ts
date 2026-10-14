@@ -54,6 +54,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 27, name: 'login-sequences' },
       { version: 28, name: 'host-paste-pacing' },
       { version: 29, name: 'management-hosts' },
+      { version: 30, name: 'host-anti-idle' },
     ]);
   });
 
@@ -145,8 +146,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 29,
-      name: 'management-hosts',
+      version: 30,
+      name: 'host-anti-idle',
     });
     expect(database.savedHostProfile(telnet.id)).toMatchObject({
       name: 'Core switch',
@@ -251,7 +252,7 @@ describe('MuxusDatabase migrations', () => {
     }
 
     database = new MuxusDatabase(filename);
-    expect(database.appliedMigrations().at(-1)).toEqual({ version: 29, name: 'management-hosts' });
+    expect(database.appliedMigrations().at(-1)).toEqual({ version: 30, name: 'host-anti-idle' });
     expect(database.savedHostProfile(rdp.id)).toMatchObject({ name: 'Build server', metadata: { group: 'Lab' } });
     const gnmi = database.saveSavedHostProfile({
       name: 'leaf1',
@@ -323,6 +324,37 @@ describe('MuxusDatabase migrations', () => {
     );
     expect(database.sftpDisabledForAlias('legacy')).toBe(true);
     expect(database.consoleCompatibilityForAlias('legacy')).toBe(false);
+  });
+
+  it('keeps version 29 hosts, with anti-idle off, when adding the anti-idle column', () => {
+    temporaryDirectory = mkdtempSync(path.join(os.tmpdir(), 'muxus-v29-migration-'));
+    const filename = path.join(temporaryDirectory, 'muxus.sqlite3');
+    database = new MuxusDatabase(filename);
+    database.updateOpenSshMetadata('legacy', { group: 'Core', pasteLineDelayMs: 250 });
+    const telnet = database.saveSavedHostProfile({
+      name: 'Core switch',
+      profile: { kind: 'telnet', host: 'switch.lab', port: 23 },
+    });
+    database.close();
+    database = undefined;
+
+    const legacy = new DatabaseSync(filename);
+    try {
+      legacy.exec(`
+        DELETE FROM schema_migrations WHERE version = 30;
+        ALTER TABLE connection_profiles DROP COLUMN anti_idle_json;
+        PRAGMA user_version = 29;
+      `);
+    } finally {
+      legacy.close();
+    }
+
+    database = new MuxusDatabase(filename);
+    const metadata = database.openSshMetadata(['legacy']).get('legacy');
+    expect(metadata).toMatchObject({ group: 'Core', pasteLineDelayMs: 250 });
+    expect(metadata?.antiIdle).toBeUndefined();
+    expect(database.savedHostProfile(telnet.id)?.metadata.antiIdle).toBeUndefined();
+    expect(database.hostAntiIdle({ profileId: telnet.id })).toBeUndefined();
   });
 
   it('upgrades the draft version 13 vault without deleting credentials', () => {
@@ -398,8 +430,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 29,
-      name: 'management-hosts',
+      version: 30,
+      name: 'host-anti-idle',
     });
     expect(database.passwordVaultConfig()).toMatchObject({
       formatVersion: 2,
@@ -763,6 +795,43 @@ describe('hybrid OpenSSH metadata', () => {
     expect(cleared?.pasteLineDelayMs).toBeUndefined();
     expect(cleared?.pasteCharDelayMs).toBeUndefined();
     expect(database.savedHostProfile(telnet.id)?.metadata.pasteCharDelayMs).toBeUndefined();
+  });
+
+  it('stores, looks up and clears the anti-idle setting of OpenSSH and saved hosts', () => {
+    database = new MuxusDatabase(':memory:');
+    const serial = database.saveSavedHostProfile({
+      name: 'Rack console',
+      profile: {
+        kind: 'serial',
+        path: '/dev/ttyUSB0',
+        baudRate: 9_600,
+        dataBits: 8,
+        stopBits: 1,
+        parity: 'none',
+        flowControl: 'none',
+      },
+    });
+    const space = { intervalSeconds: 240, text: ' ', enter: false };
+    const enter = { intervalSeconds: 60, text: '', enter: true };
+
+    expect(database.updateOpenSshMetadata('core-01', { antiIdle: space })).toMatchObject({
+      antiIdle: space,
+    });
+    expect(database.updateSavedHostMetadata(serial.id, { antiIdle: enter }).metadata).toMatchObject({
+      antiIdle: enter,
+    });
+    expect(database.hostAntiIdle({ alias: 'core-01' })).toEqual(space);
+    expect(database.hostAntiIdle({ profileId: serial.id })).toEqual(enter);
+    expect(database.hostAntiIdle({ alias: 'unknown' })).toBeUndefined();
+
+    // Other metadata edits leave it alone; null turns it off.
+    database.updateOpenSshMetadata('core-01', { color: '#ef4444' });
+    expect(database.openSshMetadata(['core-01']).get('core-01')?.antiIdle).toEqual(space);
+    database.updateOpenSshMetadata('core-01', { antiIdle: null });
+    database.updateSavedHostMetadata(serial.id, { antiIdle: null });
+    expect(database.openSshMetadata(['core-01']).get('core-01')?.antiIdle).toBeUndefined();
+    expect(database.savedHostProfile(serial.id)?.metadata.antiIdle).toBeUndefined();
+    expect(database.hostAntiIdle({ profileId: serial.id })).toBeUndefined();
   });
 
   it('moves hosts between case-insensitive groups and can clear organization', () => {

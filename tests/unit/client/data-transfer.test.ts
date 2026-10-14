@@ -827,6 +827,7 @@ describe('backing up host terminal schemes', () => {
           terminalBackgroundColor: '#002b36',
           pasteLineDelayMs: 200,
           pasteCharDelayMs: 0,
+          antiIdle: { intervalSeconds: 120, text: ' ', enter: false },
           connectCount: 0,
         },
         createdAt: '2026-08-10T00:00:00.000Z',
@@ -843,6 +844,7 @@ describe('backing up host terminal schemes', () => {
     expect(document.data.savedHosts[0]?.metadata).toMatchObject({
       pasteLineDelayMs: 200,
       pasteCharDelayMs: 0,
+      antiIdle: { intervalSeconds: 120, text: ' ', enter: false },
     });
   });
 });
@@ -1109,12 +1111,38 @@ describe('restoring imported serial hosts', () => {
           commandButtonGroup: null,
           pasteLineDelayMs: null,
           pasteCharDelayMs: null,
+          antiIdle: null,
           disableSftp: false,
           consoleCompatibility: false,
           loginSequence: null,
         }),
       }),
     );
+  });
+
+  it('restores anti-idle, and drops a setting that does not check out', async () => {
+    const restoredAntiIdle = async (antiIdle: unknown) => {
+      apiFetchMock.mockReset();
+      apiFetchMock
+        .mockResolvedValueOnce({ hosts: [] })
+        .mockResolvedValueOnce({ profiles: [] })
+        .mockResolvedValueOnce({ id: 'securecrt-serial-console' })
+        .mockResolvedValueOnce({ id: 'securecrt-serial-console' });
+      const host = importedSerial.savedHosts[0]!;
+      await restoreImportedConnections(
+        { ...importedSerial, savedHosts: [{ ...host, metadata: { ...host.metadata, antiIdle } as never }] },
+        'replace',
+      );
+      const patch = apiFetchMock.mock.calls[3]?.[1]?.body as string;
+      return (JSON.parse(patch) as { antiIdle: unknown }).antiIdle;
+    };
+    const space = { intervalSeconds: 120, text: ' ', enter: false };
+
+    expect(await restoredAntiIdle(space)).toEqual(space);
+    expect(await restoredAntiIdle({ intervalSeconds: 1, text: ' ', enter: false })).toBeNull();
+    expect(await restoredAntiIdle({ intervalSeconds: 120, text: '', enter: false })).toBeNull();
+    // A hidden Enter or Ctrl+C in the text is not restored.
+    expect(await restoredAntiIdle({ intervalSeconds: 120, text: 'a\rb\u0003', enter: false })).toBeNull();
   });
 });
 

@@ -92,6 +92,7 @@ export function useUpdateSshMetadata(onSuccess?: (metadata: OpenSshProfileMetada
               ...(patch.pasteCharDelayMs !== undefined
                 ? { pasteCharDelayMs: patch.pasteCharDelayMs ?? undefined }
                 : {}),
+              ...(patch.antiIdle !== undefined ? { antiIdle: patch.antiIdle ?? undefined } : {}),
               ...(patch.disableSftp !== undefined
                 ? { disableSftp: patch.disableSftp || undefined }
                 : {}),
