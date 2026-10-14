@@ -162,6 +162,64 @@ one pair of markers encloses the whole paste rather than each line, and cancelli
 it. With [multi-execution](commands.md#multi-execution), each mirrored terminal gets the
 paste at its own host's pace, independently of the others.
 
+#### Waiting for the prompt
+
+A fixed delay is either longer than most lines need or shorter than the slowest one. A host
+can instead have pastes wait for the device's prompt after each line, and stop at the first
+line the device rejects:
+
+1. Open the host's editor and go to **Terminal appearance**.
+2. Under **Paste pacing**, switch on **Wait for the prompt after each line**.
+3. Leave the fields empty to use the defaults, or set your own:
+    - **Prompt pattern**: a regular expression for the line the device waits on, such as
+      `R1\(config\)#` for the prompt `R1(config)#`; parentheses and other characters with a
+      meaning in regular expressions need a backslash. The default, `[>#$]\s*$`, matches a
+      line that ends in `>`, `#` or `$`, spaces allowed.
+    - **Timeout**: the longest wait for the prompt after a line, from 100 ms to one minute;
+      5000 ms by default.
+    - **Error pattern**: a regular expression for an output line that rejects the line sent.
+      The default, `^%\s*(Invalid|Incomplete|Ambiguous)`, matches lines such as
+      `% Invalid input detected`.
+
+After each line, Muxus reads what the device sends back with colours and other escape
+sequences removed, however the output is split. The next line goes out as soon as the device
+has started a new line that matches the prompt pattern; the echo of the pasted line never
+counts, even when it ends in `#`. A prompt that ends in another character needs its own
+pattern: for one such as `[switch]`, use `[>#$\]]\s*$`. If the prompt does not come within
+the timeout, as during a banner or a command that takes long, the line falls back to the line
+delay: the paste moves on once the line delay has passed as well, and the next line waits for
+the prompt again. The character delay still applies within each line.
+
+The error pattern is checked against the output lines that arrive after a line is sent, never
+against what was already on screen. An error line still counts for that line while the paste
+waits out the line delay after the timeout, and while the next line is typed a character at
+a time, up to its line break. One that comes after the next line has been sent counts for the
+line then waiting for its answer, if any. When one matches, the paste stops: nothing more is
+sent, pastes waiting behind it are dropped, and the terminal and
+[session history](session-history.md) note the line, counted within its own paste, and the
+device's answer:
+
+```text
+[paste stopped: Line 2 of 3 (“switchport mode acess”) was answered with “% Invalid input detected at '^' marker.”]
+```
+
+A pattern that takes too long to match also stops the paste, with a note that says so: the
+patterns get 100 ms for the output that arrives at once.
+
+Only whole output lines are checked for errors: an error is seen once the device ends its
+line, and one it prints without a line break after it is not seen. Of the output that answers
+one line, the first 64 KiB is checked for errors; the rest is only searched for the prompt.
+
+A program that has turned on bracketed paste mode, as bash and zsh do, reads the paste as one
+block and shows no prompt between its lines, so such a paste keeps the line and character
+delays. With multi-execution, each mirrored terminal waits for its own host's prompt and stops
+on its own; **Cancel** still stops them all. The multiline paste preview says when a paste
+will wait for the prompt, and a change in the editor applies to the next paste, in open
+sessions too.
+
+Waiting for the prompt is off by default and is available for SSH, Telnet and serial hosts.
+The [bulk editor](hosts.md#editing-several-hosts-at-once) sets it on many hosts at once, and
+it is part of a [backup](settings.md#backup-data).
 ### Keeping idle sessions open
 
 Network devices and console servers close a line that has had no input for a while, such as

@@ -37,6 +37,7 @@ import { isKeywordHighlightProfileArray } from './highlight-profiles.js';
 import { isStatusBarItemList } from './host-stats.js';
 import { isLoginSequence } from './login-sequence.js';
 import { isCustomTerminalSchemeArray } from './terminal/custom-schemes.js';
+import { isPastePromptWait } from './terminal/paste-prompt.js';
 import { saveTextFile } from './save-file.js';
 import { openSshJumpHops } from './saved-hosts.js';
 import {
@@ -659,6 +660,7 @@ function portableMetadata(
     commandButtonGroup: metadata.commandButtonGroup,
     pasteLineDelayMs: metadata.pasteLineDelayMs,
     pasteCharDelayMs: metadata.pasteCharDelayMs,
+    pastePromptWait: metadata.pastePromptWait,
     antiIdle: metadata.antiIdle,
     disableSftp: metadata.disableSftp,
     consoleCompatibility: metadata.consoleCompatibility,
@@ -826,6 +828,7 @@ function metadataPatch(metadata: PortableHostMetadata): OpenSshMetadataPatch {
     pasteLineDelayMs: metadata.pasteLineDelayMs ?? null,
     pasteCharDelayMs: metadata.pasteCharDelayMs ?? null,
     // Off for a backup without one; a setting that does not check out is dropped, not the host.
+    pastePromptWait: isPastePromptWait(metadata.pastePromptWait) ? metadata.pastePromptWait : null,
     antiIdle: isAntiIdle(metadata.antiIdle) ? metadata.antiIdle : null,
     disableSftp: metadata.disableSftp ?? false,
     consoleCompatibility: metadata.consoleCompatibility ?? false,

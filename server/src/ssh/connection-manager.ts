@@ -72,6 +72,7 @@ import { JumpHopRegistry, type JumpHop } from './jump-hops.js';
 import {
   openRemoteShell,
   RemoteShellTransportLostError,
+  type ShellProbeMemo,
 } from './remote-shell-integration.js';
 import {
   CredentialVaultCorruptError,
@@ -180,6 +181,12 @@ export interface ManagedConnection {
   metadataAlias?: string;
   /** Whether callers may open SFTP channels on this transport. */
   sftpAvailable: boolean;
+  /**
+   * Whether the server has run a shell command for Muxus on this transport.
+   * Only then may optional extras open exec channels: some network devices
+   * drop the whole connection when a second channel asks for one.
+   */
+  ranCommand(): boolean;
   /** *Forward lines resolved from ssh config — auto-started once the session is up. */
   configForwards: ConfigForward[];
   /** Force-reconnect group that dialed this transport, so sibling requests
@@ -956,6 +963,7 @@ export class SshConnectionManager {
     const closeListeners = new Set<(reason?: string) => void>();
     const postAuthSettled = Promise.all(postAuth).then(() => undefined);
     let sftpPromise: Promise<SFTPWrapper> | undefined;
+    const shellProbe: ShellProbeMemo = { ranCommand: false, execRefused: false };
     let closed = false;
     let ending = false;
 
@@ -990,6 +998,7 @@ export class SshConnectionManager {
       muxKey: key,
       metadataAlias,
       sftpAvailable: !disableSftp,
+      ranCommand: () => shellProbe.ranCommand,
       health: () => transportHealth,
       configForwards: target.resolved.forwards,
       x11Refused: () => x11?.refused ?? false,
@@ -1016,7 +1025,7 @@ export class SshConnectionManager {
             );
           }
           if (pty && !disableSftp) {
-            return openRemoteShell(client, getSftp, pty, env, x11Request, cwd);
+            return openRemoteShell(client, getSftp, pty, env, x11Request, cwd, shellProbe);
           }
           // Console compatibility drops SendEnv/SetEnv: ssh2 can only send env
           // requests before pty-req, an order some appliances answer with a

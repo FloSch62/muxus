@@ -113,6 +113,37 @@ describe('OpenSSH host keyword metadata', () => {
     expect(response.statusCode).toBe(400);
   });
 
+  it('persists prompt waiting, refuses unusable patterns and timeouts, and turns it off with null', async () => {
+    const patch = (payload: Record<string, unknown>) =>
+      app.inject({
+        method: 'PATCH',
+        url: '/api/ssh/config/hosts/console/metadata',
+        headers: auth(),
+        payload,
+      });
+    const own = { promptPattern: '[>#\\]]\\s*$', timeoutMs: 15_000, errorPattern: '^Error:' };
+
+    const set = await patch({ pastePromptWait: own });
+    expect(set.statusCode).toBe(200);
+    expect(set.json()).toMatchObject({ pastePromptWait: own });
+    expect((await patch({ pastePromptWait: {} })).json()).toMatchObject({ pastePromptWait: {} });
+    for (const bad of [
+      { promptPattern: '([' },
+      { errorPattern: '' },
+      { errorPattern: '.*' },
+      { promptPattern: 'x'.repeat(501) },
+      { timeoutMs: 50 },
+      { timeoutMs: 60_001 },
+      { timeoutMs: 1000.5 },
+    ]) {
+      expect((await patch({ pastePromptWait: bad })).statusCode).toBe(400);
+    }
+
+    const cleared = await patch({ pastePromptWait: null });
+    expect(cleared.statusCode).toBe(200);
+    expect(cleared.json()).not.toHaveProperty('pastePromptWait');
+  });
+
   it('rejects malformed per-host terminal colors', async () => {
     const response = await app.inject({
       method: 'PATCH',

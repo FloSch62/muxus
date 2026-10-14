@@ -34,6 +34,13 @@ import {
   sessionLoggingPolicyInput,
   type HostSessionLoggingDraft,
 } from './session-logging-policy.js';
+import {
+  pastePromptWaitDraft,
+  pastePromptWaitFromDraft,
+  pastePromptWaitProblem,
+  samePastePromptWaitDraft,
+  type PastePromptWaitDraft,
+} from './terminal/paste-prompt.js';
 
 /** An optional flag: unset follows the defaults, otherwise on or off. */
 export type BulkTriState = 'inherit' | 'yes' | 'no';
@@ -60,6 +67,7 @@ export interface BulkHostValues {
   commandButtonGroup: string | undefined;
   pasteLineDelayMs: number | undefined;
   pasteCharDelayMs: number | undefined;
+  pastePromptWait: PastePromptWaitDraft;
   antiIdle: AntiIdleDraft;
   highlightProfileId: string | undefined;
   highlightInheritGlobal: boolean;
@@ -94,6 +102,7 @@ export const BULK_FIELD_AUDIENCE: { readonly [F in BulkHostField]: BulkAudience 
   commandButtonGroup: 'terminal',
   pasteLineDelayMs: 'terminal',
   pasteCharDelayMs: 'terminal',
+  pastePromptWait: 'terminal',
   antiIdle: 'terminal',
   highlightProfileId: 'terminal',
   highlightInheritGlobal: 'terminal',
@@ -160,6 +169,7 @@ export function bulkValuesForHost(
     values.commandButtonGroup = metadata?.commandButtonGroup;
     values.pasteLineDelayMs = metadata?.pasteLineDelayMs;
     values.pasteCharDelayMs = metadata?.pasteCharDelayMs;
+    values.pastePromptWait = pastePromptWaitDraft(metadata?.pastePromptWait);
     values.antiIdle = antiIdleDraft(metadata?.antiIdle);
     values.highlightProfileId = highlights?.profileId;
     values.highlightInheritGlobal = highlights?.inheritGlobal ?? true;
@@ -206,6 +216,9 @@ export function sameBulkValue<F extends BulkHostField>(
   }
   if (field === 'loginSequence') {
     return sameLoginSequenceDraft(a as LoginSequenceDraft, b as LoginSequenceDraft);
+  }
+  if (field === 'pastePromptWait') {
+    return samePastePromptWaitDraft(a as PastePromptWaitDraft, b as PastePromptWaitDraft);
   }
   if (field === 'antiIdle') return sameAntiIdleDraft(a as AntiIdleDraft, b as AntiIdleDraft);
   return a === b;
@@ -265,6 +278,10 @@ export function bulkChangesProblem(changes: BulkHostChanges): string | null {
   if (changes.port !== undefined && changes.port.trim()) {
     const port = Number(changes.port);
     if (!Number.isInteger(port) || port < 1 || port > 65_535) return 'Port must be 1–65535.';
+  }
+  if (changes.pastePromptWait) {
+    const problem = pastePromptWaitProblem(changes.pastePromptWait);
+    if (problem) return problem;
   }
   if (changes.antiIdle) {
     const problem = antiIdleProblem(changes.antiIdle);
@@ -403,6 +420,9 @@ function metadataPatch(
   }
   if (differs.has('pasteLineDelayMs')) patch.pasteLineDelayMs = changes.pasteLineDelayMs ?? null;
   if (differs.has('pasteCharDelayMs')) patch.pasteCharDelayMs = changes.pasteCharDelayMs ?? null;
+  if (differs.has('pastePromptWait') && changes.pastePromptWait) {
+    patch.pastePromptWait = pastePromptWaitFromDraft(changes.pastePromptWait);
+  }
   if (differs.has('antiIdle') && changes.antiIdle) {
     patch.antiIdle = antiIdleFromDraft(changes.antiIdle);
   }

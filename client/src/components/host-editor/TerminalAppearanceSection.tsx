@@ -17,10 +17,12 @@ import {
   terminalScheme,
   terminalSchemeIdForHost,
 } from '../../terminal/palette.js';
+import type { PastePromptWaitDraft } from '../../terminal/paste-prompt.js';
 import type { AntiIdleDraft } from '../../anti-idle.js';
 import { TerminalSchemeSelect } from '../TerminalSchemeSelect.js';
 import { AntiIdleFields, AntiIdleIntro } from './AntiIdleFields.js';
 import { PasteDelayField } from './PasteDelayField.js';
+import { PastePromptFields } from './PastePromptFields.js';
 
 export interface HostTerminalAppearance {
   terminalScheme?: string;
@@ -29,6 +31,7 @@ export interface HostTerminalAppearance {
   commandButtonGroup?: string;
   pasteLineDelayMs?: number;
   pasteCharDelayMs?: number;
+  pastePromptWait: PastePromptWaitDraft;
   antiIdle: AntiIdleDraft;
 }
 
@@ -112,6 +115,10 @@ export function TerminalAppearanceSection({
           onChange={(delay) => onChange({ pasteCharDelayMs: delay })}
         />
       </Stack>
+      <PastePromptFields
+        value={value.pastePromptWait}
+        onChange={(pastePromptWait) => onChange({ pastePromptWait })}
+      />
       <AntiIdleIntro sx={{ pt: 1 }} />
       <AntiIdleFields value={value.antiIdle} onChange={(antiIdle) => onChange({ antiIdle })} />
     </Stack>

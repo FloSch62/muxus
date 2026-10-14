@@ -40,12 +40,14 @@ import { hostSessionLoggingDraft } from '../session-logging-policy.js';
 import { useCustomTerminalSchemes, usePrefsStore } from '../state/prefs.js';
 import { useUiStore } from '../state/ui.js';
 import { isTerminalSchemeId } from '../terminal/palette.js';
+import { pastePromptWaitDraft } from '../terminal/paste-prompt.js';
 import { FolderPathField } from './FolderPathField.js';
 import { HostColorPicker } from './HostColorPicker.js';
 import { AntiIdleFields, AntiIdleIntro } from './host-editor/AntiIdleFields.js';
 import { EditorShell, type EditorSectionDef } from './host-editor/EditorShell.js';
 import { LoggingSection } from './host-editor/LoggingSection.js';
 import { PasteDelayField } from './host-editor/PasteDelayField.js';
+import { PastePromptFields } from './host-editor/PastePromptFields.js';
 import { LoginSequenceEditor } from './LoginSequenceEditor.js';
 import {
   ColorOverride,
@@ -89,6 +91,7 @@ const SECTIONS: ReadonlyArray<{
       'commandButtonGroup',
       'pasteLineDelayMs',
       'pasteCharDelayMs',
+      'pastePromptWait',
       'antiIdle',
     ],
   },
@@ -266,6 +269,7 @@ function BulkEditBody({ hostKeys, onClose }: { hostKeys: readonly string[]; onCl
           commandButtonGroup={field('commandButtonGroup')}
           pasteLineDelayMs={field('pasteLineDelayMs')}
           pasteCharDelayMs={field('pasteCharDelayMs')}
+          pastePromptWait={field('pastePromptWait')}
           antiIdle={field('antiIdle')}
         />
       )}
@@ -472,6 +476,7 @@ function AppearanceSection({
   commandButtonGroup,
   pasteLineDelayMs,
   pasteCharDelayMs,
+  pastePromptWait,
   antiIdle,
 }: {
   total: number;
@@ -481,6 +486,7 @@ function AppearanceSection({
   commandButtonGroup: BulkFieldState<string | undefined>;
   pasteLineDelayMs: BulkFieldState<number | undefined>;
   pasteCharDelayMs: BulkFieldState<number | undefined>;
+  pastePromptWait: BulkFieldState<BulkHostValues['pastePromptWait']>;
   antiIdle: BulkFieldState<BulkHostValues['antiIdle']>;
 }) {
   const customSchemes = useCustomTerminalSchemes();
@@ -566,6 +572,31 @@ function AppearanceSection({
           <FieldStatus state={pasteCharDelayMs} inset />
         </Box>
       </Stack>
+      <Box>
+        {pastePromptWait.value ? (
+          <PastePromptFields value={pastePromptWait.value} onChange={pastePromptWait.set} />
+        ) : (
+          <Alert
+            severity="info"
+            variant="outlined"
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                onClick={() => pastePromptWait.set(pastePromptWaitDraft(undefined))}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                Set one for all
+              </Button>
+            }
+          >
+            These hosts wait for the prompt differently when pasting. Each keeps its own setting
+            until you set one for all of them.
+          </Alert>
+        )}
+        <FieldStatus state={pastePromptWait} />
+      </Box>
+
       <Box>
         <AntiIdleIntro sx={{ mb: 1 }} />
         {antiIdle.value ? (

@@ -78,6 +78,8 @@ interface TabBase {
   restored?: boolean;
   /** The host's login sequence while it runs: the current step and what it does. */
   loginSequence?: LoginSequenceProgress;
+  /** The last stopped paste of the session this tab noted; it moves with the tab to another window. */
+  pasteStopNoted?: number;
 }
 
 export interface LoginSequenceProgress {
@@ -123,6 +125,7 @@ type TabUpdate = Partial<{
   disconnectReason: 'completed' | 'failed' | 'disconnected' | undefined;
   freshTransport: string | undefined;
   loginSequence: LoginSequenceProgress | undefined;
+  pasteStopNoted: number | undefined;
 }>;
 
 export interface ReconnectOptions {

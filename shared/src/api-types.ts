@@ -1,3 +1,5 @@
+import type { PastePromptWait } from './paste-pacing.js';
+
 /** Shape of every REST error body ({ message, code? }). */
 export interface ApiErrorBody {
   message: string;
@@ -828,6 +830,8 @@ export interface OpenSshProfileMetadata {
   /** Paste pacing for this host's sessions; absent follows the Terminal settings. */
   pasteLineDelayMs?: number;
   pasteCharDelayMs?: number;
+  /** Pastes wait for the prompt after each line; fields left out use the defaults. Absent is off. */
+  pastePromptWait?: Partial<PastePromptWait>;
   /** Typed into this host's idle sessions; absent sends nothing. */
   antiIdle?: AntiIdle;
   /** Do not open SFTP channels or probe for remote Unix shell integration. */
@@ -852,6 +856,8 @@ export interface OpenSshMetadataPatch {
   commandButtonGroup?: string | null;
   pasteLineDelayMs?: number | null;
   pasteCharDelayMs?: number | null;
+  /** Null turns prompt waiting off. */
+  pastePromptWait?: Partial<PastePromptWait> | null;
   /** Null turns anti-idle off. */
   antiIdle?: AntiIdle | null;
   disableSftp?: boolean;
