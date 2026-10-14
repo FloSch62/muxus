@@ -5,11 +5,11 @@ icon: lucide/settings
 # Settings
 
 Settings are opened with ++ctrl+comma++ or the gear control in the top bar. In the desktop
-app they open in a window of their own: keep it beside the main window or drag it onto
-another display, and it reopens where you left it, at the size you left it. If that display
-is no longer connected, it opens over the main window instead. Opening settings again
-brings the window to the front. On Linux under Wayland the compositor decides where windows
-open, so only the size is kept there. In a browser, settings open as a dialog over the page.
+app they open in a window of their own, centered over the window you opened them from and
+at the size you left it. You can keep it beside the main window or drag it onto another
+display while it is open. Opening settings again brings the window to the front. On Linux
+under Wayland the compositor decides where windows open. In a browser, settings open as a
+dialog over the page.
 
 The sections are listed on the left. Each one is a list of settings with a short explanation
 on the left and the control on the right, grouped under small headings. In a narrow window

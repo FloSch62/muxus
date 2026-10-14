@@ -10,8 +10,8 @@ export interface Size {
   height: number;
 }
 
-/** Where a window was last left: its restored (not maximized) bounds. */
-export interface WindowPlacement extends Rectangle {
+/** How a window was last left: its restored (not maximized) size. */
+export interface WindowPlacement extends Size {
   maximized?: boolean;
 }
 
@@ -19,44 +19,31 @@ export interface WindowPlacement extends Rectangle {
 export function parseWindowPlacement(value: unknown): WindowPlacement | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const placement = value as Record<string, unknown>;
-  const { x, y, width, height, maximized } = placement;
-  if (
-    !isFiniteNumber(x) ||
-    !isFiniteNumber(y) ||
-    !isFiniteNumber(width) ||
-    !isFiniteNumber(height) ||
-    width <= 0 ||
-    height <= 0
-  ) {
+  const { width, height, maximized } = placement;
+  if (!isFiniteNumber(width) || !isFiniteNumber(height) || width <= 0 || height <= 0) {
     return undefined;
   }
-  return { x, y, width, height, ...(maximized === true ? { maximized: true } : {}) };
+  return { width, height, ...(maximized === true ? { maximized: true } : {}) };
 }
 
 /**
- * Bounds for a window that remembers its placement. Displays can be unplugged
- * or rearranged between runs, so saved bounds move onto the display they
- * overlap most and shrink to fit it. Without saved bounds, or when they no
- * longer touch any display, the window opens centered over `owner`. Only the
- * size comes back when neither is available, and the system places it.
+ * Bounds for a window that opens centered over `owner`, kept inside the
+ * display `owner` overlaps most and shrunk to fit it. Only the size comes back
+ * without an owner, and the system places it.
  */
 export function windowBounds(
-  saved: Rectangle | undefined,
+  size: Size,
   owner: Rectangle | undefined,
   workAreas: readonly Rectangle[],
-  defaultSize: Size,
 ): Rectangle | Size {
-  if (saved) {
-    const area = mostOverlapping(saved, workAreas);
-    if (area) return fitInside(saved, area);
-  }
-  const size = saved ? { width: saved.width, height: saved.height } : defaultSize;
-  if (!owner) return size;
+  const { width, height } = size;
+  if (!owner) return { width, height };
   const area = mostOverlapping(owner, workAreas);
   const centered = {
-    x: Math.round(owner.x + (owner.width - size.width) / 2),
-    y: Math.round(owner.y + (owner.height - size.height) / 2),
-    ...size,
+    x: Math.round(owner.x + (owner.width - width) / 2),
+    y: Math.round(owner.y + (owner.height - height) / 2),
+    width,
+    height,
   };
   return area ? fitInside(centered, area) : centered;
 }
