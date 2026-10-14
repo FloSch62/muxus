@@ -15,6 +15,10 @@ escape codes, report associated text), so TUIs such as Neovim, Helix and fish re
 key fidelity: ++ctrl+enter++, ++shift+enter++, key releases, and modifiers on keys that
 otherwise have no encoding.
 
+**Word jumps on macOS.** ++option+left++ and ++option+right++ move by word, as in
+Terminal.app and iTerm2. They send ++esc++ ++b++ and ++esc++ ++f++, which bash, zsh, fish
+and the CLIs of most network devices understand without extra key bindings.
+
 **`TERM`.** Sessions advertise `TERM=xterm-256color`, which is broadly supported, so remote
 `terminfo` lookups resolve.
 
