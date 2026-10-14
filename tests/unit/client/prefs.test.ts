@@ -11,6 +11,8 @@ import {
   DEFAULT_INACTIVE_PANE_DIM_STRENGTH,
   DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
   MONO_FONT_FALLBACK,
+  TERMINAL_BOX_FONT,
+  TERMINAL_SYMBOL_FONT,
   clampInactivePaneDimStrength,
   followPrefsFromOtherWindows,
   isLocalShellProfileArray,
@@ -435,6 +437,12 @@ describe('terminalFontStack', () => {
   it('always includes the bundled Nerd Font symbol fallback', () => {
     expect(MONO_FONT_FALLBACK).toContain('"Pure Nerd Font"');
     expect(terminalFontStack('Iosevka')).toBe(`Iosevka, ${MONO_FONT_FALLBACK}`);
+  });
+
+  it('takes box drawing from the bundled cell-sized face before the symbol font', () => {
+    const families = MONO_FONT_FALLBACK.split(', ');
+    expect(families.indexOf(TERMINAL_BOX_FONT)).toBe(families.indexOf('"JetBrains Mono"') + 1);
+    expect(families.indexOf(TERMINAL_BOX_FONT)).toBeLessThan(families.indexOf(TERMINAL_SYMBOL_FONT));
   });
 
   it('does not duplicate the bundled default font', () => {

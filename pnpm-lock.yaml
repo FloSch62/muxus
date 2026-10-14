@@ -170,6 +170,7 @@ overrides:
 patchedDependencies:
   '@novnc/novnc@1.7.0': ffde8e6453e76045b5c2ea6b0a74b1799c63b1463ffa5814f8fbc79086d4c5aa
   '@serialport/bindings-cpp@13.0.1': ccb198c80fb1ddcec527a44a9df5ada0b5b49112eaf75cb0fbd0397b15ff2cf4
+  '@xterm/addon-webgl@0.20.0-beta.300': 9c95d35b58c536dda150d6a74e6f5f702a3aadcc9316afd4926c9d32a3286d71
   ssh2@1.17.0: 22820db09827b0887e8e0b34478d28895a3219a5cf824e54faafe383a4b72620
 
 importers:
@@ -247,7 +248,7 @@ importers:
         version: 0.13.0-beta.301(@xterm/xterm@6.1.0-beta.304)
       '@xterm/addon-webgl':
         specifier: 0.20.0-beta.300
-        version: 0.20.0-beta.300(@xterm/xterm@6.1.0-beta.304)
+        version: 0.20.0-beta.300(patch_hash=9c95d35b58c536dda150d6a74e6f5f702a3aadcc9316afd4926c9d32a3286d71)(@xterm/xterm@6.1.0-beta.304)
       '@xterm/xterm':
         specifier: ^6.1.0-beta.304
         version: 6.1.0-beta.304
@@ -4665,7 +4666,7 @@ snapshots:
     dependencies:
       '@xterm/xterm': 6.1.0-beta.304
 
-  '@xterm/addon-webgl@0.20.0-beta.300(@xterm/xterm@6.1.0-beta.304)':
+  '@xterm/addon-webgl@0.20.0-beta.300(patch_hash=9c95d35b58c536dda150d6a74e6f5f702a3aadcc9316afd4926c9d32a3286d71)(@xterm/xterm@6.1.0-beta.304)':
     dependencies:
       '@xterm/xterm': 6.1.0-beta.304
 
