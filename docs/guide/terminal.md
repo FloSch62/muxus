@@ -227,6 +227,28 @@ sessions too.
 Waiting for the prompt is off by default and is available for SSH, Telnet and serial hosts.
 The [bulk editor](hosts.md#editing-several-hosts-at-once) sets it on many hosts at once, and
 it is part of a [backup](settings.md#backup-data).
+
+### Sending a text file
+
+**Send text file…** types a local text file into an SSH, Telnet or serial session, such as a
+saved configuration for a console. It is in the terminal-actions menu, in the tab's
+right-click menu and in the [quick launcher](quick-launcher.md). It has no shortcut until one
+is recorded for it under **Terminal → Send text file…** in the
+[keyboard sheet](../reference/keyboard-shortcuts.md).
+
+The file is typed as a [command button](commands.md#command-buttons) is: never bracketed, at
+the host's [paste pace](#pasting-into-slow-consoles), after any paste still running, and
+[waiting for the prompt](#waiting-for-the-prompt) when the host does. On a paced host its
+progress and **Cancel** show over the terminal; a host without pacing gets it at once. Each
+line break, CRLF, LF or CR, is one press of the host's [Enter key](#keys-and-echo), so the
+last line is entered only when the file ends with a line break. With
+[multi-execution](commands.md#multi-execution), each mirrored terminal gets the file at its
+own host's pace.
+
+Only UTF-8 text is typed, which includes plain ASCII. A file with NUL bytes or invalid UTF-8,
+such as a program, an archive or text saved as UTF-16 or Latin-1, is refused, and so is a
+file larger than 1 MB; nothing is typed then.
+
 ### Keeping idle sessions open
 
 Network devices and console servers close a line that has had no input for a while, such as

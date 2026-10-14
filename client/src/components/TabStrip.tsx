@@ -49,6 +49,7 @@ import ReplayOutlinedIcon from '@mui/icons-material/ReplayOutlined';
 import RestartAltOutlinedIcon from '@mui/icons-material/RestartAltOutlined';
 import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
+import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined';
 import PodcastsOutlinedIcon from '@mui/icons-material/PodcastsOutlined';
 import PowerInputOutlinedIcon from '@mui/icons-material/PowerInputOutlined';
@@ -80,6 +81,7 @@ import { findPane } from '../state/workspace-layout.js';
 import { layout, statusTextColor } from '../theme.js';
 import { useMultiExecStore } from '../state/multi-exec.js';
 import { canSendBreak, sendBreak, supportsBreak } from '../terminal/send-break.js';
+import { canSendTextFile, requestSendTextFile } from '../terminal/send-text-file.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
 import { editableManagedHostForProfile } from '../managed-hosts.js';
@@ -217,6 +219,7 @@ export function TabStrip({
   const zoomChord = useChordLabel('pane.zoom');
   const closePaneChord = useChordLabel('pane.close');
   const sendBreakChord = useChordLabel('terminal.send-break');
+  const sendTextFileChord = useChordLabel('terminal.send-text-file');
 
   const splitPane = (direction: PaneDirection) => {
     focusPane(paneId);
@@ -1456,6 +1459,21 @@ export function TabStrip({
             </ListItemIcon>
             <ListItemText>Send BREAK</ListItemText>
             <ChordHint chord={sendBreakChord} />
+          </MenuItem>
+        ) : null}
+        {supportsBreak(menuTab) ? (
+          <MenuItem
+            disabled={!canSendTextFile(menuTab)}
+            onClick={() => {
+              requestSendTextFile(menuTab?.id);
+              setMenu(null);
+            }}
+          >
+            <ListItemIcon>
+              <UploadFileOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Send text file…</ListItemText>
+            <ChordHint chord={sendTextFileChord} />
           </MenuItem>
         ) : null}
         <Divider />

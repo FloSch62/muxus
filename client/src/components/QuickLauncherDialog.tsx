@@ -1089,7 +1089,7 @@ function buildActionResults({
 }: {
   activeConnected: boolean;
   activeSsh: boolean;
-  /** Send BREAK only exists for serial, Telnet and SSH tabs. */
+  /** Send BREAK and Send text file only exist for serial, Telnet and SSH tabs. */
   activeBreak: 'none' | 'waiting' | 'ready';
   keybindings: KeybindingOverrides;
 }): LauncherResult[] {
@@ -1149,7 +1149,8 @@ function buildActionResults({
   // the palette doubles as the discovery path for the keymap.
   for (const command of KEY_COMMANDS) {
     if (command.palette === false) continue;
-    const sendsBreak = command.id === 'terminal.send-break';
+    const sendsBreak =
+      command.id === 'terminal.send-break' || command.id === 'terminal.send-text-file';
     if (sendsBreak && activeBreak === 'none') continue;
     const chords = chordLabels(command.id, keybindings);
     results.push({
