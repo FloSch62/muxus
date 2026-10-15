@@ -175,9 +175,10 @@ describe('typing vault secrets into sessions', () => {
     expect(historyId).toBeTruthy();
     session.socket.close(1000, TERMINAL_SESSION_CLOSE_REASON);
 
+    // Closing the tab flushes the recorder before it finishes the record.
     await vi.waitFor(async () => {
       const typed = await api<{ sessions: unknown[] }>('GET', `/api/session-history?query=${TYPED}`);
-      expect(typed.body.sessions).toHaveLength(1);
+      expect(typed.body.sessions).toMatchObject([{ status: 'disconnected' }]);
     });
     const leaked = await api<{ sessions: unknown[] }>('GET', `/api/session-history?query=${SECRET}`);
     expect(leaked.body.sessions).toEqual([]);
