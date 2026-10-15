@@ -61,6 +61,7 @@ resetting them.
 | Clear scrollback | ++ctrl+shift+k++ |
 | Toggle [multi-execution](../guide/commands.md#multi-execution) | ++ctrl+shift+m++ |
 | [Send BREAK](../guide/telnet-serial.md#send-break) to a serial, Telnet or SSH session | *(unbound by default)* |
+| [Send text file…](../guide/terminal.md#sending-a-text-file) to a serial, Telnet or SSH session | *(unbound by default)* |
 | Cancel the running [login sequence](../guide/adding-hosts.md#login-sequence) | *(unbound by default)* |
 | Increase / decrease font size | ++ctrl+shift+equal++, ++ctrl+shift+minus++ (also ++ctrl+equal++ / ++ctrl+minus++) |
 | Reset font size | ++ctrl+shift+0++, ++ctrl+0++ |

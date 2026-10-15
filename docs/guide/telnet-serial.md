@@ -75,7 +75,9 @@ Platform naming:
     [delay after each line](terminal.md#pasting-into-slow-consoles) under the host's
     **Terminal appearance**, and Muxus types pastes in a line at a time. Or have each line
     [wait for the prompt](terminal.md#waiting-for-the-prompt), so the paste goes as fast as
-    the device answers and stops at the first line it rejects.
+    the device answers and stops at the first line it rejects. A configuration saved in a
+    file goes the same way with [Send text file…](terminal.md#sending-a-text-file), from the
+    terminal-actions menu or the tab's right-click menu.
 
 !!! tip "Idle timeouts"
 

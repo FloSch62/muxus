@@ -14,6 +14,7 @@ import { usePrefsStore } from '../state/prefs.js';
 import { PANE_RESIZE_STEP, isRemoteSessionTab, useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
 import { sendBreak } from '../terminal/send-break.js';
+import { requestSendTextFile } from '../terminal/send-text-file.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
 import type { PaneDirection } from '../state/workspace-layout.js';
 
@@ -409,6 +410,14 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
       const state = tabs();
       return sendBreak(state.tabs.find((tab) => tab.id === state.activeId));
     },
+  },
+  {
+    id: 'terminal.send-text-file',
+    title: 'Send text file…',
+    category: 'terminal',
+    defaultChords: [],
+    keywords: ['file', 'config', 'configuration', 'upload', 'type', 'serial', 'telnet', 'ssh', 'console'],
+    run: () => requestSendTextFile(tabs().activeId),
   },
   {
     id: 'terminal.cancel-login-sequence',

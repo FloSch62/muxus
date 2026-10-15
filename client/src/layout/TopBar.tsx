@@ -40,6 +40,7 @@ import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutlineOutlin
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutlineOutlined';
 import PowerInputOutlinedIcon from '@mui/icons-material/PowerInputOutlined';
 import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
+import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
@@ -58,6 +59,7 @@ import { useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
 import { useWorkspacesStore } from '../state/workspaces.js';
 import { canSendBreak, sendBreak, supportsBreak } from '../terminal/send-break.js';
+import { canSendTextFile, requestSendTextFile } from '../terminal/send-text-file.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
 import { ChordHint, withChord } from '../components/ChordHint.js';
 import { MultiExecControl } from '../components/MultiExecControl.js';
@@ -128,6 +130,7 @@ export const TopBar = memo(function TopBar() {
   const zoomOutChord = useChordLabel('terminal.zoom-out');
   const zoomResetChord = useChordLabel('terminal.zoom-reset');
   const sendBreakChord = useChordLabel('terminal.send-break');
+  const sendTextFileChord = useChordLabel('terminal.send-text-file');
   // Re-render hook so the zoom percentage in the open menu stays current.
   const [, setZoomTick] = useState(0);
 
@@ -511,6 +514,21 @@ export const TopBar = memo(function TopBar() {
             </ListItemIcon>
             <ListItemText>Send BREAK</ListItemText>
             <ChordHint chord={sendBreakChord} />
+          </MenuItem>
+        ) : null}
+        {supportsBreak(activeTab) ? (
+          <MenuItem
+            disabled={!canSendTextFile(activeTab)}
+            onClick={() => {
+              closeMenu();
+              requestSendTextFile(activeTab?.id);
+            }}
+          >
+            <ListItemIcon>
+              <UploadFileOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Send text file…</ListItemText>
+            <ChordHint chord={sendTextFileChord} />
           </MenuItem>
         ) : null}
         <Divider />
