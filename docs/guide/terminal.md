@@ -131,6 +131,26 @@ expression options. Every match is marked in the scrollbar.
     newline in a copied snippet cannot execute part of a script before it is read. It is a
     [setting](settings.md#terminal), and it is on by default.
 
+### Invisible and look-alike characters
+
+Text copied from Word, Teams or a wiki can carry characters that look like ASCII but are
+not, and a device then rejects the line or stores a different value. The paste preview
+lists each of them with the line and column of its first three occurrences and a count of
+the rest, and opens for a single-line paste too when it contains one:
+
+| Character | Replace with ASCII |
+| --- | --- |
+| No-break space (U+00A0), narrow no-break space (U+202F) | a space |
+| Zero-width space, non-joiner and joiner (U+200B–U+200D), word joiner (U+2060), zero-width no-break space (U+FEFF) | removed |
+| Smart quotes `‘ ’ ‚` and `“ ” „` | `'` and `"` |
+| En dash `–` and em dash `—` | `-` and `--` |
+| Cyrillic and Greek letters drawn like Latin ones, such as Cyrillic `с` or Greek `ο`, in a word that also has Latin letters | the Latin letter |
+
+**Replace with ASCII** changes only the listed characters, in the preview, so the result
+can be read and edited before **Paste** sends it. Words written entirely in Cyrillic or
+Greek are left alone. Opening the preview for these characters is a
+[setting](settings.md#terminal), on by default.
+
 ### Pasting into slow consoles
 
 Serial consoles and older network devices often have small input buffers and no flow

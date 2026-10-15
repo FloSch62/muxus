@@ -72,6 +72,10 @@ policy should not change under a running recorder.
 - **Copy on select**, **OSC 52 clipboard writes** from terminal programs such as tmux and
   Zellij, and the **multiline paste confirmation**. OSC 52 reads remain blocked so a
   terminal program cannot retrieve the local clipboard.
+- **Confirm pastes with look-alike characters** opens the paste preview for any paste,
+  even a single line, that contains no-break spaces, zero-width characters, smart quotes,
+  dashes or letters that look like Latin ones. See
+  [Invisible and look-alike characters](terminal.md#invisible-and-look-alike-characters).
 - **Paste pacing**: a delay after each pasted line and, optionally, after each character,
   for consoles that drop input sent all at once. Hosts can set their own. See
   [Pasting into slow consoles](terminal.md#pasting-into-slow-consoles).

@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef, useState, type UIEvent } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type UIEvent } from 'react';
+import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Dialog from '@mui/material/Dialog';
@@ -21,9 +22,40 @@ import {
   parsePasteDelay,
   PASTE_DELAY_MAX,
 } from '../terminal/paste-pacing.js';
-import { pasteLineCount } from '../terminal/paste-safety.js';
+import {
+  flagPasteCharacters,
+  pasteLineCount,
+  replaceFlaggedCharacters,
+  type FlaggedPasteCharacter,
+} from '../terminal/paste-safety.js';
 
 const EDITOR_PADDING_Y_PX = 8.5;
+const LISTED_POSITIONS = 3;
+
+/** One row per distinct character, with where it occurs. */
+function flaggedRows(flagged: readonly FlaggedPasteCharacter[]) {
+  const groups = new Map<string, FlaggedPasteCharacter[]>();
+  for (const entry of flagged) {
+    const group = groups.get(entry.char);
+    if (group) group.push(entry);
+    else groups.set(entry.char, [entry]);
+  }
+  return [...groups.values()].map((entries) => {
+    const { char, name, ascii } = entries[0]!;
+    const code = char.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0');
+    const positions = entries
+      .slice(0, LISTED_POSITIONS)
+      .map(({ line, column }) => `line ${line}, column ${column}`)
+      .join('; ');
+    const more = entries.length - LISTED_POSITIONS;
+    return {
+      char,
+      label: `${name} (U+${code})`,
+      ascii,
+      where: more > 0 ? `${positions} and ${more} more` : positions,
+    };
+  });
+}
 
 function updateLineNumberGutter(
   gutter: HTMLPreElement | null,
@@ -75,6 +107,8 @@ export function PasteConfirmDialog({
   const fontFamily = usePrefsStore((state) => state.fontFamily);
   const lineHeight = usePrefsStore((state) => state.lineHeight);
   const [text, setText] = useState(initialText);
+  const [replacedCount, setReplacedCount] = useState(0);
+  const flagged = useMemo(() => flagPasteCharacters(text), [text]);
   const [lineDelay, setLineDelay] = useState(String(pacing.lineDelayMs));
   const lineDelayMs = parsePasteDelay(lineDelay, 'line') ?? 0;
   const confirm = () => {
@@ -115,12 +149,57 @@ export function PasteConfirmDialog({
       slotProps={{ transition: { onEntered: () => pasteButtonRef.current?.focus() } }}
     >
       <DialogTitle>
-        {lineCount === 0 ? 'Nothing to paste' : `Paste ${lineCount} lines into the terminal?`}
+        {lineCount === 0
+          ? 'Nothing to paste'
+          : `Paste ${lineCount} ${lineCount === 1 ? 'line' : 'lines'} into the terminal?`}
       </DialogTitle>
       <DialogContent>
-        <Typography variant="body2" color="textSecondary" sx={{ mb: 1.5 }}>
-          Multiple lines may run several commands immediately. Review or edit the content before sending it.
-        </Typography>
+        {lineCount !== 1 ? (
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 1.5 }}>
+            Multiple lines may run several commands immediately. Review or edit the content before sending it.
+          </Typography>
+        ) : null}
+        {flagged.length > 0 ? (
+          <Alert
+            severity="warning"
+            sx={{ mb: 1.5 }}
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                onClick={() => {
+                  setText(replaceFlaggedCharacters(text, flagged));
+                  setReplacedCount(flagged.length);
+                }}
+              >
+                Replace with ASCII
+              </Button>
+            }
+          >
+            {flagged.length === 1
+              ? 'One character is invisible or only looks like ASCII:'
+              : `${flagged.length} characters are invisible or only look like ASCII:`}
+            <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
+              {flaggedRows(flagged).map(({ char, label, ascii, where }) => (
+                <li key={char}>
+                  {label}
+                  {ascii === '' ? ', removed' : ascii === ' ' ? ', becomes a space' : (
+                    <>
+                      , becomes{' '}
+                      <Box component="code" sx={{ fontFamily: editorFontFamily }}>{ascii}</Box>
+                    </>
+                  )}
+                  : {where}
+                </li>
+              ))}
+            </Box>
+          </Alert>
+        ) : replacedCount > 0 ? (
+          <Alert severity="success" sx={{ mb: 1.5 }}>
+            {replacedCount === 1 ? 'One character was' : `${replacedCount} characters were`} replaced
+            with ASCII. Review the result before pasting it.
+          </Alert>
+        ) : null}
         <Box sx={{ position: 'relative' }}>
           <Box
             aria-hidden

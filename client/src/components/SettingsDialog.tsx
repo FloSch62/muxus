@@ -1074,6 +1074,19 @@ function TerminalSection() {
             />
           }
         />
+        <SettingRow
+          label="Confirm pastes with look-alike characters"
+          labelFor="settings-paste-warn-lookalikes"
+          description="Preview a paste, even a single line, that contains no-break spaces, zero-width characters, smart quotes, dashes or letters that look like Latin ones."
+          control={
+            <Switch
+              id="settings-paste-warn-lookalikes"
+              size="small"
+              checked={prefs.pasteWarnLookalikes}
+              onChange={(e) => prefs.set({ pasteWarnLookalikes: e.target.checked })}
+            />
+          }
+        />
       </SettingsGroup>
 
       <SettingsGroup title="Paste pacing">

@@ -101,6 +101,7 @@ const PREFERENCE_KEYS = [
   'rightClickAction',
   'terminalFileLinkActivation',
   'pasteWarnMultiline',
+  'pasteWarnLookalikes',
   'pasteLineDelayMs',
   'pasteCharDelayMs',
   'confirmCloseConnected',
@@ -961,6 +962,9 @@ export function sanitizePreferences(
   }
   if (typeof input.pasteWarnMultiline === 'boolean') {
     output.pasteWarnMultiline = input.pasteWarnMultiline;
+  }
+  if (typeof input.pasteWarnLookalikes === 'boolean') {
+    output.pasteWarnLookalikes = input.pasteWarnLookalikes;
   }
   if (validPasteDelay(input.pasteLineDelayMs, MAX_PASTE_LINE_DELAY_MS)) {
     output.pasteLineDelayMs = input.pasteLineDelayMs;

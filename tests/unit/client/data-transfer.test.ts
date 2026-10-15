@@ -48,6 +48,7 @@ beforeEach(() => {
     rememberPasswordsByDefault: false,
     newSshHostStorage: 'openssh',
     keywordHighlightProfiles: [],
+    pasteWarnLookalikes: true,
   });
 });
 
@@ -490,6 +491,15 @@ describe('backing up preferences', () => {
     const document = await createBackupDocument();
 
     expect(document.data.preferences.keywordHighlightProfiles).toEqual([profile]);
+  });
+
+  it('includes the look-alike paste confirmation', async () => {
+    usePrefsStore.setState({ pasteWarnLookalikes: false });
+    mockBackupSnapshot();
+
+    const document = await createBackupDocument();
+
+    expect(document.data.preferences.pasteWarnLookalikes).toBe(false);
   });
 });
 
@@ -1353,6 +1363,18 @@ describe('restoring the OSC 52 clipboard preference', () => {
       sanitizePreferences(prefs({ allowOsc52ClipboardWrite: 'yes' }))
         .allowOsc52ClipboardWrite,
     ).toBeUndefined();
+  });
+});
+
+describe('restoring the look-alike paste preference', () => {
+  const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
+
+  it('restores only boolean choices and leaves older backups at the default', () => {
+    expect(sanitizePreferences(prefs({ pasteWarnLookalikes: false })))
+      .toMatchObject({ pasteWarnLookalikes: false });
+    expect(sanitizePreferences(prefs({ pasteWarnLookalikes: 'no' })).pasteWarnLookalikes)
+      .toBeUndefined();
+    expect(sanitizePreferences(prefs({})).pasteWarnLookalikes).toBeUndefined();
   });
 });
 
