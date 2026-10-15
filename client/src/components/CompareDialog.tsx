@@ -22,6 +22,7 @@ import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import { useSessionHistory } from '../api/queries.js';
 import {
+  comparable,
   historyCompareLabel,
   historyCompareText,
   remoteFileCompareText,
@@ -34,7 +35,7 @@ import { useTabsStore } from '../state/tabs.js';
 import { showErrorToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
-import { prepareCompareText, unifiedDiff } from '../text-compare.js';
+import { prepareCompareText, textsMatch, unifiedDiff } from '../text-compare.js';
 import { DiffViewer } from './management/CodeEditor.js';
 
 /** Local files above this size are refused, as the editor refuses them. */
@@ -61,6 +62,7 @@ export function CompareDialog({ source }: { source: CompareText }) {
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const latestPick = useRef(0);
   const tabs = useTabsStore((state) => state.tabs);
   const { data: history } = useSessionHistory('', undefined, !!menuAnchor);
 
@@ -74,22 +76,28 @@ export function CompareDialog({ source }: { source: CompareText }) {
     () => (right ? prepareCompareText(right.text, { ignoreTimestamps, ignoreWhitespace }) : ''),
     [right, ignoreTimestamps, ignoreWhitespace],
   );
-  const diff = useMemo(
-    () =>
-      right
-        ? unifiedDiff(original, modified, { originalLabel: left.label, modifiedLabel: right.label, ignoreWhitespace })
-        : '',
-    [left, right, original, modified, ignoreWhitespace],
+  // The full diff is only built for an export; the view diffs on its own.
+  const same = useMemo(
+    () => !!right && textsMatch(original, modified, ignoreWhitespace),
+    [right, original, modified, ignoreWhitespace],
   );
 
   const pick = (load: () => Promise<CompareText> | CompareText) => {
     setMenuAnchor(null);
     setLoading(true);
+    // Only the last pick lands, however the loads finish.
+    const request = ++latestPick.current;
     void Promise.resolve()
       .then(load)
-      .then(setSecond)
-      .catch(showErrorToast)
-      .finally(() => setLoading(false));
+      .then((side) => {
+        if (request === latestPick.current) setSecond(comparable(side));
+      })
+      .catch((error: unknown) => {
+        if (request === latestPick.current) showErrorToast(error);
+      })
+      .finally(() => {
+        if (request === latestPick.current) setLoading(false);
+      });
   };
 
   const terminals = tabs.filter((tab) => terminalHandle(tab.id));
@@ -161,7 +169,7 @@ export function CompareDialog({ source }: { source: CompareText }) {
             label="Ignore leading timestamps"
           />
         </Stack>
-        {right && !diff && <Alert severity="info">No differences.</Alert>}
+        {same && <Alert severity="info">No differences.</Alert>}
         <Box sx={{ flex: 1, minHeight: 200 }}>
           {right ? (
             <DiffViewer
@@ -181,9 +189,15 @@ export function CompareDialog({ source }: { source: CompareText }) {
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button
           startIcon={<FileDownloadOutlinedIcon />}
-          disabled={!diff}
+          disabled={!right || same}
           onClick={() => {
-            if (right) saveTextFile(exportFilename(`${left.label} vs ${right.label}`, 'diff'), diff, 'text/x-diff');
+            if (!right) return;
+            const diff = unifiedDiff(original, modified, {
+              originalLabel: left.label,
+              modifiedLabel: right.label,
+              ignoreWhitespace,
+            });
+            saveTextFile(exportFilename(`${left.label} vs ${right.label}`, 'diff'), diff, 'text/x-diff');
           }}
         >
           Export diff

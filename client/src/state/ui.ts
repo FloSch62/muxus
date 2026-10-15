@@ -92,6 +92,8 @@ interface UiState {
   historySelectedId?: string;
   /** The compare dialog, opened with the side it was invoked from. */
   compareSource: CompareText | false;
+  /** Changes with each new source, so the dialog starts over instead of keeping the last one's state. */
+  compareId: number;
   workspacesOpen: boolean;
   hostEditor: HostEditorState;
   /** Host whose Muxus-only display metadata is being organized. */
@@ -144,6 +146,7 @@ export const useUiStore = create<UiState>()((set) => ({
   historyOpen: false,
   historyQuery: '',
   compareSource: false,
+  compareId: 0,
   workspacesOpen: false,
   hostEditor: false,
   hostOrganizer: false,
@@ -178,7 +181,8 @@ export const useUiStore = create<UiState>()((set) => ({
     }),
   openHistory: (historyQuery = '', historySelectedId) =>
     set({ historyOpen: true, historyQuery, historySelectedId }),
-  setCompareSource: (compareSource) => set({ compareSource }),
+  setCompareSource: (compareSource) =>
+    set((state) => ({ compareSource, compareId: compareSource ? state.compareId + 1 : state.compareId })),
   setWorkspacesOpen: (workspacesOpen) => set({ workspacesOpen }),
   setHostEditor: (hostEditor) => set({ hostEditor }),
   setHostOrganizer: (hostOrganizer) => set({ hostOrganizer }),

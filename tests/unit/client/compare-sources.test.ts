@@ -1,11 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SessionLogSummary } from '@muxus/shared';
 import {
+  MAX_COMPARE_CHARS,
+  comparable,
   historyCompareLabel,
   historyCompareText,
+  openCompare,
   remoteFileCompareText,
   terminalCompareText,
 } from '../../../client/src/compare-sources.js';
+import { useUiStore } from '../../../client/src/state/ui.js';
 
 const session: SessionLogSummary = {
   id: 'log-1',
@@ -94,5 +98,31 @@ describe('remoteFileCompareText', () => {
       }),
     );
     await expect(remoteFileCompareText('conn-1', 'core-1', '/var/log/fw.bin')).rejects.toThrow('UTF-8 text files');
+  });
+});
+
+describe('comparable', () => {
+  it('refuses texts above the limit', () => {
+    const side = { label: 'big', text: 'x'.repeat(MAX_COMPARE_CHARS) };
+    expect(comparable(side)).toBe(side);
+    expect(() => comparable({ ...side, text: `${side.text}x` })).toThrow('larger than 8 MiB');
+  });
+});
+
+describe('openCompare', () => {
+  afterEach(() => {
+    useUiStore.getState().setCompareSource(false);
+  });
+
+  it('drops a side that finishes loading after a newer one was opened', async () => {
+    let finishSlow!: (side: { label: string; text: string }) => void;
+    openCompare(() => new Promise((resolve) => (finishSlow = resolve)));
+    openCompare(() => ({ label: 'fast', text: 'b' }));
+    await vi.waitFor(() => expect(useUiStore.getState().compareSource).toMatchObject({ label: 'fast' }));
+    const { compareId } = useUiStore.getState();
+    finishSlow({ label: 'slow', text: 'a' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(useUiStore.getState().compareSource).toMatchObject({ label: 'fast' });
+    expect(useUiStore.getState().compareId).toBe(compareId);
   });
 });

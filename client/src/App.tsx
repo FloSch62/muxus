@@ -138,6 +138,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const historyOpen = useUiStore((s) => s.historyOpen);
   const logViewerOpen = useUiStore((s) => s.logViewerOpen);
   const compareSource = useUiStore((s) => s.compareSource);
+  const compareId = useUiStore((s) => s.compareId);
   const quickLauncherOpen = useUiStore((s) => s.quickLauncherOpen);
   const workspacesOpen = useUiStore((s) => s.workspacesOpen);
   const commandLineLaunch = window.muxusDesktop?.commandLineLaunch;
@@ -231,7 +232,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
         {/* Its own boundary: loading Monaco must not hide the dialog it opens from. */}
         {compareSource ? (
           <Suspense fallback={null}>
-            <CompareDialog source={compareSource} />
+            <CompareDialog key={compareId} source={compareSource} />
           </Suspense>
         ) : null}
         {quickLauncherOpen ? <QuickLauncherDialog /> : null}

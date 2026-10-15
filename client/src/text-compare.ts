@@ -55,9 +55,7 @@ const MAX_EDITS = 2_000;
 export function unifiedDiff(original: string, modified: string, options: UnifiedDiffOptions): string {
   const before = splitLines(original);
   const after = splitLines(modified);
-  const key = options.ignoreWhitespace
-    ? (line: string) => line.replace(/\s+/g, ' ').trim()
-    : (line: string) => line;
+  const key = lineKey(options.ignoreWhitespace);
   const ops = editScript(before.map(key), after.map(key));
   const context = options.context ?? 3;
   const oldAt = [0];
@@ -88,6 +86,20 @@ export function unifiedDiff(original: string, modified: string, options: Unified
   return lines.length
     ? `--- ${options.originalLabel}\n+++ ${options.modifiedLabel}\n${lines.join('\n')}\n`
     : '';
+}
+
+/** Whether {@link unifiedDiff} would find no differences, without building the diff. */
+export function textsMatch(original: string, modified: string, ignoreWhitespace = false): boolean {
+  if (original === modified) return true;
+  const before = splitLines(original);
+  const after = splitLines(modified);
+  if (before.length !== after.length) return false;
+  const key = lineKey(ignoreWhitespace);
+  return before.every((line, index) => key(line) === key(after[index]!));
+}
+
+function lineKey(ignoreWhitespace = false): (line: string) => string {
+  return ignoreWhitespace ? (line) => line.replace(/\s+/g, ' ').trim() : (line) => line;
 }
 
 function splitLines(text: string): string[] {

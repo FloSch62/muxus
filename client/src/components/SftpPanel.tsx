@@ -40,11 +40,10 @@ import type { LocalOpenTarget, SftpEntry } from '@muxus/shared';
 import { apiFetch } from '../api/http.js';
 import { useSftpList } from '../api/queries.js';
 import { downloadBlobWithProgress } from '../api/transfers.js';
-import { remoteFileCompareText } from '../compare-sources.js';
+import { openCompare, remoteFileCompareText } from '../compare-sources.js';
 import { confirmAction, promptForText } from '../state/dialogs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { usePrefsStore } from '../state/prefs.js';
-import { useUiStore } from '../state/ui.js';
 import { loadCompareDialog, loadMonacoTextEditor } from '../lazy-features.js';
 import {
   canOpenLocally,
@@ -929,9 +928,8 @@ export function SftpPanel({
             onFocus={() => void loadCompareDialog()}
             onClick={() => {
               if (menu) {
-                void remoteFileCompareText(connId, hostLabel ?? 'SFTP', remotePath(menu.entry))
-                  .then(useUiStore.getState().setCompareSource)
-                  .catch(showErrorToast);
+                const path = remotePath(menu.entry);
+                openCompare(() => remoteFileCompareText(connId, hostLabel ?? 'SFTP', path));
               }
               setMenu(null);
             }}

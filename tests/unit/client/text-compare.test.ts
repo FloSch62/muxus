@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { prepareCompareText, unifiedDiff } from '../../../client/src/text-compare.js';
+import { prepareCompareText, textsMatch, unifiedDiff } from '../../../client/src/text-compare.js';
 
 const EXACT = { ignoreTimestamps: false, ignoreWhitespace: false };
 const labels = { originalLabel: 'a', modifiedLabel: 'b' };
@@ -138,5 +138,23 @@ describe('unifiedDiff', () => {
     expect(diff[2]).toBe('@@ -1,2502 +1,2502 @@');
     expect(diff.slice(4, 2_504).every((line) => line.startsWith('-a'))).toBe(true);
     expect(diff.slice(2_504, 5_004).every((line) => line.startsWith('+b'))).toBe(true);
+  });
+});
+
+describe('textsMatch', () => {
+  it('agrees with unifiedDiff on whether there is anything to report', () => {
+    const cases: [string, string, boolean][] = [
+      ['a\nb\n', 'a\nb', false],
+      ['a\nb', 'a\nc', false],
+      ['a\nb', 'a', false],
+      ['  a\tb ', 'a b', true],
+      ['  a\tb ', 'a b', false],
+      ['', '', false],
+    ];
+    for (const [before, after, ignoreWhitespace] of cases) {
+      expect(textsMatch(before, after, ignoreWhitespace)).toBe(
+        unifiedDiff(before, after, { ...labels, ignoreWhitespace }) === '',
+      );
+    }
   });
 });

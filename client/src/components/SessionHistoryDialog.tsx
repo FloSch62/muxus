@@ -56,12 +56,12 @@ import {
 import { useSetSessionLabel, useSetSessionPinned } from '../api/session-history.js';
 import { apiFetch, apiFetchRaw } from '../api/http.js';
 import { copyToClipboard } from '../clipboard.js';
-import { historyCompareText } from '../compare-sources.js';
+import { historyCompareText, openCompare } from '../compare-sources.js';
 import { confirmAction, promptForText } from '../state/dialogs.js';
 import { loadCompareDialog } from '../lazy-features.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { findTranscriptMatchesInChunks } from '../session-history-matches.js';
-import { showErrorToast, showToast } from '../state/toast.js';
+import { showToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
 
 const MAX_PREVIEW_EVENTS = 5_000;
@@ -368,11 +368,7 @@ export function SessionHistoryDialog() {
                     aria-label="Compare with…"
                     onMouseEnter={() => void loadCompareDialog()}
                     onFocus={() => void loadCompareDialog()}
-                    onClick={() =>
-                      void historyCompareText(selected)
-                        .then(useUiStore.getState().setCompareSource)
-                        .catch(showErrorToast)
-                    }
+                    onClick={() => openCompare(() => historyCompareText(selected))}
                   >
                     <CompareArrowsIcon fontSize="small" />
                   </IconButton>
