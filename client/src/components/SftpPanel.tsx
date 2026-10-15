@@ -20,6 +20,7 @@ import Typography from '@mui/material/Typography';
 import { alpha } from '@mui/material/styles';
 import AppsOutlinedIcon from '@mui/icons-material/AppsOutlined';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import CreateNewFolderOutlinedIcon from '@mui/icons-material/CreateNewFolderOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
@@ -39,10 +40,11 @@ import type { LocalOpenTarget, SftpEntry } from '@muxus/shared';
 import { apiFetch } from '../api/http.js';
 import { useSftpList } from '../api/queries.js';
 import { downloadBlobWithProgress } from '../api/transfers.js';
+import { openCompare, remoteFileCompareText } from '../compare-sources.js';
 import { confirmAction, promptForText } from '../state/dialogs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { usePrefsStore } from '../state/prefs.js';
-import { loadMonacoTextEditor } from '../lazy-features.js';
+import { loadCompareDialog, loadMonacoTextEditor } from '../lazy-features.js';
 import {
   canOpenLocally,
   chooseLocalProgram,
@@ -918,6 +920,24 @@ export function SftpPanel({
               <DownloadOutlinedIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText>Download</ListItemText>
+          </MenuItem>
+        )}
+        {menu?.entry.type === 'file' && (
+          <MenuItem
+            onMouseEnter={() => void loadCompareDialog()}
+            onFocus={() => void loadCompareDialog()}
+            onClick={() => {
+              if (menu) {
+                const path = remotePath(menu.entry);
+                openCompare(() => remoteFileCompareText(connId, hostLabel ?? 'SFTP', path));
+              }
+              setMenu(null);
+            }}
+          >
+            <ListItemIcon>
+              <CompareArrowsIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Compare with…</ListItemText>
           </MenuItem>
         )}
         <MenuItem

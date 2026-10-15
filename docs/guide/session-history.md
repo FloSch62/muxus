@@ -66,6 +66,36 @@ exact command execution time. Older recordings fall back to approximate event ti
 the dialog indicates when this applies. Raw logs and HTML replay keep their existing
 formats.
 
+## Comparing
+
+**Compare with…**, the arrows button beside the copy button, opens the selected session in
+the compare dialog. **Compare with…** in the dialog picks the other side:
+
+- an open terminal's output, or its selection when it has one;
+- a recent session history record, newest first;
+- a **Local file…**, or a **File on** a connected session, by path, over SFTP.
+
+To check a router before and after a change, with history enabled for it:
+
+1. Before the change, connect, run `show running-config` and close the tab. After the
+   change, do the same in a new tab.
+2. In the history dialog, select the later session and click **Compare with…**.
+3. In the compare dialog, click **Compare with…** and choose the earlier session.
+
+Sessions are compared as their clean log, without timestamps. The first text is on the
+left; **Swap sides** exchanges them. **Side by side** and **Inline** switch the view.
+
+| Option | Effect |
+| --- | --- |
+| **Ignore whitespace** | Lines that differ only in indentation, trailing spaces or the number of spaces between words are unchanged. Runs of spaces inside lines are shown as one |
+| **Ignore leading timestamps** | Removes a time at the start of each line, such as `[2026-10-14T09:15:00.123Z]`, `2026-10-14 09:15:00`, `*Oct 14 09:15:00.123:` or `09:15:00` |
+
+**Export diff** saves the comparison, with these options applied, as a unified diff
+(`.diff`, the format of `diff -u`, three lines of context).
+
+The same dialog opens from the [terminal's context menu](terminal.md#copy-paste-and-export)
+and the [file browser](files.md#managing). Files must be UTF-8 text of at most 8 MiB.
+
 ## Exports
 
 | Button | What you get |

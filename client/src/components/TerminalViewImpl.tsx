@@ -17,6 +17,7 @@ import Typography from '@mui/material/Typography';
 import { useTheme } from '@mui/material/styles';
 import CloseIcon from '@mui/icons-material/Close';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
+import CompareArrowsIcon from '@mui/icons-material/CompareArrows';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import DeleteSweepOutlinedIcon from '@mui/icons-material/DeleteSweepOutlined';
@@ -57,7 +58,8 @@ import {
   copyToClipboard,
   readClipboardContent,
 } from '../clipboard.js';
-import { loadMonacoTextEditor, loadRemoteEditorWorkspace } from '../lazy-features.js';
+import { openCompare, terminalCompareText } from '../compare-sources.js';
+import { loadCompareDialog, loadMonacoTextEditor, loadRemoteEditorWorkspace } from '../lazy-features.js';
 import { IS_MAC } from '../platform.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { showToast } from '../state/toast.js';
@@ -122,6 +124,7 @@ import {
 } from '../terminal/input-modes.js';
 import { shouldFitTerminal } from '../terminal/terminal-fit.js';
 import { terminalSelectionText } from '../terminal/selection-text.js';
+import { bufferText } from '../terminal/buffer-text.js';
 import { normalizeTerminalKeyboardInput } from '../terminal/keyboard-input.js';
 import {
   terminalRightClickIntent,
@@ -189,17 +192,6 @@ const BACKGROUND_IMAGE_STORAGE_MB = 16;
 /** Quiet period a container size has to hold before the terminal refits. */
 const RESIZE_SETTLE_MS = 90;
 const TRANSFER_PREPARE_TIMEOUT_MS = 5_000;
-
-/** Plain-text contents of scrollback + screen, trailing blank rows trimmed. */
-function bufferText(term: Terminal): string {
-  const buffer = term.buffer.active;
-  const lines: string[] = [];
-  for (let i = 0; i < buffer.length; i++) {
-    lines.push(buffer.getLine(i)?.translateToString(true) ?? '');
-  }
-  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
-  return lines.length ? `${lines.join('\n')}\n` : '';
-}
 
 /**
  * The last non-blank lines at or above the cursor — usually the prompt and
@@ -938,7 +930,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       selectAll: () => term.selectAll(),
       hasSelection: () => term.hasSelection(),
       getSelection: () => terminalSelectionText(term),
-      bufferText: () => bufferText(term),
+      bufferText: () => bufferText(term.buffer.active),
       recentLines: (count) => recentLines(term, count),
       bufferHtml: () => serialize.serializeAsHTML({ includeGlobalBackground: true }),
       persistSnapshot: async () => {
@@ -2177,7 +2169,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         <MenuItem
           onClick={() => {
             const term = termRef.current;
-            if (term) saveTextFile(exportFilename(tab.title, 'txt'), bufferText(term));
+            if (term) saveTextFile(exportFilename(tab.title, 'txt'), bufferText(term.buffer.active));
             closeCtxMenu();
           }}
         >
@@ -2197,6 +2189,23 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             <CodeOutlinedIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText>Export as HTML</ListItemText>
+        </MenuItem>
+        <MenuItem
+          onMouseEnter={() => void loadCompareDialog()}
+          onFocus={() => void loadCompareDialog()}
+          onClick={() => {
+            const term = termRef.current;
+            const selection = ctxMenu?.selection;
+            if (term) {
+              openCompare(() => terminalCompareText(tab.title, selection || bufferText(term.buffer.active), !!selection));
+            }
+            setCtxMenu(null);
+          }}
+        >
+          <ListItemIcon>
+            <CompareArrowsIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Compare with…</ListItemText>
         </MenuItem>
         <Divider />
         <MenuItem

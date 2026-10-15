@@ -12,6 +12,7 @@ export const loadSendSecretMenu = () => import('./components/SendSecretMenu.js')
 export const loadShortcutsDialog = () => import('./components/ShortcutsDialog.js');
 export const loadSessionHistoryDialog = () => import('./components/SessionHistoryDialog.js');
 export const loadLogViewerDialog = () => import('./components/LogViewerDialog.js');
+export const loadCompareDialog = () => import('./components/CompareDialog.js');
 export const loadQuickLauncherDialog = () => import('./components/QuickLauncherDialog.js');
 export const loadWorkspaceDialog = () => import('./components/WorkspaceDialog.js');
 export const loadForwardingPanel = () => import('./components/ForwardingPanel.js');

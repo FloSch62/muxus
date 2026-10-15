@@ -219,11 +219,17 @@ export function DiffViewer({
   modified,
   language,
   height = '100%',
+  inline = false,
+  ignoreTrimWhitespace = false,
 }: {
   original: string;
   modified: string;
   language: CodeLanguage;
   height?: number | string;
+  /** One column with removed lines above added ones, instead of two side by side. */
+  inline?: boolean;
+  /** Lines that differ only in leading or trailing whitespace count as unchanged. */
+  ignoreTrimWhitespace?: boolean;
 }) {
   const dark = useDarkMode();
   const editorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);
@@ -257,11 +263,11 @@ export function DiffViewer({
         options={{
           ...BASE_OPTIONS,
           readOnly: true,
-          renderSideBySide: true,
+          renderSideBySide: !inline,
           useInlineViewWhenSpaceIsLimited: true,
           renderSideBySideInlineBreakpoint: 700,
           hideUnchangedRegions: { enabled: true, contextLineCount: 3, minimumLineCount: 5, revealLineCount: 20 },
-          ignoreTrimWhitespace: false,
+          ignoreTrimWhitespace,
           renderOverviewRuler: true,
         }}
       />
