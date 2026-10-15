@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildBindingIndex,
   chordsAreDefault,
@@ -20,6 +20,7 @@ import {
   sendsControlCharacter,
 } from '../../../client/src/keymap/chords.js';
 import { KEY_COMMANDS, keyCommand } from '../../../client/src/keymap/commands.js';
+import { useMultiExecStore } from '../../../client/src/state/multi-exec.js';
 import { useTabsStore } from '../../../client/src/state/tabs.js';
 import { useUiStore } from '../../../client/src/state/ui.js';
 import {
@@ -259,6 +260,97 @@ describe('default bindings', () => {
       'tab.select.last',
     ]);
     expect(commandsForChord('Alt+Shift+Digit3')).toEqual([]);
+  });
+});
+
+describe('line jumps', () => {
+  const lineStart = () => keyCommand('terminal.line-start')!;
+  const lineEnd = () => keyCommand('terminal.line-end')!;
+
+  /** The keymap of another platform: `Mod` and the macOS-only chords are fixed when it loads. */
+  async function keymapOn(platform: string) {
+    vi.stubGlobal('navigator', { platform });
+    vi.resetModules();
+    return import('../../../client/src/keymap/bindings.js');
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+    useMultiExecStore.setState({ selectedIds: [], lastMirroredIds: [] });
+    useTabsStore.setState({ activeId: null });
+  });
+
+  it('take exactly Command+Left/Right on macOS', async () => {
+    const mac = await keymapOn('MacIntel');
+    const commandIds = (code: string, modifiers: Parameters<typeof keyEvent>[2]) =>
+      mac.commandsForEvent(keyEvent(code, code, modifiers), {}).map((command) => command.id);
+
+    expect(commandIds('ArrowLeft', { metaKey: true })).toEqual(['terminal.line-start']);
+    expect(commandIds('ArrowRight', { metaKey: true })).toEqual(['terminal.line-end']);
+    expect(commandIds('ArrowLeft', { metaKey: true, shiftKey: true })).toEqual(['pane.split.left']);
+    expect(commandIds('ArrowLeft', { metaKey: true, altKey: true })).toEqual([]);
+    expect(commandIds('ArrowLeft', { ctrlKey: true })).toEqual([]);
+    expect([...mac.conflictingCommandIds()]).toEqual([]);
+  });
+
+  it('have no default chord on Windows and Linux', async () => {
+    for (const platform of ['Win32', 'Linux x86_64']) {
+      const keymap = await keymapOn(platform);
+      expect(keymap.keyCommand('terminal.line-start')?.defaultChords, platform).toEqual([]);
+      expect(keymap.keyCommand('terminal.line-end')?.defaultChords, platform).toEqual([]);
+      expect(
+        keymap.commandsForEvent(keyEvent('ArrowLeft', 'ArrowLeft', { ctrlKey: true }), {}),
+        platform,
+      ).toEqual([]);
+    }
+  });
+
+  it('only answer chords pressed in a focused terminal', () => {
+    expect(lineStart().typesIntoSession).toBe(true);
+    expect(lineEnd().typesIntoSession).toBe(true);
+  });
+
+  it('type Ctrl+A and Ctrl+E as keys pressed in the active terminal, mirrored by multi-execution', () => {
+    const typed = vi.fn(() => true);
+    const mirrored = vi.fn(() => true);
+    const unregister = [
+      registerTerminal('tab-line', { sendKeyboardInput: typed } as unknown as TerminalHandle),
+      registerTerminal('tab-mirror', { sendKeyboardInput: mirrored } as unknown as TerminalHandle),
+    ];
+    useTabsStore.setState({ activeId: 'tab-line' });
+    useMultiExecStore.getState().setSelection(['tab-line', 'tab-mirror']);
+    try {
+      expect(lineStart().run()).toBe(true);
+      expect(lineEnd().run()).toBe(true);
+      expect(typed.mock.calls).toEqual([['\x01'], ['\x05']]);
+      expect(mirrored.mock.calls).toEqual([['\x01'], ['\x05']]);
+    } finally {
+      for (const done of unregister) done();
+    }
+  });
+
+  it('leave the key alone without a live session in the active terminal', () => {
+    expect(lineStart().run()).toBe(false);
+
+    // An active tab without a terminal, such as a remote desktop.
+    useTabsStore.setState({ activeId: 'tab-ended' });
+    expect(lineStart().run()).toBe(false);
+
+    const ended = vi.fn(() => false);
+    const mirrored = vi.fn(() => true);
+    const unregister = [
+      registerTerminal('tab-ended', { sendKeyboardInput: ended } as unknown as TerminalHandle),
+      registerTerminal('tab-mirror', { sendKeyboardInput: mirrored } as unknown as TerminalHandle),
+    ];
+    useMultiExecStore.getState().setSelection(['tab-ended', 'tab-mirror']);
+    try {
+      expect(lineEnd().run()).toBe(false);
+      expect(ended).toHaveBeenCalledExactlyOnceWith('\x05');
+      expect(mirrored).not.toHaveBeenCalled();
+    } finally {
+      for (const done of unregister) done();
+    }
   });
 });
 
