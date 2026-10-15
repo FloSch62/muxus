@@ -52,6 +52,7 @@ resetting them.
 | --- | --- |
 | Copy selection | ++ctrl+shift+c++ |
 | Paste | ++ctrl+shift+v++ |
+| [Jump to line start / end](../guide/terminal.md#protocols) | ++cmd+left++, ++cmd+right++ on macOS; *(unbound by default elsewhere)* |
 | Show [saved command menu](../guide/commands.md#keyboard-menu) | ++ctrl+space++ |
 | Run a [command button](../guide/commands.md#button-shortcuts) | *(unbound; recorded per button)* |
 | [Send secret…](../guide/commands.md#send-secret) | ++ctrl+shift+p++ |

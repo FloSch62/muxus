@@ -17,17 +17,23 @@ export function setChordCaptureActive(active: boolean): void {
   capturing = active;
 }
 
+const keyUpWaits = new Map<string, () => void>();
+
 /**
- * The keyup of a key the recorder or a button shortcut took still reaches the
- * focused control, and a focused chip deletes itself on a Backspace or Delete
- * keyup. Keep that keyup away from the page. It may never come (macOS sends
+ * The keyup of a key the recorder or a session-typing command took still
+ * reaches the focused control: a focused chip deletes itself on a Backspace or
+ * Delete keyup, and xterm reports the release to a Kitty-protocol program.
+ * Keep that keyup away from the page. It may never come (macOS sends
  * none for a key released while Cmd is held), so a later press of the key
  * ends the wait rather than leaving its own keyup swallowed.
  */
 export function swallowKeyUp(code: string): void {
+  // One wait per key: presses whose keyup never came must not pile up listeners.
+  keyUpWaits.get(code)?.();
   const done = () => {
     window.removeEventListener('keyup', onKeyUp, true);
     window.removeEventListener('keydown', onKeyDown, true);
+    if (keyUpWaits.get(code) === done) keyUpWaits.delete(code);
   };
   const onKeyUp = (event: KeyboardEvent) => {
     if (event.code !== code) return;
@@ -39,6 +45,7 @@ export function swallowKeyUp(code: string): void {
   };
   window.addEventListener('keyup', onKeyUp, true);
   window.addEventListener('keydown', onKeyDown, true);
+  keyUpWaits.set(code, done);
 }
 
 /**
@@ -101,16 +108,14 @@ export function installShortcuts(queryClient?: QueryClient): () => void {
     for (const command of commandsForEvent(event, keybindings, shortcutCommands(commandButtons))) {
       if (typing === 'editor' && !command.inEditor) continue;
       const button = command.category === 'buttons';
-      // A button types into the active session, so it only answers keys the
-      // terminal itself would have taken, never one aimed at a dialog or the sidebar.
-      if (button && !inTerminal) continue;
+      // A button, like any command that types into the active session, only answers
+      // keys the terminal itself would have taken, never one aimed at a dialog or the sidebar.
+      if ((button || command.typesIntoSession) && !inTerminal) continue;
       const handled = button && event.repeat ? command.id === heldButtonId : command.run();
       if (!handled) continue;
-      if (button) {
-        heldButtonId = command.id;
-        // The page saw no press, so it gets no release either.
-        if (!event.repeat) swallowKeyUp(event.code);
-      }
+      if (button) heldButtonId = command.id;
+      // The page and the session saw no press, so they get no release either.
+      if ((button || command.typesIntoSession) && !event.repeat) swallowKeyUp(event.code);
       event.preventDefault();
       event.stopImmediatePropagation();
       return;
