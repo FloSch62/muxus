@@ -93,6 +93,13 @@ terminal to that host leaves the tunnel running.
 Yes: SSH, Telnet, local shells, `COM` serial ports, RDP and VNC remote desktops, and NETCONF, gNMI, gNOI and gNSI. The desktop installer is an NSIS
 `.exe`.
 
+### On macOS, `ssh` in a local shell says "No route to host", but works in another terminal
+
+macOS 15 and later attribute connections from a local shell to the app hosting it. Allow
+Muxus under **System Settings → Privacy & Security → Local Network**. If it is already on,
+switch it off and on again, then restart the Mac: macOS may keep blocking until it reboots,
+especially after Muxus updates. This can also affect Tailscale and other VPN addresses.
+
 ### Is there a Wayland/HiDPI/scaling issue?
 
 Interface scale is a setting (**Settings → Appearance**), separate from terminal font zoom,
