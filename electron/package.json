@@ -46,7 +46,7 @@
     "@electron/rebuild": "^4.2.1",
     "@muxus/server": "workspace:*",
     "@types/node": "^24.19.2",
-    "electron": "44.7.2",
+    "electron": "44.8.0",
     "electron-builder": "^26.17.0",
     "electron-updater": "^6.8.9",
     "esbuild": "^0.28.2",
