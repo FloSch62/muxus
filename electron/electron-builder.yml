@@ -56,6 +56,11 @@ nsis:
   include: windows/installer.nsh
 mac:
   category: public.app-category.developer-tools
+  # Local Network privacy (macOS 15+) attributes connections from local shells
+  # to Muxus. Without this key the system blocks LAN and Tailscale addresses
+  # with "No route to host" instead of asking.
+  extendInfo:
+    NSLocalNetworkUsageDescription: Muxus connects to SSH, Telnet, RDP, VNC and management hosts on your local network.
   identity: null
   notarize: false
   # Native modules ship both Darwin prebuilds in each architecture package,
