@@ -10,6 +10,7 @@ import {
   splitActivePane,
   toggleMultiExec,
 } from '../session-actions.js';
+import { broadcastTerminalInput } from '../state/multi-exec.js';
 import { usePrefsStore } from '../state/prefs.js';
 import { PANE_RESIZE_STEP, isRemoteSessionTab, useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
@@ -32,6 +33,8 @@ export interface KeyCommand {
   palette?: boolean;
   /** Also answers while the file editor has focus, where other bindings stay quiet. */
   inEditor?: boolean;
+  /** Types into the active session, so its chords only answer while a terminal has focus. */
+  typesIntoSession?: boolean;
   /**
    * Runs the command. Returning `false` means "not applicable right now" and
    * leaves the key to whatever would have received it — the terminal keeps
@@ -53,6 +56,14 @@ const macOnly = (chord: string): string[] => (IS_MAC ? [chord] : []);
 
 const tabs = () => useTabsStore.getState();
 const activeTerminal = () => terminalHandle(useTabsStore.getState().activeId);
+
+/** Bytes sent as a key typed in the active terminal, mirrored like one under multi-execution. */
+function typeKeystroke(data: string): boolean {
+  const id = tabs().activeId;
+  if (!id || !terminalHandle(id)?.sendKeyboardInput(data)) return false;
+  broadcastTerminalInput(id, data);
+  return true;
+}
 
 const DIRECTION_LABELS: Record<PaneDirection, string> = {
   left: 'left',
@@ -297,6 +308,25 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
       handle.pasteClipboard();
       return true;
     },
+  },
+  {
+    id: 'terminal.line-start',
+    title: 'Jump to line start',
+    category: 'terminal',
+    // Ctrl+A, as Command+Left sends in VS Code and Ghostty; elsewhere Home already does this.
+    defaultChords: macOnly('Mod+ArrowLeft'),
+    keywords: ['beginning of line', 'home', 'cursor'],
+    typesIntoSession: true,
+    run: () => typeKeystroke('\x01'),
+  },
+  {
+    id: 'terminal.line-end',
+    title: 'Jump to line end',
+    category: 'terminal',
+    defaultChords: macOnly('Mod+ArrowRight'),
+    keywords: ['end of line', 'cursor'],
+    typesIntoSession: true,
+    run: () => typeKeystroke('\x05'),
   },
   {
     id: 'terminal.command-menu',

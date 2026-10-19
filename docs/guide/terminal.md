@@ -19,6 +19,15 @@ otherwise have no encoding.
 Terminal.app and iTerm2. They send ++esc++ ++b++ and ++esc++ ++f++, which bash, zsh, fish
 and the CLIs of most network devices understand without extra key bindings.
 
+**Line jumps on macOS.** ++cmd+left++ and ++cmd+right++ jump to the start and end of the
+line, as in VS Code and Ghostty. They send ++ctrl+a++ and ++ctrl+e++, which bash, zsh, fish
+and the CLIs of most network devices understand. Full-screen programs get the same keys, so
+in Vim ++ctrl+a++ increments a number and in GNU screen it starts a command; clearing the
+chords of **Terminal → Jump to line start** and **Jump to line end** in the
+[keyboard sheet](../reference/keyboard-shortcuts.md) passes the keys through unchanged. On
+Windows and Linux, ++home++ and ++end++ already do this, so the two commands have no
+shortcut until one is recorded in the keyboard sheet.
+
 **`TERM`.** Sessions advertise `TERM=xterm-256color`, which is broadly supported, so remote
 `terminfo` lookups resolve.
 

@@ -19,6 +19,10 @@ import { useMultiExecStore } from '../../../client/src/state/multi-exec.js';
 import { usePrefsStore, type CommandButton } from '../../../client/src/state/prefs.js';
 import { useTabsStore } from '../../../client/src/state/tabs.js';
 import { useUiStore } from '../../../client/src/state/ui.js';
+import {
+  registerTerminal,
+  type TerminalHandle,
+} from '../../../client/src/terminal/terminal-registry.js';
 import { runCommandButton } from '../../../client/src/vault-secrets.js';
 
 // Shortcuts must take the click path; what that path types is covered by its own tests.
@@ -233,6 +237,14 @@ class StandInElement {
 const terminalFocus = new StandInElement(true);
 const elsewhereFocus = new StandInElement(false);
 
+/** A focused text field, such as a dialog input open over the terminal. */
+class StandInTextField extends StandInElement {
+  override closest(selector: string): StandInElement | null {
+    return selector.includes('input') ? this : null;
+  }
+}
+const textFieldFocus = new StandInTextField(false);
+
 class StandInWindow extends EventTarget {
   override removeEventListener(
     type: string,
@@ -325,6 +337,47 @@ describe('pressing a button shortcut', () => {
     // App commands still answer from there.
     expect(press(' ', 'Space', { ctrlKey: true }, false, elsewhereFocus)).toBe(true);
     expect(useUiStore.getState().commandButtonMenuOpen).toBe(true);
+  });
+
+  it('types a line jump only from a focused terminal, as it runs a button', () => {
+    const id = openTab({ kind: 'local' });
+    const sendKeyboardInput = vi.fn(() => true);
+    const unregister = registerTerminal(id, { sendKeyboardInput } as unknown as TerminalHandle);
+    // The default chord is macOS-only; any chord takes the same path.
+    usePrefsStore.setState({ keybindings: { 'terminal.line-start': ['Ctrl+Alt+ArrowLeft'] } });
+    const press = install();
+    const chord = { ctrlKey: true, altKey: true };
+    try {
+      expect(press('ArrowLeft', 'ArrowLeft', chord, false, textFieldFocus)).toBe(false);
+      expect(press('ArrowLeft', 'ArrowLeft', chord, false, elsewhereFocus)).toBe(false);
+      expect(sendKeyboardInput).not.toHaveBeenCalled();
+
+      expect(press('ArrowLeft', 'ArrowLeft', chord)).toBe(true);
+      expect(sendKeyboardInput).toHaveBeenCalledExactlyOnceWith('\x01');
+    } finally {
+      unregister();
+      usePrefsStore.setState({ keybindings: {} });
+    }
+  });
+
+  it('keeps the keyup of a line jump from the session, with one wait per key', () => {
+    const id = openTab({ kind: 'local' });
+    const sendKeyboardInput = vi.fn(() => true);
+    const unregister = registerTerminal(id, { sendKeyboardInput } as unknown as TerminalHandle);
+    usePrefsStore.setState({ keybindings: { 'terminal.line-start': ['Ctrl+Alt+ArrowLeft'] } });
+    const press = install();
+    const chord = { ctrlKey: true, altKey: true };
+    try {
+      // Three presses without a keyup, as macOS sends none while Cmd is held.
+      for (let i = 0; i < 3; i++) expect(press('ArrowLeft', 'ArrowLeft', chord)).toBe(true);
+      // A program reading key releases (Kitty protocol) sees none for the jump.
+      expect(release('ArrowLeft', 'ArrowLeft')).toBe(false);
+      // Only the last press was waiting, so the next keyup reaches the page.
+      expect(release('ArrowLeft', 'ArrowLeft')).toBe(true);
+    } finally {
+      unregister();
+      usePrefsStore.setState({ keybindings: {} });
+    }
   });
 
   it('leaves the key and its repeats to the shell when the press did not run the button', () => {
