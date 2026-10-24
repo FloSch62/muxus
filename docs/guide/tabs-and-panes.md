@@ -28,7 +28,7 @@ splits, and the tab strip has split buttons for the mouse.
 
 | Chord | What happens |
 | --- | --- |
-| ++alt+left++ / ++alt+right++ / ++alt+up++ / ++alt+down++ | Focus the pane in that direction, geometrically |
+| ++alt+left++ / ++alt+right++ / ++alt+up++ / ++alt+down++ (++cmd+option++ and an arrow on macOS) | Focus the pane in that direction, geometrically |
 | ++ctrl+shift+o++ | Focus the next pane |
 | ++alt+shift+left++ … | Send the current tab to the neighbouring pane, splitting one off when there is none |
 | ++ctrl+shift+z++ | Zoom the focused pane to the whole canvas, and back |
@@ -38,7 +38,9 @@ splits, and the tab strip has split buttons for the mouse.
 !!! tip "Focus keys fall through to the shell"
 
     ++alt+left++ moves focus **only when a pane sits to the left**. When there is none, the
-    key is passed to the shell, so ++alt+left++ still moves a word in readline.
+    key is passed to the shell, so ++alt+left++ still moves a word in readline. On macOS,
+    where ++option+left++ and ++option+right++ [jump by word](terminal.md#protocols) in
+    every pane, focus moves with ++cmd+option+left++ … instead.
 
 Drag a divider to resize it, double-click it to even the split, or give it focus and use
 the arrows. **Even out panes** in the pane menu balances the whole layout.

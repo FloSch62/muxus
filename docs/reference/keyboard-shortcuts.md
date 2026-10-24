@@ -18,7 +18,9 @@ resetting them.
 
     One default table serves every platform. Chords marked ++ctrl++ below are ++cmd++ on
     macOS. A few extra Command-only chords exist on macOS where Ctrl belongs to the shell:
-    ++cmd+w++ closes a tab, and ++cmd+1++ … ++cmd+9++ select one.
+    ++cmd+w++ closes a tab, and ++cmd+1++ … ++cmd+9++ select one. Moving focus between
+    panes takes ++cmd+option++ and an arrow on macOS, because ++option+left++ and
+    ++option+right++ jump by word there.
 
 ## Panes
 
@@ -27,7 +29,7 @@ resetting them.
 | Split pane right | ++ctrl+shift+right++, ++alt+shift+equal++ |
 | Split pane down | ++ctrl+shift+down++, ++alt+shift+minus++ |
 | Split pane left / up | ++ctrl+shift+left++, ++ctrl+shift+up++ |
-| Focus pane left / right / up / down | ++alt+left++, ++alt+right++, ++alt+up++, ++alt+down++ |
+| Focus pane left / right / up / down | ++alt+left++, ++alt+right++, ++alt+up++, ++alt+down++ (++cmd+option+left++ … on macOS) |
 | Focus next pane | ++ctrl+shift+o++ |
 | Zoom pane / restore layout | ++ctrl+shift+z++ |
 | Grow / shrink pane | ++ctrl+shift+period++, ++ctrl+shift+comma++ |
@@ -111,7 +113,8 @@ Monaco's own bindings apply inside the [file editor](../guide/editor.md):
 - **Numbered tabs are window-wide.** Hold ++alt++ to reveal the number on every tab;
   ++alt+1++ … ++alt+9++ activate those exact tabs across all panes.
 - **Keys fall through when they do not apply.** ++alt+left++ moves focus only when a pane
-  is to the left; otherwise the shell receives it.
+  is to the left; otherwise the shell receives it. On macOS, ++option+left++ and
+  ++option+right++ always go to the shell as word jumps.
 - **Chords follow the printed key cap.** ++ctrl+shift+z++ is the key labelled `Z` on QWERTZ
   and AZERTY. Arrows and keys whose character a modifier mangles use their physical
   position.

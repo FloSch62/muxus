@@ -37,8 +37,9 @@ export interface KeyCommand {
   typesIntoSession?: boolean;
   /**
    * Runs the command. Returning `false` means "not applicable right now" and
-   * leaves the key to whatever would have received it — the terminal keeps
-   * Alt+← for word motion until a pane actually sits to the left.
+   * leaves the key to whatever would have received it — on Windows and Linux
+   * the terminal keeps Alt+← for word motion until a pane actually sits to
+   * the left.
    */
   run: () => boolean;
 }
@@ -95,7 +96,11 @@ function focusCommand(direction: PaneDirection): KeyCommand {
     id: `pane.focus.${direction}`,
     title: `Focus pane ${DIRECTION_LABELS[direction]}`,
     category: 'panes',
-    defaultChords: [`Alt+${DIRECTION_ARROWS[direction]}`],
+    // Option+←/→ jumps by word on macOS, in every pane, so panes take
+    // Command+Option+arrow there, as in iTerm2.
+    defaultChords: [
+      IS_MAC ? `Mod+Alt+${DIRECTION_ARROWS[direction]}` : `Alt+${DIRECTION_ARROWS[direction]}`,
+    ],
     keywords: ['focus', 'move', 'navigate', direction],
     run: () => tabs().focusPaneDirection(direction),
   };
