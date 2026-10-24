@@ -16,6 +16,12 @@ on the left and the control on the right, grouped under small headings. In a nar
 the section list becomes a picker at the top. Close the settings window or dialog with ++esc++,
 or with its close button.
 
+**Search settings**, above the section list, finds a setting by its name or by what it is
+about: `font`, `dark mode`, `keepalive`, `ctrl+d` or `osc52`. Results list as you type, each
+with its section and heading. Choose one with a click, or with the arrow keys and ++enter++,
+to open its section, scrolled to the setting and outlined for a moment. ++ctrl+f++
+(++cmd+f++ on macOS) moves to the search field from anywhere in Settings.
+
 Most changes apply immediately to open terminals, in every Muxus window. SSH keepalive
 changes apply on the next connection; session logging saves explicitly because storage
 policy should not change under a running recorder.

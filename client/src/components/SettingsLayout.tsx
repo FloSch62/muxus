@@ -1,3 +1,4 @@
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import FormControl from '@mui/material/FormControl';
 import MenuItem from '@mui/material/MenuItem';
@@ -7,7 +8,40 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutlined';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutlineOutlined';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
+import { settingsTitleKey } from '../settings-search.js';
 import { statusTextColor } from '../theme.js';
+
+/** A setting picked in Settings search: the row label or group title to bring into view. */
+export interface SettingsFocusTarget {
+  label: string;
+  kind: 'row' | 'group';
+  /** Changes on every pick, so picking the same setting again outlines it again. */
+  nonce: number;
+}
+
+export const SettingsFocusContext = createContext<SettingsFocusTarget | undefined>(undefined);
+
+const FOCUS_HIGHLIGHT_MS = 2500;
+const FOCUS_HIGHLIGHT_SX = { outline: 2, outlineColor: 'primary.main', outlineOffset: -2 } as const;
+
+/** Scroll the picked setting into view once it renders, and outline it for a moment. */
+function useSettingsFocus(kind: SettingsFocusTarget['kind'], label: string | undefined) {
+  const target = useContext(SettingsFocusContext);
+  const nonce =
+    target && label !== undefined && target.kind === kind && target.label === label
+      ? target.nonce
+      : undefined;
+  const ref = useRef<HTMLDivElement>(null);
+  const [highlighted, setHighlighted] = useState<number>();
+  useEffect(() => {
+    if (nonce === undefined) return;
+    ref.current?.scrollIntoView({ block: kind === 'row' ? 'center' : 'start' });
+    setHighlighted(nonce);
+    const timer = window.setTimeout(() => setHighlighted(undefined), FOCUS_HIGHLIGHT_MS);
+    return () => window.clearTimeout(timer);
+  }, [kind, nonce]);
+  return { ref, highlighted: highlighted !== undefined && highlighted === nonce };
+}
 
 /**
  * The layout language every Settings section shares: a page heading, then
@@ -59,8 +93,9 @@ export function SettingsGroup({
   flush?: boolean;
   children: React.ReactNode;
 }) {
+  const focus = useSettingsFocus('group', title ? settingsTitleKey(title) : undefined);
   return (
-    <Box component="section">
+    <Box component="section" ref={focus.ref}>
       {title || action ? (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minHeight: 28, mb: 0.75 }}>
           {title ? (
@@ -94,6 +129,7 @@ export function SettingsGroup({
           borderRadius: 2,
           bgcolor: 'background.paper',
           overflow: 'hidden',
+          ...(focus.highlighted ? FOCUS_HIGHLIGHT_SX : {}),
           ...(flush
             ? {}
             : { '& > .settings-row + .settings-row': { borderTop: 1, borderColor: 'divider' } }),
@@ -129,8 +165,13 @@ export function SettingRow({
   /** Extra content under the row (a hint, an alert, a sub-setting). */
   children?: React.ReactNode;
 }) {
+  const focus = useSettingsFocus('row', typeof label === 'string' ? label : undefined);
   return (
-    <Box className="settings-row" sx={{ px: 2, py: 1.5 }}>
+    <Box
+      ref={focus.ref}
+      className="settings-row"
+      sx={{ px: 2, py: 1.5, ...(focus.highlighted ? FOCUS_HIGHLIGHT_SX : {}) }}
+    >
       <Box
         sx={{
           display: 'flex',

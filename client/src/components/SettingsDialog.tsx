@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Autocomplete from '@mui/material/Autocomplete';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
@@ -23,7 +23,6 @@ import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Typography from '@mui/material/Typography';
 import { alpha, useTheme, type Theme } from '@mui/material/styles';
-import type { SvgIconComponent } from '@mui/icons-material';
 import ArticleOutlinedIcon from '@mui/icons-material/ArticleOutlined';
 import BugReportOutlinedIcon from '@mui/icons-material/BugReportOutlined';
 import CloseIcon from '@mui/icons-material/Close';
@@ -67,6 +66,7 @@ import {
   sessionLoggingPolicyInput,
 } from '../session-logging-policy.js';
 import { useSettingsDraft } from '../settings-draft.js';
+import type { SettingsSearchEntry } from '../settings-search.js';
 import {
   STATUS_BAR_ITEM_LABELS,
   STATUS_BAR_ITEMS,
@@ -120,7 +120,15 @@ import { LayoutPreview } from './LayoutPreview.js';
 import { LinkHandlerSettings } from './LinkHandlerSettings.js';
 import { LocalShellProfilesSection } from './LocalShellProfilesSection.js';
 import { SessionLoggingPolicyFields } from './SessionLoggingPolicyFields.js';
-import { RowSelect, SettingRow, SettingsGroup, SettingsPage } from './SettingsLayout.js';
+import {
+  RowSelect,
+  SettingRow,
+  SettingsFocusContext,
+  SettingsGroup,
+  SettingsPage,
+  type SettingsFocusTarget,
+} from './SettingsLayout.js';
+import { SettingsSearch, type SettingsSectionInfo } from './SettingsSearch.js';
 import { TerminalSchemeSelect } from './TerminalSchemeSelect.js';
 import { DataTransferSection } from './DataTransferSection.js';
 import { MobaXtermImportDialog } from './MobaXtermImportDialog.js';
@@ -128,7 +136,7 @@ import { PasswordVaultSection } from './PasswordVaultSection.js';
 import { X11Section } from './X11Section.js';
 import { SecureCrtImportDialog } from './SecureCrtImportDialog.js';
 
-const SECTIONS: Array<{ id: SettingsSection; label: string; icon: SvgIconComponent }> = [
+const SECTIONS: SettingsSectionInfo[] = [
   { id: 'appearance', label: 'Appearance', icon: PaletteOutlinedIcon },
   { id: 'terminal', label: 'Terminal', icon: TerminalIcon },
   { id: 'local-shells', label: 'Local shells', icon: CodeOutlinedIcon },
@@ -175,6 +183,8 @@ export interface SettingsNavigation {
   section: SettingsSection;
   /** The entry settings were opened for, highlighted until another section is picked. */
   focusItem?: string;
+  /** The setting picked in search, scrolled to and outlined in its section. */
+  focusSetting?: SettingsFocusTarget;
   loggingDirty: boolean;
   setLoggingDirty: (dirty: boolean) => void;
   /** Run `action` unless that would silently drop unsaved logging edits. */
@@ -182,6 +192,8 @@ export interface SettingsNavigation {
   pick: (section: SettingsSection) => void;
   /** Bring a section, and optionally one entry in it, into view. */
   show: (target: SettingsTarget) => void;
+  /** Open the section of a search result and bring the setting into view. */
+  reveal: (entry: SettingsSearchEntry) => void;
 }
 
 /**
@@ -193,6 +205,8 @@ export interface SettingsNavigation {
 export function useSettingsNavigation(initial?: SettingsTarget | null): SettingsNavigation {
   const [section, setSection] = useState<SettingsSection>(initial?.section ?? 'appearance');
   const [focusItem, setFocusItem] = useState(initial?.item);
+  const [focusSetting, setFocusSetting] = useState<SettingsFocusTarget>();
+  const focusCount = useRef(0);
   const [loggingDirty, setLoggingDirty] = useState(false);
 
   /** Nothing leaves the logging section behind without the user's say-so. */
@@ -216,18 +230,35 @@ export function useSettingsNavigation(initial?: SettingsTarget | null): Settings
     },
     [loggingDirty, section],
   );
-  const show = useCallback(
-    (target: SettingsTarget) => {
-      if (target.section === section) {
+  const open = useCallback(
+    (target: SettingsTarget, setting?: SettingsFocusTarget) => {
+      const apply = () => {
         setFocusItem(target.item);
+        setFocusSetting(setting);
+      };
+      if (target.section === section) {
+        apply();
         return;
       }
       leaveSection(() => {
         setSection(target.section);
-        setFocusItem(target.item);
+        apply();
       });
     },
     [leaveSection, section],
+  );
+  const show = useCallback((target: SettingsTarget) => open(target), [open]);
+  const reveal = useCallback(
+    (entry: SettingsSearchEntry) =>
+      open(
+        { section: entry.section },
+        {
+          label: entry.row ?? entry.label,
+          kind: entry.kind ?? 'row',
+          nonce: ++focusCount.current,
+        },
+      ),
+    [open],
   );
   const pick = useCallback(
     (next: SettingsSection) => {
@@ -235,7 +266,17 @@ export function useSettingsNavigation(initial?: SettingsTarget | null): Settings
     },
     [section, show],
   );
-  return { section, focusItem, loggingDirty, setLoggingDirty, leaveSection, pick, show };
+  return {
+    section,
+    focusItem,
+    focusSetting,
+    loggingDirty,
+    setLoggingDirty,
+    leaveSection,
+    pick,
+    show,
+    reveal,
+  };
 }
 
 export type SessionImportSource = 'mobaxterm' | 'securecrt';
@@ -263,19 +304,30 @@ export function SettingsBody({
   navigation: SettingsNavigation;
   onImport: (source: SessionImportSource) => void;
 }) {
+  // One search field shows at a time: atop the section list, or above the
+  // section picker in a narrow window.
+  const searchInputs = useRef<Array<HTMLInputElement | null>>([]);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || event.shiftKey || event.altKey) return;
+      if (!(IS_MAC ? event.metaKey : event.ctrlKey) || event.key.toLowerCase() !== 'f') return;
+      const input = searchInputs.current.find((candidate) => candidate?.offsetParent);
+      if (!input) return;
+      event.preventDefault();
+      input.focus();
+      input.select();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   return (
     <Box sx={{ display: 'flex', flex: 1, minHeight: 0 }}>
-      <Tabs
-        orientation="vertical"
-        value={navigation.section}
-        onChange={(_event, next: SettingsSection) => navigation.pick(next)}
-        aria-label="Settings sections"
-        variant="scrollable"
-        slotProps={{ indicator: { sx: { display: 'none' } } }}
+      <Box
         sx={{
           width: 196,
           flexShrink: 0,
-          py: 1,
+          minHeight: 0,
           borderRight: 1,
           borderColor: 'divider',
           bgcolor: (theme) =>
@@ -283,34 +335,54 @@ export function SettingsBody({
               ? alpha('#000', 0.12)
               : alpha(theme.palette.text.primary, 0.02),
           display: { xs: 'none', sm: 'flex' },
+          flexDirection: 'column',
         }}
       >
-        {SECTIONS.map(({ id, label, icon: Icon }) => (
-          <Tab
-            key={id}
-            value={id}
-            icon={<Icon />}
-            iconPosition="start"
-            sx={NAV_TAB_SX}
-            label={
-              id === 'logging' && navigation.loggingDirty ? (
-                <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-                  {label}
-                  <Tooltip title="Unsaved changes">
-                    <Box
-                      component="span"
-                      aria-label="Unsaved changes"
-                      sx={{ ml: 'auto', width: 7, height: 7, borderRadius: '50%', bgcolor: 'warning.main' }}
-                    />
-                  </Tooltip>
-                </Box>
-              ) : (
-                label
-              )
-            }
+        <Box sx={{ px: 1, pt: 1.5, pb: 0.75 }}>
+          <SettingsSearch
+            sections={SECTIONS}
+            onPick={navigation.reveal}
+            inputRef={(input) => {
+              searchInputs.current[0] = input;
+            }}
           />
-        ))}
-      </Tabs>
+        </Box>
+        <Tabs
+          orientation="vertical"
+          value={navigation.section}
+          onChange={(_event, next: SettingsSection) => navigation.pick(next)}
+          aria-label="Settings sections"
+          variant="scrollable"
+          slotProps={{ indicator: { sx: { display: 'none' } } }}
+          sx={{ flex: 1, minHeight: 0, pb: 1 }}
+        >
+          {SECTIONS.map(({ id, label, icon: Icon }) => (
+            <Tab
+              key={id}
+              value={id}
+              icon={<Icon />}
+              iconPosition="start"
+              sx={NAV_TAB_SX}
+              label={
+                id === 'logging' && navigation.loggingDirty ? (
+                  <Box component="span" sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                    {label}
+                    <Tooltip title="Unsaved changes">
+                      <Box
+                        component="span"
+                        aria-label="Unsaved changes"
+                        sx={{ ml: 'auto', width: 7, height: 7, borderRadius: '50%', bgcolor: 'warning.main' }}
+                      />
+                    </Tooltip>
+                  </Box>
+                ) : (
+                  label
+                )
+              }
+            />
+          ))}
+        </Tabs>
+      </Box>
       <Box
         sx={{
           flex: 1,
@@ -322,6 +394,15 @@ export function SettingsBody({
         }}
       >
         {/* Narrow windows: the section list becomes a picker above the page. */}
+        <Box sx={{ display: { xs: 'block', sm: 'none' }, mb: 1.5 }}>
+          <SettingsSearch
+            sections={SECTIONS}
+            onPick={navigation.reveal}
+            inputRef={(input) => {
+              searchInputs.current[1] = input;
+            }}
+          />
+        </Box>
         <FormControl size="small" fullWidth sx={{ display: { xs: 'flex', sm: 'none' }, mb: 2.5 }}>
           <Select
             value={navigation.section}
@@ -335,29 +416,31 @@ export function SettingsBody({
             ))}
           </Select>
         </FormControl>
-        <Box sx={{ maxWidth: 760 }}>
-          {navigation.section === 'appearance' && <AppearanceSection />}
-          {navigation.section === 'terminal' && <TerminalSection />}
-          {navigation.section === 'local-shells' && (
-            <LocalShellProfilesSection focusItem={navigation.focusItem} />
-          )}
-          {navigation.section === 'logging' && (
-            <SessionLoggingSection onDirtyChange={navigation.setLoggingDirty} />
-          )}
-          {navigation.section === 'highlighting' && <HighlightProfilesSection />}
-          {navigation.section === 'behavior' && <BehaviorSection />}
-          {navigation.section === 'x11' && <X11Section />}
-          {navigation.section === 'keyboard' && <KeyboardSection />}
-          {navigation.section === 'passwords' && <PasswordVaultSection />}
-          {navigation.section === 'data' && (
-            <DataTransferSection
-              onImportMobaXterm={() => onImport('mobaxterm')}
-              onImportSecureCrt={() => onImport('securecrt')}
-            />
-          )}
-          {navigation.section === 'debug' && <DebugSection />}
-          {navigation.section === 'about' && <AboutSection />}
-        </Box>
+        <SettingsFocusContext.Provider value={navigation.focusSetting}>
+          <Box sx={{ maxWidth: 760 }}>
+            {navigation.section === 'appearance' && <AppearanceSection />}
+            {navigation.section === 'terminal' && <TerminalSection />}
+            {navigation.section === 'local-shells' && (
+              <LocalShellProfilesSection focusItem={navigation.focusItem} />
+            )}
+            {navigation.section === 'logging' && (
+              <SessionLoggingSection onDirtyChange={navigation.setLoggingDirty} />
+            )}
+            {navigation.section === 'highlighting' && <HighlightProfilesSection />}
+            {navigation.section === 'behavior' && <BehaviorSection />}
+            {navigation.section === 'x11' && <X11Section />}
+            {navigation.section === 'keyboard' && <KeyboardSection />}
+            {navigation.section === 'passwords' && <PasswordVaultSection />}
+            {navigation.section === 'data' && (
+              <DataTransferSection
+                onImportMobaXterm={() => onImport('mobaxterm')}
+                onImportSecureCrt={() => onImport('securecrt')}
+              />
+            )}
+            {navigation.section === 'debug' && <DebugSection />}
+            {navigation.section === 'about' && <AboutSection />}
+          </Box>
+        </SettingsFocusContext.Provider>
       </Box>
     </Box>
   );
