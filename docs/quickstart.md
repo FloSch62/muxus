@@ -51,10 +51,10 @@ and no second password prompt.
   <figcaption>Split in any direction; every pane keeps its own tab strip.</figcaption>
 </figure>
 
-Move around with ++alt+left++ / ++alt+right++ / ++alt+up++ / ++alt+down++, zoom a pane to
-the whole window with ++ctrl+shift+z++, and close one with ++ctrl+shift+x++. Nothing is
-taken from the shell: ++ctrl+w++ still deletes a word, so closing a tab is
-++ctrl+shift+w++.
+Move around with ++alt+left++ / ++alt+right++ / ++alt+up++ / ++alt+down++ (++cmd+option++
+and an arrow on macOS), zoom a pane to the whole window with ++ctrl+shift+z++, and close
+one with ++ctrl+shift+x++. Nothing is taken from the shell: ++ctrl+w++ still deletes a
+word, so closing a tab is ++ctrl+shift+w++.
 
 [More on tabs & panes :octicons-arrow-right-24:](guide/tabs-and-panes.md)
 

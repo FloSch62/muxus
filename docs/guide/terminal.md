@@ -17,7 +17,8 @@ otherwise have no encoding.
 
 **Word jumps on macOS.** ++option+left++ and ++option+right++ move by word, as in
 Terminal.app and iTerm2. They send ++esc++ ++b++ and ++esc++ ++f++, which bash, zsh, fish
-and the CLIs of most network devices understand without extra key bindings.
+and the CLIs of most network devices understand without extra key bindings. They do so in
+split panes too: focus moves between panes with ++cmd+option+left++ … on macOS.
 
 **Line jumps on macOS.** ++cmd+left++ and ++cmd+right++ jump to the start and end of the
 line, as in VS Code and Ghostty. They send ++ctrl+a++ and ++ctrl+e++, which bash, zsh, fish

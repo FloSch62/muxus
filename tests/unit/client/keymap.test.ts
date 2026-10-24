@@ -263,16 +263,16 @@ describe('default bindings', () => {
   });
 });
 
+/** The keymap of another platform: `Mod` and the macOS-only chords are fixed when it loads. */
+async function keymapOn(platform: string) {
+  vi.stubGlobal('navigator', { platform });
+  vi.resetModules();
+  return import('../../../client/src/keymap/bindings.js');
+}
+
 describe('line jumps', () => {
   const lineStart = () => keyCommand('terminal.line-start')!;
   const lineEnd = () => keyCommand('terminal.line-end')!;
-
-  /** The keymap of another platform: `Mod` and the macOS-only chords are fixed when it loads. */
-  async function keymapOn(platform: string) {
-    vi.stubGlobal('navigator', { platform });
-    vi.resetModules();
-    return import('../../../client/src/keymap/bindings.js');
-  }
 
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -289,7 +289,7 @@ describe('line jumps', () => {
     expect(commandIds('ArrowLeft', { metaKey: true })).toEqual(['terminal.line-start']);
     expect(commandIds('ArrowRight', { metaKey: true })).toEqual(['terminal.line-end']);
     expect(commandIds('ArrowLeft', { metaKey: true, shiftKey: true })).toEqual(['pane.split.left']);
-    expect(commandIds('ArrowLeft', { metaKey: true, altKey: true })).toEqual([]);
+    expect(commandIds('ArrowLeft', { metaKey: true, altKey: true })).toEqual(['pane.focus.left']);
     expect(commandIds('ArrowLeft', { ctrlKey: true })).toEqual([]);
     expect([...mac.conflictingCommandIds()]).toEqual([]);
   });
@@ -350,6 +350,41 @@ describe('line jumps', () => {
       expect(mirrored).not.toHaveBeenCalled();
     } finally {
       for (const done of unregister) done();
+    }
+  });
+});
+
+describe('pane focus keys', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it('leave Option+arrow to word jumps on macOS and take Command+Option+arrow', async () => {
+    const mac = await keymapOn('MacIntel');
+    const commandIds = (code: string, modifiers: Parameters<typeof keyEvent>[2]) =>
+      mac.commandsForEvent(keyEvent(code, code, modifiers), {}).map((command) => command.id);
+
+    // Two panes side by side must not turn the word jump into a focus change.
+    expect(commandIds('ArrowLeft', { altKey: true })).toEqual([]);
+    expect(commandIds('ArrowRight', { altKey: true })).toEqual([]);
+    for (const direction of ['Left', 'Right', 'Up', 'Down']) {
+      expect(commandIds(`Arrow${direction}`, { metaKey: true, altKey: true })).toEqual([
+        `pane.focus.${direction.toLowerCase()}`,
+      ]);
+    }
+    expect([...mac.conflictingCommandIds()]).toEqual([]);
+  });
+
+  it('stay on Alt+arrow on Windows and Linux', async () => {
+    for (const platform of ['Win32', 'Linux x86_64']) {
+      const keymap = await keymapOn(platform);
+      expect(
+        keymap
+          .commandsForEvent(keyEvent('ArrowLeft', 'ArrowLeft', { altKey: true }), {})
+          .map((command) => command.id),
+        platform,
+      ).toEqual(['pane.focus.left']);
     }
   });
 });
