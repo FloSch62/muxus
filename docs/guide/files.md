@@ -51,11 +51,16 @@ by dragging its edge to bring them back.
 | **Drag files in** | Upload them to the current directory |
 | **Drag a file out** | Download it to the drop location |
 | :material-upload: | Upload with a file picker |
-| :material-download: | Download the selected file |
+| :material-download: | Download the selected files |
 | Double-click a file | Open it in the [remote editor](editor.md) |
 
 Uploads and downloads report progress, and large transfers do not block the terminal in the
 same tab.
+
+Downloading several files asks once for a folder and saves them all there. A file of the
+same name already in the folder is kept, and the new one is numbered, as in
+`report (1).txt`. Browsers that cannot write to a folder, such as Firefox and Safari, save
+the files to their downloads folder instead. Dragging out takes one file at a time.
 
 !!! warning "Overwrite confirmation"
 
@@ -86,6 +91,18 @@ In the desktop app, hold ++shift++ while dropping onto an SSH terminal to type t
 paths at the prompt instead of uploading. Shift is used on every platform because ++ctrl++,
 ++alt++, ++option++ and ++cmd++ already choose between copying, moving and linking in file
 managers. Dropping onto a [local terminal](terminal.md#dropping-files) always types the paths.
+
+## Selecting several files
+
+Click a row to select it. ++ctrl++ + click (++cmd++ + click on macOS) adds a row or takes it
+out again, ++shift++ + click selects every row from the one clicked last, and ++ctrl+a++
+(++cmd+a++) selects the whole folder. ++esc++ or a click on the empty space below the rows
+clears the selection. The toolbar shows how many rows are selected.
+
+With several rows selected, :material-download: downloads every selected file, and the row
+menu of a selected row offers **Download** for the files and **Delete** for all of them.
+++delete++ (++cmd+backspace++ on macOS) deletes the selection too. Folders are skipped by
+downloads.
 
 ## Managing
 

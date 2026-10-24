@@ -89,6 +89,7 @@ resetting them.
 | New session to a host that already has one open | Middle-click it in the sidebar |
 | Select hosts in the sidebar to [edit, move or delete them together](../guide/hosts.md#editing-several-hosts-at-once) | ++ctrl++ + click (++cmd++ + click on macOS) for one, ++shift++ + click for a range from the last host clicked |
 | [Upload files into an SSH session's directory](../guide/files.md#dropping-files-onto-the-terminal), or type the local paths | Drop them on the terminal; hold ++shift++ while dropping to type the paths |
+| [Select files in the file browser](../guide/files.md#selecting-several-files) to download or delete them together | ++ctrl++ + click (++cmd++ + click on macOS) for one, ++shift++ + click for a range, ++ctrl+a++ for all, ++delete++ to delete |
 | Search next / previous match | ++enter++, ++shift+enter++ |
 
 ## File editor

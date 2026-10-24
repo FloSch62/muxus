@@ -45,6 +45,7 @@ import { confirmAction, promptForText } from '../state/dialogs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { usePrefsStore } from '../state/prefs.js';
 import { loadCompareDialog, loadMonacoTextEditor } from '../lazy-features.js';
+import { IS_MAC } from '../platform.js';
 import {
   canOpenLocally,
   chooseLocalProgram,
@@ -58,6 +59,18 @@ import {
   MIN_SFTP_PANEL_WIDTH,
 } from '../sftp-panel-width.js';
 import { initialSftpPath } from '../sftp-panel-state.js';
+import { pickDownloadFolder, saveIntoFolder } from '../sftp-download.js';
+import {
+  EMPTY_SFTP_SELECTION,
+  selectAllSftpEntries,
+  selectedSftpEntries,
+  selectSftpEntry,
+  sftpContextSelection,
+  sftpEntryCount,
+  sftpSelectGesture,
+  type SftpSelectGesture,
+  type SftpSelection,
+} from '../sftp-selection.js';
 import {
   cleanRelativePath,
   collectDrop,
@@ -132,7 +145,7 @@ const SftpEntryTable = memo(function SftpEntryTable({
   currentPath,
   entries,
   isFetching,
-  selectedName,
+  selectedNames,
   onNavigate,
   onOpenFile,
   onSelect,
@@ -142,10 +155,10 @@ const SftpEntryTable = memo(function SftpEntryTable({
   currentPath: string;
   entries: SftpEntry[];
   isFetching: boolean;
-  selectedName?: string;
+  selectedNames: ReadonlySet<string>;
   onNavigate: (path: string) => void;
   onOpenFile: (path: string) => void;
-  onSelect: (name: string) => void;
+  onSelect: (name: string, gesture: SftpSelectGesture) => void;
   onContextMenu: (entry: SftpEntry, x: number, y: number) => void;
 }) {
   return (
@@ -175,7 +188,7 @@ const SftpEntryTable = memo(function SftpEntryTable({
             <TableRow
               key={entry.name}
               hover
-              selected={entry.name === selectedName}
+              selected={selectedNames.has(entry.name)}
               draggable={entry.type === 'file' && !!entry.downloadTicket}
               title={entry.type === 'file' ? 'Double-click to edit · drag out to download' : undefined}
               sx={{
@@ -184,7 +197,7 @@ const SftpEntryTable = memo(function SftpEntryTable({
                 contentVisibility: 'auto',
                 containIntrinsicSize: '0 33px',
               }}
-              onClick={() => onSelect(entry.name)}
+              onClick={(event) => onSelect(entry.name, sftpSelectGesture(event, IS_MAC))}
               onPointerDown={() => {
                 if (entry.type === 'file') void loadMonacoTextEditor();
               }}
@@ -288,7 +301,7 @@ export function SftpPanel({
   const [path, setPath] = useState(startingPath);
   const [pathInput, setPathInput] = useState(startingPath);
   const [dragOver, setDragOver] = useState(false);
-  const [selectedName, setSelectedName] = useState<string>();
+  const [selection, setSelection] = useState<SftpSelection>(EMPTY_SFTP_SELECTION);
   const [menu, setMenu] = useState<{ x: number; y: number; entry: SftpEntry } | null>(null);
   const [openWithFile, setOpenWithFile] = useState<{ entry: SftpEntry; path: string }>();
   const [busy, setBusy] = useState(false);
@@ -316,7 +329,7 @@ export function SftpPanel({
     if (!followTerminalFolder || !terminalPath) return;
     setPath(terminalPath);
     setPathInput(terminalPath);
-    setSelectedName(undefined);
+    setSelection(EMPTY_SFTP_SELECTION);
   }, [followTerminalFolder, terminalPath]);
   useEffect(() => () => transferControllerRef.current?.abort(), []);
   // Files dropped onto a terminal of this connection report their upload here.
@@ -334,18 +347,23 @@ export function SftpPanel({
       }),
     [data?.entries],
   );
-  const selected = useMemo(
-    () => entries.find((entry) => entry.name === selectedName),
-    [entries, selectedName],
-  );
+  const entryNames = useMemo(() => entries.map((entry) => entry.name), [entries]);
+  const selectedEntries = useMemo(() => selectedSftpEntries(entries, selection), [entries, selection]);
+  const selectedFiles = selectedEntries.filter((entry) => entry.type === 'file');
+  const single = selectedEntries.length === 1 ? selectedEntries[0] : undefined;
   const currentPath = data?.path ?? path;
   const homePath = homePathRef.current ?? (path === '.' ? data?.path : undefined) ?? '.';
 
   const navigate = useCallback((next: string) => {
     setPath(next);
     setPathInput(next);
-    setSelectedName(undefined);
+    setSelection(EMPTY_SFTP_SELECTION);
   }, []);
+  const select = useCallback(
+    (name: string, gesture: SftpSelectGesture) =>
+      setSelection((current) => selectSftpEntry(current, name, gesture, entryNames)),
+    [entryNames],
+  );
   const refresh = useCallback(
     () => void queryClient.invalidateQueries({ queryKey: ['sftp-list', connId] }),
     [connId, queryClient],
@@ -355,7 +373,7 @@ export function SftpPanel({
     [currentPath],
   );
   const openContextMenu = useCallback((entry: SftpEntry, x: number, y: number) => {
-    setSelectedName(entry.name);
+    setSelection((current) => sftpContextSelection(current, entry.name));
     setMenu({ x, y, entry });
   }, []);
 
@@ -440,6 +458,85 @@ export function SftpPanel({
       saveDownload(entry.name, blob);
       showToast('success', `Downloaded ${entry.name}`);
     });
+
+  /**
+   * Several files at once: into one folder picked up front where the page can
+   * write to one, so the desktop app does not ask where to save each file, and
+   * otherwise one by one to the browser's downloads.
+   */
+  const downloadFiles = (files: SftpEntry[]) => {
+    const [first] = files;
+    if (!first) return;
+    if (files.length === 1) {
+      download(first);
+      return;
+    }
+    if (busy) {
+      showToast('warning', 'Wait for the current SFTP operation to finish.');
+      return;
+    }
+    // Taken now: a followed terminal can change folders while the folder is picked.
+    const targets = files.map((entry) => ({ entry, file: remotePath(entry) }));
+    void (async () => {
+      let folder: FileSystemDirectoryHandle | null | undefined;
+      try {
+        folder = await pickDownloadFolder();
+      } catch (pickError) {
+        showErrorToast(pickError);
+        return;
+      }
+      if (folder === null) return;
+      const id = nextTransferIdRef.current++;
+      const controller = new AbortController();
+      transferControllerRef.current = controller;
+      setBusy(true);
+      try {
+        let bytes = 0;
+        for (const [index, { entry, file }] of targets.entries()) {
+          const current = {
+            id,
+            direction: 'download' as const,
+            name: entry.name,
+            fileIndex: index + 1,
+            fileCount: targets.length,
+          };
+          setTransfer({ ...current, loaded: 0, total: entry.size, bytesPerSecond: 0, phase: 'preparing' });
+          const blob = await downloadBlobWithProgress(
+            `/api/sftp/${connId}/download?path=${encodeURIComponent(file)}`,
+            (progress) => setTransfer({ ...current, ...progress, phase: 'transferring' }),
+            controller.signal,
+          );
+          if (folder) await saveIntoFolder(folder, entry.name, blob);
+          else saveDownload(entry.name, blob);
+          bytes += blob.size;
+        }
+        const summary = `${targets.length} files`;
+        setTransfer({
+          id,
+          direction: 'download',
+          name: summary,
+          loaded: bytes,
+          total: bytes,
+          bytesPerSecond: 0,
+          phase: 'complete',
+          fileIndex: targets.length,
+          fileCount: targets.length,
+        });
+        showToast('success', folder?.name ? `Downloaded ${summary} to ${folder.name}` : `Downloaded ${summary}`);
+        setTimeout(
+          () => setTransfer((current) => (current?.id === id ? undefined : current)),
+          1_200,
+        );
+      } catch (downloadError) {
+        setTransfer(undefined);
+        if (isAbortError(downloadError)) showToast('info', 'Download cancelled');
+        else showErrorToast(downloadError);
+      } finally {
+        if (transferControllerRef.current === controller) transferControllerRef.current = undefined;
+        setBusy(false);
+      }
+    })();
+  };
 
   // Saves in the program are offered for upload back to `file` (LocalCopySync).
   const openLocally = (entry: SftpEntry, file: string, target: LocalOpenTarget) =>
@@ -557,29 +654,69 @@ export function SftpPanel({
     });
   };
 
-  const remove = (entry: SftpEntry) => {
+  const remove = (targets: SftpEntry[]) => {
+    const [entry] = targets;
+    if (!entry) return;
+    const files = targets.map(remotePath);
+    const folders = targets.some((target) => target.type === 'dir');
     void confirmAction({
-      title: `Delete ${entry.name}?`,
+      title: targets.length === 1 ? `Delete ${entry.name}?` : `Delete ${targets.length} items?`,
       description:
-        entry.type === 'dir'
-          ? 'The folder and everything inside it is removed from the remote host. This cannot be undone.'
-          : 'The file is removed from the remote host. This cannot be undone.',
+        targets.length > 1
+          ? `${sftpEntryCount(targets)} are removed from the remote host${
+              folders ? ', with everything inside the folders' : ''
+            }. This cannot be undone.`
+          : entry.type === 'dir'
+            ? 'The folder and everything inside it is removed from the remote host. This cannot be undone.'
+            : 'The file is removed from the remote host. This cannot be undone.',
       confirmLabel: 'Delete',
       destructive: true,
     }).then((confirmed) => {
       if (!confirmed) return;
-      run(() =>
-        apiFetch(`/api/sftp/${connId}/delete`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ path: remotePath(entry) }),
-        }),
-      );
+      setSelection(EMPTY_SFTP_SELECTION);
+      // One at a time: the SFTP channel is shared, and a failure stops the rest.
+      run(async () => {
+        for (const file of files) {
+          await apiFetch(`/api/sftp/${connId}/delete`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ path: file }),
+          });
+        }
+      });
     });
+  };
+
+  const onListingKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    const mod = IS_MAC ? event.metaKey : event.ctrlKey;
+    if (mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'a') {
+      setSelection(selectAllSftpEntries(entryNames));
+    } else if (event.key === 'Escape' && selection.names.size > 0) {
+      setSelection(EMPTY_SFTP_SELECTION);
+    } else if (
+      (event.key === 'Delete' || (IS_MAC && event.metaKey && event.key === 'Backspace')) &&
+      selectedEntries.length > 0
+    ) {
+      remove(selectedEntries);
+    } else {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
   };
 
   const hasLocalFiles = (event: React.DragEvent) =>
     Array.from(event.dataTransfer.types).includes('Files');
+  const downloadLabel =
+    selectedFiles.length > 1 ? `Download ${selectedFiles.length} selected files` : 'Download selected file';
+  // A right-click inside a selection of several acts on all of them.
+  const menuTargets = !menu
+    ? []
+    : selectedEntries.length > 1 && selection.names.has(menu.entry.name)
+      ? selectedEntries
+      : [menu.entry];
+  const menuFile = menuTargets.length === 1 && menu?.entry.type === 'file' ? menu.entry : undefined;
+  const menuFiles = menuTargets.filter((entry) => entry.type === 'file');
   return (
     <Box
       ref={panelRef}
@@ -752,31 +889,37 @@ export function SftpPanel({
             <IconButton
               size="small"
               aria-label="Open selected file in editor"
-              disabled={busy || selected?.type !== 'file'}
+              disabled={busy || single?.type !== 'file'}
               onMouseEnter={() => void loadMonacoTextEditor()}
               onFocus={() => void loadMonacoTextEditor()}
-              onClick={() => selected && onOpenFile(remotePath(selected))}
+              onClick={() => single && onOpenFile(remotePath(single))}
             >
               <EditOutlinedIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title="Download selected file">
+        <Tooltip title={downloadLabel}>
           <span>
             <IconButton
               size="small"
-              aria-label="Download selected file"
-              disabled={busy || selected?.type !== 'file'}
-              onClick={() => selected && download(selected)}
+              aria-label={downloadLabel}
+              disabled={busy || selectedFiles.length === 0}
+              onClick={() => downloadFiles(selectedFiles)}
             >
               <DownloadOutlinedIcon fontSize="small" />
             </IconButton>
           </span>
         </Tooltip>
         <Box sx={{ flex: 1 }} />
-        <Typography variant="caption" color="textDisabled" sx={{ [NARROW_PANEL]: { display: 'none' } }}>
-          Drag in to upload · drag out to download
-        </Typography>
+        {selectedEntries.length > 1 ? (
+          <Typography variant="caption" color="textSecondary" noWrap>
+            {selectedEntries.length} selected
+          </Typography>
+        ) : (
+          <Typography variant="caption" color="textDisabled" sx={{ [NARROW_PANEL]: { display: 'none' } }}>
+            Drag in to upload · drag out to download
+          </Typography>
+        )}
       </Stack>
       {transfer && (
         <TransferProgress
@@ -797,7 +940,24 @@ export function SftpPanel({
           sx={{ mx: 0.75, mb: 0.75 }}
         />
       )}
-      <Box sx={{ flex: 1, overflow: 'auto', position: 'relative' }}>
+      <Box
+        // Focusable, so a click on a row brings the listing's keys along:
+        // Ctrl/Cmd+A selects everything, Delete deletes, Esc clears.
+        component="section"
+        tabIndex={0}
+        aria-label="Remote files"
+        onKeyDown={onListingKeyDown}
+        onClick={(event) => {
+          // Empty space below the rows clears the selection, as in a file manager.
+          if (event.target === event.currentTarget) setSelection(EMPTY_SFTP_SELECTION);
+        }}
+        sx={{
+          flex: 1,
+          overflow: 'auto',
+          position: 'relative',
+          '&:focus-visible': { outline: 2, outlineColor: 'primary.main', outlineOffset: -2 },
+        }}
+      >
         {(isFetching || busy) && !transfer && <CircularProgress size={18} sx={{ position: 'absolute', zIndex: 2, top: 8, right: 12 }} />}
         {error ? (
           <Typography variant="body2" color="error" sx={{ p: 2 }}>
@@ -809,10 +969,10 @@ export function SftpPanel({
             currentPath={currentPath}
             entries={entries}
             isFetching={isFetching}
-            selectedName={selectedName}
+            selectedNames={selection.names}
             onNavigate={navigate}
             onOpenFile={onOpenFile}
-            onSelect={setSelectedName}
+            onSelect={select}
             onContextMenu={openContextMenu}
           />
         )}
@@ -868,12 +1028,12 @@ export function SftpPanel({
         anchorReference="anchorPosition"
         anchorPosition={menu ? { top: menu.y, left: menu.x } : undefined}
       >
-        {menu?.entry.type === 'file' && (
+        {menuFile && (
           <MenuItem
             onMouseEnter={() => void loadMonacoTextEditor()}
             onFocus={() => void loadMonacoTextEditor()}
             onClick={() => {
-              if (menu) onOpenFile(remotePath(menu.entry));
+              onOpenFile(remotePath(menuFile));
               setMenu(null);
             }}
           >
@@ -883,10 +1043,10 @@ export function SftpPanel({
             <ListItemText>Open in editor</ListItemText>
           </MenuItem>
         )}
-        {menu?.entry.type === 'file' && localOpen && (
+        {menuFile && localOpen && (
           <MenuItem
             onClick={() => {
-              if (menu) openLocally(menu.entry, remotePath(menu.entry), { kind: 'default' });
+              openLocally(menuFile, remotePath(menuFile), { kind: 'default' });
               setMenu(null);
             }}
           >
@@ -896,10 +1056,10 @@ export function SftpPanel({
             <ListItemText>Open with default program</ListItemText>
           </MenuItem>
         )}
-        {menu?.entry.type === 'file' && localChooser && (
+        {menuFile && localChooser && (
           <MenuItem
             onClick={() => {
-              if (menu) openWith(menu.entry);
+              openWith(menuFile);
               setMenu(null);
             }}
           >
@@ -909,28 +1069,28 @@ export function SftpPanel({
             <ListItemText>Open with…</ListItemText>
           </MenuItem>
         )}
-        {menu?.entry.type === 'file' && (
+        {menuFiles.length > 0 && (
           <MenuItem
             onClick={() => {
-              if (menu) download(menu.entry);
+              downloadFiles(menuFiles);
               setMenu(null);
             }}
           >
             <ListItemIcon>
               <DownloadOutlinedIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>Download</ListItemText>
+            <ListItemText>
+              {menuFiles.length > 1 ? `Download ${menuFiles.length} files` : 'Download'}
+            </ListItemText>
           </MenuItem>
         )}
-        {menu?.entry.type === 'file' && (
+        {menuFile && (
           <MenuItem
             onMouseEnter={() => void loadCompareDialog()}
             onFocus={() => void loadCompareDialog()}
             onClick={() => {
-              if (menu) {
-                const path = remotePath(menu.entry);
-                openCompare(() => remoteFileCompareText(connId, hostLabel ?? 'SFTP', path));
-              }
+              const path = remotePath(menuFile);
+              openCompare(() => remoteFileCompareText(connId, hostLabel ?? 'SFTP', path));
               setMenu(null);
             }}
           >
@@ -940,20 +1100,22 @@ export function SftpPanel({
             <ListItemText>Compare with…</ListItemText>
           </MenuItem>
         )}
+        {menuTargets.length < 2 && (
+          <MenuItem
+            onClick={() => {
+              if (menu) rename(menu.entry);
+              setMenu(null);
+            }}
+          >
+            <ListItemIcon>
+              <DriveFileRenameOutlineIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Rename</ListItemText>
+          </MenuItem>
+        )}
         <MenuItem
           onClick={() => {
-            if (menu) rename(menu.entry);
-            setMenu(null);
-          }}
-        >
-          <ListItemIcon>
-            <DriveFileRenameOutlineIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>Rename</ListItemText>
-        </MenuItem>
-        <MenuItem
-          onClick={() => {
-            if (menu) remove(menu.entry);
+            remove(menuTargets);
             setMenu(null);
           }}
           sx={{ color: 'error.main' }}
@@ -961,7 +1123,9 @@ export function SftpPanel({
           <ListItemIcon sx={{ color: 'error.main' }}>
             <DeleteOutlineIcon fontSize="small" />
           </ListItemIcon>
-          <ListItemText>Delete</ListItemText>
+          <ListItemText>
+            {menuTargets.length > 1 ? `Delete ${menuTargets.length} items` : 'Delete'}
+          </ListItemText>
         </MenuItem>
       </Menu>
       {openWithFile && (
