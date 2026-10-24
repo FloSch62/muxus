@@ -14,13 +14,13 @@ import type {
   SftpUploadResponse,
 } from '@muxus/shared';
 import type { AppContext } from '../app.js';
+import type { ManagedConnection } from '../ssh/connection-manager.js';
 import { HttpProblem, sendError } from '../util/errors.js';
 
 /** Directory-tree deletes stop after this many entries — runaway guard. */
 const MAX_RECURSIVE_DELETE = 10_000;
 /** Monaco is a text editor, not a way to accidentally buffer huge remote artifacts. */
 const MAX_EDITOR_BYTES = 8 * 1024 * 1024;
-const DOWNLOAD_TICKET_TTL_MS = 2 * 60 * 1000;
 const CLIPBOARD_IMAGE_MODE = 0o600;
 const CLIPBOARD_IMAGE_TEMP_DIR = '/tmp';
 
@@ -49,21 +49,29 @@ interface SftpAttrs {
  * SSH connection (MobaXterm-style) instead of dialing a second one.
  */
 export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void {
-  const downloadTickets = new Map<
-    string,
-    { connId: string; path: string; expiresAt: number }
-  >();
-  const issueDownloadTicket = (connId: string, file: string): string => {
-    const now = Date.now();
-    for (const [ticket, value] of downloadTickets) {
-      if (value.expiresAt <= now) downloadTickets.delete(ticket);
+  // A listing can stay on screen long before a file is dragged out of it, and
+  // a drag whose download fails leaves the file manager with an empty file.
+  // So a ticket lasts as long as its connection: each remote file keeps one
+  // ticket across listings, and all of them go when the connection closes.
+  const downloadTickets = new Map<string, { connId: string; path: string }>();
+  const ticketsByConnection = new Map<string, Map<string, string>>();
+  const issueDownloadTicket = (connection: ManagedConnection, file: string): string => {
+    const connId = connection.id;
+    let tickets = ticketsByConnection.get(connId);
+    if (!tickets) {
+      const issued = new Map<string, string>();
+      tickets = issued;
+      ticketsByConnection.set(connId, issued);
+      connection.onClose(() => {
+        for (const ticket of issued.values()) downloadTickets.delete(ticket);
+        ticketsByConnection.delete(connId);
+      });
     }
+    const existing = tickets.get(file);
+    if (existing) return existing;
     const ticket = randomBytes(18).toString('base64url');
-    downloadTickets.set(ticket, {
-      connId,
-      path: file,
-      expiresAt: now + DOWNLOAD_TICKET_TTL_MS,
-    });
+    tickets.set(file, ticket);
+    downloadTickets.set(ticket, { connId, path: file });
     return ticket;
   };
 
@@ -72,7 +80,11 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
     const lease = ctx.connections.acquire(connId, 'sftp');
     if (!lease) throw new HttpProblem(404, 'connection not found');
     try {
-      return { sftp: await lease.connection.sftp(), release: () => lease.release() };
+      return {
+        sftp: await lease.connection.sftp(),
+        connection: lease.connection,
+        release: () => lease.release(),
+      };
     } catch (err) {
       lease.release();
       throw err;
@@ -81,11 +93,11 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
 
   const withSftp = async <T>(
     req: FastifyRequest,
-    operation: (sftp: SFTPWrapper) => Promise<T> | T,
+    operation: (sftp: SFTPWrapper, connection: ManagedConnection) => Promise<T> | T,
   ): Promise<T> => {
     const lease = await acquireSftp(req);
     try {
-      return await operation(lease.sftp);
+      return await operation(lease.sftp, lease.connection);
     } finally {
       lease.release();
     }
@@ -106,11 +118,10 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
 
   app.get('/api/sftp/:connId/list', async (req, reply) => {
     try {
-      return await withSftp(req, async (sftp) => {
+      return await withSftp(req, async (sftp, connection) => {
         const dir = requirePath(req);
         const resolved = await call<string>((cb) => sftp.realpath(dir, cb));
         const listing = await call<SftpDirEntry[]>((cb) => sftp.readdir(resolved, cb));
-        const { connId } = req.params as ConnParams;
         const entries: SftpEntry[] = listing
           .map((item) => ({
             name: item.filename,
@@ -120,7 +131,7 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
             mode: item.attrs.mode & 0o7777,
             ...ownerFromLongname(item.longname),
             ...(entryType(item.attrs.mode) === 'file'
-              ? { downloadTicket: issueDownloadTicket(connId, path.join(resolved, item.filename)) }
+              ? { downloadTicket: issueDownloadTicket(connection, path.join(resolved, item.filename)) }
               : {}),
           }))
           .filter((entry) => entry.name !== '.' && entry.name !== '..');
@@ -168,8 +179,7 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
       const { connId } = req.params as ConnParams;
       const ticketValue = (req.query as { ticket?: unknown }).ticket;
       const ticket = typeof ticketValue === 'string' ? downloadTickets.get(ticketValue) : undefined;
-      if (!ticket || ticket.connId !== connId || ticket.expiresAt <= Date.now()) {
-        if (typeof ticketValue === 'string') downloadTickets.delete(ticketValue);
+      if (!ticket || ticket.connId !== connId) {
         throw new HttpProblem(401, 'download ticket is missing or expired');
       }
       const lease = await acquireSftp(req);
