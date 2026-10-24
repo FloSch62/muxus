@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { PassThrough, Readable, Writable } from 'node:stream';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { registerSftpRoutes } from '../../../server/src/routes/sftp.js';
 
 type RouteHandler = (request: unknown, reply: unknown) => Promise<unknown>;
@@ -415,6 +415,138 @@ describe('SFTP download transport ownership', () => {
 
     stream.destroy();
     expect(release).toHaveBeenCalledOnce();
+  });
+});
+
+/** The listing and drag-download routes on one connection that the test can close. */
+function captureDragDownloadRoutes() {
+  const gets = new Map<string, RouteHandler>();
+  const app = {
+    get: (route: string, handler: RouteHandler) => gets.set(route, handler),
+    post: vi.fn(),
+    put: vi.fn(),
+  };
+  const closeListeners: Array<() => void> = [];
+  const opened: string[] = [];
+  const sftp = {
+    realpath: (dir: string, callback: (error: Error | null, resolved?: string) => void) =>
+      callback(null, dir === '.' ? '/home/deploy' : dir),
+    readdir: (_dir: string, callback: (error: Error | null, entries?: unknown) => void) =>
+      callback(null, [
+        {
+          filename: 'report.txt',
+          longname: '-rw-r--r--    1 deploy   deploy          7 Oct  9 08:53 report.txt',
+          attrs: { size: 7, mtime: 1_760_000_000, mode: 0o100644 },
+        },
+      ]),
+    stat: (_path: string, callback: (error: Error | null, attrs?: unknown) => void) =>
+      callback(null, { size: 7 }),
+    createReadStream: (file: string) => {
+      opened.push(file);
+      return new PassThrough();
+    },
+  };
+  let closed = false;
+  const connection = {
+    id: 'connection-1',
+    sftp: async () => sftp,
+    onClose: (listener: () => void) => {
+      closeListeners.push(listener);
+      return () => undefined;
+    },
+  };
+  const ctx = {
+    connections: {
+      acquire: () =>
+        closed ? undefined : { connection, owner: 'sftp', release: vi.fn() },
+    },
+  };
+  registerSftpRoutes(app as never, ctx as never);
+  const list = gets.get('/api/sftp/:connId/list')!;
+  const drag = gets.get('/api/sftp/:connId/drag-download')!;
+
+  const ticket = async (): Promise<string | undefined> => {
+    const listing = (await list(
+      { params: { connId: 'connection-1' }, query: { path: '.' } },
+      {},
+    )) as { entries: Array<{ downloadTicket?: string }> };
+    return listing.entries[0]?.downloadTicket;
+  };
+  const download = async (value: string | undefined, connId = 'connection-1') => {
+    const response: { status?: number; body?: unknown } = {};
+    const reply = {
+      raw: new EventEmitter(),
+      header() {
+        return this;
+      },
+      code(status: number) {
+        response.status = status;
+        return this;
+      },
+      send(body: unknown) {
+        response.body = body;
+        return body;
+      },
+    };
+    await drag({ params: { connId }, query: { ticket: value } }, reply);
+    return response;
+  };
+  const closeConnection = () => {
+    closed = true;
+    for (const listener of closeListeners) listener();
+  };
+  return { ticket, download, closeConnection, opened, closeListeners };
+}
+
+describe('SFTP drag-out download tickets', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('still download a file dragged out long after its folder was listed', async () => {
+    vi.useFakeTimers({ now: Date.parse('2026-10-24T09:00:00Z') });
+    const routes = captureDragDownloadRoutes();
+    const ticket = await routes.ticket();
+    expect(ticket).toBeTruthy();
+
+    // A listing left on screen: finding the file and dragging it can take a while.
+    vi.setSystemTime(Date.parse('2026-10-24T12:00:00Z'));
+    const response = await routes.download(ticket);
+
+    expect(response.status).toBeUndefined();
+    expect(response.body).toBeInstanceOf(PassThrough);
+    expect(routes.opened).toEqual(['/home/deploy/report.txt']);
+  });
+
+  it('keep one ticket per file across listings of the same connection', async () => {
+    const routes = captureDragDownloadRoutes();
+    const first = await routes.ticket();
+
+    expect(await routes.ticket()).toBe(first);
+    expect(routes.closeListeners).toHaveLength(1);
+  });
+
+  it('stop working once the connection closes', async () => {
+    const routes = captureDragDownloadRoutes();
+    const ticket = await routes.ticket();
+
+    routes.closeConnection();
+
+    expect(await routes.download(ticket)).toMatchObject({
+      status: 401,
+      body: { message: 'download ticket is missing or expired' },
+    });
+    expect(routes.opened).toEqual([]);
+  });
+
+  it('only download through the connection they were issued for', async () => {
+    const routes = captureDragDownloadRoutes();
+    const ticket = await routes.ticket();
+
+    expect((await routes.download(ticket, 'connection-2')).status).toBe(401);
+    expect((await routes.download('forged')).status).toBe(401);
+    expect((await routes.download(undefined)).status).toBe(401);
+    expect(routes.opened).toEqual([]);
   });
 });
 
