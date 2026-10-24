@@ -249,8 +249,27 @@ function saveClientState(state: Record<string, string>): void {
 }
 
 function buildMenu(): void {
+  // The stock app menu, except About opens Settings → About: the native panel
+  // can't carry a link back to the repository, docs or issue tracker.
+  const appMenu: MenuItemConstructorOptions = {
+    label: app.name,
+    submenu: [
+      {
+        label: `About ${app.name}`,
+        click: () => showSettingsWindow({ kind: 'settings', section: 'about' }, lastFocusedWindow),
+      },
+      { type: 'separator' },
+      { role: 'services' },
+      { type: 'separator' },
+      { role: 'hide' },
+      { role: 'hideOthers' },
+      { role: 'unhide' },
+      { type: 'separator' },
+      { role: 'quit' },
+    ],
+  };
   const template: MenuItemConstructorOptions[] = [
-    ...(isMac ? [{ role: 'appMenu' as const }] : []),
+    ...(isMac ? [appMenu] : []),
     { role: 'fileMenu' },
     { role: 'editMenu' },
     {
