@@ -1220,6 +1220,19 @@ function BehaviorSection() {
             />
           }
         />
+        <SettingRow
+          label="Close the tab when its shell exits"
+          labelFor="settings-close-tab-on-exit"
+          description="After exit, logout or Ctrl+D, the tab closes instead of offering to reconnect. A shell that exits with an error, a lost connection, a serial console and a pinned tab stay open."
+          control={
+            <Switch
+              id="settings-close-tab-on-exit"
+              size="small"
+              checked={prefs.closeTabOnCleanExit}
+              onChange={(e) => prefs.set({ closeTabOnCleanExit: e.target.checked })}
+            />
+          }
+        />
       </SettingsGroup>
       <SettingsGroup title="Hosts sidebar">
         <SettingRow

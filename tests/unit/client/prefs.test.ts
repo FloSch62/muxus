@@ -133,6 +133,19 @@ describe('paste pacing preferences', () => {
   });
 });
 
+describe('close tab on clean exit preference', () => {
+  it('is off by default, also for preferences saved before it existed', () => {
+    const initial = usePrefsStore.getInitialState();
+    expect(initial.closeTabOnCleanExit).toBe(false);
+    expect(mergePersistedPrefs({ confirmCloseConnected: false }, initial).closeTabOnCleanExit).toBe(false);
+  });
+
+  it('drops a stored value that is not a boolean', () => {
+    expect(migratePrefsState({ closeTabOnCleanExit: 'yes' }, 17)).not.toHaveProperty('closeTabOnCleanExit');
+    expect(migratePrefsState({ closeTabOnCleanExit: true }, 17)).toMatchObject({ closeTabOnCleanExit: true });
+  });
+});
+
 describe('look-alike paste preference', () => {
   it('is on by default, also for preferences saved before it existed', () => {
     const initial = usePrefsStore.getInitialState();

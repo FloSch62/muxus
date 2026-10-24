@@ -105,6 +105,7 @@ const PREFERENCE_KEYS = [
   'pasteLineDelayMs',
   'pasteCharDelayMs',
   'confirmCloseConnected',
+  'closeTabOnCleanExit',
   'sshSessionSummary',
   'rememberPasswordsByDefault',
   'newSshHostStorage',
@@ -974,6 +975,9 @@ export function sanitizePreferences(
   }
   if (typeof input.confirmCloseConnected === 'boolean') {
     output.confirmCloseConnected = input.confirmCloseConnected;
+  }
+  if (typeof input.closeTabOnCleanExit === 'boolean') {
+    output.closeTabOnCleanExit = input.closeTabOnCleanExit;
   }
   if (typeof input.sshSessionSummary === 'boolean') {
     output.sshSessionSummary = input.sshSessionSummary;

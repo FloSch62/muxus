@@ -62,6 +62,7 @@ import { openCompare, terminalCompareText } from '../compare-sources.js';
 import { loadCompareDialog, loadMonacoTextEditor, loadRemoteEditorWorkspace } from '../lazy-features.js';
 import { IS_MAC } from '../platform.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
+import { requestCloseTabs } from '../session-actions.js';
 import { showToast } from '../state/toast.js';
 import {
   broadcastTerminalInput,
@@ -153,6 +154,7 @@ import {
   autoReconnectDelayMs,
   autoReconnectNotice,
   canDiagnoseConnection,
+  closesTabOnExit,
   CONNECTION_INTERRUPTION_GRACE_MS,
   connectionFailureReason,
   isDiagnoseKey,
@@ -1570,6 +1572,17 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             disconnectReason: reasonKind,
             loginSequence: undefined,
           });
+          // Unsaved remote files still ask first; kept, the tab stays as ended above.
+          if (
+            closesTabOnExit({
+              enabled: usePrefsStore.getState().closeTabOnCleanExit,
+              profileKind: tab.profile.kind,
+              pinned: !!useTabsStore.getState().tabs.find((candidate) => candidate.id === tab.id)?.pinned,
+              exit: exitMessage,
+            })
+          ) {
+            void requestCloseTabs([tab.id]);
+          }
         };
 
         if (!shouldDelayConnectionLost(exitMessage, ready)) {

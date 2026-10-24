@@ -501,6 +501,15 @@ describe('backing up preferences', () => {
 
     expect(document.data.preferences.pasteWarnLookalikes).toBe(false);
   });
+
+  it('includes closing tabs when their shell exits', async () => {
+    usePrefsStore.setState({ closeTabOnCleanExit: true });
+    mockBackupSnapshot();
+
+    const document = await createBackupDocument();
+
+    expect(document.data.preferences.closeTabOnCleanExit).toBe(true);
+  });
 });
 
 describe('restoring terminal file link activation preferences', () => {
@@ -1363,6 +1372,18 @@ describe('restoring the OSC 52 clipboard preference', () => {
       sanitizePreferences(prefs({ allowOsc52ClipboardWrite: 'yes' }))
         .allowOsc52ClipboardWrite,
     ).toBeUndefined();
+  });
+});
+
+describe('restoring the close tab on clean exit preference', () => {
+  const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
+
+  it('restores only boolean choices and leaves older backups at the default', () => {
+    expect(sanitizePreferences(prefs({ closeTabOnCleanExit: true })))
+      .toMatchObject({ closeTabOnCleanExit: true });
+    expect(sanitizePreferences(prefs({ closeTabOnCleanExit: 1 })).closeTabOnCleanExit)
+      .toBeUndefined();
+    expect(sanitizePreferences(prefs({})).closeTabOnCleanExit).toBeUndefined();
   });
 });
 

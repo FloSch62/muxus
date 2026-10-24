@@ -156,6 +156,13 @@ include the global set. See [keyword highlighting](terminal.md#keyword-highlight
 **Confirm before closing a live session** is on by default because closing a connected tab
 ends its shell.
 
+**Close the tab when its shell exits** is off by default. Turned on, a local, SSH or Telnet
+tab closes when its shell exits by itself with status 0, for example after `exit`, `logout`
+or ++ctrl+d++, instead of waiting with *Press any key to reconnect*. A shell that exits with
+another status, a failed or lost connection, a serial console and a pinned tab stay open
+with the usual prompt, and a tab with unsaved remote files asks first. Most shells exit with
+the status of the last command, so ++ctrl+d++ right after a failed command keeps the tab.
+
 **Open hosts with** chooses how sidebar entries open: a **Single click** (the default) or a
 **Double-click**. With a double-click, a single click selects a host as in a file manager;
 the local terminal rows follow the same choice, and ++enter++ opens either way. See

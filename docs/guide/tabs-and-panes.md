@@ -56,7 +56,8 @@ serial, a remote desktop, or a remote editor.
 
 - **New tab**: ++ctrl+shift+t++, or the **+** in the strip.
 - **Close**: ++ctrl+shift+w++ (++cmd+w++ on macOS). Not ++ctrl+w++, which deletes a word in
-  the shell.
+  the shell. With **Close the tab when its shell exits** under
+  [Settings → Behavior](settings.md#behavior), `exit` or ++ctrl+d++ closes the tab too.
 - **Switch**: hold ++alt++ to reveal each tab's window-wide number, then use ++alt+1++ …
   ++alt+9++ to activate that exact tab wherever it lives. **Settings → Keyboard** can keep
   the numbers visible all the time. ++ctrl+pgup++ / ++ctrl+pgdn++ still cycle within the

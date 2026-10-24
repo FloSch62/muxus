@@ -4,6 +4,7 @@ import {
   autoReconnectDelayMs,
   autoReconnectNotice,
   canDiagnoseConnection,
+  closesTabOnExit,
   CONNECTION_INTERRUPTION_GRACE_MS,
   connectionFailureReason,
   isDiagnoseKey,
@@ -15,6 +16,7 @@ import {
   shouldWaitForTerminalOutput,
   terminalNotice,
   type AutoReconnectInput,
+  type CloseOnExitInput,
 } from '../../../client/src/connection-recovery.js';
 
 describe('connection failure presentation', () => {
@@ -102,6 +104,46 @@ describe('automatic reconnection', () => {
 
   it('still redials after a drop when auth was interactive', () => {
     expect(autoReconnectDelayMs(drop({ sawAuthPrompt: true }))).toBe(2_000);
+  });
+});
+
+describe('closing the tab when the shell exits', () => {
+  const ended = (overrides: Partial<CloseOnExitInput> = {}): CloseOnExitInput => ({
+    enabled: true,
+    profileKind: 'local',
+    pinned: false,
+    exit: { op: 'exit', code: 0, reason: 'completed' },
+    ...overrides,
+  });
+
+  it('closes a local, SSH or Telnet tab whose shell exited with status 0', () => {
+    expect(closesTabOnExit(ended())).toBe(true);
+    expect(closesTabOnExit(ended({ profileKind: 'ssh' }))).toBe(true);
+    // Telnet reports no status: the remote end closing the connection is the exit.
+    expect(
+      closesTabOnExit(ended({ profileKind: 'telnet', exit: { op: 'exit', reason: 'completed' } })),
+    ).toBe(true);
+  });
+
+  it('keeps the tab while the preference is off', () => {
+    expect(closesTabOnExit(ended({ enabled: false }))).toBe(false);
+  });
+
+  it('keeps the tab for a non-zero status, a failure or a lost connection', () => {
+    expect(closesTabOnExit(ended({ exit: { op: 'exit', code: 1, reason: 'completed' } }))).toBe(false);
+    expect(closesTabOnExit(ended({ exit: { op: 'exit', reason: 'failed' } }))).toBe(false);
+    expect(
+      closesTabOnExit(ended({ profileKind: 'ssh', exit: { op: 'exit', reason: 'disconnected' } })),
+    ).toBe(false);
+    // The backend went away without saying how the session ended.
+    expect(closesTabOnExit(ended({ exit: undefined }))).toBe(false);
+  });
+
+  it('keeps serial consoles and pinned tabs', () => {
+    expect(
+      closesTabOnExit(ended({ profileKind: 'serial', exit: { op: 'exit', reason: 'completed' } })),
+    ).toBe(false);
+    expect(closesTabOnExit(ended({ pinned: true }))).toBe(false);
   });
 });
 
