@@ -42,6 +42,32 @@ export function autoReconnectDelayMs(input: AutoReconnectInput): number | undefi
   return AUTO_RECONNECT_DELAYS_MS[input.attempts];
 }
 
+export interface CloseOnExitInput {
+  /** The close-on-clean-exit preference. */
+  enabled: boolean;
+  profileKind: SessionProfile['kind'];
+  /** Pinned tabs are kept, as "Close other tabs" keeps them. */
+  pinned: boolean;
+  exit: TerminalExitMessage | undefined;
+}
+
+/**
+ * Whether an ended session closes its tab: the preference is on and the shell
+ * exited by itself with status 0, as after `exit` or Ctrl+D. A failed or lost
+ * connection keeps its tab for the reconnect prompt, and so does a serial
+ * console, whose port only closes when the device or adapter goes away.
+ */
+export function closesTabOnExit(input: CloseOnExitInput): boolean {
+  const { exit } = input;
+  return (
+    input.enabled &&
+    !input.pinned &&
+    input.profileKind !== 'serial' &&
+    exit?.reason === 'completed' &&
+    (exit.code === undefined || exit.code === 0)
+  );
+}
+
 /**
  * Whether an ended session offers the diagnose key: a network session that
  * failed or dropped, not a shell that exited on its own.

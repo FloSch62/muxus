@@ -200,6 +200,8 @@ export interface PrefsState {
   pasteCharDelayMs: number;
   /** Ask before closing a tab with a live session. */
   confirmCloseConnected: boolean;
+  /** Close a tab whose shell exits with status 0 instead of offering to reconnect. */
+  closeTabOnCleanExit: boolean;
   /** Dial remote sessions on workspace restore and retry dropped connections. */
   autoReconnectRemote: boolean;
   /** SSH keepalive fallback in seconds; zero relies entirely on ssh_config. */
@@ -381,6 +383,7 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
     delete state.sshKeepaliveIntervalSeconds;
   }
   if (typeof state.sshSessionSummary !== 'boolean') delete state.sshSessionSummary;
+  if (typeof state.closeTabOnCleanExit !== 'boolean') delete state.closeTabOnCleanExit;
   if (!validPasteDelay(state.pasteLineDelayMs, MAX_PASTE_LINE_DELAY_MS)) {
     delete state.pasteLineDelayMs;
   }
@@ -601,6 +604,7 @@ export const usePrefsStore = create<PrefsState>()(
       pasteLineDelayMs: 0,
       pasteCharDelayMs: 0,
       confirmCloseConnected: true,
+      closeTabOnCleanExit: false,
       autoReconnectRemote: true,
       sshKeepaliveIntervalSeconds: DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
       sshSessionSummary: false,
