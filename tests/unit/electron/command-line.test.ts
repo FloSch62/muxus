@@ -37,6 +37,14 @@ describe('desktop command-line launch parsing', () => {
     expect(parseCommandLineLaunch(['muxus', `--host=${'x'.repeat(501)}`])).toBeUndefined();
   });
 
+  it('takes a value starting with -- only after =, as generated IDs may', () => {
+    expect(parseCommandLineLaunch(['muxus', '--host=--F3kq9Xr2LmT8vB1nZaQ'])).toEqual({
+      kind: 'host',
+      name: '--F3kq9Xr2LmT8vB1nZaQ',
+    });
+    expect(parseCommandLineLaunch(['muxus', '--host', '--workspace', 'Lab'])).toBeUndefined();
+  });
+
   it('validates structured second-instance launch data', () => {
     expect(parseCommandLineLaunchData({ kind: 'workspace', name: ' Night shift ' })).toEqual({
       kind: 'workspace',
@@ -180,7 +188,7 @@ describe('desktop link arguments', () => {
 
   it('caps an oversized link one character past the limit', () => {
     const launch = parseCommandLineLaunch(['muxus', `ssh://${'a'.repeat(5000)}`]);
-    expect(launch?.name).toHaveLength(2049);
+    expect(launch?.kind === 'url' ? launch.name : undefined).toHaveLength(2049);
   });
 
   it('does not mistake the executable, switches or flag values for links', () => {
@@ -207,6 +215,29 @@ describe('desktop link arguments', () => {
     expect(parseCommandLineLaunchData({ kind: 'url', name: 42 })).toBeUndefined();
     expect(linkLaunch('telnet://switch')).toEqual({ kind: 'url', name: 'telnet://switch' });
     expect(linkLaunch('/Users/me/file.txt')).toBeUndefined();
+  });
+});
+
+describe('desktop new window requests', () => {
+  it('takes --new-window without a value', () => {
+    expect(parseCommandLineLaunch(['muxus', '--new-window'])).toEqual({ kind: 'new-window' });
+    expect(
+      parseCommandLineLaunch(['electron', '/src/muxus/electron', '--no-sandbox', '--new-window']),
+    ).toEqual({ kind: 'new-window' });
+  });
+
+  it('counts as the one launch target', () => {
+    expect(parseCommandLineLaunch(['muxus', '--new-window', '--host', 'edge'])).toBeUndefined();
+    expect(parseCommandLineLaunch(['muxus', 'ssh://edge', '--new-window'])).toBeUndefined();
+    expect(parseCommandLineLaunch(['muxus', '--host', '--new-window'])).toBeUndefined();
+    expect(parseCommandLineLaunch(['muxus', '--new-window', '--port', '22'])).toBeUndefined();
+  });
+
+  it('revalidates a forwarded request', () => {
+    expect(parseCommandLineLaunchData({ kind: 'new-window' })).toEqual({ kind: 'new-window' });
+    expect(parseCommandLineLaunchData({ kind: 'new-window', name: '--host=edge' })).toEqual({
+      kind: 'new-window',
+    });
   });
 });
 

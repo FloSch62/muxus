@@ -40,7 +40,10 @@ import type {
   LocalOpenTarget,
   LocalProgramChoice,
   MobaXtermSessionSource,
+  SavedHostProfilesResponse,
+  SshConfigResponse,
   UpdateCheckResult,
+  WorkspaceSummary,
 } from '@muxus/shared';
 import {
   canHandleCommandLineLaunch,
@@ -48,6 +51,12 @@ import {
   parseCommandLineLaunch,
   parseCommandLineLaunchData,
 } from './command-line.js';
+import {
+  APP_USER_MODEL_ID,
+  dockMenuEntries,
+  jumpListCategories,
+  recentLaunches,
+} from './launch-menu.js';
 import {
   developmentUserDataPath,
   seedDevelopmentDatabase,
@@ -106,6 +115,13 @@ importLoginShellEnvironment(undefined, undefined, undefined, (err) =>
 // with the installed desktop file. Electron selects Wayland automatically
 // when the session supports it; no display-backend flag is needed.
 if (process.platform === 'linux') app.setDesktopName('muxus.desktop');
+
+// The installer's shortcut ID, so windows and the jump list share its taskbar button.
+// Store packages keep the package's identity and get no jump list.
+const hasJumpList = process.platform === 'win32' && process.windowsStore !== true;
+if (hasJumpList) {
+  app.setAppUserModelId(isDevelopment ? `${APP_USER_MODEL_ID}.development` : APP_USER_MODEL_ID);
+}
 
 // Not named __dirname: the esbuild banner defines that identifier for the
 // bundled CJS deps, and banner names can't be renamed around.
@@ -1531,6 +1547,11 @@ function commandLineLaunchWindow(): BrowserWindow | undefined {
 
 /** Hand a later launch request to a window, or hold it until the first one exists. */
 function deliverCommandLineLaunch(launch: CommandLineLaunch | undefined): void {
+  if (launch?.kind === 'new-window') {
+    // Before the first window exists, starting up brings one anyway.
+    if (appUrl) createWindow(appUrl, undefined, launch);
+    return;
+  }
   const win = launch
     ? (commandLineLaunchWindow() ?? (appUrl ? createWindow(appUrl) : undefined))
     : (primaryWindow ?? appWindows()[0]);
@@ -1553,6 +1574,78 @@ function deliverCommandLineLaunch(launch: CommandLineLaunch | undefined): void {
       send();
     }
   }
+}
+
+const LAUNCH_MENU_REFRESH_MS = 15_000;
+let launchMenuTimer: NodeJS.Timeout | undefined;
+let launchMenuKey: string | undefined;
+/** Entries removed from the jump list; Windows reports them only until it is next set. */
+const removedJumpListArgs = new Set<string>();
+
+/**
+ * The Windows jump list or the macOS Dock menu: a new window and the recent
+ * hosts and workspaces. Only the server sees every connection, from any
+ * window, so they are read from it as often as windows reread the host list.
+ */
+async function refreshLaunchMenu(): Promise<void> {
+  const running = server;
+  if (!running || quitting) return;
+  const read = async <T>(url: string): Promise<T> => {
+    const response = await running.app.inject({
+      method: 'GET',
+      url,
+      headers: { authorization: `Bearer ${running.token}` },
+    });
+    if (response.statusCode !== 200) throw new Error(`${url} answered ${response.statusCode}`);
+    return response.json<T>();
+  };
+  const [ssh, saved, catalog] = await Promise.all([
+    read<SshConfigResponse>('/api/ssh/config'),
+    read<SavedHostProfilesResponse>('/api/profiles'),
+    read<{ workspaces: WorkspaceSummary[] }>('/api/workspaces'),
+  ]);
+  const recent = recentLaunches(ssh.hosts, saved.profiles, catalog.workspaces);
+  if (isMac) {
+    const entries = dockMenuEntries(recent);
+    const key = JSON.stringify(entries);
+    if (key === launchMenuKey) return;
+    launchMenuKey = key;
+    app.dock?.setMenu(
+      Menu.buildFromTemplate(
+        entries.map((entry) =>
+          'launch' in entry
+            ? { label: entry.label, click: () => deliverCommandLineLaunch(entry.launch) }
+            : entry,
+        ),
+      ),
+    );
+    return;
+  }
+  for (const item of app.getJumpListSettings().removedItems) {
+    if (item.args) removedJumpListArgs.add(item.args);
+  }
+  const categories = jumpListCategories(
+    recent,
+    // From a source checkout the executable is Electron, which needs the app folder.
+    { program: process.execPath, args: isDevelopment ? [app.getAppPath()] : [] },
+    removedJumpListArgs,
+  );
+  const key = JSON.stringify(categories);
+  if (key === launchMenuKey) return;
+  launchMenuKey = key;
+  const result = app.setJumpList(categories);
+  if (result !== 'ok') mainLog('warn', `the jump list was only partly set (${result})`);
+}
+
+function startLaunchMenu(): void {
+  if (!isMac && !hasJumpList) return;
+  const refresh = () => {
+    void refreshLaunchMenu().catch((err: unknown) =>
+      mainLog('warn', 'could not update the jump list or Dock menu', err),
+    );
+  };
+  refresh();
+  launchMenuTimer = setInterval(refresh, LAUNCH_MENU_REFRESH_MS);
 }
 
 // Electron may reorder split-form custom switches in second-instance argv.
@@ -1640,8 +1733,14 @@ if (!app.requestSingleInstanceLock(initialCommandLineLaunch ?? {})) {
     buildMenu();
     const url = server.url;
     appUrl = url;
-    const win = createWindow(url, undefined, initialCommandLineLaunch);
+    // Starting up already opens a window, with the startup workspace as usual.
+    const win = createWindow(
+      url,
+      undefined,
+      initialCommandLineLaunch?.kind === 'new-window' ? undefined : initialCommandLineLaunch,
+    );
     desktopUpdater = createDesktopUpdater();
+    startLaunchMenu();
     if (deferredCommandLineLaunches.length > 0) {
       const launches = deferredCommandLineLaunches.splice(0);
       win.webContents.once('did-finish-load', () => {
@@ -1661,6 +1760,7 @@ if (!app.requestSingleInstanceLock(initialCommandLineLaunch ?? {})) {
 
   app.on('before-quit', (event) => {
     quitting = true;
+    clearInterval(launchMenuTimer);
     desktopUpdater?.stop();
     flushClientState();
     if (!server) return;

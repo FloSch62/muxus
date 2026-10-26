@@ -86,6 +86,13 @@ linux:
   desktop:
     entry:
       StartupWMClass: muxus
+      # Listed in the launcher's menu; GNOME also takes it for its own New Window.
+      Actions: new-window;
+    desktopActions:
+      # AppImage integration points it at the AppImage, as it does the entry's Exec.
+      new-window:
+        Name: New Window
+        Exec: /opt/Muxus/muxus --new-window
   target:
     - target: AppImage
       arch: [x64]

@@ -6,12 +6,14 @@ icon: lucide/terminal-square
 
 ## Desktop launch targets
 
-The desktop executable can open a saved host, a folder of hosts, or a workspace directly:
+The desktop executable can open a saved host, a folder of hosts, a workspace or another
+window directly:
 
 ```bash
 muxus --host edge-router
 muxus --folder "Production/EU"
 muxus --workspace "Night shift"
+muxus --new-window
 ```
 
 Names are matched case-insensitively. A host accepts an OpenSSH alias, a saved-host name or
@@ -27,6 +29,11 @@ added to `PATH`; AutoHotkey, Stream Deck, PowerShell, and shortcuts can invoke `
 by its full installation path.
 
 Flags accept both `--host edge-router` and `--host=edge-router`.
+
+`--new-window` takes no value. A running Muxus opens another, empty window; otherwise Muxus
+starts as usual, with its startup workspace. The
+[Windows taskbar entries](../guide/the-window.md#taskbar-and-dock) start Muxus with these
+flags.
 
 ## Ad-hoc SSH connections
 

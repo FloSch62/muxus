@@ -140,3 +140,38 @@ is hidden. Telnet, serial and remote desktop tabs show no statistics.
 A pane with no tabs shows the empty state, which offers to add a host or open a local
 terminal. The sidebar's **Local terminal** row starts a PTY running the login shell in a
 new tab, which is also what a fresh window provides.
+
+## Taskbar and Dock
+
+The Muxus icon in the taskbar or the Dock opens another window, a recent host or a recent
+workspace without going through a window first.
+
+=== ":material-microsoft-windows: Windows"
+
+    Right-click Muxus in the taskbar:
+
+    - **New window** opens another, empty window, or starts Muxus.
+    - **Recent hosts** lists the five hosts connected most recently, and **Recent
+      workspaces** the three workspaces opened most recently.
+
+    To keep an entry at the top under **Pinned**, hover it and click the pin, or right-click
+    it and choose **Pin to this list**. **Remove from this list** takes an entry out until
+    Muxus restarts. The entries also work while Muxus is closed. The Microsoft Store version
+    does not add them.
+
+=== ":material-apple: macOS"
+
+    Right-click or Control-click Muxus in the Dock. **New Window** opens another, empty
+    window; **Recent Hosts** and **Recent Workspaces** list the five hosts connected and the
+    three workspaces opened most recently.
+
+=== ":material-linux: Linux"
+
+    The launcher's menu for Muxus, in GNOME and KDE for example, offers **New Window**.
+
+A recent host opens as a new tab in the window used last. A recent workspace opens in a
+window of its own, or brings forward the window that already shows it, as the
+[`--host` and `--workspace` flags](../reference/cli.md#desktop-launch-targets) do. The
+lists follow new connections, renames and deletions within fifteen seconds. Saved hosts
+and workspaces are opened by ID, so their entries, pinned ones included, keep working after
+a rename. An entry whose host or workspace no longer exists shows a notification instead.

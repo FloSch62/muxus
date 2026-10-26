@@ -13,7 +13,10 @@ const TARGET_FLAGS = {
   '--folder': 'folder',
   '--workspace': 'workspace',
   '--connect': 'connect',
-} as const satisfies Record<string, Exclude<CommandLineLaunch['kind'], 'url'>>;
+} as const satisfies Record<string, Exclude<CommandLineLaunch['kind'], 'url' | 'new-window'>>;
+
+/** Takes no value; a running Muxus opens another, empty window. */
+const NEW_WINDOW_FLAG = '--new-window';
 
 /** Parts of a `--connect` target that may also be given as separate flags. */
 interface ConnectOptions {
@@ -108,6 +111,11 @@ export function parseCommandLineLaunch(
       launch = link;
       continue;
     }
+    if (argument === NEW_WINDOW_FLAG) {
+      if (launch) return undefined;
+      launch = { kind: 'new-window' };
+      continue;
+    }
     const separator = argument.indexOf('=');
     const flag = separator < 0 ? argument : argument.slice(0, separator);
     const kind = TARGET_FLAGS[flag as keyof typeof TARGET_FLAGS];
@@ -118,7 +126,7 @@ export function parseCommandLineLaunch(
     const value = rawValue?.trim();
     if (
       !value ||
-      value.startsWith('--') ||
+      (separator < 0 && value.startsWith('--')) ||
       value.length > MAX_TARGET_LENGTH
     ) {
       return undefined;
@@ -146,6 +154,7 @@ export function parseCommandLineLaunchData(
 ): CommandLineLaunch | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const candidate = value as Record<string, unknown>;
+  if (candidate.kind === 'new-window') return { kind: 'new-window' };
   if (
     candidate.kind !== 'host' &&
     candidate.kind !== 'folder' &&

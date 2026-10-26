@@ -85,6 +85,9 @@ export function CommandLineLaunchHandler() {
     };
 
     void (async () => {
+      // The desktop shell opened this window for it; there is nothing left to do.
+      if (request.kind === 'new-window') return;
+
       if (needsHostCatalog && hostCatalogError) {
         showToast('error', 'Could not load the host catalog for the command-line request.');
         return;
