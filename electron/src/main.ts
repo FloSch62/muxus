@@ -118,7 +118,8 @@ if (process.platform === 'linux') app.setDesktopName('muxus.desktop');
 
 // The installer's shortcut ID, so windows and the jump list share its taskbar button.
 // Store packages keep the package's identity and get no jump list.
-const hasJumpList = process.platform === 'win32' && process.windowsStore !== true;
+const hasJumpList =
+  process.platform === 'win32' && !isStoreDistribution(distributionMetadata, process.windowsStore === true);
 if (hasJumpList) {
   app.setAppUserModelId(isDevelopment ? `${APP_USER_MODEL_ID}.development` : APP_USER_MODEL_ID);
 }
@@ -1579,6 +1580,8 @@ function deliverCommandLineLaunch(launch: CommandLineLaunch | undefined): void {
 const LAUNCH_MENU_REFRESH_MS = 15_000;
 let launchMenuTimer: NodeJS.Timeout | undefined;
 let launchMenuKey: string | undefined;
+/** The last failure is logged once, not on every retry. */
+let lastJumpListResult: string | undefined;
 /** Entries removed from the jump list; Windows reports them only until it is next set. */
 const removedJumpListArgs = new Set<string>();
 
@@ -1632,9 +1635,11 @@ async function refreshLaunchMenu(): Promise<void> {
   );
   const key = JSON.stringify(categories);
   if (key === launchMenuKey) return;
-  launchMenuKey = key;
   const result = app.setJumpList(categories);
-  if (result !== 'ok') mainLog('warn', `the jump list was only partly set (${result})`);
+  // Kept only once it is set, so the next refresh tries a failed list again.
+  if (result === 'ok') launchMenuKey = key;
+  else if (result !== lastJumpListResult) mainLog('warn', `the jump list was only partly set (${result})`);
+  lastJumpListResult = result;
 }
 
 function startLaunchMenu(): void {
