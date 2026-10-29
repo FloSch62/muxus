@@ -567,14 +567,16 @@ export interface HostOrderRequest {
  * workspace catalogs used by the rest of the UI. A `connect` name is an
  * already validated ad-hoc "[user@]host[:port]" SSH target instead. A `url`
  * name is an ssh:// or telnet:// link as received, which the renderer parses
- * so that it can report a malformed one.
+ * so that it can report a malformed one. `new-window` asks a running Muxus for
+ * another, empty window.
  */
 export type CommandLineLaunch =
   | { kind: 'host'; name: string }
   | { kind: 'folder'; name: string }
   | { kind: 'workspace'; name: string }
   | { kind: 'connect'; name: string }
-  | { kind: 'url'; name: string };
+  | { kind: 'url'; name: string }
+  | { kind: 'new-window' };
 
 /**
  * One extra application window requested by the renderer. Workspace windows

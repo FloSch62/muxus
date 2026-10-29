@@ -37,11 +37,15 @@ function resolutionError(
   resolution: Exclude<TargetResolution<unknown>, { status: 'found' }>,
 ): string {
   const label = kind === 'folder' ? 'folder' : kind;
-  return resolution.status === 'not-found'
-    ? `No ${label} named “${name}” was found.`
-    : `More than one ${label} matches “${name}”. Use its exact ${
-        kind === 'folder' ? 'path' : 'name or ID'
-      }.`;
+  if (resolution.status === 'not-found') {
+    // Jump list entries name hosts and workspaces by ID, which means nothing to the user.
+    return kind === 'folder'
+      ? `No folder named “${name}” was found.`
+      : `This ${label} is no longer in Muxus. It may have been renamed or deleted.`;
+  }
+  return `More than one ${label} matches “${name}”. Use its exact ${
+    kind === 'folder' ? 'path' : 'name or ID'
+  }.`;
 }
 
 /** Execute desktop CLI requests once the normal application catalogs are ready. */
@@ -85,6 +89,9 @@ export function CommandLineLaunchHandler() {
     };
 
     void (async () => {
+      // The desktop shell opened this window for it; there is nothing left to do.
+      if (request.kind === 'new-window') return;
+
       if (needsHostCatalog && hostCatalogError) {
         showToast('error', 'Could not load the host catalog for the command-line request.');
         return;
