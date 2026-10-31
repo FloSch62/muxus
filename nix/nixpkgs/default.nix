@@ -1,5 +1,5 @@
-# The nixpkgs-style package, laid out like pkgs/by-name in nixpkgs. It fetches
-# a tagged release from GitHub instead of building the working tree.
+# The nixpkgs-style package, laid out like pkgs/by-name in nixpkgs. It builds
+# a tagged release from GitHub instead of the working tree.
 #
 #   nix-build nix/nixpkgs -A muxus
 #   nix-update --file nix/nixpkgs muxus --version 0.14.0   # bump version and hash

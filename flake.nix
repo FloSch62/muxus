@@ -6,7 +6,7 @@
   outputs =
     { self, nixpkgs }:
     let
-      # Desktop releases are x86_64 only (electron-builder AppImage/deb).
+      # The package is x86_64 only for now.
       # Dev shells also work on aarch64 for server and web development.
       packageSystems = [ "x86_64-linux" ];
       devSystems = packageSystems ++ [ "aarch64-linux" ];
@@ -16,7 +16,7 @@
     in
     {
       # ── installable package ──────────────────────────────────────────────
-      # The released AppImage, wrapped for Nix. Same file nixpkgs would take
+      # The latest release, built from source. Same file nixpkgs would take
       # (nix/nixpkgs), so version and hash are bumped in exactly one place.
       #   inputs.muxus.packages.${system}.default
       packages = forPackageSystems (
@@ -42,9 +42,8 @@
       devShells = forDevSystems (system: import ./nix/dev-shells.nix (pkgsFor system));
 
       # ── integration for NixOS and Home Manager users ─────────────────────
-      overlays.default = final: _prev: {
-        muxus = self.packages.${final.stdenv.hostPlatform.system}.muxus;
-      };
+      # Built with the caller's package set, so it shares their dependencies.
+      overlays.default = final: _prev: (import ./nix/nixpkgs { pkgs = final; });
 
       # ── formatter (nixfmt via nix fmt) ───────────────────────────────────
       formatter = forDevSystems (system: (pkgsFor system).nixfmt);

@@ -1,45 +1,54 @@
 name: nixpkgs
 
-# After a release: check that the nixpkgs-style package builds for the new
-# release. The bumped file is uploaded as an artifact for the first nixpkgs
-# submission; after that, the nixpkgs bot (r-ryantm) opens the bumps itself.
+# After a release: bump version and hashes in nix/nixpkgs, check the package
+# builds, and open a PR so `nix flake update muxus` picks up the release once
+# merged. The hashes only exist once the tag does, so this cannot happen before
+# it. Needs "Allow GitHub Actions to create and approve pull requests".
 on:
   release:
     types:
       - published
   workflow_dispatch:
     inputs:
-      version:
-        description: "Release tag, e.g. v0.14.0 (empty builds the version in the file)"
+      tag:
+        description: Existing release tag (for example, v0.14.0)
+        required: true
         type: string
-        default: ""
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
 
 jobs:
-  build:
+  bump:
+    if: ${{ !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: main
       - uses: cachix/install-nix-action@v31
 
-      - name: Use the flake's pinned nixpkgs as <nixpkgs>
-        run: |
-          nixpkgs="$(nix flake metadata --json | jq -r '.locks.nodes.nixpkgs.locked | "github:\(.owner)/\(.repo)/\(.rev)"')"
-          echo "NIX_PATH=nixpkgs=$(nix flake prefetch --json "$nixpkgs" | jq -r .storePath)" >> "$GITHUB_ENV"
-
-      - name: Bump the package to this tag
+      - name: Bump and build
         env:
-          TAG: ${{ github.event.release.tag_name || inputs.version }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
-          [ -n "$TAG" ] || exit 0
-          nix run nixpkgs#nix-update -- --file nix/nixpkgs --version "${TAG#v}" muxus
+          nix run nixpkgs#nix-update -- --flake --version "${TAG#v}" muxus
+          nix build .#muxus --no-link
 
-      - name: Build
-        run: nix-build nix/nixpkgs -A muxus --no-out-link
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: nixpkgs-package
-          path: nix/nixpkgs
+      - name: Open a PR with the bump
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          git diff --quiet && exit 0
+          branch="nix/bump-${TAG#v}"
+          title="nix: bump muxus to ${TAG#v}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -am "$title"
+          git push --force origin "$branch"
+          # A re-run updates the branch above; its PR already exists.
+          gh pr view "$branch" --json state --jq .state | grep -qx OPEN \
+            || gh pr create --base main --head "$branch" --title "$title" --body "Automated bump after the $TAG release."

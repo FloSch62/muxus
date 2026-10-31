@@ -1,6 +1,6 @@
 # Nix and NixOS
 
-Muxus ships a flake. It wraps the released AppImage, so nothing is compiled.
+Muxus ships a flake that builds the latest release from source and runs it on the Electron from nixpkgs, which can be older than the version the release is tested with.
 
 ## Install
 
@@ -23,6 +23,8 @@ environment.systemPackages = [ inputs.muxus.packages.${pkgs.stdenv.hostPlatform.
 
 `nix flake update muxus` picks up the newest release.
 
+The first build downloads about 750 MB of JavaScript dependencies, which takes minutes rather than seconds. The compile itself takes about a minute, and the dependencies are only downloaded again when a release changes them.
+
 ## Develop
 
 ```sh
@@ -37,8 +39,8 @@ With direnv, `direnv allow` loads the default shell on `cd` (`.envrc` uses the f
 `nix/nixpkgs/muxus/package.nix` is written the way nixpkgs wants it and is laid out like `pkgs/by-name`. The flake builds this same file, so a release bumps one place:
 
 ```sh
-nix-update --file nix/nixpkgs muxus --version X.Y.Z
-nix-build nix/nixpkgs -A muxus
+nix-update --flake muxus --version X.Y.Z
+nix build .#muxus
 ```
 
-The **nixpkgs** workflow runs this after each release and uploads the bumped file as an artifact.
+The **nixpkgs** workflow runs this after each release and opens a PR with the bump. Once Muxus is in nixpkgs, its bot opens version bumps there too, and users get prebuilt downloads from the NixOS binary cache.
