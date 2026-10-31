@@ -1,0 +1,45 @@
+name: nixpkgs
+
+# After a release: check that the nixpkgs-style package builds for the new
+# release. The bumped file is uploaded as an artifact for the first nixpkgs
+# submission; after that, the nixpkgs bot (r-ryantm) opens the bumps itself.
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag, e.g. v0.14.0 (empty builds the version in the file)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+
+      - name: Use the flake's pinned nixpkgs as <nixpkgs>
+        run: |
+          nixpkgs="$(nix flake metadata --json | jq -r '.locks.nodes.nixpkgs.locked | "github:\(.owner)/\(.repo)/\(.rev)"')"
+          echo "NIX_PATH=nixpkgs=$(nix flake prefetch --json "$nixpkgs" | jq -r .storePath)" >> "$GITHUB_ENV"
+
+      - name: Bump the package to this tag
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.version }}
+        run: |
+          [ -n "$TAG" ] || exit 0
+          nix run nixpkgs#nix-update -- --file nix/nixpkgs --version "${TAG#v}" muxus
+
+      - name: Build
+        run: nix-build nix/nixpkgs -A muxus --no-out-link
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nixpkgs-package
+          path: nix/nixpkgs

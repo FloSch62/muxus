@@ -14,3 +14,7 @@ promo/
 # Zensical docs build output & cache
 site/
 .cache/
+
+# Nix / direnv
+.direnv/
+result
