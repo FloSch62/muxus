@@ -211,6 +211,19 @@ function recentLines(term: Terminal, count: number): string[] {
   return lines;
 }
 
+/**
+ * Re-measure the cell after a webfont arrives. xterm measures only on open,
+ * on a font option change and on resize, so a terminal opened while Chromium
+ * still showed the fallback face keeps that face's cell size — WebGL then
+ * squeezes every glyph into it. Assigning the same value is ignored, so the
+ * family is nudged and restored; both fire synchronously before any paint.
+ */
+function remeasureCells(term: Terminal): void {
+  const family = term.options.fontFamily ?? '';
+  term.options.fontFamily = `${family} `;
+  term.options.fontFamily = family;
+}
+
 async function openLinkedTerminalFile(tabId: string, candidate: string): Promise<void> {
   let current = useTabsStore.getState().tabs.find((tab) => tab.id === tabId);
   if (!current?.profile) return;
@@ -759,6 +772,11 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         `${initialFontSize}px ${initialFontStack}`,
         '[15:58:10] root@rocker1:~',
       ),
+      // Bold resolves to a separate face (JetBrains Mono 500, synthesized up).
+      document.fonts.load(
+        `bold ${initialFontSize}px ${initialFontStack}`,
+        '[15:58:10] root@rocker1:~',
+      ),
       document.fonts.load(`${initialFontSize}px ${TERMINAL_BOX_FONT}`, '\u2500\u2588'),
       document.fonts.load(
         `${initialFontSize}px ${TERMINAL_SYMBOL_FONT}`,
@@ -767,6 +785,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     ])
       .then(() => {
         if (termRef.current !== term) return;
+        remeasureCells(term);
         // The WebGL atlas caches glyphs rasterized with the fallback face;
         // refresh alone would repaint those same bitmaps.
         webglAddonRef.current?.clearTextureAtlas();
@@ -1846,6 +1865,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         ) {
           return;
         }
+        remeasureCells(term);
         webglAddonRef.current?.clearTextureAtlas();
         term.refresh(0, term.rows - 1);
         fitTerminal();
@@ -1873,6 +1893,11 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     }
     if (webglAddonRef.current) return;
     let cancelled = false;
+    const onFontsLoaded = () => {
+      if (termRef.current !== term || !webglAddonRef.current) return;
+      webglAddonRef.current.clearTextureAtlas();
+      term.refresh(0, term.rows - 1);
+    };
     void import('@xterm/addon-webgl')
       .then(({ WebglAddon }) => {
         if (cancelled || termRef.current !== term || webglAddonRef.current) return;
@@ -1888,6 +1913,11 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         // suppress retries or make toggle-off dispose a renderer that never ran.
         webglAddonRef.current = webgl;
         fitTerminal();
+        // Faces the preload did not cover (other weights, unicode-range
+        // subsets) load on first use, after WebGL has already cached the
+        // fallback glyph. The DOM renderer repaints on its own; the atlas
+        // has to be dropped.
+        document.fonts.addEventListener('loadingdone', onFontsLoaded);
       })
       .catch(() => {
         // Chunk fetch failed or WebGL2 is unusable — the DOM renderer stays.
@@ -1897,6 +1927,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       });
     return () => {
       cancelled = true;
+      document.fonts.removeEventListener('loadingdone', onFontsLoaded);
     };
   }, [webglRenderer, generation]);
 
