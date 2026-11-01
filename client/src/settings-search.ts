@@ -80,6 +80,7 @@ export const SETTINGS_SEARCH_INDEX: readonly SettingsSearchEntry[] = [
   // Behavior
   { section: 'behavior', group: 'Tabs', label: 'Confirm before closing a live session', keywords: ['close tab', 'warning', 'prompt'] },
   { section: 'behavior', group: 'Tabs', label: 'Close the tab when its shell exits', keywords: ['exit', 'logout', 'ctrl+d', 'close tab', 'session ended'] },
+  { section: 'behavior', group: 'Tabs', label: 'Show program status on tabs', keywords: ['osc 7501', 'agent', 'working', 'waiting', 'done', 'busy'] },
   { section: 'behavior', group: 'Hosts sidebar', label: 'Open hosts with', keywords: ['single click', 'double-click', 'sidebar'] },
   { section: 'behavior', group: 'New hosts', label: 'Save new SSH hosts in', keywords: ['openssh', 'ssh config', 'storage'] },
   { section: 'behavior', group: 'Connecting', label: 'Show a summary when an SSH session connects', keywords: ['cipher', 'encryption', 'connection info'] },

@@ -169,6 +169,10 @@ another status, a failed or lost connection, a serial console and a pinned tab s
 with the usual prompt, and a tab with unsaved remote files asks first. Most shells exit with
 the status of the last command, so ++ctrl+d++ right after a failed command keeps the tab.
 
+**Show program status on tabs** is on by default. Programs that report their state with
+OSC 7501 mark their tab while they work, when they wait for you, and when they finish or
+fail. See [Program status](tabs-and-panes.md#program-status).
+
 **Open hosts with** chooses how sidebar entries open: a **Single click** (the default) or a
 **Double-click**. With a double-click, a single click selects a host as in a file manager;
 the local terminal rows follow the same choice, and ++enter++ opens either way. See

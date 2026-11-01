@@ -93,6 +93,8 @@ import {
   themeWithColorOverrides,
 } from '../terminal/palette.js';
 import { attachCommandTracker, attachCwdTracker } from '../terminal/shell-integration.js';
+import { attachProgramStatus } from '../terminal/program-status.js';
+import { useProgramStatusStore } from '../state/program-status.js';
 import { attachOsc52Clipboard } from '../terminal/osc52-clipboard.js';
 import {
   attachKeywordHighlighter,
@@ -1024,6 +1026,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     el.addEventListener('wheel', onWheel, { passive: false, capture: true });
 
     const commandTracker = attachCommandTracker(term);
+    const programStatus = attachProgramStatus(term, {
+      enabled: () => usePrefsStore.getState().showProgramStatus,
+      reply: (data) => {
+        sendInput(data);
+      },
+      update: (change) => useProgramStatusStore.getState().update(tab.id, change),
+    });
     const cwdTracker =
       tab.profile.kind === 'ssh' || tab.profile.kind === 'local'
         ? attachCwdTracker(term, (terminalCwd) => {
@@ -1188,6 +1197,8 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       let pendingReattach: string | undefined;
       if (!attachingExistingSession) {
         updateTab(tab.id, { loginSequence: undefined, pasteStopNoted: undefined });
+        // A new shell: what programs reported in the old one no longer applies.
+        programStatus.reset();
       }
       diagnosable = false;
       ws = socket;
@@ -1456,6 +1467,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
             break;
           case 'exit':
             exitMessage = ctl;
+            programStatus.sessionEnded();
             break;
           case 'paste-progress':
             if (ctl.state !== 'running') pacedPastePending = false;
@@ -1783,6 +1795,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       el.removeEventListener('copy', onNativeCopy, { capture: true });
       onSearchResults.dispose();
       commandTracker.dispose();
+      programStatus.dispose();
       cwdTracker?.dispose();
       fileLinks?.dispose();
       keywordHighlighterRef.current?.dispose();

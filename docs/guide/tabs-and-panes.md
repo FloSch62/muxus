@@ -77,6 +77,24 @@ serial, a remote desktop, or a remote editor.
 Each tab shows a status dot: amber while connecting, green when connected, red when the
 transport is gone.
 
+### Program status
+
+Programs that report their state with OSC 7501, the Program Status Protocol, mark their
+tab next to the title. Coding agents and some build and package tools do this:
+
+| Mark | Meaning |
+| --- | --- |
+| A blue ring | The program is working; it fills up when the program reports progress |
+| An amber question mark | The program is waiting for you: a permission, an answer or a sign-in |
+| A green check | The program finished; shown until you switch to the tab |
+| A red cross | The program failed; shown until you switch to the tab |
+
+Hover the mark for what the program reported. Working and waiting end at the next shell
+prompt or when the session ends. When several programs in one tab report, the tab shows the
+most urgent one. Muxus answers the protocol's support query only while the feature is on;
+turn it off with **Show program status on tabs** under
+[Settings → Behavior](settings.md#behavior).
+
 Tab numbers follow depth-first split-tree order: at every split the left or top branch comes
 before the right or bottom branch, then tabs are numbered left-to-right inside each strip.
 Splitting, moving, reordering or closing tabs and panes recalculates the sequence immediately.

@@ -202,6 +202,8 @@ export interface PrefsState {
   confirmCloseConnected: boolean;
   /** Close a tab whose shell exits with status 0 instead of offering to reconnect. */
   closeTabOnCleanExit: boolean;
+  /** Show what programs report with OSC 7501 (working, waiting, done) on their tab. */
+  showProgramStatus: boolean;
   /** Dial remote sessions on workspace restore and retry dropped connections. */
   autoReconnectRemote: boolean;
   /** SSH keepalive fallback in seconds; zero relies entirely on ssh_config. */
@@ -384,6 +386,7 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   }
   if (typeof state.sshSessionSummary !== 'boolean') delete state.sshSessionSummary;
   if (typeof state.closeTabOnCleanExit !== 'boolean') delete state.closeTabOnCleanExit;
+  if (typeof state.showProgramStatus !== 'boolean') delete state.showProgramStatus;
   if (!validPasteDelay(state.pasteLineDelayMs, MAX_PASTE_LINE_DELAY_MS)) {
     delete state.pasteLineDelayMs;
   }
@@ -605,6 +608,7 @@ export const usePrefsStore = create<PrefsState>()(
       pasteCharDelayMs: 0,
       confirmCloseConnected: true,
       closeTabOnCleanExit: false,
+      showProgramStatus: true,
       autoReconnectRemote: true,
       sshKeepaliveIntervalSeconds: DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
       sshSessionSummary: false,

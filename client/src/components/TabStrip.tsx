@@ -90,6 +90,7 @@ import { loadHostEditorDialog } from '../lazy-features.js';
 import { hostKindIcon } from './host-kind-icon.js';
 import { LocalShellIcon } from './LocalShellIcon.js';
 import { TabPasteProgress } from './PasteProgress.js';
+import { ProgramStatusBadge } from './ProgramStatusBadge.js';
 import {
   activeTabTransfer,
   beginTabDrag,
@@ -770,6 +771,7 @@ export function TabStrip({
               />
             ) : null}
             <TabPasteProgress tabId={tab.id} />
+            <ProgramStatusBadge tabId={tab.id} />
             {tab.loginSequence ? (
               <Tooltip
                 title={`Login sequence, step ${tab.loginSequence.step} of ${tab.loginSequence.steps}: ${tab.loginSequence.detail}`}
@@ -1022,6 +1024,7 @@ export function TabStrip({
                 secondary={tabStatusLabel(tab)}
                 slotProps={{ primary: { noWrap: true }, secondary: { noWrap: true } }}
               />
+              <ProgramStatusBadge tabId={tab.id} sx={{ ml: 1 }} />
               {tab.pinned ? <PinIcon aria-label="Pinned" sx={{ ml: 1, fontSize: 14 }} /> : null}
               {active ? <CheckIcon aria-label="Active tab" sx={{ ml: 0.5, fontSize: 18 }} /> : null}
             </MenuItem>
