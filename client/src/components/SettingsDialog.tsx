@@ -1316,6 +1316,19 @@ function BehaviorSection() {
             />
           }
         />
+        <SettingRow
+          label="Show program status on tabs"
+          labelFor="settings-program-status"
+          description="Programs that report their state with OSC 7501, such as coding agents and long builds, mark their tab while they work, when they wait for you, and when they finish or fail."
+          control={
+            <Switch
+              id="settings-program-status"
+              size="small"
+              checked={prefs.showProgramStatus}
+              onChange={(e) => prefs.set({ showProgramStatus: e.target.checked })}
+            />
+          }
+        />
       </SettingsGroup>
       <SettingsGroup title="Hosts sidebar">
         <SettingRow

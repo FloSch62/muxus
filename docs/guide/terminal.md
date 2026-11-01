@@ -39,6 +39,10 @@ shortcut until one is recorded in the keyboard sheet.
 lifecycle with OSC 133/633. Muxus renders that as scrollbar marks: a command that exits
 non-zero paints its line red in the overview ruler.
 
+**Program status.** Programs that report their state with OSC 7501 mark their tab while
+they work, wait for you, finish or fail. See
+[Program status](tabs-and-panes.md#program-status).
+
 **Unicode 11 widths** and a **minimum contrast ratio** are enabled, so wide glyphs measure
 correctly and low-contrast remote colour choices stay readable.
 
