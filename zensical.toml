@@ -27,6 +27,7 @@ nav = [
   { "Install" = [
     "install/index.md",
     { "From source" = "install/from-source.md" },
+    { "Nix and NixOS" = "install/nix.md" },
     { "Quickstart" = "quickstart.md" },
   ] },
   { "User guide" = [
