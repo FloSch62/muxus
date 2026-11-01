@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -10,7 +10,9 @@ import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
+import CloseFullscreenIcon from '@mui/icons-material/CloseFullscreen';
 import CloseIcon from '@mui/icons-material/Close';
+import OpenInFullIcon from '@mui/icons-material/OpenInFull';
 import ComputerOutlinedIcon from '@mui/icons-material/ComputerOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
@@ -36,6 +38,14 @@ import {
 import { showToast } from '../../state/toast.js';
 import { useUiStore } from '../../state/ui.js';
 import { layout, statusTextColor } from '../../theme.js';
+import { usePrefsStore } from '../../state/prefs.js';
+import {
+  DEFAULT_ENVIRONMENTS_PANEL_WIDTH,
+  MIN_ENVIRONMENTS_PANEL_WIDTH,
+  clampEnvironmentsPanelWidth,
+  maxEnvironmentsPanelWidth,
+} from '../../environments-panel-width.js';
+import { PanelResizeHandle } from '../PanelResizeHandle.js';
 import { AuthPromptDialog, type AuthPromptRequest, type AuthPromptResult } from '../AuthPromptDialog.js';
 import { HostKeyDialog, type HostKeyRequest } from '../HostKeyDialog.js';
 import { ClabTopologyDialog } from './ClabTopologyDialog.js';
@@ -85,6 +95,11 @@ export function EnvironmentsPanel() {
   const [topology, setTopology] = useState<{ host: HostEnvironmentsEntry; lab: ContainerlabLab } | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const expansion = useExpansion();
+  const panelRef = useRef<HTMLElement>(null);
+  const panelWidth = usePrefsStore((state) => state.environmentsPanelWidth);
+  const sidebarOnRight = usePrefsStore((state) => state.sidebarPosition === 'right');
+  const setPrefs = usePrefsStore((state) => state.set);
+  const [expanded, setExpanded] = useState(false);
   const [dialAuth, setDialAuth] = useState<{
     request: AuthPromptRequest;
     resolve: (result: AuthPromptResult | null) => void;
@@ -162,11 +177,15 @@ export function EnvironmentsPanel() {
 
   return (
     <Box
+      ref={panelRef}
       component="aside"
       aria-label="Containers and VMs"
       sx={{
-        width: layout.environmentsPanelWidth,
-        maxWidth: '50%',
+        position: 'relative',
+        // Expanded, it takes what the sidebar and a usable workspace leave.
+        width: expanded ? 'calc(100% - 560px)' : panelWidth,
+        minWidth: MIN_ENVIRONMENTS_PANEL_WIDTH,
+        maxWidth: expanded ? '75%' : 'calc(100% - 560px)',
         flexShrink: 0,
         height: '100%',
         display: 'flex',
@@ -177,17 +196,30 @@ export function EnvironmentsPanel() {
         borderColor: 'divider',
       }}
     >
-      <Stack direction="row" spacing={1} sx={{ px: 1.5, py: 1, alignItems: 'center', borderBottom: 1, borderColor: 'divider' }}>
+      {/* As tall as the tab strip beside it, so their bottom lines meet. */}
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{
+          height: layout.tabStripHeight,
+          flexShrink: 0,
+          boxSizing: 'border-box',
+          px: 1.5,
+          alignItems: 'center',
+          borderBottom: 1,
+          borderColor: 'divider',
+        }}
+      >
         <ViewInArOutlinedIcon fontSize="small" color="primary" />
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography variant="subtitle2" noWrap sx={{ fontWeight: 700 }}>
+          <Typography variant="subtitle2" noWrap sx={{ fontWeight: 700, lineHeight: scoped ? 1.25 : undefined }}>
             {scoped ? scoped.label : 'Containers & VMs'}
           </Typography>
           {scoped ? (
             <Button
               size="small"
               onClick={() => setPanel({})}
-              sx={{ p: 0, minWidth: 0, fontSize: 11, textTransform: 'none', lineHeight: 1.2 }}
+              sx={{ p: 0, minWidth: 0, fontSize: 11, textTransform: 'none', lineHeight: 1.1, display: 'block' }}
             >
               All hosts
             </Button>
@@ -202,6 +234,16 @@ export function EnvironmentsPanel() {
             }}
           >
             <RefreshOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title={expanded ? 'Back to the set width' : 'Widen to see more'}>
+          <IconButton
+            size="small"
+            aria-label={expanded ? 'Restore panel width' : 'Widen panel'}
+            aria-pressed={expanded}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? <CloseFullscreenIcon fontSize="small" /> : <OpenInFullIcon fontSize="small" />}
           </IconButton>
         </Tooltip>
         <IconButton size="small" aria-label="Close containers and VMs panel" onClick={() => setPanel(false)}>
@@ -290,6 +332,20 @@ export function EnvironmentsPanel() {
           onClose={() => setTopology(null)}
         />
       ) : null}
+      {expanded ? null : (
+        <PanelResizeHandle
+          panelRef={panelRef}
+          // The panel sits between the sidebar and the panes: it grows toward the panes.
+          edge={sidebarOnRight ? 'left' : 'right'}
+          width={panelWidth}
+          defaultWidth={DEFAULT_ENVIRONMENTS_PANEL_WIDTH}
+          minWidth={MIN_ENVIRONMENTS_PANEL_WIDTH}
+          maxWidth={maxEnvironmentsPanelWidth}
+          clampWidth={clampEnvironmentsPanelWidth}
+          onWidthChange={(environmentsPanelWidth) => setPrefs({ environmentsPanelWidth })}
+          label="Resize containers and VMs panel"
+        />
+      )}
     </Box>
   );
 }
@@ -423,14 +479,7 @@ function HostCard({
               case 'proxmox':
                 return <ProxmoxSection key="proxmox" {...sectionProps} depth={1} environment={environment} />;
               case 'libvirt':
-                return (
-                  <LibvirtSection
-                    key={`libvirt:${environment.uri ?? ''}`}
-                    {...sectionProps}
-                    depth={1}
-                    environment={environment}
-                  />
-                );
+                return <LibvirtSection key="libvirt" {...sectionProps} depth={1} environment={environment} />;
             }
           })}
         </>

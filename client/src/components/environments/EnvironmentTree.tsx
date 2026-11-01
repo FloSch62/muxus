@@ -18,6 +18,37 @@ export const MONO = { fontFamily: '"JetBrains Mono", monospace' } as const;
 /** Indent of one tree level, in px. */
 const LEVEL = 16;
 
+/** Label and value pairs shown when the pointer rests on a line; empty values are left out. */
+export type LineHint = readonly (readonly [label: string, value: string | number | undefined | null | false])[];
+
+function HintCard({ title, hint }: { title: string; hint: LineHint }) {
+  const rows = hint.filter((row): row is readonly [string, string | number] => row[1] !== undefined && row[1] !== null && row[1] !== false && row[1] !== '');
+  return (
+    <Box sx={{ py: 0.25 }}>
+      <Box sx={{ fontWeight: 600, fontSize: 12, wordBreak: 'break-all', mb: rows.length ? 0.5 : 0 }}>{title}</Box>
+      {rows.length ? (
+        <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 1, rowGap: 0.25 }}>
+          {rows.map(([label, value], index) => (
+            <Box key={index} sx={{ display: 'contents' }}>
+              {label ? (
+                <Box component="dt" sx={{ opacity: 0.7 }}>
+                  {label}
+                </Box>
+              ) : null}
+              <Box
+                component="dd"
+                sx={{ m: 0, ...MONO, fontSize: 11, wordBreak: 'break-all', ...(label ? {} : { gridColumn: '1 / -1' }) }}
+              >
+                {value}
+              </Box>
+            </Box>
+          ))}
+        </Box>
+      ) : null}
+    </Box>
+  );
+}
+
 /**
  * One line of the panel's tree: chevron, icon, name with a dim detail, a
  * status column, and the line's own actions. Hosts, providers, groups and
@@ -37,6 +68,7 @@ export function TreeLine({
   dim = false,
   selected = false,
   label,
+  hint,
 }: {
   depth: number;
   /** undefined: a leaf, no chevron. */
@@ -54,8 +86,22 @@ export function TreeLine({
   selected?: boolean;
   /** Accessible name when the title is not plain text. */
   label?: string;
+  /** Details shown on hover, under the full name. Plain-text detail and status are shown by default. */
+  hint?: LineHint;
 }) {
   const expandable = open !== undefined;
+  const name = label ?? (typeof title === 'string' ? title : undefined);
+  const hintRows: LineHint = hint ?? [
+    ['', typeof detail === 'string' ? detail : undefined],
+    ['', typeof status === 'string' ? status : undefined],
+  ];
+  // Without details of its own, a line explains itself only when its text is cut off.
+  const [clipped, setClipped] = useState(false);
+  const measure = (event: MouseEvent<HTMLElement>) => {
+    if (hint) return;
+    const spans = event.currentTarget.querySelectorAll<HTMLElement>('[data-clip]');
+    setClipped([...spans].some((span) => span.scrollWidth > span.clientWidth));
+  };
   return (
     <Box
       role="treeitem"
@@ -101,38 +147,52 @@ export function TreeLine({
         ) : null}
       </Box>
       {icon ? <Box sx={{ display: 'flex', flexShrink: 0 }}>{icon}</Box> : null}
-      <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 0.75 }}>
+      <Tooltip
+        title={name && (hint || clipped) ? <HintCard title={name} hint={hintRows} /> : ''}
+        placement="bottom-start"
+        enterDelay={500}
+        enterNextDelay={300}
+        disableInteractive
+        slotProps={{ tooltip: { sx: { maxWidth: 420 } } }}
+      >
         <Box
-          component="span"
-          sx={{
-            fontSize: 13,
-            fontWeight: emphasis ? 600 : 500,
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            flexShrink: 1,
-            minWidth: 0,
-          }}
+          onMouseEnter={measure}
+          sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 0.75 }}
         >
-          {title}
-        </Box>
-        {detail ? (
           <Box
             component="span"
+            data-clip
             sx={{
-              fontSize: 11,
-              color: 'text.secondary',
+              fontSize: 13,
+              fontWeight: emphasis ? 600 : 500,
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
-              flexShrink: 100,
+              flexShrink: 1,
               minWidth: 0,
             }}
           >
-            {detail}
+            {title}
           </Box>
-        ) : null}
-      </Box>
+          {detail ? (
+            <Box
+              component="span"
+              data-clip
+              sx={{
+                fontSize: 11,
+                color: 'text.secondary',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                flexShrink: 100,
+                minWidth: 0,
+              }}
+            >
+              {detail}
+            </Box>
+          ) : null}
+        </Box>
+      </Tooltip>
       {status ? (
         <Box
           sx={{
@@ -140,7 +200,7 @@ export function TreeLine({
             color: 'text.secondary',
             whiteSpace: 'nowrap',
             flexShrink: 0,
-            maxWidth: 150,
+            maxWidth: '38%',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
           }}

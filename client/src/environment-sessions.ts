@@ -11,15 +11,9 @@ import {
 import { openRemotePort } from './api/environments.js';
 import { environmentSource } from './environments.js';
 import { openSessionProfile } from './session-actions.js';
-import { confirmAction, promptForText } from './state/dialogs.js';
+import { promptForText } from './state/dialogs.js';
 import type { EnvironmentHost } from './state/environments.js';
-import { useMultiExecStore } from './state/multi-exec.js';
-import {
-  isMultiExecTarget,
-  useTabsStore,
-  type SessionSetEntry,
-  type SessionSetLayout,
-} from './state/tabs.js';
+import type { SessionSetEntry } from './state/tabs.js';
 import { showToast } from './state/toast.js';
 
 function hostSuffix(host: EnvironmentHost): string {
@@ -144,66 +138,6 @@ export function containerlabNodeEntry(
 export function openContainerlabNode(host: EnvironmentHost, lab: ContainerlabLab, node: ContainerlabNode): void {
   const entry = containerlabNodeEntry(host, lab, node);
   openSessionProfile(entry.profile, entry.title, entry.color);
-}
-
-/**
- * Open several sessions side by side, replacing the current layout the way
- * launching a sidebar folder does, and type into all of them at once.
- */
-export async function openSessionGrid(
-  label: string,
-  entries: readonly SessionSetEntry[],
-  options: { layout?: SessionSetLayout; multiExec?: boolean } = {},
-): Promise<void> {
-  if (entries.length === 0) return;
-  const live = useTabsStore.getState().tabs.some((tab) => tab.profile && tab.status !== 'closed');
-  if (
-    live &&
-    !(await confirmAction({
-      title: `Open ${label}`,
-      description: `${entries.length} sessions replace the current layout. Live sessions in it are closed.`,
-      confirmLabel: 'Open',
-    }))
-  ) {
-    return;
-  }
-  const ids = useTabsStore
-    .getState()
-    .launchSet(entries, options.layout ?? (entries.length > 1 ? 'grid' : 'tabs'));
-  useMultiExecStore.getState().setGroups([]);
-  if (options.multiExec && ids.length > 1) mirrorOnceConnected(ids);
-}
-
-/** Give up on sessions that have not connected by then and mirror the rest. */
-const MIRROR_WAIT_MS = 30_000;
-
-/**
- * Mirrored input only reaches connected terminals, so a freshly launched set
- * joins it as its sessions come up: once all are connected, or with whatever
- * has connected when the wait runs out.
- */
-function mirrorOnceConnected(ids: readonly string[]): void {
-  let settled = false;
-  const connected = () =>
-    useTabsStore
-      .getState()
-      .tabs.filter((tab) => ids.includes(tab.id) && isMultiExecTarget(tab))
-      .map((tab) => tab.id);
-  const finish = (targets: string[]) => {
-    if (settled) return;
-    settled = true;
-    unsubscribe();
-    window.clearTimeout(timer);
-    if (targets.length > 1) useMultiExecStore.getState().setSelection(targets);
-  };
-  const unsubscribe = useTabsStore.subscribe((state) => {
-    const open = state.tabs.filter((tab) => ids.includes(tab.id));
-    // The set was closed or replaced before it came up.
-    if (open.length === 0) return finish([]);
-    const ready = connected();
-    if (ready.length === open.length) finish(ready);
-  });
-  const timer = window.setTimeout(() => finish(connected()), MIRROR_WAIT_MS);
 }
 
 // ---------------------------------------------------------------------------

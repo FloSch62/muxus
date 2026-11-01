@@ -83,6 +83,7 @@ describe('environmentArgv', () => {
       '-c',
       'qemu:///system',
       'console',
+      '--force',
       'runner',
     ]);
   });
@@ -114,7 +115,7 @@ describe('shellQuote', () => {
   });
 
   it('builds the command line an SSH session runs', () => {
-    expect(environmentCommandLine({ kind: 'libvirt-console', domain: 'my vm' })).toBe("virsh console 'my vm'");
+    expect(environmentCommandLine({ kind: 'libvirt-console', domain: 'my vm' })).toBe("virsh console --force 'my vm'");
     expect(environmentCommandLine({ kind: 'container', runtime: 'docker', container: 'web', shell: 'sh' })).toBe(
       'docker exec -it -e TERM=xterm-256color web sh',
     );

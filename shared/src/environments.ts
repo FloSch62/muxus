@@ -151,7 +151,9 @@ export function environmentArgv(target: EnvironmentTarget): string[] {
     case 'proxmox-serial':
       return ['qm', 'terminal', String(target.vmid)];
     case 'libvirt-console':
-      return ['virsh', ...(target.uri ? ['-c', target.uri] : []), 'console', target.domain];
+      // --force takes over a console another client still holds (an earlier tab,
+      // virt-manager); without it virsh refuses and the tab closes at once.
+      return ['virsh', ...(target.uri ? ['-c', target.uri] : []), 'console', '--force', target.domain];
   }
 }
 
@@ -292,11 +294,13 @@ export interface LibvirtDomain {
   /** running, shut off, paused … as virsh says. */
   state: string;
   id?: number;
+  /** The connection that holds it; virsh's default when absent. */
+  uri?: LibvirtUri;
 }
 
+/** One hypervisor: the system daemon's domains, then the user session's. */
 export interface LibvirtEnvironment {
   kind: 'libvirt';
-  uri?: LibvirtUri;
   version?: string;
   domains: LibvirtDomain[];
 }
@@ -373,7 +377,8 @@ export type EnvironmentAction =
       kind: 'container';
       runtime: ContainerRuntime;
       container: string;
-      action: 'start' | 'stop' | 'restart' | 'pause' | 'unpause';
+      /** remove deletes the container, stopping it first if it runs. */
+      action: 'start' | 'stop' | 'restart' | 'pause' | 'unpause' | 'remove';
     }
   | {
       kind: 'compose';

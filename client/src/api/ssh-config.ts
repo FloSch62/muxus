@@ -110,6 +110,9 @@ export function useUpdateSshMetadata(onSuccess?: (metadata: OpenSshProfileMetada
               ...(patch.consoleCompatibility !== undefined
                 ? { consoleCompatibility: patch.consoleCompatibility || undefined }
                 : {}),
+              ...(patch.discoverEnvironments !== undefined
+                ? { discoverEnvironments: patch.discoverEnvironments ?? undefined }
+                : {}),
             };
             return { ...host, metadata };
           }),

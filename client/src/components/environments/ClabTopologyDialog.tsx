@@ -9,18 +9,12 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { useTheme } from '@mui/material/styles';
 import CloseIcon from '@mui/icons-material/Close';
-import GridViewOutlinedIcon from '@mui/icons-material/GridViewOutlined';
 import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 import type { ContainerlabLab, ContainerlabTopologyResponse } from '@muxus/shared';
 import { fetchContainerlabTopology } from '../../api/environments.js';
 import { environmentSource, isRunning } from '../../environments.js';
-import {
-  containerlabNodeEntry,
-  nodeUsesSsh,
-  openContainerlabNode,
-  openSessionGrid,
-} from '../../environment-sessions.js';
+import { nodeUsesSsh, openContainerlabNode } from '../../environment-sessions.js';
 import type { HostEnvironmentsEntry } from '../../state/environments.js';
 import { MONO, StatusDot } from './EnvironmentTree.js';
 
@@ -133,7 +127,6 @@ export function ClabTopologyDialog({
   }, [mode]);
 
   const node = lab?.nodes.find((candidate) => candidate.name === selected);
-  const running = lab?.nodes.filter((candidate) => isRunning(candidate.state)) ?? [];
   const frameSrc = `${VIEWER_PATH}?${new URLSearchParams({ parentOrigin: window.location.origin }).toString()}`;
 
   return (
@@ -147,22 +140,6 @@ export function ClabTopologyDialog({
             {host.label} · {state.status === 'ready' ? state.topology.path : lab?.topologyFile}
           </Typography>
         </Box>
-        <Button
-          size="small"
-          startIcon={<GridViewOutlinedIcon />}
-          disabled={!lab || running.length === 0}
-          onClick={() => {
-            if (!lab) return;
-            onClose();
-            void openSessionGrid(
-              lab.name,
-              running.map((candidate) => containerlabNodeEntry(host, lab, candidate)),
-              { multiExec: true },
-            );
-          }}
-        >
-          Open all nodes
-        </Button>
         <IconButton aria-label="Close" onClick={onClose}>
           <CloseIcon fontSize="small" />
         </IconButton>

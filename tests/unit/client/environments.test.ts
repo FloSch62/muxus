@@ -11,6 +11,8 @@ import {
   environmentBadges,
   environmentHostForManaged,
   environmentHostForProfile,
+  discoveryEnabledFor,
+  forgetDisconnectedHosts,
   liveConnectionFor,
   podWorkload,
 } from '../../../client/src/environments.js';
@@ -22,7 +24,8 @@ import {
   sshThroughHost,
 } from '../../../client/src/environment-sessions.js';
 import { environmentLaunchItems } from '../../../client/src/environment-launcher.js';
-import type { HostEnvironmentsEntry } from '../../../client/src/state/environments.js';
+import { useEnvironmentsStore, type HostEnvironmentsEntry } from '../../../client/src/state/environments.js';
+import { usePrefsStore } from '../../../client/src/state/prefs.js';
 import { useTabsStore, type TerminalTab } from '../../../client/src/state/tabs.js';
 
 const savedPve = {
@@ -80,6 +83,41 @@ describe('environment hosts', () => {
     });
     expect(liveConnectionFor(host)).toBe('c3');
   });
+
+  it('follows a host’s own discovery choice before the global setting', () => {
+    const host = environmentHostForManaged({
+      kind: 'profile',
+      entry: { ...savedPve, metadata: { discoverEnvironments: false } } as unknown as SavedHostProfile,
+    })!;
+    expect(host.discover).toBe(false);
+    usePrefsStore.setState({ discoverEnvironments: true });
+    expect(discoveryEnabledFor(host)).toBe(false);
+    expect(discoveryEnabledFor({ ...host, discover: undefined })).toBe(true);
+    usePrefsStore.setState({ discoverEnvironments: false });
+    expect(discoveryEnabledFor({ ...host, discover: true })).toBe(true);
+    expect(discoveryEnabledFor({ ...host, discover: undefined })).toBe(false);
+  });
+
+  it('forgets hosts nobody is connected to, except this computer and the one the panel shows', () => {
+    const pve = environmentHostForManaged({ kind: 'profile', entry: savedPve })!;
+    const build = environmentHostForManaged({ kind: 'ssh', entry: configHost })!;
+    const store = useEnvironmentsStore.getState();
+    for (const host of [{ key: 'local', label: 'This computer' }, pve, build]) {
+      store.update(host, { status: 'ready', environments: [{ kind: 'kubernetes', contexts: ['a'] }] });
+    }
+    useTabsStore.setState({
+      tabs: [
+        { id: 'a', status: 'connected', connId: 'c1', profile: { kind: 'ssh', target: 'x', profileId: 'p-pve' } },
+      ] as unknown as TerminalTab[],
+    });
+    forgetDisconnectedHosts(build.key);
+    expect(Object.keys(useEnvironmentsStore.getState().entries).sort()).toEqual(['local', 'profile:p-pve', 'ssh:build-01']);
+    forgetDisconnectedHosts();
+    expect(Object.keys(useEnvironmentsStore.getState().entries).sort()).toEqual(['local', 'profile:p-pve']);
+    useTabsStore.setState({ tabs: [] });
+    forgetDisconnectedHosts();
+    expect(Object.keys(useEnvironmentsStore.getState().entries)).toEqual(['local']);
+  });
 });
 
 describe('environmentBadges', () => {
@@ -104,7 +142,7 @@ describe('environmentBadges', () => {
       },
       { kind: 'containerlab', labs: [{ name: 'x', runtime: 'docker', nodes: [] }] },
       { kind: 'kubernetes', contexts: ['a', 'b'] },
-      { kind: 'libvirt', uri: 'qemu:///session', domains: [{ name: 'off', state: 'shut off' }] },
+      { kind: 'libvirt', domains: [{ name: 'off', state: 'shut off', uri: 'qemu:///session' }] },
     ];
     expect(environmentBadges(environments).map(({ kind, count }) => [kind, count])).toEqual([
       ['docker', 1],
@@ -117,7 +155,7 @@ describe('environmentBadges', () => {
     expect(
       environmentBadges([
         { kind: 'containers', runtime: 'podman', containers: [] },
-        { kind: 'libvirt', uri: 'qemu:///system', domains: [] },
+        { kind: 'libvirt', domains: [] },
         { kind: 'proxmox', guests: [] },
       ]),
     ).toEqual([]);

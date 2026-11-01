@@ -349,10 +349,33 @@ describe('discoverEnvironments', () => {
       { kind: 'kubernetes', version: 'v1.31.0', contexts: ['kind-dev', 'prod-eu'], currentContext: 'kind-dev' },
       {
         kind: 'libvirt',
-        uri: 'qemu:///system',
         version: '10.0.0',
-        domains: [{ name: 'runner', state: 'running', id: 1 }],
+        domains: [{ name: 'runner', state: 'running', id: 1, uri: 'qemu:///system' }],
       },
+    ]);
+  });
+
+  it('lists libvirt once, with the session VMs after the system ones', async () => {
+    const list = (rows: string) => ran(` Id   Name   State\n------\n${rows}`);
+    const libvirt = async (system: string, session: string) =>
+      (
+        await discoverEnvironments(
+          fakeRunner({ 'virsh-version': ran('10.0.0\n'), 'virsh-system': list(system), 'virsh-session': list(session) }),
+        )
+      ).environments.filter((environment) => environment.kind === 'libvirt');
+    expect(await libvirt(' 1    runner   running\n', ' -    desk     shut off\n')).toEqual([
+      {
+        kind: 'libvirt',
+        version: '10.0.0',
+        domains: [
+          { name: 'runner', state: 'running', id: 1, uri: 'qemu:///system' },
+          { name: 'desk', state: 'shut off', uri: 'qemu:///session' },
+        ],
+      },
+    ]);
+    // A session URI answered by the system daemon lists the same VMs: shown once.
+    expect(await libvirt(' 1    runner   running\n', ' 1    runner   running\n')).toEqual([
+      { kind: 'libvirt', version: '10.0.0', domains: [{ name: 'runner', state: 'running', id: 1, uri: 'qemu:///system' }] },
     ]);
   });
 
@@ -391,6 +414,12 @@ describe('actionArgv', () => {
       'docker',
       'restart',
       'web',
+    ]);
+    expect(actionArgv({ kind: 'container', runtime: 'podman', container: 'old-db', action: 'remove' })).toEqual([
+      'podman',
+      'rm',
+      '--force',
+      'old-db',
     ]);
     expect(actionArgv({ kind: 'compose', runtime: 'podman', project: 'shop', action: 'stop' })).toEqual([
       'podman',

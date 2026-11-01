@@ -181,7 +181,10 @@ the local terminal rows follow the same choice, and ++enter++ opens either way. 
 **Find containers, clusters and VMs** is on by default. Muxus asks `docker`, `podman`,
 `kubectl`, `pvesh` and `virsh` what runs on this computer when the window opens, and on
 an SSH host when a session to it connects, and counts it beside the host in the sidebar.
-Hosts that cannot run commands are never asked. See [Containers & VMs](environments.md).
+Hosts that cannot run commands are never asked, and a host's own editor can switch it on
+or off for that host. **Refresh containers, clusters and VMs** asks again while sessions
+stay connected: every 30 seconds by default, from every 15 seconds to every 5 minutes, or
+**Only when connecting**. See [Containers & VMs](environments.md).
 
 **Save new SSH hosts in** chooses where the host editor starts a new SSH host: **OpenSSH
 config** (the default) or **Muxus app data only**. The editor's **Save host in** field can

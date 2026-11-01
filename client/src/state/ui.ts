@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { SavedHostProfile, SshGateway, SshHostEntry } from '@muxus/shared';
 import type { CompareText } from '../compare-sources.js';
+import type { HostDraft } from '../components/host-editor/draft.js';
 import { openSettingsWindow } from '../window-management.js';
 
 /** Unified editor state for OpenSSH entries and Muxus-owned Telnet/serial/RDP/VNC hosts. */
@@ -15,6 +16,8 @@ export type HostEditorState =
       prefillGateway?: SshGateway;
       group?: string;
       kind?: SavedHostProfile['kind'];
+      /** A new SSH host already filled in, e.g. a container found on a host. */
+      draft?: HostDraft;
     }
   | { mode: 'duplicate'; entry: SshHostEntry }
   | { mode: 'edit'; entry: SshHostEntry }

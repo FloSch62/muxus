@@ -22,7 +22,7 @@ import {
   openInKubus,
 } from '../../environment-sessions.js';
 import type { HostEnvironmentsEntry } from '../../state/environments.js';
-import { ENVIRONMENT_KINDS } from './environment-icons.js';
+import { ENVIRONMENT_KINDS, EnvironmentLogo } from './environment-icons.js';
 import type { SectionProps } from './EnvironmentSections.js';
 import { LineAction, LineMenu, MONO, NoteLine, StatusDot, TreeLine, type Health } from './EnvironmentTree.js';
 
@@ -65,7 +65,7 @@ export function KubernetesSection({ environment, ...props }: SectionProps & { en
         depth={depth}
         open={open}
         onToggle={() => expansion.toggle(key, true)}
-        icon={<kind.Icon sx={{ fontSize: 17, color: kind.color }} />}
+        icon={<EnvironmentLogo kind="kubernetes" />}
         title={kind.label}
         detail={environment.version ? `kubectl ${environment.version}` : undefined}
         status={`${environment.contexts.length} context${environment.contexts.length === 1 ? '' : 's'}`}
@@ -132,18 +132,30 @@ function ContextLines({
     };
   }, [open, host.key, context]);
 
+  // What the shown list is of. Reading the same list again (a refresh) keeps it
+  // on screen until the new one arrives; another context or namespace starts over.
+  const shownFor = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (!open) return;
     let live = true;
-    setPods({ status: 'loading' });
+    const listKey = `${host.key}\n${context}\n${namespace}`;
+    const again = shownFor.current === listKey;
+    if (!again) {
+      shownFor.current = undefined;
+      setPods({ status: 'loading' });
+    }
     void (async () => {
       try {
         const source = await environmentSource(hostRef.current, true);
         if (!source) throw new Error(`${hostRef.current.label} is not connected`);
         const { pods: list } = await fetchKubernetesPods(source, context, namespace || undefined);
-        if (live) setPods({ status: 'ready', pods: list });
+        if (!live) return;
+        shownFor.current = listKey;
+        setPods({ status: 'ready', pods: list });
       } catch (error) {
-        if (live) setPods({ status: 'error', message: error instanceof Error ? error.message : String(error) });
+        if (!live) return;
+        shownFor.current = undefined;
+        setPods({ status: 'error', message: error instanceof Error ? error.message : String(error) });
       }
     })();
     return () => {
@@ -316,6 +328,16 @@ function PodLine({
         label={pod.name}
         detail={pod.restarts > 0 ? `${pod.restarts} restart${pod.restarts === 1 ? '' : 's'}` : undefined}
         status={pod.ready}
+        hint={[
+          ['Namespace', pod.namespace],
+          ['Phase', pod.reason ? `${pod.phase} (${pod.reason})` : pod.phase],
+          ['Ready', pod.ready],
+          ['Restarts', pod.restarts],
+          ['Node', pod.node],
+          ['Owner', pod.owner ? `${pod.owner.kind}/${pod.owner.name}` : undefined],
+          ['Containers', pod.containers.join(', ')],
+          ['Created', pod.createdAt],
+        ]}
         dim={health === 'off'}
         onOpen={running ? () => shell() : () => logs()}
         actions={

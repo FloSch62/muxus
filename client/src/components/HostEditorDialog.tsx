@@ -50,6 +50,7 @@ import {
   draftToRequest,
   draftToSavedSshInput,
   identityAgentForDetection,
+  environmentDiscoveryFromDraft,
   type HostDraft,
 } from './host-editor/draft.js';
 import { EditorShell, type EditorSectionDef } from './host-editor/EditorShell.js';
@@ -195,7 +196,7 @@ function editorKind(state: OpenState): ConnectionKind {
 
 function stateIdentity(state: OpenState): string {
   if (state.mode === 'new') {
-    return `new:${state.prefillTarget ?? ''}:${state.group ?? ''}`;
+    return `new:${state.prefillTarget ?? ''}:${state.group ?? ''}:${state.draft?.aliasText ?? ''}`;
   }
   if (state.mode === 'edit-profile' || state.mode === 'duplicate-profile') {
     return `${state.mode}:${state.entry.id}`;
@@ -205,6 +206,7 @@ function stateIdentity(state: OpenState): string {
 
 function initialSshDraft(state: OpenState): HostDraft {
   if (state.mode === 'new') {
+    if (state.draft) return state.draft;
     return blankDraft(
       state.prefillTarget,
       state.group,
@@ -366,6 +368,7 @@ function SshHostEditorContent({
         ...terminalInputModesPatch(draft.inputModes),
         disableSftp: draft.disableSftp,
         consoleCompatibility: draft.consoleCompatibility,
+        discoverEnvironments: environmentDiscoveryFromDraft(draft.discoverEnvironments),
         keywordHighlights:
           highlights.inheritGlobal &&
           !highlights.profileId &&
@@ -396,6 +399,7 @@ function SshHostEditorContent({
         ...terminalInputModesPatch(draft.inputModes),
         disableSftp: draft.disableSftp,
         consoleCompatibility: draft.consoleCompatibility,
+        discoverEnvironments: environmentDiscoveryFromDraft(draft.discoverEnvironments),
         keywordHighlights:
           highlights.inheritGlobal &&
           !highlights.profileId &&
@@ -521,7 +525,8 @@ function SshHostEditorContent({
       count:
         draft.extras.length +
         (draft.disableSftp ? 1 : 0) +
-        (draft.consoleCompatibility ? 1 : 0),
+        (draft.consoleCompatibility ? 1 : 0) +
+        (draft.discoverEnvironments === 'default' ? 0 : 1),
     },
   ];
 

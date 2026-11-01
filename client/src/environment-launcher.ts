@@ -99,16 +99,16 @@ export function environmentLaunchItems(entries: readonly HostEnvironmentsEntry[]
           for (const domain of environment.domains) {
             if (domain.state !== 'running') continue;
             items.push({
-              id: `environment:${host.key}:libvirt:${environment.uri ?? ''}:${domain.name}`,
+              id: `environment:${host.key}:libvirt:${domain.uri ?? ''}:${domain.name}`,
               kind: 'libvirt',
               label: domain.name,
-              detail: `${where} › libvirt VM · serial console`,
+              detail: `${where} › libvirt VM${domain.uri === 'qemu:///session' ? ' (user session)' : ''} · serial console`,
               keywords: ['libvirt', 'virsh', 'kvm', 'qemu', 'vm', where],
               open: () =>
                 void openEnvironmentTarget(host, {
                   kind: 'libvirt-console',
                   domain: domain.name,
-                  uri: environment.uri,
+                  uri: domain.uri,
                 }),
             });
           }

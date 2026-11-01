@@ -8,6 +8,7 @@ import {
   type EnvironmentProblem,
   type HostEnvironment,
   type KubernetesPod,
+  type LibvirtDomain,
   type LibvirtEnvironment,
   type LibvirtUri,
 } from '@muxus/shared';
@@ -182,7 +183,7 @@ export async function discoverEnvironments(run: ProbeRunner): Promise<DiscoveryR
 
 /**
  * The system daemon is where most hypervisor hosts keep their VMs; a user's
- * own session daemon counts only when it holds any. A virsh that reaches
+ * own session daemon adds its VMs to the same list. A virsh that reaches
  * neither is a client without a daemon, not a problem worth reporting,
  * unless it was refused.
  */
@@ -191,24 +192,26 @@ function libvirtEnvironments(
   add: (entry: EnvironmentProblem | undefined) => void,
 ): LibvirtEnvironment[] {
   const version = parseCliVersion(`version ${probeOutput(results.get('virsh-version')) ?? ''}`);
-  const environments: LibvirtEnvironment[] = [];
   const system = probeOutput(results.get('virsh-system'));
-  if (system !== undefined) {
-    environments.push({ kind: 'libvirt', uri: 'qemu:///system', version, domains: parseVirshList(system) });
-  } else {
+  if (system === undefined) {
     const failure = probeFailure(results.get('virsh-system'));
     if (failure && /denied|authenticat|polkit|authoriz/i.test(failure)) {
       add({ provider: 'libvirt', message: failure });
     }
   }
-  const session = probeOutput(results.get('virsh-session'));
-  if (session !== undefined) {
-    const domains = parseVirshList(session);
-    if (domains.length > 0) {
-      environments.push({ kind: 'libvirt', uri: 'qemu:///session', version, domains });
-    }
-  }
-  return environments;
+  const systemDomains = system === undefined ? [] : parseVirshList(system);
+  const sessionOutput = probeOutput(results.get('virsh-session'));
+  const sessionDomains = sessionOutput === undefined ? [] : parseVirshList(sessionOutput);
+  // Some setups answer the session URI with the system daemon: the same VMs twice.
+  const systemNames = new Set(systemDomains.map((domain) => domain.name));
+  const duplicate =
+    sessionDomains.length === systemDomains.length && sessionDomains.every((domain) => systemNames.has(domain.name));
+  const domains: LibvirtDomain[] = [
+    ...systemDomains.map((domain) => ({ ...domain, uri: 'qemu:///system' as const })),
+    ...(duplicate ? [] : sessionDomains.map((domain) => ({ ...domain, uri: 'qemu:///session' as const }))),
+  ];
+  if (system === undefined && domains.length === 0) return [];
+  return [{ kind: 'libvirt', version, domains }];
 }
 
 function contextArgs(context: string | undefined): string[] {
@@ -364,6 +367,8 @@ export function actionArgv(action: EnvironmentAction): string[] {
   switch (action.kind) {
     case 'container':
       if (!CONTAINER_NAME_PATTERN.test(action.container)) throw new HttpProblem(400, 'invalid container name');
+      // A running container is stopped first; volumes it named are kept.
+      if (action.action === 'remove') return [action.runtime, 'rm', '--force', action.container];
       return [action.runtime, action.action, action.container];
     case 'compose':
       if (!COMPOSE_PROJECT.test(action.project)) throw new HttpProblem(400, 'invalid compose project');

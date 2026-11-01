@@ -177,6 +177,10 @@ For an otherwise normal SSH server that only lacks SFTP or cannot use Muxus shel
 allocation intact. This remains separate from console compatibility so existing disabled-SFTP
 hosts keep their previous session behavior.
 
+**Find containers, clusters and VMs** decides for this host whether Muxus lists its
+[containers and VMs](environments.md) while a session is connected: **Like Settings**
+(the default) follows the global switch in Settings → Behavior, **On** and **Off** override it.
+
 Any other keyword OpenSSH understands is entered here as free-form option/value pairs. The
 panel shows the **exact block** that will be written.
 

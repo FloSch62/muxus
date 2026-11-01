@@ -3,6 +3,7 @@ import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
+import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
 import Switch from '@mui/material/Switch';
 import TextField from '@mui/material/TextField';
@@ -14,7 +15,8 @@ import SettingsEthernetIcon from '@mui/icons-material/SettingsEthernet';
 import { DIAL_TIME_KEYWORDS } from '@muxus/shared';
 import { useAppInfo } from '../../api/queries.js';
 import { applyLegacyPreset, legacyPresetState, unsupportedEntries } from './advanced-options.js';
-import type { HostDraft } from './draft.js';
+import type { EnvironmentDiscoveryDraft, HostDraft } from './draft.js';
+import { usePrefsStore } from '../../state/prefs.js';
 
 /**
  * Everything ssh_config knows that Muxus doesn't model as a field: free-form
@@ -38,6 +40,7 @@ export function AdvancedSection({
   configBacked?: boolean;
 }) {
   const sshAlgorithms = useAppInfo().data?.sshAlgorithms;
+  const discoverByDefault = usePrefsStore((state) => state.discoverEnvironments);
   const legacyState = legacyPresetState(draft.extras);
 
   const update = (i: number, patch: Partial<{ keyword: string; value: string }>) =>
@@ -71,6 +74,26 @@ export function AdvancedSection({
         <Typography variant="body2" color="textSecondary">
           Keeps SendEnv/SetEnv and normal TTY behavior. Console mode already disables SFTP and
           shell integration, regardless of this setting.
+        </Typography>
+      </Stack>
+
+      <Stack spacing={1}>
+        <Typography variant="subtitle2">Containers & VMs</Typography>
+        <TextField
+          select
+          size="small"
+          label="Find containers, clusters and VMs"
+          value={draft.discoverEnvironments}
+          onChange={(event) => set({ discoverEnvironments: event.target.value as EnvironmentDiscoveryDraft })}
+          sx={{ maxWidth: 360 }}
+        >
+          <MenuItem value="default">Like Settings ({discoverByDefault ? 'on' : 'off'})</MenuItem>
+          <MenuItem value="on">On</MenuItem>
+          <MenuItem value="off">Off</MenuItem>
+        </TextField>
+        <Typography variant="body2" color="textSecondary">
+          Runs docker, podman, kubectl, pvesh and virsh on this host while a session to it is connected,
+          to list what it runs. Off never runs them here.
         </Typography>
       </Stack>
 

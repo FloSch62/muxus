@@ -11,6 +11,8 @@ export interface EnvironmentHost {
   /** How sessions on this host connect; absent for this computer. */
   profile?: SshProfile;
   color?: string;
+  /** The host's own choice to be read on connect; absent follows Settings. */
+  discover?: boolean;
 }
 
 export type EnvironmentStatus =

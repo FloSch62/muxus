@@ -25,9 +25,6 @@ import { usePrefsStore } from './state/prefs.js';
 import { useTabsStore } from './state/tabs.js';
 import { useUiStore } from './state/ui.js';
 
-/** An automatic reading is this old before connecting again reads the host anew. */
-export const AUTO_REFRESH_MS = 5 * 60_000;
-
 export const LOCAL_ENVIRONMENT_HOST: EnvironmentHost = {
   key: LOCAL_ENVIRONMENT_KEY,
   label: 'This computer',
@@ -41,6 +38,7 @@ export function environmentHostForManaged(host: ManagedHost): EnvironmentHost | 
       label: managedHostDisplayName(host),
       profile: { kind: 'ssh', target: host.entry.alias },
       color: host.entry.metadata?.color,
+      discover: host.entry.metadata?.discoverEnvironments,
     };
   }
   if (host.entry.profile.kind !== 'ssh') return undefined;
@@ -49,6 +47,7 @@ export function environmentHostForManaged(host: ManagedHost): EnvironmentHost | 
     label: managedHostDisplayName(host),
     profile: { ...host.entry.profile, profileId: host.entry.id },
     color: host.entry.metadata.color,
+    discover: host.entry.metadata.discoverEnvironments,
   };
 }
 
@@ -92,6 +91,25 @@ export function setEnvironmentDialHandlers(handlers: DialHandlers | undefined): 
 export function releaseEnvironmentDials(): void {
   for (const dial of dials.values()) dial.close();
   dials.clear();
+  forgetDisconnectedHosts();
+}
+
+/** Whether Muxus can read the host now without connecting: this computer, a connected tab, or the panel's own connection. */
+export function hostConnected(host: EnvironmentHost): boolean {
+  return !host.profile || dials.has(host.key) || liveConnectionFor(host) !== undefined;
+}
+
+/**
+ * Drop what is known about hosts nobody is connected to, so nothing is shown
+ * for them. `keep` is the host the panel is open on, which may be connecting.
+ */
+export function forgetDisconnectedHosts(keep?: string): void {
+  const store = useEnvironmentsStore.getState();
+  for (const key of store.order) {
+    const entry = store.entries[key];
+    if (!entry || key === keep || reading.has(key) || hostConnected(entry)) continue;
+    store.remove(key);
+  }
 }
 
 /**
@@ -123,11 +141,15 @@ function dropDial(host: EnvironmentHost, connId: string): void {
 
 const reading = new Map<string, Promise<void>>();
 
+interface ReadOptions {
+  automatic: boolean;
+  interactive: boolean;
+  /** A background refresh: keep showing the last result until the new one arrives. */
+  quiet?: boolean;
+}
+
 /** Read what a host runs and store it. Concurrent requests for one host share a reading. */
-export function discoverHost(
-  host: EnvironmentHost,
-  options: { automatic: boolean; interactive: boolean },
-): Promise<void> {
+export function discoverHost(host: EnvironmentHost, options: ReadOptions): Promise<void> {
   const pending = reading.get(host.key);
   if (pending) return pending;
   const run = readHost(host, options).finally(() => reading.delete(host.key));
@@ -135,15 +157,12 @@ export function discoverHost(
   return run;
 }
 
-async function readHost(
-  host: EnvironmentHost,
-  { automatic, interactive }: { automatic: boolean; interactive: boolean },
-): Promise<void> {
+async function readHost(host: EnvironmentHost, { automatic, interactive, quiet }: ReadOptions): Promise<void> {
   const store = useEnvironmentsStore.getState();
   const existing = store.entries[host.key];
   // An explicit request keeps the host listed even if it was found automatically.
   const keepAutomatic = automatic && (existing?.automatic ?? true);
-  store.update(host, { status: 'loading', message: undefined, automatic: keepAutomatic });
+  store.update(host, quiet && existing ? { automatic: keepAutomatic } : { status: 'loading', message: undefined, automatic: keepAutomatic });
   for (let attempt = 0; attempt < 2; attempt++) {
     let source: EnvironmentSource | undefined;
     try {
@@ -187,9 +206,24 @@ export function refreshHost(entry: HostEnvironmentsEntry): Promise<void> {
   return discoverHost(entry, { automatic: false, interactive: true });
 }
 
-/** Whether automatic discovery is switched on. */
-export function environmentDiscoveryEnabled(): boolean {
-  return usePrefsStore.getState().discoverEnvironments;
+/** Whether a host is read without being asked: its own choice, else the global setting. */
+export function discoveryEnabledFor(host: EnvironmentHost): boolean {
+  return host.discover ?? usePrefsStore.getState().discoverEnvironments;
+}
+
+/**
+ * Read every host that can be read without connecting again, quietly. Hosts
+ * that run no commands, and hosts found automatically whose discovery is now
+ * off, are left alone.
+ */
+export function refreshConnectedHosts(): void {
+  const { entries, order } = useEnvironmentsStore.getState();
+  for (const key of order) {
+    const entry = entries[key];
+    if (!entry || entry.status === 'unsupported' || entry.status === 'loading' || !hostConnected(entry)) continue;
+    if (entry.automatic && !discoveryEnabledFor(entry)) continue;
+    void discoverHost(entry, { automatic: entry.automatic, interactive: false, quiet: true });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -259,11 +293,7 @@ export function environmentBadges(environments: readonly HostEnvironment[]): Env
       case 'libvirt': {
         if (environment.domains.length === 0) break;
         const running = environment.domains.filter((domain) => domain.state === 'running').length;
-        const existing = badges.find((badge) => badge.kind === 'libvirt');
-        const count = (existing?.count ?? 0) + running;
-        const label = `libvirt: ${plural(count, 'running VM')}`;
-        if (existing) Object.assign(existing, { count, label });
-        else badges.push({ kind: 'libvirt', count, label });
+        badges.push({ kind: 'libvirt', count: running, label: `libvirt: ${plural(running, 'running VM')}` });
         break;
       }
     }

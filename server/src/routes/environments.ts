@@ -55,7 +55,7 @@ const actionSchema = z.discriminatedUnion('kind', [
     kind: z.literal('container'),
     runtime: z.enum(CONTAINER_RUNTIMES),
     container: z.string().regex(CONTAINER_NAME_PATTERN),
-    action: z.enum(['start', 'stop', 'restart', 'pause', 'unpause']),
+    action: z.enum(['start', 'stop', 'restart', 'pause', 'unpause', 'remove']),
   }),
   z.object({
     kind: z.literal('compose'),

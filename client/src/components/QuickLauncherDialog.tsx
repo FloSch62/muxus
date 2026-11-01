@@ -100,7 +100,7 @@ import { showErrorToast, showToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
 import { useEnvironmentsStore } from '../state/environments.js';
 import { environmentLaunchItems, type EnvironmentLaunchItem } from '../environment-launcher.js';
-import { ENVIRONMENT_KINDS } from './environments/environment-icons.js';
+import { ENVIRONMENT_KINDS, EnvironmentLogo } from './environments/environment-icons.js';
 import { useWorkspacesStore } from '../state/workspaces.js';
 import { canSendBreak, supportsBreak } from '../terminal/send-break.js';
 import { formatTimestamp } from '../time-format.js';
@@ -1291,8 +1291,7 @@ function ResultIcon({ result }: { result: LauncherResult }) {
     );
   }
   if (result.kind === 'environment') {
-    const { Icon, color } = ENVIRONMENT_KINDS[result.environment.kind];
-    return <Icon {...props} sx={{ color }} />;
+    return <EnvironmentLogo kind={result.environment.kind} size={20} />;
   }
   if (result.kind === 'keymap') return <KeyboardOutlinedIcon {...props} />;
   if (result.action === 'environments') return <ViewInArOutlinedIcon {...props} />;

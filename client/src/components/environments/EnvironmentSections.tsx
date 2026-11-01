@@ -1,5 +1,4 @@
 import Box from '@mui/material/Box';
-import GridViewOutlinedIcon from '@mui/icons-material/GridViewOutlined';
 import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
 import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined';
 import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
@@ -15,6 +14,7 @@ import {
   type ContainerlabLab,
   type ContainerRuntimeEnvironment,
   type EnvironmentAction,
+  type EnvironmentTarget,
   type LibvirtDomain,
   type LibvirtEnvironment,
   type ProxmoxEnvironment,
@@ -26,22 +26,22 @@ import {
   fetchProxmoxAddresses,
   type EnvironmentSource,
 } from '../../api/environments.js';
+import { useSavedHostProfiles, useSshConfig } from '../../api/queries.js';
 import { copyToClipboard } from '../../clipboard.js';
+import { addAddressToHosts, addEnvironmentToHosts, type HostDirectory } from '../../environment-hosts.js';
 import { environmentSource, isRunning, plainContainers } from '../../environments.js';
 import {
-  containerlabNodeEntry,
   nodeUsesSsh,
   openContainerlabNode,
   openEnvironmentTarget,
   openHostPort,
-  openSessionGrid,
   openSshToAddress,
   openVncOnHost,
   portScheme,
 } from '../../environment-sessions.js';
 import type { HostEnvironmentsEntry } from '../../state/environments.js';
 import { showToast } from '../../state/toast.js';
-import { ENVIRONMENT_KINDS } from './environment-icons.js';
+import { ENVIRONMENT_KINDS, EnvironmentLogo } from './environment-icons.js';
 import {
   ChipRow,
   LineAction,
@@ -65,6 +65,31 @@ export interface SectionProps {
   expansion: Expansion;
   /** Run a lifecycle action, asking first when `confirm` says so, then read the host again. */
   act: (action: EnvironmentAction, confirm?: { title: string; description: string }) => void;
+}
+
+/** The sidebar's hosts, for copying a parent host's connection settings. */
+function useHostDirectory(): HostDirectory {
+  const { data: config } = useSshConfig();
+  const { data: saved } = useSavedHostProfiles();
+  return { sshHosts: config?.hosts ?? [], savedProfiles: saved?.profiles ?? [] };
+}
+
+/**
+ * Keep a guest as a sidebar host: SSH to the address it reports, through the
+ * hypervisor, or its console when it reports none.
+ */
+async function addGuestToHosts(
+  host: HostEnvironmentsEntry,
+  hosts: HostDirectory,
+  name: string,
+  addresses: (source: EnvironmentSource) => Promise<{ addresses: string[] }>,
+  console: EnvironmentTarget,
+): Promise<void> {
+  const result = await withSource(host, addresses);
+  if (!result) return;
+  const address = result.addresses[0];
+  if (address) addAddressToHosts(host, hosts, { name, address });
+  else addEnvironmentToHosts(host, hosts, name, console);
 }
 
 function matches(filter: string, ...values: Array<string | undefined>): boolean {
@@ -152,7 +177,7 @@ export function ContainersSection({
         depth={depth}
         open={open}
         onToggle={() => expansion.toggle(key, true)}
-        icon={<kind.Icon sx={{ fontSize: 17, color: kind.color }} />}
+        icon={<EnvironmentLogo kind={environment.runtime} />}
         title={kind.label}
         detail={environment.version ? `v${environment.version}` : undefined}
         status={`${running} / ${all.length} running`}
@@ -235,6 +260,7 @@ function ContainerLine({
   const { host, depth, act } = props;
   const { runtime } = environment;
   const up = isRunning(container.state);
+  const hosts = useHostDirectory();
   const shell = (shellName?: 'bash' | 'sh') =>
     openEnvironmentTarget(host, {
       kind: 'container',
@@ -243,12 +269,17 @@ function ContainerLine({
       ...(shellName ? { shell: shellName } : {}),
     });
   const logs = () => openEnvironmentTarget(host, { kind: 'container-logs', runtime, container: container.name });
-  const lifecycle = (action: 'start' | 'stop' | 'restart' | 'pause' | 'unpause') =>
+  const lifecycle = (action: 'start' | 'stop' | 'restart' | 'pause' | 'unpause' | 'remove') =>
     act(
       { kind: 'container', runtime, container: container.name, action },
       action === 'stop'
         ? { title: `Stop ${container.name}?`, description: 'Its processes are asked to exit.' }
-        : undefined,
+        : action === 'remove'
+          ? {
+              title: `Remove ${container.name}?`,
+              description: `${up ? 'The container is stopped and deleted' : 'The container is deleted'}, with what it wrote outside its volumes. Its image and named volumes are kept.`,
+            }
+          : undefined,
     );
   const published = container.ports.filter((port) => port.hostPort && port.protocol === 'tcp');
   const menu: MenuEntry[] = [
@@ -268,12 +299,18 @@ function ContainerLine({
         ]
       : [{ label: 'Start', onClick: () => lifecycle('start'), divider: true }]),
     {
+      label: 'Add to hosts',
+      onClick: () => addEnvironmentToHosts(host, hosts, container.name, { kind: 'container', runtime, container: container.name }),
+    },
+    {
       label: 'Copy exec command',
       onClick: () =>
         void copyToClipboard(
           environmentCommandLine({ kind: 'container', runtime, container: container.name }),
         ),
+      divider: true,
     },
+    { label: 'Remove…', onClick: () => lifecycle('remove'), destructive: true },
   ];
 
   return (
@@ -284,6 +321,22 @@ function ContainerLine({
         title={container.name}
         detail={<Box component="span" sx={MONO}>{container.image}</Box>}
         status={container.status}
+        hint={[
+          ['Image', container.image],
+          ['Status', container.status],
+          ['Compose', container.composeProject],
+          ['ID', container.id.slice(0, 12)],
+          [
+            'Ports',
+            container.ports
+              .map((port) =>
+                port.hostPort
+                  ? `${port.hostIp ? `${port.hostIp}:` : ''}${port.hostPort}→${port.containerPort}/${port.protocol}`
+                  : `${port.containerPort}/${port.protocol}`,
+              )
+              .join(', '),
+          ],
+        ]}
         dim={!up}
         onOpen={up ? () => shell() : logs}
         actions={
@@ -334,7 +387,7 @@ export function ContainerlabSection({
         depth={depth}
         open={open}
         onToggle={() => expansion.toggle(key, true)}
-        icon={<kind.Icon sx={{ fontSize: 17, color: kind.color }} />}
+        icon={<EnvironmentLogo kind="containerlab" />}
         title={kind.label}
         status={`${environment.labs.length} lab${environment.labs.length === 1 ? '' : 's'}`}
       />
@@ -356,6 +409,7 @@ function LabLines({
   const key = `${host.key}/containerlab/${lab.name}`;
   const open = expansion.isOpen(key, true);
   const running = lab.nodes.filter((node) => isRunning(node.state));
+  const hosts = useHostDirectory();
   const labMatches = matches(filter, lab.name);
   const matching = lab.nodes.filter((node) => labMatches || matches(filter, node.name, node.kind, node.ipv4));
   const nodes = matching.filter((node) => showStopped || isRunning(node.state));
@@ -370,6 +424,11 @@ function LabLines({
         title={lab.name}
         detail={file}
         status={`${running.length} / ${lab.nodes.length} nodes`}
+        hint={[
+          ['Topology', lab.topologyFile],
+          ['Owner', lab.owner],
+          ['Nodes', `${running.length} of ${lab.nodes.length} running`],
+        ]}
         emphasis
         actions={
           <>
@@ -378,18 +437,6 @@ function LabLines({
               Icon={HubOutlinedIcon}
               disabled={!lab.topologyFile}
               onClick={() => onTopology(lab)}
-            />
-            <LineAction
-              label="Open all nodes side by side, typing into all of them"
-              Icon={GridViewOutlinedIcon}
-              disabled={running.length === 0}
-              onClick={() =>
-                void openSessionGrid(
-                  lab.name,
-                  running.map((node) => containerlabNodeEntry(host, lab, node)),
-                  { multiExec: true },
-                )
-              }
             />
           </>
         }
@@ -406,6 +453,14 @@ function LabLines({
                 title={node.name}
                 detail={node.kind}
                 status={node.ipv4 ? <Box component="span" sx={MONO}>{node.ipv4}</Box> : node.state}
+                hint={[
+                  ['Kind', node.kind],
+                  ['Image', node.image],
+                  ['State', node.state],
+                  ['IPv4', node.ipv4],
+                  ['IPv6', node.ipv6],
+                  ['Container', node.container],
+                ]}
                 dim={!up}
                 onOpen={up ? () => openContainerlabNode(host, lab, node) : undefined}
                 actions={
@@ -451,6 +506,22 @@ function LabLines({
                         ...(node.ipv4
                           ? [{ label: 'Copy management address', onClick: () => void copyToClipboard(node.ipv4!) }]
                           : []),
+                        {
+                          label: 'Add to hosts',
+                          onClick: () =>
+                            ssh
+                              ? addAddressToHosts(host, hosts, {
+                                  name: `${lab.name}-${node.name}`,
+                                  address: node.ipv4!,
+                                  user: 'admin',
+                                  group: lab.name,
+                                })
+                              : addEnvironmentToHosts(host, hosts, `${lab.name}-${node.name}`, {
+                                  kind: 'container',
+                                  runtime: lab.runtime,
+                                  container: node.container,
+                                }),
+                        },
                       ]}
                     />
                   </>
@@ -487,6 +558,7 @@ export function ProxmoxSection({ environment, ...props }: SectionProps & { envir
   const guests = environment.guests.filter((guest) => matches(filter, guest.name, String(guest.vmid)));
   const visible = guests.filter((guest) => showStopped || (guest.status === 'running' && !guest.template));
   const running = environment.guests.filter((guest) => guest.status === 'running').length;
+  const hosts = useHostDirectory();
   if (filter && guests.length === 0) return null;
 
   const power = (guest: ProxmoxGuest, action: 'start' | 'shutdown' | 'reboot' | 'stop') =>
@@ -505,7 +577,7 @@ export function ProxmoxSection({ environment, ...props }: SectionProps & { envir
         depth={depth}
         open={open}
         onToggle={() => expansion.toggle(key, true)}
-        icon={<kind.Icon sx={{ fontSize: 17, color: kind.color }} />}
+        icon={<EnvironmentLogo kind="proxmox" />}
         title={kind.label}
         detail={environment.version}
         status={`${running} / ${environment.guests.length} running`}
@@ -541,6 +613,13 @@ export function ProxmoxSection({ environment, ...props }: SectionProps & { envir
                 title={guest.name}
                 detail={`${guest.type === 'qemu' ? 'VM' : 'CT'} ${guest.vmid}${guest.node ? ` · ${guest.node}` : ''}`}
                 status={load}
+                hint={[
+                  ['Type', guest.type === 'qemu' ? 'Virtual machine' : 'Container (LXC)'],
+                  ['ID', guest.vmid],
+                  ['Node', guest.node],
+                  ['Status', guest.template ? 'template' : guest.status],
+                  ['Load', up && guest.maxcpu ? load : undefined],
+                ]}
                 dim={!up}
                 onOpen={up ? console : undefined}
                 actions={
@@ -560,17 +639,34 @@ export function ProxmoxSection({ environment, ...props }: SectionProps & { envir
                     ) : null}
                     <LineMenu
                       label={`More actions for ${guest.name}`}
-                      entries={
-                        up
+                      entries={[
+                        ...(up
                           ? [
                               { label: 'Reboot', onClick: () => power(guest, 'reboot') },
                               { label: 'Shut down…', onClick: () => power(guest, 'shutdown') },
-                              { label: 'Stop (force)…', onClick: () => power(guest, 'stop'), destructive: true },
+                              { label: 'Stop (force)…', onClick: () => power(guest, 'stop'), destructive: true, divider: true },
                             ]
                           : guest.template
                             ? []
-                            : [{ label: 'Start', onClick: () => power(guest, 'start') }]
-                      }
+                            : [{ label: 'Start', onClick: () => power(guest, 'start'), divider: true }]),
+                        ...(guest.template
+                          ? []
+                          : [
+                              {
+                                label: 'Add to hosts',
+                                onClick: () =>
+                                  void addGuestToHosts(
+                                    host,
+                                    hosts,
+                                    guest.name,
+                                    (source) => fetchProxmoxAddresses(source, guest.type, guest.vmid),
+                                    guest.type === 'lxc'
+                                      ? { kind: 'proxmox-lxc', vmid: guest.vmid }
+                                      : { kind: 'proxmox-serial', vmid: guest.vmid },
+                                  ),
+                              },
+                            ]),
+                      ]}
                     />
                   </>
                 }
@@ -590,17 +686,17 @@ export function ProxmoxSection({ environment, ...props }: SectionProps & { envir
 export function LibvirtSection({ environment, ...props }: SectionProps & { environment: LibvirtEnvironment }) {
   const { host, depth, filter, showStopped, expansion, act } = props;
   const kind = ENVIRONMENT_KINDS.libvirt;
-  const key = `${host.key}/libvirt/${environment.uri ?? 'default'}`;
+  const key = `${host.key}/libvirt`;
   const open = expansion.isOpen(key, true);
   const domains = environment.domains.filter((domain) => matches(filter, domain.name));
   const visible = domains.filter((domain) => showStopped || domain.state === 'running');
   const running = environment.domains.filter((domain) => domain.state === 'running').length;
+  const hosts = useHostDirectory();
   if (filter && domains.length === 0) return null;
-  const { uri } = environment;
 
   const power = (domain: LibvirtDomain, action: 'start' | 'shutdown' | 'reboot' | 'destroy') =>
     act(
-      { kind: 'libvirt', uri, domain: domain.name, action },
+      { kind: 'libvirt', uri: domain.uri, domain: domain.name, action },
       action === 'destroy'
         ? { title: `Force off ${domain.name}?`, description: 'The VM is switched off without shutting down.' }
         : action === 'shutdown'
@@ -608,7 +704,7 @@ export function LibvirtSection({ environment, ...props }: SectionProps & { envir
           : undefined,
     );
   const vnc = async (domain: LibvirtDomain) => {
-    const result = await withSource(host, (source) => fetchLibvirtDisplay(source, uri, domain.name));
+    const result = await withSource(host, (source) => fetchLibvirtDisplay(source, domain.uri, domain.name));
     if (!result) return;
     if (!result.vnc) {
       showToast('warning', `${domain.name} has no VNC display.`);
@@ -617,7 +713,7 @@ export function LibvirtSection({ environment, ...props }: SectionProps & { envir
     openVncOnHost(host, result.vnc, domain.name);
   };
   const ssh = async (domain: LibvirtDomain) => {
-    const result = await withSource(host, (source) => fetchLibvirtAddresses(source, uri, domain.name));
+    const result = await withSource(host, (source) => fetchLibvirtAddresses(source, domain.uri, domain.name));
     if (!result) return;
     const address = result.addresses[0];
     if (!address) {
@@ -633,22 +729,28 @@ export function LibvirtSection({ environment, ...props }: SectionProps & { envir
         depth={depth}
         open={open}
         onToggle={() => expansion.toggle(key, true)}
-        icon={<kind.Icon sx={{ fontSize: 17, color: kind.color }} />}
+        icon={<EnvironmentLogo kind="libvirt" />}
         title={kind.label}
-        detail={uri}
+        detail={environment.version ? `libvirt ${environment.version}` : undefined}
         status={`${running} / ${environment.domains.length} running`}
       />
       {open
         ? visible.map((domain) => {
             const up = domain.state === 'running';
-            const console = () => openEnvironmentTarget(host, { kind: 'libvirt-console', domain: domain.name, uri });
+            const console = () => openEnvironmentTarget(host, { kind: 'libvirt-console', domain: domain.name, uri: domain.uri });
             return (
               <TreeLine
-                key={domain.name}
+                key={`${domain.uri ?? ''}:${domain.name}`}
                 depth={depth + 1}
                 icon={<StatusDot health={up ? 'up' : domain.state === 'paused' ? 'warn' : 'off'} />}
                 title={domain.name}
+                detail={domain.uri === 'qemu:///session' ? 'user session' : undefined}
                 status={domain.state}
+                hint={[
+                  ['State', domain.state],
+                  ['Connection', domain.uri],
+                  ['ID', domain.id],
+                ]}
                 dim={!up}
                 onOpen={up ? console : undefined}
                 actions={
@@ -660,13 +762,26 @@ export function LibvirtSection({ environment, ...props }: SectionProps & { envir
                     <LineMenu
                       label={`More actions for ${domain.name}`}
                       entries={
-                        up
-                          ? [
-                              { label: 'Reboot', onClick: () => power(domain, 'reboot') },
-                              { label: 'Shut down…', onClick: () => power(domain, 'shutdown') },
-                              { label: 'Force off…', onClick: () => power(domain, 'destroy'), destructive: true },
-                            ]
-                          : [{ label: 'Start', onClick: () => power(domain, 'start') }]
+                        [
+                          ...(up
+                            ? [
+                                { label: 'Reboot', onClick: () => power(domain, 'reboot') },
+                                { label: 'Shut down…', onClick: () => power(domain, 'shutdown') },
+                                { label: 'Force off…', onClick: () => power(domain, 'destroy'), destructive: true, divider: true },
+                              ]
+                            : [{ label: 'Start', onClick: () => power(domain, 'start'), divider: true }]),
+                          {
+                            label: 'Add to hosts',
+                            onClick: () =>
+                              void addGuestToHosts(
+                                host,
+                                hosts,
+                                domain.name,
+                                (source) => fetchLibvirtAddresses(source, domain.uri, domain.name),
+                                { kind: 'libvirt-console', domain: domain.name, uri: domain.uri },
+                              ),
+                          },
+                        ]
                       }
                     />
                   </>

@@ -2,11 +2,12 @@ import { memo, useMemo } from 'react';
 import Box from '@mui/material/Box';
 import ButtonBase from '@mui/material/ButtonBase';
 import Tooltip from '@mui/material/Tooltip';
+import { alpha } from '@mui/material/styles';
 import { environmentBadges } from '../../environments.js';
 import { useEnvironmentsStore } from '../../state/environments.js';
 import { useUiStore } from '../../state/ui.js';
 import { loadEnvironmentsPanel } from '../../lazy-features.js';
-import { ENVIRONMENT_KINDS } from './environment-icons.js';
+import { ENVIRONMENT_KINDS, EnvironmentLogo } from './environment-icons.js';
 
 /**
  * What a host runs, as small counts at the end of its sidebar row: running
@@ -25,7 +26,7 @@ export const EnvironmentBadges = memo(function EnvironmentBadges({ hostKey }: { 
   return (
     <Box sx={{ display: 'flex', gap: 0.5, flexShrink: 0 }}>
       {badges.map((badge) => {
-        const { Icon, color } = ENVIRONMENT_KINDS[badge.kind];
+        const { color } = ENVIRONMENT_KINDS[badge.kind];
         return (
           <Tooltip key={badge.kind} title={badge.label} disableInteractive>
             <ButtonBase
@@ -45,15 +46,15 @@ export const EnvironmentBadges = memo(function EnvironmentBadges({ hostKey }: { 
                 borderRadius: 0.75,
                 border: 1,
                 borderColor: open ? color : 'divider',
-                bgcolor: open ? color : 'transparent',
-                color: open ? '#fff' : 'text.secondary',
+                bgcolor: open ? alpha(color, 0.18) : 'transparent',
+                color: open ? 'text.primary' : 'text.secondary',
                 fontSize: 11,
                 lineHeight: 1,
                 fontVariantNumeric: 'tabular-nums',
                 '&:hover': { borderColor: color },
               }}
             >
-              <Icon sx={{ fontSize: 11, color: open ? '#fff' : color }} />
+              <EnvironmentLogo kind={badge.kind} size={12} />
               {badge.count}
             </ButtonBase>
           </Tooltip>
