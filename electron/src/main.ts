@@ -1015,6 +1015,28 @@ function systemLinkHandlers(): LinuxLinkHandlers | SystemLinkHandlers | null {
   return linkHandlers;
 }
 
+/**
+ * Kubus, the Kubernetes desktop app, takes `kubus://<route>` links. Only an
+ * in-app route travels: a path that cannot reach another origin.
+ */
+const KUBUS_ROUTE = /^\/(?!\/)[A-Za-z0-9/._~%|=&?:@+-]*$/;
+
+ipcMain.handle('muxus:kubus:available', async (event): Promise<boolean> => {
+  if (!isManagedWindowSender(event)) return false;
+  return !!app.getApplicationNameForProtocol('kubus://');
+});
+
+ipcMain.handle('muxus:kubus:open', async (event, route: unknown): Promise<boolean> => {
+  if (!isManagedWindowSender(event) || typeof route !== 'string' || route.length > 2048) return false;
+  if (!KUBUS_ROUTE.test(route)) return false;
+  try {
+    await shell.openExternal(`kubus://${route.slice(1)}`);
+    return true;
+  } catch {
+    return false;
+  }
+});
+
 ipcMain.handle('muxus:link-handlers:get', async (event): Promise<LinkHandlerState | undefined> => {
   if (!isManagedWindowSender(event)) return undefined;
   return systemLinkHandlers()?.state();

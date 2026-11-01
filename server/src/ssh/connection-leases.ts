@@ -6,7 +6,8 @@ export type ConnectionLeaseOwner =
   | 'dial'
   | 'desktop'
   | 'management'
-  | 'stats';
+  | 'stats'
+  | 'environments';
 
 export interface LeaseableConnection {
   readonly id: string;

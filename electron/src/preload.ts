@@ -267,6 +267,12 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   registerLinkHandler(scheme: ConnectionLinkScheme): Promise<LinkHandlerRegistration | undefined> {
     return ipcRenderer.invoke('muxus:link-handlers:register', scheme);
   },
+  kubusAvailable(): Promise<boolean> {
+    return ipcRenderer.invoke('muxus:kubus:available');
+  },
+  openKubus(route: string): Promise<boolean> {
+    return ipcRenderer.invoke('muxus:kubus:open', route);
+  },
   /** Detach a tab only when the native cursor is outside every Muxus window. */
   detachTab(launch: Extract<AppWindowLaunch, { kind: 'tab-transfer' }>): Promise<boolean> {
     return ipcRenderer.invoke('muxus:detach-tab', launch);

@@ -21,6 +21,7 @@ import { nanoid } from 'nanoid';
 import type { FastifyBaseLogger } from 'fastify';
 import {
   DEFAULT_PASSWORD_VAULT_UNLOCK_POLICY,
+  environmentCommandLine,
   type AuthPromptInfo,
   type AuthPromptResponse,
   type ConfigForward,
@@ -141,6 +142,16 @@ export function sessionSettings(resolved: ResolvedTarget): SessionSettings {
     requestTty: resolved.requestTty,
     forwardX11: resolved.forwardX11,
   };
+}
+
+/**
+ * A session into a container, pod or console runs that command on the host
+ * instead of the login shell (or a configured RemoteCommand), always with a
+ * terminal, the way `ssh -t host docker exec -it …` would.
+ */
+export function environmentSession(settings: SessionSettings, profile: SshProfile): SessionSettings {
+  if (!profile.environment) return settings;
+  return { ...settings, remoteCommand: environmentCommandLine(profile.environment), requestTty: 'force' };
 }
 
 /** RequestTTY the way ssh(1) treats it: auto ⇒ a tty only for plain shells. */
@@ -629,11 +640,14 @@ export class SshConnectionManager {
     // application preference supplied by the current renderer, so the wire
     // value always wins — including its absence (preference set to
     // configuration-only), which must clear anything a client stored. So
-    // does a link's host key fingerprint, which only tightens verification.
+    // does a link's host key fingerprint, which only tightens verification,
+    // and the container or console a session enters, which is the session's
+    // own choice rather than a connection setting.
     return {
       ...saved,
       keepaliveIntervalSeconds: profile.keepaliveIntervalSeconds,
       hostKeyFingerprint: profile.hostKeyFingerprint,
+      environment: profile.environment,
     };
   }
 
@@ -697,12 +711,13 @@ export class SshConnectionManager {
   ): Promise<TerminalShell> {
     const { cwd, backspaceKey, ...connectOpts } = opts;
     const lease = await this.connect(profile, io, 'terminal', connectOpts);
+    const settings = (resolved: ResolvedTarget) => environmentSession(sessionSettings(resolved), profile);
     try {
       const stream = await lease.connection.shell(
         cols,
         rows,
         term,
-        sessionSettings(lease.target.resolved),
+        settings(lease.target.resolved),
         cwd,
         backspaceKey,
       );
@@ -724,7 +739,7 @@ export class SshConnectionManager {
           cols,
           rows,
           term,
-          sessionSettings(dedicated.target.resolved),
+          settings(dedicated.target.resolved),
           cwd,
           backspaceKey,
         );

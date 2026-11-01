@@ -8,3 +8,4 @@ export * from './connection-links.js';
 export * from './paste-pacing.js';
 export * from './management.js';
 export * from './gnmi-path.js';
+export * from './environments.js';

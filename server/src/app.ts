@@ -39,6 +39,7 @@ import { registerLogRoutes } from './routes/logs.js';
 import { registerLocalFileRoutes } from './routes/local-files.js';
 import { registerLocalShellRoutes } from './routes/local-shells.js';
 import { registerHostStatsRoutes } from './routes/host-stats.js';
+import { registerEnvironmentRoutes } from './routes/environments.js';
 import { registerDiagnosticsRoutes } from './routes/diagnostics.js';
 import { appLogPinoSink } from './logging/log-buffer.js';
 import {
@@ -75,6 +76,15 @@ const CONTENT_SECURITY_POLICY = [
   "form-action 'none'",
   "frame-ancestors 'none'",
 ].join('; ');
+
+/** Where the vendored containerlab topology viewer is served (client/public). */
+const CLAB_VIEWER_PATH = '/vendor/clab-viewer/';
+
+/** The same policy, except that Muxus itself may frame the viewer. */
+const CLAB_VIEWER_CONTENT_SECURITY_POLICY = CONTENT_SECURITY_POLICY.replace(
+  "frame-ancestors 'none'",
+  "frame-ancestors 'self'",
+);
 
 /** The level the server returns to when debug logging is switched off. */
 export function baseLogLevel(): string {
@@ -177,12 +187,17 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
     },
   });
 
-  app.addHook('onSend', async (_req, reply) => {
+  app.addHook('onSend', async (req, reply) => {
+    // The containerlab topology viewer is the one page Muxus frames itself.
+    const framable = req.url.startsWith(CLAB_VIEWER_PATH);
     void reply
-      .header('content-security-policy', CONTENT_SECURITY_POLICY)
+      .header(
+        'content-security-policy',
+        framable ? CLAB_VIEWER_CONTENT_SECURITY_POLICY : CONTENT_SECURITY_POLICY,
+      )
       .header('referrer-policy', 'no-referrer')
       .header('x-content-type-options', 'nosniff')
-      .header('x-frame-options', 'DENY')
+      .header('x-frame-options', framable ? 'SAMEORIGIN' : 'DENY')
       .header(
         'permissions-policy',
         'camera=(), geolocation=(), microphone=(), clipboard-read=(self), clipboard-write=(self)',
@@ -220,6 +235,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   registerLocalFileRoutes(app);
   registerLocalShellRoutes(app);
   registerHostStatsRoutes(app, ctx);
+  registerEnvironmentRoutes(app, ctx);
   registerDiagnosticsRoutes(app, ctx);
   registerTerminalSocket(app, ctx);
   registerSftpLeaseSocket(app, ctx);

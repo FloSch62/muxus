@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import os from 'node:os';
 import pty from 'node-pty';
-import type { LocalProfile } from '@muxus/shared';
+import { environmentArgv, type LocalProfile } from '@muxus/shared';
 import { shellIntegration } from './shell-integration.js';
 
 export const DEFAULT_TERM = 'xterm-256color';
@@ -25,9 +25,12 @@ export interface LocalPty {
 }
 
 export function spawnLocalPty(profile: LocalProfile, cols: number, rows: number): LocalPty {
-  const shell = profile.shell?.trim() || defaultShell();
-  const integration = shellIntegration(shell, process.env);
-  const args = localPtyArgs(profile, integration.args);
+  // A container, pod or console session runs its tool directly, with no
+  // shell integration: the shell it ends up in belongs to the container.
+  const environment = profile.environment ? environmentArgv(profile.environment) : undefined;
+  const shell = environment?.[0] ?? (profile.shell?.trim() || defaultShell());
+  const integration = environment ? { args: [], env: {} } : shellIntegration(shell, process.env);
+  const args = environment ? environment.slice(1) : localPtyArgs(profile, integration.args);
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (!HOST_TERMINAL_ENV.test(key)) env[key] = value;

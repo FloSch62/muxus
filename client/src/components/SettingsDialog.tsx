@@ -1344,6 +1344,19 @@ function BehaviorSection() {
             />
           }
         />
+        <SettingRow
+          label="Find containers, clusters and VMs"
+          labelFor="settings-discover-environments"
+          description="When an SSH session connects, and for this computer when Muxus starts, ask docker, podman, kubectl, pvesh and virsh what runs there, and count it beside the host. Hosts that cannot run commands, such as routers, are never asked."
+          control={
+            <Switch
+              id="settings-discover-environments"
+              size="small"
+              checked={prefs.discoverEnvironments}
+              onChange={(e) => prefs.set({ discoverEnvironments: e.target.checked })}
+            />
+          }
+        />
       </SettingsGroup>
       <SettingsGroup title="New hosts">
         <SettingRow

@@ -204,6 +204,8 @@ export interface PrefsState {
   closeTabOnCleanExit: boolean;
   /** Show what programs report with OSC 7501 (working, waiting, done) on their tab. */
   showProgramStatus: boolean;
+  /** Find the containers, clusters, labs and VMs of this computer and of connected SSH hosts. */
+  discoverEnvironments: boolean;
   /** Dial remote sessions on workspace restore and retry dropped connections. */
   autoReconnectRemote: boolean;
   /** SSH keepalive fallback in seconds; zero relies entirely on ssh_config. */
@@ -387,6 +389,7 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   if (typeof state.sshSessionSummary !== 'boolean') delete state.sshSessionSummary;
   if (typeof state.closeTabOnCleanExit !== 'boolean') delete state.closeTabOnCleanExit;
   if (typeof state.showProgramStatus !== 'boolean') delete state.showProgramStatus;
+  if (typeof state.discoverEnvironments !== 'boolean') delete state.discoverEnvironments;
   if (!validPasteDelay(state.pasteLineDelayMs, MAX_PASTE_LINE_DELAY_MS)) {
     delete state.pasteLineDelayMs;
   }
@@ -609,6 +612,7 @@ export const usePrefsStore = create<PrefsState>()(
       confirmCloseConnected: true,
       closeTabOnCleanExit: false,
       showProgramStatus: true,
+      discoverEnvironments: true,
       autoReconnectRemote: true,
       sshKeepaliveIntervalSeconds: DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
       sshSessionSummary: false,

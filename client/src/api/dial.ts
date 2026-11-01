@@ -1,4 +1,4 @@
-import type { TerminalServerMessage, TunnelSshOptions } from '@muxus/shared';
+import type { SshProfile, TerminalServerMessage, TunnelSshOptions } from '@muxus/shared';
 import type {
   AuthPromptRequest,
   AuthPromptResult,
@@ -34,6 +34,18 @@ export function dialConnection(
   handlers: DialHandlers,
   sshOptions?: TunnelSshOptions,
 ): Promise<DialedConnection> {
+  return dialProfile(
+    {
+      kind: 'ssh',
+      target,
+      ...(sshOptions === undefined ? {} : { useConfig: false, ...sshOptions }),
+    },
+    handlers,
+  );
+}
+
+/** {@link dialConnection} for a whole profile, such as a saved host's `{ target, profileId }`. */
+export function dialProfile(profile: SshProfile, handlers: DialHandlers): Promise<DialedConnection> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl('/ws/terminal'), wsProtocols());
     let settled = false;
@@ -50,12 +62,7 @@ export function dialConnection(
       ws.send(
         JSON.stringify({
           op: 'dial',
-          profile: {
-            kind: 'ssh',
-            target,
-            ...(sshOptions === undefined ? {} : { useConfig: false, ...sshOptions }),
-            ...sshKeepalivePrefField(),
-          },
+          profile: { ...profile, ...sshKeepalivePrefField() },
         }),
       );
     };

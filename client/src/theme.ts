@@ -36,6 +36,8 @@ export const layout = {
   sftpPanelWidth: DEFAULT_SFTP_PANEL_WIDTH,
   /** Forwarding side panel width. */
   forwardingPanelWidth: 380,
+  /** Containers, clusters and VMs panel width. */
+  environmentsPanelWidth: 460,
   /** Themed scrollbar thickness. */
   scrollbarSize: 10,
 } as const;

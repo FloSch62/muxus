@@ -35,6 +35,7 @@ import SelectAllIcon from '@mui/icons-material/SelectAll';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import WorkspacesOutlinedIcon from '@mui/icons-material/WorkspacesOutlined';
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
+import ViewInArOutlinedIcon from '@mui/icons-material/ViewInArOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutlineOutlined';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutlineOutlined';
@@ -65,6 +66,7 @@ import { ChordHint, withChord } from '../components/ChordHint.js';
 import { MultiExecControl } from '../components/MultiExecControl.js';
 import {
   loadCommandButtonsDialog,
+  loadEnvironmentsPanel,
   loadForwardingPanel,
   loadSettingsDialog,
   loadSessionHistoryDialog,
@@ -94,6 +96,8 @@ export const TopBar = memo(function TopBar() {
   const workspaceName = useWorkspacesStore((s) => s.activeName);
   const workspacesReady = useWorkspacesStore((s) => s.ready);
   const forwardingOpen = useUiStore((s) => s.forwardingOpen);
+  const environmentsPanel = useUiStore((s) => s.environmentsPanel);
+  const setEnvironmentsPanel = useUiStore((s) => s.setEnvironmentsPanel);
   const setForwardingOpen = useUiStore((s) => s.setForwardingOpen);
   const activeTab = useTabsStore((s) => s.tabs.find((t) => t.id === s.activeId));
   const requestSearch = useTabsStore((s) => s.requestSearch);
@@ -232,6 +236,18 @@ export const TopBar = memo(function TopBar() {
             </IconButton>
           </Tooltip>
         )}
+        <Tooltip title="Containers & VMs">
+          <IconButton
+            size="small"
+            aria-label="Toggle containers and VMs panel"
+            color={environmentsPanel === false ? 'default' : 'primary'}
+            onMouseEnter={() => void loadEnvironmentsPanel()}
+            onFocus={() => void loadEnvironmentsPanel()}
+            onClick={() => setEnvironmentsPanel(environmentsPanel === false ? {} : false)}
+          >
+            <ViewInArOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
         <Tooltip title={`Port forwarding & tunnels${forwardsSummary ? ` — ${forwardsSummary}` : ''}`}>
           <IconButton
             size="small"
