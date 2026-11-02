@@ -21,7 +21,7 @@
     "@muxus/shared": "workspace:*",
     "@novnc/novnc": "^1.7.0",
     "@tanstack/react-query": "^5.104.5",
-    "@xterm/addon-clipboard": "^0.3.0-beta.313",
+    "@xterm/addon-clipboard": "^0.3.0-beta.334",
     "@xterm/addon-fit": "^0.12.0-beta.311",
     "@xterm/addon-image": "^0.10.0-beta.310",
     "@xterm/addon-search": "^0.17.0-beta.310",

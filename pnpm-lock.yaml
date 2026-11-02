@@ -226,8 +226,8 @@ importers:
         specifier: ^5.104.5
         version: 5.104.5(@types/react@19.3.0)(react@19.3.1)
       '@xterm/addon-clipboard':
-        specifier: ^0.3.0-beta.313
-        version: 0.3.0-beta.313(@xterm/xterm@6.1.0-beta.315)
+        specifier: ^0.3.0-beta.334
+        version: 0.3.0-beta.334(@xterm/xterm@6.1.0-beta.315)
       '@xterm/addon-fit':
         specifier: ^0.12.0-beta.311
         version: 0.12.0-beta.311(@xterm/xterm@6.1.0-beta.315)
@@ -1794,10 +1794,10 @@ packages:
     resolution: {integrity: sha512-5AXjrcMClTryPe9LgZrygpB1lj7s0S9E0+W+AHaVKAVyHanafK86iPSvG5xHVSp/jC+VH1UXu0TAEmY279xH7A==}
     engines: {node: '>=14.6'}
 
-  '@xterm/addon-clipboard@0.3.0-beta.313':
-    resolution: {integrity: sha512-Jvt9vzccZ1vQ0VHsQsvW0j9TGThsCeY9T3x2TP+pHhYB5NVgOIlKhNiRRGTdMxsJd8eW3fxEpTGVhf88aeb8Ug==}
+  '@xterm/addon-clipboard@0.3.0-beta.334':
+    resolution: {integrity: sha512-0R7yIt2NyQzTiaMjVMFM1z5hc/vzmZD41cNQFJCzNrN62ziYCA8ZzT244KMSUr6GiYOvygNNokaFCOLkf9iekQ==}
     peerDependencies:
-      '@xterm/xterm': ^6.1.0-beta.315
+      '@xterm/xterm': ^6.1.0-beta.336
 
   '@xterm/addon-fit@0.12.0-beta.311':
     resolution: {integrity: sha512-M40mAWDoAVKz+0zs5ipmBJ+tNilw8CzUbbGIX05NANmTiw0MS47FYeJ4d2El4zdvFphDJjtVLrxTKXuz2wUM6Q==}
@@ -4651,7 +4651,7 @@ snapshots:
 
   '@xmldom/xmldom@0.9.12': {}
 
-  '@xterm/addon-clipboard@0.3.0-beta.313(@xterm/xterm@6.1.0-beta.315)':
+  '@xterm/addon-clipboard@0.3.0-beta.334(@xterm/xterm@6.1.0-beta.315)':
     dependencies:
       '@xterm/xterm': 6.1.0-beta.315
 
