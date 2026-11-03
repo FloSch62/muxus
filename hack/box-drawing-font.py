@@ -5,7 +5,7 @@ Elements (U+2500-259F), so the DOM renderer used to take those glyphs from the
 symbol font: an em wide and a different height, which shreds block art and
 leaves gaps in frame lines. This takes JetBrains Mono's own glyphs for the
 range, which share its cell, and pushes every edge that touches the cell
-outward. Terminal rows clip their overflow, so the vertical overshoot ends
+outward. Muxus clips each terminal row, so the vertical overshoot ends
 exactly at the row edge at any line height; the horizontal one only needs to
 cover the antialiased seam between neighbouring cells.
 

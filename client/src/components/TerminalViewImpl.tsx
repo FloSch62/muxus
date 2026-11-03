@@ -2035,6 +2035,12 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           // xterm.css defaults the viewport to #000, which shows through the
           // .xterm padding as a black ring around the canvas.
           '& .xterm .xterm-viewport': { backgroundColor: 'transparent' },
+          // The DOM renderer lets each row overflow vertically (inline style),
+          // but the box-drawing face overshoots the cell so lines meet at any
+          // line height and relies on the row cutting that off. Without the
+          // clip, │ ┃ ╎ reach into the rows above and below: an indent guide
+          // sticks out past its block.
+          '& .xterm .xterm-rows > div': { overflowY: 'clip !important' },
         }}
       />
       {searchOpen && (
