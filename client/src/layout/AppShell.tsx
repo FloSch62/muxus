@@ -42,10 +42,12 @@ import { TerminalView } from '../components/TerminalView.js';
 import { RemoteDesktopView } from '../components/RemoteDesktopView.js';
 import { ManagementView } from '../components/ManagementView.js';
 import {
+  loadEnvironmentsPanel,
   loadForwardingPanel,
   loadRemoteEditorWorkspace,
   loadSftpPanel,
 } from '../lazy-features.js';
+import { useEnvironmentDiscovery } from '../components/environments/useEnvironmentDiscovery.js';
 import { layout } from '../theme.js';
 import { moveFileBrowser } from '../file-browser.js';
 import { Sidebar } from './Sidebar.js';
@@ -57,6 +59,9 @@ const ForwardingPanel = lazy(() =>
 );
 const SftpPanel = lazy(() =>
   loadSftpPanel().then((module) => ({ default: module.SftpPanel })),
+);
+const EnvironmentsPanel = lazy(() =>
+  loadEnvironmentsPanel().then((module) => ({ default: module.EnvironmentsPanel })),
 );
 const RemoteEditorWorkspace = lazy(() =>
   loadRemoteEditorWorkspace().then((module) => ({ default: module.RemoteEditorWorkspace })),
@@ -71,6 +76,7 @@ export function AppShell({
   initialWorkspace?: WorkspaceInitialSelection;
 }) {
   useWorkspacePersistence(persistWorkspace, initialWorkspace);
+  useEnvironmentDiscovery();
   const sidebarCollapsed = usePrefsStore((state) => state.sidebarCollapsed);
   const sidebarOnRight = usePrefsStore((state) => state.sidebarPosition === 'right');
   const commandBarAtBottom = usePrefsStore((state) => state.commandBarPosition === 'bottom');
@@ -80,8 +86,16 @@ export function AppShell({
   const zoomedPaneId = useTabsStore((state) => state.zoomedPaneId);
   const focusMode = useUiStore((state) => state.focusMode);
   const forwardingOpen = useUiStore((state) => state.forwardingOpen);
+  const environmentsOpen = useUiStore((state) => state.environmentsPanel !== false);
   const setHostEditor = useUiStore((state) => state.setHostEditor);
   const showSidebar = !focusMode && !sidebarCollapsed;
+  const environmentsPanel = (
+    <ErrorBoundary label="The containers and VMs panel">
+      <Suspense fallback={null}>
+        <EnvironmentsPanel />
+      </Suspense>
+    </ErrorBoundary>
+  );
 
   return (
     <Box
@@ -93,6 +107,8 @@ export function AppShell({
       {focusMode || commandBarAtBottom ? null : <ActionBar position="top" />}
       <Box sx={{ flex: 1, display: 'flex', minHeight: 0 }}>
         {showSidebar && !sidebarOnRight ? <Sidebar /> : null}
+        {/* The containers and VMs panel opens beside the sidebar it grows out of. */}
+        {environmentsOpen && !focusMode && !sidebarOnRight ? environmentsPanel : null}
         <Box sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>
           <PaneCanvas
             root={root}
@@ -112,6 +128,7 @@ export function AppShell({
         ) : null}
         {/* Docked on the right, the sidebar keeps the window edge and the
             forwarding panel opens between it and the panes. */}
+        {environmentsOpen && !focusMode && sidebarOnRight ? environmentsPanel : null}
         {showSidebar && sidebarOnRight ? <Sidebar /> : null}
       </Box>
       {focusMode || !commandBarAtBottom ? null : <ActionBar position="bottom" />}

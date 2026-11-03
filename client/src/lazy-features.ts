@@ -16,6 +16,7 @@ export const loadCompareDialog = () => import('./components/CompareDialog.js');
 export const loadQuickLauncherDialog = () => import('./components/QuickLauncherDialog.js');
 export const loadWorkspaceDialog = () => import('./components/WorkspaceDialog.js');
 export const loadForwardingPanel = () => import('./components/ForwardingPanel.js');
+export const loadEnvironmentsPanel = () => import('./components/environments/EnvironmentsPanel.js');
 export const loadSftpPanel = () => import('./components/SftpPanel.js');
 export const loadRemoteEditorWorkspace = () => import('./components/RemoteEditorWorkspace.js');
 export const loadTerminalViewImpl = () => import('./components/TerminalViewImpl.js');

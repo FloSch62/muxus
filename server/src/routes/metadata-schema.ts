@@ -146,6 +146,8 @@ export const metadataPatchSchema = z
     localEcho: z.boolean().nullable().optional(),
     disableSftp: z.boolean().optional(),
     consoleCompatibility: z.boolean().optional(),
+    // Null follows the global setting.
+    discoverEnvironments: z.boolean().nullable().optional(),
     loginSequence: loginSequenceSchema.nullable().optional(),
   })
   .refine((patch) => Object.keys(patch).length > 0, 'at least one metadata field is required');

@@ -82,6 +82,7 @@ import { IS_MAC } from '../platform.js';
 import {
   DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
   MAX_INACTIVE_PANE_DIM_STRENGTH,
+  ENVIRONMENT_REFRESH_SECONDS,
   MIN_INACTIVE_PANE_DIM_STRENGTH,
   clampInactivePaneDimStrength,
   terminalSchemeIdForMode,
@@ -1259,6 +1260,14 @@ const NEW_SSH_HOST_STORAGE_OPTIONS = [
   ['openssh', 'OpenSSH config'],
 ] as const satisfies ReadonlyArray<readonly [NewSshHostStorage, string]>;
 
+const ENVIRONMENT_REFRESH_OPTIONS = ENVIRONMENT_REFRESH_SECONDS.map(
+  (seconds) =>
+    [
+      seconds,
+      seconds === 0 ? 'Only when connecting' : seconds < 60 ? `Every ${seconds} seconds` : seconds === 60 ? 'Every minute' : `Every ${seconds / 60} minutes`,
+    ] as const,
+);
+
 const SIDEBAR_OPEN_GESTURE_OPTIONS = [
   ['click', 'Single click'],
   ['double-click', 'Double-click'],
@@ -1341,6 +1350,32 @@ function BehaviorSection() {
               value={prefs.sidebarOpenGesture}
               onChange={(sidebarOpenGesture) => prefs.set({ sidebarOpenGesture })}
               options={SIDEBAR_OPEN_GESTURE_OPTIONS}
+            />
+          }
+        />
+        <SettingRow
+          label="Find containers, clusters and VMs"
+          labelFor="settings-discover-environments"
+          description="When an SSH session connects, and for this computer when Muxus starts, ask docker, podman, kubectl, pvesh and virsh what runs there, and count it beside the host. Hosts that cannot run commands, such as routers, are never asked."
+          control={
+            <Switch
+              id="settings-discover-environments"
+              size="small"
+              checked={prefs.discoverEnvironments}
+              onChange={(e) => prefs.set({ discoverEnvironments: e.target.checked })}
+            />
+          }
+        />
+        <SettingRow
+          label="Refresh containers, clusters and VMs"
+          description="How often hosts with a connected session, and this computer, are asked again. The host editor can switch finding them on or off for one host."
+          control={
+            <RowSelect<number>
+              id="settings-environment-refresh"
+              label="Refresh containers, clusters and VMs"
+              value={prefs.environmentRefreshSeconds}
+              onChange={(environmentRefreshSeconds) => prefs.set({ environmentRefreshSeconds })}
+              options={ENVIRONMENT_REFRESH_OPTIONS}
             />
           }
         />

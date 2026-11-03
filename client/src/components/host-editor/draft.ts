@@ -66,6 +66,8 @@ export interface HostDraft {
   disableSftp: boolean;
   /** Muxus-only console mode: also no env requests, with PTY rejection fallback. */
   consoleCompatibility: boolean;
+  /** Look for containers, clusters and VMs on connect; 'default' follows Settings. */
+  discoverEnvironments: EnvironmentDiscoveryDraft;
   /** Target config file; '' keeps the block's file (or the root for new hosts). */
   file: string;
   hostname: string;
@@ -124,6 +126,7 @@ export function blankDraft(
     inputModes: hostTerminalInputModes(undefined),
     disableSftp: false,
     consoleCompatibility: false,
+    discoverEnvironments: 'default',
     file: '',
     hostname: parsed?.host ?? (storage === 'muxus' ? target : ''),
     user: parsed?.user ?? '',
@@ -176,6 +179,7 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
     inputModes: hostTerminalInputModes(entry.metadata),
     disableSftp: entry.metadata?.disableSftp ?? false,
     consoleCompatibility: entry.metadata?.consoleCompatibility ?? false,
+    discoverEnvironments: environmentDiscoveryDraft(entry.metadata?.discoverEnvironments),
     file: entry.file,
     hostname: o.hostname ?? '',
     user: o.user ?? '',
@@ -244,6 +248,7 @@ export function draftFromSavedSshProfile(
     inputModes: hostTerminalInputModes(saved.metadata),
     disableSftp: saved.metadata.disableSftp ?? false,
     consoleCompatibility: saved.metadata.consoleCompatibility ?? false,
+    discoverEnvironments: environmentDiscoveryDraft(saved.metadata.discoverEnvironments),
     file: '',
     hostname: profile.target,
     user: profile.user ?? '',
@@ -529,4 +534,15 @@ function remoteCommandDraft(value: string | undefined): {
   if (value === undefined) return { mode: 'inherit', value: '' };
   if (value.toLowerCase() === 'none') return { mode: 'shell', value: '' };
   return { mode: 'command', value };
+}
+
+export type EnvironmentDiscoveryDraft = 'default' | 'on' | 'off';
+
+export function environmentDiscoveryDraft(value: boolean | undefined): EnvironmentDiscoveryDraft {
+  return value === undefined ? 'default' : value ? 'on' : 'off';
+}
+
+/** The stored override: null follows the global setting. */
+export function environmentDiscoveryFromDraft(value: EnvironmentDiscoveryDraft): boolean | null {
+  return value === 'default' ? null : value === 'on';
 }

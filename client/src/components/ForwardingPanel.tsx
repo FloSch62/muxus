@@ -232,7 +232,20 @@ export function ForwardingPanel() {
         borderColor: 'divider',
       }}
     >
-      <Stack direction="row" spacing={1} sx={{ px: 1.5, py: 1, alignItems: 'center', borderBottom: 1, borderColor: 'divider' }}>
+      {/* As tall as the tab strip beside it, so their bottom lines meet. */}
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{
+          height: layout.tabStripHeight,
+          flexShrink: 0,
+          boxSizing: 'border-box',
+          px: 1.5,
+          alignItems: 'center',
+          borderBottom: 1,
+          borderColor: 'divider',
+        }}
+      >
         <SwapHorizOutlinedIcon fontSize="small" color="primary" />
         <Typography variant="subtitle2" sx={{ fontWeight: 700, flex: 1 }}>
           Port forwarding

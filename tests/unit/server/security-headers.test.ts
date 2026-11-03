@@ -35,4 +35,14 @@ describe('security headers', () => {
     expect(response.headers['x-frame-options']).toBe('DENY');
     expect(response.headers['x-content-type-options']).toBe('nosniff');
   });
+
+  it('lets Muxus frame only the containerlab viewer, and only itself', async () => {
+    const viewer = await app.inject({ method: 'GET', url: '/vendor/clab-viewer/viewer.html?parentOrigin=x' });
+    expect(viewer.headers['content-security-policy']).toContain("frame-ancestors 'self'");
+    expect(viewer.headers['x-frame-options']).toBe('SAMEORIGIN');
+
+    const page = await app.inject({ method: 'GET', url: '/vendor/other/viewer.html' });
+    expect(page.headers['content-security-policy']).toContain("frame-ancestors 'none'");
+    expect(page.headers['x-frame-options']).toBe('DENY');
+  });
 });

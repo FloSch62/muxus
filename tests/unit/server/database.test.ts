@@ -57,6 +57,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 30, name: 'host-paste-prompt-wait' },
       { version: 31, name: 'host-anti-idle' },
       { version: 32, name: 'host-terminal-input-modes' },
+      { version: 33, name: 'host-environment-discovery' },
     ]);
   });
 
@@ -148,8 +149,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 32,
-      name: 'host-terminal-input-modes',
+      version: 33,
+      name: 'host-environment-discovery',
     });
     expect(database.savedHostProfile(telnet.id)).toMatchObject({
       name: 'Core switch',
@@ -255,8 +256,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 32,
-      name: 'host-terminal-input-modes',
+      version: 33,
+      name: 'host-environment-discovery',
     });
     expect(database.savedHostProfile(rdp.id)).toMatchObject({ name: 'Build server', metadata: { group: 'Lab' } });
     const gnmi = database.saveSavedHostProfile({
@@ -408,6 +409,7 @@ describe('MuxusDatabase migrations', () => {
     try {
       legacy.exec(`
         DELETE FROM schema_migrations WHERE version >= 30;
+        ALTER TABLE connection_profiles DROP COLUMN discover_environments;
         ALTER TABLE connection_profiles DROP COLUMN paste_prompt_wait_json;
         ALTER TABLE connection_profiles DROP COLUMN anti_idle_json;
         ALTER TABLE connection_profiles DROP COLUMN backspace_key;
@@ -421,10 +423,11 @@ describe('MuxusDatabase migrations', () => {
     }
 
     database = new MuxusDatabase(filename);
-    expect(database.appliedMigrations().slice(-3)).toEqual([
+    expect(database.appliedMigrations().slice(-4)).toEqual([
       { version: 30, name: 'host-paste-prompt-wait' },
       { version: 31, name: 'host-anti-idle' },
       { version: 32, name: 'host-terminal-input-modes' },
+      { version: 33, name: 'host-environment-discovery' },
     ]);
     const metadata = database.openSshMetadata(['legacy']).get('legacy');
     expect(metadata).toMatchObject({ group: 'Core', pasteLineDelayMs: 250 });
@@ -463,6 +466,25 @@ describe('MuxusDatabase migrations', () => {
     } finally {
       upgraded.close();
     }
+  });
+
+  it("keeps a host's own environment discovery choice, and clears it back to Settings", () => {
+    database = new MuxusDatabase(':memory:');
+    database.updateOpenSshMetadata('lab', { group: 'Lab' });
+    expect(database.openSshMetadata(['lab']).get('lab')).not.toHaveProperty('discoverEnvironments');
+    database.updateOpenSshMetadata('lab', { discoverEnvironments: false });
+    expect(database.openSshMetadata(['lab']).get('lab')).toMatchObject({ discoverEnvironments: false });
+    database.updateOpenSshMetadata('lab', { color: '#00ff00' });
+    expect(database.openSshMetadata(['lab']).get('lab')).toMatchObject({ discoverEnvironments: false });
+    database.updateOpenSshMetadata('lab', { discoverEnvironments: null });
+    expect(database.openSshMetadata(['lab']).get('lab')).not.toHaveProperty('discoverEnvironments');
+
+    const saved = database.saveSavedHostProfile({
+      name: 'Hypervisor',
+      profile: { kind: 'ssh', target: 'hv.lab', useConfig: false, user: 'root' },
+    });
+    database.updateSavedHostMetadata(saved.id, { discoverEnvironments: true });
+    expect(database.savedHostProfile(saved.id)?.metadata).toMatchObject({ discoverEnvironments: true });
   });
 
   it('upgrades the draft version 13 vault without deleting credentials', () => {
@@ -538,8 +560,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 32,
-      name: 'host-terminal-input-modes',
+      version: 33,
+      name: 'host-environment-discovery',
     });
     expect(database.passwordVaultConfig()).toMatchObject({
       formatVersion: 2,

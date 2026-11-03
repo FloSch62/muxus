@@ -85,6 +85,8 @@ import type { HostMenuState } from './sidebar/HostContextMenu.js';
 import type { HostSessionsMenuState } from './sidebar/HostSessionsMenu.js';
 import type { LocalShellMenuState } from './sidebar/LocalShellContextMenu.js';
 import { LocalShellIcon } from './LocalShellIcon.js';
+import { EnvironmentBadges } from './environments/EnvironmentBadges.js';
+import { LOCAL_ENVIRONMENT_KEY } from '../state/environments.js';
 import { HostTree, type HostTreeHandle } from './sidebar/HostTree.js';
 import { SelectionBar } from './sidebar/SelectionBar.js';
 import type { LaunchTarget } from './sidebar/LaunchGroupDialog.js';
@@ -650,6 +652,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
         <List dense disablePadding>
           <ListItemButton
             component="li"
+            aria-label="Local terminal"
             sx={fixedRowSx}
             onMouseEnter={() => void loadTerminalViewImpl()}
             onFocus={() => void loadTerminalViewImpl()}
@@ -667,9 +670,10 @@ export const SessionSidebar = memo(function SessionSidebar() {
             }}
           >
             <TerminalIcon sx={{ fontSize: 16, flexShrink: 0, color: 'text.secondary' }} />
-            <Box component="span" sx={{ ...treeLabelSx, minWidth: 0 }}>
+            <Box component="span" sx={{ ...treeLabelSx, minWidth: 0, flex: 1 }}>
               Local terminal
             </Box>
+            <EnvironmentBadges hostKey={LOCAL_ENVIRONMENT_KEY} />
           </ListItemButton>
           {visibleLocalShellProfiles.map((profile) => (
             <Tooltip

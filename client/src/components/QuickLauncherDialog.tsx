@@ -35,6 +35,7 @@ import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import StopOutlinedIcon from '@mui/icons-material/StopOutlined';
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
+import ViewInArOutlinedIcon from '@mui/icons-material/ViewInArOutlined';
 import WorkspacesOutlinedIcon from '@mui/icons-material/WorkspacesOutlined';
 import {
   sessionLogName,
@@ -97,6 +98,9 @@ import { usePrefsStore } from '../state/prefs.js';
 import { useTabsStore, type TabStatus } from '../state/tabs.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
+import { useEnvironmentsStore } from '../state/environments.js';
+import { environmentLaunchItems, type EnvironmentLaunchItem } from '../environment-launcher.js';
+import { ENVIRONMENT_KINDS, EnvironmentLogo } from './environments/environment-icons.js';
 import { useWorkspacesStore } from '../state/workspaces.js';
 import { canSendBreak, supportsBreak } from '../terminal/send-break.js';
 import { formatTimestamp } from '../time-format.js';
@@ -125,6 +129,7 @@ type LauncherResult = ResultBase &
     | { kind: 'tunnel'; tunnel: TunnelRecord; running?: ForwardInfo }
     | { kind: 'history'; session: SessionLogSummary; historyQuery: string }
     | { kind: 'local-shell'; profile: LocalShellProfileConfig }
+    | { kind: 'environment'; environment: EnvironmentLaunchItem }
     | { kind: 'action'; action: LauncherAction }
     | { kind: 'keymap'; command: KeyCommand; chord?: string }
   );
@@ -137,6 +142,7 @@ type LauncherAction =
   | 'history'
   | 'commands'
   | 'tunnels'
+  | 'environments'
   | 'sftp'
   | 'find-terminal';
 
@@ -256,16 +262,36 @@ export function QuickLauncherDialog() {
       wslShellProfiles,
     ],
   );
+  const environmentEntries = useEnvironmentsStore((state) => state.entries);
+  const environmentResults = useMemo(
+    (): LauncherResult[] =>
+      environmentLaunchItems(Object.values(environmentEntries)).map((environment) => ({
+        id: environment.id,
+        kind: 'environment',
+        environment,
+        label: environment.label,
+        detail: environment.detail,
+        keywords: environment.keywords,
+        priority: 140,
+        showWhenEmpty: false,
+      })),
+    [environmentEntries],
+  );
+  const environmentNames = useMemo(
+    () => new Set(environmentResults.map((result) => result.label.toLocaleLowerCase())),
+    [environmentResults],
+  );
   const queryResults = useMemo(
     () =>
       buildQueryResults({
         sshHosts,
         savedHosts,
+        environmentNames,
         history,
         historyQuery: debouncedHistoryQuery,
         directTarget: deferredQuery,
       }),
-    [debouncedHistoryQuery, deferredQuery, history, savedHosts, sshHosts],
+    [debouncedHistoryQuery, deferredQuery, environmentNames, history, savedHosts, sshHosts],
   );
   const actionResults = useMemo(
     () =>
@@ -278,8 +304,8 @@ export function QuickLauncherDialog() {
     [activeBreak, activeConnected, activeSsh, keybindings],
   );
   const allResults = useMemo(
-    () => [...catalogResults, ...queryResults, ...actionResults],
-    [actionResults, catalogResults, queryResults],
+    () => [...catalogResults, ...queryResults, ...environmentResults, ...actionResults],
+    [actionResults, catalogResults, environmentResults, queryResults],
   );
   const results = useMemo(
     () =>
@@ -406,6 +432,9 @@ export function QuickLauncherDialog() {
       case 'tunnels':
         ui.setForwardingOpen(true);
         break;
+      case 'environments':
+        ui.setEnvironmentsPanel({});
+        break;
       case 'sftp': {
         const tab = tabState.tabs.find((candidate) => candidate.id === tabState.activeId);
         if (tab?.profile && tab.profile.kind === 'ssh' && tab.connId) {
@@ -482,6 +511,10 @@ export function QuickLauncherDialog() {
       case 'local-shell':
         close();
         openLocalShellProfile(result.profile);
+        break;
+      case 'environment':
+        close();
+        result.environment.open();
         break;
       case 'action':
         runAction(result.action);
@@ -1023,12 +1056,15 @@ function buildCatalogResults({
 function buildQueryResults({
   sshHosts,
   savedHosts,
+  environmentNames,
   history,
   historyQuery,
   directTarget,
 }: {
   sshHosts: readonly SshHostEntry[];
   savedHosts: readonly SavedHostProfile[];
+  /** Containers, nodes and VMs by lower-cased name: a query naming one is not an SSH target. */
+  environmentNames: ReadonlySet<string>;
   history: readonly SessionLogSummary[];
   historyQuery: string;
   directTarget: string;
@@ -1062,7 +1098,8 @@ function buildQueryResults({
         (entry) =>
           entry.name.toLocaleLowerCase() === normalized ||
           entry.metadata.displayName?.toLocaleLowerCase() === normalized,
-      );
+      ) ||
+      environmentNames.has(normalized);
     if (!known) {
       results.push({
         id: `quick-connect:${target}`,
@@ -1127,6 +1164,15 @@ function buildActionResults({
       'ssh',
       'forward',
       'proxy',
+    ]),
+    actionResult('environments', 'Show containers & VMs', 'Docker, Podman, Containerlab, Kubernetes, Proxmox and libvirt on your hosts', [
+      'docker',
+      'podman',
+      'kubernetes',
+      'containerlab',
+      'proxmox',
+      'libvirt',
+      'virtual machines',
     ]),
     {
       ...actionResult('sftp', 'Toggle file browser', 'Browse files over SFTP for the active SSH session', [
@@ -1244,7 +1290,11 @@ function ResultIcon({ result }: { result: LauncherResult }) {
       />
     );
   }
+  if (result.kind === 'environment') {
+    return <EnvironmentLogo kind={result.environment.kind} size={20} />;
+  }
   if (result.kind === 'keymap') return <KeyboardOutlinedIcon {...props} />;
+  if (result.action === 'environments') return <ViewInArOutlinedIcon {...props} />;
   if (result.action === 'settings') return <SettingsOutlinedIcon {...props} />;
   if (result.action === 'workspaces') return <WorkspacesOutlinedIcon {...props} />;
   if (result.action === 'history') return <HistoryOutlinedIcon {...props} />;
@@ -1275,6 +1325,8 @@ function ResultKindLabel({
       ? 'CONNECT'
       : result.kind === 'local-shell'
         ? 'LOCAL'
+        : result.kind === 'environment'
+          ? ENVIRONMENT_KINDS[result.environment.kind].label.toUpperCase()
         : result.kind === 'editor'
           ? 'FILE'
           : result.kind.toUpperCase();

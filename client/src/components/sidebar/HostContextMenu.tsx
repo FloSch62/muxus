@@ -16,6 +16,8 @@ import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined';
+import ViewInArOutlinedIcon from '@mui/icons-material/ViewInArOutlined';
+import { environmentHostForManaged, showHostEnvironments } from '../../environments.js';
 import { useSavedHostProfiles } from '../../api/queries.js';
 import { managementHostPrefill } from '../host-editor/management-draft.js';
 import { copyToClipboard } from '../../clipboard.js';
@@ -28,6 +30,7 @@ import {
   openManagedHostInNewWindow,
 } from '../../session-actions.js';
 import {
+  loadEnvironmentsPanel,
   loadFolderDialog,
   loadHostBulkEditDialog,
   loadHostEditorDialog,
@@ -134,6 +137,21 @@ export function HostContextMenu({
             <FolderOpenOutlinedIcon fontSize="small" />
           </ListItemIcon>
           Open SFTP file browser
+        </MenuItem>
+      ) : null}
+      {menu && environmentHostForManaged(menu.host) ? (
+        <MenuItem
+          onMouseEnter={() => void loadEnvironmentsPanel()}
+          onFocus={() => void loadEnvironmentsPanel()}
+          onClick={run((host) => {
+            const environmentHost = environmentHostForManaged(host);
+            if (environmentHost) showHostEnvironments(environmentHost);
+          })}
+        >
+          <ListItemIcon>
+            <ViewInArOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          Containers &amp; VMs
         </MenuItem>
       ) : null}
       <MenuItem disabled={!canMoveUp} onClick={run(() => onMove(-1))}>

@@ -2,6 +2,10 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { DEFAULT_SIDEBAR_WIDTH } from '../sidebar-width.js';
 import { DEFAULT_SFTP_PANEL_WIDTH } from '../sftp-panel-width.js';
+import {
+  DEFAULT_ENVIRONMENTS_PANEL_WIDTH,
+  MIN_ENVIRONMENTS_PANEL_WIDTH,
+} from '../environments-panel-width.js';
 import { muxusStateStorage, onStateItemChange } from './persist-storage.js';
 import { isStatusBarItemList, STATUS_BAR_ITEMS, type StatusBarItem } from '../host-stats.js';
 import {
@@ -34,6 +38,9 @@ import {
   DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
   MAX_SSH_KEEPALIVE_INTERVAL_SECONDS,
 } from '@muxus/shared/ws-protocol';
+
+/** How often connected hosts are read again; 0 reads them only when they connect. */
+export const ENVIRONMENT_REFRESH_SECONDS = [0, 15, 30, 60, 120, 300] as const;
 
 export type ThemeMode = 'light' | 'dark' | 'os';
 export type EffectiveThemeMode = Exclude<ThemeMode, 'os'>;
@@ -204,6 +211,10 @@ export interface PrefsState {
   closeTabOnCleanExit: boolean;
   /** Show what programs report with OSC 7501 (working, waiting, done) on their tab. */
   showProgramStatus: boolean;
+  /** Find the containers, clusters, labs and VMs of this computer and of connected SSH hosts. */
+  discoverEnvironments: boolean;
+  /** Read connected hosts' containers, clusters and VMs again this often; 0 only on connect. */
+  environmentRefreshSeconds: number;
   /** Dial remote sessions on workspace restore and retry dropped connections. */
   autoReconnectRemote: boolean;
   /** SSH keepalive fallback in seconds; zero relies entirely on ssh_config. */
@@ -284,6 +295,8 @@ export interface PrefsState {
   sidebarEmptyFolders: string[];
   /** Width of the per-session remote file browser. */
   sftpPanelWidth: number;
+  /** Width of the containers and VMs panel. */
+  environmentsPanelWidth: number;
   /** Verbose diagnostic logging plus access to the log viewer and export. */
   debugMode: boolean;
   set: (patch: Partial<Omit<PrefsState, 'set'>>) => void;
@@ -387,6 +400,20 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   if (typeof state.sshSessionSummary !== 'boolean') delete state.sshSessionSummary;
   if (typeof state.closeTabOnCleanExit !== 'boolean') delete state.closeTabOnCleanExit;
   if (typeof state.showProgramStatus !== 'boolean') delete state.showProgramStatus;
+  if (typeof state.discoverEnvironments !== 'boolean') delete state.discoverEnvironments;
+  if (
+    typeof state.environmentsPanelWidth !== 'number' ||
+    !Number.isFinite(state.environmentsPanelWidth) ||
+    state.environmentsPanelWidth < MIN_ENVIRONMENTS_PANEL_WIDTH
+  ) {
+    delete state.environmentsPanelWidth;
+  }
+  if (
+    typeof state.environmentRefreshSeconds !== 'number' ||
+    !(ENVIRONMENT_REFRESH_SECONDS as readonly number[]).includes(state.environmentRefreshSeconds)
+  ) {
+    delete state.environmentRefreshSeconds;
+  }
   if (!validPasteDelay(state.pasteLineDelayMs, MAX_PASTE_LINE_DELAY_MS)) {
     delete state.pasteLineDelayMs;
   }
@@ -609,6 +636,8 @@ export const usePrefsStore = create<PrefsState>()(
       confirmCloseConnected: true,
       closeTabOnCleanExit: false,
       showProgramStatus: true,
+      discoverEnvironments: true,
+      environmentRefreshSeconds: 30,
       autoReconnectRemote: true,
       sshKeepaliveIntervalSeconds: DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
       sshSessionSummary: false,
@@ -645,6 +674,7 @@ export const usePrefsStore = create<PrefsState>()(
       sidebarFolderOrder: {},
       sidebarEmptyFolders: [],
       sftpPanelWidth: DEFAULT_SFTP_PANEL_WIDTH,
+      environmentsPanelWidth: DEFAULT_ENVIRONMENTS_PANEL_WIDTH,
       debugMode: false,
       set: (patch) => set(patch),
     }),

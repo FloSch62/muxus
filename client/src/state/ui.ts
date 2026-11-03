@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { SavedHostProfile, SshGateway, SshHostEntry } from '@muxus/shared';
 import type { CompareText } from '../compare-sources.js';
+import type { HostDraft } from '../components/host-editor/draft.js';
 import { openSettingsWindow } from '../window-management.js';
 
 /** Unified editor state for OpenSSH entries and Muxus-owned Telnet/serial/RDP/VNC hosts. */
@@ -15,6 +16,8 @@ export type HostEditorState =
       prefillGateway?: SshGateway;
       group?: string;
       kind?: SavedHostProfile['kind'];
+      /** A new SSH host already filled in, e.g. a container found on a host. */
+      draft?: HostDraft;
     }
   | { mode: 'duplicate'; entry: SshHostEntry }
   | { mode: 'edit'; entry: SshHostEntry }
@@ -105,6 +108,11 @@ interface UiState {
   /** Global forwarding side panel (saved tunnels + live forwards). */
   forwardingOpen: boolean;
   /**
+   * The containers, clusters and VMs panel: every host found so far, or one
+   * host (`hostKey`) opened from its sidebar badge or menu.
+   */
+  environmentsPanel: { hostKey?: string } | false;
+  /**
    * The sidebar tab in front. Kept per window and never persisted, like the
    * window's tabs, so each window browses its own sessions.
    */
@@ -129,6 +137,7 @@ interface UiState {
   setHostBulkEditor: (hostKeys: string[] | false) => void;
   setFolderDialog: (value: FolderDialogState) => void;
   setForwardingOpen: (open: boolean) => void;
+  setEnvironmentsPanel: (value: { hostKey?: string } | false) => void;
   setSidebarView: (view: SidebarView) => void;
   setLogViewerOpen: (open: boolean) => void;
 }
@@ -153,6 +162,7 @@ export const useUiStore = create<UiState>()((set) => ({
   hostBulkEditor: false,
   folderDialog: false,
   forwardingOpen: false,
+  environmentsPanel: false,
   sidebarView: 'hosts',
   logViewerOpen: false,
   setFocusMode: (focusMode) => set({ focusMode }),
@@ -189,6 +199,7 @@ export const useUiStore = create<UiState>()((set) => ({
   setHostBulkEditor: (hostBulkEditor) => set({ hostBulkEditor }),
   setFolderDialog: (folderDialog) => set({ folderDialog }),
   setForwardingOpen: (forwardingOpen) => set({ forwardingOpen }),
+  setEnvironmentsPanel: (environmentsPanel) => set({ environmentsPanel }),
   setSidebarView: (sidebarView) => set({ sidebarView }),
   setLogViewerOpen: (logViewerOpen) => set({ logViewerOpen }),
 }));

@@ -23,8 +23,19 @@ const tmp = mkdtempSync(path.join(os.tmpdir(), 'muxus-host-key-pin-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
 const PASSWORD = 'secret';
-const ED25519 = utils.generateKeyPairSync('ed25519').private;
-const RSA = utils.generateKeyPairSync('rsa', { bits: 2048 }).private;
+/**
+ * ssh2 writes roughly one ed25519 key in 200 in a form its own parser rejects
+ * ("Malformed OpenSSH private key"), so draw until the key round-trips.
+ */
+function generateKey(type: 'ed25519' | 'rsa'): string {
+  for (;;) {
+    const key = utils.generateKeyPairSync(type, type === 'rsa' ? { bits: 2048 } : {}).private;
+    if (!(utils.parseKey(key) instanceof Error)) return key;
+  }
+}
+
+const ED25519 = generateKey('ed25519');
+const RSA = generateKey('rsa');
 
 function publicBlob(privateKey: string): Buffer {
   return (utils.parseKey(privateKey) as ParsedKey).getPublicSSH();
@@ -32,7 +43,7 @@ function publicBlob(privateKey: string): Buffer {
 
 const ED25519_SHA256 = fingerprintSha256(publicBlob(ED25519));
 const RSA_MD5 = fingerprintMd5(publicBlob(RSA)).slice(4);
-const OTHER_SHA256 = fingerprintSha256(publicBlob(utils.generateKeyPairSync('ed25519').private));
+const OTHER_SHA256 = fingerprintSha256(publicBlob(generateKey('ed25519')));
 
 function startServer(hostKeys: string[]): Promise<{ server: Server; port: number }> {
   const server = new Server({ hostKeys }, (conn) => {

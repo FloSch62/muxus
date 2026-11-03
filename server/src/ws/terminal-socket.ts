@@ -825,7 +825,9 @@ async function handleSession(
     const alias = ctx.connections.metadataAliasFor(profile);
     return alias ? { alias } : undefined;
   };
-  const sshLoginSequence = prepareLoginSequence(sshHost);
+  // A host's login sequence answers the host's own prompts; a container or
+  // console session never shows them.
+  const sshLoginSequence = profile.environment ? undefined : prepareLoginSequence(sshHost);
 
   // Flow control: a runaway `cat hugefile` must not balloon the ws buffer.
   let paused = false;

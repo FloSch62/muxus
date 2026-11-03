@@ -2,6 +2,18 @@ import { z } from 'zod';
 import { TERMINAL_ENTER_KEYS, type ConfigForward } from './api-types.js';
 import { normalizeHostKeyFingerprint } from './connection-links.js';
 import {
+  CONTAINER_NAME_PATTERN,
+  CONTAINER_RUNTIMES,
+  CONTAINER_SHELLS,
+  KUBE_CONTAINER_PATTERN,
+  KUBE_CONTEXT_PATTERN,
+  KUBE_NAME_PATTERN,
+  LIBVIRT_DOMAIN_PATTERN,
+  LIBVIRT_URIS,
+  PROXMOX_MAX_VMID,
+  PROXMOX_MIN_VMID,
+} from './environments.js';
+import {
   GNMI_DEFAULT_PORT,
   NETCONF_DEFAULT_PORT,
   type ManagementSessionInfo,
@@ -50,6 +62,52 @@ export function terminalWebSocketProtocols(token: string): string[] {
 
 /** Where a terminal session runs. Secrets (passwords, key passphrases) are
  *  never part of the profile — they travel only in `auth-response` replies. */
+const containerNameSchema = z.string().regex(CONTAINER_NAME_PATTERN);
+const kubeNameSchema = z.string().regex(KUBE_NAME_PATTERN);
+const kubeContainerSchema = z.string().regex(KUBE_CONTAINER_PATTERN);
+const kubeContextSchema = z.string().regex(KUBE_CONTEXT_PATTERN);
+const vmidSchema = z.number().int().min(PROXMOX_MIN_VMID).max(PROXMOX_MAX_VMID);
+
+/**
+ * A container, pod or VM console the session enters on the host it runs on.
+ * The server builds the command from these fields; see environments.ts.
+ */
+export const environmentTargetSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('container'),
+    runtime: z.enum(CONTAINER_RUNTIMES),
+    container: containerNameSchema,
+    shell: z.enum(CONTAINER_SHELLS).optional(),
+  }),
+  z.object({
+    kind: z.literal('container-logs'),
+    runtime: z.enum(CONTAINER_RUNTIMES),
+    container: containerNameSchema,
+  }),
+  z.object({
+    kind: z.literal('pod'),
+    context: kubeContextSchema.optional(),
+    namespace: kubeNameSchema,
+    pod: kubeNameSchema,
+    container: kubeContainerSchema.optional(),
+  }),
+  z.object({
+    kind: z.literal('pod-logs'),
+    context: kubeContextSchema.optional(),
+    namespace: kubeNameSchema,
+    pod: kubeNameSchema,
+    container: kubeContainerSchema.optional(),
+    previous: z.boolean().optional(),
+  }),
+  z.object({ kind: z.literal('proxmox-lxc'), vmid: vmidSchema }),
+  z.object({ kind: z.literal('proxmox-serial'), vmid: vmidSchema }),
+  z.object({
+    kind: z.literal('libvirt-console'),
+    domain: z.string().regex(LIBVIRT_DOMAIN_PATTERN),
+    uri: z.enum(LIBVIRT_URIS).optional(),
+  }),
+]);
+
 export const localProfileSchema = z.object({
   kind: z.literal('local'),
   /** Login shell override; empty/absent picks the server's default. */
@@ -59,6 +117,8 @@ export const localProfileSchema = z.object({
   cwd: z.string().max(4096).optional(),
   /** Text entered after the interactive shell starts, followed by Enter. */
   startupCommand: z.string().max(32_768).optional(),
+  /** Enter a container, pod or console on this computer instead of starting a shell. */
+  environment: environmentTargetSchema.optional(),
 });
 
 export const sshProfileSchema = z.object({
@@ -111,6 +171,11 @@ export const sshProfileSchema = z.object({
   passwordOnly: z.boolean().optional(),
   remoteCommand: z.string().min(1).max(32_768).optional(),
   requestTty: z.enum(['no', 'yes', 'force', 'auto']).optional(),
+  /**
+   * Enter a container, pod or console on the host instead of its login shell.
+   * Like a link's fingerprint it belongs to this session, never to a saved host.
+   */
+  environment: environmentTargetSchema.optional(),
   strictHostKeyChecking: z.enum(['yes', 'no', 'accept-new', 'ask']).optional(),
   /**
    * Host key the target must present, from an ssh:// link's fingerprint, in

@@ -537,6 +537,16 @@ const MIGRATIONS = [
         CHECK(local_echo IN (0, 1));
     `,
   },
+  {
+    version: 33,
+    name: 'host-environment-discovery',
+    // NULL follows the global setting; 0 and 1 override it for this host.
+    sql: `
+      ALTER TABLE connection_profiles
+        ADD COLUMN discover_environments INTEGER
+        CHECK(discover_environments IS NULL OR discover_environments IN (0, 1));
+    `,
+  },
 ] as const;
 
 /** Kinds stored as Muxus-owned saved hosts (everything but OpenSSH metadata rows). */
@@ -737,6 +747,7 @@ export interface OpenSshMetadata {
   localEcho?: boolean;
   disableSftp?: boolean;
   consoleCompatibility?: boolean;
+  discoverEnvironments?: boolean;
   loginSequence?: LoginSequence;
   lastConnectedAt?: string;
   connectCount: number;
@@ -937,6 +948,7 @@ export class MuxusDatabase {
         profiles.local_echo,
         profiles.disable_sftp,
         profiles.console_compatibility,
+        profiles.discover_environments,
         profiles.login_sequence_json,
         profiles.last_connected_at,
         profiles.connect_count,
@@ -1055,6 +1067,7 @@ export class MuxusDatabase {
             local_echo = ?,
             disable_sftp = ?,
             console_compatibility = ?,
+            discover_environments = ?,
             login_sequence_json = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
@@ -1113,6 +1126,13 @@ export class MuxusDatabase {
           : patch.consoleCompatibility
             ? 1
             : 0,
+        patch.discoverEnvironments === undefined
+          ? nullableNumber(current.discover_environments)
+          : patch.discoverEnvironments === null
+            ? null
+            : patch.discoverEnvironments
+              ? 1
+              : 0,
         loginSequenceColumn(patch.loginSequence, current.login_sequence_json),
         String(current.id),
       );
@@ -1612,6 +1632,7 @@ export class MuxusDatabase {
             local_echo = ?,
             disable_sftp = ?,
             console_compatibility = ?,
+            discover_environments = ?,
             login_sequence_json = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
@@ -1670,6 +1691,13 @@ export class MuxusDatabase {
           : patch.consoleCompatibility
             ? 1
             : 0,
+        patch.discoverEnvironments === undefined
+          ? nullableNumber(current.discover_environments)
+          : patch.discoverEnvironments === null
+            ? null
+            : patch.discoverEnvironments
+              ? 1
+              : 0,
         loginSequenceColumn(patch.loginSequence, current.login_sequence_json),
         id,
       );
@@ -2698,6 +2726,7 @@ function metadataFromRow(row: SqlRow): OpenSshMetadata {
     ...terminalInputModesFromRow(row),
     ...(Number(row.disable_sftp) === 1 ? { disableSftp: true } : {}),
     ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),
+    ...discoverEnvironmentsFromRow(row),
     loginSequence: loginSequenceFromJson(row.login_sequence_json),
     lastConnectedAt: optionalString(row.last_connected_at),
     connectCount: Number(row.connect_count),
@@ -2744,6 +2773,7 @@ function savedHostFromRow(row: SqlRow): SavedHostProfile {
       ...terminalInputModesFromRow(row),
       ...(Number(row.disable_sftp) === 1 ? { disableSftp: true } : {}),
       ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),
+      ...discoverEnvironmentsFromRow(row),
       loginSequence: loginSequenceFromJson(row.login_sequence_json),
       lastConnectedAt: optionalString(row.last_connected_at),
       connectCount: Number(row.connect_count),
@@ -2751,6 +2781,12 @@ function savedHostFromRow(row: SqlRow): SavedHostProfile {
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };
+}
+
+/** NULL follows the global setting and is left out. */
+function discoverEnvironmentsFromRow(row: SqlRow): Pick<OpenSshMetadata, 'discoverEnvironments'> {
+  const value = nullableNumber(row.discover_environments);
+  return value === null ? {} : { discoverEnvironments: value === 1 };
 }
 
 /** Stored keys were validated when written; anything else keeps what xterm.js does. */

@@ -92,6 +92,10 @@ declare global {
       getLinkHandlers?(): Promise<LinkHandlerState | undefined>;
       /** Make Muxus the system handler for one link scheme. */
       registerLinkHandler?(scheme: ConnectionLinkScheme): Promise<LinkHandlerRegistration | undefined>;
+      /** Whether the Kubus desktop app is registered for kubus:// links. */
+      kubusAvailable?(): Promise<boolean>;
+      /** Open an in-app Kubus route, such as `/r/core/v1/pods?sel=…`, through its kubus:// link. */
+      openKubus?(route: string): Promise<boolean>;
       /** Open a tab-transfer window when the native cursor is outside every app window. */
       detachTab(
         launch: Extract<AppWindowLaunch, { kind: 'tab-transfer' }>,

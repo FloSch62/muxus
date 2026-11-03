@@ -85,6 +85,7 @@ behaviour. The pages are independent and can be read in any order.
 -   :material-folder-network-outline: **[File browser (SFTP)](files.md)**: upload, download, rename, delete
 -   :material-file-document-edit-outline: **[Remote editor](editor.md)**: Monaco over the live SSH transport
 -   :material-swap-horizontal: **[Tunnels & port forwarding](tunnels.md)**: saved `-L`, `-R`, `-D` without a terminal
+-   :material-cube-outline: **[Containers & VMs](environments.md)**: Docker, Podman, Containerlab, Kubernetes, Proxmox and libvirt on your hosts
 -   :material-view-dashboard-outline: **[Workspaces](workspaces.md)**: save, reopen, reconnect a whole layout
 -   :material-history: **[Session history](session-history.md)**: opt-in retention, search, replay
 -   :material-magnify: **[Quick launcher](quick-launcher.md)**: ++ctrl+k++ for every category

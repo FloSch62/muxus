@@ -11,8 +11,10 @@ import { folderSegments, type VisibleNode } from '../../host-tree.js';
 import {
   managedHostAddress,
   managedHostDisplayName,
+  managedHostKey,
   type ManagedHost,
 } from '../../managed-hosts.js';
+import { EnvironmentBadges } from '../environments/EnvironmentBadges.js';
 import { loadTerminalViewImpl } from '../../lazy-features.js';
 import { hostKindIcon } from '../host-kind-icon.js';
 import { hostDetailLines } from './host-details.js';
@@ -234,6 +236,7 @@ export const HostRow = memo(function HostRow({
             )}
           </Stack>
         </Box>
+        <EnvironmentBadges hostKey={managedHostKey(host)} />
         {match ? (
           <Typography
             component="span"
