@@ -18,7 +18,7 @@ import { nodeUsesSsh, openContainerlabNode } from '../../environment-sessions.js
 import type { HostEnvironmentsEntry } from '../../state/environments.js';
 import { MONO, StatusDot } from './EnvironmentTree.js';
 
-/** The vendored containerlab viewer (client/public/vendor/clab-viewer). */
+/** The containerlab viewer, served from @containerlab/clab-viewer (client/clab-viewer-plugin.ts). */
 const VIEWER_PATH = '/vendor/clab-viewer/viewer.html';
 
 type TopologyState =

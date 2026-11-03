@@ -77,7 +77,7 @@ const CONTENT_SECURITY_POLICY = [
   "frame-ancestors 'none'",
 ].join('; ');
 
-/** Where the vendored containerlab topology viewer is served (client/public). */
+/** Where the containerlab topology viewer is served (client/clab-viewer-plugin.ts). */
 const CLAB_VIEWER_PATH = '/vendor/clab-viewer/';
 
 /** The same policy, except that Muxus itself may frame the viewer. */
