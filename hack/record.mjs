@@ -43,6 +43,8 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const PREFS = {
   themeMode: THEME,
   monoFontSize: 14,
+  // Prompt detection reads the DOM renderer's .xterm-rows.
+  webglRenderer: false,
   fontFamily: 'JetBrains Mono',
   lineHeight: 1.1,
   lightTerminalScheme: 'github-light',

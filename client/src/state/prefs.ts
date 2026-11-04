@@ -179,7 +179,7 @@ export interface PrefsState {
   scrollback: number;
   cursorBlink: boolean;
   cursorStyle: 'block' | 'underline' | 'bar';
-  /** Render terminals on the GPU via WebGL; off keeps the DOM renderer. */
+  /** Render terminals on the GPU via WebGL (the default); off keeps the DOM renderer. */
   webglRenderer: boolean;
   /** Local terminal shell; 'auto' lets the server pick the login shell. */
   localShell: string;
@@ -620,7 +620,7 @@ export const usePrefsStore = create<PrefsState>()(
       scrollback: 10_000,
       cursorBlink: true,
       cursorStyle: 'block',
-      webglRenderer: false,
+      webglRenderer: true,
       localShell: 'auto',
       localShellProfiles: [],
       defaultLocalShellProfileId: '',

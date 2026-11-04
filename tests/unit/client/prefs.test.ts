@@ -312,8 +312,8 @@ describe('split pane focus preferences', () => {
 });
 
 describe('GPU renderer preference', () => {
-  it('defaults to the DOM renderer', () => {
-    expect(usePrefsStore.getInitialState().webglRenderer).toBe(false);
+  it('defaults to the GPU renderer', () => {
+    expect(usePrefsStore.getInitialState().webglRenderer).toBe(true);
   });
 
   it('keeps a boolean choice and drops malformed persisted values', () => {
