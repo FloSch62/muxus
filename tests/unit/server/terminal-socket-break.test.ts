@@ -62,6 +62,7 @@ describe('Send BREAK over the terminal socket', () => {
     });
     const route = terminalRoute({
       connections: {
+        usesSystemOpenSsh: () => false,
         connectShell: vi.fn().mockResolvedValue({
           lease: {
             connection: {

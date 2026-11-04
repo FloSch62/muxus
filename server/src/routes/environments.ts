@@ -27,6 +27,7 @@ import {
 import {
   localProbeRunner,
   remoteProbeRunner,
+  scriptProbeRunner,
   type ProbeRunner,
 } from '../environments/probe-runner.js';
 import { HttpProblem, sendError } from '../util/errors.js';
@@ -127,6 +128,17 @@ export function registerEnvironmentRoutes(app: FastifyInstance, ctx: AppContext)
   ): Promise<T | EnvironmentsResponse> => {
     const { connId } = (req.params ?? {}) as { connId?: string };
     if (!connId) return work(localProbeRunner());
+    const system = ctx.systemOpenSsh.acquire(connId);
+    if (system) {
+      try {
+        if (options.auto && !(await system.connection.runsCommands())) {
+          return { status: 'unsupported', message: 'The host does not run commands.' };
+        }
+        return await work(scriptProbeRunner(system.connection.runScript));
+      } finally {
+        system.release();
+      }
+    }
     const lease = ctx.connections.acquire(connId, 'environments');
     if (!lease) throw new HttpProblem(404, 'connection not found');
     try {
@@ -243,6 +255,11 @@ export function registerEnvironmentRoutes(app: FastifyInstance, ctx: AppContext)
     handle(async (req): Promise<EnvironmentPortResponse> => {
       const { connId } = req.params as { connId: string };
       const { host, port } = parse(portSchema, req.body);
+      const system = ctx.systemOpenSsh.acquire(connId);
+      if (system) {
+        system.release();
+        throw new HttpProblem(400, 'Opening ports is not available with system OpenSSH.');
+      }
       const existing = ctx.forwards
         .list(connId)
         .find(

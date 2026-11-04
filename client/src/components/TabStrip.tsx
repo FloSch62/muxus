@@ -81,6 +81,7 @@ import { findPane } from '../state/workspace-layout.js';
 import { layout, statusTextColor } from '../theme.js';
 import { useMultiExecStore } from '../state/multi-exec.js';
 import { canSendBreak, sendBreak, supportsBreak } from '../terminal/send-break.js';
+import { SYSTEM_OPENSSH_UNAVAILABLE } from '../system-openssh.js';
 import { canSendTextFile, requestSendTextFile } from '../terminal/send-text-file.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
@@ -1234,6 +1235,16 @@ export function TabStrip({
             </ListItemIcon>
             Open SFTP file browser
           </MenuItem>
+        ) : menuTab?.systemOpenSsh ? (
+          <MenuItem disabled>
+            <ListItemIcon>
+              <FolderOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText
+              primary="Open SFTP file browser"
+              secondary="Not available for this system OpenSSH session"
+            />
+          </MenuItem>
         ) : null}
         <Divider />
         <MenuItem
@@ -1458,7 +1469,11 @@ export function TabStrip({
             <ListItemIcon>
               <PowerInputOutlinedIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>Send BREAK</ListItemText>
+            {menuTab?.systemOpenSsh ? (
+              <ListItemText primary="Send BREAK" secondary={SYSTEM_OPENSSH_UNAVAILABLE} />
+            ) : (
+              <ListItemText>Send BREAK</ListItemText>
+            )}
             <ChordHint chord={sendBreakChord} />
           </MenuItem>
         ) : null}

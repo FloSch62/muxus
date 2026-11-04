@@ -347,7 +347,8 @@ function PaneCanvas({
                       connId={tab.connId}
                       hostLabel={tab.title}
                       terminalPath={tab.terminalCwd}
-                      followTerminalFolder={tab.sftpFollowTerminal !== false}
+                      followTerminalFolder={tab.sftpFollowTerminal !== false && !tab.systemOpenSsh}
+                      followTerminalFolderUnavailable={tab.systemOpenSsh === true}
                       onFollowTerminalFolderChange={(sftpFollowTerminal) =>
                         updateTab(tab.id, { sftpFollowTerminal })
                       }

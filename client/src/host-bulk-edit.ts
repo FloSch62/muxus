@@ -63,6 +63,7 @@ export interface BulkHostValues {
   forwardAgent: BulkTriState;
   forwardX11: BulkTriState;
   consoleCompatibility: boolean;
+  systemOpenSsh: boolean;
   disableSftp: boolean;
   terminalScheme: string | undefined;
   terminalFontColor: string | undefined;
@@ -102,6 +103,7 @@ export const BULK_FIELD_AUDIENCE: { readonly [F in BulkHostField]: BulkAudience 
   forwardAgent: 'ssh',
   forwardX11: 'ssh',
   consoleCompatibility: 'ssh',
+  systemOpenSsh: 'ssh',
   disableSftp: 'ssh',
   terminalScheme: 'terminal',
   terminalFontColor: 'terminal',
@@ -196,6 +198,7 @@ export function bulkValuesForHost(
     values.forwardAgent = triState(options.forwardAgent);
     values.forwardX11 = triState(options.forwardX11);
     values.consoleCompatibility = metadata?.consoleCompatibility ?? false;
+    values.systemOpenSsh = metadata?.systemOpenSsh ?? false;
     values.disableSftp = metadata?.disableSftp ?? false;
   }
   return values;
@@ -446,6 +449,7 @@ function metadataPatch(
   if (differs.has('implicitCr')) patch.implicitCr = changes.implicitCr;
   if (differs.has('localEcho')) patch.localEcho = changes.localEcho;
   if (differs.has('consoleCompatibility')) patch.consoleCompatibility = changes.consoleCompatibility;
+  if (differs.has('systemOpenSsh')) patch.systemOpenSsh = changes.systemOpenSsh;
   if (differs.has('disableSftp')) patch.disableSftp = changes.disableSftp;
   if (differs.has('loginSequence') && changes.loginSequence) {
     patch.loginSequence = loginSequenceFromDraft(changes.loginSequence);

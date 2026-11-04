@@ -47,6 +47,7 @@ export function hostDetailLines(
       );
     }
     if (profile.passwordOnly) lines.push('Password authentication');
+    if (host.entry.metadata.systemOpenSsh) lines.push('System OpenSSH');
     if (host.entry.metadata.consoleCompatibility) lines.push('Console compatibility');
     else if (host.entry.metadata.disableSftp) lines.push('SFTP disabled');
     if (profile.forwards?.length) {
@@ -64,6 +65,7 @@ export function hostDetailLines(
     lines.push(`Key ${resolved.identityFiles.map((file) => file.split(/[\\/]/).pop()).join(', ')}`);
   }
   if (resolved.passwordOnly) lines.push('Password authentication');
+  if (host.entry.metadata?.systemOpenSsh) lines.push('System OpenSSH');
   if (host.entry.metadata?.consoleCompatibility) lines.push('Console compatibility');
   else if (host.entry.metadata?.disableSftp) lines.push('SFTP disabled');
   if (resolved.forwards.length > 0) {

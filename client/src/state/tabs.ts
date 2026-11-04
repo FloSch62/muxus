@@ -37,6 +37,8 @@ interface TabBase {
   sftpOpen: boolean;
   /** Server-advertised capability for the current SSH transport. */
   sftpAvailable?: boolean;
+  /** The session runs the computer's `ssh` program: no features of the built-in client. */
+  systemOpenSsh?: boolean;
   /** Most recent working directory reported by a live local or remote shell. */
   terminalCwd?: string;
   /** Explicit opt-out from following the terminal in the attached SFTP panel. */
@@ -112,6 +114,7 @@ type TabUpdate = Partial<{
   transferId: string | undefined;
   sftpOpen: boolean;
   sftpAvailable: boolean | undefined;
+  systemOpenSsh: boolean | undefined;
   terminalCwd: string | undefined;
   sftpFollowTerminal: boolean | undefined;
   color: string | undefined;
@@ -474,6 +477,7 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
           connId: undefined,
           sftpOpen: false,
           sftpAvailable: undefined,
+          systemOpenSsh: undefined,
           terminalCwd: undefined,
           searchRequest: 0,
           editorPaths: [],
@@ -876,6 +880,7 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
           status: tab.connectOnMount ? 'connecting' as const : 'closed' as const,
           sftpOpen: false,
           sftpAvailable: undefined,
+          systemOpenSsh: undefined,
           terminalCwd: undefined,
           searchRequest: 0,
           editorPaths: [],
@@ -1015,6 +1020,7 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
           connId: _connId,
           sftpOpen: _sftpOpen,
           sftpAvailable: _sftpAvailable,
+          systemOpenSsh: _systemOpenSsh,
           terminalCwd: _terminalCwd,
           sftpFollowTerminal: _sftpFollowTerminal,
           ...emptyPatch

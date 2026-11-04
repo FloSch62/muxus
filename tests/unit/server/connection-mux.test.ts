@@ -135,6 +135,7 @@ function makeManager(
   options: {
     disableSftpForHost?: (alias: string) => boolean;
     consoleCompatibilityForHost?: (alias: string) => boolean;
+    systemOpenSshForHost?: (alias: string) => boolean;
   } = {},
 ): SshConnectionManager {
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
@@ -189,6 +190,19 @@ function hangingIo(): { io: ConnectIo; prompted: Promise<void>; release: () => v
   };
   return { io, prompted, release: () => release?.() };
 }
+
+describe('hosts set to system OpenSSH', () => {
+  it('are not dialed by the built-in client', async () => {
+    const configFile = path.join(tmp, 'system-openssh-config');
+    writeFileSync(configFile, 'Host krb\n  HostName 127.0.0.1\n');
+    const manager = makeManager(configFile, { systemOpenSshForHost: (alias) => alias === 'krb' });
+    const profile: SshProfile = { kind: 'ssh', target: 'krb' };
+
+    expect(manager.usesSystemOpenSsh(profile)).toBe(true);
+    expect(manager.usesSystemOpenSsh({ kind: 'ssh', target: 'other' })).toBe(false);
+    await expect(manager.connect(profile, makeIo().io)).rejects.toThrow('uses system OpenSSH');
+  });
+});
 
 describe('SSH connection multiplexing', () => {
   let manager: SshConnectionManager | undefined;

@@ -389,6 +389,8 @@ export class SshConnectionManager {
   private readonly consoleCompatibilityForHost: ((alias: string) => boolean) | undefined;
   private readonly disableSftpForProfile: ((id: string) => boolean) | undefined;
   private readonly consoleCompatibilityForProfile: ((id: string) => boolean) | undefined;
+  private readonly systemOpenSshForHost: ((alias: string) => boolean) | undefined;
+  private readonly systemOpenSshForProfile: ((id: string) => boolean) | undefined;
   private readonly agentOperationTimeoutMs: number;
   private readonly agentWaitStatusMs: number;
   private readonly x11: LocalX11 | undefined;
@@ -414,6 +416,8 @@ export class SshConnectionManager {
       disableSftpForProfile?: (id: string) => boolean;
       /** Muxus-owned console setting for a database-backed SSH host. */
       consoleCompatibilityForProfile?: (id: string) => boolean;
+      systemOpenSshForHost?: (alias: string) => boolean;
+      systemOpenSshForProfile?: (id: string) => boolean;
       /** Test seam; production uses the exported responsive-agent defaults. */
       agentOperationTimeoutMs?: number;
       /** Test seam; production uses the exported responsive-agent defaults. */
@@ -434,6 +438,8 @@ export class SshConnectionManager {
     this.consoleCompatibilityForHost = options.consoleCompatibilityForHost;
     this.disableSftpForProfile = options.disableSftpForProfile;
     this.consoleCompatibilityForProfile = options.consoleCompatibilityForProfile;
+    this.systemOpenSshForHost = options.systemOpenSshForHost;
+    this.systemOpenSshForProfile = options.systemOpenSshForProfile;
     this.agentOperationTimeoutMs =
       options.agentOperationTimeoutMs ?? DEFAULT_AGENT_OPERATION_TIMEOUT_MS;
     this.agentWaitStatusMs =
@@ -495,6 +501,12 @@ export class SshConnectionManager {
     } = {},
   ): Promise<MuxedConnectionLease> {
     profile = this.resolveProfile(profile);
+    if (this.usesSystemOpenSsh(profile)) {
+      // Tunnels and the like need the built-in client, which this host was set up not to use.
+      throw new Error(
+        'This host uses system OpenSSH, so Muxus cannot open a connection of its own to it. Use a terminal to the host, or turn the option off in the host settings.',
+      );
+    }
     const doc = this.loadConfig();
     const chain = buildChain(
       doc,
@@ -628,6 +640,22 @@ export class SshConnectionManager {
   listedMetadataAliasFor(profile: SshProfile): string | undefined {
     if (profile.useConfig === false || profile.profileId) return undefined;
     return listedMetadataAlias(this.loadConfig(), profile.target);
+  }
+
+  /** Whether a tab to this profile runs the computer's `ssh` program. */
+  usesSystemOpenSsh(profile: SshProfile): boolean {
+    if (profile.profileId) return this.systemOpenSshForProfile?.(profile.profileId) ?? false;
+    if (!this.systemOpenSshForHost) return false;
+    const alias = this.listedMetadataAliasFor(profile);
+    return alias ? this.systemOpenSshForHost(alias) : false;
+  }
+
+  /** Whether a system OpenSSH host's settings leave SFTP on. Console compatibility shapes
+   *  the built-in client's session, so the host editor greys it out for these hosts. */
+  sftpAllowedFor(profile: SshProfile): boolean {
+    if (profile.profileId) return !this.disableSftpForProfile?.(profile.profileId);
+    const alias = this.listedMetadataAliasFor(profile);
+    return !(alias && this.disableSftpForHost?.(alias));
   }
 
   resolveProfile(profile: SshProfile): SshProfile {

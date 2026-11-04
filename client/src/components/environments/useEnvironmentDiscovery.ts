@@ -7,6 +7,7 @@ import {
   environmentHostForProfile,
   forgetDisconnectedHosts,
   refreshConnectedHosts,
+  tabRunsCommands,
 } from '../../environments.js';
 import { useEnvironmentsStore, type EnvironmentHost } from '../../state/environments.js';
 import { usePrefsStore } from '../../state/prefs.js';
@@ -47,6 +48,7 @@ export function useEnvironmentDiscovery(): void {
     const connected = new Map<string, EnvironmentHost>();
     for (const tab of tabs) {
       if (tab.profile?.kind !== 'ssh' || tab.status !== 'connected' || !tab.connId) continue;
+      if (!tabRunsCommands(tab)) continue;
       const host = environmentHostForProfile(tab.profile, config.hosts, saved.profiles);
       if (host) connected.set(host.key, host);
     }
@@ -54,7 +56,9 @@ export function useEnvironmentDiscovery(): void {
       const entry = store.entries[host.key];
       if (entry) {
         // The host editor may have changed the host's own choice.
-        if (entry.discover !== host.discover) store.update(host, {});
+        if (entry.discover !== host.discover || entry.systemOpenSsh !== host.systemOpenSsh) {
+          store.update(host, {});
+        }
         if (entry.automatic && !discoveryEnabledFor(host)) store.remove(host.key);
         continue;
       }

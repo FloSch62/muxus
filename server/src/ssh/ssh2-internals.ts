@@ -3,6 +3,9 @@
 // @ts-expect-error -- no declaration exists for this ssh2 internal module.
 import constants from 'ssh2/lib/protocol/constants.js';
 
+// @ts-expect-error -- no declaration exists for this ssh2 internal module.
+import sftpProtocol from 'ssh2/lib/protocol/SFTP.js';
+
 interface Ssh2Constants {
   SUPPORTED_KEX: string[];
   SUPPORTED_CIPHER: string[];
@@ -12,3 +15,6 @@ interface Ssh2Constants {
 }
 
 export default constants as Ssh2Constants;
+
+/** ssh2's SFTP protocol, usable over any byte stream; see sftp-over-stdio.ts. */
+export const SFTP = (sftpProtocol as { SFTP: new (client: unknown, channel: unknown) => unknown }).SFTP;

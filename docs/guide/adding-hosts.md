@@ -177,6 +177,11 @@ For an otherwise normal SSH server that only lacks SFTP or cannot use Muxus shel
 allocation intact. This remains separate from console compatibility so existing disabled-SFTP
 hosts keep their previous session behavior.
 
+**Use system OpenSSH** connects with this computer's `ssh` program instead of the built-in SSH
+client, for what the built-in client does not support, such as
+[Kerberos (GSSAPI)](../reference/ssh-config.md#system-openssh). Prompts and errors appear in the
+terminal, exactly as `ssh` prints them.
+
 **Find containers, clusters and VMs** decides for this host whether Muxus lists its
 [containers and VMs](environments.md) while a session is connected: **Like Settings**
 (the default) follows the global switch in Settings → Behavior, **On** and **Off** override it.

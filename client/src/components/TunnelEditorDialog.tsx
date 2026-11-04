@@ -41,6 +41,7 @@ import {
   type HostDraft,
 } from './host-editor/draft.js';
 import { RouteSection } from './host-editor/RouteSection.js';
+import { SYSTEM_OPENSSH_UNAVAILABLE, tunnelUsesSystemOpenSsh } from '../system-openssh.js';
 
 export interface TunnelEditorState {
   /** Present when editing an existing tunnel. */
@@ -113,9 +114,10 @@ function TunnelEditorForm({
   const selectedHost = (config?.hosts ?? []).find((host) =>
     host.aliases.includes(hostTarget),
   );
+  const hostNeedsSystemOpenSsh = selectedHost?.metadata?.systemOpenSsh === true;
   const connectionOk =
     mode === 'host'
-      ? !!hostTarget.trim()
+      ? !!hostTarget.trim() && !hostNeedsSystemOpenSsh
       : !!custom.aliasText.trim() &&
         !/\s/.test(custom.aliasText.trim()) &&
         (!custom.port || portOk(custom.port)) &&
@@ -211,6 +213,9 @@ function TunnelEditorForm({
                   freeSolo
                   fullWidth
                   options={aliases}
+                  getOptionDisabled={(alias) =>
+                    tunnelUsesSystemOpenSsh({ target: alias }, config?.hosts ?? [])
+                  }
                   inputValue={hostTarget}
                   onInputChange={(_event, value) => setHostTarget(value)}
                   renderInput={(params) => (
@@ -218,7 +223,12 @@ function TunnelEditorForm({
                       {...params}
                       label="SSH host"
                       placeholder="Choose an alias from ~/.ssh/config"
-                      helperText="Keys, jump hosts, user, and port stay linked to this host's SSH config."
+                      error={hostNeedsSystemOpenSsh}
+                      helperText={
+                        hostNeedsSystemOpenSsh
+                          ? `${SYSTEM_OPENSSH_UNAVAILABLE}: use LocalForward in this host's settings instead.`
+                          : "Keys, jump hosts, user, and port stay linked to this host's SSH config."
+                      }
                     />
                   )}
                 />

@@ -78,6 +78,7 @@ const SECTIONS: ReadonlyArray<{
       'forwardAgent',
       'forwardX11',
       'consoleCompatibility',
+      'systemOpenSsh',
       'disableSftp',
     ],
   },
@@ -262,6 +263,7 @@ function BulkEditBody({ hostKeys, onClose }: { hostKeys: readonly string[]; onCl
           forwardAgent={field('forwardAgent')}
           forwardX11={field('forwardX11')}
           consoleCompatibility={field('consoleCompatibility')}
+          systemOpenSsh={field('systemOpenSsh')}
           disableSftp={field('disableSftp')}
         />
       )}
@@ -362,6 +364,7 @@ function ConnectionSection({
   forwardAgent,
   forwardX11,
   consoleCompatibility,
+  systemOpenSsh,
   disableSftp,
 }: {
   total: number;
@@ -372,6 +375,7 @@ function ConnectionSection({
   forwardAgent: BulkFieldState<BulkHostValues['forwardAgent']>;
   forwardX11: BulkFieldState<BulkHostValues['forwardX11']>;
   consoleCompatibility: BulkFieldState<boolean>;
+  systemOpenSsh: BulkFieldState<boolean>;
   disableSftp: BulkFieldState<boolean>;
 }) {
   const sshCount = applicableCount(user.summary);
@@ -457,6 +461,14 @@ function ConnectionSection({
         <FieldStatus state={forwardX11} />
       </Box>
       <Divider />
+      <Box>
+        <BulkCheckbox
+          state={systemOpenSsh}
+          label="Use system OpenSSH"
+          description="Connects with this computer's ssh program, for authentication such as Kerberos (GSSAPI). Windows gets the terminal only; elsewhere the file browser, statistics and container listing work too."
+        />
+        <FieldStatus state={systemOpenSsh} />
+      </Box>
       <Box>
         <BulkCheckbox
           state={consoleCompatibility}

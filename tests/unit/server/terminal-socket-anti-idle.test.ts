@@ -93,6 +93,7 @@ async function sshSession(database: MuxusDatabase, history = historyStore().stor
   });
   const route = terminalRoute({
     connections: {
+      usesSystemOpenSsh: () => false,
       connectShell: vi.fn().mockResolvedValue({
         lease: {
           connection: {

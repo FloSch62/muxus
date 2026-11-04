@@ -58,6 +58,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 31, name: 'host-anti-idle' },
       { version: 32, name: 'host-terminal-input-modes' },
       { version: 33, name: 'host-environment-discovery' },
+      { version: 34, name: 'host-system-openssh' },
     ]);
   });
 
@@ -149,8 +150,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 33,
-      name: 'host-environment-discovery',
+      version: 34,
+      name: 'host-system-openssh',
     });
     expect(database.savedHostProfile(telnet.id)).toMatchObject({
       name: 'Core switch',
@@ -256,8 +257,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 33,
-      name: 'host-environment-discovery',
+      version: 34,
+      name: 'host-system-openssh',
     });
     expect(database.savedHostProfile(rdp.id)).toMatchObject({ name: 'Build server', metadata: { group: 'Lab' } });
     const gnmi = database.saveSavedHostProfile({
@@ -410,6 +411,7 @@ describe('MuxusDatabase migrations', () => {
       legacy.exec(`
         DELETE FROM schema_migrations WHERE version >= 30;
         ALTER TABLE connection_profiles DROP COLUMN discover_environments;
+        ALTER TABLE connection_profiles DROP COLUMN system_openssh;
         ALTER TABLE connection_profiles DROP COLUMN paste_prompt_wait_json;
         ALTER TABLE connection_profiles DROP COLUMN anti_idle_json;
         ALTER TABLE connection_profiles DROP COLUMN backspace_key;
@@ -423,11 +425,12 @@ describe('MuxusDatabase migrations', () => {
     }
 
     database = new MuxusDatabase(filename);
-    expect(database.appliedMigrations().slice(-4)).toEqual([
+    expect(database.appliedMigrations().slice(-5)).toEqual([
       { version: 30, name: 'host-paste-prompt-wait' },
       { version: 31, name: 'host-anti-idle' },
       { version: 32, name: 'host-terminal-input-modes' },
       { version: 33, name: 'host-environment-discovery' },
+      { version: 34, name: 'host-system-openssh' },
     ]);
     const metadata = database.openSshMetadata(['legacy']).get('legacy');
     expect(metadata).toMatchObject({ group: 'Core', pasteLineDelayMs: 250 });
@@ -560,8 +563,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 33,
-      name: 'host-environment-discovery',
+      version: 34,
+      name: 'host-system-openssh',
     });
     expect(database.passwordVaultConfig()).toMatchObject({
       formatVersion: 2,
@@ -846,6 +849,13 @@ describe('hybrid OpenSSH metadata', () => {
 
     database.updateOpenSshMetadata('production', { consoleCompatibility: false });
     expect(database.consoleCompatibilityForAlias('production')).toBe(false);
+
+    expect(database.systemOpenSshForAlias('production')).toBe(false);
+    database.updateOpenSshMetadata('production', { systemOpenSsh: true });
+    expect(database.systemOpenSshForAlias('production')).toBe(true);
+    expect(database.openSshMetadata(['production']).get('production')?.systemOpenSsh).toBe(true);
+    database.updateOpenSshMetadata('production', { systemOpenSsh: false });
+    expect(database.systemOpenSshForAlias('production')).toBe(false);
     expect(database.sftpDisabledForAlias('production')).toBe(true);
 
     database.updateOpenSshMetadata('production', { disableSftp: false });

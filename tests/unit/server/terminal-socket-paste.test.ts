@@ -86,6 +86,7 @@ async function sshSession(answer?: (line: string) => string) {
   };
   const ctx = {
     connections: {
+      usesSystemOpenSsh: () => false,
       connectShell,
       resolveProfile: (profile: unknown) => profile,
       leaseCount: () => 0,

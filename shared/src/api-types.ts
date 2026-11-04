@@ -867,6 +867,8 @@ export interface OpenSshProfileMetadata {
   disableSftp?: boolean;
   /** Console appliances: also suppress env requests and tolerate a rejected PTY. */
   consoleCompatibility?: boolean;
+  /** Connect with the computer's `ssh` program instead of the built-in SSH client. */
+  systemOpenSsh?: boolean;
   /** Look for containers, clusters and VMs when a session connects; absent follows Settings. */
   discoverEnvironments?: boolean;
   /** The host's own login sequence; absent inherits the folder's. */
@@ -898,6 +900,7 @@ export interface OpenSshMetadataPatch {
   localEcho?: boolean | null;
   disableSftp?: boolean;
   consoleCompatibility?: boolean;
+  systemOpenSsh?: boolean;
   /** Null follows the global setting. */
   discoverEnvironments?: boolean | null;
   /** Null goes back to the folder's sequence. */

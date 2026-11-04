@@ -354,6 +354,14 @@ export async function readRemoteHostStats(client: Client): Promise<HostStatsRead
   return sample ? { supported: true, sample } : { supported: false };
 }
 
+/** The same reading through anything that can feed a script to the host's sh. */
+export async function readHostStatsWith(
+  runScript: (script: string) => Promise<string>,
+): Promise<HostStatsReading> {
+  const sample = parseHostStats(await runScript(HOST_STATS_SCRIPT));
+  return sample ? { supported: true, sample } : { supported: false };
+}
+
 /** CPU time summed over every core, from Node; the platform-neutral fallback. */
 function nodeCpuTime(): Pick<HostStatsSample, 'cpuTime' | 'cores'> {
   const cpus = os.cpus();

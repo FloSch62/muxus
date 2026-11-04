@@ -40,6 +40,9 @@ function tabSource(tab: TerminalTab | undefined): HostStatsSource | string {
   if (kind !== 'ssh' && kind !== 'local') return 'Statistics are shown for SSH and local sessions';
   if (tab.status !== 'connected') return 'Not connected';
   if (kind === 'local') return { kind: 'local' };
+  if (tab.systemOpenSsh && tab.sftpAvailable === false) {
+    return 'Statistics are not available for this system OpenSSH session';
+  }
   return tab.connId ? { kind: 'ssh', connId: tab.connId } : 'Not connected';
 }
 

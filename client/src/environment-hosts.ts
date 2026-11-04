@@ -107,6 +107,8 @@ export function jumpHostDraft(
     hostname: options.address,
     user: options.user ?? '',
     ...(hop ? { routeMode: 'jump' as const, proxyJump: [hop] } : {}),
+    // Only the ssh program can log in to this hop, so it has to be what jumps through it.
+    ...(host.systemOpenSsh ? { systemOpenSsh: true } : {}),
   };
 }
 

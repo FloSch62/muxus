@@ -7,12 +7,15 @@ import type { SshGateway } from '@muxus/shared';
 import { useSavedHostProfiles, useSshConfig } from '../../api/queries.js';
 import { hostDisplayName } from '../../host-organization.js';
 import { savedHostAddress, savedHostDisplayName } from '../../saved-hosts.js';
+import { SYSTEM_OPENSSH_UNAVAILABLE } from '../../system-openssh.js';
 
 interface GatewayOption {
   key: string;
   label: string;
   detail: string;
   gateway: SshGateway;
+  /** Carrying a connection through a host needs the built-in client. */
+  unavailable?: boolean;
 }
 
 /** Pick an SSH host (ssh_config or saved) that a connection is carried through. */
@@ -31,8 +34,9 @@ export function SshGatewayField({
     const fromConfig = (config?.hosts ?? []).map((host) => ({
       key: `ssh:${host.alias}`,
       label: hostDisplayName(host),
-      detail: host.alias,
+      detail: host.metadata?.systemOpenSsh ? SYSTEM_OPENSSH_UNAVAILABLE : host.alias,
       gateway: { target: host.alias },
+      unavailable: host.metadata?.systemOpenSsh === true,
     }));
     const fromProfiles = (saved?.profiles ?? []).flatMap((profile) =>
       profile.profile.kind === 'ssh'
@@ -40,8 +44,11 @@ export function SshGatewayField({
             {
               key: `profile:${profile.id}`,
               label: savedHostDisplayName(profile),
-              detail: savedHostAddress(profile),
+              detail: profile.metadata.systemOpenSsh
+                ? SYSTEM_OPENSSH_UNAVAILABLE
+                : savedHostAddress(profile),
               gateway: { target: profile.profile.target, profileId: profile.id },
+              unavailable: profile.metadata.systemOpenSsh === true,
             },
           ]
         : [],
@@ -59,6 +66,7 @@ export function SshGatewayField({
       value={selected}
       isOptionEqualToValue={(option, candidate) => option.key === candidate.key}
       getOptionLabel={(option) => option.label}
+      getOptionDisabled={(option) => option.unavailable === true}
       onChange={(_event, option) => onChange(option?.gateway)}
       renderOption={(props, option) => {
         const { key, ...optionProps } = props;

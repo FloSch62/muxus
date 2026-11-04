@@ -368,6 +368,7 @@ function SshHostEditorContent({
         ...terminalInputModesPatch(draft.inputModes),
         disableSftp: draft.disableSftp,
         consoleCompatibility: draft.consoleCompatibility,
+        systemOpenSsh: draft.systemOpenSsh,
         discoverEnvironments: environmentDiscoveryFromDraft(draft.discoverEnvironments),
         keywordHighlights:
           highlights.inheritGlobal &&
@@ -399,6 +400,7 @@ function SshHostEditorContent({
         ...terminalInputModesPatch(draft.inputModes),
         disableSftp: draft.disableSftp,
         consoleCompatibility: draft.consoleCompatibility,
+        systemOpenSsh: draft.systemOpenSsh,
         discoverEnvironments: environmentDiscoveryFromDraft(draft.discoverEnvironments),
         keywordHighlights:
           highlights.inheritGlobal &&
@@ -526,6 +528,7 @@ function SshHostEditorContent({
         draft.extras.length +
         (draft.disableSftp ? 1 : 0) +
         (draft.consoleCompatibility ? 1 : 0) +
+        (draft.systemOpenSsh ? 1 : 0) +
         (draft.discoverEnvironments === 'default' ? 0 : 1),
     },
   ];

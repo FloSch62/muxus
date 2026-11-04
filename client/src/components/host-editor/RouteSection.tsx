@@ -60,6 +60,18 @@ export function RouteSection({
       : [];
   const hopName = (hop: string) => jumpHopLabel(hop, savedHosts);
   const isSavedHop = (hop: string) => savedHostHopId(hop) !== undefined;
+  // The ssh program only knows its own config; the built-in client cannot log in
+  // to a hop that was set up for the ssh program.
+  const hopUnavailable = (hop: string) => {
+    const savedId = savedHostHopId(hop);
+    if (draft.systemOpenSsh) return savedId !== undefined;
+    if (savedId !== undefined) {
+      return savedHosts?.find((host) => host.id === savedId)?.metadata.systemOpenSsh === true;
+    }
+    return (config?.hosts ?? []).some(
+      (host) => host.aliases.includes(hop) && host.metadata?.systemOpenSsh === true,
+    );
+  };
   const target = draftAliases(draft)[0] || draft.hostname || 'target';
 
   const move = (i: number, dir: -1 | 1) => {
@@ -192,6 +204,7 @@ export function RouteSection({
               value={null}
               options={[...aliasOptions, ...savedOptions]}
               getOptionLabel={hopName}
+              getOptionDisabled={hopUnavailable}
               groupBy={
                 savedOptions.length
                   ? (hop) => (isSavedHop(hop) ? 'Saved in Muxus' : 'From your SSH config')

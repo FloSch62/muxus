@@ -9,3 +9,4 @@ export * from './paste-pacing.js';
 export * from './management.js';
 export * from './gnmi-path.js';
 export * from './environments.js';
+export * from './appimage-env.js';

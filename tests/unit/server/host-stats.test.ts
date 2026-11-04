@@ -269,7 +269,7 @@ type RouteHandler = (request: unknown, reply: unknown) => Promise<unknown>;
 function captureRoutes(acquire: (connId: string, owner: string) => unknown) {
   const gets = new Map<string, RouteHandler>();
   const app = { get: (path: string, handler: RouteHandler) => gets.set(path, handler) };
-  registerHostStatsRoutes(app as never, { connections: { acquire } } as never);
+  registerHostStatsRoutes(app as never, { systemOpenSsh: { acquire: () => undefined }, connections: { acquire } } as never);
   return gets;
 }
 

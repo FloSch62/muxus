@@ -8,6 +8,7 @@ import fastifyStatic from '@fastify/static';
 import { DESKTOP_RDP_WS_PATH, TERMINAL_WS_PROTOCOL } from '@muxus/shared/ws-protocol';
 import type { ServerConfig } from './config.js';
 import { SshConnectionManager } from './ssh/connection-manager.js';
+import { SystemOpenSshSessions } from './ssh/system-openssh.js';
 import { LocalX11 } from './x11/local-x11.js';
 import {
   folderAuthResolver,
@@ -51,6 +52,7 @@ import { PasswordVault } from './security/password-vault.js';
 export interface AppContext {
   config: ServerConfig;
   connections: SshConnectionManager;
+  systemOpenSsh: SystemOpenSshSessions;
   forwards: ForwardManager;
   database: MuxusDatabase;
   history: SessionHistoryStore;
@@ -130,7 +132,10 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
     disableSftpForProfile: (id) => database.sftpDisabledForSavedHost(id),
     consoleCompatibilityForProfile: (id) =>
       database.consoleCompatibilityForSavedHost(id),
+    systemOpenSshForHost: (alias) => database.systemOpenSshForAlias(alias),
+    systemOpenSshForProfile: (id) => database.systemOpenSshForSavedHost(id),
   });
+  const systemOpenSsh = new SystemOpenSshSessions();
   const forwards = new ForwardManager(connections, app.log, {
     tunnel: (id) => database.tunnel(id),
   });
@@ -151,6 +156,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   const ctx: AppContext = {
     config,
     connections,
+    systemOpenSsh,
     forwards,
     database,
     history,
@@ -259,6 +265,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   app.addHook('onClose', async () => {
     forwards.stopAll();
     connections.closeAll();
+    systemOpenSsh.closeAll();
     x11.close();
     vault.dispose();
     await history.close();

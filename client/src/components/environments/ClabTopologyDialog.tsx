@@ -17,6 +17,7 @@ import { environmentSource, isRunning } from '../../environments.js';
 import { nodeUsesSsh, openContainerlabNode } from '../../environment-sessions.js';
 import type { HostEnvironmentsEntry } from '../../state/environments.js';
 import { MONO, StatusDot } from './EnvironmentTree.js';
+import { SYSTEM_OPENSSH_UNAVAILABLE } from '../../system-openssh.js';
 
 /** The containerlab viewer, served from @containerlab/clab-viewer (client/clab-viewer-plugin.ts). */
 const VIEWER_PATH = '/vendor/clab-viewer/viewer.html';
@@ -192,7 +193,8 @@ export function ClabTopologyDialog({
           <Button
             size="small"
             variant="contained"
-            disabled={!isRunning(node.state)}
+            disabled={!isRunning(node.state) || (nodeUsesSsh(node) && host.systemOpenSsh)}
+            title={nodeUsesSsh(node) && host.systemOpenSsh ? SYSTEM_OPENSSH_UNAVAILABLE : undefined}
             startIcon={nodeUsesSsh(node) ? <LoginOutlinedIcon /> : <TerminalOutlinedIcon />}
             onClick={() => {
               openContainerlabNode(host, lab, node);

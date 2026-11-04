@@ -14,7 +14,7 @@ import type {
   SftpUploadResponse,
 } from '@muxus/shared';
 import type { AppContext } from '../app.js';
-import type { ManagedConnection } from '../ssh/connection-manager.js';
+import type { SftpConnection } from '../ssh/system-openssh.js';
 import { HttpProblem, sendError } from '../util/errors.js';
 
 /** Directory-tree deletes stop after this many entries — runaway guard. */
@@ -55,7 +55,7 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
   // ticket across listings, and all of them go when the connection closes.
   const downloadTickets = new Map<string, { connId: string; path: string }>();
   const ticketsByConnection = new Map<string, Map<string, string>>();
-  const issueDownloadTicket = (connection: ManagedConnection, file: string): string => {
+  const issueDownloadTicket = (connection: SftpConnection, file: string): string => {
     const connId = connection.id;
     let tickets = ticketsByConnection.get(connId);
     if (!tickets) {
@@ -77,7 +77,7 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
 
   const acquireSftp = async (req: FastifyRequest) => {
     const { connId } = req.params as ConnParams;
-    const lease = ctx.connections.acquire(connId, 'sftp');
+    const lease = ctx.systemOpenSsh.acquire(connId) ?? ctx.connections.acquire(connId, 'sftp');
     if (!lease) throw new HttpProblem(404, 'connection not found');
     try {
       return {
@@ -93,7 +93,7 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
 
   const withSftp = async <T>(
     req: FastifyRequest,
-    operation: (sftp: SFTPWrapper, connection: ManagedConnection) => Promise<T> | T,
+    operation: (sftp: SFTPWrapper, connection: SftpConnection) => Promise<T> | T,
   ): Promise<T> => {
     const lease = await acquireSftp(req);
     try {

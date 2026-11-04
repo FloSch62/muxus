@@ -24,6 +24,19 @@ export interface LocalPty {
   shell: string;
 }
 
+/** The environment of a program running in a terminal Muxus owns. */
+export function ptyEnvironment(): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!HOST_TERMINAL_ENV.test(key)) env[key] = value;
+  }
+  env.TERM = DEFAULT_TERM;
+  // Muxus renders 24-bit color; advertise it independently of terminfo.
+  env.COLORTERM = 'truecolor';
+  env.TERM_PROGRAM = 'muxus';
+  return env;
+}
+
 export function spawnLocalPty(profile: LocalProfile, cols: number, rows: number): LocalPty {
   // A container, pod or console session runs its tool directly, with no
   // shell integration: the shell it ends up in belongs to the container.
@@ -31,15 +44,7 @@ export function spawnLocalPty(profile: LocalProfile, cols: number, rows: number)
   const shell = environment?.[0] ?? (profile.shell?.trim() || defaultShell());
   const integration = environment ? { args: [], env: {} } : shellIntegration(shell, process.env);
   const args = environment ? environment.slice(1) : localPtyArgs(profile, integration.args);
-  const env: NodeJS.ProcessEnv = {};
-  for (const [key, value] of Object.entries(process.env)) {
-    if (!HOST_TERMINAL_ENV.test(key)) env[key] = value;
-  }
-  Object.assign(env, integration.env);
-  env.TERM = DEFAULT_TERM;
-  // Muxus renders 24-bit color; advertise it independently of terminfo.
-  env.COLORTERM = 'truecolor';
-  env.TERM_PROGRAM = 'muxus';
+  const env = { ...ptyEnvironment(), ...integration.env };
   const spawned = pty.spawn(shell, args, {
     name: DEFAULT_TERM,
     cols,

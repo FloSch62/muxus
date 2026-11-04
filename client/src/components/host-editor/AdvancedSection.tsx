@@ -14,6 +14,10 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import SettingsEthernetIcon from '@mui/icons-material/SettingsEthernet';
 import { DIAL_TIME_KEYWORDS } from '@muxus/shared';
 import { useAppInfo } from '../../api/queries.js';
+import {
+  SYSTEM_OPENSSH_UNAVAILABLE,
+  SYSTEM_OPENSSH_WINDOWS_UNAVAILABLE,
+} from '../../system-openssh.js';
 import { applyLegacyPreset, legacyPresetState, unsupportedEntries } from './advanced-options.js';
 import type { EnvironmentDiscoveryDraft, HostDraft } from './draft.js';
 import { usePrefsStore } from '../../state/prefs.js';
@@ -39,7 +43,9 @@ export function AdvancedSection({
   previewError: string | null;
   configBacked?: boolean;
 }) {
-  const sshAlgorithms = useAppInfo().data?.sshAlgorithms;
+  const { sshAlgorithms, platform } = useAppInfo().data ?? {};
+  // Windows OpenSSH cannot share a login, so nothing here runs beside its terminal.
+  const systemOnWindows = draft.systemOpenSsh && platform === 'win32';
   const discoverByDefault = usePrefsStore((state) => state.discoverEnvironments);
   const legacyState = legacyPresetState(draft.extras);
 
@@ -49,22 +55,46 @@ export function AdvancedSection({
   return (
     <Stack spacing={2}>
       <Stack spacing={0.5}>
+        <Typography variant="subtitle2">SSH client</Typography>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={draft.systemOpenSsh}
+              onChange={(event) => set({ systemOpenSsh: event.target.checked })}
+            />
+          }
+          label="Use system OpenSSH"
+        />
+        <Typography variant="body2" color="textSecondary">
+          Connects with this computer&apos;s ssh program, for authentication such as Kerberos
+          (GSSAPI). Windows gets the terminal only; elsewhere the file browser, statistics and
+          container listing work too. Tunnels and other features of the built-in client are not
+          available.
+        </Typography>
+      </Stack>
+
+      <Stack spacing={0.5}>
         <Typography variant="subtitle2">Console compatibility</Typography>
         <FormControlLabel
           control={
             <Switch
-              checked={draft.consoleCompatibility}
+              // Greyed rather than cleared, so turning system OpenSSH off restores it.
+              disabled={draft.systemOpenSsh}
+              checked={draft.consoleCompatibility && !draft.systemOpenSsh}
               onChange={(event) => set({ consoleCompatibility: event.target.checked })}
             />
           }
           label="Enable console compatibility mode"
         />
         <Typography variant="body2" color="textSecondary">
-          Skips SFTP, shell integration, and SendEnv/SetEnv requests. TTY settings still apply.
+          {draft.systemOpenSsh
+            ? `${SYSTEM_OPENSSH_UNAVAILABLE}: the ssh program decides what it requests.`
+            : 'Skips SFTP, shell integration, and SendEnv/SetEnv requests. TTY settings still apply.'}
         </Typography>
         <FormControlLabel
           control={
             <Switch
+              disabled={systemOnWindows}
               checked={draft.disableSftp}
               onChange={(event) => set({ disableSftp: event.target.checked })}
             />
@@ -83,6 +113,8 @@ export function AdvancedSection({
           select
           size="small"
           label="Find containers, clusters and VMs"
+          disabled={systemOnWindows}
+          helperText={systemOnWindows ? SYSTEM_OPENSSH_WINDOWS_UNAVAILABLE : undefined}
           value={draft.discoverEnvironments}
           onChange={(event) => set({ discoverEnvironments: event.target.value as EnvironmentDiscoveryDraft })}
           sx={{ maxWidth: 360 }}

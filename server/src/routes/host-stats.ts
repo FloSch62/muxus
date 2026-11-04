@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { HostStatsResponse } from '@muxus/shared';
 import type { AppContext } from '../app.js';
 import {
+  readHostStatsWith,
   readLocalHostStats,
   readRemoteHostStats,
   type HostStatsReading,
@@ -46,6 +47,15 @@ export function registerHostStatsRoutes(app: FastifyInstance, ctx: AppContext): 
     try {
       const { connId } = req.params as { connId: string };
       const reading = await shared(`ssh:${connId}`, async () => {
+        const system = ctx.systemOpenSsh.acquire(connId);
+        if (system) {
+          try {
+            if (!(await system.connection.runsCommands())) return { supported: false };
+            return await readHostStatsWith(system.connection.runScript);
+          } finally {
+            system.release();
+          }
+        }
         const lease = ctx.connections.acquire(connId, 'stats');
         if (!lease) throw new HttpProblem(404, 'connection not found');
         try {

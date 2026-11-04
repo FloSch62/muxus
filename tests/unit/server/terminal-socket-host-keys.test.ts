@@ -84,6 +84,7 @@ async function openSession(
     app as never,
     {
       connections: {
+        usesSystemOpenSsh: () => false,
         resolveProfile: (resolved: unknown) => resolved,
         metadataAliasFor: (resolved: SshProfile) => aliases.metadataAliasFor(resolved),
         listedMetadataAliasFor: (resolved: SshProfile) => aliases.listedMetadataAliasFor(resolved),

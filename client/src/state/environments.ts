@@ -13,6 +13,8 @@ export interface EnvironmentHost {
   color?: string;
   /** The host's own choice to be read on connect; absent follows Settings. */
   discover?: boolean;
+  /** It connects with the computer's `ssh` program, so no feature can dial it or jump through it. */
+  systemOpenSsh?: boolean;
 }
 
 export type EnvironmentStatus =

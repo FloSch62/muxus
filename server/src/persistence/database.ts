@@ -547,6 +547,15 @@ const MIGRATIONS = [
         CHECK(discover_environments IS NULL OR discover_environments IN (0, 1));
     `,
   },
+  {
+    version: 34,
+    name: 'host-system-openssh',
+    sql: `
+      ALTER TABLE connection_profiles
+        ADD COLUMN system_openssh INTEGER NOT NULL DEFAULT 0
+        CHECK(system_openssh IN (0, 1));
+    `,
+  },
 ] as const;
 
 /** Kinds stored as Muxus-owned saved hosts (everything but OpenSSH metadata rows). */
@@ -747,6 +756,7 @@ export interface OpenSshMetadata {
   localEcho?: boolean;
   disableSftp?: boolean;
   consoleCompatibility?: boolean;
+  systemOpenSsh?: boolean;
   discoverEnvironments?: boolean;
   loginSequence?: LoginSequence;
   lastConnectedAt?: string;
@@ -948,6 +958,7 @@ export class MuxusDatabase {
         profiles.local_echo,
         profiles.disable_sftp,
         profiles.console_compatibility,
+        profiles.system_openssh,
         profiles.discover_environments,
         profiles.login_sequence_json,
         profiles.last_connected_at,
@@ -1013,6 +1024,23 @@ export class MuxusDatabase {
     return Number(row?.console_compatibility) === 1;
   }
 
+  /** Whether this OpenSSH alias connects through the computer's `ssh` program. */
+  systemOpenSshForAlias(alias: string): boolean {
+    const row = this.metadataByAlias.get(alias);
+    return Number(row?.system_openssh) === 1;
+  }
+
+  /** Whether one Muxus-owned host connects through the computer's `ssh` program. */
+  systemOpenSshForSavedHost(id: string): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT system_openssh FROM connection_profiles
+         WHERE id = ? AND kind = 'ssh'`,
+      )
+      .get(id);
+    return Number(row?.system_openssh) === 1;
+  }
+
   /** Whether one Muxus-owned host must avoid SFTP and shell probing. */
   sftpDisabledForSavedHost(id: string): boolean {
     const row = this.db
@@ -1067,6 +1095,7 @@ export class MuxusDatabase {
             local_echo = ?,
             disable_sftp = ?,
             console_compatibility = ?,
+            system_openssh = ?,
             discover_environments = ?,
             login_sequence_json = ?,
             updated_at = CURRENT_TIMESTAMP
@@ -1124,6 +1153,11 @@ export class MuxusDatabase {
         patch.consoleCompatibility === undefined
           ? Number(current.console_compatibility)
           : patch.consoleCompatibility
+            ? 1
+            : 0,
+        patch.systemOpenSsh === undefined
+          ? Number(current.system_openssh)
+          : patch.systemOpenSsh
             ? 1
             : 0,
         patch.discoverEnvironments === undefined
@@ -1632,6 +1666,7 @@ export class MuxusDatabase {
             local_echo = ?,
             disable_sftp = ?,
             console_compatibility = ?,
+            system_openssh = ?,
             discover_environments = ?,
             login_sequence_json = ?,
             updated_at = CURRENT_TIMESTAMP
@@ -1689,6 +1724,11 @@ export class MuxusDatabase {
         patch.consoleCompatibility === undefined
           ? Number(current.console_compatibility)
           : patch.consoleCompatibility
+            ? 1
+            : 0,
+        patch.systemOpenSsh === undefined
+          ? Number(current.system_openssh)
+          : patch.systemOpenSsh
             ? 1
             : 0,
         patch.discoverEnvironments === undefined
@@ -2726,6 +2766,7 @@ function metadataFromRow(row: SqlRow): OpenSshMetadata {
     ...terminalInputModesFromRow(row),
     ...(Number(row.disable_sftp) === 1 ? { disableSftp: true } : {}),
     ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),
+    ...(Number(row.system_openssh) === 1 ? { systemOpenSsh: true } : {}),
     ...discoverEnvironmentsFromRow(row),
     loginSequence: loginSequenceFromJson(row.login_sequence_json),
     lastConnectedAt: optionalString(row.last_connected_at),
@@ -2773,6 +2814,7 @@ function savedHostFromRow(row: SqlRow): SavedHostProfile {
       ...terminalInputModesFromRow(row),
       ...(Number(row.disable_sftp) === 1 ? { disableSftp: true } : {}),
       ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),
+      ...(Number(row.system_openssh) === 1 ? { systemOpenSsh: true } : {}),
       ...discoverEnvironmentsFromRow(row),
       loginSequence: loginSequenceFromJson(row.login_sequence_json),
       lastConnectedAt: optionalString(row.last_connected_at),

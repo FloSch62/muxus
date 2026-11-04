@@ -678,6 +678,7 @@ function portableMetadata(
     localEcho: metadata.localEcho,
     disableSftp: metadata.disableSftp,
     consoleCompatibility: metadata.consoleCompatibility,
+    systemOpenSsh: metadata.systemOpenSsh,
     discoverEnvironments: metadata.discoverEnvironments,
     loginSequence: metadata.loginSequence,
     sortOrder: metadata.sortOrder,
@@ -848,6 +849,7 @@ function metadataPatch(metadata: PortableHostMetadata): OpenSshMetadataPatch {
     ...terminalInputModesPatch(restoredInputModes(metadata)),
     disableSftp: metadata.disableSftp ?? false,
     consoleCompatibility: metadata.consoleCompatibility ?? false,
+    systemOpenSsh: metadata.systemOpenSsh ?? false,
     discoverEnvironments: typeof metadata.discoverEnvironments === 'boolean' ? metadata.discoverEnvironments : null,
     loginSequence: isLoginSequence(metadata.loginSequence) ? metadata.loginSequence : null,
   };

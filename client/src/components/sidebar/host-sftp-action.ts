@@ -7,16 +7,19 @@ import { useTabsStore } from '../../state/tabs.js';
 export function managedHostSupportsSftp(
   host: ManagedHost,
 ): boolean {
+  // Console compatibility shapes the built-in client's session; system OpenSSH ignores it.
   if (host.kind === 'ssh') {
     return (
       host.entry.metadata?.disableSftp !== true &&
-      host.entry.metadata?.consoleCompatibility !== true
+      (host.entry.metadata?.systemOpenSsh === true ||
+        host.entry.metadata?.consoleCompatibility !== true)
     );
   }
   return (
     host.entry.profile.kind === 'ssh' &&
     host.entry.metadata.disableSftp !== true &&
-    host.entry.metadata.consoleCompatibility !== true
+    (host.entry.metadata.systemOpenSsh === true ||
+      host.entry.metadata.consoleCompatibility !== true)
   );
 }
 

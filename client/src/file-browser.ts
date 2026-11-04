@@ -77,11 +77,15 @@ export function moveFileBrowser(position: FileBrowserPosition, tabId: string | u
 
 /** Why the sidebar's browser has no files to show for the active tab. */
 export function fileBrowserUnavailableReason(
-  tab: Pick<TerminalTab, 'profile' | 'status' | 'sftpAvailable'> | undefined,
+  tab: Pick<TerminalTab, 'profile' | 'status' | 'sftpAvailable' | 'systemOpenSsh'> | undefined,
 ): string {
   if (!tab?.profile) return 'Open an SSH session to browse its files.';
   if (tab.profile.kind !== 'ssh') return 'Only SSH sessions have a file browser.';
-  if (tab.sftpAvailable === false) return 'SFTP is turned off for this host.';
+  if (tab.sftpAvailable === false) {
+    return tab.systemOpenSsh
+      ? 'The file browser is not available for this system OpenSSH session.'
+      : 'SFTP is turned off for this host.';
+  }
   if (tab.status === 'connecting') return 'Waiting for the session to connect…';
   return 'The session is not connected.';
 }
