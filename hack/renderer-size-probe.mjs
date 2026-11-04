@@ -121,16 +121,16 @@ const report = (label, m) => {
 };
 
 console.log('mode after load:', JSON.stringify((await measure()).domRows ? 'dom' : 'webgl?'));
-report('after load (default = dom)', await measure());
-
-await toggle(); // → WebGL
-const webgl = await measure();
-report('after toggle ON (webgl)', webgl);
-await page.locator('.xterm-screen').screenshot({ path: '/tmp/muxus-webgl-perf/size-webgl.png' });
+report('after load (default = webgl)', await measure());
 
 await toggle(); // → DOM
 const dom = await measure();
 report('after toggle OFF (dom)', dom);
 await page.locator('.xterm-screen').screenshot({ path: '/tmp/muxus-webgl-perf/size-dom.png' });
+
+await toggle(); // → WebGL
+const webgl = await measure();
+report('after toggle ON (webgl)', webgl);
+await page.locator('.xterm-screen').screenshot({ path: '/tmp/muxus-webgl-perf/size-webgl.png' });
 
 await browser.close();
