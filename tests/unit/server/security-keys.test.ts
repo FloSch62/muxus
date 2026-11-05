@@ -532,8 +532,9 @@ describe('security keys in the ssh-agent', () => {
       await agent.close();
     }
     expect(logins.some((login) => login.accepted)).toBe(true);
-    // The touch prompt replaces the generic agent wait notice.
-    expect(io.statuses.some((s) => s.includes('Waiting for the SSH agent'))).toBe(false);
+    // The touch prompt replaces the signing wait notice. Listing identities
+    // keeps its own notice, which a slow machine can reach within the test's 10 ms.
+    expect(io.statuses.some((s) => s.includes('Waiting for the SSH agent to approve signing'))).toBe(false);
   }, 15_000);
 
   it('says why the security key did not sign, instead of a bare authentication failure', async () => {

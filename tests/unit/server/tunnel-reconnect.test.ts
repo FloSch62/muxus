@@ -99,6 +99,29 @@ function echoThrough(port: number, text: string): Promise<string> {
   });
 }
 
+/** A SOCKS5 client past its greeting, like a browser's idle proxy socket. */
+async function greetedSocksClient(port: number) {
+  const socket = net.connect(port, '127.0.0.1');
+  const nextChunk = () =>
+    new Promise<Buffer>((resolve, reject) => {
+      socket.once('data', resolve);
+      socket.once('error', reject);
+    });
+  const greeting = nextChunk();
+  socket.write(Buffer.from([5, 1, 0]));
+  expect([...(await greeting)]).toEqual([5, 0]);
+  return {
+    socket,
+    nextChunk,
+    /** Send CONNECT to 127.0.0.1:port and resolve with the reply code. */
+    async connect(targetPort: number): Promise<number> {
+      const reply = nextChunk();
+      socket.write(Buffer.from([5, 1, 0, 1, 127, 0, 0, 1, targetPort >> 8, targetPort & 0xff]));
+      return (await reply)[1]!;
+    },
+  };
+}
+
 let knownHostsCounter = 0;
 
 const interactiveIo: ConnectIo = {
@@ -114,7 +137,7 @@ describe('tunnel auto-reconnect over a real SSH transport', () => {
   });
 
   /** Servers, managers and a saved tunnel, with nothing dialed yet. */
-  async function prepare(auth: 'none' | 'password') {
+  async function prepare(auth: 'none' | 'password', patch: Partial<TunnelRecord> = {}) {
     const sshd = await startSshd(auth);
     const echo = await startEcho();
     const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
@@ -135,6 +158,7 @@ describe('tunnel auto-reconnect over a real SSH transport', () => {
       autoReconnect: true,
       createdAt: '2026-10-08T00:00:00Z',
       updatedAt: '2026-10-08T00:00:00Z',
+      ...patch,
     };
     const forwards = new ForwardManager(connections, log as never, {
       tunnel: (id) => (id === tunnel.id ? tunnel : undefined),
@@ -158,8 +182,8 @@ describe('tunnel auto-reconnect over a real SSH transport', () => {
   }
 
   /** A running tunnel, started the way the forwarding panel starts one. */
-  async function setup(auth: 'none' | 'password') {
-    const { sshd, forwards, tunnel, bindPort, dialInteractively } = await prepare(auth);
+  async function setup(auth: 'none' | 'password', patch: Partial<TunnelRecord> = {}) {
+    const { sshd, forwards, tunnel, bindPort, dialInteractively } = await prepare(auth, patch);
     const dial = await dialInteractively();
     const started = await forwards.start({
       connId: dial.connection.id,
@@ -217,5 +241,29 @@ describe('tunnel auto-reconnect over a real SSH transport', () => {
     expect(forwards.list()[0]?.error).toMatch(/Sign-in needed/);
     // The listener is down while the tunnel waits for the user.
     await expect(echoThrough(bindPort, 'x')).rejects.toThrow(/ECONNREFUSED/);
+  });
+
+  it('refuses a SOCKS request left over from a dead connection and serves the retry', async () => {
+    const { sshd, forwards, started, bindPort } = await setup('none', { type: 'dynamic' });
+    const firstConnId = started.connId;
+    const targetPort = started.targetPort!;
+    // Connected before the machine went to sleep; closing the listener leaves it open.
+    const idle = await greetedSocksClient(bindPort);
+
+    sshd.drop();
+    await vi.waitFor(() => {
+      expect(forwards.list()[0]?.status).toBe('active');
+      expect(forwards.list()[0]?.connId).not.toBe(firstConnId);
+    });
+
+    // 5 is SOCKS5 "connection refused": the client hears it and can try again.
+    expect(await idle.connect(targetPort)).toBe(5);
+
+    const retry = await greetedSocksClient(bindPort);
+    expect(await retry.connect(targetPort)).toBe(0);
+    const echoed = retry.nextChunk();
+    retry.socket.write('after');
+    expect((await echoed).toString('utf8')).toBe('after');
+    retry.socket.destroy();
   });
 });
