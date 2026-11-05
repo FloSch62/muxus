@@ -13,18 +13,25 @@ import {
   type TerminalScheme,
 } from '../terminal/palette.js';
 
-const BUILTIN_SCHEME_GROUPS = [
-  { label: 'Light schemes', schemes: TERMINAL_SCHEMES.filter((scheme) => scheme.light) },
-  { label: 'Dark schemes', schemes: TERMINAL_SCHEMES.filter((scheme) => !scheme.light) },
-] as const;
+const LIGHT_SCHEMES = {
+  label: 'Light schemes',
+  schemes: TERMINAL_SCHEMES.filter((scheme) => scheme.light),
+};
+const DARK_SCHEMES = {
+  label: 'Dark schemes',
+  schemes: TERMINAL_SCHEMES.filter((scheme) => !scheme.light),
+};
 
-/** Every scheme on offer, the user's own first. */
+/** Every scheme on offer: the user's own first, then the built-ins, `firstMode` leading. */
 export function terminalSchemeGroups(
   customSchemes: readonly TerminalScheme[],
+  firstMode: 'light' | 'dark' = 'light',
 ): ReadonlyArray<{ label: string; schemes: readonly TerminalScheme[] }> {
+  const builtin =
+    firstMode === 'dark' ? [DARK_SCHEMES, LIGHT_SCHEMES] : [LIGHT_SCHEMES, DARK_SCHEMES];
   return customSchemes.length > 0
-    ? [{ label: 'Custom schemes', schemes: customSchemes }, ...BUILTIN_SCHEME_GROUPS]
-    : BUILTIN_SCHEME_GROUPS;
+    ? [{ label: 'Custom schemes', schemes: customSchemes }, ...builtin]
+    : builtin;
 }
 
 const SCHEME_SWATCH_COLORS = ['red', 'green', 'yellow', 'blue', 'magenta', 'cyan'] as const;
@@ -43,6 +50,7 @@ export function TerminalSchemeSelect({
   inheritLabel,
   hideLabel = false,
   mixed = false,
+  firstMode,
   onChange,
 }: {
   id: string;
@@ -53,6 +61,8 @@ export function TerminalSchemeSelect({
   hideLabel?: boolean;
   /** Several hosts with different schemes: shows "Multiple values" until one is picked. */
   mixed?: boolean;
+  /** Which built-in group leads the menu, for a picker dedicated to one mode. */
+  firstMode?: 'light' | 'dark';
   onChange: (value: string) => void;
 }) {
   const labelId = `${id}-label`;
@@ -91,7 +101,7 @@ export function TerminalSchemeSelect({
           </MenuItem>
         ) : null}
         {inheritLabel ? <MenuItem value="">{inheritLabel}</MenuItem> : null}
-        {terminalSchemeGroups(customSchemes).flatMap((group) => [
+        {terminalSchemeGroups(customSchemes, firstMode).flatMap((group) => [
           <ListSubheader key={group.label}>{group.label}</ListSubheader>,
           ...group.schemes.map((scheme) => (
             <MenuItem key={scheme.id} value={scheme.id}>
