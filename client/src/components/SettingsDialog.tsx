@@ -752,6 +752,7 @@ function AppearanceSection() {
                 id="dark-terminal-theme"
                 label="Dark terminal theme"
                 hideLabel
+                firstMode="dark"
                 value={prefs.darkTerminalScheme}
                 onChange={(darkTerminalScheme) => prefs.set({ darkTerminalScheme })}
               />
