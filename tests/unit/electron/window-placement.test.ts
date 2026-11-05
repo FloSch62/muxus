@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   parseWindowPlacement,
+  trafficLightPosition,
   windowBounds,
   type WindowPlacement,
 } from '../../../electron/src/window-placement.js';
@@ -71,5 +72,20 @@ describe('settings window placement', () => {
     expect(parseWindowPlacement({ width: 900, height: Number.NaN })).toBeUndefined();
     expect(parseWindowPlacement([900, 700])).toBeUndefined();
     expect(parseWindowPlacement(null)).toBeUndefined();
+  });
+});
+
+describe('macOS traffic light position', () => {
+  it('centers the buttons in the regular titlebar', () => {
+    expect(trafficLightPosition(52)).toEqual({ x: 16, y: 18 });
+  });
+
+  it('keeps the buttons clear of the border in the compact focus mode titlebar', () => {
+    expect(trafficLightPosition(32)).toEqual({ x: 16, y: 8 });
+  });
+
+  it('follows a titlebar scaled by the interface zoom', () => {
+    expect(trafficLightPosition(Math.round(52 * 1.5))).toEqual({ x: 16, y: 31 });
+    expect(trafficLightPosition(Math.round(32 * 0.5))).toEqual({ x: 16, y: 0 });
   });
 });

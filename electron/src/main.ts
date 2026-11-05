@@ -85,7 +85,12 @@ import { initMainLog, installCrashCapture, mainLog, mainLogPath } from './main-l
 import { readLocalMobaXtermSessions } from './mobaxterm.js';
 import { workspaceOwnershipUpdate } from './workspace-window-state.js';
 import { pointInsideAnyWindow } from './tab-detach.js';
-import { parseWindowPlacement, windowBounds, type WindowPlacement } from './window-placement.js';
+import {
+  parseWindowPlacement,
+  trafficLightPosition,
+  windowBounds,
+  type WindowPlacement,
+} from './window-placement.js';
 import { checkStoreUpdate, isStoreDistribution, storePageUrl, type DistributionMetadata } from './store-updates.js';
 import { DesktopUpdater, updateDisabledReason } from './updater.js';
 import { StoreUpdater } from './store-updater.js';
@@ -416,7 +421,7 @@ function appWindowOptions(): BrowserWindowConstructorOptions {
     backgroundColor: overlayColors().color,
     icon: windowIcon(),
     titleBarStyle: 'hidden',
-    trafficLightPosition: { x: 16, y: 18 },
+    trafficLightPosition: trafficLightPosition(TITLEBAR_HEIGHT),
     titleBarOverlay: isMac ? true : { ...overlayColors(), height: TITLEBAR_HEIGHT },
     webPreferences: {
       preload: path.join(moduleDir, 'preload.js'),
@@ -618,23 +623,25 @@ interface TitleBarOverlayOptions {
 
 const overlayOptionsByWindow = new WeakMap<BrowserWindow, TitleBarOverlayOptions>();
 
-/** Repaint the native overlay, sized to the window's current scale. */
+/**
+ * Fit the native window controls to the titlebar at the window's current scale:
+ * repaint the overlay, or on macOS, which has none, recenter the traffic lights.
+ */
 function applyTitleBarOverlay(win: BrowserWindow, options: TitleBarOverlayOptions): void {
-  if (isMac) return;
   overlayOptionsByWindow.set(win, options);
   try {
-    win.setTitleBarOverlay({
-      color: options.color,
-      symbolColor: options.symbolColor,
-      height: Math.round(options.height * win.webContents.getZoomFactor()),
-    });
+    const height = Math.round(options.height * win.webContents.getZoomFactor());
+    if (isMac) {
+      win.setWindowButtonPosition(trafficLightPosition(height));
+    } else {
+      win.setTitleBarOverlay({ color: options.color, symbolColor: options.symbolColor, height });
+    }
   } catch {
     /* overlay not supported in this environment */
   }
 }
 
 ipcMain.on('muxus:set-titlebar-overlay', (event, options: unknown) => {
-  if (isMac) return;
   const win = senderWindow(event);
   if (!win) return;
   const { color, symbolColor, height } = (options ?? {}) as {
