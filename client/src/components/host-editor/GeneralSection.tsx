@@ -28,11 +28,14 @@ export function GeneralSection({
   set,
   config,
   canChooseStorage = false,
+  nameHelper,
 }: {
   draft: HostDraft;
   set: (patch: Partial<HostDraft>) => void;
   config: SshConfigResponse | undefined;
   canChooseStorage?: boolean;
+  /** Replaces the name field's help, e.g. to describe a [from-to] range. */
+  nameHelper?: string;
 }) {
   const [newFileName, setNewFileName] = useState('');
   const rootPath = config?.path ?? '~/.ssh/config';
@@ -79,11 +82,12 @@ export function GeneralSection({
           required
           fullWidth
           helperText={
-            configBacked
+            nameHelper ??
+            (configBacked
               ? primary
                 ? `Connect with: ssh ${primary}`
                 : 'The name you connect as — also works in any terminal'
-              : 'How this host appears in Muxus'
+              : 'How this host appears in Muxus')
           }
         />
       </Stack>
