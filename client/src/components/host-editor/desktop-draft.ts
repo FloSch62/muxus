@@ -5,6 +5,7 @@ import type {
   SshGateway,
 } from '@muxus/shared';
 import { parseHostTarget } from './native-draft.js';
+import { savedGatewayFallbacks } from './SshGatewayRouteField.js';
 
 export type DesktopKind = 'rdp' | 'vnc';
 
@@ -28,6 +29,8 @@ export interface DesktopHostDraft {
   domain: string;
   /** SSH host the desktop is reached through; undefined connects directly. */
   sshGateway?: SshGateway;
+  /** Gateways tried in order when `sshGateway` fails. */
+  sshGatewayFallbacks: SshGateway[];
   shareClipboard: boolean;
   resizeRemote: boolean;
   viewOnly: boolean;
@@ -44,6 +47,7 @@ export function blankDesktopDraft(prefillTarget = '', group = ''): DesktopHostDr
     username: user ?? '',
     domain: '',
     sshGateway: undefined,
+    sshGatewayFallbacks: [],
     shareClipboard: true,
     resizeRemote: false,
     viewOnly: false,
@@ -64,6 +68,7 @@ export function desktopDraftFromProfile(saved: SavedHostProfile, duplicate: bool
     username: profile.username ?? '',
     domain: profile.kind === 'rdp' ? (profile.domain ?? '') : '',
     sshGateway: profile.sshGateway,
+    sshGatewayFallbacks: profile.sshGatewayFallbacks ?? [],
     shareClipboard: profile.shareClipboard !== false,
     resizeRemote: profile.kind === 'vnc' && profile.resizeRemote === true,
     viewOnly: profile.kind === 'vnc' && profile.viewOnly === true,
@@ -88,11 +93,13 @@ export function desktopDraftToInput(
   kind: DesktopKind,
   existingId?: string,
 ): SavedHostProfileInput {
+  const fallbacks = savedGatewayFallbacks(draft.sshGateway, draft.sshGatewayFallbacks);
   const common = {
     host: draft.host.trim(),
     port: desktopDraftPort(draft, kind),
     ...(draft.username.trim() ? { username: draft.username.trim() } : {}),
     ...(draft.sshGateway ? { sshGateway: draft.sshGateway } : {}),
+    ...(fallbacks ? { sshGatewayFallbacks: fallbacks } : {}),
     ...(draft.shareClipboard ? {} : { shareClipboard: false }),
   };
   return {

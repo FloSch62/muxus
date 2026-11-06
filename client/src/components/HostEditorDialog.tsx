@@ -54,6 +54,7 @@ import {
   draftFromSavedSshProfile,
   draftProblem,
   draftToRequest,
+  draftJumpFallbacks,
   draftToSavedSshInput,
   identityAgentForDetection,
   environmentDiscoveryFromDraft,
@@ -695,6 +696,9 @@ function metadataPatch(draft: HostDraft): OpenSshMetadataPatch {
         ? null
         : highlights,
     loginSequence: loginSequenceFromDraft(draft.loginSequence),
+    // ssh_config cannot hold fallback routes, so Muxus keeps them for the
+    // alias; a Muxus host has them in its profile instead.
+    ...(draft.storage === 'openssh' ? { proxyJumpFallbacks: draftJumpFallbacks(draft) ?? null } : {}),
   };
 }
 

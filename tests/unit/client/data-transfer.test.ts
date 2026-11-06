@@ -1149,6 +1149,7 @@ describe('restoring imported serial hosts', () => {
           consoleCompatibility: false,
           discoverEnvironments: null,
           loginSequence: null,
+          proxyJumpFallbacks: null,
         }),
       }),
     );

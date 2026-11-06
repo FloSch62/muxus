@@ -871,6 +871,11 @@ export interface OpenSshProfileMetadata {
   discoverEnvironments?: boolean;
   /** The host's own login sequence; absent inherits the folder's. */
   loginSequence?: LoginSequence;
+  /**
+   * Jump routes tried in order when the ProxyJump in ssh_config fails, each a
+   * whole chain. Kept by Muxus: ssh_config has no way to say it.
+   */
+  proxyJumpFallbacks?: string[][];
   lastConnectedAt?: string;
   connectCount: number;
 }
@@ -902,6 +907,8 @@ export interface OpenSshMetadataPatch {
   discoverEnvironments?: boolean | null;
   /** Null goes back to the folder's sequence. */
   loginSequence?: LoginSequence | null;
+  /** Null or empty removes the fallback jump routes. */
+  proxyJumpFallbacks?: string[][] | null;
 }
 
 /**

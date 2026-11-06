@@ -19,7 +19,7 @@ import { useUiStore } from '../state/ui.js';
 import { FolderPathField } from './FolderPathField.js';
 import { HostColorPicker } from './HostColorPicker.js';
 import { EditorShell, type EditorSectionDef } from './host-editor/EditorShell.js';
-import { SshGatewayField } from './host-editor/SshGatewayField.js';
+import { SshGatewayRouteField } from './host-editor/SshGatewayRouteField.js';
 import {
   DEFAULT_DESKTOP_PORTS,
   desktopDraftMetadataPatch,
@@ -228,7 +228,11 @@ function RouteSection({ kind, draft, set }: SectionProps) {
           servers behind a bastion or listening only on localhost.
         </Typography>
       </Box>
-      <SshGatewayField value={draft.sshGateway} onChange={(sshGateway) => set({ sshGateway })} />
+      <SshGatewayRouteField
+        gateway={draft.sshGateway}
+        fallbacks={draft.sshGatewayFallbacks}
+        onChange={set}
+      />
     </Stack>
   );
 }
