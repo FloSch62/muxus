@@ -97,6 +97,21 @@ describe('ForwardManager lifecycle', () => {
     });
   });
 
+  it('keeps an independent forward when the terminal sessions on its connection end', async () => {
+    const { connection } = fakeConnection('connection-1');
+    const connections = {
+      acquire: () => ({ connection, owner: 'forward' as const, release: vi.fn() }),
+    };
+    manager = new ForwardManager(connections as never, { warn: vi.fn() } as never);
+
+    const proxy = await manager.start({ connId: connection.id, type: 'dynamic', bindPort: 0, independent: true });
+    const plain = await manager.start({ connId: connection.id, type: 'dynamic', bindPort: 0 });
+    manager.stopSessionForConnection(connection.id);
+
+    expect(manager.list().map((info) => info.id)).toEqual([proxy.id]);
+    expect(plain.lifecycle).toBe('session');
+  });
+
   it('promotes a running session forward when it is saved as a tunnel', async () => {
     const release = vi.fn();
     const { connection } = fakeConnection('connection-1');

@@ -93,7 +93,7 @@ export class ForwardManager {
       targetHost: req.targetHost,
       targetPort: req.targetPort,
       origin,
-      lifecycle: req.tunnelId ? 'independent' : 'session',
+      lifecycle: req.tunnelId || req.independent ? 'independent' : 'session',
       status: 'active',
       tunnelId: req.tunnelId,
     };

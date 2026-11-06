@@ -42,15 +42,19 @@ declare global {
       setTitleBarOverlay(options: { color: string; symbolColor: string; height: number }): void;
       /**
        * Open a saved web host's browser window, through `proxy` (a SOCKS5
-       * forward on its SSH gateway) when set. Settles with 'closed' when the
-       * window closes, or 'focused' at once when it was already open.
+       * forward on its SSH gateway) when set. The window owns `forwardId`
+       * and stops it when it closes, or at once when it was already open
+       * ('focused').
        */
       openWebWindow?(request: {
         key: string;
         url: string;
         title: string;
         proxy?: string;
-      }): Promise<'closed' | 'focused' | 'invalid'>;
+        forwardId?: string;
+      }): Promise<'opened' | 'focused' | 'invalid'>;
+      /** Bring a web host's open window to the front; false when it has none. */
+      focusWebWindow?(key: string): Promise<boolean>;
       /** Scale the whole window natively (the interface zoom preference). */
       setZoomFactor(factor: number): void;
       getAppInfo(): Promise<AppInfo | undefined>;

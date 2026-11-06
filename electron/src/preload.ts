@@ -267,14 +267,19 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   registerLinkHandler(scheme: ConnectionLinkScheme): Promise<LinkHandlerRegistration | undefined> {
     return ipcRenderer.invoke('muxus:link-handlers:register', scheme);
   },
-  /** Open a saved web host's browser window; settles when it closes, or at once if it was open. */
+  /** Open a saved web host's browser window, which then owns (and stops) `forwardId`. */
   openWebWindow(request: {
     key: string;
     url: string;
     title: string;
     proxy?: string;
-  }): Promise<'closed' | 'focused' | 'invalid'> {
+    forwardId?: string;
+  }): Promise<'opened' | 'focused' | 'invalid'> {
     return ipcRenderer.invoke('muxus:web:open', request);
+  },
+  /** Bring a web host's open window to the front; false when it has none. */
+  focusWebWindow(key: string): Promise<boolean> {
+    return ipcRenderer.invoke('muxus:web:focus', key);
   },
   kubusAvailable(): Promise<boolean> {
     return ipcRenderer.invoke('muxus:kubus:available');

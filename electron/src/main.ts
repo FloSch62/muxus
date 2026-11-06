@@ -85,7 +85,7 @@ import { initMainLog, installCrashCapture, mainLog, mainLogPath } from './main-l
 import { readLocalMobaXtermSessions } from './mobaxterm.js';
 import { workspaceOwnershipUpdate } from './workspace-window-state.js';
 import { pointInsideAnyWindow } from './tab-detach.js';
-import { handleWebCertificateError, registerWebWindows } from './web-windows.js';
+import { closeAllWebWindows, handleWebCertificateError, registerWebWindows } from './web-windows.js';
 import {
   parseWindowPlacement,
   trafficLightPosition,
@@ -508,8 +508,12 @@ function createWindow(
     activeWorkspaceByWebContents.delete(webContentsId);
     if (primaryWindow === win) primaryWindow = undefined;
     if (lastFocusedWindow === win) lastFocusedWindow = undefined;
-    // Settings outliving every app window would keep Muxus running headless.
-    if (appWindows().length === 0) settingsWindow?.close();
+    // Settings or web pages outliving every app window would keep Muxus
+    // running headless.
+    if (appWindows().length === 0) {
+      settingsWindow?.close();
+      closeAllWebWindows();
+    }
   });
   confineToAppOrigin(win, new URL(url).origin);
   // Cmd+W is the macOS "close window" accelerator: hand it to the renderer so
@@ -1030,7 +1034,21 @@ function systemLinkHandlers(): LinuxLinkHandlers | SystemLinkHandlers | null {
 const KUBUS_ROUTE = /^\/(?!\/)[A-Za-z0-9/._~%|=&?:@+-]*$/;
 
 // Saved web hosts open in their own browser windows (see web-windows.ts).
-registerWebWindows(isManagedWindowSender, () => ({ icon: windowIcon() }));
+registerWebWindows(
+  isManagedWindowSender,
+  () => ({ icon: windowIcon() }),
+  (forwardId) => {
+    const running = server;
+    if (!running) return;
+    void running.app
+      .inject({
+        method: 'DELETE',
+        url: `/api/forwards/${encodeURIComponent(forwardId)}`,
+        headers: { authorization: `Bearer ${running.token}` },
+      })
+      .catch(() => undefined);
+  },
+);
 app.on('certificate-error', (event, contents, url, error, certificate, callback) => {
   // Only web host windows may accept a certificate; app windows keep the refusal.
   if (handleWebCertificateError(contents, url, error, certificate.fingerprint, callback)) {

@@ -12,6 +12,7 @@ const forwardRequestSchema = z.object({
   targetHost: z.string().min(1).optional(),
   targetPort: z.number().int().min(1).max(65535).optional(),
   tunnelId: z.string().min(1).optional(),
+  independent: z.boolean().optional(),
 }).refine((req) => req.bindPort > 0 || req.type !== 'remote', {
   message: 'bindPort must be 1–65535',
 });

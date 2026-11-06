@@ -1201,6 +1201,11 @@ export interface ForwardRequest {
   targetPort?: number;
   /** Saved tunnel this forward realizes (running-state matching in the UI). */
   tunnelId?: string;
+  /**
+   * Keep running when the terminal sessions on its connection close, until
+   * stopped (a web page's proxy, which its window stops).
+   */
+  independent?: boolean;
 }
 
 export interface ForwardInfo {

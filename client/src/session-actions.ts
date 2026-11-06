@@ -179,8 +179,8 @@ export async function launchManagedHostGroup(
   hosts: readonly ManagedHost[],
   layout: SessionSetLayout,
 ): Promise<string[]> {
-  const currentTabIds = useTabsStore.getState().tabs.map((tab) => tab.id);
-  if (!(await confirmDiscardRemoteEditors(currentTabIds))) return [];
+  // Web pages open in their own windows next to the tabs; only the rest
+  // replaces the tabs, so a group of pages alone leaves the tabs untouched.
   const sessions: SessionSetEntry[] = [];
   for (const host of hosts) {
     if (host.kind === 'ssh') {
@@ -190,7 +190,6 @@ export async function launchManagedHostGroup(
         color: host.entry.metadata?.color,
       });
     } else if (host.entry.profile.kind === 'web') {
-      // Web pages in the group open in their own windows next to the tabs.
       openWebHost(host.entry);
     } else {
       sessions.push({
@@ -200,6 +199,9 @@ export async function launchManagedHostGroup(
       });
     }
   }
+  if (sessions.length === 0) return [];
+  const currentTabIds = useTabsStore.getState().tabs.map((tab) => tab.id);
+  if (!(await confirmDiscardRemoteEditors(currentTabIds))) return [];
   const ids = useTabsStore.getState().launchSet(sessions, layout);
   useMultiExecStore.getState().setGroups([]);
   return ids;

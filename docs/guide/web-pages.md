@@ -29,8 +29,9 @@ gateway, name lookups included, so:
 The gateway connects the way an SSH tab would: its jump chain, keys, host-key checks and
 password prompts all apply.
 
-The proxy stops when the page's window closes. Opening the page again while its window is
-open brings that window to the front.
+The proxy stops when the page's window closes; closing the last Muxus window closes the pages
+too. Opening the page again while its window is open brings that window to the front. Closing
+an SSH tab to the same gateway leaves the page's proxy running.
 
 ## The page's window
 
