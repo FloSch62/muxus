@@ -42,7 +42,9 @@ beforeAll(async () => {
           stream.pipe(child.stdin);
           child.stdout.pipe(stream, { end: false });
           child.stderr.pipe(stream.stderr, { end: false });
-          child.on('exit', (code) => {
+          // 'close', not 'exit': like sshd, send everything the child wrote
+          // before the exit status and the end of the channel.
+          child.on('close', (code) => {
             stream.exit(code ?? 1);
             stream.end();
           });
