@@ -77,7 +77,7 @@ The route determines how the connection is dialled.
 - **Jump hosts** writes the chain, in order, as `ProxyJump a,b,c`. Each hop is either an
   alias from the configuration or a bare `user@host:port`. Muxus dials the hops in sequence
   and rejects a chain that loops back on itself.
-- **If this route fails** (under the jump chain) lists other jump routes to try, in order.
+- **Add fallback route** (under the jump chain) lists other jump routes to try, in order.
   Each is one host, or several separated by commas for a chain of its own. Muxus moves on
   to the next route when a jump host cannot be reached, refuses the login, or cannot reach
   the target, and the status line says which route it is trying. A login the target itself

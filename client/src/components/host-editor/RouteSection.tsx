@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Autocomplete from '@mui/material/Autocomplete';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
@@ -235,7 +236,7 @@ export function RouteSection({
         </Stack>
       ) : null}
 
-      {draft.routeMode === 'jump' ? (
+      {draft.routeMode === 'jump' && (draft.proxyJump.length > 0 || draft.proxyJumpFallbacks.length > 0) ? (
         <FallbackRoutes
           draft={draft}
           set={set}
@@ -268,7 +269,8 @@ export function RouteSection({
 /**
  * Other jump routes to try, in order, when the one above fails before the
  * target answers. Each is a whole chain: one host, or several joined by
- * commas. ssh_config cannot say this, so Muxus keeps them either way.
+ * commas. ssh_config cannot say this, so Muxus keeps them either way. Most
+ * hosts have none, so this stays one quiet button until it is asked for.
  */
 function FallbackRoutes({
   draft,
@@ -281,19 +283,25 @@ function FallbackRoutes({
   options: readonly string[];
   hopName: (hop: string) => string;
 }) {
+  const [adding, setAdding] = useState(false);
   const [pending, setPending] = useState('');
   const routes = draft.proxyJumpFallbacks;
   const key = (route: readonly string[]) => route.join(',');
   const taken = new Set([key(draft.proxyJump), ...routes.map(key)]);
 
-  const add = (value: string) => {
+  const add = (value: string): boolean => {
     const route = value
       .split(',')
       .map((hop) => hop.trim())
       .filter(Boolean);
-    if (route.length === 0 || route.some((hop) => /\s/.test(hop)) || taken.has(key(route))) return;
-    if (routes.length >= MAX_JUMP_FALLBACKS) return;
+    if (route.length === 0 || route.some((hop) => /\s/.test(hop)) || taken.has(key(route))) return false;
+    if (routes.length >= MAX_JUMP_FALLBACKS) return false;
     set({ proxyJumpFallbacks: [...routes, route] });
+    setPending('');
+    return true;
+  };
+  const stopAdding = () => {
+    setAdding(false);
     setPending('');
   };
   const move = (i: number, dir: -1 | 1) => {
@@ -307,16 +315,20 @@ function FallbackRoutes({
 
   return (
     <Stack spacing={0.5}>
-      <Typography variant="subtitle2">If this route fails</Typography>
-      <Typography variant="caption" color="textSecondary">
-        Muxus tries these jump routes in order when a jump host above cannot be reached or
-        cannot reach the target. A login the target itself refuses is not retried.
-        {draft.storage === 'openssh' ? ' Kept in Muxus — ssh_config has no way to say this.' : ''}
-      </Typography>
       {routes.map((route, i) => (
         <Stack key={`${key(route)}-${i}`} direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-          <Typography sx={{ width: 64, fontSize: 12, color: 'text.disabled' }}>Then try</Typography>
-          <Typography sx={{ flex: 1, fontSize: 13 }}>{label(route)}</Typography>
+          <Typography sx={{ width: 20, textAlign: 'right', fontSize: 12, color: 'text.disabled' }}>or</Typography>
+          <Typography
+            sx={{
+              flex: 1,
+              fontSize: 13,
+              ...(route.some((hop) => savedHostHopId(hop) !== undefined)
+                ? {}
+                : { fontFamily: '"JetBrains Mono", monospace' }),
+            }}
+          >
+            {label(route)}
+          </Typography>
           <IconButton size="small" aria-label={`Try ${label(route)} earlier`} disabled={i === 0} onClick={() => move(i, -1)}>
             <ArrowUpwardIcon sx={{ fontSize: 16 }} />
           </IconButton>
@@ -332,7 +344,19 @@ function FallbackRoutes({
           </IconButton>
         </Stack>
       ))}
-      {routes.length < MAX_JUMP_FALLBACKS ? (
+      {routes.length > 0 ? (
+        <Typography variant="caption" color="textSecondary">
+          Tried in order if the route above fails.
+          {draft.storage === 'openssh' ? ' Saved in Muxus, not ssh_config.' : ''}
+        </Typography>
+      ) : null}
+      {routes.length >= MAX_JUMP_FALLBACKS ? null : !adding ? (
+        <Stack direction="row">
+          <Button size="small" startIcon={<AddIcon />} onClick={() => setAdding(true)}>
+            Add fallback route
+          </Button>
+        </Stack>
+      ) : (
         <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', pt: 1 }}>
           <Autocomplete
             freeSolo
@@ -348,24 +372,39 @@ function FallbackRoutes({
             renderInput={(params) => (
               <TextField
                 {...params}
-                label="Add fallback jump route"
-                placeholder="bastion-b, or several hosts separated by commas"
+                // oxlint-disable-next-line jsx-a11y/no-autofocus -- Only appears because Add fallback route was just clicked.
+                autoFocus
+                label="Fallback route"
+                placeholder="Host, or several separated by commas"
+                onBlur={() => {
+                  if (!pending.trim()) stopAdding();
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && pending.trim()) {
                     e.preventDefault();
                     add(pending);
+                  } else if (e.key === 'Escape') {
+                    // Leaves this field, not the whole editor.
+                    e.stopPropagation();
+                    stopAdding();
                   }
                 }}
               />
             )}
           />
           <Box sx={{ pt: 0.5 }}>
-            <IconButton aria-label="Add fallback jump route" onClick={() => add(pending)} disabled={!pending.trim()}>
+            <IconButton
+              aria-label="Add fallback route"
+              disabled={!pending.trim()}
+              onClick={() => {
+                if (add(pending)) setAdding(false);
+              }}
+            >
               <AddIcon />
             </IconButton>
           </Box>
         </Stack>
-      ) : null}
+      )}
     </Stack>
   );
 }

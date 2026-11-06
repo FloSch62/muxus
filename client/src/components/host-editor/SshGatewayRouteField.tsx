@@ -39,9 +39,6 @@ export function SshGatewayRouteField({
       />
       {gateway ? (
         <Stack spacing={1}>
-          <Typography variant="caption" color="textSecondary">
-            If {gateway.target} cannot be reached or cannot open the connection, Muxus tries these in order.
-          </Typography>
           {list.map((fallback, i) => (
             <Stack key={i} direction="row" spacing={1} sx={{ alignItems: 'center' }}>
               <Stack sx={{ flex: 1 }}>
@@ -62,6 +59,11 @@ export function SshGatewayRouteField({
               </IconButton>
             </Stack>
           ))}
+          {list.length > 0 ? (
+            <Typography variant="caption" color="textSecondary">
+              Tried in order if {gateway.target} cannot be reached or refuses the login.
+            </Typography>
+          ) : null}
           {list.length < MAX_JUMP_FALLBACKS ? (
             <Stack direction="row">
               <Button

@@ -40,14 +40,10 @@ export function hostDetailLines(
       return lines;
     }
     if (profile.kind !== 'ssh') return lines;
-    if (profile.proxyJump?.length) {
-      lines.push(
-        `via ${profile.proxyJump.map((hop) => jumpHopLabel(hop, savedProfiles)).join(' → ')}`,
-      );
-    }
-    for (const route of profile.proxyJumpFallbacks ?? []) {
-      lines.push(`or via ${route.map((hop) => jumpHopLabel(hop, savedProfiles)).join(' → ')}`);
-    }
+    const route = jumpRouteLine(profile.proxyJump, profile.proxyJumpFallbacks, (hop) =>
+      jumpHopLabel(hop, savedProfiles),
+    );
+    if (route) lines.push(route);
     if (profile.identityFiles?.length) {
       lines.push(
         `Key ${profile.identityFiles.map((file) => file.split(/[\\/]/).pop()).join(', ')}`,
@@ -66,10 +62,8 @@ export function hostDetailLines(
   if (host.entry.description) lines.push(host.entry.description);
   const resolved = host.entry.resolved;
   if (!resolved) return lines;
-  if (resolved.proxyJump.length > 0) lines.push(`via ${resolved.proxyJump.join(' → ')}`);
-  for (const route of host.entry.metadata?.proxyJumpFallbacks ?? []) {
-    lines.push(`or via ${route.join(' → ')}`);
-  }
+  const route = jumpRouteLine(resolved.proxyJump, host.entry.metadata?.proxyJumpFallbacks);
+  if (route) lines.push(route);
   if (resolved.identityFiles.length > 0) {
     lines.push(`Key ${resolved.identityFiles.map((file) => file.split(/[\\/]/).pop()).join(', ')}`);
   }
@@ -82,6 +76,22 @@ export function hostDetailLines(
     );
   }
   return lines;
+}
+
+/**
+ * One line for a jump route and its fallbacks: "via a → b (then c, d → e)".
+ * An alias whose ProxyJump was removed from ssh_config still tries its saved
+ * fallbacks after dialing directly, so that reads "Direct, then via c".
+ */
+function jumpRouteLine(
+  route: readonly string[] | undefined,
+  fallbacks: readonly (readonly string[])[] | undefined,
+  label: (hop: string) => string = (hop) => hop,
+): string | undefined {
+  const chain = (hops: readonly string[]) => hops.map(label).join(' → ');
+  const then = (fallbacks ?? []).map(chain).join(', ');
+  if (!route?.length) return then ? `Direct, then via ${then}` : undefined;
+  return then ? `via ${chain(route)} (then ${then})` : `via ${chain(route)}`;
 }
 
 /** "a" or "a (then b, c)" for a gateway and its fallbacks. */
