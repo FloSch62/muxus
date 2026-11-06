@@ -2,6 +2,7 @@ import Divider from '@mui/material/Divider';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
+import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 import CreateNewFolderOutlinedIcon from '@mui/icons-material/CreateNewFolderOutlined';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
@@ -33,6 +34,7 @@ export function FolderContextMenu({
   onEdit,
   onLaunch,
   onEditHosts,
+  onRunScript,
   onCollapseAll,
   onDelete,
   onMove,
@@ -49,6 +51,8 @@ export function FolderContextMenu({
   onLaunch: (node: FolderNode) => void;
   /** Edit every host inside, nested folders included, in one go. */
   onEditHosts: (node: FolderNode) => void;
+  /** Open Scripts with the folder's SSH hosts, subfolders included. */
+  onRunScript: (node: FolderNode) => void;
   onCollapseAll: (node: FolderNode) => void;
   onDelete: (node: FolderNode) => void;
   onMove: (node: FolderNode, delta: -1 | 1) => void;
@@ -87,6 +91,12 @@ export function FolderContextMenu({
           <EditNoteOutlinedIcon fontSize="small" />
         </ListItemIcon>
         {count > 1 ? `Edit ${count} hosts…` : count === 1 ? 'Edit host…' : 'Edit hosts…'}
+      </MenuItem>
+      <MenuItem disabled={count === 0} onClick={run(onRunScript)}>
+        <ListItemIcon>
+          <TerminalOutlinedIcon fontSize="small" />
+        </ListItemIcon>
+        Run script on hosts in this folder…
       </MenuItem>
       <Divider />
       <MenuItem disabled={!canMoveUp} onClick={run((node) => onMove(node, -1))}>

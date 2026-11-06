@@ -51,6 +51,7 @@ nav = [
     { "Containers & VMs" = "guide/environments.md" },
     { "Graphical apps (X11)" = "guide/x11.md" },
     { "Command buttons & multi-exec" = "guide/commands.md" },
+    { "Scripts on many hosts" = "guide/scripts.md" },
     { "Session history" = "guide/session-history.md" },
     { "Settings" = "guide/settings.md" },
   ] },

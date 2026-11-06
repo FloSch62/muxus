@@ -23,6 +23,7 @@ import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { BackendStatusBanner } from './components/BackendStatusBanner.js';
 import { UpdateNotification } from './components/UpdateNotification.js';
 import { WindowDialPrompts } from './components/WindowDialPrompts.js';
+import { ScriptsDialog } from './components/ScriptsDialog.js';
 import { useDialogStore } from './state/dialogs.js';
 import { useToastStore } from './state/toast.js';
 import { useLocalCopiesStore } from './state/local-copies.js';
@@ -134,6 +135,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const settingsOpen = useUiStore((s) => s.settingsOpen);
   const commandButtonMenuOpen = useUiStore((s) => s.commandButtonMenuOpen);
   const commandButtonsOpen = useUiStore((s) => s.commandButtonsOpen);
+  const scriptsDialog = useUiStore((s) => s.scriptsDialog);
   const sendSecretMenuOpen = useUiStore((s) => s.sendSecretMenuOpen);
   const shortcutsOpen = useUiStore((s) => s.shortcutsOpen);
   const historyOpen = useUiStore((s) => s.historyOpen);
@@ -227,6 +229,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
         {settingsOpen ? <SettingsDialog /> : null}
         {commandButtonMenuOpen ? <CommandButtonMenu /> : null}
         {commandButtonsOpen ? <CommandButtonsDialog /> : null}
+        {scriptsDialog ? <ScriptsDialog /> : null}
         {sendSecretMenuOpen ? <SendSecretMenu /> : null}
         {shortcutsOpen ? <ShortcutsDialog /> : null}
         {historyOpen ? <SessionHistoryDialog /> : null}

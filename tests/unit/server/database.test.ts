@@ -58,7 +58,9 @@ describe('MuxusDatabase migrations', () => {
       { version: 31, name: 'host-anti-idle' },
       { version: 32, name: 'host-terminal-input-modes' },
       { version: 33, name: 'host-environment-discovery' },
-      { version: 34, name: 'web-hosts' },
+      { version: 34, name: 'host-jump-fallbacks' },
+      { version: 35, name: 'scripts' },
+      { version: 36, name: 'web-hosts' },
     ]);
   });
 
@@ -82,6 +84,32 @@ describe('MuxusDatabase migrations', () => {
       },
     });
     expect(database.listSavedHostProfiles().map((profile) => profile.kind)).toEqual(['web']);
+  });
+
+  it('keeps saved scripts', () => {
+    database = new MuxusDatabase(':memory:');
+    const script = database.saveScript({ name: 'Disk space', body: 'df -h\n' });
+    expect(database.listScripts()).toEqual([script]);
+    const renamed = database.saveScript({ id: script.id, name: 'Free space', body: 'df -h /\n' });
+    expect(renamed).toMatchObject({ id: script.id, name: 'Free space', body: 'df -h /\n' });
+    expect(database.deleteScript(script.id)).toBe(true);
+    expect(database.listScripts()).toEqual([]);
+  });
+
+  it('keeps fallback jump routes for an OpenSSH alias', () => {
+    database = new MuxusDatabase(':memory:');
+    expect(database.jumpFallbacksForAlias('app')).toEqual([]);
+    database.updateOpenSshMetadata('app', { proxyJumpFallbacks: [['bastion-b'], ['edge', 'bastion-c']] });
+    expect(database.jumpFallbacksForAlias('app')).toEqual([['bastion-b'], ['edge', 'bastion-c']]);
+    expect(database.openSshMetadata(['app']).get('app')?.proxyJumpFallbacks).toEqual([
+      ['bastion-b'],
+      ['edge', 'bastion-c'],
+    ]);
+    // Other metadata changes leave them alone; null or an empty list removes them.
+    database.updateOpenSshMetadata('app', { color: '#336699' });
+    expect(database.jumpFallbacksForAlias('app')).toHaveLength(2);
+    database.updateOpenSshMetadata('app', { proxyJumpFallbacks: [] });
+    expect(database.jumpFallbacksForAlias('app')).toEqual([]);
   });
 
   it('keeps version 22 logging policies when adding log files', () => {
@@ -172,7 +200,7 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 34,
+      version: 36,
       name: 'web-hosts',
     });
     expect(database.savedHostProfile(telnet.id)).toMatchObject({
@@ -279,7 +307,7 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 34,
+      version: 36,
       name: 'web-hosts',
     });
     expect(database.savedHostProfile(rdp.id)).toMatchObject({ name: 'Build server', metadata: { group: 'Lab' } });
@@ -432,6 +460,8 @@ describe('MuxusDatabase migrations', () => {
     try {
       legacy.exec(`
         DELETE FROM schema_migrations WHERE version >= 30;
+        DROP TABLE scripts;
+        ALTER TABLE connection_profiles DROP COLUMN proxy_jump_fallbacks_json;
         ALTER TABLE connection_profiles DROP COLUMN discover_environments;
         ALTER TABLE connection_profiles DROP COLUMN paste_prompt_wait_json;
         ALTER TABLE connection_profiles DROP COLUMN anti_idle_json;
@@ -446,12 +476,14 @@ describe('MuxusDatabase migrations', () => {
     }
 
     database = new MuxusDatabase(filename);
-    expect(database.appliedMigrations().slice(-5)).toEqual([
+    expect(database.appliedMigrations().slice(-7)).toEqual([
       { version: 30, name: 'host-paste-prompt-wait' },
       { version: 31, name: 'host-anti-idle' },
       { version: 32, name: 'host-terminal-input-modes' },
       { version: 33, name: 'host-environment-discovery' },
-      { version: 34, name: 'web-hosts' },
+      { version: 34, name: 'host-jump-fallbacks' },
+      { version: 35, name: 'scripts' },
+      { version: 36, name: 'web-hosts' },
     ]);
     const metadata = database.openSshMetadata(['legacy']).get('legacy');
     expect(metadata).toMatchObject({ group: 'Core', pasteLineDelayMs: 250 });
@@ -584,7 +616,7 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 34,
+      version: 36,
       name: 'web-hosts',
     });
     expect(database.passwordVaultConfig()).toMatchObject({

@@ -304,6 +304,24 @@ describe('managed host identity and clipboard actions', () => {
     );
   });
 
+  it('folds fallback routes into the one route line of the hover card', () => {
+    const routed = {
+      ...nativeSsh,
+      entry: {
+        ...nativeSsh.entry,
+        profile: {
+          ...nativeSsh.entry.profile,
+          proxyJump: ['edge'],
+          proxyJumpFallbacks: [['backup'], ['dr-1', 'dr-2']],
+        },
+      },
+    };
+
+    const lines = hostDetailLines(routed);
+    expect(lines[0]).toBe('via edge (then backup, dr-1 → dr-2)');
+    expect(lines.filter((line) => line.includes('backup'))).toHaveLength(1);
+  });
+
   it('offers SFTP only for SSH hosts where it is not explicitly disabled', () => {
     const disabled = sshHost('console');
     disabled.metadata = {

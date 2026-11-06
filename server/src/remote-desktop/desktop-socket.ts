@@ -9,7 +9,6 @@ import type {
   DesktopCredentials,
   DesktopProfile,
   DesktopServerMessage,
-  SshProfile,
 } from '@muxus/shared';
 import {
   DESKTOP_RDP_WS_PATH,
@@ -25,6 +24,7 @@ import {
   type DesktopPasswordTarget,
 } from '../security/password-vault.js';
 import { connectFailureMessage, connectTcp, connectThroughGateway } from '../util/dial.js';
+import { connectGateway, gatewayCandidates, type SshGatewayRef } from '../ssh/gateways.js';
 import { certificateChallenge, type PresentedCertificate } from './certificates.js';
 import { DesktopPasswords, type VaultPasswordRef } from './desktop-passwords.js';
 import { serveRdpCleanPath, type RdpStreamTarget } from './rdp-proxy.js';
@@ -73,6 +73,8 @@ export class DesktopSession {
   closed = false;
   private profile: DesktopProfile | undefined;
   private gateway: MuxedConnectionLease | undefined;
+  /** The gateway in use: the first that answered, when fallbacks are listed. */
+  private usedGateway: SshGatewayRef | undefined;
   private credentials: DesktopCredentials = {};
   /** The password in use came from the vault (so a rejection means it is stale). */
   private usedSavedPassword = false;
@@ -241,13 +243,6 @@ export class DesktopSession {
   }
 
   private async dialGateway(profile: DesktopProfile): Promise<void> {
-    const gateway = profile.sshGateway!;
-    const sshProfile: SshProfile = {
-      kind: 'ssh',
-      target: gateway.target,
-      ...(gateway.profileId ? { profileId: gateway.profileId } : {}),
-    };
-    this.status(`Connecting to the SSH gateway ${gateway.target} …`, true);
     const io: ConnectIo = {
       status: (message, options) => this.status(message, options?.transient),
       prompt: (info) => this.prompt(info),
@@ -257,12 +252,19 @@ export class DesktopSession {
         return (await reply).accept;
       },
     };
-    const lease = await this.ctx.connections.connect(sshProfile, io, 'desktop');
+    const { lease, gateway } = await connectGateway(
+      this.ctx.connections,
+      gatewayCandidates(profile),
+      io,
+      'desktop',
+      () => this.closed,
+    );
     if (this.closed) {
       lease.release();
       return;
     }
     this.gateway = lease;
+    this.usedGateway = gateway;
     const unsubscribe = lease.connection.onClose((reason) => {
       if (this.closed) return;
       send(this.socket, {
@@ -276,8 +278,9 @@ export class DesktopSession {
     await lease.connection.waitForPostAuth();
   }
 
+  /** Saved passwords and pins belong to the gateway the session went through. */
   private gatewayKey(): string {
-    const gateway = this.profile?.sshGateway;
+    const gateway = this.usedGateway ?? this.profile?.sshGateway;
     if (!gateway) return '';
     return gateway.profileId ? `profile:${gateway.profileId}` : `ssh:${gateway.target}`;
   }
@@ -290,7 +293,7 @@ export class DesktopSession {
       host: profile.host,
       port: profile.port,
       gateway: this.gatewayKey(),
-      gatewayLabel: profile.sshGateway?.target,
+      gatewayLabel: (this.usedGateway ?? profile.sshGateway)?.target,
       domain: profile.kind === 'rdp' ? (profile.domain ?? '') : '',
     };
     return { account: desktopPasswordAccount(target), label: desktopPasswordLabel(target) };
@@ -470,7 +473,7 @@ export class DesktopSession {
       this.status(`Connecting to ${target} …`, true);
       return connectTcp(profile.host, profile.port);
     }
-    this.status(`Connecting to ${target} through ${profile.sshGateway!.target} …`, true);
+    this.status(`Connecting to ${target} through ${this.usedGateway?.target} …`, true);
     return connectThroughGateway(gateway.connection.client, profile.host, profile.port);
   }
 
