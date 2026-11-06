@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   MAX_CUSTOM_TERMINAL_SCHEMES,
+  MAX_TERMINAL_SCHEME_FILE_BYTES,
   TERMINAL_SCHEME_FILE_FORMAT,
+  applyTerminalSchemeImport,
   createTerminalSchemeDocument,
   customSchemeCopyOf,
   isCustomTerminalSchemeArray,
   mergeCustomTerminalSchemes,
   parseTerminalSchemeFile,
+  readTerminalSchemeFiles,
+  summarizeTerminalSchemeImport,
   terminalSchemeFromCustom,
   terminalSchemesFromCustom,
   type CustomTerminalScheme,
@@ -371,5 +375,142 @@ describe('merging imported schemes', () => {
     }));
 
     expect(() => mergeCustomTerminalSchemes(full, [frappe])).toThrow('exceed the limit');
+  });
+
+  it('says how many more schemes fit when an import is too large', () => {
+    const current = Array.from({ length: MAX_CUSTOM_TERMINAL_SCHEMES - 1 }, (_, index) =>
+      withBackground(index, `scheme-${index}`),
+    );
+    const imported = [withBackground(200, 'scheme-a'), withBackground(201, 'scheme-b')];
+
+    expect(() => mergeCustomTerminalSchemes(current, imported)).toThrow('it adds 2, and 1 more fit');
+  });
+});
+
+/** A scheme whose colors differ from every other `index`. */
+function withBackground(index: number, id: string): CustomTerminalScheme {
+  return {
+    id,
+    name: `Scheme ${id}`,
+    colors: { ...FRAPPE_COLORS, background: `#${index.toString(16).padStart(6, '0')}` },
+  };
+}
+
+describe('importing several scheme files', () => {
+  const windowsTerminalFile = (name: string, background: string) =>
+    new File([JSON.stringify({ ...WINDOWS_TERMINAL_FRAPPE, name, background })], `${name}.json`);
+
+  it('reads every file and reports the ones it cannot read', async () => {
+    const oversized = new File(['x'.repeat(MAX_TERMINAL_SCHEME_FILE_BYTES + 1)], 'huge.json');
+
+    const { schemes, failures } = await readTerminalSchemeFiles([
+      windowsTerminalFile('One', '#111111'),
+      new File(['not a scheme'], 'broken.json'),
+      oversized,
+      windowsTerminalFile('Two', '#222222'),
+    ]);
+
+    expect(schemes.map((scheme) => scheme.name)).toEqual(['One', 'Two']);
+    expect(failures).toEqual([
+      {
+        filename: 'broken.json',
+        message: 'This file is neither a JSON color scheme nor an iTerm2 color preset.',
+      },
+      { filename: 'huge.json', message: 'That color scheme file is too large.' },
+    ]);
+  });
+
+  it('adds nothing when the same files are imported again', async () => {
+    const files = [windowsTerminalFile('One', '#111111'), windowsTerminalFile('Two', '#222222')];
+    const first = applyTerminalSchemeImport([], (await readTerminalSchemeFiles(files)).schemes);
+    expect(first.imported).toHaveLength(2);
+    expect(first.alreadyPresent).toBe(0);
+
+    const again = applyTerminalSchemeImport(
+      first.schemes,
+      (await readTerminalSchemeFiles(files)).schemes,
+    );
+
+    expect(again.schemes).toEqual(first.schemes);
+    expect(again.imported).toEqual([]);
+    expect(again.alreadyPresent).toBe(2);
+  });
+
+  it('recognizes a scheme stored under another name than the built-in it shares a name with', () => {
+    const imported = withBackground(1, 'scheme-new');
+    const first = applyTerminalSchemeImport([], [{ ...imported, name: 'Dracula' }]);
+    expect(first.imported[0]!.name).toBe('Dracula 2');
+
+    const again = applyTerminalSchemeImport(first.schemes, [
+      { ...imported, id: 'scheme-newer', name: 'Dracula' },
+    ]);
+
+    expect(again.schemes).toEqual(first.schemes);
+    expect(again.alreadyPresent).toBe(1);
+  });
+
+  it('keeps one of several identical schemes in the same import', () => {
+    const result = applyTerminalSchemeImport(
+      [],
+      [withBackground(1, 'scheme-a'), withBackground(1, 'scheme-b')],
+    );
+
+    expect(result.schemes.map((scheme) => scheme.id)).toEqual(['scheme-a']);
+    expect(result.alreadyPresent).toBe(1);
+  });
+
+  it('still updates a scheme with a known id when only its name changed', () => {
+    const renamed = { ...frappe, name: 'Frappé, renamed' };
+
+    const result = applyTerminalSchemeImport([frappe], [renamed]);
+
+    expect(result.schemes).toEqual([renamed]);
+    expect(result.imported).toEqual([renamed]);
+    expect(result.alreadyPresent).toBe(0);
+  });
+
+  it('lets schemes that are already present stay out of the scheme limit', () => {
+    const full = Array.from({ length: MAX_CUSTOM_TERMINAL_SCHEMES }, (_, index) =>
+      withBackground(index, `scheme-${index}`),
+    );
+
+    const result = applyTerminalSchemeImport(full, [withBackground(3, 'scheme-repeat')]);
+
+    expect(result.schemes).toEqual(full);
+    expect(result.alreadyPresent).toBe(1);
+  });
+});
+
+describe('summarizing a scheme import', () => {
+  const one = { ...frappe, name: 'One' };
+  const two = { ...frappe, id: 'scheme-two', name: 'Two' };
+  const failure = { filename: 'broken.json', message: 'Not a scheme.' };
+  const other = { filename: 'other.json', message: 'Also not a scheme.' };
+
+  it.each([
+    [[one], 0, [], 'success', 'Imported One.'],
+    [[one, two], 0, [], 'success', 'Imported 2 color schemes.'],
+    [[one, two], 1, [], 'success', 'Imported 2 color schemes. 1 was already in your list.'],
+    [[one], 2, [], 'success', 'Imported One. 2 were already in your list.'],
+    [[], 1, [], 'info', 'That color scheme is already in your list.'],
+    [[], 2, [], 'info', 'Those color schemes are already in your list.'],
+    [[], 0, [failure], 'error', 'Not a scheme.'],
+    [[], 0, [failure, other], 'error', '2 files could not be imported.'],
+    [[one], 0, [failure], 'warning', 'Imported One. 1 file could not be imported.'],
+    [[], 2, [failure], 'warning', '2 were already in your list. 1 file could not be imported.'],
+  ] as const)('reports %j, %i already present, %j', (imported, alreadyPresent, failures, severity, message) => {
+    const summary = summarizeTerminalSchemeImport(
+      { imported: [...imported], alreadyPresent },
+      failures,
+    );
+
+    expect(summary.severity).toBe(severity);
+    expect(summary.message).toBe(message);
+  });
+
+  it('names each failed file in the details of a batch', () => {
+    expect(summarizeTerminalSchemeImport({ imported: [one], alreadyPresent: 0 }, [failure, other]).details).toBe(
+      'broken.json: Not a scheme.\nother.json: Also not a scheme.',
+    );
   });
 });

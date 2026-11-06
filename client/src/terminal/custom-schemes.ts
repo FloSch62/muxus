@@ -221,11 +221,138 @@ export function mergeCustomTerminalSchemes(
     else merged.push({ ...scheme, name: unusedSchemeName(scheme.name, merged) });
   }
   if (merged.length > MAX_CUSTOM_TERMINAL_SCHEMES) {
+    const added = merged.length - current.length;
+    const room = MAX_CUSTOM_TERMINAL_SCHEMES - current.length;
     throw new Error(
-      `This import would exceed the limit of ${MAX_CUSTOM_TERMINAL_SCHEMES} custom color schemes. Delete an existing scheme and try again.`,
+      `This import would exceed the limit of ${MAX_CUSTOM_TERMINAL_SCHEMES} custom color schemes: it adds ${added}, and ${room} more fit. Delete existing schemes or import fewer files.`,
     );
   }
   return merged;
+}
+
+export interface TerminalSchemeFileFailure {
+  filename: string;
+  message: string;
+}
+
+export interface TerminalSchemeFilesRead {
+  schemes: CustomTerminalScheme[];
+  failures: TerminalSchemeFileFailure[];
+}
+
+/** Read the schemes in several files; a file that cannot be read does not stop the others. */
+export async function readTerminalSchemeFiles(
+  files: readonly Pick<File, 'name' | 'size' | 'text'>[],
+): Promise<TerminalSchemeFilesRead> {
+  const results = await Promise.all(
+    files.map(async (file) => {
+      try {
+        if (file.size > MAX_TERMINAL_SCHEME_FILE_BYTES) {
+          throw new Error('That color scheme file is too large.');
+        }
+        return { schemes: parseTerminalSchemeFile(await file.text(), file.name) };
+      } catch (error) {
+        return {
+          failure: {
+            filename: file.name,
+            message: error instanceof Error ? error.message : String(error),
+          },
+        };
+      }
+    }),
+  );
+  return {
+    schemes: results.flatMap((result) => result.schemes ?? []),
+    failures: results.flatMap((result) => result.failure ?? []),
+  };
+}
+
+export interface TerminalSchemeImport {
+  /** The user's schemes with the import applied. */
+  schemes: CustomTerminalScheme[];
+  /** The stored form of each scheme the import added or updated. */
+  imported: CustomTerminalScheme[];
+  /** Schemes left out because the user already has the same colors. */
+  alreadyPresent: number;
+}
+
+/**
+ * Apply imported schemes, leaving out any whose colors the user already has, so
+ * importing the same files twice adds nothing. The name cannot decide this: a
+ * scheme named like a built-in is stored under another name. A known id always
+ * goes through, so an updated export can still rename its scheme.
+ */
+export function applyTerminalSchemeImport(
+  current: readonly CustomTerminalScheme[],
+  imported: readonly CustomTerminalScheme[],
+): TerminalSchemeImport {
+  const knownIds = new Set(current.map((scheme) => scheme.id));
+  const knownColors = new Set(current.map((scheme) => schemeColorsKey(scheme.colors)));
+  const accepted = imported.filter((scheme) => {
+    if (knownIds.has(scheme.id)) return true;
+    const colors = schemeColorsKey(scheme.colors);
+    if (knownColors.has(colors)) return false;
+    knownColors.add(colors);
+    return true;
+  });
+  const schemes = mergeCustomTerminalSchemes(current, accepted);
+  return {
+    schemes,
+    imported: accepted.flatMap(
+      (scheme) => schemes.find((candidate) => candidate.id === scheme.id) ?? [],
+    ),
+    alreadyPresent: imported.length - accepted.length,
+  };
+}
+
+export interface TerminalSchemeImportSummary {
+  severity: 'success' | 'info' | 'warning' | 'error';
+  message: string;
+  details?: string;
+}
+
+/** The one message that reports an import of any number of files. */
+export function summarizeTerminalSchemeImport(
+  { imported, alreadyPresent }: Pick<TerminalSchemeImport, 'imported' | 'alreadyPresent'>,
+  failures: readonly TerminalSchemeFileFailure[],
+): TerminalSchemeImportSummary {
+  const nothingElse = imported.length === 0 && alreadyPresent === 0;
+  if (nothingElse && failures.length === 1) {
+    return { severity: 'error', message: failures[0]!.message };
+  }
+  const parts: string[] = [];
+  if (imported.length === 1) parts.push(`Imported ${imported[0]!.name}.`);
+  else if (imported.length > 1) parts.push(`Imported ${imported.length} color schemes.`);
+  if (alreadyPresent === 1) {
+    parts.push(
+      imported.length || failures.length
+        ? '1 was already in your list.'
+        : 'That color scheme is already in your list.',
+    );
+  } else if (alreadyPresent > 1) {
+    parts.push(
+      imported.length || failures.length
+        ? `${alreadyPresent} were already in your list.`
+        : 'Those color schemes are already in your list.',
+    );
+  }
+  if (failures.length === 0) {
+    return { severity: imported.length ? 'success' : 'info', message: parts.join(' ') };
+  }
+  parts.push(
+    failures.length === 1
+      ? '1 file could not be imported.'
+      : `${failures.length} files could not be imported.`,
+  );
+  return {
+    severity: nothingElse ? 'error' : 'warning',
+    message: parts.join(' '),
+    details: failures.map((failure) => `${failure.filename}: ${failure.message}`).join('\n'),
+  };
+}
+
+function schemeColorsKey(colors: CustomSchemeColors): string {
+  return SCHEME_COLOR_KEYS.map((key) => colors[key].toLowerCase()).join();
 }
 
 function parseSchemeDocument(document: Record<string, unknown>): CustomTerminalScheme[] {
