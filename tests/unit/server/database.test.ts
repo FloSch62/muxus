@@ -58,7 +58,18 @@ describe('MuxusDatabase migrations', () => {
       { version: 31, name: 'host-anti-idle' },
       { version: 32, name: 'host-terminal-input-modes' },
       { version: 33, name: 'host-environment-discovery' },
+      { version: 34, name: 'scripts' },
     ]);
+  });
+
+  it('keeps saved scripts', () => {
+    database = new MuxusDatabase(':memory:');
+    const script = database.saveScript({ name: 'Disk space', body: 'df -h\n' });
+    expect(database.listScripts()).toEqual([script]);
+    const renamed = database.saveScript({ id: script.id, name: 'Free space', body: 'df -h /\n' });
+    expect(renamed).toMatchObject({ id: script.id, name: 'Free space', body: 'df -h /\n' });
+    expect(database.deleteScript(script.id)).toBe(true);
+    expect(database.listScripts()).toEqual([]);
   });
 
   it('keeps version 22 logging policies when adding log files', () => {
@@ -149,8 +160,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 33,
-      name: 'host-environment-discovery',
+      version: 34,
+      name: 'scripts',
     });
     expect(database.savedHostProfile(telnet.id)).toMatchObject({
       name: 'Core switch',
@@ -256,8 +267,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 33,
-      name: 'host-environment-discovery',
+      version: 34,
+      name: 'scripts',
     });
     expect(database.savedHostProfile(rdp.id)).toMatchObject({ name: 'Build server', metadata: { group: 'Lab' } });
     const gnmi = database.saveSavedHostProfile({
@@ -409,6 +420,7 @@ describe('MuxusDatabase migrations', () => {
     try {
       legacy.exec(`
         DELETE FROM schema_migrations WHERE version >= 30;
+        DROP TABLE scripts;
         ALTER TABLE connection_profiles DROP COLUMN discover_environments;
         ALTER TABLE connection_profiles DROP COLUMN paste_prompt_wait_json;
         ALTER TABLE connection_profiles DROP COLUMN anti_idle_json;
@@ -423,11 +435,12 @@ describe('MuxusDatabase migrations', () => {
     }
 
     database = new MuxusDatabase(filename);
-    expect(database.appliedMigrations().slice(-4)).toEqual([
+    expect(database.appliedMigrations().slice(-5)).toEqual([
       { version: 30, name: 'host-paste-prompt-wait' },
       { version: 31, name: 'host-anti-idle' },
       { version: 32, name: 'host-terminal-input-modes' },
       { version: 33, name: 'host-environment-discovery' },
+      { version: 34, name: 'scripts' },
     ]);
     const metadata = database.openSshMetadata(['legacy']).get('legacy');
     expect(metadata).toMatchObject({ group: 'Core', pasteLineDelayMs: 250 });
@@ -560,8 +573,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 33,
-      name: 'host-environment-discovery',
+      version: 34,
+      name: 'scripts',
     });
     expect(database.passwordVaultConfig()).toMatchObject({
       formatVersion: 2,

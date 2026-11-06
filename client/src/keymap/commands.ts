@@ -555,6 +555,17 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
     },
   },
   {
+    id: 'app.scripts',
+    title: 'Run a script on hosts…',
+    category: 'app',
+    defaultChords: [],
+    keywords: ['script', 'batch', 'bulk', 'run', 'many hosts', 'parallel', 'ansible'],
+    run: () => {
+      useUiStore.getState().setScriptsDialog({});
+      return true;
+    },
+  },
+  {
     id: 'app.settings',
     title: 'Open settings',
     category: 'app',

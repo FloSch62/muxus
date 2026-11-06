@@ -31,6 +31,8 @@ import { registerWorkspaceRoutes } from './routes/workspaces.js';
 import { registerTerminalSnapshotRoutes } from './routes/terminal-snapshots.js';
 import { registerSerialRoutes } from './routes/serial.js';
 import { registerProfileRoutes } from './routes/profiles.js';
+import { registerScriptRoutes } from './routes/scripts.js';
+import { ScriptRuns } from './scripts/script-runs.js';
 import { registerHostOrderRoutes } from './routes/host-order.js';
 import { registerSessionHistoryRoutes } from './routes/session-history.js';
 import { registerPasswordVaultRoutes } from './routes/password-vault.js';
@@ -52,6 +54,8 @@ export interface AppContext {
   config: ServerConfig;
   connections: SshConnectionManager;
   forwards: ForwardManager;
+  /** Scripts running on live SSH connections. */
+  scriptRuns: ScriptRuns;
   database: MuxusDatabase;
   history: SessionHistoryStore;
   vault: PasswordVault;
@@ -152,6 +156,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
     config,
     connections,
     forwards,
+    scriptRuns: new ScriptRuns({ acquire: (connId) => connections.acquire(connId, 'script') }),
     database,
     history,
     vault,
@@ -227,6 +232,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   registerTerminalSnapshotRoutes(app, ctx);
   registerSerialRoutes(app);
   registerProfileRoutes(app, ctx);
+  registerScriptRoutes(app, ctx);
   registerHostOrderRoutes(app, ctx);
   registerSessionHistoryRoutes(app, ctx);
   registerPasswordVaultRoutes(app, ctx);
@@ -257,6 +263,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   }
 
   app.addHook('onClose', async () => {
+    ctx.scriptRuns.stopAll();
     forwards.stopAll();
     connections.closeAll();
     x11.close();
