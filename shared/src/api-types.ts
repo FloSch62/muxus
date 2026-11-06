@@ -1403,6 +1403,11 @@ export interface LinkHandlerRegistration {
   openedSystemSettings?: boolean;
 }
 
+/** Largest script Muxus stores or runs, in characters. */
+export const MAX_SCRIPT_BYTES = 1024 * 1024;
+/** Longest per-host time limit for a script run: a week. */
+export const MAX_SCRIPT_TIMEOUT_SECONDS = 7 * 24 * 3600;
+
 /** A script kept in Muxus to run on hosts. */
 export interface SavedScript {
   id: string;

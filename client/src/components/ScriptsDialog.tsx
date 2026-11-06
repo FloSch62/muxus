@@ -35,7 +35,7 @@ import SkipNextIcon from '@mui/icons-material/SkipNext';
 import StopIcon from '@mui/icons-material/Stop';
 import SyncIcon from '@mui/icons-material/Sync';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
-import type { SavedScript } from '@muxus/shared';
+import { MAX_SCRIPT_BYTES, MAX_SCRIPT_TIMEOUT_SECONDS, type SavedScript } from '@muxus/shared';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
 import { useDeleteScript, useSaveScript, useSavedScripts } from '../api/scripts.js';
 import { copyToClipboard } from '../clipboard.js';
@@ -44,6 +44,7 @@ import type { HostRunState, RunMode } from '../scripts/run-plan.js';
 import {
   cancelScriptJob,
   jobRunning,
+  rerunFailedHosts,
   scriptTarget,
   startScriptJob,
   useScriptJobStore,
@@ -122,7 +123,7 @@ export function ScriptsDialog() {
   };
 
   const importFile = async (file: File) => {
-    if (file.size > 1024 * 1024) {
+    if (file.size > MAX_SCRIPT_BYTES) {
       showToast('error', 'Scripts can be up to 1 MB.');
       return;
     }
@@ -138,46 +139,76 @@ export function ScriptsDialog() {
     .map((key) => targets.find((target) => target.key === key))
     .filter((target): target is ScriptTarget => !!target);
   const running = jobRunning(job);
+  const timeoutText = timeoutMinutes.trim();
+  const timeoutValue = timeoutText === '' ? 0 : Number(timeoutText);
+  const maxTimeoutMinutes = MAX_SCRIPT_TIMEOUT_SECONDS / 60;
+  const timeoutProblem =
+    !Number.isFinite(timeoutValue) || timeoutValue < 0
+      ? 'Enter the time limit in minutes, or 0.'
+      : timeoutValue > maxTimeoutMinutes
+        ? `The time limit can be at most ${maxTimeoutMinutes} minutes (a week).`
+        : null;
   const problem = !body.trim()
     ? 'The script is empty.'
     : chosenTargets.length === 0
       ? 'Pick the hosts to run it on.'
       : modeKind === 'batches' && !(Number(batchSize) >= 1)
         ? 'A batch needs at least one host.'
-        : running
-          ? 'A script is still running.'
-          : null;
+        : timeoutProblem
+          ? timeoutProblem
+          : running
+            ? 'A script is still running.'
+            : null;
 
-  const run = (onlyKeys?: string[]) => {
-    const list = onlyKeys
-      ? onlyKeys.map((key) => targets.find((target) => target.key === key)).filter((t): t is ScriptTarget => !!t)
-      : chosenTargets;
+  const run = () => {
     try {
       startScriptJob({
         scriptName: name.trim() || 'Untitled script',
         body,
-        targets: list,
+        targets: chosenTargets,
         mode,
         stopOnFailure: modeKind !== 'parallel' && stopOnFailure,
-        timeoutSeconds: Math.max(0, Math.round((Number(timeoutMinutes) || 0) * 60)),
+        timeoutSeconds: Math.round(timeoutValue * 60),
       });
       setView('results');
     } catch (err) {
       showErrorToast(err);
     }
   };
+  const rerun = () => {
+    try {
+      rerunFailedHosts(targets);
+    } catch (err) {
+      showErrorToast(err);
+    }
+  };
+  // Closing throws away an unsaved script, so ask first, as switching does.
+  const close = async () => {
+    if (
+      dirty &&
+      !(await confirmAction({
+        title: 'Discard changes?',
+        description: 'The script has unsaved changes.',
+        confirmLabel: 'Discard',
+        destructive: true,
+      }))
+    ) {
+      return;
+    }
+    setState(false);
+  };
 
   return (
     <Dialog
       open
-      onClose={() => setState(false)}
+      onClose={() => void close()}
       maxWidth="lg"
       fullWidth
       slotProps={{ paper: { sx: { height: 720 } } }}
     >
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, pb: 0 }}>
         <Box sx={{ flex: 1 }}>Scripts</Box>
-        <IconButton aria-label="Close" onClick={() => setState(false)}>
+        <IconButton aria-label="Close" onClick={() => void close()}>
           <CloseIcon />
         </IconButton>
       </DialogTitle>
@@ -353,6 +384,7 @@ export function ScriptsDialog() {
                   label="Stop a host's run after (minutes)"
                   value={timeoutMinutes}
                   onChange={(event) => setTimeoutMinutes(event.target.value.replace(/[^\d.]/g, ''))}
+                  error={!!timeoutProblem}
                   helperText="0 lets it run"
                   sx={{ maxWidth: 260 }}
                 />
@@ -372,13 +404,13 @@ export function ScriptsDialog() {
           </Stack>
         </Box>
       ) : (
-        <Results onRerun={(keys) => run(keys)} />
+        <Results onRerun={rerun} />
       )}
     </Dialog>
   );
 }
 
-function Results({ onRerun }: { onRerun: (keys: string[]) => void }) {
+function Results({ onRerun }: { onRerun: () => void }) {
   const job = useScriptJobStore((s) => s.job);
   const [selected, setSelected] = useState<string>();
   const outputRef = useRef<HTMLPreElement>(null);
@@ -415,7 +447,7 @@ function Results({ onRerun }: { onRerun: (keys: string[]) => void }) {
             Cancel
           </Button>
         ) : failedKeys.length > 0 ? (
-          <Button startIcon={<RedoIcon />} onClick={() => onRerun(failedKeys)}>
+          <Button startIcon={<RedoIcon />} onClick={onRerun}>
             Run again on failed hosts
           </Button>
         ) : null}

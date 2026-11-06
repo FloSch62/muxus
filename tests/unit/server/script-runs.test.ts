@@ -1,4 +1,7 @@
 import { spawn } from 'node:child_process';
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { generateKeyPairSync } from 'node:crypto';
 import type net from 'node:net';
 import { Client, Server } from 'ssh2';
@@ -14,6 +17,8 @@ const HOST_KEY = generateKeyPairSync('rsa', {
 let server: Server;
 let client: Client;
 const commands: string[] = [];
+/** Answer every exec like a Windows host whose shell is cmd.exe. */
+let windowsHost = false;
 
 /** An sshd whose exec runs the command with the local sh, stdin and all. */
 beforeAll(async () => {
@@ -26,7 +31,14 @@ beforeAll(async () => {
         session.on('exec', (acceptExec, _reject, info) => {
           commands.push(info.command);
           const stream = acceptExec();
-          const child = spawn('/bin/sh', ['-c', info.command], { stdio: 'pipe' });
+          if (windowsHost) {
+            stream.stderr.write("'sh' n'est pas reconnu en tant que commande interne\r\n");
+            stream.exit(1);
+            stream.end();
+            return;
+          }
+          // Like sshd: each exec session in a session (and process group) of its own.
+          const child = spawn('/bin/sh', ['-c', info.command], { stdio: 'pipe', detached: true });
           stream.pipe(child.stdin);
           child.stdout.pipe(stream, { end: false });
           child.stderr.pipe(stream.stderr, { end: false });
@@ -56,9 +68,10 @@ afterAll(async () => {
 
 function runs() {
   const release = vi.fn();
-  const connection = { client, onClose: () => () => undefined };
+  const unsubscribe = vi.fn();
+  const connection = { client, onClose: vi.fn(() => unsubscribe) };
   const manager = new ScriptRuns({ acquire: (id) => (id === 'c1' ? ({ connection, release } as never) : undefined) });
-  return { manager, release };
+  return { manager, release, unsubscribe };
 }
 
 async function finished(manager: ScriptRuns, id: string) {
@@ -109,6 +122,55 @@ describe('script runs over SSH exec', () => {
     manager.cancel(other.id);
     expect(manager.status(other.id).state).toBe('cancelled');
   }, 10_000);
+
+  it('stops the script itself on cancel and timeout, and removes its file', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'muxus-script-stop-'));
+    const previous = process.env.TMPDIR;
+    process.env.TMPDIR = `${dir}/`;
+    try {
+      const { manager, release, unsubscribe } = runs();
+      // A script that would leave a trace if it ran on after the stop.
+      const marker = path.join(dir, 'still-running');
+      const cancelled = await manager.start('c1', `sleep 1.5; touch ${marker}`);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      manager.cancel(cancelled.id);
+      const timedOut = await manager.start('c1', `sleep 2.5; touch ${marker}`, 1);
+      await finished(manager, timedOut.id);
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+
+      expect(existsSync(marker)).toBe(false);
+      expect(readdirSync(dir)).toEqual([]);
+      expect(release).toHaveBeenCalledTimes(2);
+      expect(unsubscribe).toHaveBeenCalledTimes(2);
+    } finally {
+      process.env.TMPDIR = previous;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  it('says so when the host has no POSIX shell to start the script', async () => {
+    const { manager } = runs();
+    // As cmd.exe would: the wrapper never runs, so no marker arrives.
+    windowsHost = true;
+    try {
+      const { id } = await manager.start('c1', 'uname -a');
+      expect(await finished(manager, id)).toMatchObject({
+        state: 'failed',
+        error: expect.stringMatching(/no POSIX shell/),
+      });
+    } finally {
+      windowsHost = false;
+    }
+  });
+
+  it('keeps its own job marker out of the output', async () => {
+    const { manager } = runs();
+    const { id } = await manager.start('c1', 'echo out\necho err >&2');
+    const status = await finished(manager, id);
+    expect(status.output).toContain('out');
+    expect(status.output).toContain('err');
+    expect(status.output).not.toContain('muxus-job');
+  });
 
   it('refuses a connection that is gone', async () => {
     const { manager } = runs();

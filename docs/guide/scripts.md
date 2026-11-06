@@ -32,6 +32,8 @@ On each host the script is copied into a temporary file and run from there, then
   hanging. Use `sudo -n` rather than a `sudo` that would ask for a password.
 - Standard output and standard error are shown together, in the order they arrived.
 - A script can be up to 1 MB.
+- The host needs a POSIX shell (`sh`): Linux, the BSDs, macOS and other Unix hosts. A Windows
+  host whose SSH shell is `cmd.exe` reports that the script never started.
 
 ## Hosts and how they run
 
@@ -48,7 +50,7 @@ On each host the script is copied into a temporary file and run from there, then
 and then runs no more hosts; the rest are listed as not run. A host fails when the script exits
 with a code other than 0, cannot connect, or runs past the time limit.
 
-**Stop a host's run after** ends a host's script after that many minutes; 0 lets it run.
+**Stop a host's run after** ends a host's script after that many minutes, at most a week; 0 lets it run.
 
 Each host connects the way its terminal tab would: jump hosts, keys and saved passwords all
 apply, and an open connection to the host is reused. When hosts need a password or a host key
@@ -60,8 +62,10 @@ confirmation, the questions appear one at a time.
 not run) and how long it took, and shows the selected host's output as it arrives. The summary
 at the top counts successes and failures.
 
-- **Cancel** stops the scripts still running and starts no more hosts.
-- **Run again on failed hosts** repeats the run on just the hosts that failed.
+- **Cancel** stops the scripts still running, with everything they started, and starts no
+  more hosts. Hosts still waiting for a password are dropped along with their prompts.
+- **Run again on failed hosts** runs the same script again, as it was, on just the hosts that
+  failed, even if the editor holds another one by then.
 - The copy button copies a host's output.
 
 Closing the dialog does not stop a run. Open **Scripts** again to see it.

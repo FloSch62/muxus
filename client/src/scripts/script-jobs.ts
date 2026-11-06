@@ -29,6 +29,9 @@ export interface HostRun {
 export interface ScriptJob {
   id: number;
   scriptName: string;
+  /** The script this job runs, kept so a rerun runs it again unchanged. */
+  body: string;
+  timeoutSeconds: number;
   mode: RunMode;
   stopOnFailure: boolean;
   startedAt: number;
@@ -101,7 +104,7 @@ export function openScriptsFor(hosts: readonly ManagedHost[], what: string): voi
 
 let nextJobId = 1;
 /** Live pieces of the running job, to stop them on cancel. */
-const live = { dials: new Set<DialedConnection>(), runs: new Set<string>() };
+const live = { abort: new AbortController(), runs: new Set<string>() };
 
 export function jobRunning(job: ScriptJob | undefined): boolean {
   return !!job && job.endedAt === undefined;
@@ -119,9 +122,13 @@ export function startScriptJob(input: {
   const store = useScriptJobStore.getState();
   if (jobRunning(store.job)) throw new Error('A script is still running. Cancel it or wait for it to finish.');
   const jobId = nextJobId++;
+  live.abort = new AbortController();
+  const signal = live.abort.signal;
   store.setJob({
     id: jobId,
     scriptName: input.scriptName,
+    body: input.body,
+    timeoutSeconds: input.timeoutSeconds,
     mode: input.mode,
     stopOnFailure: input.stopOnFailure,
     startedAt: Date.now(),
@@ -137,7 +144,7 @@ export function startScriptJob(input: {
     stopOnFailure: input.stopOnFailure,
     cancelled,
     skip: (target) => patch(target.key, { state: 'skipped' }),
-    runOne: (target) => runOnHost(target, input.body, input.timeoutSeconds, patch, cancelled),
+    runOne: (target) => runOnHost(target, input.body, input.timeoutSeconds, patch, cancelled, signal),
   }).finally(() => useScriptJobStore.getState().patchJob(jobId, { endedAt: Date.now() }));
 }
 
@@ -146,8 +153,24 @@ export function cancelScriptJob(): void {
   const job = store.job;
   if (!jobRunning(job)) return;
   store.patchJob(job!.id, { cancelled: true });
-  for (const dial of live.dials) dial.close();
+  // Dials still connecting give up, prompts waiting for an answer included.
+  live.abort.abort();
   for (const runId of live.runs) void cancelScriptRun(runId);
+}
+
+/** Run the finished job's script again, unchanged, on the hosts where it failed. */
+export function rerunFailedHosts(targets: readonly ScriptTarget[]): void {
+  const job = useScriptJobStore.getState().job;
+  if (!job || jobRunning(job)) return;
+  const failed = new Set(job.hosts.filter((host) => host.state === 'failed').map((host) => host.key));
+  startScriptJob({
+    scriptName: job.scriptName,
+    body: job.body,
+    targets: targets.filter((target) => failed.has(target.key)),
+    mode: job.mode,
+    stopOnFailure: job.stopOnFailure,
+    timeoutSeconds: job.timeoutSeconds,
+  });
 }
 
 async function runOnHost(
@@ -156,6 +179,7 @@ async function runOnHost(
   timeoutSeconds: number,
   patch: (key: string, value: Partial<HostRun> | ((host: HostRun) => Partial<HostRun>)) => void,
   cancelled: () => boolean,
+  signal: AbortSignal,
 ): Promise<{ state: 'completed' | 'failed' | 'cancelled' }> {
   if (cancelled()) {
     patch(target.key, { state: 'skipped' });
@@ -170,11 +194,10 @@ async function runOnHost(
 
   let dialed: DialedConnection;
   try {
-    dialed = await dialProfile(target.profile, promptsFor(target));
+    dialed = await dialProfile(target.profile, promptsFor(target, signal), signal);
   } catch (err) {
     return fail(err instanceof Error ? err.message : String(err));
   }
-  live.dials.add(dialed);
   let runId: string;
   try {
     if (cancelled()) return fail('Cancelled.');
@@ -183,11 +206,12 @@ async function runOnHost(
     return fail(err instanceof Error ? err.message : String(err));
   } finally {
     // The run holds its own lease on the connection now.
-    live.dials.delete(dialed);
     dialed.close();
   }
 
   live.runs.add(runId);
+  // A cancel that came while the run was starting found no run to stop.
+  if (cancelled()) void cancelScriptRun(runId);
   patch(target.key, { state: 'running' });
   let offset = 0;
   try {
@@ -219,9 +243,9 @@ async function runOnHost(
   }
 }
 
-/** The window's sign-in prompts, labelled with the host that asks. */
-function promptsFor(target: ScriptTarget): DialHandlers {
-  const handlers = windowDialHandlers();
+/** The window's sign-in prompts, labelled with the host that asks; cancelling the job takes them back. */
+function promptsFor(target: ScriptTarget, signal: AbortSignal): DialHandlers {
+  const handlers = windowDialHandlers(signal);
   return {
     ...handlers,
     onAuthPrompt: (request) =>
