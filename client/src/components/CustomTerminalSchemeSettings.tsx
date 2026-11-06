@@ -22,15 +22,15 @@ import {
 import { showErrorToast, showToast } from '../state/toast.js';
 import {
   MAX_CUSTOM_TERMINAL_SCHEMES,
-  MAX_TERMINAL_SCHEME_FILE_BYTES,
   MAX_TERMINAL_SCHEME_NAME_LENGTH,
   SCHEME_ANSI_COLOR_KEYS,
   SCHEME_BASE_COLOR_KEYS,
   SCHEME_BRIGHT_ANSI_COLOR_KEYS,
+  applyTerminalSchemeImport,
   createTerminalSchemeDocument,
   customSchemeCopyOf,
-  mergeCustomTerminalSchemes,
-  parseTerminalSchemeFile,
+  readTerminalSchemeFiles,
+  summarizeTerminalSchemeImport,
   terminalSchemeFromCustom,
   type CustomSchemeColorKey,
   type CustomSchemeColors,
@@ -118,41 +118,36 @@ export function CustomTerminalSchemeSettings() {
     }
   };
 
-  const importSchemes = async (file: File) => {
-    if (file.size > MAX_TERMINAL_SCHEME_FILE_BYTES) {
-      showToast('error', 'That color scheme file is too large.');
-      return;
-    }
+  const importSchemes = async (files: readonly File[]) => {
     try {
-      const imported = parseTerminalSchemeFile(await file.text(), file.name);
-      const merged = mergeCustomTerminalSchemes(
+      const { schemes: read, failures } = await readTerminalSchemeFiles(files);
+      const result = applyTerminalSchemeImport(
         usePrefsStore.getState().customTerminalSchemes,
-        imported,
+        read,
       );
-      setPrefs({ customTerminalSchemes: merged });
-      const first = merged.find((scheme) => scheme.id === imported[0]?.id);
-      setSelectedId(first?.id ?? '');
-      showToast(
-        'success',
-        imported.length === 1 && first
-          ? `Imported ${first.name}.`
-          : `Imported ${imported.length} color schemes.`,
-      );
+      const [first] = result.imported;
+      if (first) {
+        setPrefs({ customTerminalSchemes: result.schemes });
+        setSelectedId(first.id);
+      }
+      const { severity, message, details } = summarizeTerminalSchemeImport(result, failures);
+      showToast(severity, message, details);
     } catch (error) {
       showErrorToast(error);
     }
   };
 
   const chooseImport = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+    // Clearing the input also empties its live file list, so copy it first.
+    const files = Array.from(event.target.files ?? []);
     event.target.value = '';
-    if (file) void importSchemes(file);
+    if (files.length > 0) void importSchemes(files);
   };
 
   return (
     <SettingsGroup
       title={schemes.length ? `Custom color schemes · ${schemes.length}` : 'Custom color schemes'}
-      description="Your own schemes are offered in the terminal theme pickers above and in every host's terminal appearance. Start from a copy of any scheme, or import a Windows Terminal (.json) or iTerm2 (.itermcolors) color scheme."
+      description="Your own schemes are offered in the terminal theme pickers above and in every host's terminal appearance. Start from a copy of any scheme, or import one or more Windows Terminal (.json) or iTerm2 (.itermcolors) color schemes."
       action={
         <>
           <Button
@@ -194,7 +189,8 @@ export function CustomTerminalSchemeSettings() {
         ref={importInput}
         hidden
         type="file"
-        aria-label="Import a color scheme file"
+        multiple
+        aria-label="Import color scheme files"
         accept=".json,.itermcolors,application/json"
         onChange={chooseImport}
       />
