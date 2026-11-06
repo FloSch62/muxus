@@ -21,10 +21,10 @@ open. Nothing is installed on the host and no port is exposed.
 ## Where they show up
 
 **Beside the host.** While a session to a host is connected, its sidebar row ends in
-small counts with each tool's logo: running containers, labs, Kubernetes contexts,
-running VMs. A host that runs none of them shows nothing, so the tree stays as it was,
-and so does a host nobody is connected to. Clicking a count opens the panel on that
-host.
+the overlapping logos of the tools it runs, and hovering them gives the counts: running
+containers, labs, Kubernetes contexts, running VMs. A host that runs none of them shows
+nothing, so the tree stays as it was, and so does a host nobody is connected to. Clicking
+the logos opens the panel on that host.
 
 **In the panel.** The :material-cube-outline: control in the top bar opens the panel with
 this computer and every connected host. Each host lists the tools it has, and each tool

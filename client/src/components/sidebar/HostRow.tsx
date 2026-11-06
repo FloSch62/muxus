@@ -186,7 +186,12 @@ export const HostRow = memo(function HostRow({
             opacity: dragging ? 0.45 : 1,
             cursor: draggable ? 'grab' : 'pointer',
             ...((match || sessionsOpen) && { bgcolor: 'action.selected' }),
-            '&:hover .host-row-menu, & .host-row-menu:focus-visible': { opacity: 1 },
+            '&:hover .host-row-menu, & .host-row-menu:focus-visible': {
+              opacity: 1,
+              width: 'auto',
+              p: 0.125,
+              ml: 0,
+            },
             ...(dropEdge && {
               [`&::${dropEdge === 'before' ? 'before' : 'after'}`]: {
                 content: '""',
@@ -252,9 +257,15 @@ export const HostRow = memo(function HostRow({
           edge="end"
           tabIndex={-1}
           aria-label={`Options for ${title}`}
+          // Until the row is hovered it takes no width (nor the row's gap), which
+          // goes to the name. Collapsed rather than hidden, so it stays a valid
+          // anchor for the menu it opens.
           sx={{
             flexShrink: 0,
-            p: 0.125,
+            overflow: 'hidden',
+            p: { xs: 0.125, md: 0 },
+            width: { md: 0 },
+            ml: { md: -0.75 },
             opacity: { xs: 1, md: 0 },
             transition: 'opacity 120ms ease',
           }}
