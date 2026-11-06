@@ -88,6 +88,8 @@ import type { ConnectionKind } from './host-editor/EditorShell.js';
 import { NativeHostEditorContent } from './NativeHostEditorContent.js';
 import { RemoteDesktopHostEditorContent } from './RemoteDesktopHostEditorContent.js';
 import { ManagementHostEditorContent } from './ManagementHostEditorContent.js';
+import { WebHostEditorContent } from './WebHostEditorContent.js';
+import { blankWebDraft, webDraftFromProfile, type WebHostDraft } from './host-editor/web-draft.js';
 import {
   blankManagementDraft,
   managementDraftFromProfile,
@@ -151,6 +153,7 @@ function HostEditorBody({ state }: { state: OpenState }) {
   const [managementDraft, setManagementDraft] = useState<ManagementHostDraft>(() =>
     initialManagementDraft(state),
   );
+  const [webDraft, setWebDraft] = useState<WebHostDraft>(() => initialWebDraft(state));
   const lastIdentity = useRef(stateIdentity(state));
 
   // Re-seed only when the edited entry itself changes — a connection-type
@@ -163,6 +166,7 @@ function HostEditorBody({ state }: { state: OpenState }) {
     setNativeDraft(initialNativeDraft(state));
     setDesktopDraft(initialDesktopDraft(state));
     setManagementDraft(initialManagementDraft(state));
+    setWebDraft(initialWebDraft(state));
   }, [state]);
 
   const kind = editorKind(state);
@@ -174,6 +178,9 @@ function HostEditorBody({ state }: { state: OpenState }) {
         setDraft={setSshDraft}
       />
     );
+  }
+  if (kind === 'web') {
+    return <WebHostEditorContent state={state} draft={webDraft} setDraft={setWebDraft} />;
   }
   if (kind === 'gnmi' || kind === 'netconf') {
     return (
@@ -273,6 +280,20 @@ function initialDesktopDraft(state: OpenState): DesktopHostDraft {
   return blankDesktopDraft(
     state.mode === 'new' ? state.prefillTarget : undefined,
     state.mode === 'new' ? state.group : undefined,
+  );
+}
+
+function initialWebDraft(state: OpenState): WebHostDraft {
+  if (
+    (state.mode === 'edit-profile' || state.mode === 'duplicate-profile') &&
+    state.entry.profile.kind === 'web'
+  ) {
+    return webDraftFromProfile(state.entry, state.mode === 'duplicate-profile');
+  }
+  return blankWebDraft(
+    state.mode === 'new' ? state.prefillTarget : undefined,
+    state.mode === 'new' ? state.group : undefined,
+    state.mode === 'new' ? state.prefillGateway : undefined,
   );
 }
 

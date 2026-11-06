@@ -395,7 +395,7 @@ export class ForwardManager {
         },
       );
     });
-    await listen(server, info.bindPort);
+    info.bindPort = await listen(server, info.bindPort);
     return () => server.close();
   }
 
@@ -450,7 +450,9 @@ export class ForwardManager {
         );
       });
     });
-    await listen(server, info.bindPort);
+    // Port 0 lets the system pick a free one (a web host's private proxy);
+    // the forward then reports the port it got.
+    info.bindPort = await listen(server, info.bindPort);
     return () => server.close();
   }
 }
@@ -515,10 +517,14 @@ function configForwardKey(
   ]);
 }
 
-function listen(server: net.Server, port: number): Promise<void> {
+/** Listen on 127.0.0.1 and resolve with the bound port (the picked one for port 0). */
+function listen(server: net.Server, port: number): Promise<number> {
   return new Promise((resolve, reject) => {
     server.once('error', (err) => reject(new HttpProblem(400, `could not listen on 127.0.0.1:${port}: ${err.message}`)));
-    server.listen(port, '127.0.0.1', () => resolve());
+    server.listen(port, '127.0.0.1', () => {
+      const address = server.address();
+      resolve(typeof address === 'object' && address ? address.port : port);
+    });
   });
 }
 

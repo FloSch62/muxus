@@ -160,7 +160,7 @@ describe('managed host identity and clipboard actions', () => {
     ).toEqual(ssh);
     expect(
       editableManagedHostForProfile(
-        { ...telnet.entry.profile, profileId: telnet.entry.id },
+        { ...(telnet.entry.profile as import('@muxus/shared').TelnetProfile), profileId: telnet.entry.id },
         [ssh.entry],
         [nativeSsh.entry, telnet.entry],
       ),

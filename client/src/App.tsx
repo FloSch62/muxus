@@ -22,6 +22,7 @@ import { AppShell } from './layout/AppShell.js';
 import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { BackendStatusBanner } from './components/BackendStatusBanner.js';
 import { UpdateNotification } from './components/UpdateNotification.js';
+import { WindowDialPrompts } from './components/WindowDialPrompts.js';
 import { useDialogStore } from './state/dialogs.js';
 import { useToastStore } from './state/toast.js';
 import { useLocalCopiesStore } from './state/local-copies.js';
@@ -219,6 +220,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
       </ErrorBoundary>
       <Suspense fallback={null}>
         {hostEditorOpen ? <HostEditorDialog /> : null}
+        <WindowDialPrompts />
         {hostOrganizerOpen ? <HostOrganizationDialog /> : null}
         {hostBulkEditorOpen ? <HostBulkEditDialog /> : null}
         {folderDialogOpen ? <FolderDialog /> : null}

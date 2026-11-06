@@ -207,7 +207,11 @@ describe('RDP and VNC hosts in lists and windows', () => {
   });
 
   it('opens desktop sessions in new windows', () => {
-    const launch = { kind: 'session' as const, title: 'Build server', profile: rdpHost.profile };
+    const launch = {
+      kind: 'session' as const,
+      title: 'Build server',
+      profile: rdpHost.profile as import('@muxus/shared').SessionProfile,
+    };
     expect(decodeAppWindowLaunch(encodeAppWindowLaunch(launch))).toEqual(launch);
     expect(
       decodeAppWindowLaunch(

@@ -12,11 +12,12 @@ import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import DesktopWindowsOutlinedIcon from '@mui/icons-material/DesktopWindowsOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import LanguageOutlinedIcon from '@mui/icons-material/LanguageOutlined';
+import PublicOutlinedIcon from '@mui/icons-material/PublicOutlined';
 import ScreenShareOutlinedIcon from '@mui/icons-material/ScreenShareOutlined';
 import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined';
 import UsbOutlinedIcon from '@mui/icons-material/UsbOutlined';
 
-export type ConnectionKind = 'ssh' | 'telnet' | 'serial' | 'rdp' | 'vnc' | 'gnmi' | 'netconf';
+export type ConnectionKind = 'ssh' | 'telnet' | 'serial' | 'rdp' | 'vnc' | 'gnmi' | 'netconf' | 'web';
 
 export interface EditorSectionDef<S extends string> {
   value: S;
@@ -206,6 +207,7 @@ export function ConnectionTypeTabs({
       <Tab value="vnc" icon={<ScreenShareOutlinedIcon fontSize="small" />} iconPosition="start" label="VNC" />
       <Tab value="gnmi" icon={<SensorsOutlinedIcon fontSize="small" />} iconPosition="start" label="gNMI" />
       <Tab value="netconf" icon={<AccountTreeOutlinedIcon fontSize="small" />} iconPosition="start" label="NETCONF" />
+      <Tab value="web" icon={<PublicOutlinedIcon fontSize="small" />} iconPosition="start" label="Web" />
     </Tabs>
   );
 }

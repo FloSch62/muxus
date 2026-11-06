@@ -267,6 +267,15 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   registerLinkHandler(scheme: ConnectionLinkScheme): Promise<LinkHandlerRegistration | undefined> {
     return ipcRenderer.invoke('muxus:link-handlers:register', scheme);
   },
+  /** Open a saved web host's browser window; settles when it closes, or at once if it was open. */
+  openWebWindow(request: {
+    key: string;
+    url: string;
+    title: string;
+    proxy?: string;
+  }): Promise<'closed' | 'focused' | 'invalid'> {
+    return ipcRenderer.invoke('muxus:web:open', request);
+  },
   kubusAvailable(): Promise<boolean> {
     return ipcRenderer.invoke('muxus:kubus:available');
   },

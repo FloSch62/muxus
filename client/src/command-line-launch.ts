@@ -224,7 +224,8 @@ export function resolveConnectionLink(
   }
   const pin = link.hostKeyFingerprint ? { hostKeyFingerprint: link.hostKeyFingerprint } : {};
   const match = matches.length === 1 ? matches[0]!.host : undefined;
-  if (match?.kind === 'profile') {
+  // Links name ssh:// and telnet:// hosts, never a page.
+  if (match?.kind === 'profile' && match.entry.profile.kind !== 'web') {
     return { kind: 'host', host: match, profile: { ...match.entry.profile, profileId: match.entry.id, ...pin } };
   }
   if (match?.kind === 'ssh') {

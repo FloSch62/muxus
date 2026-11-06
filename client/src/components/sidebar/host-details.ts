@@ -21,6 +21,10 @@ export function hostDetailLines(
       if (profile.shareClipboard === false) lines.push('Clipboard not shared');
       return lines;
     }
+    if (profile.kind === 'web') {
+      if (profile.sshGateway) lines.push(`via SOCKS5 on ${profile.sshGateway.target}`);
+      return lines;
+    }
     if (profile.kind === 'gnmi' || profile.kind === 'netconf') {
       if (profile.sshGateway) lines.push(`via SSH gateway ${profile.sshGateway.target}`);
       if (profile.kind === 'gnmi') {

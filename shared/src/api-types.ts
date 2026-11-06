@@ -527,9 +527,10 @@ export type SavedHostSessionProfile =
   | import('./ws-protocol.js').RdpProfile
   | import('./ws-protocol.js').VncProfile
   | import('./ws-protocol.js').GnmiProfile
-  | import('./ws-protocol.js').NetconfProfile;
+  | import('./ws-protocol.js').NetconfProfile
+  | import('./ws-protocol.js').WebProfile;
 
-/** SSH/Telnet/serial/RDP/VNC/gNMI/NETCONF host stored natively by Muxus rather than in ssh_config. */
+/** SSH/Telnet/serial/RDP/VNC/gNMI/NETCONF/web host stored natively by Muxus rather than in ssh_config. */
 export interface SavedHostProfile {
   id: string;
   kind: SavedHostSessionProfile['kind'];

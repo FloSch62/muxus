@@ -14,7 +14,7 @@ import {
 } from './state/prefs.js';
 import { useMultiExecStore } from './state/multi-exec.js';
 import { isMultiExecTarget, isRemoteSessionTab, useTabsStore } from './state/tabs.js';
-import type { PaneDirection, SessionSetLayout } from './state/tabs.js';
+import type { PaneDirection, SessionSetEntry, SessionSetLayout } from './state/tabs.js';
 import { confirmAction, promptForText } from './state/dialogs.js';
 import { showErrorToast, showToast } from './state/toast.js';
 import { apiFetch } from './api/http.js';
@@ -22,6 +22,7 @@ import { terminalHandle } from './terminal/terminal-registry.js';
 import { confirmDiscardRemoteEditors } from './editor/remote-editor-registry.js';
 import { findPane, visibleTabIds } from './state/workspace-layout.js';
 import { openAppWindow } from './window-management.js';
+import { openWebHost } from './web-hosts.js';
 import { createTabTransferId, shouldDetachTabDrag } from './tab-drag.js';
 
 /**
@@ -133,6 +134,11 @@ export function connectTarget(target: string, title = target, replaceTabId?: str
 }
 
 export function connectSavedHost(host: SavedHostProfile, replaceTabId?: string): string {
+  // A web page opens in its own browser window, never in a tab.
+  if (host.profile.kind === 'web') {
+    openWebHost(host);
+    return '';
+  }
   const profile = { ...host.profile, profileId: host.id };
   const title = savedHostDisplayName(host);
   const id = launchOnce(`saved:${host.id}:${replaceTabId ?? ''}`, () => {
@@ -175,22 +181,26 @@ export async function launchManagedHostGroup(
 ): Promise<string[]> {
   const currentTabIds = useTabsStore.getState().tabs.map((tab) => tab.id);
   if (!(await confirmDiscardRemoteEditors(currentTabIds))) return [];
-  const ids = useTabsStore.getState().launchSet(
-    hosts.map((host) =>
-      host.kind === 'ssh'
-        ? {
-            profile: { kind: 'ssh' as const, target: host.entry.alias },
-            title: host.entry.metadata?.displayName ?? host.entry.alias,
-            color: host.entry.metadata?.color,
-          }
-        : {
-            profile: { ...host.entry.profile, profileId: host.entry.id },
-            title: savedHostDisplayName(host.entry),
-            color: host.entry.metadata.color,
-          },
-    ),
-    layout,
-  );
+  const sessions: SessionSetEntry[] = [];
+  for (const host of hosts) {
+    if (host.kind === 'ssh') {
+      sessions.push({
+        profile: { kind: 'ssh' as const, target: host.entry.alias },
+        title: host.entry.metadata?.displayName ?? host.entry.alias,
+        color: host.entry.metadata?.color,
+      });
+    } else if (host.entry.profile.kind === 'web') {
+      // Web pages in the group open in their own windows next to the tabs.
+      openWebHost(host.entry);
+    } else {
+      sessions.push({
+        profile: { ...host.entry.profile, profileId: host.entry.id },
+        title: savedHostDisplayName(host.entry),
+        color: host.entry.metadata.color,
+      });
+    }
+  }
+  const ids = useTabsStore.getState().launchSet(sessions, layout);
   useMultiExecStore.getState().setGroups([]);
   return ids;
 }
@@ -413,6 +423,10 @@ export function openHostInNewWindow(host: SshHostEntry): void {
 }
 
 export function openSavedHostInNewWindow(host: SavedHostProfile): void {
+  if (host.profile.kind === 'web') {
+    openWebHost(host);
+    return;
+  }
   openAppWindow({
     kind: 'session',
     profile: { ...host.profile, profileId: host.id },

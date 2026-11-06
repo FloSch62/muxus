@@ -65,6 +65,9 @@ export function savedHostAddress(profile: SavedHostProfile): string {
       : `${connection.host}:${connection.port}`;
     return connection.sshGateway ? `${address} via ${connection.sshGateway.target}` : address;
   }
+  if (connection.kind === 'web') {
+    return connection.sshGateway ? `${connection.url} via ${connection.sshGateway.target}` : connection.url;
+  }
   return connection.kind === 'telnet'
     ? `${connection.host}:${connection.port}`
     : `${connection.path} · ${connection.baudRate} baud`;

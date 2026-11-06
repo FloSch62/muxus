@@ -77,6 +77,26 @@ describe('ForwardManager lifecycle', () => {
     expect(release).toHaveBeenCalledTimes(1);
   });
 
+  it('reports the port a SOCKS5 forward on port 0 was given', async () => {
+    const { connection } = fakeConnection('connection-1');
+    const connections = {
+      acquire: () => ({ connection, owner: 'forward' as const, release: vi.fn() }),
+    };
+    manager = new ForwardManager(connections as never, { warn: vi.fn() } as never);
+
+    const forward = await manager.start({ connId: connection.id, type: 'dynamic', bindPort: 0 });
+
+    expect(forward.bindPort).toBeGreaterThan(0);
+    // Something really listens there.
+    await new Promise<void>((resolve, reject) => {
+      const socket = net.connect(forward.bindPort, '127.0.0.1', () => {
+        socket.destroy();
+        resolve();
+      });
+      socket.on('error', reject);
+    });
+  });
+
   it('promotes a running session forward when it is saved as a tunnel', async () => {
     const release = vi.fn();
     const { connection } = fakeConnection('connection-1');

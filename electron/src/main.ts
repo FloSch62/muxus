@@ -85,6 +85,7 @@ import { initMainLog, installCrashCapture, mainLog, mainLogPath } from './main-l
 import { readLocalMobaXtermSessions } from './mobaxterm.js';
 import { workspaceOwnershipUpdate } from './workspace-window-state.js';
 import { pointInsideAnyWindow } from './tab-detach.js';
+import { handleWebCertificateError, registerWebWindows } from './web-windows.js';
 import {
   parseWindowPlacement,
   trafficLightPosition,
@@ -1027,6 +1028,15 @@ function systemLinkHandlers(): LinuxLinkHandlers | SystemLinkHandlers | null {
  * in-app route travels: a path that cannot reach another origin.
  */
 const KUBUS_ROUTE = /^\/(?!\/)[A-Za-z0-9/._~%|=&?:@+-]*$/;
+
+// Saved web hosts open in their own browser windows (see web-windows.ts).
+registerWebWindows(isManagedWindowSender, () => ({ icon: windowIcon() }));
+app.on('certificate-error', (event, contents, url, error, certificate, callback) => {
+  // Only web host windows may accept a certificate; app windows keep the refusal.
+  if (handleWebCertificateError(contents, url, error, certificate.fingerprint, callback)) {
+    event.preventDefault();
+  }
+});
 
 ipcMain.handle('muxus:kubus:available', async (event): Promise<boolean> => {
   if (!isManagedWindowSender(event)) return false;

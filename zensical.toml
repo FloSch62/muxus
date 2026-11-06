@@ -38,6 +38,7 @@ nav = [
     { "Telnet & serial" = "guide/telnet-serial.md" },
     { "Remote desktop (RDP & VNC)" = "guide/remote-desktop.md" },
     { "NETCONF & gNMI" = "guide/netconf-gnmi.md" },
+    { "Web pages" = "guide/web-pages.md" },
     { "Connecting" = "guide/connecting.md" },
     { "Tabs & panes" = "guide/tabs-and-panes.md" },
     { "The terminal" = "guide/terminal.md" },
