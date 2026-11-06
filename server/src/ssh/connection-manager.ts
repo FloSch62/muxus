@@ -390,6 +390,8 @@ export class SshConnectionManager {
   private readonly disableSftpForProfile: ((id: string) => boolean) | undefined;
   private readonly consoleCompatibilityForProfile: ((id: string) => boolean) | undefined;
   private readonly jumpFallbacksForHost: ((alias: string) => string[][]) | undefined;
+  /** Per host, which of its jump routes (0 = the primary) connected last. */
+  private readonly lastWorkingRoute = new Map<string, number>();
   private readonly agentOperationTimeoutMs: number;
   private readonly agentWaitStatusMs: number;
   private readonly x11: LocalX11 | undefined;
@@ -504,14 +506,32 @@ export class SshConnectionManager {
     if (fallbacks.length === 0) return this.connectRoute(doc, profile, io, owner, opts);
 
     // Alternative jump routes: each is the same host with another ProxyJump
-    // chain. A live transport over any of them serves the request first.
-    const routes: SshProfile[] = [
+    // chain. The route that worked last for this host goes first, so a retry
+    // (a reconnect, an overflow transport) does not wait on a dead primary.
+    const routeKey = lastRouteKey(profile);
+    const all: SshProfile[] = [
       profile,
       ...fallbacks.map((proxyJump) => ({ ...profile, proxyJump, proxyCommand: undefined })),
     ];
+    const remembered = this.lastWorkingRoute.get(routeKey);
+    const routes =
+      remembered && remembered > 0 && remembered < all.length
+        ? [all[remembered]!, ...all.filter((_, i) => i !== remembered)]
+        : all;
+    // A route that cannot even be planned (a saved jump host that was
+    // deleted, a loop) is skipped like one that cannot be reached.
+    const plans = routes.map((route) => {
+      try {
+        return this.routePlan(doc, route, opts);
+      } catch (err) {
+        return err instanceof Error ? err : new Error(String(err));
+      }
+    });
     if (!opts.dedicatedTransport && !opts.freshTransport) {
-      for (const route of routes) {
-        const shared = this.sharedForRoute(doc, route, owner);
+      // A live transport over any route serves the request first.
+      for (const plan of plans) {
+        if (plan instanceof Error) continue;
+        const shared = this.tryShare(plan, owner);
         if (shared) {
           io.status(`Reusing the SSH connection to ${shared.connection.host} (multiplexed).`, {
             transient: true,
@@ -522,22 +542,42 @@ export class SshConnectionManager {
     }
     for (let i = 0; ; i++) {
       const route = routes[i]!;
-      try {
-        return await this.connectRoute(doc, route, io, owner, opts);
-      } catch (err) {
-        const failedRoute = err instanceof Error ? routeFailures.get(err) : undefined;
-        const next = routes[i + 1];
-        if (failedRoute === undefined || !next) throw err;
-        const nextRoute = this.routeLabel(doc, next);
-        const reason = err instanceof Error ? err.message : String(err);
-        this.log.info(
-          { target: profile.target, failedRoute, nextRoute, err: reason },
-          'ssh jump route failed; trying the next one',
-        );
-        io.status(
-          `${failedRoute ? `Route via ${failedRoute}` : 'Direct connection'} failed (${reason}) — trying via ${nextRoute} …`,
-        );
+      const plan = plans[i]!;
+      const next = routes[i + 1];
+      let failedRoute: string | undefined;
+      let failure: unknown;
+      if (plan instanceof Error) {
+        failedRoute = this.routeLabel(doc, route);
+        failure = plan;
+      } else {
+        try {
+          const lease = await this.connectRoute(doc, route, io, owner, opts, plan);
+          this.lastWorkingRoute.set(routeKey, all.indexOf(route));
+          if (opts.freshTransport && !opts.dedicatedTransport) {
+            // A forced reconnect replaces the transports of every route to
+            // this host, not just the one it landed on.
+            for (const other of plans) {
+              if (!(other instanceof Error) && other.key !== plan.key) {
+                this.retireReplacedTransports(other.key, lease.connection.id);
+              }
+            }
+          }
+          return lease;
+        } catch (err) {
+          failedRoute = err instanceof Error ? routeFailures.get(err) : undefined;
+          failure = err;
+        }
       }
+      if (failedRoute === undefined || !next) throw failure;
+      const nextRoute = this.routeLabel(doc, next);
+      const reason = failure instanceof Error ? failure.message : String(failure);
+      this.log.info(
+        { target: profile.target, failedRoute, nextRoute, err: reason },
+        'ssh jump route failed; trying the next one',
+      );
+      io.status(
+        `${failedRoute ? `Route via ${failedRoute}` : 'Direct connection'} failed (${reason}) — trying via ${nextRoute} …`,
+      );
     }
   }
 
@@ -548,6 +588,9 @@ export class SshConnectionManager {
   private jumpFallbacksFor(doc: ConfigDocument, profile: SshProfile): string[][] {
     if (profile.proxyJumpFallbacks) return profile.proxyJumpFallbacks;
     if (profile.useConfig === false || !this.jumpFallbacksForHost) return [];
+    // A caller that chose its own route (a NETCONF gateway, an explicit
+    // ProxyJump) gets that route, not the alias's saved alternatives.
+    if (profile.proxyJump?.length || profile.proxyCommand) return [];
     const alias = findMetadataAlias(doc, parseHostSpec(profile.target).host);
     return alias ? this.jumpFallbacksForHost(alias) : [];
   }
@@ -564,19 +607,17 @@ export class SshConnectionManager {
     }
   }
 
-  /** A live transport already dialed over this route, leased to `owner`. */
-  private sharedForRoute(
-    doc: ConfigDocument,
-    profile: SshProfile,
+  /**
+   * A live transport already dialed for this plan, leased to `owner`, with
+   * the plan's config forwards merged in. A force-reconnect passes its token
+   * so it only ever joins its own replacement.
+   */
+  private tryShare(
+    plan: RoutePlan,
     owner: ConnectionLeaseOwner,
+    freshToken?: string,
   ): MuxedConnectionLease | undefined {
-    let plan: ReturnType<SshConnectionManager['routePlan']>;
-    try {
-      plan = this.routePlan(doc, profile, {});
-    } catch {
-      return undefined;
-    }
-    const shared = this.acquireShared(plan.key, owner, plan.target);
+    const shared = this.acquireShared(plan.key, owner, plan.target, freshToken);
     if (shared) {
       shared.connection.configForwards = mergeConfigForwards(
         shared.connection.configForwards,
@@ -591,7 +632,7 @@ export class SshConnectionManager {
     doc: ConfigDocument,
     profile: SshProfile,
     opts: { forcePlainShell?: boolean },
-  ) {
+  ): RoutePlan {
     const chain = buildChain(
       doc,
       profile,
@@ -631,9 +672,9 @@ export class SshConnectionManager {
       dedicatedTransport?: boolean;
       forcePlainShell?: boolean;
     },
+    plan: RoutePlan = this.routePlan(doc, profile, opts),
   ): Promise<MuxedConnectionLease> {
-    const { chain, target, metadataAlias, consoleCompatibility, disableSftp, key } =
-      this.routePlan(doc, profile, opts);
+    const { chain, target, metadataAlias, consoleCompatibility, disableSftp, key } = plan;
     const configForwards = target.resolved.forwards;
     const label = `${target.user}@${target.resolved.hostname}:${target.port}`;
     this.log.debug(
@@ -645,12 +686,8 @@ export class SshConnectionManager {
     if (!opts.dedicatedTransport) {
       // A force-reconnect request skips every pre-existing transport but may
       // still share the replacement its own gesture already established.
-      const shared = this.acquireShared(key, owner, target, freshToken);
+      const shared = this.tryShare(plan, owner, freshToken);
       if (shared) {
-        shared.connection.configForwards = mergeConfigForwards(
-          shared.connection.configForwards,
-          configForwards,
-        );
         this.log.debug({ label, connId: shared.connection.id }, 'reusing multiplexed ssh transport');
         io.status(`Reusing the SSH connection to ${label} (multiplexed).`, { transient: true });
         return shared;
@@ -1596,6 +1633,21 @@ export class SshConnectionManager {
 // Dial plan
 // ---------------------------------------------------------------------------
 
+/** The dial plan for one route: its hops, target and multiplexing key. */
+interface RoutePlan {
+  chain: ChainHop[];
+  target: ChainHop;
+  metadataAlias: string | undefined;
+  consoleCompatibility: boolean;
+  disableSftp: boolean;
+  key: string;
+}
+
+/** Which host a remembered route belongs to. */
+function lastRouteKey(profile: SshProfile): string {
+  return profile.profileId ? `profile:${profile.profileId}` : `target:${profile.user ?? ''}@${profile.target}:${profile.port ?? ''}`;
+}
+
 /**
  * Identity of a dial plan for connection sharing: the resolved hop sequence
  * (user@hostname:port and agent-forwarding policy for each hop) plus the
@@ -1918,7 +1970,6 @@ function isChannelOpenRefusal(err: unknown): boolean {
   return typeof (cause as { reason?: unknown } | undefined)?.reason === 'number';
 }
 
-/** A shared jump hop could not carry another chain; the chain dials it again. */
 /**
  * Dial failures another jump route could avoid, mapped to the route that
  * failed ('' for a direct connection). A target that refuses the login is
@@ -1926,6 +1977,9 @@ function isChannelOpenRefusal(err: unknown): boolean {
  * choice, so neither tries the next route.
  */
 const routeFailures = new WeakMap<Error, string>();
+
+/** Failures that end the attempt instead of trying another route or gateway. */
+export const STOP_FALLBACK = /authentication cancelled|host key verification failed|host denied/i;
 
 const NETWORK_FAILURE =
   /connection refused|could not resolve|timed out|ECONNRESET|EHOSTUNREACH|ENETUNREACH|EPIPE|socket hang up/i;
@@ -1936,13 +1990,16 @@ export function isRouteFailure(
   failingHop: number,
   openingChannel: boolean,
 ): boolean {
-  if (/authentication cancelled/i.test(err.message)) return false;
+  // A cancelled prompt is the user's choice; a rejected or changed host key
+  // must be seen, not quietly routed around.
+  if (STOP_FALLBACK.test(err.message)) return false;
   // A jump host failed, or could not reach the next hop.
   if (failingHop < chain.length - 1 || openingChannel) return true;
   // The target itself: only a direct connection that never got through counts.
   return chain.length === 1 && NETWORK_FAILURE.test(err.message);
 }
 
+/** A shared jump hop could not carry another chain; the chain dials it again. */
 class StaleJumpHopError extends Error {
   constructor(
     readonly hop: JumpHop,

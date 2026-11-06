@@ -5,10 +5,9 @@ import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import type { SshGateway } from '@muxus/shared';
+import { MAX_JUMP_FALLBACKS } from '@muxus/shared/ws-protocol';
 import { SshGatewayField } from './SshGatewayField.js';
 
-/** Fallback gateways a host may list after its first. */
-export const MAX_GATEWAY_FALLBACKS = 4;
 
 /**
  * The SSH gateway a connection goes through, and the gateways to try in
@@ -63,7 +62,7 @@ export function SshGatewayRouteField({
               </IconButton>
             </Stack>
           ))}
-          {list.length < MAX_GATEWAY_FALLBACKS ? (
+          {list.length < MAX_JUMP_FALLBACKS ? (
             <Stack direction="row">
               <Button
                 size="small"

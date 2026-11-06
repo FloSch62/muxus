@@ -26,7 +26,8 @@ import {
 } from '@muxus/shared';
 import { jumpHopLabel, savedHostDisplayName } from '../../saved-hosts.js';
 import type { HostDraft } from './draft.js';
-import { draftAliases, MAX_FALLBACK_ROUTES } from './draft.js';
+import { MAX_JUMP_FALLBACKS } from '@muxus/shared/ws-protocol';
+import { draftAliases } from './draft.js';
 
 /**
  * Select direct, ProxyJump, or ProxyCommand routing. The jump route includes a
@@ -291,7 +292,7 @@ function FallbackRoutes({
       .map((hop) => hop.trim())
       .filter(Boolean);
     if (route.length === 0 || route.some((hop) => /\s/.test(hop)) || taken.has(key(route))) return;
-    if (routes.length >= MAX_FALLBACK_ROUTES) return;
+    if (routes.length >= MAX_JUMP_FALLBACKS) return;
     set({ proxyJumpFallbacks: [...routes, route] });
     setPending('');
   };
@@ -331,7 +332,7 @@ function FallbackRoutes({
           </IconButton>
         </Stack>
       ))}
-      {routes.length < MAX_FALLBACK_ROUTES ? (
+      {routes.length < MAX_JUMP_FALLBACKS ? (
         <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', pt: 1 }}>
           <Autocomplete
             freeSolo

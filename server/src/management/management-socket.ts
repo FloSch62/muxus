@@ -85,7 +85,7 @@ export class ManagementSession {
   private profile: ManagementProfile | undefined;
   private lease: MuxedConnectionLease | undefined;
   /** The SSH gateway in use: the first that answered, when fallbacks are listed. */
-  private gatewayTarget = '';
+  private usedGateway: SshGatewayRef | undefined;
   private gnmi: GnmiClient | undefined;
   private gnmiInfo: GnmiSessionInfo | undefined;
   private encoding: GnmiEncoding = 'json_ietf';
@@ -277,8 +277,9 @@ export class ManagementSession {
     }
   }
 
+  /** Saved passwords and pins belong to the gateway the session went through. */
   private gatewayKey(): string {
-    const gateway = this.profile?.sshGateway;
+    const gateway = this.usedGateway ?? this.profile?.sshGateway;
     if (!gateway) return '';
     return gateway.profileId ? `profile:${gateway.profileId}` : `ssh:${gateway.target}`;
   }
@@ -302,7 +303,7 @@ export class ManagementSession {
         'management',
         () => this.closed,
       );
-      this.gatewayTarget = gateway.target;
+      this.usedGateway = gateway;
       if (this.closed) {
         lease.release();
         return;
@@ -360,7 +361,7 @@ export class ManagementSession {
           models: capabilities.models,
           tls: client.tls,
           address: `${username ? `${username}@` : ''}${profile.host}:${profile.port}`,
-          ...(this.gatewayTarget ? { via: this.gatewayTarget } : {}),
+          ...(this.usedGateway ? { via: this.usedGateway.target } : {}),
           ...(services ? { services } : {}),
           connectedAt: new Date().toISOString(),
         };
@@ -395,7 +396,7 @@ export class ManagementSession {
       host: profile.host,
       port: profile.port,
       gateway: this.gatewayKey(),
-      gatewayLabel: profile.sshGateway?.target,
+      gatewayLabel: (this.usedGateway ?? profile.sshGateway)?.target,
       domain: '',
     };
     return { account: desktopPasswordAccount(target), label: desktopPasswordLabel(target) };
@@ -441,7 +442,7 @@ export class ManagementSession {
     const target = `${profile.host}:${profile.port}`;
     let stream: Duplex;
     if (this.lease) {
-      this.status(`Connecting to ${target} through ${this.gatewayTarget} …`, true);
+      this.status(`Connecting to ${target} through ${this.usedGateway?.target} …`, true);
       stream = await connectThroughGateway(this.lease.connection.client, profile.host, profile.port);
     } else {
       this.status(`Connecting to ${target} …`, true);

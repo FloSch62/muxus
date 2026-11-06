@@ -115,14 +115,13 @@ export function managementDraftToInput(
   kind: ManagementKind,
   existingId?: string,
 ): SavedHostProfileInput {
+  const fallbacks = savedGatewayFallbacks(draft.sshGateway, draft.sshGatewayFallbacks);
   const common = {
     host: draft.host.trim(),
     port: managementDraftPort(draft, kind),
     ...(draft.username.trim() ? { username: draft.username.trim() } : {}),
     ...(draft.sshGateway ? { sshGateway: draft.sshGateway } : {}),
-    ...(savedGatewayFallbacks(draft.sshGateway, draft.sshGatewayFallbacks)
-      ? { sshGatewayFallbacks: savedGatewayFallbacks(draft.sshGateway, draft.sshGatewayFallbacks) }
-      : {}),
+    ...(fallbacks ? { sshGatewayFallbacks: fallbacks } : {}),
   };
   const tls = draft.tls !== 'plaintext';
   return {

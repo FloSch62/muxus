@@ -39,6 +39,8 @@ export const TERMINAL_SESSION_CLOSE_REASON = 'terminal session closed';
 export const MAX_SSH_KEEPALIVE_INTERVAL_SECONDS = 3600;
 /** Alternative jump routes or gateways a host may list after its first. */
 export const MAX_JUMP_FALLBACKS = 4;
+/** Hops in one ProxyJump chain. */
+export const MAX_JUMP_HOPS = 8;
 
 /** The ServerAliveInterval fallback Muxus uses unless Settings say otherwise. */
 export const DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS = 30;
@@ -157,14 +159,14 @@ export const sshProfileSchema = z.object({
   forwardAgent: z.boolean().optional(),
   /** Absent = the platform default (on with the bundled Windows X server). */
   forwardX11: z.boolean().optional(),
-  proxyJump: z.array(z.string().min(1).max(500)).max(8).optional(),
+  proxyJump: z.array(z.string().min(1).max(500)).max(MAX_JUMP_HOPS).optional(),
   /**
    * Alternative jump routes, tried in order when `proxyJump` (or the one
    * ssh_config gives) fails before the target is reached. Each is a whole
    * chain, like `proxyJump`.
    */
   proxyJumpFallbacks: z
-    .array(z.array(z.string().min(1).max(500)).min(1).max(8))
+    .array(z.array(z.string().min(1).max(500)).min(1).max(MAX_JUMP_HOPS))
     .max(MAX_JUMP_FALLBACKS)
     .optional(),
   proxyCommand: z.string().min(1).max(32_768).optional(),

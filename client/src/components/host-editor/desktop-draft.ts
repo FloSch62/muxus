@@ -93,14 +93,13 @@ export function desktopDraftToInput(
   kind: DesktopKind,
   existingId?: string,
 ): SavedHostProfileInput {
+  const fallbacks = savedGatewayFallbacks(draft.sshGateway, draft.sshGatewayFallbacks);
   const common = {
     host: draft.host.trim(),
     port: desktopDraftPort(draft, kind),
     ...(draft.username.trim() ? { username: draft.username.trim() } : {}),
     ...(draft.sshGateway ? { sshGateway: draft.sshGateway } : {}),
-    ...(savedGatewayFallbacks(draft.sshGateway, draft.sshGatewayFallbacks)
-      ? { sshGatewayFallbacks: savedGatewayFallbacks(draft.sshGateway, draft.sshGatewayFallbacks) }
-      : {}),
+    ...(fallbacks ? { sshGatewayFallbacks: fallbacks } : {}),
     ...(draft.shareClipboard ? {} : { shareClipboard: false }),
   };
   return {

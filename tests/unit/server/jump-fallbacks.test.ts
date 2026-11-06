@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Server } from 'ssh2';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
+import { savedHostHop } from '@muxus/shared';
 import type { SshProfile } from '@muxus/shared/ws-protocol';
 import {
   isRouteFailure,
@@ -249,6 +250,69 @@ describe('fallback jump routes', () => {
     second.release();
   }, 20_000);
 
+  it('skips a route that cannot be planned and tries the next', async () => {
+    const secondary = await start();
+    const app = await start();
+    manager = makeManager(
+      writeConfig({ primary: await closedPort(), secondary: secondary.port, app: app.port }),
+      // The middle route names a saved jump host that no longer exists.
+      { app: [[savedHostHop('deleted-host')], ['secondary']] },
+    );
+    const { io, statuses } = makeIo();
+
+    await manager.connectShell(ssh('app'), io, 80, 24, 'xterm-256color');
+
+    expect(secondary.stats.forwards).toBe(1);
+    expect(statuses.filter((line) => /failed .* trying via/.test(line))).toHaveLength(2);
+  }, 20_000);
+
+  it('stops instead of routing around a rejected jump host key', async () => {
+    const primary = await start();
+    const secondary = await start();
+    const app = await start();
+    manager = makeManager(writeConfig({ primary: primary.port, secondary: secondary.port, app: app.port }), {
+      app: [['secondary']],
+    });
+    const { io } = makeIo();
+    io.hostKey = () => Promise.resolve(false);
+
+    await expect(manager.connectShell(ssh('app'), io, 80, 24, 'xterm-256color')).rejects.toThrow(/host denied|host key/i);
+    expect(secondary.stats.connections).toBe(0);
+  }, 20_000);
+
+  it('keeps a route the caller chose instead of the alias fallbacks', async () => {
+    const secondary = await start();
+    const app = await start();
+    manager = makeManager(
+      writeConfig({ primary: await closedPort(), secondary: secondary.port, app: app.port }),
+      { app: [['secondary']] },
+    );
+
+    await expect(
+      manager.connect(ssh('app', { proxyJump: ['primary'] }), makeIo().io, 'management'),
+    ).rejects.toThrow(/refused/);
+    expect(secondary.stats.connections).toBe(0);
+  }, 20_000);
+
+  it('tries the route that worked last first next time', async () => {
+    const secondary = await start();
+    const app = await start();
+    manager = makeManager(
+      writeConfig({ primary: await closedPort(), secondary: secondary.port, app: app.port }),
+      { app: [['secondary']] },
+    );
+    const first = await manager.connect(ssh('app'), makeIo().io, 'forward');
+    first.release();
+    manager.closeAll();
+
+    const { io, statuses } = makeIo();
+    const again = await manager.connect(ssh('app'), io, 'forward');
+
+    expect(statuses.some((line) => /Route via primary failed/.test(line))).toBe(false);
+    expect(secondary.stats.forwards).toBe(2);
+    again.release();
+  }, 20_000);
+
   it('reports the last failure when every route fails', async () => {
     const app = await start();
     manager = makeManager(
@@ -272,9 +336,10 @@ describe('isRouteFailure', () => {
     expect(isRouteFailure(new Error('jump host could not reach'), twoHops, 1, true)).toBe(true);
   });
 
-  it('leaves the target login and a cancelled prompt alone', () => {
+  it('leaves the target login, a cancelled prompt and a host key problem alone', () => {
     expect(isRouteFailure(new Error('authentication to x failed'), twoHops, 1, false)).toBe(false);
     expect(isRouteFailure(new Error('authentication cancelled'), twoHops, 0, false)).toBe(false);
+    expect(isRouteFailure(new Error('host key verification failed'), twoHops, 0, false)).toBe(false);
   });
 
   it('counts a direct connection that never got through', () => {
@@ -310,6 +375,14 @@ describe('SSH gateway fallbacks', () => {
     const connect = vi.fn().mockRejectedValue(new Error('authentication cancelled'));
     await expect(connectGateway({ connect }, [{ target: 'a' }, { target: 'b' }], io, 'desktop')).rejects.toThrow(
       /cancelled/,
+    );
+    expect(connect).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops at a rejected host key', async () => {
+    const connect = vi.fn().mockRejectedValue(new Error('host key verification failed for a'));
+    await expect(connectGateway({ connect }, [{ target: 'a' }, { target: 'b' }], io, 'desktop')).rejects.toThrow(
+      /host key/,
     );
     expect(connect).toHaveBeenCalledTimes(1);
   });

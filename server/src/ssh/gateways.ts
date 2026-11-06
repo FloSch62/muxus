@@ -1,8 +1,9 @@
 import type { SshProfile } from '@muxus/shared';
-import type {
-  ConnectIo,
-  MuxedConnectionLease,
-  SshConnectionManager,
+import {
+  STOP_FALLBACK,
+  type ConnectIo,
+  type MuxedConnectionLease,
+  type SshConnectionManager,
 } from './connection-manager.js';
 import type { ConnectionLeaseOwner } from './connection-leases.js';
 
@@ -51,7 +52,7 @@ export async function connectGateway(
     } catch (err) {
       const next = candidates[i + 1];
       const message = err instanceof Error ? err.message : String(err);
-      if (!next || closed() || /authentication cancelled/i.test(message)) throw err;
+      if (!next || closed() || STOP_FALLBACK.test(message)) throw err;
       io.status(`The SSH gateway ${gateway.target} failed (${message}) — trying ${next.target} …`);
     }
   }

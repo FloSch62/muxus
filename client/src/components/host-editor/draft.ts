@@ -293,9 +293,6 @@ export function draftFromSavedSshProfile(
   };
 }
 
-/** Alternative jump routes a host may list after its first. */
-export const MAX_FALLBACK_ROUTES = 4;
-
 /** The fallback routes to save: only a jump route has any. */
 export function draftJumpFallbacks(draft: HostDraft): string[][] | undefined {
   return draft.routeMode === 'jump' && draft.proxyJumpFallbacks.length > 0

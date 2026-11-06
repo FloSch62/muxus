@@ -27,6 +27,7 @@ import {
   TERMINAL_ENTER_KEYS,
   validPasteDelay,
 } from '@muxus/shared';
+import { MAX_JUMP_FALLBACKS, MAX_JUMP_HOPS } from '@muxus/shared/ws-protocol';
 import { apiFetch } from './api/http.js';
 import { fetchHostPreview } from './api/ssh-config.js';
 import { isAntiIdle } from './anti-idle.js';
@@ -859,12 +860,12 @@ function metadataPatch(metadata: PortableHostMetadata): OpenSshMetadataPatch {
 function isJumpRoutes(value: unknown): value is string[][] {
   return (
     Array.isArray(value) &&
-    value.length <= 4 &&
+    value.length <= MAX_JUMP_FALLBACKS &&
     value.every(
       (route) =>
         Array.isArray(route) &&
         route.length > 0 &&
-        route.length <= 8 &&
+        route.length <= MAX_JUMP_HOPS &&
         route.every((hop) => typeof hop === 'string' && hop.trim().length > 0 && hop.length <= 500),
     )
   );
