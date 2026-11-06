@@ -389,6 +389,7 @@ export class SshConnectionManager {
   private readonly consoleCompatibilityForHost: ((alias: string) => boolean) | undefined;
   private readonly disableSftpForProfile: ((id: string) => boolean) | undefined;
   private readonly consoleCompatibilityForProfile: ((id: string) => boolean) | undefined;
+  private readonly jumpFallbacksForHost: ((alias: string) => string[][]) | undefined;
   private readonly agentOperationTimeoutMs: number;
   private readonly agentWaitStatusMs: number;
   private readonly x11: LocalX11 | undefined;
@@ -414,6 +415,8 @@ export class SshConnectionManager {
       disableSftpForProfile?: (id: string) => boolean;
       /** Muxus-owned console setting for a database-backed SSH host. */
       consoleCompatibilityForProfile?: (id: string) => boolean;
+      /** Muxus-owned fallback jump routes for an ssh_config alias. */
+      jumpFallbacksForHost?: (alias: string) => string[][];
       /** Test seam; production uses the exported responsive-agent defaults. */
       agentOperationTimeoutMs?: number;
       /** Test seam; production uses the exported responsive-agent defaults. */
@@ -434,6 +437,7 @@ export class SshConnectionManager {
     this.consoleCompatibilityForHost = options.consoleCompatibilityForHost;
     this.disableSftpForProfile = options.disableSftpForProfile;
     this.consoleCompatibilityForProfile = options.consoleCompatibilityForProfile;
+    this.jumpFallbacksForHost = options.jumpFallbacksForHost;
     this.agentOperationTimeoutMs =
       options.agentOperationTimeoutMs ?? DEFAULT_AGENT_OPERATION_TIMEOUT_MS;
     this.agentWaitStatusMs =
@@ -496,6 +500,98 @@ export class SshConnectionManager {
   ): Promise<MuxedConnectionLease> {
     profile = this.resolveProfile(profile);
     const doc = this.loadConfig();
+    const fallbacks = this.jumpFallbacksFor(doc, profile);
+    if (fallbacks.length === 0) return this.connectRoute(doc, profile, io, owner, opts);
+
+    // Alternative jump routes: each is the same host with another ProxyJump
+    // chain. A live transport over any of them serves the request first.
+    const routes: SshProfile[] = [
+      profile,
+      ...fallbacks.map((proxyJump) => ({ ...profile, proxyJump, proxyCommand: undefined })),
+    ];
+    if (!opts.dedicatedTransport && !opts.freshTransport) {
+      for (const route of routes) {
+        const shared = this.sharedForRoute(doc, route, owner);
+        if (shared) {
+          io.status(`Reusing the SSH connection to ${shared.connection.host} (multiplexed).`, {
+            transient: true,
+          });
+          return shared;
+        }
+      }
+    }
+    for (let i = 0; ; i++) {
+      const route = routes[i]!;
+      try {
+        return await this.connectRoute(doc, route, io, owner, opts);
+      } catch (err) {
+        const failedRoute = err instanceof Error ? routeFailures.get(err) : undefined;
+        const next = routes[i + 1];
+        if (failedRoute === undefined || !next) throw err;
+        const nextRoute = this.routeLabel(doc, next);
+        const reason = err instanceof Error ? err.message : String(err);
+        this.log.info(
+          { target: profile.target, failedRoute, nextRoute, err: reason },
+          'ssh jump route failed; trying the next one',
+        );
+        io.status(
+          `${failedRoute ? `Route via ${failedRoute}` : 'Direct connection'} failed (${reason}) — trying via ${nextRoute} …`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Fallback jump routes for a host: a saved Muxus host keeps them in its
+   * profile, an ssh_config alias in its Muxus metadata.
+   */
+  private jumpFallbacksFor(doc: ConfigDocument, profile: SshProfile): string[][] {
+    if (profile.proxyJumpFallbacks) return profile.proxyJumpFallbacks;
+    if (profile.useConfig === false || !this.jumpFallbacksForHost) return [];
+    const alias = findMetadataAlias(doc, parseHostSpec(profile.target).host);
+    return alias ? this.jumpFallbacksForHost(alias) : [];
+  }
+
+  /** "bastion-a → bastion-b" for the jump hosts a route dials, '' when direct. */
+  private routeLabel(doc: ConfigDocument, profile: SshProfile): string {
+    try {
+      return buildChain(doc, profile, this.folderAuth, this.profileFolderAuth, this.savedSshProfile)
+        .slice(0, -1)
+        .map((hop) => hop.spec.host)
+        .join(' → ');
+    } catch {
+      return (profile.proxyJump ?? []).join(' → ');
+    }
+  }
+
+  /** A live transport already dialed over this route, leased to `owner`. */
+  private sharedForRoute(
+    doc: ConfigDocument,
+    profile: SshProfile,
+    owner: ConnectionLeaseOwner,
+  ): MuxedConnectionLease | undefined {
+    let plan: ReturnType<SshConnectionManager['routePlan']>;
+    try {
+      plan = this.routePlan(doc, profile, {});
+    } catch {
+      return undefined;
+    }
+    const shared = this.acquireShared(plan.key, owner, plan.target);
+    if (shared) {
+      shared.connection.configForwards = mergeConfigForwards(
+        shared.connection.configForwards,
+        plan.target.resolved.forwards,
+      );
+    }
+    return shared;
+  }
+
+  /** The dial plan and multiplexing key `connectRoute` uses for one route. */
+  private routePlan(
+    doc: ConfigDocument,
+    profile: SshProfile,
+    opts: { forcePlainShell?: boolean },
+  ) {
     const chain = buildChain(
       doc,
       profile,
@@ -521,6 +617,23 @@ export class SshConnectionManager {
         ? (this.disableSftpForProfile?.(profile.profileId) ?? false)
         : false);
     const key = muxKey(chain, disableSftp, consoleCompatibility);
+    return { chain, target, metadataAlias, consoleCompatibility, disableSftp, key };
+  }
+
+  /** {@link connect} over one jump route. */
+  private async connectRoute(
+    doc: ConfigDocument,
+    profile: SshProfile,
+    io: ConnectIo,
+    owner: ConnectionLeaseOwner,
+    opts: {
+      freshTransport?: string;
+      dedicatedTransport?: boolean;
+      forcePlainShell?: boolean;
+    },
+  ): Promise<MuxedConnectionLease> {
+    const { chain, target, metadataAlias, consoleCompatibility, disableSftp, key } =
+      this.routePlan(doc, profile, opts);
     const configForwards = target.resolved.forwards;
     const label = `${target.user}@${target.resolved.hostname}:${target.port}`;
     this.log.debug(
@@ -900,9 +1013,13 @@ export class SshConnectionManager {
     reused?.retain();
     const postAuth: Promise<void>[] = [];
     let dialed: Client | undefined;
+    // Where a failure happened decides whether another jump route may help.
+    let failingHop = first;
+    let openingChannel = false;
     try {
       for (let i = first; i < chain.length; i++) {
         const hop = chain[i]!;
+        failingHop = i;
         const reusing = route !== undefined && route === reused;
         const via = route
           ? ` via ${route.label}${reusing ? ' over its open connection' : ''}`
@@ -913,8 +1030,10 @@ export class SshConnectionManager {
         );
         let sock: Duplex | undefined;
         if (route) {
+          openingChannel = true;
           try {
             sock = await openJumpChannel(route.client, hop.resolved.hostname, hop.port);
+            openingChannel = false;
           } catch (err) {
             // A refusal from a live jump host is about the target. Anything
             // else means the shared connection itself is gone or unusable.
@@ -967,6 +1086,15 @@ export class SshConnectionManager {
       }
       // dial() already logged the raw failure; this adds which hop died.
       this.log.debug({ err, hops: chain.length, from: first }, 'ssh dial chain aborted');
+      if (err instanceof Error && isRouteFailure(err, chain, failingHop, openingChannel)) {
+        routeFailures.set(
+          err,
+          chain
+            .slice(0, -1)
+            .map((hop) => hop.spec.host)
+            .join(' → '),
+        );
+      }
       throw err;
     }
 
@@ -1791,6 +1919,30 @@ function isChannelOpenRefusal(err: unknown): boolean {
 }
 
 /** A shared jump hop could not carry another chain; the chain dials it again. */
+/**
+ * Dial failures another jump route could avoid, mapped to the route that
+ * failed ('' for a direct connection). A target that refuses the login is
+ * the same target on every route, and a cancelled prompt is the user's
+ * choice, so neither tries the next route.
+ */
+const routeFailures = new WeakMap<Error, string>();
+
+const NETWORK_FAILURE =
+  /connection refused|could not resolve|timed out|ECONNRESET|EHOSTUNREACH|ENETUNREACH|EPIPE|socket hang up/i;
+
+export function isRouteFailure(
+  err: Error,
+  chain: readonly ChainHop[],
+  failingHop: number,
+  openingChannel: boolean,
+): boolean {
+  if (/authentication cancelled/i.test(err.message)) return false;
+  // A jump host failed, or could not reach the next hop.
+  if (failingHop < chain.length - 1 || openingChannel) return true;
+  // The target itself: only a direct connection that never got through counts.
+  return chain.length === 1 && NETWORK_FAILURE.test(err.message);
+}
+
 class StaleJumpHopError extends Error {
   constructor(
     readonly hop: JumpHop,

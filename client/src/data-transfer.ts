@@ -680,6 +680,7 @@ function portableMetadata(
     consoleCompatibility: metadata.consoleCompatibility,
     discoverEnvironments: metadata.discoverEnvironments,
     loginSequence: metadata.loginSequence,
+    proxyJumpFallbacks: metadata.proxyJumpFallbacks,
     sortOrder: metadata.sortOrder,
   };
 }
@@ -850,7 +851,23 @@ function metadataPatch(metadata: PortableHostMetadata): OpenSshMetadataPatch {
     consoleCompatibility: metadata.consoleCompatibility ?? false,
     discoverEnvironments: typeof metadata.discoverEnvironments === 'boolean' ? metadata.discoverEnvironments : null,
     loginSequence: isLoginSequence(metadata.loginSequence) ? metadata.loginSequence : null,
+    proxyJumpFallbacks: isJumpRoutes(metadata.proxyJumpFallbacks) ? metadata.proxyJumpFallbacks : null,
   };
+}
+
+/** Fallback jump routes from a backup: a list of non-empty lists of host names. */
+function isJumpRoutes(value: unknown): value is string[][] {
+  return (
+    Array.isArray(value) &&
+    value.length <= 4 &&
+    value.every(
+      (route) =>
+        Array.isArray(route) &&
+        route.length > 0 &&
+        route.length <= 8 &&
+        route.every((hop) => typeof hop === 'string' && hop.trim().length > 0 && hop.length <= 500),
+    )
+  );
 }
 
 /** A backup without keys or echo, or with values this release does not know, keeps xterm.js's. */

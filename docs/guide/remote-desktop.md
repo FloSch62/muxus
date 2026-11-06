@@ -100,6 +100,10 @@ like `ssh -L`. The host and port you entered are resolved and connected **on the
 side**, so they can be names or addresses only the gateway can reach, including
 `localhost` for a VNC server that listens only on the loopback interface.
 
+**Add fallback gateway** lists more SSH hosts to try, in order, when the first cannot be
+reached or cannot open the connection. A cancelled password prompt stops there instead
+of moving on. gNMI and NETCONF hosts offer the same.
+
 The gateway connects the way an SSH tab would: its jump chain, keys, host-key checks and
 password prompts all apply, and a connection that is already open is reused. VNC traffic,
 which most servers leave unencrypted, then crosses the network inside SSH.

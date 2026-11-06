@@ -13,6 +13,7 @@ import { hostDisplayName } from '../../host-organization.js';
 import type { ManagedHost } from '../../managed-hosts.js';
 import { savedHostDisplayName } from '../../saved-hosts.js';
 import { parseHostTarget } from './native-draft.js';
+import { savedGatewayFallbacks } from './SshGatewayRouteField.js';
 
 export type ManagementKind = 'gnmi' | 'netconf';
 
@@ -34,6 +35,8 @@ export interface ManagementHostDraft {
   port: string;
   username: string;
   sshGateway?: SshGateway;
+  /** Gateways tried in order when `sshGateway` fails. */
+  sshGatewayFallbacks: SshGateway[];
   tls: GnmiTlsMode;
   tlsServerName: string;
   caFile: string;
@@ -57,6 +60,7 @@ export function blankManagementDraft(
     port: port ?? '',
     username: user ?? '',
     sshGateway,
+    sshGatewayFallbacks: [],
     tls: 'verify',
     tlsServerName: '',
     caFile: '',
@@ -80,6 +84,7 @@ export function managementDraftFromProfile(saved: SavedHostProfile, duplicate: b
     port: profile.port === DEFAULT_MANAGEMENT_PORTS[profile.kind] ? '' : String(profile.port),
     username: profile.username ?? '',
     sshGateway: profile.sshGateway,
+    sshGatewayFallbacks: profile.sshGatewayFallbacks ?? [],
     tls: gnmi?.tls ?? 'verify',
     tlsServerName: gnmi?.tlsServerName ?? '',
     caFile: gnmi?.caFile ?? '',
@@ -115,6 +120,9 @@ export function managementDraftToInput(
     port: managementDraftPort(draft, kind),
     ...(draft.username.trim() ? { username: draft.username.trim() } : {}),
     ...(draft.sshGateway ? { sshGateway: draft.sshGateway } : {}),
+    ...(savedGatewayFallbacks(draft.sshGateway, draft.sshGatewayFallbacks)
+      ? { sshGatewayFallbacks: savedGatewayFallbacks(draft.sshGateway, draft.sshGatewayFallbacks) }
+      : {}),
   };
   const tls = draft.tls !== 'plaintext';
   return {

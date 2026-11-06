@@ -547,6 +547,16 @@ const MIGRATIONS = [
         CHECK(discover_environments IS NULL OR discover_environments IN (0, 1));
     `,
   },
+  {
+    version: 34,
+    name: 'host-jump-fallbacks',
+    // Fallback ProxyJump chains for an OpenSSH alias, as a JSON array of arrays.
+    sql: `
+      ALTER TABLE connection_profiles
+        ADD COLUMN proxy_jump_fallbacks_json TEXT
+        CHECK(proxy_jump_fallbacks_json IS NULL OR json_valid(proxy_jump_fallbacks_json));
+    `,
+  },
 ] as const;
 
 /** Kinds stored as Muxus-owned saved hosts (everything but OpenSSH metadata rows). */
@@ -749,6 +759,7 @@ export interface OpenSshMetadata {
   consoleCompatibility?: boolean;
   discoverEnvironments?: boolean;
   loginSequence?: LoginSequence;
+  proxyJumpFallbacks?: string[][];
   lastConnectedAt?: string;
   connectCount: number;
 }
@@ -950,6 +961,7 @@ export class MuxusDatabase {
         profiles.console_compatibility,
         profiles.discover_environments,
         profiles.login_sequence_json,
+        profiles.proxy_jump_fallbacks_json,
         profiles.last_connected_at,
         profiles.connect_count,
         groups.name AS group_name
@@ -1013,6 +1025,11 @@ export class MuxusDatabase {
     return Number(row?.console_compatibility) === 1;
   }
 
+  /** Jump routes to try, in order, when this OpenSSH alias's ProxyJump fails. */
+  jumpFallbacksForAlias(alias: string): string[][] {
+    return jumpFallbacksFromJson(this.metadataByAlias.get(alias)?.proxy_jump_fallbacks_json) ?? [];
+  }
+
   /** Whether one Muxus-owned host must avoid SFTP and shell probing. */
   sftpDisabledForSavedHost(id: string): boolean {
     const row = this.db
@@ -1069,6 +1086,7 @@ export class MuxusDatabase {
             console_compatibility = ?,
             discover_environments = ?,
             login_sequence_json = ?,
+            proxy_jump_fallbacks_json = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `)
@@ -1134,6 +1152,11 @@ export class MuxusDatabase {
               ? 1
               : 0,
         loginSequenceColumn(patch.loginSequence, current.login_sequence_json),
+        patch.proxyJumpFallbacks === undefined
+          ? nullableString(current.proxy_jump_fallbacks_json)
+          : patch.proxyJumpFallbacks === null || patch.proxyJumpFallbacks.length === 0
+            ? null
+            : JSON.stringify(patch.proxyJumpFallbacks),
         String(current.id),
       );
     return metadataFromRow(this.metadataByAlias.get(alias)!);
@@ -2728,9 +2751,27 @@ function metadataFromRow(row: SqlRow): OpenSshMetadata {
     ...(Number(row.console_compatibility) === 1 ? { consoleCompatibility: true } : {}),
     ...discoverEnvironmentsFromRow(row),
     loginSequence: loginSequenceFromJson(row.login_sequence_json),
+    proxyJumpFallbacks: jumpFallbacksFromJson(row.proxy_jump_fallbacks_json),
     lastConnectedAt: optionalString(row.last_connected_at),
     connectCount: Number(row.connect_count),
   };
+}
+
+function jumpFallbacksFromJson(value: SQLOutputValue | undefined): string[][] | undefined {
+  if (typeof value !== 'string') return undefined;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) return undefined;
+    const routes = parsed.filter(
+      (route): route is string[] =>
+        Array.isArray(route) &&
+        route.length > 0 &&
+        route.every((hop) => typeof hop === 'string' && hop.length > 0),
+    );
+    return routes.length > 0 ? routes : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function managementRequestFromRow(row: SqlRow): SavedManagementRequest {

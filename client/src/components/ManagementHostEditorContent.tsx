@@ -34,7 +34,7 @@ import {
   type ManagementHostDraft,
   type ManagementKind,
 } from './host-editor/management-draft.js';
-import { SshGatewayField } from './host-editor/SshGatewayField.js';
+import { SshGatewayRouteField } from './host-editor/SshGatewayRouteField.js';
 
 type EditorState = Exclude<HostEditorState, false>;
 type Section = 'general' | 'login' | 'security' | 'route' | 'options';
@@ -426,10 +426,11 @@ function RouteSection({ kind, draft, set }: SectionProps) {
             : 'Reach the device through an SSH jump host, like ssh -J. Jump hosts set in ssh_config for this host apply as well.'}
         </Typography>
       </Box>
-      <SshGatewayField
+      <SshGatewayRouteField
         label={kind === 'gnmi' ? 'SSH gateway' : 'Jump host'}
-        value={draft.sshGateway}
-        onChange={(sshGateway) => set({ sshGateway })}
+        gateway={draft.sshGateway}
+        fallbacks={draft.sshGatewayFallbacks}
+        onChange={set}
       />
     </Stack>
   );

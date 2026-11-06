@@ -26,7 +26,7 @@ import {
 } from '@muxus/shared';
 import { jumpHopLabel, savedHostDisplayName } from '../../saved-hosts.js';
 import type { HostDraft } from './draft.js';
-import { draftAliases } from './draft.js';
+import { draftAliases, MAX_FALLBACK_ROUTES } from './draft.js';
 
 /**
  * Select direct, ProxyJump, or ProxyCommand routing. The jump route includes a
@@ -234,6 +234,22 @@ export function RouteSection({
         </Stack>
       ) : null}
 
+      {draft.routeMode === 'jump' ? (
+        <FallbackRoutes
+          draft={draft}
+          set={set}
+          options={[
+            ...(config?.hosts ?? []).map((h) => h.alias).filter((a) => !self.has(a)),
+            ...(draft.storage === 'muxus'
+              ? (savedHosts ?? [])
+                  .filter((host) => host.profile.kind === 'ssh' && host.id !== selfProfileId)
+                  .map((host) => savedHostHop(host.id))
+              : []),
+          ]}
+          hopName={hopName}
+        />
+      ) : null}
+
       {draft.routeMode === 'command' ? (
         <TextField
           label="ProxyCommand"
@@ -243,6 +259,111 @@ export function RouteSection({
           helperText="Supports OpenSSH tokens %% (percent), %h (host), %n (alias), %p (port), and %r (user)."
           fullWidth
         />
+      ) : null}
+    </Stack>
+  );
+}
+
+/**
+ * Other jump routes to try, in order, when the one above fails before the
+ * target answers. Each is a whole chain: one host, or several joined by
+ * commas. ssh_config cannot say this, so Muxus keeps them either way.
+ */
+function FallbackRoutes({
+  draft,
+  set,
+  options,
+  hopName,
+}: {
+  draft: HostDraft;
+  set: (patch: Partial<HostDraft>) => void;
+  options: readonly string[];
+  hopName: (hop: string) => string;
+}) {
+  const [pending, setPending] = useState('');
+  const routes = draft.proxyJumpFallbacks;
+  const key = (route: readonly string[]) => route.join(',');
+  const taken = new Set([key(draft.proxyJump), ...routes.map(key)]);
+
+  const add = (value: string) => {
+    const route = value
+      .split(',')
+      .map((hop) => hop.trim())
+      .filter(Boolean);
+    if (route.length === 0 || route.some((hop) => /\s/.test(hop)) || taken.has(key(route))) return;
+    if (routes.length >= MAX_FALLBACK_ROUTES) return;
+    set({ proxyJumpFallbacks: [...routes, route] });
+    setPending('');
+  };
+  const move = (i: number, dir: -1 | 1) => {
+    const next = [...routes];
+    const j = i + dir;
+    if (j < 0 || j >= next.length) return;
+    [next[i], next[j]] = [next[j]!, next[i]!];
+    set({ proxyJumpFallbacks: next });
+  };
+  const label = (route: readonly string[]) => route.map(hopName).join(' → ');
+
+  return (
+    <Stack spacing={0.5}>
+      <Typography variant="subtitle2">If this route fails</Typography>
+      <Typography variant="caption" color="textSecondary">
+        Muxus tries these jump routes in order when a jump host above cannot be reached or
+        cannot reach the target. A login the target itself refuses is not retried.
+        {draft.storage === 'openssh' ? ' Kept in Muxus — ssh_config has no way to say this.' : ''}
+      </Typography>
+      {routes.map((route, i) => (
+        <Stack key={`${key(route)}-${i}`} direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+          <Typography sx={{ width: 64, fontSize: 12, color: 'text.disabled' }}>Then try</Typography>
+          <Typography sx={{ flex: 1, fontSize: 13 }}>{label(route)}</Typography>
+          <IconButton size="small" aria-label={`Try ${label(route)} earlier`} disabled={i === 0} onClick={() => move(i, -1)}>
+            <ArrowUpwardIcon sx={{ fontSize: 16 }} />
+          </IconButton>
+          <IconButton size="small" aria-label={`Try ${label(route)} later`} disabled={i === routes.length - 1} onClick={() => move(i, 1)}>
+            <ArrowDownwardIcon sx={{ fontSize: 16 }} />
+          </IconButton>
+          <IconButton
+            size="small"
+            aria-label={`Remove ${label(route)}`}
+            onClick={() => set({ proxyJumpFallbacks: routes.filter((_, j) => j !== i) })}
+          >
+            <DeleteOutlineIcon fontSize="small" />
+          </IconButton>
+        </Stack>
+      ))}
+      {routes.length < MAX_FALLBACK_ROUTES ? (
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', pt: 1 }}>
+          <Autocomplete
+            freeSolo
+            fullWidth
+            value={null}
+            options={options.filter((hop) => !taken.has(hop))}
+            getOptionLabel={hopName}
+            inputValue={pending}
+            onInputChange={(_e, v) => setPending(v)}
+            onChange={(_e, v) => {
+              if (typeof v === 'string') add(v);
+            }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="Add fallback jump route"
+                placeholder="bastion-b, or several hosts separated by commas"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && pending.trim()) {
+                    e.preventDefault();
+                    add(pending);
+                  }
+                }}
+              />
+            )}
+          />
+          <Box sx={{ pt: 0.5 }}>
+            <IconButton aria-label="Add fallback jump route" onClick={() => add(pending)} disabled={!pending.trim()}>
+              <AddIcon />
+            </IconButton>
+          </Box>
+        </Stack>
       ) : null}
     </Stack>
   );
