@@ -26,6 +26,7 @@ import { certificateChallenge, type PresentedCertificate } from '../remote-deskt
 import { DesktopPasswords, type VaultPasswordRef } from '../remote-desktop/desktop-passwords.js';
 import { desktopPasswordAccount, desktopPasswordLabel } from '../security/password-vault.js';
 import { connectFailureMessage, connectTcp, connectThroughGateway } from '../util/dial.js';
+import { connectGateway, gatewayCandidates, type SshGatewayRef } from '../ssh/gateways.js';
 import { GnmiClient, type GnmiSubscription } from './gnmi/client.js';
 import { GrpcCode, GrpcError, type GrpcCall } from './gnmi/grpc.js';
 import { decodeMessage, encodeMessage } from './gnmi/protobuf.js';
@@ -83,6 +84,8 @@ export class ManagementSession {
   closed = false;
   private profile: ManagementProfile | undefined;
   private lease: MuxedConnectionLease | undefined;
+  /** The SSH gateway in use: the first that answered, when fallbacks are listed. */
+  private usedGateway: SshGatewayRef | undefined;
   private gnmi: GnmiClient | undefined;
   private gnmiInfo: GnmiSessionInfo | undefined;
   private encoding: GnmiEncoding = 'json_ietf';
@@ -274,8 +277,9 @@ export class ManagementSession {
     }
   }
 
+  /** Saved passwords and pins belong to the gateway the session went through. */
   private gatewayKey(): string {
-    const gateway = this.profile?.sshGateway;
+    const gateway = this.usedGateway ?? this.profile?.sshGateway;
     if (!gateway) return '';
     return gateway.profileId ? `profile:${gateway.profileId}` : `ssh:${gateway.target}`;
   }
@@ -290,15 +294,16 @@ export class ManagementSession {
   // gNMI
 
   private async connectGnmi(profile: GnmiProfile): Promise<void> {
-    const gateway = profile.sshGateway;
-    if (gateway) {
-      this.status(`Connecting to the SSH gateway ${gateway.target} …`, true);
-      const sshProfile: SshProfile = {
-        kind: 'ssh',
-        target: gateway.target,
-        ...(gateway.profileId ? { profileId: gateway.profileId } : {}),
-      };
-      const lease = await this.ctx.connections.connect(sshProfile, this.connectIo(), 'management');
+    const candidates = gatewayCandidates(profile);
+    if (candidates.length > 0) {
+      const { lease, gateway } = await connectGateway(
+        this.ctx.connections,
+        candidates,
+        this.connectIo(),
+        'management',
+        () => this.closed,
+      );
+      this.usedGateway = gateway;
       if (this.closed) {
         lease.release();
         return;
@@ -356,7 +361,7 @@ export class ManagementSession {
           models: capabilities.models,
           tls: client.tls,
           address: `${username ? `${username}@` : ''}${profile.host}:${profile.port}`,
-          ...(gateway ? { via: gateway.target } : {}),
+          ...(this.usedGateway ? { via: this.usedGateway.target } : {}),
           ...(services ? { services } : {}),
           connectedAt: new Date().toISOString(),
         };
@@ -391,7 +396,7 @@ export class ManagementSession {
       host: profile.host,
       port: profile.port,
       gateway: this.gatewayKey(),
-      gatewayLabel: profile.sshGateway?.target,
+      gatewayLabel: (this.usedGateway ?? profile.sshGateway)?.target,
       domain: '',
     };
     return { account: desktopPasswordAccount(target), label: desktopPasswordLabel(target) };
@@ -437,7 +442,7 @@ export class ManagementSession {
     const target = `${profile.host}:${profile.port}`;
     let stream: Duplex;
     if (this.lease) {
-      this.status(`Connecting to ${target} through ${profile.sshGateway?.target} …`, true);
+      this.status(`Connecting to ${target} through ${this.usedGateway?.target} …`, true);
       stream = await connectThroughGateway(this.lease.connection.client, profile.host, profile.port);
     } else {
       this.status(`Connecting to ${target} …`, true);
@@ -519,7 +524,11 @@ export class ManagementSession {
       target: profile.host,
       port: profile.port,
       ...(profile.username?.trim() ? { user: profile.username.trim() } : {}),
-      ...(gateway ? { proxyJump: [gateway.profileId ? savedHostHop(gateway.profileId) : gateway.target] } : {}),
+      ...(gateway ? { proxyJump: [gatewayHop(gateway)] } : {}),
+      // Fallback gateways become fallback jump routes: the SSH dial tries them in order.
+      ...(gateway && profile.sshGatewayFallbacks?.length
+        ? { proxyJumpFallbacks: profile.sshGatewayFallbacks.map((fallback) => [gatewayHop(fallback)]) }
+        : {}),
     };
     this.status(`Connecting to ${profile.host}:${profile.port} …`, true);
     const lease = await this.ctx.connections.connect(sshProfile, this.connectIo(), 'management');
@@ -839,4 +848,8 @@ export function registerManagementSocket(app: FastifyInstance, ctx: AppContext):
   app.get('/ws/management', { websocket: true }, (socket) => {
     new ManagementSession(socket, ctx, app.log).start();
   });
+}
+
+function gatewayHop(gateway: SshGatewayRef): string {
+  return gateway.profileId ? savedHostHop(gateway.profileId) : gateway.target;
 }

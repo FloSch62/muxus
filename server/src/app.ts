@@ -131,6 +131,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
     profileFolderAuth: savedProfileFolderAuthResolver(database),
     disableSftpForHost: (alias) => database.sftpDisabledForAlias(alias),
     consoleCompatibilityForHost: (alias) => database.consoleCompatibilityForAlias(alias),
+    jumpFallbacksForHost: (alias) => database.jumpFallbacksForAlias(alias),
     disableSftpForProfile: (id) => database.sftpDisabledForSavedHost(id),
     consoleCompatibilityForProfile: (id) =>
       database.consoleCompatibilityForSavedHost(id),
