@@ -77,6 +77,51 @@ describe('host name ranges', () => {
   it('suggests a range from the duplicated name', () => {
     expect(rangeExample('grvdgmapp1')).toBe('grvdgmapp[2-10]');
     expect(rangeExample('bastion')).toBe('bastion[1-10]');
+    // Counts on from the number, whatever its size, and keeps its width.
+    expect(rangeExample('app12')).toBe('app[13-21]');
+    expect(rangeExample('app9')).toBe('app[10-18]');
+    expect(rangeExample('db01')).toBe('db[02-10]');
+    expect(rangeExample('db099')).toBe('db[100-108]');
+  });
+
+  it('checks a HostName range against the name range before expanding it', () => {
+    // Four billion values would freeze the window if they were built first.
+    const started = Date.now();
+    expect(expandDraftRange(draft('web[2-4]', '10.0.0.[1-4000000000]'), 'web1')?.problem).toMatch(
+      /4000000000 values but the name range has 3/,
+    );
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it('refuses numbers too large to count exactly', () => {
+    expect(expandDraftRange(draft('x[99999999999999999-99999999999999999]', ''), undefined)?.problem).toMatch(
+      /too large/,
+    );
+    expect(expandDraftRange(draft('x[1-2]', '10.[99999999999999999-99999999999999999]'), undefined)?.problem).toMatch(
+      /too large/,
+    );
+  });
+
+  it('refuses brackets that are not one well-formed range', () => {
+    // A name with stray brackets would otherwise be saved literally.
+    expect(expandDraftRange(draft('web[2-10', ''), undefined)?.problem).toMatch(/name\[from-to\]/);
+    expect(expandDraftRange(draft('web[2,3]', ''), undefined)?.problem).toMatch(/name\[from-to\]/);
+    // A HostName range needs a name range to step with.
+    expect(expandDraftRange(draft('web5', '10.0.0.[12-20]'), undefined)?.problem).toMatch(/range in the name too/);
+    // Only one range in the HostName.
+    expect(expandDraftRange(draft('web[1-3]', '10.[1-3].0.[1-3]'), undefined)?.problem).toMatch(/one \[from-to\]/);
+    // An IPv6 HostName is not a range.
+    expect(expandDraftRange(draft('web1', 'fd00::1'), undefined)).toBeUndefined();
+  });
+
+  it('gives each host its own display name, or none', () => {
+    const plain = { ...draft('web[1-3]', ''), displayName: 'Web' };
+    expect(expandDraftRange(plain, undefined)?.problem).toMatch(/display name/);
+    const ranged = { ...draft('web[1-3]', ''), displayName: 'Web [1-3]' };
+    expect(expandDraftRange(ranged, undefined)!.drafts.map((d) => d.displayName)).toEqual(['Web 1', 'Web 2', 'Web 3']);
+    const mismatched = { ...draft('web[1-3]', ''), displayName: 'Web [1-2]' };
+    expect(expandDraftRange(mismatched, undefined)?.problem).toMatch(/display name range has 2 values/);
+    expect(expandDraftRange(draft('web[1-3]', ''), undefined)!.drafts.map((d) => d.displayName)).toEqual(['', '', '']);
   });
 
   it('describes what a save will create', () => {

@@ -1,5 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type {
+  HostBatchCreateRequest,
+  HostBatchCreateResponse,
   HostPreviewResponse,
   HostUpsertRequest,
   OpenSshMetadataPatch,
@@ -15,11 +17,29 @@ const json = (body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
+export function upsertHost(req: HostUpsertRequest): Promise<{ file: string }> {
+  return apiFetch<{ file: string }>('/api/ssh/config/hosts', json(req));
+}
+
+/** Add many new Host blocks in one write per config file (a range save). */
+export function createHosts(hosts: HostUpsertRequest[]): Promise<HostBatchCreateResponse> {
+  const body: HostBatchCreateRequest = { hosts };
+  return apiFetch<HostBatchCreateResponse>('/api/ssh/config/hosts/batch', json(body));
+}
+
+export function patchSshMetadata(alias: string, patch: OpenSshMetadataPatch): Promise<OpenSshProfileMetadata> {
+  return apiFetch<OpenSshProfileMetadata>(`/api/ssh/config/hosts/${encodeURIComponent(alias)}/metadata`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+}
+
 /** Create or update a Host block in ~/.ssh/config. */
 export function useUpsertHost(onSuccess?: (req: HostUpsertRequest) => void) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (req: HostUpsertRequest) => apiFetch<{ file: string }>('/api/ssh/config/hosts', json(req)),
+    mutationFn: upsertHost,
     onSuccess: (_data, req) => {
       void queryClient.invalidateQueries({ queryKey: ['ssh-config'] });
       onSuccess?.(req);
@@ -46,14 +66,7 @@ export function useUpdateSshMetadata(onSuccess?: (metadata: OpenSshProfileMetada
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ alias, patch }: { alias: string; patch: OpenSshMetadataPatch }) =>
-      apiFetch<OpenSshProfileMetadata>(
-        `/api/ssh/config/hosts/${encodeURIComponent(alias)}/metadata`,
-        {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(patch),
-        },
-      ),
+      patchSshMetadata(alias, patch),
     onMutate: async ({ alias, patch }) => {
       await queryClient.cancelQueries({ queryKey: ['ssh-config'] });
       const previous = queryClient.getQueryData<SshConfigResponse>(['ssh-config']);

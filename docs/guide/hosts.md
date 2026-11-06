@@ -128,8 +128,12 @@ offers **Edit *n* selected hosts…**.
 zero keeps the width (`db[01-12]`), and `..` or `:` work in place of `-`. The HostName
 follows along: if it contains the duplicated host's name (`grvdgmapp1.corp.local`), each copy
 gets its own (`grvdgmapp2.corp.local` …); otherwise give it a range of its own, such as
-`10.0.0.[12-20]`. The line under the alias shows what will be created before you save. The
-same works in **Add host**.
+`10.0.0.[12-20]`, with as many values as the alias range. A display name either stays empty
+or takes a range too (`Web [2-10]`), so the copies can be told apart. The line under the alias
+shows what will be created before you save, and a range that names an existing host is refused.
+Hosts for `ssh_config` are written in one go, so `config.muxus.bak` holds the file from before
+the whole range. If a host is created but its folder, colour or logging settings cannot be
+saved, Muxus names it so you can set them by editing it. The same works in **Add host**.
 
 ## Folders
 

@@ -10,22 +10,25 @@ import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import { useQueryClient } from '@tanstack/react-query';
-import type { OpenSshMetadataPatch, SavedHostProfile } from '@muxus/shared';
+import type { HostUpsertRequest, OpenSshMetadataPatch, SavedHostProfile } from '@muxus/shared';
 import {
   useSavedHostProfiles,
   useSessionLoggingPolicy,
   useSshConfig,
   useSshKeys,
 } from '../api/queries.js';
-import { apiFetch } from '../api/http.js';
-import { useSaveSessionLoggingPolicy } from '../api/session-history.js';
+import { saveSessionLoggingPolicy, useSaveSessionLoggingPolicy } from '../api/session-history.js';
 import {
+  patchHostProfileMetadata,
+  saveHostProfile,
   useDeleteHostProfile,
   useSaveHostProfile,
   useUpdateHostProfileMetadata,
 } from '../api/profiles.js';
 import {
+  createHosts,
   fetchHostPreview,
+  patchSshMetadata,
   useDeleteHost,
   useUpdateSshMetadata,
   useUpsertHost,
@@ -39,7 +42,7 @@ import {
   sessionLoggingPolicyInput,
 } from '../session-logging-policy.js';
 import { usePrefsStore } from '../state/prefs.js';
-import { showErrorToast, showToast } from '../state/toast.js';
+import { showToast } from '../state/toast.js';
 import { useUiStore, type HostEditorState } from '../state/ui.js';
 import { customTerminalInputModes, terminalInputModesPatch } from '../terminal/input-modes.js';
 import { pastePromptWaitFromDraft } from '../terminal/paste-prompt.js';
@@ -72,7 +75,9 @@ import {
   describeDraftRange,
   expandDraftRange,
   rangeExample,
+  type DraftRange,
 } from './host-editor/name-range.js';
+import { saveHostRange, summarizeRangeSave, type RangeSaveSteps } from './host-editor/range-save.js';
 import { RouteSection } from './host-editor/RouteSection.js';
 import {
   blankDesktopDraft,
@@ -105,6 +110,9 @@ type SshEditorState = Extract<
   { mode: 'new' | 'duplicate' | 'edit' | 'duplicate-profile' | 'edit-profile' }
 >;
 
+/** Set while a range save runs, so nothing can close its dialog midway. */
+const rangeSaveRunning = { current: false };
+
 export function HostEditorDialog() {
   const state = useUiStore((s) => s.hostEditor);
   const setState = useUiStore((s) => s.setHostEditor);
@@ -113,7 +121,10 @@ export function HostEditorDialog() {
   return (
     <Dialog
       open
-      onClose={() => setState(false)}
+      onClose={() => {
+        // A range save keeps running after its dialog is gone; keep it open.
+        if (!rangeSaveRunning.current) setState(false);
+      }}
       maxWidth="md"
       fullWidth
       slotProps={{
@@ -386,16 +397,15 @@ function SshHostEditorContent({
       ),
     [draft.storage, config, savedData],
   );
-  const range = creating ? expandDraftRange(draft, sourceName, existingNames) : undefined;
+  const range = useMemo(
+    () => (creating ? expandDraftRange(draft, sourceName, existingNames) : undefined),
+    [creating, draft, sourceName, existingNames],
+  );
   const [rangeProgress, setRangeProgress] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const loading = draft.sessionLogging.loaded ? null : 'Loading session logging settings…';
-  const problem = loading
-    ? null
-    : range
-      ? (range.problem ?? (range.drafts[0] ? draftProblem(range.drafts[0]) : null))
-      : draftProblem(draft);
+  const problem = loading ? null : range ? rangeProblem(range) : draftProblem(draft);
   const previewDraft = range?.drafts[0] ?? draft;
 
   useEffect(() => {
@@ -429,34 +439,28 @@ function SshHostEditorContent({
 
   const set = (patch: Partial<HostDraft>) => setDraft((d) => ({ ...d, ...patch }));
   const saveRange = async (drafts: HostDraft[], connect: boolean) => {
-    let created = 0;
-    let first: SavedHostProfile | undefined;
+    rangeSaveRunning.current = true;
+    let report;
     try {
-      for (const host of drafts) {
-        setRangeProgress(`Creating ${host.aliasText} (${created + 1} of ${drafts.length})…`);
-        const profile = await saveRangeHost(host);
-        first ??= profile;
-        created += 1;
-      }
-    } catch (err) {
-      showErrorToast(err);
-      if (created > 0) {
-        showToast(
-          'warning',
-          `Created ${created} of ${drafts.length} hosts, then stopped at ${drafts[created]?.aliasText}.`,
-        );
-      }
+      report = await saveHostRange(drafts, rangeSaveSteps, setRangeProgress);
     } finally {
+      rangeSaveRunning.current = false;
       setRangeProgress(null);
       void queryClient.invalidateQueries({ queryKey: ['ssh-config'] });
       void queryClient.invalidateQueries({ queryKey: ['saved-host-profiles'] });
       void queryClient.invalidateQueries({ queryKey: ['session-logging-policy'] });
     }
-    if (created < drafts.length) return;
-    close();
-    showToast('success', `Created ${created} hosts.`);
-    if (!connect) return;
-    if (first) connectSavedHost(first);
+    const summary = summarizeRangeSave(report);
+    if (report.created.length === 0) {
+      // Nothing changed: keep the dialog so the range can be fixed.
+      showToast('error', summary.message, summary.detail);
+      return;
+    }
+    // Close this editor only; the dialog could not be closed meanwhile.
+    if (useUiStore.getState().hostEditor === state) close();
+    showToast(summary.severity, summary.message, summary.detail);
+    if (!connect || summary.severity !== 'success') return;
+    if (report.firstProfile) connectSavedHost(report.firstProfile);
     else if (drafts[0]) connectTarget(drafts[0].aliasText);
   };
 
@@ -594,7 +598,9 @@ function SshHostEditorContent({
             : undefined
       }
       deletePending={deleteHost.isPending || deleteProfile.isPending}
-      onClose={close}
+      onClose={() => {
+        if (!rangeSaveRunning.current) close();
+      }}
       onSave={save}
     >
       {section === 'general' && (
@@ -692,44 +698,30 @@ function metadataPatch(draft: HostDraft): OpenSshMetadataPatch {
   };
 }
 
-const jsonRequest = (method: string, body: unknown): RequestInit => ({
-  method,
-  headers: { 'content-type': 'application/json' },
-  body: JSON.stringify(body),
-});
-
 /**
- * Save one host of a range the way the single-host save chain does: the
- * connection, then its metadata, then its session logging override.
+ * What stops a range from being saved: the range itself, or any one of its
+ * hosts (a later name can be longer than the first, say).
  */
-async function saveRangeHost(draft: HostDraft): Promise<SavedHostProfile | undefined> {
-  let profileKey: string;
-  let profile: SavedHostProfile | undefined;
-  if (draft.storage === 'muxus') {
-    const saved = await apiFetch<SavedHostProfile>(
-      '/api/profiles',
-      jsonRequest('PUT', draftToSavedSshInput(draft)),
-    );
-    profile = await apiFetch<SavedHostProfile>(
-      `/api/profiles/${encodeURIComponent(saved.id)}/metadata`,
-      jsonRequest('PATCH', metadataPatch(draft)),
-    );
-    profileKey = `profile:${saved.id}`;
-  } else {
-    const req = draftToRequest(draft);
-    const alias = req.aliases[0] ?? '';
-    await apiFetch('/api/ssh/config/hosts', jsonRequest('POST', req));
-    await apiFetch(
-      `/api/ssh/config/hosts/${encodeURIComponent(alias)}/metadata`,
-      jsonRequest('PATCH', metadataPatch(draft)),
-    );
-    profileKey = `ssh:${alias}`;
+function rangeProblem(range: DraftRange): string | null {
+  if (range.problem) return range.problem;
+  for (const draft of range.drafts) {
+    const problem = draftProblem(draft);
+    if (problem) return range.drafts.length > 1 ? `${draft.aliasText}: ${problem}` : problem;
   }
-  const url = `/api/session-history/policy?profileKey=${encodeURIComponent(profileKey)}`;
-  if (draft.sessionLogging.inherit) {
-    await apiFetch(url, { method: 'DELETE' });
-  } else {
-    await apiFetch(url, jsonRequest('PUT', sessionLoggingPolicyInput(draft.sessionLogging)));
-  }
-  return profile;
+  return null;
 }
+
+/** A range save makes the same requests, in the same order, as a single save. */
+const rangeSaveSteps: RangeSaveSteps = {
+  createConfigHosts: (requests: HostUpsertRequest[]) => createHosts(requests),
+  saveProfile: saveHostProfile,
+  saveSettings: async (draft, profile) => {
+    const alias = draft.aliasText;
+    if (profile) await patchHostProfileMetadata(profile.id, metadataPatch(draft));
+    else await patchSshMetadata(alias, metadataPatch(draft));
+    await saveSessionLoggingPolicy({
+      profileKey: profile ? `profile:${profile.id}` : `ssh:${alias}`,
+      policy: draft.sessionLogging.inherit ? null : sessionLoggingPolicyInput(draft.sessionLogging),
+    });
+  },
+};
