@@ -14,6 +14,7 @@ import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import type { HostUpsertRequest } from '@muxus/shared';
 import {
+  createHosts,
   deleteHost,
   deleteHosts,
   patchHosts,
@@ -569,5 +570,37 @@ describe('previewHost', () => {
     expect(host.options.user).toBe("O'Neil");
     expect(host.resolved.user).toBe("O'Neil");
     expect(host.options.identityFiles).toEqual([windowsKey, apostropheKey]);
+  });
+});
+
+describe('createHosts', () => {
+  const host = (alias: string): HostUpsertRequest => ({ aliases: [alias], options: { hostname: `${alias}.corp.local` } });
+
+  it('appends every block and writes the file once, so the backup predates the whole save', () => {
+    const original = ['Host app1', '  HostName app1.corp.local', ''].join('\n');
+    const root = seed(original);
+
+    expect(createHosts([host('app2'), host('app3'), host('app4')], root)).toEqual({ created: 3 });
+
+    const written = readFileSync(root, 'utf8');
+    expect(written).toContain('Host app2\n  HostName app2.corp.local');
+    expect(written.indexOf('Host app2')).toBeLessThan(written.indexOf('Host app4'));
+    expect(readFileSync(`${root}.muxus.bak`, 'utf8')).toBe(original);
+  });
+
+  it('writes nothing when one alias already exists', () => {
+    const original = ['Host app3', '  HostName app3.corp.local', ''].join('\n');
+    const root = seed(original);
+
+    expect(() => createHosts([host('app2'), host('app3')], root)).toThrow(/app3.*already exists/);
+    expect(readFileSync(root, 'utf8')).toBe(original);
+    expect(existsSync(`${root}.muxus.bak`)).toBe(false);
+  });
+
+  it('refuses an alias named twice in one batch, and edits of existing hosts', () => {
+    const root = seed('');
+    expect(() => createHosts([host('app2'), host('app2')], root)).toThrow(/twice/);
+    expect(() => createHosts([{ ...host('app2'), previousAlias: 'app1' }], root)).toThrow(/only creates/);
+    expect(() => createHosts([], root)).toThrow(/no hosts/);
   });
 });

@@ -1086,6 +1086,15 @@ export interface HostBulkUpdateResponse {
   updated: number;
 }
 
+/** Body of POST /api/ssh/config/hosts/batch: new Host blocks, written in one go. */
+export interface HostBatchCreateRequest {
+  hosts: HostUpsertRequest[];
+}
+
+export interface HostBatchCreateResponse {
+  created: number;
+}
+
 /** Body of DELETE /api/ssh/config/hosts: the Host blocks of many aliases. */
 export interface HostBulkDeleteRequest {
   aliases: string[];

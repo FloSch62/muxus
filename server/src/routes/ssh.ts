@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type {
+  HostBatchCreateResponse,
   HostBulkDeleteResponse,
   HostBulkUpdateResponse,
   HostPreviewResponse,
@@ -14,7 +15,7 @@ import { sendError } from '../util/errors.js';
 import { metadataPatchSchema } from './metadata-schema.js';
 import { defaultSshConfigPath, listHosts, loadConfigDocument, sortHostList } from '../ssh/ssh-config.js';
 import { batchFolderAuthResolver } from '../ssh/folder-auth.js';
-import { deleteHost, deleteHosts, patchHosts, previewHost, upsertHost } from '../ssh/ssh-config-edit.js';
+import { createHosts, deleteHost, deleteHosts, patchHosts, previewHost, upsertHost } from '../ssh/ssh-config-edit.js';
 import { listSshKeys } from '../ssh/key-scan.js';
 
 const forwardSchema = z.object({
@@ -71,6 +72,11 @@ const bulkUpdateSchema = z.object({
     .refine((options) => Object.keys(options).length > 0, 'at least one option is required'),
 });
 
+/** At most as many as one range save may create. */
+const batchCreateSchema = z.object({
+  hosts: z.array(upsertSchema).min(1).max(250),
+});
+
 const bulkDeleteSchema = z.object({
   aliases: z.array(z.string().min(1)).min(1).max(5000),
 });
@@ -104,6 +110,19 @@ export function registerSshRoutes(app: FastifyInstance, ctx: AppContext): void {
         ctx.database.renameOpenSshAlias(parsed.data.previousAlias, nextAlias);
       }
       return result;
+    } catch (err) {
+      return sendError(reply, err);
+    }
+  });
+
+  // Many new hosts (a range duplicate), in a single write per config file.
+  app.post('/api/ssh/config/hosts/batch', async (req, reply): Promise<HostBatchCreateResponse | void> => {
+    try {
+      const parsed = batchCreateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return await reply.code(400).send({ message: parsed.error.issues[0]?.message ?? 'invalid host list' });
+      }
+      return createHosts(parsed.data.hosts);
     } catch (err) {
       return sendError(reply, err);
     }
