@@ -80,6 +80,8 @@ interface UiState {
   settingsTarget: SettingsTarget | null;
   commandButtonMenuOpen: boolean;
   commandButtonsOpen: boolean;
+  /** The Scripts dialog, with the hosts to run on already picked when opened from a selection. */
+  scriptsDialog: false | { hostKeys?: string[] };
   /** The Send secret… picker beside the active terminal cursor. */
   sendSecretMenuOpen: boolean;
   /**
@@ -124,6 +126,7 @@ interface UiState {
   openSettings: (target: SettingsTarget) => void;
   setCommandButtonMenuOpen: (open: boolean) => void;
   setCommandButtonsOpen: (open: boolean) => void;
+  setScriptsDialog: (state: false | { hostKeys?: string[] }) => void;
   setSendSecretMenuOpen: (open: boolean) => void;
   setCommandButtonGroupForTab: (tabId: string, groupId: string) => void;
   setShortcutsOpen: (open: boolean) => void;
@@ -148,6 +151,7 @@ export const useUiStore = create<UiState>()((set) => ({
   settingsTarget: null,
   commandButtonMenuOpen: false,
   commandButtonsOpen: false,
+  scriptsDialog: false,
   sendSecretMenuOpen: false,
   commandButtonGroupByTab: {},
   shortcutsOpen: false,
@@ -177,6 +181,7 @@ export const useUiStore = create<UiState>()((set) => ({
   },
   setCommandButtonMenuOpen: (commandButtonMenuOpen) => set({ commandButtonMenuOpen }),
   setCommandButtonsOpen: (commandButtonsOpen) => set({ commandButtonsOpen }),
+  setScriptsDialog: (scriptsDialog) => set({ scriptsDialog }),
   setSendSecretMenuOpen: (sendSecretMenuOpen) => set({ sendSecretMenuOpen }),
   setCommandButtonGroupForTab: (tabId, groupId) =>
     set((state) => ({

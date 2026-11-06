@@ -1409,3 +1409,52 @@ export interface LinkHandlerRegistration {
    */
   openedSystemSettings?: boolean;
 }
+
+/** Largest script Muxus stores or runs, in characters. */
+export const MAX_SCRIPT_BYTES = 1024 * 1024;
+/** Longest per-host time limit for a script run: a week. */
+export const MAX_SCRIPT_TIMEOUT_SECONDS = 7 * 24 * 3600;
+
+/** A script kept in Muxus to run on hosts. */
+export interface SavedScript {
+  id: string;
+  name: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SavedScriptInput {
+  /** Omit to create; supply to replace. */
+  id?: string;
+  name: string;
+  body: string;
+}
+
+export interface SavedScriptsResponse {
+  scripts: SavedScript[];
+}
+
+/** Run a script on one live SSH connection (POST /api/script-runs). */
+export interface ScriptRunRequest {
+  connId: string;
+  body: string;
+  /** Stop the run after this long; absent or 0 lets it run. */
+  timeoutSeconds?: number;
+}
+
+export type ScriptRunState = 'running' | 'completed' | 'failed' | 'cancelled' | 'timed-out';
+
+/** A run's progress (GET /api/script-runs/:id?since=<offset>). */
+export interface ScriptRunStatus {
+  id: string;
+  state: ScriptRunState;
+  exitCode?: number;
+  /** Output (stdout and stderr, interleaved) from `since` on. */
+  output: string;
+  /** Pass back as `since` to get only what came after. */
+  offset: number;
+  /** The run printed more than Muxus keeps; the start was dropped. */
+  truncated: boolean;
+  error?: string;
+}

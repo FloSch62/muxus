@@ -20,6 +20,8 @@ import type {
   SavedHostProfile,
   SavedHostProfileInput,
   SavedManagementRequest,
+  SavedScript,
+  SavedScriptInput,
   SavedManagementRequestInput,
   SessionHistorySettings,
   SessionHistorySettingsInput,
@@ -555,6 +557,20 @@ const MIGRATIONS = [
       ALTER TABLE connection_profiles
         ADD COLUMN proxy_jump_fallbacks_json TEXT
         CHECK(proxy_jump_fallbacks_json IS NULL OR json_valid(proxy_jump_fallbacks_json));
+    `,
+  },
+  {
+    version: 35,
+    name: 'scripts',
+    // Scripts kept in Muxus to run on many hosts.
+    sql: `
+      CREATE TABLE scripts (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 200),
+        body TEXT NOT NULL CHECK(length(body) <= 1048576),
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) STRICT;
     `,
   },
 ] as const;
@@ -2070,6 +2086,29 @@ export class MuxusDatabase {
     return pruned;
   }
 
+  listScripts(): SavedScript[] {
+    return this.db
+      .prepare('SELECT * FROM scripts ORDER BY name COLLATE NOCASE, created_at')
+      .all()
+      .map(scriptFromRow);
+  }
+
+  saveScript(input: SavedScriptInput): SavedScript {
+    requireNonEmpty(input.name, 'name');
+    const id = input.id ?? nanoid();
+    this.db
+      .prepare(`
+        INSERT INTO scripts(id, name, body) VALUES (?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET name = excluded.name, body = excluded.body, updated_at = CURRENT_TIMESTAMP
+      `)
+      .run(id, input.name.trim(), input.body);
+    return scriptFromRow(this.db.prepare('SELECT * FROM scripts WHERE id = ?').get(id)!);
+  }
+
+  deleteScript(id: string): boolean {
+    return Number(this.db.prepare('DELETE FROM scripts WHERE id = ?').run(id).changes) > 0;
+  }
+
   listTunnels(): TunnelRecord[] {
     return this.db
       .prepare(`
@@ -2754,6 +2793,16 @@ function metadataFromRow(row: SqlRow): OpenSshMetadata {
     proxyJumpFallbacks: jumpFallbacksFromJson(row.proxy_jump_fallbacks_json),
     lastConnectedAt: optionalString(row.last_connected_at),
     connectCount: Number(row.connect_count),
+  };
+}
+
+function scriptFromRow(row: SqlRow): SavedScript {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    body: String(row.body),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
   };
 }
 

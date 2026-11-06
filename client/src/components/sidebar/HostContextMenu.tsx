@@ -7,6 +7,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DriveFileMoveOutlinedIcon from '@mui/icons-material/DriveFileMoveOutlined';
 import EditNoteOutlinedIcon from '@mui/icons-material/EditNoteOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
@@ -61,6 +62,7 @@ export function HostContextMenu({
   onMoveToFolder,
   selectedCount,
   onEditSelected,
+  onRunScript,
   onMoveSelected,
   onDeleteSelected,
 }: {
@@ -76,6 +78,8 @@ export function HostContextMenu({
   onEditSelected: () => void;
   onMoveSelected: () => void;
   onDeleteSelected: () => void;
+  /** Open Scripts for this host, or for the selection it is part of. */
+  onRunScript: (host: ManagedHost) => void;
 }) {
   const setHostEditor = useUiStore((s) => s.setHostEditor);
   const setHostOrganizer = useUiStore((s) => s.setHostOrganizer);
@@ -121,6 +125,14 @@ export function HostContextMenu({
         </ListItemIcon>
         Open in new window
       </MenuItem>
+      {menu && isScriptHost(menu.host) ? (
+        <MenuItem onClick={run(onRunScript)}>
+          <ListItemIcon>
+            <TerminalOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          {forSelection ? `Run script on ${selectedCount} selected hosts…` : 'Run script…'}
+        </MenuItem>
+      ) : null}
       {menu && managedHostSupportsSftp(menu.host) ? (
         <MenuItem
           onMouseEnter={() => {
@@ -285,5 +297,10 @@ export function HostContextMenu({
 }
 
 function isSshHost(host: ManagedHost): boolean {
+  return host.kind === 'ssh' || host.entry.profile.kind === 'ssh';
+}
+
+/** Scripts run over SSH: config hosts and SSH hosts saved in Muxus. */
+function isScriptHost(host: ManagedHost): boolean {
   return host.kind === 'ssh' || host.entry.profile.kind === 'ssh';
 }
