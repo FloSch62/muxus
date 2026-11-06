@@ -145,7 +145,9 @@ describe('script runs over SSH exec', () => {
       expect(release).toHaveBeenCalledTimes(2);
       expect(unsubscribe).toHaveBeenCalledTimes(2);
     } finally {
-      process.env.TMPDIR = previous;
+      // Assigning undefined would leave the string "undefined" behind.
+      if (previous === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = previous;
       rmSync(dir, { recursive: true, force: true });
     }
   }, 15_000);
@@ -162,6 +164,19 @@ describe('script runs over SSH exec', () => {
       });
     } finally {
       windowsHost = false;
+    }
+  });
+
+  it('still runs when TMPDIR points nowhere', async () => {
+    const previous = process.env.TMPDIR;
+    process.env.TMPDIR = '/nonexistent/muxus-test';
+    try {
+      const { manager } = runs();
+      const { id } = await manager.start('c1', 'echo fine');
+      expect(await finished(manager, id)).toMatchObject({ state: 'completed', output: 'fine\n' });
+    } finally {
+      if (previous === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = previous;
     }
   });
 

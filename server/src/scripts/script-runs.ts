@@ -29,8 +29,9 @@ const MAX_HELD_STDERR = 64 * 1024;
  * mktemp, the fallback file is created exclusively and private.
  */
 export const SCRIPT_WRAPPER = [
-  'muxus_f=$(mktemp 2>/dev/null) || {',
-  '  muxus_f="${TMPDIR:-/tmp}/muxus-script-$$"',
+  // A TMPDIR that points nowhere should not stop the script: try /tmp too.
+  'muxus_f=$(mktemp 2>/dev/null) || muxus_f=$(mktemp /tmp/muxus-script.XXXXXX 2>/dev/null) || {',
+  '  muxus_f="/tmp/muxus-script-$$"',
   '  (umask 077; set -C; : > "$muxus_f") 2>/dev/null || exit 125',
   '}',
   "trap 'rm -f \"$muxus_f\"' EXIT",
