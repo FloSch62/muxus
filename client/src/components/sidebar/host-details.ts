@@ -15,14 +15,41 @@ export function hostDetailLines(
   if (host.kind === 'profile') {
     const profile = host.entry.profile;
     if (profile.kind === 'rdp' || profile.kind === 'vnc') {
-      if (profile.sshGateway) lines.push(`via SSH gateway ${profile.sshGateway.target}`);
+      if (profile.sshGateway) {
+        lines.push(`via SSH gateway ${gatewayChain(profile.sshGateway, profile.sshGatewayFallbacks)}`);
+      }
       if (profile.kind === 'rdp' && profile.domain) lines.push(`Domain ${profile.domain}`);
       if (profile.kind === 'vnc' && profile.viewOnly) lines.push('View only');
       if (profile.shareClipboard === false) lines.push('Clipboard not shared');
       return lines;
     }
+    if (profile.kind === 'smb' || profile.kind === 'nfs') {
+      if (profile.kind === 'nfs') lines.push(`NFSv${profile.version ?? '4'}${profile.readOnly ? ', read only' : ''}`);
+      if (profile.kind === 'smb' && profile.username) lines.push(`as ${profile.username}`);
+      if (profile.sshGateway) {
+        lines.push(`via SSH gateway ${gatewayChain(profile.sshGateway, profile.sshGatewayFallbacks)}`);
+      }
+      return lines;
+    }
+    if (profile.kind === 'winrm') {
+      lines.push(profile.https ? 'HTTPS' : 'HTTP, NTLM-encrypted');
+      if (profile.auth === 'basic') lines.push('Basic authentication');
+      if (profile.shell === 'powershell') lines.push('PowerShell');
+      if (profile.sshGateway) {
+        lines.push(`via SSH gateway ${gatewayChain(profile.sshGateway, profile.sshGatewayFallbacks)}`);
+      }
+      return lines;
+    }
+    if (profile.kind === 'web') {
+      if (profile.sshGateway) {
+        lines.push(`via SOCKS5 on ${gatewayChain(profile.sshGateway, profile.sshGatewayFallbacks)}`);
+      }
+      return lines;
+    }
     if (profile.kind === 'gnmi' || profile.kind === 'netconf') {
-      if (profile.sshGateway) lines.push(`via SSH gateway ${profile.sshGateway.target}`);
+      if (profile.sshGateway) {
+        lines.push(`via SSH gateway ${gatewayChain(profile.sshGateway, profile.sshGatewayFallbacks)}`);
+      }
       if (profile.kind === 'gnmi') {
         lines.push(
           profile.tls === 'plaintext'
@@ -40,6 +67,9 @@ export function hostDetailLines(
       lines.push(
         `via ${profile.proxyJump.map((hop) => jumpHopLabel(hop, savedProfiles)).join(' → ')}`,
       );
+    }
+    for (const route of profile.proxyJumpFallbacks ?? []) {
+      lines.push(`or via ${route.map((hop) => jumpHopLabel(hop, savedProfiles)).join(' → ')}`);
     }
     if (profile.identityFiles?.length) {
       lines.push(
@@ -60,6 +90,9 @@ export function hostDetailLines(
   const resolved = host.entry.resolved;
   if (!resolved) return lines;
   if (resolved.proxyJump.length > 0) lines.push(`via ${resolved.proxyJump.join(' → ')}`);
+  for (const route of host.entry.metadata?.proxyJumpFallbacks ?? []) {
+    lines.push(`or via ${route.join(' → ')}`);
+  }
   if (resolved.identityFiles.length > 0) {
     lines.push(`Key ${resolved.identityFiles.map((file) => file.split(/[\\/]/).pop()).join(', ')}`);
   }
@@ -72,4 +105,14 @@ export function hostDetailLines(
     );
   }
   return lines;
+}
+
+/** "a" or "a (then b, c)" for a gateway and its fallbacks. */
+function gatewayChain(
+  gateway: { target: string },
+  fallbacks: readonly { target: string }[] | undefined,
+): string {
+  return fallbacks?.length
+    ? `${gateway.target} (then ${fallbacks.map((fallback) => fallback.target).join(', ')})`
+    : gateway.target;
 }

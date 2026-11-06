@@ -234,6 +234,15 @@ export function managedHostCopyCommand(
     const user = profile.username ? `${profile.username}@` : '';
     return { label: 'Copy ssh command', text: `ssh -p ${profile.port} ${user}${profile.host} -s netconf` };
   }
+  if (profile.kind === 'web') return { label: 'Copy address', text: profile.url };
+  if (profile.kind === 'smb') {
+    return { label: 'Copy share path', text: `\\\\${profile.host}\\${profile.share}${profile.folder ? `\\${profile.folder.replace(/\//g, '\\')}` : ''}` };
+  }
+  if (profile.kind === 'nfs') return { label: 'Copy export', text: `${profile.host}:${profile.export}` };
+  if (profile.kind === 'winrm') {
+    const scheme = profile.https ? 'https' : 'http';
+    return { label: 'Copy winrs command', text: `winrs -r:${scheme}://${profile.host}:${profile.port} cmd` };
+  }
   return profile.kind === 'telnet'
     ? { label: 'Copy telnet command', text: `telnet ${profile.host} ${profile.port}` }
     : { label: 'Copy device path', text: profile.path };

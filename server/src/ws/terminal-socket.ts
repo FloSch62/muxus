@@ -20,6 +20,7 @@ import {
 } from '../local/pty-manager.js';
 import { SerialTransport } from '../serial/serial-transport.js';
 import { TelnetTransport } from '../telnet/telnet-transport.js';
+import { WinrmTransport } from '../winrm/winrm-transport.js';
 import type { TerminalTransport } from '../transports/terminal-transport.js';
 import {
   SessionRecorder,
@@ -700,6 +701,43 @@ async function handleSession(
       'serial session established',
     );
     if (profile.profileId) ctx.database.recordSavedHostConnection(profile.profileId);
+    return;
+  }
+
+  if (profile.kind === 'winrm') {
+    // A saved host connects with its stored settings, not whatever a renderer sent.
+    const stored = profile.profileId ? ctx.database.savedHostProfile(profile.profileId)?.profile : undefined;
+    if (profile.profileId && stored?.kind !== 'winrm') throw new Error('This saved host no longer exists.');
+    const winrm = stored?.kind === 'winrm' ? { ...stored, profileId: profile.profileId } : profile;
+    const transport = await WinrmTransport.connect(winrm, {
+      connections: ctx.connections,
+      vault: ctx.vault,
+      io,
+      log: app.log,
+      closed: () => !socketOpen,
+    });
+    if (!socketOpen) {
+      transport.close();
+      return;
+    }
+    const savedHost = () => (winrm.profileId ? { profileId: winrm.profileId } : undefined);
+    attachTerminalTransport(
+      socket,
+      control,
+      transport,
+      (writer) => {
+        writeInput = writer;
+      },
+      `winrm-${nanoid(10)}`,
+      recorder,
+      handleLoggingControl,
+      prepareLoginSequence(savedHost),
+    );
+    socket.once('close', transport.onData((data) => pastePacer.output(data)));
+    writePastedInput = drainedWriter(transport);
+    startAntiIdle(savedHost, { afterFirstInput: true });
+    app.log.info({ host: winrm.host, port: winrm.port }, 'winrm session established');
+    if (winrm.profileId) ctx.database.recordSavedHostConnection(winrm.profileId);
     return;
   }
 

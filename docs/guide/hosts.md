@@ -123,6 +123,14 @@ new session. On a host that is part of a selection, moving and deleting apply to
 selection (**Move *n* selected hosts…**, **Delete *n* selected hosts**), and the menu also
 offers **Edit *n* selected hosts…**.
 
+**Duplicate** can create a whole series at once: write a number range in the alias, such as
+`grvdgmapp[2-10]`, and saving creates one host per number with the same settings. A leading
+zero keeps the width (`db[01-12]`), and `..` or `:` work in place of `-`. The HostName
+follows along: if it contains the duplicated host's name (`grvdgmapp1.corp.local`), each copy
+gets its own (`grvdgmapp2.corp.local` …); otherwise give it a range of its own, such as
+`10.0.0.[12-20]`. The line under the alias shows what will be created before you save. The
+same works in **Add host**.
+
 ## Folders
 
 Folders are stored in the local database next to the host colour, not in `ssh_config`.

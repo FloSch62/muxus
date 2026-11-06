@@ -53,6 +53,13 @@ export function sessionProfileIdentity(profile: TerminalProfile): {
       };
     case 'local':
       return { profileKey: 'local', host: profile.shell?.trim() || 'Local shell' };
+    case 'winrm': {
+      const host = `${profile.host}:${profile.port}`;
+      return {
+        profileKey: profile.profileId ? `profile:${profile.profileId}` : `winrm:${host}`,
+        host,
+      };
+    }
   }
 }
 

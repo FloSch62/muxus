@@ -224,7 +224,13 @@ export function resolveConnectionLink(
   }
   const pin = link.hostKeyFingerprint ? { hostKeyFingerprint: link.hostKeyFingerprint } : {};
   const match = matches.length === 1 ? matches[0]!.host : undefined;
-  if (match?.kind === 'profile') {
+  // Links name ssh:// and telnet:// hosts, never a page or a share.
+  if (
+    match?.kind === 'profile' &&
+    match.entry.profile.kind !== 'web' &&
+    match.entry.profile.kind !== 'smb' &&
+    match.entry.profile.kind !== 'nfs'
+  ) {
     return { kind: 'host', host: match, profile: { ...match.entry.profile, profileId: match.entry.id, ...pin } };
   }
   if (match?.kind === 'ssh') {

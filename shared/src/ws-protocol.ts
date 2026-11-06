@@ -37,6 +37,8 @@ export const TERMINAL_SESSION_CLOSE_REASON = 'terminal session closed';
 
 /** Upper bound for the Muxus-wide ServerAliveInterval fallback, in seconds. */
 export const MAX_SSH_KEEPALIVE_INTERVAL_SECONDS = 3600;
+/** Alternative jump routes or gateways a host may list after its first. */
+export const MAX_JUMP_FALLBACKS = 4;
 
 /** The ServerAliveInterval fallback Muxus uses unless Settings say otherwise. */
 export const DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS = 30;
@@ -156,6 +158,15 @@ export const sshProfileSchema = z.object({
   /** Absent = the platform default (on with the bundled Windows X server). */
   forwardX11: z.boolean().optional(),
   proxyJump: z.array(z.string().min(1).max(500)).max(8).optional(),
+  /**
+   * Alternative jump routes, tried in order when `proxyJump` (or the one
+   * ssh_config gives) fails before the target is reached. Each is a whole
+   * chain, like `proxyJump`.
+   */
+  proxyJumpFallbacks: z
+    .array(z.array(z.string().min(1).max(500)).min(1).max(8))
+    .max(MAX_JUMP_FALLBACKS)
+    .optional(),
   proxyCommand: z.string().min(1).max(32_768).optional(),
   forwards: z
     .array(
@@ -222,6 +233,9 @@ export const sshGatewaySchema = z.object({
   profileId: z.string().min(1).max(200).optional(),
 });
 
+/** Further gateways tried in order when the one before fails. */
+export const sshGatewayFallbacksSchema = z.array(sshGatewaySchema).max(MAX_JUMP_FALLBACKS);
+
 export const rdpProfileSchema = z.object({
   kind: z.literal('rdp'),
   /** Stable Muxus database profile when this is a saved host. */
@@ -232,6 +246,7 @@ export const rdpProfileSchema = z.object({
   username: z.string().trim().max(256).optional(),
   domain: z.string().trim().max(256).optional(),
   sshGateway: sshGatewaySchema.optional(),
+  sshGatewayFallbacks: sshGatewayFallbacksSchema.optional(),
   /** Text clipboard redirection; absent means on, as in mstsc. */
   shareClipboard: z.boolean().optional(),
 });
@@ -245,6 +260,7 @@ export const vncProfileSchema = z.object({
   /** Only servers with user logins ask for one (VeNCrypt, Apple Remote Desktop, UltraVNC). */
   username: z.string().trim().max(256).optional(),
   sshGateway: sshGatewaySchema.optional(),
+  sshGatewayFallbacks: sshGatewayFallbacksSchema.optional(),
   /** Ask the server to resize its desktop to the pane instead of scaling the picture. */
   resizeRemote: z.boolean().optional(),
   /** Watch without sending keyboard or mouse input. */
@@ -276,6 +292,7 @@ export const gnmiProfileSchema = z.object({
   certFile: filePathSchema.optional(),
   keyFile: filePathSchema.optional(),
   sshGateway: sshGatewaySchema.optional(),
+  sshGatewayFallbacks: sshGatewayFallbacksSchema.optional(),
   /** Preferred encoding; absent picks the best one the device supports. */
   encoding: z.enum(['json_ietf', 'json', 'proto', 'ascii', 'bytes']).optional(),
 });
@@ -293,7 +310,105 @@ export const netconfProfileSchema = z.object({
   port: z.number().int().min(1).max(65535).default(NETCONF_DEFAULT_PORT),
   username: z.string().trim().max(256).optional(),
   sshGateway: sshGatewaySchema.optional(),
+  sshGatewayFallbacks: sshGatewayFallbacksSchema.optional(),
 });
+
+/** WinRM's HTTP and HTTPS ports. */
+export const WINRM_HTTP_PORT = 5985;
+export const WINRM_HTTPS_PORT = 5986;
+
+/**
+ * A Windows command shell over WinRM (WS-Management), like `winrs`. NTLM
+ * signs and seals each message over HTTP; HTTPS also allows Basic logins.
+ * The password travels only in `auth-response` replies or comes from the
+ * password vault.
+ */
+export const winrmProfileSchema = z.object({
+  kind: z.literal('winrm'),
+  /** Stable Muxus database profile when this is a saved host. */
+  profileId: z.string().min(1).max(200).optional(),
+  host: z.string().trim().min(1).max(253),
+  port: z.number().int().min(1).max(65535).default(WINRM_HTTP_PORT),
+  /** HTTPS (usually port 5986); absent is plain HTTP with NTLM sealing. */
+  https: z.boolean().optional(),
+  /** Absent checks the server certificate. */
+  tlsVerify: z.enum(['verify', 'skip-verify']).optional(),
+  /** Absent is Negotiate (NTLM); Basic only over HTTPS. */
+  auth: z.enum(['negotiate', 'basic']).optional(),
+  /** DOMAIN\user or user@domain; absent asks when connecting. */
+  username: z.string().trim().max(256).optional(),
+  /** Absent runs cmd.exe. */
+  shell: z.enum(['cmd', 'powershell']).optional(),
+  sshGateway: sshGatewaySchema.optional(),
+  sshGatewayFallbacks: sshGatewayFallbacksSchema.optional(),
+});
+
+/**
+ * A web page, opened in a Muxus browser window. With an SSH gateway the
+ * window's traffic goes through a SOCKS proxy on that gateway, so names and
+ * addresses only the gateway can reach work, and HTTPS stays end to end.
+ * Saved hosts only: it has no session of its own.
+ */
+export const webProfileSchema = z.object({
+  kind: z.literal('web'),
+  /** Stable Muxus database profile when this is a saved host. */
+  profileId: z.string().min(1).max(200).optional(),
+  url: z
+    .string()
+    .trim()
+    .min(1)
+    .max(4096)
+    .refine((value) => /^https?:\/\/[^\s/]+/i.test(value), 'Enter an http:// or https:// address'),
+  sshGateway: sshGatewaySchema.optional(),
+  sshGatewayFallbacks: sshGatewayFallbacksSchema.optional(),
+});
+export type WebProfile = z.infer<typeof webProfileSchema>;
+
+/**
+ * A Windows (SMB/CIFS) file share, mounted with the operating system's own
+ * client and opened in its file manager. Saved hosts only: no session.
+ */
+export const smbProfileSchema = z.object({
+  kind: z.literal('smb'),
+  /** Stable Muxus database profile when this is a saved host. */
+  profileId: z.string().min(1).max(200).optional(),
+  host: z.string().trim().min(1).max(253),
+  port: z.number().int().min(1).max(65535).default(445),
+  share: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .refine((value) => !/[\\/]/.test(value), 'The share name cannot contain slashes'),
+  /** Folder inside the share to open, e.g. Reports/2026. */
+  folder: z.string().trim().max(1024).optional(),
+  /** DOMAIN\\user or user@domain; absent mounts as guest (or, on Windows, as you). */
+  username: z.string().trim().max(256).optional(),
+  sshGateway: sshGatewaySchema.optional(),
+  sshGatewayFallbacks: sshGatewayFallbacksSchema.optional(),
+});
+export type SmbProfile = z.infer<typeof smbProfileSchema>;
+
+/** An NFS export, mounted with the operating system's own client. Saved hosts only. */
+export const nfsProfileSchema = z.object({
+  kind: z.literal('nfs'),
+  /** Stable Muxus database profile when this is a saved host. */
+  profileId: z.string().min(1).max(200).optional(),
+  host: z.string().trim().min(1).max(253),
+  /** The exported path on the server, e.g. /srv/data. */
+  export: z
+    .string()
+    .trim()
+    .min(1)
+    .max(1024)
+    .refine((value) => value.startsWith('/'), 'The export path starts with /'),
+  /** Absent is NFSv4, the only version that can go through an SSH gateway. */
+  version: z.enum(['3', '4']).optional(),
+  readOnly: z.boolean().optional(),
+  sshGateway: sshGatewaySchema.optional(),
+  sshGatewayFallbacks: sshGatewayFallbacksSchema.optional(),
+});
+export type NfsProfile = z.infer<typeof nfsProfileSchema>;
 
 /** Sessions rendered by xterm.js over /ws/terminal. */
 export const terminalProfileSchema = z.discriminatedUnion('kind', [
@@ -301,6 +416,7 @@ export const terminalProfileSchema = z.discriminatedUnion('kind', [
   sshProfileSchema,
   telnetProfileSchema,
   serialProfileSchema,
+  winrmProfileSchema,
 ]);
 
 /** Sessions drawn as a remote screen over /ws/desktop. */
@@ -324,12 +440,14 @@ export const sessionProfileSchema = z.discriminatedUnion('kind', [
   vncProfileSchema,
   gnmiProfileSchema,
   netconfProfileSchema,
+  winrmProfileSchema,
 ]);
 export type SessionProfile = z.infer<typeof sessionProfileSchema>;
 export type SshProfile = Extract<SessionProfile, { kind: 'ssh' }>;
 export type LocalProfile = Extract<SessionProfile, { kind: 'local' }>;
 export type TelnetProfile = Extract<SessionProfile, { kind: 'telnet' }>;
 export type SerialProfile = Extract<SessionProfile, { kind: 'serial' }>;
+export type WinrmProfile = Extract<SessionProfile, { kind: 'winrm' }>;
 export type RdpProfile = Extract<SessionProfile, { kind: 'rdp' }>;
 export type VncProfile = Extract<SessionProfile, { kind: 'vnc' }>;
 export type GnmiProfile = Extract<SessionProfile, { kind: 'gnmi' }>;

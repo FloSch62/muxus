@@ -65,6 +65,25 @@ export function savedHostAddress(profile: SavedHostProfile): string {
       : `${connection.host}:${connection.port}`;
     return connection.sshGateway ? `${address} via ${connection.sshGateway.target}` : address;
   }
+  if (connection.kind === 'smb') {
+    const user = connection.username ? `${connection.username}@` : '';
+    const port = connection.port === 445 ? '' : `:${connection.port}`;
+    const folder = connection.folder ? `/${connection.folder}` : '';
+    const address = `//${user}${connection.host}${port}/${connection.share}${folder}`;
+    return connection.sshGateway ? `${address} via ${connection.sshGateway.target}` : address;
+  }
+  if (connection.kind === 'nfs') {
+    const address = `${connection.host}:${connection.export}`;
+    return connection.sshGateway ? `${address} via ${connection.sshGateway.target}` : address;
+  }
+  if (connection.kind === 'winrm') {
+    const user = connection.username ? `${connection.username}@` : '';
+    const address = `${user}${connection.host}:${connection.port}${connection.https ? ' (HTTPS)' : ''}`;
+    return connection.sshGateway ? `${address} via ${connection.sshGateway.target}` : address;
+  }
+  if (connection.kind === 'web') {
+    return connection.sshGateway ? `${connection.url} via ${connection.sshGateway.target}` : connection.url;
+  }
   return connection.kind === 'telnet'
     ? `${connection.host}:${connection.port}`
     : `${connection.path} · ${connection.baudRate} baud`;

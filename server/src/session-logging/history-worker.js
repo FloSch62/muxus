@@ -64,7 +64,7 @@ db.exec(`
     id TEXT PRIMARY KEY,
     profile_key TEXT NOT NULL,
     title TEXT NOT NULL,
-    kind TEXT NOT NULL CHECK(kind IN ('openssh', 'ssh', 'local', 'serial', 'telnet')),
+    kind TEXT NOT NULL CHECK(kind IN ('openssh', 'ssh', 'local', 'serial', 'telnet', 'winrm')),
     host TEXT NOT NULL,
     started_at TEXT NOT NULL,
     ended_at TEXT,
@@ -156,6 +156,42 @@ if (!db.prepare('PRAGMA table_info(session_logs)').all().some((column) => column
   db.exec('ALTER TABLE session_logs ADD COLUMN label TEXT');
 }
 db.exec("INSERT OR IGNORE INTO history_schema_migrations(version, name) VALUES (3, 'session-labels')");
+
+// WinRM sessions join the recorded kinds. SQLite can only change a CHECK by
+// rebuilding the table; foreign keys pause so the transcript rows that
+// reference it stay (the documented procedure for a table rebuild).
+{
+  const table = db.prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'session_logs'").get();
+  const definition = String(table?.sql ?? '');
+  if (!definition.includes("'winrm'")) {
+    const indexes = db
+      .prepare("SELECT sql FROM sqlite_schema WHERE type = 'index' AND tbl_name = 'session_logs' AND sql IS NOT NULL")
+      .all()
+      .map((row) => String(row.sql));
+    db.exec('PRAGMA foreign_keys = OFF');
+    try {
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        db.exec(`
+          ${definition
+            .replace("'serial', 'telnet')", "'serial', 'telnet', 'winrm')")
+            .replace(/^CREATE TABLE\s+"?session_logs"?/, 'CREATE TABLE session_logs_rebuilt')};
+          INSERT INTO session_logs_rebuilt SELECT * FROM session_logs;
+          DROP TABLE session_logs;
+          ALTER TABLE session_logs_rebuilt RENAME TO session_logs;
+        `);
+        for (const index of indexes) db.exec(index);
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    } finally {
+      db.exec('PRAGMA foreign_keys = ON');
+    }
+  }
+}
+db.exec("INSERT OR IGNORE INTO history_schema_migrations(version, name) VALUES (4, 'winrm-sessions')");
 
 removeTrash();
 if (workerData.legacyDatabasePath && workerData.legacyDatabasePath !== ':memory:') {

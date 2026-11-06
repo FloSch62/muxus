@@ -527,9 +527,13 @@ export type SavedHostSessionProfile =
   | import('./ws-protocol.js').RdpProfile
   | import('./ws-protocol.js').VncProfile
   | import('./ws-protocol.js').GnmiProfile
-  | import('./ws-protocol.js').NetconfProfile;
+  | import('./ws-protocol.js').NetconfProfile
+  | import('./ws-protocol.js').WebProfile
+  | import('./ws-protocol.js').WinrmProfile
+  | import('./ws-protocol.js').SmbProfile
+  | import('./ws-protocol.js').NfsProfile;
 
-/** SSH/Telnet/serial/RDP/VNC/gNMI/NETCONF host stored natively by Muxus rather than in ssh_config. */
+/** SSH/Telnet/serial/RDP/VNC/gNMI/NETCONF/web/WinRM/SMB/NFS host stored natively by Muxus rather than in ssh_config. */
 export interface SavedHostProfile {
   id: string;
   kind: SavedHostSessionProfile['kind'];
@@ -871,6 +875,11 @@ export interface OpenSshProfileMetadata {
   discoverEnvironments?: boolean;
   /** The host's own login sequence; absent inherits the folder's. */
   loginSequence?: LoginSequence;
+  /**
+   * Jump routes tried in order when the ProxyJump in ssh_config fails, each a
+   * whole chain. Kept by Muxus: ssh_config has no way to say it.
+   */
+  proxyJumpFallbacks?: string[][];
   lastConnectedAt?: string;
   connectCount: number;
 }
@@ -902,6 +911,8 @@ export interface OpenSshMetadataPatch {
   discoverEnvironments?: boolean | null;
   /** Null goes back to the folder's sequence. */
   loginSequence?: LoginSequence | null;
+  /** Null or empty removes the fallback jump routes. */
+  proxyJumpFallbacks?: string[][] | null;
 }
 
 /**
@@ -1392,4 +1403,79 @@ export interface LinkHandlerRegistration {
    * installation), so its settings were opened for the user to pick Muxus.
    */
   openedSystemSettings?: boolean;
+}
+
+/** Mount a saved SMB or NFS share (POST /api/shares/:id/mount). */
+export interface ShareMountRequest {
+  /** SMB only; absent uses the remembered password, if any. */
+  password?: string;
+  /** Keep a typed password in the password vault once the mount works. */
+  remember?: boolean;
+  /** Local port of a forward to the share through an SSH gateway. */
+  forwardPort?: number;
+  /** That forward, stopped again when the share unmounts. */
+  forwardId?: string;
+}
+
+export interface ShareMount {
+  profileId: string;
+  /** Where the share is: a folder, a GVFS path, a UNC path or a drive letter. */
+  path: string;
+  /** The folder to open: `path` plus the host's folder inside the share. */
+  openPath: string;
+  /** The gateway forward the mount uses; stopped when it unmounts. */
+  forwardId?: string;
+}
+
+export type ShareMountResponse =
+  | { status: 'mounted'; mount: ShareMount; alreadyMounted: boolean; warning?: string }
+  /** SMB needs a password: ask and post again with `password`. */
+  | { status: 'password-required'; label: string; rememberable: boolean; rejected: boolean };
+
+export interface ShareMountsResponse {
+  mounts: ShareMount[];
+}
+
+/** A script kept in Muxus to run on hosts. */
+export interface SavedScript {
+  id: string;
+  name: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SavedScriptInput {
+  /** Omit to create; supply to replace. */
+  id?: string;
+  name: string;
+  body: string;
+}
+
+export interface SavedScriptsResponse {
+  scripts: SavedScript[];
+}
+
+/** Run a script on one live SSH connection (POST /api/script-runs). */
+export interface ScriptRunRequest {
+  connId: string;
+  body: string;
+  /** Stop the run after this long; absent or 0 lets it run. */
+  timeoutSeconds?: number;
+}
+
+export type ScriptRunState = 'running' | 'completed' | 'failed' | 'cancelled' | 'timed-out';
+
+/** A run's progress (GET /api/script-runs/:id?since=<offset>). */
+export interface ScriptRunStatus {
+  id: string;
+  state: ScriptRunState;
+  exitCode?: number;
+  /** Output (stdout and stderr, interleaved) from `since` on. */
+  output: string;
+  /** Pass back as `since` to get only what came after. */
+  offset: number;
+  /** The run printed more than Muxus keeps; the start was dropped. */
+  truncated: boolean;
+  error?: string;
 }

@@ -90,6 +90,15 @@ function isSessionProfile(profile: Record<string, unknown>): boolean {
       (profile.port === undefined || validPort(profile.port))
     );
   }
+  if (profile.kind === 'winrm') {
+    return (
+      validProfileId(profile.profileId) &&
+      typeof profile.host === 'string' &&
+      profile.host.length > 0 &&
+      profile.host.length <= 253 &&
+      (profile.port === undefined || validPort(profile.port))
+    );
+  }
   if (profile.kind === 'rdp' || profile.kind === 'vnc' || profile.kind === 'gnmi' || profile.kind === 'netconf') {
     const gateway = profile.sshGateway as Record<string, unknown> | undefined;
     return (

@@ -40,6 +40,19 @@ declare global {
         onChange(callback: (name: string) => void): () => void;
       };
       setTitleBarOverlay(options: { color: string; symbolColor: string; height: number }): void;
+      /**
+       * Open a saved web host's browser window, through `proxy` (a SOCKS5
+       * forward on its SSH gateway) when set. Settles with 'closed' when the
+       * window closes, or 'focused' at once when it was already open.
+       */
+      openWebWindow?(request: {
+        key: string;
+        url: string;
+        title: string;
+        proxy?: string;
+      }): Promise<'closed' | 'focused' | 'invalid'>;
+      /** Show a mounted share's folder in the system file manager; false when it is not a folder. */
+      openFolder?(folder: string): Promise<boolean>;
       /** Scale the whole window natively (the interface zoom preference). */
       setZoomFactor(factor: number): void;
       getAppInfo(): Promise<AppInfo | undefined>;

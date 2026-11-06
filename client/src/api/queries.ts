@@ -118,7 +118,7 @@ export function useTunnels() {
 
 export interface SessionHistoryFilters {
   host?: string;
-  kind?: 'ssh' | 'local' | 'serial' | 'telnet';
+  kind?: 'ssh' | 'local' | 'serial' | 'telnet' | 'winrm';
   startedAfter?: string;
   startedBefore?: string;
 }

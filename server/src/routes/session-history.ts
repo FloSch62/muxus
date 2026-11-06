@@ -31,7 +31,7 @@ const historyQuerySchema = z.object({
   query: z.string().trim().max(500).optional(),
   profileKey: z.string().trim().min(1).max(500).optional(),
   host: z.string().trim().max(500).optional(),
-  kind: z.enum(['ssh', 'local', 'serial', 'telnet']).optional(),
+  kind: z.enum(['ssh', 'local', 'serial', 'telnet', 'winrm']).optional(),
   startedAfter: z.iso.datetime().optional(),
   startedBefore: z.iso.datetime().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),

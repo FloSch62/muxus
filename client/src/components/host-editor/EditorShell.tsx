@@ -12,11 +12,26 @@ import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import DesktopWindowsOutlinedIcon from '@mui/icons-material/DesktopWindowsOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import LanguageOutlinedIcon from '@mui/icons-material/LanguageOutlined';
+import PublicOutlinedIcon from '@mui/icons-material/PublicOutlined';
+import FolderSharedOutlinedIcon from '@mui/icons-material/FolderSharedOutlined';
+import StorageOutlinedIcon from '@mui/icons-material/StorageOutlined';
+import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 import ScreenShareOutlinedIcon from '@mui/icons-material/ScreenShareOutlined';
 import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined';
 import UsbOutlinedIcon from '@mui/icons-material/UsbOutlined';
 
-export type ConnectionKind = 'ssh' | 'telnet' | 'serial' | 'rdp' | 'vnc' | 'gnmi' | 'netconf';
+export type ConnectionKind =
+  | 'ssh'
+  | 'telnet'
+  | 'serial'
+  | 'rdp'
+  | 'vnc'
+  | 'gnmi'
+  | 'netconf'
+  | 'web'
+  | 'winrm'
+  | 'smb'
+  | 'nfs';
 
 export interface EditorSectionDef<S extends string> {
   value: S;
@@ -192,7 +207,9 @@ export function ConnectionTypeTabs({
     <Tabs
       value={kind}
       onChange={(_event, value: ConnectionKind) => onChange(value)}
-      variant="fullWidth"
+      // Eleven kinds do not fit every dialog width; scroll rather than squeeze.
+      variant="scrollable"
+      scrollButtons="auto"
       sx={{
         borderBottom: 1,
         borderColor: 'divider',
@@ -206,6 +223,10 @@ export function ConnectionTypeTabs({
       <Tab value="vnc" icon={<ScreenShareOutlinedIcon fontSize="small" />} iconPosition="start" label="VNC" />
       <Tab value="gnmi" icon={<SensorsOutlinedIcon fontSize="small" />} iconPosition="start" label="gNMI" />
       <Tab value="netconf" icon={<AccountTreeOutlinedIcon fontSize="small" />} iconPosition="start" label="NETCONF" />
+      <Tab value="winrm" icon={<TerminalOutlinedIcon fontSize="small" />} iconPosition="start" label="WinRM" />
+      <Tab value="web" icon={<PublicOutlinedIcon fontSize="small" />} iconPosition="start" label="Web" />
+      <Tab value="smb" icon={<FolderSharedOutlinedIcon fontSize="small" />} iconPosition="start" label="SMB" />
+      <Tab value="nfs" icon={<StorageOutlinedIcon fontSize="small" />} iconPosition="start" label="NFS" />
     </Tabs>
   );
 }

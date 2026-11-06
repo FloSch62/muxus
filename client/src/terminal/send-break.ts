@@ -4,7 +4,7 @@ import { terminalHandle } from './terminal-registry.js';
 /** Serial, Telnet and SSH sessions have a line to send BREAK on; shells and desktops do not. */
 export function supportsBreak(tab: TerminalTab | undefined): boolean {
   const kind = tab?.profile?.kind;
-  return kind === 'serial' || kind === 'telnet' || kind === 'ssh';
+  return kind === 'serial' || kind === 'telnet' || kind === 'ssh' || kind === 'winrm';
 }
 
 /**

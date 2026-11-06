@@ -31,6 +31,10 @@ import { registerWorkspaceRoutes } from './routes/workspaces.js';
 import { registerTerminalSnapshotRoutes } from './routes/terminal-snapshots.js';
 import { registerSerialRoutes } from './routes/serial.js';
 import { registerProfileRoutes } from './routes/profiles.js';
+import { registerShareRoutes } from './routes/shares.js';
+import { registerScriptRoutes } from './routes/scripts.js';
+import { ScriptRuns } from './scripts/script-runs.js';
+import { ShareManager } from './shares/share-manager.js';
 import { registerHostOrderRoutes } from './routes/host-order.js';
 import { registerSessionHistoryRoutes } from './routes/session-history.js';
 import { registerPasswordVaultRoutes } from './routes/password-vault.js';
@@ -52,6 +56,10 @@ export interface AppContext {
   config: ServerConfig;
   connections: SshConnectionManager;
   forwards: ForwardManager;
+  /** SMB and NFS shares mounted with the operating system's clients. */
+  shares: ShareManager;
+  /** Scripts running on live SSH connections. */
+  scriptRuns: ScriptRuns;
   database: MuxusDatabase;
   history: SessionHistoryStore;
   vault: PasswordVault;
@@ -127,6 +135,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
     profileFolderAuth: savedProfileFolderAuthResolver(database),
     disableSftpForHost: (alias) => database.sftpDisabledForAlias(alias),
     consoleCompatibilityForHost: (alias) => database.consoleCompatibilityForAlias(alias),
+    jumpFallbacksForHost: (alias) => database.jumpFallbacksForAlias(alias),
     disableSftpForProfile: (id) => database.sftpDisabledForSavedHost(id),
     consoleCompatibilityForProfile: (id) =>
       database.consoleCompatibilityForSavedHost(id),
@@ -152,6 +161,17 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
     config,
     connections,
     forwards,
+    shares: new ShareManager({
+      savedShare: (id) => {
+        const saved = database.savedHostProfile(id);
+        return saved && (saved.profile.kind === 'smb' || saved.profile.kind === 'nfs')
+          ? { name: saved.name, profile: saved.profile }
+          : undefined;
+      },
+      vault,
+      stopForward: (id) => forwards.stop(id),
+    }),
+    scriptRuns: new ScriptRuns({ acquire: (connId) => connections.acquire(connId, 'script') }),
     database,
     history,
     vault,
@@ -227,6 +247,8 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   registerTerminalSnapshotRoutes(app, ctx);
   registerSerialRoutes(app);
   registerProfileRoutes(app, ctx);
+  registerShareRoutes(app, ctx);
+  registerScriptRoutes(app, ctx);
   registerHostOrderRoutes(app, ctx);
   registerSessionHistoryRoutes(app, ctx);
   registerPasswordVaultRoutes(app, ctx);
@@ -257,6 +279,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   }
 
   app.addHook('onClose', async () => {
+    ctx.scriptRuns.stopAll();
     forwards.stopAll();
     connections.closeAll();
     x11.close();

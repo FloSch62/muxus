@@ -267,6 +267,19 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   registerLinkHandler(scheme: ConnectionLinkScheme): Promise<LinkHandlerRegistration | undefined> {
     return ipcRenderer.invoke('muxus:link-handlers:register', scheme);
   },
+  /** Open a saved web host's browser window; settles when it closes, or at once if it was open. */
+  openWebWindow(request: {
+    key: string;
+    url: string;
+    title: string;
+    proxy?: string;
+  }): Promise<'closed' | 'focused' | 'invalid'> {
+    return ipcRenderer.invoke('muxus:web:open', request);
+  },
+  /** Show a mounted share in the system file manager. */
+  openFolder(folder: string): Promise<boolean> {
+    return ipcRenderer.invoke('muxus:open-folder', folder);
+  },
   kubusAvailable(): Promise<boolean> {
     return ipcRenderer.invoke('muxus:kubus:available');
   },

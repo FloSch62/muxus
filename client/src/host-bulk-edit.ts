@@ -134,12 +134,14 @@ export function isSshHost(host: ManagedHost): boolean {
   return host.kind === 'ssh' || host.entry.profile.kind === 'ssh';
 }
 
-/** Whether a host opens a terminal: SSH, Telnet or serial, not a remote desktop. */
+/** Whether a host opens a terminal: SSH, Telnet, serial or WinRM, not a remote desktop. */
 export function isTerminalHost(host: ManagedHost): boolean {
   return (
     isSshHost(host) ||
     (host.kind === 'profile' &&
-      (host.entry.profile.kind === 'telnet' || host.entry.profile.kind === 'serial'))
+      (host.entry.profile.kind === 'telnet' ||
+        host.entry.profile.kind === 'serial' ||
+        host.entry.profile.kind === 'winrm'))
   );
 }
 

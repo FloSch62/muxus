@@ -7,6 +7,8 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DriveFileMoveOutlinedIcon from '@mui/icons-material/DriveFileMoveOutlined';
 import EditNoteOutlinedIcon from '@mui/icons-material/EditNoteOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import EjectOutlinedIcon from '@mui/icons-material/EjectOutlined';
+import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
@@ -21,6 +23,7 @@ import { environmentHostForManaged, showHostEnvironments } from '../../environme
 import { useSavedHostProfiles } from '../../api/queries.js';
 import { managementHostPrefill } from '../host-editor/management-draft.js';
 import { copyToClipboard } from '../../clipboard.js';
+import { unmountShareHost } from '../../share-hosts.js';
 import {
   managedHostCopyCommand,
   type ManagedHost,
@@ -61,6 +64,7 @@ export function HostContextMenu({
   onMoveToFolder,
   selectedCount,
   onEditSelected,
+  onRunScript,
   onMoveSelected,
   onDeleteSelected,
 }: {
@@ -76,6 +80,8 @@ export function HostContextMenu({
   onEditSelected: () => void;
   onMoveSelected: () => void;
   onDeleteSelected: () => void;
+  /** Open Scripts for this host, or for the selection it is part of. */
+  onRunScript: (host: ManagedHost) => void;
 }) {
   const setHostEditor = useUiStore((s) => s.setHostEditor);
   const setHostOrganizer = useUiStore((s) => s.setHostOrganizer);
@@ -121,6 +127,26 @@ export function HostContextMenu({
         </ListItemIcon>
         Open in new window
       </MenuItem>
+      {menu && isScriptHost(menu.host) ? (
+        <MenuItem onClick={run(onRunScript)}>
+          <ListItemIcon>
+            <TerminalOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          {forSelection ? `Run script on ${selectedCount} selected hosts…` : 'Run script…'}
+        </MenuItem>
+      ) : null}
+      {menu && !forSelection && isShareHost(menu.host) ? (
+        <MenuItem
+          onClick={run((host) => {
+            if (host.kind === 'profile') void unmountShareHost(host.entry);
+          })}
+        >
+          <ListItemIcon>
+            <EjectOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          Unmount share
+        </MenuItem>
+      ) : null}
       {menu && managedHostSupportsSftp(menu.host) ? (
         <MenuItem
           onMouseEnter={() => {
@@ -285,5 +311,14 @@ export function HostContextMenu({
 }
 
 function isSshHost(host: ManagedHost): boolean {
+  return host.kind === 'ssh' || host.entry.profile.kind === 'ssh';
+}
+
+function isShareHost(host: ManagedHost): boolean {
+  return host.kind === 'profile' && (host.entry.profile.kind === 'smb' || host.entry.profile.kind === 'nfs');
+}
+
+/** Scripts run over SSH: config hosts and SSH hosts saved in Muxus. */
+function isScriptHost(host: ManagedHost): boolean {
   return host.kind === 'ssh' || host.entry.profile.kind === 'ssh';
 }

@@ -53,6 +53,48 @@ describe('hybrid session history store', () => {
     expect((await store.sessionLog(next))?.events[0]?.lineTimestamps).toEqual(lineTimestamps);
   });
 
+  it('admits WinRM sessions after upgrading, keeping older transcripts', async () => {
+    root = mkdtempSync(path.join(os.tmpdir(), 'muxus-history-test-'));
+    store = await SessionHistoryStore.open({ root, settings });
+    const policy = { maxPartBytes: 64 * 1024, maxParts: 2 };
+    const time = '2026-11-06T10:00:00.000Z';
+    const old = store.beginSession({ profileKey: 'ssh:core', title: 'Core', kind: 'ssh', host: 'core', startedAt: time, captureInput: false }, policy);
+    store.append(old, [{ sequence: 1, recordedAt: time, elapsedMs: 0, direction: 'output', raw: Buffer.from('kept\n'), text: 'kept\n' }], policy);
+    store.finishSession(old, 'completed', time);
+    await store.close();
+
+    // Put back the version 3 table, which did not know WinRM.
+    const database = new DatabaseSync(path.join(root, 'session-history.sqlite'));
+    const definition = String(
+      (database.prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'session_logs'").get() as { sql: string }).sql,
+    );
+    const indexes = database
+      .prepare("SELECT sql FROM sqlite_schema WHERE type = 'index' AND tbl_name = 'session_logs' AND sql IS NOT NULL")
+      .all()
+      .map((row) => String((row as { sql: string }).sql));
+    database.exec('PRAGMA foreign_keys = OFF');
+    database.exec(`
+      ${definition.replace(", 'winrm')", ')').replace(/^CREATE TABLE\s+"?session_logs"?/, 'CREATE TABLE session_logs_v3')};
+      INSERT INTO session_logs_v3 SELECT * FROM session_logs;
+      DROP TABLE session_logs;
+      ALTER TABLE session_logs_v3 RENAME TO session_logs;
+      DELETE FROM history_schema_migrations WHERE version = 4;
+    `);
+    for (const index of indexes) database.exec(index);
+    expect(() =>
+      database.exec(
+        "INSERT INTO session_logs(id, profile_key, title, kind, host, started_at, status, capture_input) VALUES ('x', 'k', 't', 'winrm', 'h', 'now', 'active', 0)",
+      ),
+    ).toThrow(/CHECK/);
+    database.close();
+
+    store = await SessionHistoryStore.open({ root, settings });
+    expect((await store.sessionLog(old))?.events[0]?.text).toBe('kept\n');
+    const winrm = store.beginSession({ profileKey: 'winrm:fs01:5985', title: 'File server', kind: 'winrm', host: 'fs01:5985', startedAt: time, captureInput: false }, policy);
+    store.finishSession(winrm, 'completed', time);
+    expect((await store.sessionLog(winrm))?.kind).toBe('winrm');
+  });
+
   it('rotates compressed raw segments and searches normalized chunks', async () => {
     root = mkdtempSync(path.join(os.tmpdir(), 'muxus-history-test-'));
     store = await SessionHistoryStore.open({ root, settings });

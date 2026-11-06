@@ -77,6 +77,14 @@ The route determines how the connection is dialled.
 - **Jump hosts** writes the chain, in order, as `ProxyJump a,b,c`. Each hop is either an
   alias from the configuration or a bare `user@host:port`. Muxus dials the hops in sequence
   and rejects a chain that loops back on itself.
+- **If this route fails** (under the jump chain) lists other jump routes to try, in order.
+  Each is one host, or several separated by commas for a chain of its own. Muxus moves on
+  to the next route when a jump host cannot be reached, refuses the login, or cannot reach
+  the target, and the status line says which route it is trying. A login the target itself
+  refuses is not retried, because every route ends at the same target. A tab opened while
+  a fallback route is up reuses that connection instead of trying the dead route again.
+  `ssh_config` has no way to express fallbacks, so Muxus keeps them in its own data even
+  for hosts stored in `ssh_config`; the `ProxyJump` line stays the first route.
 - **ProxyCommand** takes a command that provides the transport on stdin/stdout, such as
   `cloudflared access ssh --hostname %h`. The `%h`, `%p` and `%r` tokens are expanded at
   dial time.

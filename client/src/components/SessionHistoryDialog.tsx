@@ -93,7 +93,7 @@ export function SessionHistoryDialog() {
   const filters = useMemo(
     () => ({
       host: debouncedHost || undefined,
-      kind: (kind || undefined) as 'ssh' | 'local' | 'serial' | 'telnet' | undefined,
+      kind: (kind || undefined) as 'ssh' | 'local' | 'serial' | 'telnet' | 'winrm' | undefined,
       startedAfter: dateBoundary(startedAfter, false),
       startedBefore: dateBoundary(startedBefore, true),
     }),
@@ -240,6 +240,7 @@ export function SessionHistoryDialog() {
                   <MenuItem value="local">Local</MenuItem>
                   <MenuItem value="serial">Serial</MenuItem>
                   <MenuItem value="telnet">Telnet</MenuItem>
+                  <MenuItem value="winrm">WinRM</MenuItem>
                 </Select>
               </FormControl>
               <TextField
