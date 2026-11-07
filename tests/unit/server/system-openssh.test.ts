@@ -145,11 +145,13 @@ describe('ssh arguments for background jobs and containers', () => {
 
 describe('findSshBinary', () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'muxus-find-ssh-'));
-  const program = path.join(dir, 'ssh');
+  // The host's own platform, since the program has to exist on its file system.
+  const program = path.join(dir, process.platform === 'win32' ? 'ssh.exe' : 'ssh');
   writeFileSync(program, '#!/bin/sh\n', { mode: 0o755 });
 
   it('searches PATH', () => {
-    expect(findSshBinary({ PATH: `/nonexistent:${dir}` }, 'linux')).toBe(program);
+    const missing = path.join(dir, 'nonexistent');
+    expect(findSshBinary({ PATH: `${missing}${path.delimiter}${dir}` })).toBe(program);
   });
 
   it('reports nothing when there is no program', () => {
