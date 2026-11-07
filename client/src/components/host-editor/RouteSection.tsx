@@ -62,6 +62,18 @@ export function RouteSection({
       : [];
   const hopName = (hop: string) => jumpHopLabel(hop, savedHosts);
   const isSavedHop = (hop: string) => savedHostHopId(hop) !== undefined;
+  // The ssh program only knows its own config; the built-in client cannot log in
+  // to a hop that was set up for the ssh program.
+  const hopUnavailable = (hop: string) => {
+    const savedId = savedHostHopId(hop);
+    if (draft.systemOpenSsh) return savedId !== undefined;
+    if (savedId !== undefined) {
+      return savedHosts?.find((host) => host.id === savedId)?.metadata.systemOpenSsh === true;
+    }
+    return (config?.hosts ?? []).some(
+      (host) => host.aliases.includes(hop) && host.metadata?.systemOpenSsh === true,
+    );
+  };
   const target = draftAliases(draft)[0] || draft.hostname || 'target';
 
   const move = (i: number, dir: -1 | 1) => {
@@ -194,6 +206,7 @@ export function RouteSection({
               value={null}
               options={[...aliasOptions, ...savedOptions]}
               getOptionLabel={hopName}
+              getOptionDisabled={hopUnavailable}
               groupBy={
                 savedOptions.length
                   ? (hop) => (isSavedHop(hop) ? 'Saved in Muxus' : 'From your SSH config')
@@ -322,6 +335,7 @@ function FallbackRoutes({
             sx={{
               flex: 1,
               fontSize: 13,
+              ...(draft.systemOpenSsh ? { color: 'text.disabled' } : {}),
               ...(route.some((hop) => savedHostHopId(hop) !== undefined)
                 ? {}
                 : { fontFamily: '"JetBrains Mono", monospace' }),
@@ -344,13 +358,20 @@ function FallbackRoutes({
           </IconButton>
         </Stack>
       ))}
-      {routes.length > 0 ? (
+      {draft.systemOpenSsh ? (
+        // The ssh program dials only the route above; keep any saved
+        // fallbacks for when the option is turned off.
+        <Typography variant="caption" color="textSecondary">
+          Fallback routes are not available with system OpenSSH.
+          {routes.length > 0 ? ' They are kept for when the option is turned off.' : ''}
+        </Typography>
+      ) : routes.length > 0 ? (
         <Typography variant="caption" color="textSecondary">
           Tried in order if the route above fails.
           {draft.storage === 'openssh' ? ' Saved in Muxus, not ssh_config.' : ''}
         </Typography>
       ) : null}
-      {routes.length >= MAX_JUMP_FALLBACKS ? null : !adding ? (
+      {routes.length >= MAX_JUMP_FALLBACKS || draft.systemOpenSsh ? null : !adding ? (
         <Stack direction="row">
           <Button size="small" startIcon={<AddIcon />} onClick={() => setAdding(true)}>
             Add fallback route

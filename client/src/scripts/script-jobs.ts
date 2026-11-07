@@ -7,6 +7,7 @@ import { hostDisplayName } from '../host-organization.js';
 import type { ManagedHost } from '../managed-hosts.js';
 import { savedHostDisplayName } from '../saved-hosts.js';
 import { showToast } from '../state/toast.js';
+import { managedHostUsesSystemOpenSsh } from '../system-openssh.js';
 import { useUiStore } from '../state/ui.js';
 import { runJob, type HostRunState, type RunMode } from './run-plan.js';
 
@@ -73,8 +74,12 @@ export interface ScriptTarget {
   profile: SshProfile;
 }
 
-/** SSH hosts only: scripts run over an SSH exec channel. */
+/**
+ * SSH hosts only: scripts run over an SSH exec channel of the built-in client,
+ * so hosts set to use system OpenSSH are left out too.
+ */
 export function scriptTarget(host: ManagedHost): ScriptTarget | undefined {
+  if (managedHostUsesSystemOpenSsh(host)) return undefined;
   if (host.kind === 'ssh') {
     return { key: `ssh:${host.entry.alias}`, label: hostDisplayName(host.entry), profile: { kind: 'ssh', target: host.entry.alias } };
   }
@@ -89,7 +94,7 @@ export function scriptTarget(host: ManagedHost): ScriptTarget | undefined {
 
 /**
  * Open Scripts with these hosts picked: one host, a selection or a folder.
- * Hosts that cannot run scripts (Telnet, serial, RDP …) are left out.
+ * Hosts that cannot run scripts (Telnet, serial, RDP, system OpenSSH …) are left out.
  */
 export function openScriptsFor(hosts: readonly ManagedHost[], what: string): void {
   const keys = hosts.map(scriptTarget).filter((target): target is ScriptTarget => !!target).map((target) => target.key);
@@ -98,7 +103,12 @@ export function openScriptsFor(hosts: readonly ManagedHost[], what: string): voi
     return;
   }
   const left = hosts.length - keys.length;
-  if (left > 0) showToast('info', `${left} host${left === 1 ? '' : 's'} left out: scripts run on SSH hosts only.`);
+  if (left > 0) {
+    showToast(
+      'info',
+      `${left} host${left === 1 ? '' : 's'} left out: scripts run only on SSH hosts that use the built-in client.`,
+    );
+  }
   useUiStore.getState().setScriptsDialog({ hostKeys: keys });
 }
 

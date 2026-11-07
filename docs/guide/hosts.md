@@ -222,7 +222,7 @@ hosts that already have every new value are skipped.
 | Section | Settings | Applies to |
 | --- | --- | --- |
 | Folder & color | Folder, colour | Every host |
-| SSH connection | User, port, host verification, agent forwarding, X11 forwarding, console compatibility, SFTP | SSH hosts |
+| SSH connection | User, port, host verification, agent forwarding, X11 forwarding, system OpenSSH, console compatibility, SFTP | SSH hosts |
 | Terminal appearance | Colour scheme, text and background colour, command button group, paste delays, waiting for the prompt, anti-idle, keys and echo | SSH, Telnet and serial hosts |
 | Highlighting | Highlighting profile, global rules | SSH, Telnet and serial hosts |
 | Session logging | Logging policy for new sessions | SSH, Telnet and serial hosts |

@@ -22,7 +22,7 @@ import {
   type HostEnvironmentsEntry,
 } from './state/environments.js';
 import { usePrefsStore } from './state/prefs.js';
-import { useTabsStore } from './state/tabs.js';
+import { useTabsStore, type TerminalTab } from './state/tabs.js';
 import { useUiStore } from './state/ui.js';
 
 export const LOCAL_ENVIRONMENT_HOST: EnvironmentHost = {
@@ -39,6 +39,7 @@ export function environmentHostForManaged(host: ManagedHost): EnvironmentHost | 
       profile: { kind: 'ssh', target: host.entry.alias },
       color: host.entry.metadata?.color,
       discover: host.entry.metadata?.discoverEnvironments,
+      systemOpenSsh: host.entry.metadata?.systemOpenSsh,
     };
   }
   if (host.entry.profile.kind !== 'ssh') return undefined;
@@ -48,6 +49,7 @@ export function environmentHostForManaged(host: ManagedHost): EnvironmentHost | 
     profile: { ...host.entry.profile, profileId: host.entry.id },
     color: host.entry.metadata.color,
     discover: host.entry.metadata.discoverEnvironments,
+    systemOpenSsh: host.entry.metadata.systemOpenSsh,
   };
 }
 
@@ -70,10 +72,17 @@ function sameHost(profile: SessionProfile | null, host: EnvironmentHost): boolea
   return !profile.profileId && profile.target === host.profile.target;
 }
 
+/** Whether commands can reach the host over this tab: a system OpenSSH tab needs its login shared. */
+export function tabRunsCommands(tab: Pick<TerminalTab, 'systemOpenSsh' | 'sftpAvailable'>): boolean {
+  return !(tab.systemOpenSsh && tab.sftpAvailable === false);
+}
+
 /** A transport to the host some tab already holds. */
 export function liveConnectionFor(host: EnvironmentHost): string | undefined {
   const tabs = useTabsStore.getState().tabs;
-  return tabs.find((tab) => tab.status === 'connected' && tab.connId && sameHost(tab.profile, host))?.connId;
+  return tabs.find(
+    (tab) => tab.status === 'connected' && tab.connId && tabRunsCommands(tab) && sameHost(tab.profile, host),
+  )?.connId;
 }
 
 /**

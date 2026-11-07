@@ -85,6 +85,8 @@ for example *Upload to /home/admin/project*.
 - A host without SFTP ([console compatibility mode or **Disable SFTP and shell integration
   only**](adding-hosts.md#advanced)) shows *SFTP is disabled for this host* instead of
   uploading.
+- Hosts with [**Use system OpenSSH**](../reference/ssh-config.md#system-openssh) have no file
+  browser on Windows, and do not take dropped files there.
 - Telnet, serial and remote desktop tabs do not take dropped files.
 
 In the desktop app, hold ++shift++ while dropping onto an SSH terminal to type the local

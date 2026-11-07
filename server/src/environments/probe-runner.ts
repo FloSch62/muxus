@@ -140,6 +140,12 @@ export function remoteProbeRunner(client: Client): ProbeRunner {
   };
 }
 
+/** Probes through anything that can feed a script to the host's sh. */
+export function scriptProbeRunner(runScript: (script: string) => Promise<string>): ProbeRunner {
+  return async (probes) =>
+    probes.length === 0 ? new Map() : parseProbeOutput(await runScript(probeScript(probes)));
+}
+
 /** Probes on the computer running the Muxus backend. */
 export function localProbeRunner(platform: NodeJS.Platform = process.platform): ProbeRunner {
   if (platform === 'win32') return windowsProbeRunner;

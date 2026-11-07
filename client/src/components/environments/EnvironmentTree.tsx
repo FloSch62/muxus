@@ -310,30 +310,34 @@ export function StatusDot({ health }: { health: Health }) {
 }
 
 /** A service a host serves, opened in the browser through a forward when needed. */
-export function PortChip({ label, title, onClick }: { label: string; title: string; onClick: () => void }) {
+export function PortChip({ label, title, onClick, disabled }: { label: string; title: string; onClick: () => void; disabled?: boolean }) {
   return (
     <Tooltip title={title} disableInteractive>
-      <ButtonBase
-        onClick={(event) => {
-          event.stopPropagation();
-          onClick();
-        }}
-        sx={{
-          height: 20,
-          px: 0.75,
-          gap: 0.5,
-          borderRadius: 10,
-          border: 1,
-          borderColor: 'divider',
-          fontSize: 11,
-          ...MONO,
-          color: 'text.secondary',
-          '&:hover': { borderColor: 'primary.main', color: 'primary.main' },
-        }}
-      >
-        {label}
-        <OpenInNewOutlinedIcon sx={{ fontSize: 11 }} />
-      </ButtonBase>
+      <span>
+        <ButtonBase
+          disabled={disabled}
+          onClick={(event) => {
+            event.stopPropagation();
+            onClick();
+          }}
+          sx={{
+            ...(disabled ? { opacity: 0.5 } : {}),
+            height: 20,
+            px: 0.75,
+            gap: 0.5,
+            borderRadius: 10,
+            border: 1,
+            borderColor: 'divider',
+            fontSize: 11,
+            ...MONO,
+            color: 'text.secondary',
+            '&:hover': { borderColor: 'primary.main', color: 'primary.main' },
+          }}
+        >
+          {label}
+          <OpenInNewOutlinedIcon sx={{ fontSize: 11 }} />
+        </ButtonBase>
+      </span>
     </Tooltip>
   );
 }

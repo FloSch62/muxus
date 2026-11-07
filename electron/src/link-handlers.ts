@@ -89,25 +89,7 @@ async function readText(file: string): Promise<string | undefined> {
   }
 }
 
-/**
- * An AppImage puts its own mount first in PATH, XDG_DATA_DIRS and
- * LD_LIBRARY_PATH. Those entries must not reach xdg-mime: the mount has
- * nothing to say about desktop defaults, and a space in its name breaks the
- * script's directory loops.
- */
-export function withoutAppImagePaths(env: Environment): Environment {
-  const mount = env.APPDIR;
-  if (!env.APPIMAGE || !mount) return env;
-  const cleaned = { ...env };
-  for (const name of ['PATH', 'XDG_DATA_DIRS', 'LD_LIBRARY_PATH']) {
-    const value = cleaned[name];
-    if (value === undefined) continue;
-    const kept = value.split(':').filter((entry) => entry && entry !== mount && !entry.startsWith(`${mount}/`));
-    if (kept.length > 0) cleaned[name] = kept.join(':');
-    else delete cleaned[name];
-  }
-  return cleaned;
-}
+export { withoutAppImagePaths } from '@muxus/shared';
 
 function missingProgram(error: unknown): boolean {
   return (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT';

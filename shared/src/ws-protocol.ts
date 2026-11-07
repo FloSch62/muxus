@@ -601,6 +601,8 @@ export type TerminalServerMessage =
       host?: string;
       user?: string;
       sftpAvailable?: boolean;
+      /** The session is the computer's `ssh` program; `sftpAvailable` also says whether its login is shared. */
+      systemOpenSsh?: boolean;
       /** SSH terminal sessions only. */
       summary?: SshSessionSummary;
     }

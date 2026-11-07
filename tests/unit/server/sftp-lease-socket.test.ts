@@ -16,6 +16,7 @@ describe('detached SFTP window leases', () => {
     const unsubscribe = vi.fn();
     const connectionCloseListeners: Array<() => void> = [];
     const ctx = {
+      systemOpenSsh: { acquire: () => undefined },
       connections: {
         acquire: vi.fn(() => ({
           connection: {
@@ -57,7 +58,10 @@ describe('detached SFTP window leases', () => {
         handler = routeHandler;
       }),
     };
-    const ctx = { connections: { acquire: vi.fn(() => undefined) } };
+    const ctx = {
+      systemOpenSsh: { acquire: () => undefined },
+      connections: { acquire: vi.fn(() => undefined) },
+    };
     registerSftpLeaseSocket(app as never, ctx as never);
     const socket = { close: vi.fn() };
 

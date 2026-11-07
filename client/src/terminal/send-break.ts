@@ -11,9 +11,14 @@ export function supportsBreak(tab: TerminalTab | undefined): boolean {
  * Whether the session is attached. An SSH console that has printed nothing
  * yet still counts: a silent console is exactly when BREAK is wanted.
  */
-export function canSendBreak(tab: TerminalTab | undefined): boolean {
+export function sessionAttached(tab: TerminalTab | undefined): boolean {
   if (!tab || !supportsBreak(tab)) return false;
   return tab.status === 'connected' || (tab.status === 'connecting' && !!tab.connId);
+}
+
+/** `ssh` only sends BREAK through an escape sequence, which its sessions here turn off. */
+export function canSendBreak(tab: TerminalTab | undefined): boolean {
+  return sessionAttached(tab) && !tab!.systemOpenSsh;
 }
 
 /** BREAK goes to this one session only; multi-execution never mirrors it. */

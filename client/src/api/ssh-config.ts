@@ -123,6 +123,9 @@ export function useUpdateSshMetadata(onSuccess?: (metadata: OpenSshProfileMetada
               ...(patch.consoleCompatibility !== undefined
                 ? { consoleCompatibility: patch.consoleCompatibility || undefined }
                 : {}),
+              ...(patch.systemOpenSsh !== undefined
+                ? { systemOpenSsh: patch.systemOpenSsh || undefined }
+                : {}),
               ...(patch.discoverEnvironments !== undefined
                 ? { discoverEnvironments: patch.discoverEnvironments ?? undefined }
                 : {}),

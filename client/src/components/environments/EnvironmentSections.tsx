@@ -39,7 +39,8 @@ import {
   openVncOnHost,
   portScheme,
 } from '../../environment-sessions.js';
-import type { HostEnvironmentsEntry } from '../../state/environments.js';
+import type { EnvironmentHost, HostEnvironmentsEntry } from '../../state/environments.js';
+import { unavailableWithSystemOpenSsh } from '../../system-openssh.js';
 import { showToast } from '../../state/toast.js';
 import { ENVIRONMENT_KINDS, EnvironmentLogo } from './environment-icons.js';
 import {
@@ -78,6 +79,14 @@ function useHostDirectory(): HostDirectory {
  * Keep a guest as a sidebar host: SSH to the address it reports, through the
  * hypervisor, or its console when it reports none.
  */
+/**
+ * A saved host only exists as a jump hop inside Muxus, and only the ssh program
+ * can log in to a host set to use it, so such a host has no way to be jumped through.
+ */
+function jumpUnavailable(host: EnvironmentHost): boolean {
+  return host.systemOpenSsh === true && !!host.profile?.profileId;
+}
+
 async function addGuestToHosts(
   host: HostEnvironmentsEntry,
   hosts: HostDirectory,
@@ -354,7 +363,8 @@ function ContainerLine({
             <PortChip
               key={`${port.hostPort}:${port.containerPort}`}
               label={`${port.hostPort} → ${port.containerPort}`}
-              title={`Open ${portScheme(port.hostPort!)}://…:${port.hostPort}${host.profile ? `, forwarded from ${host.label}` : ''}`}
+              disabled={host.systemOpenSsh}
+              title={host.systemOpenSsh ? unavailableWithSystemOpenSsh('Open this port') : `Open ${portScheme(port.hostPort!)}://…:${port.hostPort}${host.profile ? `, forwarded from ${host.label}` : ''}`}
               onClick={() => void openHostPort(host, port.hostIp, port.hostPort!)}
             />
           ))}
@@ -462,13 +472,19 @@ function LabLines({
                   ['Container', node.container],
                 ]}
                 dim={!up}
-                onOpen={up ? () => openContainerlabNode(host, lab, node) : undefined}
+                onOpen={up && !(ssh && host.systemOpenSsh) ? () => openContainerlabNode(host, lab, node) : undefined}
                 actions={
                   <>
                     <LineAction
-                      label={ssh ? `SSH to ${node.ipv4} as admin` : 'Open shell'}
+                      label={
+                        ssh
+                          ? host.systemOpenSsh
+                            ? unavailableWithSystemOpenSsh(`SSH to ${node.ipv4} as admin`)
+                            : `SSH to ${node.ipv4} as admin`
+                          : 'Open shell'
+                      }
                       Icon={ssh ? LoginOutlinedIcon : TerminalOutlinedIcon}
-                      disabled={!up}
+                      disabled={!up || (ssh && host.systemOpenSsh)}
                       onClick={() => openContainerlabNode(host, lab, node)}
                     />
                     <LineMenu
@@ -508,6 +524,7 @@ function LabLines({
                           : []),
                         {
                           label: 'Add to hosts',
+                          disabled: ssh && jumpUnavailable(host),
                           onClick: () =>
                             ssh
                               ? addAddressToHosts(host, hosts, {
@@ -583,7 +600,12 @@ export function ProxmoxSection({ environment, ...props }: SectionProps & { envir
         status={`${running} / ${environment.guests.length} running`}
         actions={
           <LineAction
-            label="Open the web interface (https :8006)"
+            label={
+              host.systemOpenSsh
+                ? unavailableWithSystemOpenSsh('Open the web interface')
+                : 'Open the web interface (https :8006)'
+            }
+            disabled={host.systemOpenSsh}
             Icon={PublicOutlinedIcon}
             onClick={() => void openHostPort(host, '127.0.0.1', 8006, 'https')}
           />
@@ -632,7 +654,12 @@ export function ProxmoxSection({ environment, ...props }: SectionProps & { envir
                       />
                     ) : null}
                     {up ? (
-                      <LineAction label="SSH to the guest" Icon={LoginOutlinedIcon} onClick={() => void sshToGuest(host, guest)} />
+                      <LineAction
+                        label={host.systemOpenSsh ? unavailableWithSystemOpenSsh('SSH to the guest') : 'SSH to the guest'}
+                        disabled={host.systemOpenSsh}
+                        Icon={LoginOutlinedIcon}
+                        onClick={() => void sshToGuest(host, guest)}
+                      />
                     ) : null}
                     {!up && !guest.template ? (
                       <LineAction label="Start" Icon={PlayArrowOutlinedIcon} onClick={() => power(guest, 'start')} />
@@ -654,6 +681,7 @@ export function ProxmoxSection({ environment, ...props }: SectionProps & { envir
                           : [
                               {
                                 label: 'Add to hosts',
+                                disabled: jumpUnavailable(host),
                                 onClick: () =>
                                   void addGuestToHosts(
                                     host,
@@ -756,8 +784,8 @@ export function LibvirtSection({ environment, ...props }: SectionProps & { envir
                 actions={
                   <>
                     {up ? <LineAction label="Serial console (virsh console)" Icon={TerminalOutlinedIcon} onClick={console} /> : null}
-                    {up ? <LineAction label="VNC display" Icon={ScreenShareOutlinedIcon} onClick={() => void vnc(domain)} /> : null}
-                    {up ? <LineAction label="SSH to the VM" Icon={LoginOutlinedIcon} onClick={() => void ssh(domain)} /> : null}
+                    {up ? <LineAction label={host.systemOpenSsh ? unavailableWithSystemOpenSsh('VNC display') : 'VNC display'} disabled={host.systemOpenSsh} Icon={ScreenShareOutlinedIcon} onClick={() => void vnc(domain)} /> : null}
+                    {up ? <LineAction label={host.systemOpenSsh ? unavailableWithSystemOpenSsh('SSH to the VM') : 'SSH to the VM'} disabled={host.systemOpenSsh} Icon={LoginOutlinedIcon} onClick={() => void ssh(domain)} /> : null}
                     {!up ? <LineAction label="Start" Icon={PlayArrowOutlinedIcon} onClick={() => power(domain, 'start')} /> : null}
                     <LineMenu
                       label={`More actions for ${domain.name}`}
@@ -772,6 +800,7 @@ export function LibvirtSection({ environment, ...props }: SectionProps & { envir
                             : [{ label: 'Start', onClick: () => power(domain, 'start'), divider: true }]),
                           {
                             label: 'Add to hosts',
+                            disabled: jumpUnavailable(host),
                             onClick: () =>
                               void addGuestToHosts(
                                 host,

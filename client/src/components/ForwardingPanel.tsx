@@ -44,6 +44,7 @@ import {
   stopForward,
 } from '../api/tunnels.js';
 import { confirmAction } from '../state/dialogs.js';
+import { SYSTEM_OPENSSH_UNAVAILABLE, tunnelUsesSystemOpenSsh } from '../system-openssh.js';
 import { showErrorToast, showToast } from '../state/toast.js';
 import { useUiStore } from '../state/ui.js';
 import { layout, statusTextColor } from '../theme.js';
@@ -364,13 +365,21 @@ export function ForwardingPanel() {
                   </IconButton>
                 </Tooltip>
               ) : (
-                <Tooltip title={needsStart ? 'Start tunnel and sign in' : `Start tunnel (via ${tunnel.target})`}>
+                <Tooltip
+                  title={
+                    tunnelUsesSystemOpenSsh(tunnel, config?.hosts ?? [])
+                      ? `${SYSTEM_OPENSSH_UNAVAILABLE}: ${tunnel.target} uses it`
+                      : needsStart
+                        ? 'Start tunnel and sign in'
+                        : `Start tunnel (via ${tunnel.target})`
+                  }
+                >
                   <span>
                     <IconButton
                       size="small"
                       color="primary"
                       aria-label={`Start tunnel ${tunnel.name ?? tunnel.id}`}
-                      disabled={anyStarting}
+                      disabled={anyStarting || tunnelUsesSystemOpenSsh(tunnel, config?.hosts ?? [])}
                       onClick={() => void startFlow(tunnel)}
                     >
                       <PlayArrowIcon fontSize="small" />

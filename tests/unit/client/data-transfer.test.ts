@@ -1147,6 +1147,7 @@ describe('restoring imported serial hosts', () => {
           localEcho: false,
           disableSftp: false,
           consoleCompatibility: false,
+          systemOpenSsh: false,
           discoverEnvironments: null,
           loginSequence: null,
           proxyJumpFallbacks: null,

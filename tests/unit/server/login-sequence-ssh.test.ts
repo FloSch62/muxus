@@ -62,6 +62,7 @@ function sshSession(database: MuxusDatabase) {
   };
   const ctx = {
     connections: {
+      usesSystemOpenSsh: () => false,
       connectShell,
       resolveProfile: (profile: unknown) => profile,
       metadataAliasFor: (profile: { target: string }) => profile.target,

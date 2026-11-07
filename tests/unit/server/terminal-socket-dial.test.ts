@@ -301,6 +301,7 @@ describe('terminal socket connect mode', () => {
     };
     const ctx = {
       connections: {
+        usesSystemOpenSsh: () => false,
         connectShell,
         resolveProfile: (profile: unknown) => profile,
         leaseCount: () => 0,
@@ -338,5 +339,83 @@ describe('terminal socket connect mode', () => {
       forwards: [{ type: 'local', bindPort: 8080, targetHost: 'db', targetPort: 5432 }],
     });
     socket.close(1000, TERMINAL_SESSION_CLOSE_REASON);
+  });
+
+  it('runs a host set to system OpenSSH through its own transport', async () => {
+    let route!: (socket: TestSocket) => void;
+    const app = {
+      get: (_path: string, _options: unknown, handler: (socket: TestSocket) => void) => {
+        route = handler;
+      },
+      log: { info: vi.fn(), warn: vi.fn() },
+    };
+    const session = {
+      id: 'system-ssh-1',
+      sftpAvailable: true,
+      write: vi.fn(),
+      drain: vi.fn(async () => undefined),
+      resize: vi.fn(),
+      sendBreak: vi.fn(),
+      pause: vi.fn(),
+      resume: vi.fn(),
+      close: vi.fn(),
+      onData: vi.fn(() => () => undefined),
+      onClose: vi.fn(() => () => undefined),
+      onError: vi.fn(() => () => undefined),
+    };
+    const start = vi.fn(() => session);
+    const connectShell = vi.fn();
+    const recordOpenSshConnection = vi.fn();
+    const ctx = {
+      connections: {
+        usesSystemOpenSsh: () => true,
+        sftpAllowedFor: () => true,
+        listedMetadataAliasFor: () => 'krb',
+        connectShell,
+        resolveProfile: (profile: unknown) => profile,
+      },
+      systemOpenSsh: { start },
+      database: {
+        sessionLoggingPolicy: () => ({ enabled: false, logToFile: false, captureInput: false }),
+        hostAntiIdle: () => undefined,
+        hostLoginSequence: () => undefined,
+        recordOpenSshConnection,
+      },
+      terminalInputs: new TerminalInputs(),
+    };
+    registerTerminalSocket(app as never, ctx as never);
+
+    const socket = new TestSocket();
+    route(socket);
+    socket.emit(
+      'message',
+      Buffer.from(
+        JSON.stringify({
+          op: 'connect',
+          profile: { kind: 'ssh', target: 'krb' },
+          cols: 100,
+          rows: 30,
+        }),
+      ),
+      false,
+    );
+
+    const frames = () =>
+      socket.send.mock.calls
+        .filter(([frame]) => typeof frame === 'string')
+        .map(([frame]) => JSON.parse(String(frame)) as { op: string });
+    await vi.waitFor(() => expect(frames().some((frame) => frame.op === 'ready')).toBe(true));
+    expect(frames().find((frame) => frame.op === 'ready')).toEqual({
+      op: 'ready',
+      connId: 'system-ssh-1',
+      sftpAvailable: true,
+      systemOpenSsh: true,
+    });
+    expect(start).toHaveBeenCalledWith({ kind: 'ssh', target: 'krb' }, 100, 30, true);
+    expect(connectShell).not.toHaveBeenCalled();
+    expect(recordOpenSshConnection).toHaveBeenCalledWith('krb');
+
+    socket.close(1000, TERMINAL_SESSION_CLOSE_REASON);
+    expect(session.close).toHaveBeenCalled();
   });
 });

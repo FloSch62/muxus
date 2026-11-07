@@ -1,5 +1,6 @@
 import Divider from '@mui/material/Divider';
 import ListItemIcon from '@mui/material/ListItemIcon';
+import ListItemText from '@mui/material/ListItemText';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
@@ -18,7 +19,17 @@ import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined';
 import ViewInArOutlinedIcon from '@mui/icons-material/ViewInArOutlined';
-import { environmentHostForManaged, showHostEnvironments } from '../../environments.js';
+import { useAppInfo } from '../../api/queries.js';
+import {
+  environmentHostForManaged,
+  liveConnectionFor,
+  showHostEnvironments,
+} from '../../environments.js';
+import {
+  managedHostUsesSystemOpenSsh,
+  SYSTEM_OPENSSH_UNAVAILABLE,
+  SYSTEM_OPENSSH_WINDOWS_UNAVAILABLE,
+} from '../../system-openssh.js';
 import { useSavedHostProfiles } from '../../api/queries.js';
 import { managementHostPrefill } from '../host-editor/management-draft.js';
 import { copyToClipboard } from '../../clipboard.js';
@@ -81,6 +92,7 @@ export function HostContextMenu({
   /** Open Scripts for this host, or for the selection it is part of. */
   onRunScript: (host: ManagedHost) => void;
 }) {
+  const platform = useAppInfo().data?.platform;
   const setHostEditor = useUiStore((s) => s.setHostEditor);
   const setHostOrganizer = useUiStore((s) => s.setHostOrganizer);
   const { data: savedData } = useSavedHostProfiles();
@@ -96,6 +108,16 @@ export function HostContextMenu({
   // Moving and deleting act on the whole selection the host belongs to, as in
   // a file manager. Editing keeps both, since one host has a fuller editor.
   const forSelection = selectedCount > 1;
+
+  const systemHost = !!menu && managedHostUsesSystemOpenSsh(menu.host);
+  const systemOnWindows = systemHost && platform === 'win32';
+  const systemEnvironmentHost = systemHost ? environmentHostForManaged(menu.host) : undefined;
+  // These hosts are only read over a terminal's login; nothing can dial one just for this.
+  const environmentsUnavailable = systemOnWindows
+    ? SYSTEM_OPENSSH_WINDOWS_UNAVAILABLE
+    : systemEnvironmentHost && !liveConnectionFor(systemEnvironmentHost)
+      ? 'Connect a terminal to this host first'
+      : undefined;
 
   return (
     <Menu
@@ -126,11 +148,17 @@ export function HostContextMenu({
         Open in new window
       </MenuItem>
       {menu && isScriptHost(menu.host) ? (
-        <MenuItem onClick={run(onRunScript)}>
+        <MenuItem disabled={systemHost && !forSelection} onClick={run(onRunScript)}>
           <ListItemIcon>
             <TerminalOutlinedIcon fontSize="small" />
           </ListItemIcon>
-          {forSelection ? `Run script on ${selectedCount} selected hosts…` : 'Run script…'}
+          {forSelection ? (
+            `Run script on ${selectedCount} selected hosts…`
+          ) : systemHost ? (
+            <ListItemText primary="Run script…" secondary={SYSTEM_OPENSSH_UNAVAILABLE} />
+          ) : (
+            'Run script…'
+          )}
         </MenuItem>
       ) : null}
       {menu && managedHostSupportsSftp(menu.host) ? (
@@ -143,18 +171,27 @@ export function HostContextMenu({
             void loadTerminalViewImpl();
             void loadSftpPanel();
           }}
+          disabled={systemOnWindows}
           onClick={run(openManagedHostSftp)}
         >
           <ListItemIcon>
             <FolderOpenOutlinedIcon fontSize="small" />
           </ListItemIcon>
-          Open SFTP file browser
+          {systemOnWindows ? (
+            <ListItemText
+              primary="Open SFTP file browser"
+              secondary={SYSTEM_OPENSSH_WINDOWS_UNAVAILABLE}
+            />
+          ) : (
+            'Open SFTP file browser'
+          )}
         </MenuItem>
       ) : null}
       {menu && environmentHostForManaged(menu.host) ? (
         <MenuItem
           onMouseEnter={() => void loadEnvironmentsPanel()}
           onFocus={() => void loadEnvironmentsPanel()}
+          disabled={!!environmentsUnavailable}
           onClick={run((host) => {
             const environmentHost = environmentHostForManaged(host);
             if (environmentHost) showHostEnvironments(environmentHost);
@@ -163,7 +200,11 @@ export function HostContextMenu({
           <ListItemIcon>
             <ViewInArOutlinedIcon fontSize="small" />
           </ListItemIcon>
-          Containers &amp; VMs
+          {environmentsUnavailable ? (
+            <ListItemText primary="Containers & VMs" secondary={environmentsUnavailable} />
+          ) : (
+            <>Containers &amp; VMs</>
+          )}
         </MenuItem>
       ) : null}
       <MenuItem disabled={!canMoveUp} onClick={run(() => onMove(-1))}>

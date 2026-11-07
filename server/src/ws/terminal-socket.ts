@@ -733,6 +733,46 @@ async function handleSession(
     return;
   }
 
+  if (ctx.connections.usesSystemOpenSsh(profile)) {
+    const session = ctx.systemOpenSsh.start(
+      profile,
+      cols,
+      rows,
+      ctx.connections.sftpAllowedFor(profile),
+    );
+    if (!socketOpen) {
+      session.close();
+      return;
+    }
+    attachTerminalTransport(
+      socket,
+      control,
+      session,
+      (writer) => {
+        writeInput = writer;
+      },
+      session.id,
+      recorder,
+      handleLoggingControl,
+      // A container or console session never shows the host's own prompts.
+      profile.environment ? undefined : prepareLoginSequence(keysHost),
+      { sftpAvailable: session.sftpAvailable, systemOpenSsh: true },
+    );
+    socket.once('close', session.onData((data) => pastePacer.output(data)));
+    writePastedInput = drainedWriter(session);
+    // ssh may be asking for a password, which anti-idle text must not answer.
+    startAntiIdle(keysHost, { afterFirstInput: true });
+    app.log.info({ target: profile.target, connId: session.id }, 'system openssh session started');
+    try {
+      const alias = ctx.connections.listedMetadataAliasFor(profile);
+      if (profile.profileId) ctx.database.recordSavedHostConnection(profile.profileId);
+      else if (alias) ctx.database.recordOpenSshConnection(alias);
+    } catch (err) {
+      app.log.warn({ err, target: profile.target }, 'could not record recent connection');
+    }
+    return;
+  }
+
   // --- SSH ---
   const { lease: terminalLease, stream, transport, summary } = await ctx.connections.connectShell(
     profile,
@@ -925,6 +965,7 @@ function attachTerminalTransport(
   recorder: SessionRecorder,
   handleLoggingControl: (msg: TerminalClientMessage) => boolean,
   loginSequence: LoginSequenceSession | undefined,
+  readyFields: { sftpAvailable?: boolean; systemOpenSsh?: boolean } = {},
 ): void {
   setWriteInput((data) => transport.write(data));
   control.onMessage = (msg) => {
@@ -978,7 +1019,7 @@ function attachTerminalTransport(
     transport.close();
   });
   loginSequence?.start();
-  sendControl(socket, { op: 'ready', connId });
+  sendControl(socket, { op: 'ready', connId, ...readyFields });
 }
 
 /** Write to a byte transport, settling once it has sent the bytes on. */

@@ -147,6 +147,7 @@ export const metadataPatchSchema = z
     localEcho: z.boolean().nullable().optional(),
     disableSftp: z.boolean().optional(),
     consoleCompatibility: z.boolean().optional(),
+    systemOpenSsh: z.boolean().optional(),
     // Null follows the global setting.
     discoverEnvironments: z.boolean().nullable().optional(),
     loginSequence: loginSequenceSchema.nullable().optional(),

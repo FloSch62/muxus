@@ -86,6 +86,7 @@ import { FileTypeIcon } from './FileTypeIcon.js';
 import { OpenWithDialog } from './OpenWithDialog.js';
 import { formatSize, TransferProgress } from './TransferProgress.js';
 import { PanelResizeHandle } from './PanelResizeHandle.js';
+import { SYSTEM_OPENSSH_UNAVAILABLE } from '../system-openssh.js';
 
 interface TransferState {
   id: number;
@@ -269,6 +270,7 @@ export function SftpPanel({
   initialPath = '.',
   terminalPath,
   followTerminalFolder = false,
+  followTerminalFolderUnavailable = false,
   onFollowTerminalFolderChange,
   fill = false,
   inSidebar = false,
@@ -284,6 +286,8 @@ export function SftpPanel({
   terminalPath?: string;
   /** Whether the attached browser follows terminal working-directory reports. */
   followTerminalFolder?: boolean;
+  /** The terminal has no shell integration to report its folder with. */
+  followTerminalFolderUnavailable?: boolean;
   onFollowTerminalFolderChange?: (follow: boolean) => void;
   /** Fill a standalone window instead of using the saved side-panel width. */
   fill?: boolean;
@@ -982,11 +986,13 @@ export function SftpPanel({
           control={(
             <Checkbox
               size="small"
+              disabled={followTerminalFolderUnavailable}
               checked={followTerminalFolder}
               onChange={(event) => onFollowTerminalFolderChange(event.target.checked)}
             />
           )}
           label="Follow terminal folder"
+          title={followTerminalFolderUnavailable ? SYSTEM_OPENSSH_UNAVAILABLE : undefined}
           sx={{
             m: 0,
             px: 0.75,

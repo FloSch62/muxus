@@ -2,11 +2,11 @@ import { MAX_PACED_PASTE_LENGTH } from '@muxus/shared';
 import { broadcastTerminalTyping } from '../state/multi-exec.js';
 import { useTabsStore } from '../state/tabs.js';
 import { showToast } from '../state/toast.js';
-import { canSendBreak } from './send-break.js';
+import { sessionAttached } from './send-break.js';
 import { terminalHandle } from './terminal-registry.js';
 
 /** A file goes to the serial, Telnet and SSH sessions that take BREAK, once attached. */
-export const canSendTextFile = canSendBreak;
+export const canSendTextFile = sessionAttached;
 
 const tabById = (tabId: string) =>
   useTabsStore.getState().tabs.find((candidate) => candidate.id === tabId);

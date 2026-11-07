@@ -13,7 +13,7 @@ interface ConnParams {
 export function registerSftpLeaseSocket(app: FastifyInstance, ctx: AppContext): void {
   app.get('/ws/sftp/:connId/lease', { websocket: true }, (socket, request) => {
     const { connId } = request.params as ConnParams;
-    const lease = ctx.connections.acquire(connId, 'sftp');
+    const lease = ctx.systemOpenSsh.acquire(connId) ?? ctx.connections.acquire(connId, 'sftp');
     if (!lease) {
       socket.close(1008, 'connection not found');
       return;

@@ -25,6 +25,7 @@ function captureUploadHandler(
     put: vi.fn(),
   };
   const ctx = {
+    systemOpenSsh: { acquire: () => undefined },
     connections: {
       acquire: () => ({
         connection: { sftp: async () => sftp },
@@ -49,6 +50,7 @@ function captureDownloadHandler(stream: PassThrough): {
   };
   const release = vi.fn();
   const ctx = {
+    systemOpenSsh: { acquire: () => undefined },
     connections: {
       acquire: () => ({
         connection: {
@@ -76,6 +78,7 @@ function captureEditorHandlers(sftp: object): { read: RouteHandler; save: RouteH
     put: (route: string, _options: unknown, handler: RouteHandler) => puts.set(route, handler),
   };
   const ctx = {
+    systemOpenSsh: { acquire: () => undefined },
     connections: {
       acquire: () => ({
         connection: { sftp: async () => sftp },
@@ -456,6 +459,7 @@ function captureDragDownloadRoutes() {
     },
   };
   const ctx = {
+    systemOpenSsh: { acquire: () => undefined },
     connections: {
       acquire: () =>
         closed ? undefined : { connection, owner: 'sftp', release: vi.fn() },

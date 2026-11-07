@@ -66,6 +66,7 @@ export interface HostDraft {
   disableSftp: boolean;
   /** Muxus-only console mode: also no env requests, with PTY rejection fallback. */
   consoleCompatibility: boolean;
+  systemOpenSsh: boolean;
   /** Look for containers, clusters and VMs on connect; 'default' follows Settings. */
   discoverEnvironments: EnvironmentDiscoveryDraft;
   /** Target config file; '' keeps the block's file (or the root for new hosts). */
@@ -128,6 +129,7 @@ export function blankDraft(
     inputModes: hostTerminalInputModes(undefined),
     disableSftp: false,
     consoleCompatibility: false,
+    systemOpenSsh: false,
     discoverEnvironments: 'default',
     file: '',
     hostname: parsed?.host ?? (storage === 'muxus' ? target : ''),
@@ -182,6 +184,7 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
     inputModes: hostTerminalInputModes(entry.metadata),
     disableSftp: entry.metadata?.disableSftp ?? false,
     consoleCompatibility: entry.metadata?.consoleCompatibility ?? false,
+    systemOpenSsh: entry.metadata?.systemOpenSsh ?? false,
     discoverEnvironments: environmentDiscoveryDraft(entry.metadata?.discoverEnvironments),
     file: entry.file,
     hostname: o.hostname ?? '',
@@ -252,6 +255,7 @@ export function draftFromSavedSshProfile(
     inputModes: hostTerminalInputModes(saved.metadata),
     disableSftp: saved.metadata.disableSftp ?? false,
     consoleCompatibility: saved.metadata.consoleCompatibility ?? false,
+    systemOpenSsh: saved.metadata.systemOpenSsh ?? false,
     discoverEnvironments: environmentDiscoveryDraft(saved.metadata.discoverEnvironments),
     file: '',
     hostname: profile.target,

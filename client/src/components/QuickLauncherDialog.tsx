@@ -54,6 +54,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { usePasswordVaultStatus } from '../api/password-vault-queries.js';
 import { useForwards, useSavedHostProfiles, useSessionHistory, useSshConfig, useTunnels } from '../api/queries.js';
 import { startTunnel, stopForward } from '../api/tunnels.js';
+import { SYSTEM_OPENSSH_UNAVAILABLE, tunnelUsesSystemOpenSsh } from '../system-openssh.js';
 import { useActiveCommandButtonGroup } from '../command-button-groups.js';
 import {
   commandButtonGroupOf,
@@ -102,7 +103,7 @@ import { useEnvironmentsStore } from '../state/environments.js';
 import { environmentLaunchItems, type EnvironmentLaunchItem } from '../environment-launcher.js';
 import { ENVIRONMENT_KINDS, EnvironmentLogo } from './environments/environment-icons.js';
 import { useWorkspacesStore } from '../state/workspaces.js';
-import { canSendBreak, supportsBreak } from '../terminal/send-break.js';
+import { sessionAttached, supportsBreak } from '../terminal/send-break.js';
 import { formatTimestamp } from '../time-format.js';
 import { findVaultSecret, runCommandButton, vaultSecretMissing } from '../vault-secrets.js';
 import { focusOpenWorkspace, openWorkspace } from '../workspace-persistence.js';
@@ -211,10 +212,11 @@ export function QuickLauncherDialog() {
     !!activeTab.connId &&
     activeTab.sftpAvailable !== false;
   const activeBreak = supportsBreak(activeTab)
-    ? canSendBreak(activeTab)
+    ? sessionAttached(activeTab)
       ? 'ready'
       : 'waiting'
     : 'none';
+  const activeSystemOpenSsh = activeTab?.systemOpenSsh === true;
   const liveCount = tabs.filter(
     (tab) =>
       tab.profile &&
@@ -300,9 +302,10 @@ export function QuickLauncherDialog() {
         activeConnected: !!activeConnected,
         activeSsh: !!activeSsh,
         activeBreak,
+        activeSystemOpenSsh,
         keybindings,
       }),
-    [activeBreak, activeConnected, activeSsh, keybindings],
+    [activeBreak, activeConnected, activeSsh, activeSystemOpenSsh, keybindings],
   );
   const allResults = useMemo(
     () => [...catalogResults, ...queryResults, ...environmentResults, ...actionResults],
@@ -1050,6 +1053,9 @@ function buildCatalogResults({
       keywords: ['tunnel', 'forward', tunnel.target, tunnel.type],
       priority: running ? 280 : 100,
       showWhenEmpty: !!running,
+      // A running tunnel can always be stopped.
+      disabledReason:
+        !running && tunnelUsesSystemOpenSsh(tunnel, sshHosts) ? SYSTEM_OPENSSH_UNAVAILABLE : undefined,
     });
   }
 
@@ -1126,12 +1132,14 @@ function buildActionResults({
   activeConnected,
   activeSsh,
   activeBreak,
+  activeSystemOpenSsh,
   keybindings,
 }: {
   activeConnected: boolean;
   activeSsh: boolean;
   /** Send BREAK and Send text file only exist for serial, Telnet and SSH tabs. */
   activeBreak: 'none' | 'waiting' | 'ready';
+  activeSystemOpenSsh: boolean;
   keybindings: KeybindingOverrides;
 }): LauncherResult[] {
   const results: LauncherResult[] = [];
@@ -1190,7 +1198,11 @@ function buildActionResults({
         'upload',
         'download',
       ]),
-      disabledReason: activeSsh ? undefined : 'Select a connected SSH session first',
+      disabledReason: activeSsh
+        ? undefined
+        : activeSystemOpenSsh
+          ? 'Not available for this system OpenSSH session'
+          : 'Select a connected SSH session first',
     },
     {
       ...actionResult('find-terminal', 'Find in active terminal', 'Search the current terminal buffer', [
@@ -1220,7 +1232,11 @@ function buildActionResults({
       priority: 60,
       showWhenEmpty: false,
       disabledReason:
-        sendsBreak && activeBreak === 'waiting' ? 'Wait for the session to connect first' : undefined,
+        command.id === 'terminal.send-break' && activeSystemOpenSsh
+          ? SYSTEM_OPENSSH_UNAVAILABLE
+          : sendsBreak && activeBreak === 'waiting'
+            ? 'Wait for the session to connect first'
+            : undefined,
     });
   }
 
