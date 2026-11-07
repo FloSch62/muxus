@@ -65,6 +65,7 @@ nav = [
     { "Privacy policy" = "privacy.md" },
   ] },
   { "Release notes" = [
+    { "0.15" = "release-notes/0.15.md" },
     { "0.14" = "release-notes/0.14.md" },
     { "0.13" = "release-notes/0.13.md" },
     { "0.12" = "release-notes/0.12.md" },
