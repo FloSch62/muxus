@@ -76,6 +76,46 @@ export function upsertHost(req: HostUpsertRequest, rootPath = defaultSshConfigPa
   return { file: targetFile };
 }
 
+/**
+ * Add many new Host blocks at once, as a range duplicate does. Every alias is
+ * checked before anything is written, and each touched file is written once,
+ * so its `.muxus.bak` holds the content from before the whole save rather
+ * than from before its last block.
+ */
+export function createHosts(
+  reqs: readonly HostUpsertRequest[],
+  rootPath = defaultSshConfigPath(),
+): { created: number } {
+  if (reqs.length === 0) throw new HttpProblem(400, 'no hosts to create');
+  const doc = loadConfigDocument(rootPath);
+  const seen = new Set<string>();
+  const targets: string[] = [];
+  for (const req of reqs) {
+    validateUpsert(req);
+    if (req.previousAlias) throw new HttpProblem(400, 'a batch only creates new hosts');
+    for (const alias of req.aliases) {
+      if (seen.has(alias)) throw new HttpProblem(400, `Host "${alias}" is named twice`);
+      seen.add(alias);
+      const other = findHostBlock(doc, alias);
+      if (other) {
+        throw new HttpProblem(409, `Host "${alias}" already exists in ${path.basename(other.file)}`, 'host-exists');
+      }
+    }
+    targets.push(resolveTargetFile(req.file ?? doc.rootPath, doc.rootPath));
+  }
+
+  const changed = new Set<string>();
+  reqs.forEach((req, i) => {
+    const targetFile = targets[i]!;
+    appendBlock(doc, targetFile, renderHostBlock(req, detectIndent(doc, targetFile)));
+    changed.add(targetFile);
+    if (ensureIncluded(doc, targetFile)) changed.add(doc.rootPath);
+  });
+
+  for (const file of changed) writeConfigFile(file, doc.files.get(file) ?? []);
+  return { created: reqs.length };
+}
+
 /** The ssh_config keyword each patchable option is written as. */
 const PATCH_KEYWORDS = {
   user: 'User',

@@ -8,15 +8,26 @@ import type {
 import { apiFetch } from './http.js';
 import { showErrorToast } from '../state/toast.js';
 
+export function saveHostProfile(input: SavedHostProfileInput): Promise<SavedHostProfile> {
+  return apiFetch<SavedHostProfile>('/api/profiles', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+}
+
+export function patchHostProfileMetadata(id: string, patch: OpenSshMetadataPatch): Promise<SavedHostProfile> {
+  return apiFetch<SavedHostProfile>(`/api/profiles/${encodeURIComponent(id)}/metadata`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+}
+
 export function useSaveHostProfile(onSuccess?: (profile: SavedHostProfile) => void) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: SavedHostProfileInput) =>
-      apiFetch<SavedHostProfile>('/api/profiles', {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(input),
-      }),
+    mutationFn: saveHostProfile,
     onSuccess: (profile) => {
       void queryClient.invalidateQueries({ queryKey: ['saved-host-profiles'] });
       onSuccess?.(profile);
@@ -31,11 +42,7 @@ export function useUpdateHostProfileMetadata(
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: OpenSshMetadataPatch }) =>
-      apiFetch<SavedHostProfile>(`/api/profiles/${encodeURIComponent(id)}/metadata`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(patch),
-      }),
+      patchHostProfileMetadata(id, patch),
     // Telnet and serial rows sit in the same sidebar folders as SSH hosts,
     // whose metadata hook is optimistic — without this they visibly lag behind
     // when a folder change moves both at once.

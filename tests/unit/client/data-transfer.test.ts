@@ -1150,6 +1150,7 @@ describe('restoring imported serial hosts', () => {
           systemOpenSsh: false,
           discoverEnvironments: null,
           loginSequence: null,
+          proxyJumpFallbacks: null,
         }),
       }),
     );

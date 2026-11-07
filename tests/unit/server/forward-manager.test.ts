@@ -1,3 +1,5 @@
+import net from 'node:net';
+import { PassThrough } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TunnelRecord } from '@muxus/shared';
 import type { ConnectIo, ManagedConnection } from '../../../server/src/ssh/connection-manager.js';
@@ -21,6 +23,14 @@ function fakeConnection(id: string, client: object = {}) {
       for (const listener of listeners) listener(reason);
     },
   };
+}
+
+async function freePort(): Promise<number> {
+  const probe = net.createServer();
+  await new Promise<void>((resolve) => probe.listen(0, '127.0.0.1', () => resolve()));
+  const { port } = probe.address() as net.AddressInfo;
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  return port;
 }
 
 function savedTunnel(patch: Partial<TunnelRecord> = {}): TunnelRecord {
@@ -67,6 +77,41 @@ describe('ForwardManager lifecycle', () => {
     expect(release).toHaveBeenCalledTimes(1);
   });
 
+  it('reports the port a SOCKS5 forward on port 0 was given', async () => {
+    const { connection } = fakeConnection('connection-1');
+    const connections = {
+      acquire: () => ({ connection, owner: 'forward' as const, release: vi.fn() }),
+    };
+    manager = new ForwardManager(connections as never, { warn: vi.fn() } as never);
+
+    const forward = await manager.start({ connId: connection.id, type: 'dynamic', bindPort: 0 });
+
+    expect(forward.bindPort).toBeGreaterThan(0);
+    // Something really listens there.
+    await new Promise<void>((resolve, reject) => {
+      const socket = net.connect(forward.bindPort, '127.0.0.1', () => {
+        socket.destroy();
+        resolve();
+      });
+      socket.on('error', reject);
+    });
+  });
+
+  it('keeps an independent forward when the terminal sessions on its connection end', async () => {
+    const { connection } = fakeConnection('connection-1');
+    const connections = {
+      acquire: () => ({ connection, owner: 'forward' as const, release: vi.fn() }),
+    };
+    manager = new ForwardManager(connections as never, { warn: vi.fn() } as never);
+
+    const proxy = await manager.start({ connId: connection.id, type: 'dynamic', bindPort: 0, independent: true });
+    const plain = await manager.start({ connId: connection.id, type: 'dynamic', bindPort: 0 });
+    manager.stopSessionForConnection(connection.id);
+
+    expect(manager.list().map((info) => info.id)).toEqual([proxy.id]);
+    expect(plain.lifecycle).toBe('session');
+  });
+
   it('promotes a running session forward when it is saved as a tunnel', async () => {
     const release = vi.fn();
     const { connection } = fakeConnection('connection-1');
@@ -104,6 +149,69 @@ describe('ForwardManager lifecycle', () => {
 
     manager.stop(first.info.id);
     expect(release).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ForwardManager clients on a failing transport', () => {
+  let manager: ForwardManager | undefined;
+
+  afterEach(() => manager?.stopAll());
+
+  type ChannelOpened = (err: Error | undefined, stream: PassThrough) => void;
+
+  /** A running -L forward over a client whose forwardOut the test supplies. */
+  async function startLocal(forwardOut: (...args: never[]) => void) {
+    const { connection } = fakeConnection('connection-1', { forwardOut });
+    const warn = vi.fn();
+    manager = new ForwardManager(
+      { acquire: () => ({ connection, owner: 'forward', release: vi.fn() }) } as never,
+      { warn } as never,
+    );
+    const port = await freePort();
+    await manager.start({
+      connId: connection.id,
+      type: 'local',
+      bindPort: port,
+      targetHost: 'db',
+      targetPort: 5432,
+    });
+    return { port, warn };
+  }
+
+  it('drops a local client when ssh2 reports the transport is not writable', async () => {
+    // A half-closed transport: ssh2 throws, and its close event has not fired yet.
+    const forwardOut = vi.fn(() => {
+      throw new Error('Not connected');
+    });
+    const { port, warn } = await startLocal(forwardOut);
+
+    await new Promise<void>((resolve) => {
+      net.connect(port, '127.0.0.1').once('close', () => resolve());
+    });
+
+    expect(forwardOut).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.objectContaining({ message: 'Not connected' }) }),
+      'forwardOut failed',
+    );
+  });
+
+  it('survives a local client resetting while its channel opens', async () => {
+    let opened: ChannelOpened | undefined;
+    const { port } = await startLocal((...args: never[]) => {
+      opened = args[4] as unknown as ChannelOpened;
+    });
+
+    const client = net.connect(port, '127.0.0.1');
+    await vi.waitFor(() => expect(opened).toBeDefined());
+    client.resetAndDestroy();
+    // Let the listener's side read the reset before the channel comes back.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // The channel opens for nobody and must not linger.
+    const channel = new PassThrough();
+    opened!(undefined, channel);
+    await vi.waitFor(() => expect(channel.destroyed).toBe(true));
   });
 });
 

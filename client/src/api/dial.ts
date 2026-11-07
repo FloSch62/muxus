@@ -44,9 +44,21 @@ export function dialConnection(
   );
 }
 
-/** {@link dialConnection} for a whole profile, such as a saved host's `{ target, profileId }`. */
-export function dialProfile(profile: SshProfile, handlers: DialHandlers): Promise<DialedConnection> {
+/**
+ * {@link dialConnection} for a whole profile, such as a saved host's
+ * `{ target, profileId }`. Aborting `signal` gives up on a dial still in
+ * progress, prompts included.
+ */
+export function dialProfile(
+  profile: SshProfile,
+  handlers: DialHandlers,
+  signal?: AbortSignal,
+): Promise<DialedConnection> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new Error('cancelled'));
+      return;
+    }
     const ws = new WebSocket(wsUrl('/ws/terminal'), wsProtocols());
     let settled = false;
     let lastStatus = '';
@@ -54,9 +66,12 @@ export function dialProfile(profile: SshProfile, handlers: DialHandlers): Promis
     const fail = (message: string) => {
       if (settled) return;
       settled = true;
+      signal?.removeEventListener('abort', onAbort);
       reject(new Error(message));
       closeTerminalWebSocket(ws);
     };
+    const onAbort = () => fail('cancelled');
+    signal?.addEventListener('abort', onAbort, { once: true });
 
     ws.onopen = () => {
       ws.send(
@@ -105,6 +120,7 @@ export function dialProfile(profile: SshProfile, handlers: DialHandlers): Promis
           break;
         case 'ready':
           settled = true;
+          signal?.removeEventListener('abort', onAbort);
           resolve({ connId: msg.connId, close: () => closeTerminalWebSocket(ws) });
           break;
         case 'exit':

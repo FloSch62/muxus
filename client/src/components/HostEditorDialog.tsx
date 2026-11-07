@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import Dialog from '@mui/material/Dialog';
 import AltRouteIcon from '@mui/icons-material/AltRoute';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
@@ -9,21 +9,26 @@ import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
 import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
-import type { SavedHostProfile } from '@muxus/shared';
+import { useQueryClient } from '@tanstack/react-query';
+import type { HostUpsertRequest, OpenSshMetadataPatch, SavedHostProfile } from '@muxus/shared';
 import {
   useSavedHostProfiles,
   useSessionLoggingPolicy,
   useSshConfig,
   useSshKeys,
 } from '../api/queries.js';
-import { useSaveSessionLoggingPolicy } from '../api/session-history.js';
+import { saveSessionLoggingPolicy, useSaveSessionLoggingPolicy } from '../api/session-history.js';
 import {
+  patchHostProfileMetadata,
+  saveHostProfile,
   useDeleteHostProfile,
   useSaveHostProfile,
   useUpdateHostProfileMetadata,
 } from '../api/profiles.js';
 import {
+  createHosts,
   fetchHostPreview,
+  patchSshMetadata,
   useDeleteHost,
   useUpdateSshMetadata,
   useUpsertHost,
@@ -37,6 +42,7 @@ import {
   sessionLoggingPolicyInput,
 } from '../session-logging-policy.js';
 import { usePrefsStore } from '../state/prefs.js';
+import { showToast } from '../state/toast.js';
 import { useUiStore, type HostEditorState } from '../state/ui.js';
 import { customTerminalInputModes, terminalInputModesPatch } from '../terminal/input-modes.js';
 import { pastePromptWaitFromDraft } from '../terminal/paste-prompt.js';
@@ -48,6 +54,7 @@ import {
   draftFromSavedSshProfile,
   draftProblem,
   draftToRequest,
+  draftJumpFallbacks,
   draftToSavedSshInput,
   identityAgentForDetection,
   environmentDiscoveryFromDraft,
@@ -65,6 +72,13 @@ import {
   nativeDraftFromProfile,
   type NativeHostDraft,
 } from './host-editor/native-draft.js';
+import {
+  describeDraftRange,
+  expandDraftRange,
+  rangeExample,
+  type DraftRange,
+} from './host-editor/name-range.js';
+import { saveHostRange, summarizeRangeSave, type RangeSaveSteps } from './host-editor/range-save.js';
 import { RouteSection } from './host-editor/RouteSection.js';
 import {
   blankDesktopDraft,
@@ -75,6 +89,8 @@ import type { ConnectionKind } from './host-editor/EditorShell.js';
 import { NativeHostEditorContent } from './NativeHostEditorContent.js';
 import { RemoteDesktopHostEditorContent } from './RemoteDesktopHostEditorContent.js';
 import { ManagementHostEditorContent } from './ManagementHostEditorContent.js';
+import { WebHostEditorContent } from './WebHostEditorContent.js';
+import { blankWebDraft, webDraftFromProfile, type WebHostDraft } from './host-editor/web-draft.js';
 import {
   blankManagementDraft,
   managementDraftFromProfile,
@@ -97,6 +113,9 @@ type SshEditorState = Extract<
   { mode: 'new' | 'duplicate' | 'edit' | 'duplicate-profile' | 'edit-profile' }
 >;
 
+/** Set while a range save runs, so nothing can close its dialog midway. */
+const rangeSaveRunning = { current: false };
+
 export function HostEditorDialog() {
   const state = useUiStore((s) => s.hostEditor);
   const setState = useUiStore((s) => s.setHostEditor);
@@ -105,7 +124,10 @@ export function HostEditorDialog() {
   return (
     <Dialog
       open
-      onClose={() => setState(false)}
+      onClose={() => {
+        // A range save keeps running after its dialog is gone; keep it open.
+        if (!rangeSaveRunning.current) setState(false);
+      }}
       maxWidth="md"
       fullWidth
       slotProps={{
@@ -132,6 +154,7 @@ function HostEditorBody({ state }: { state: OpenState }) {
   const [managementDraft, setManagementDraft] = useState<ManagementHostDraft>(() =>
     initialManagementDraft(state),
   );
+  const [webDraft, setWebDraft] = useState<WebHostDraft>(() => initialWebDraft(state));
   const lastIdentity = useRef(stateIdentity(state));
 
   // Re-seed only when the edited entry itself changes — a connection-type
@@ -144,6 +167,7 @@ function HostEditorBody({ state }: { state: OpenState }) {
     setNativeDraft(initialNativeDraft(state));
     setDesktopDraft(initialDesktopDraft(state));
     setManagementDraft(initialManagementDraft(state));
+    setWebDraft(initialWebDraft(state));
   }, [state]);
 
   const kind = editorKind(state);
@@ -155,6 +179,9 @@ function HostEditorBody({ state }: { state: OpenState }) {
         setDraft={setSshDraft}
       />
     );
+  }
+  if (kind === 'web') {
+    return <WebHostEditorContent state={state} draft={webDraft} setDraft={setWebDraft} />;
   }
   if (kind === 'gnmi' || kind === 'netconf') {
     return (
@@ -257,6 +284,20 @@ function initialDesktopDraft(state: OpenState): DesktopHostDraft {
   );
 }
 
+function initialWebDraft(state: OpenState): WebHostDraft {
+  if (
+    (state.mode === 'edit-profile' || state.mode === 'duplicate-profile') &&
+    state.entry.profile.kind === 'web'
+  ) {
+    return webDraftFromProfile(state.entry, state.mode === 'duplicate-profile');
+  }
+  return blankWebDraft(
+    state.mode === 'new' ? state.prefillTarget : undefined,
+    state.mode === 'new' ? state.group : undefined,
+    state.mode === 'new' ? state.prefillGateway : undefined,
+  );
+}
+
 function initialManagementDraft(state: OpenState): ManagementHostDraft {
   if (
     (state.mode === 'edit-profile' || state.mode === 'duplicate-profile') &&
@@ -350,73 +391,44 @@ function SshHostEditorContent({
   });
   const upsert = useUpsertHost((req) => {
     savedAlias.current = req.aliases[0] ?? '';
-    const highlights = draft.keywordHighlights;
-    updateMetadata.mutate({
-      alias: req.aliases[0] ?? '',
-      patch: {
-        displayName: draft.displayName.trim() || null,
-        group: draft.group.trim() || null,
-        color: draft.color ?? null,
-        terminalScheme: draft.terminalScheme ?? null,
-        terminalFontColor: draft.terminalFontColor ?? null,
-        terminalBackgroundColor: draft.terminalBackgroundColor ?? null,
-        commandButtonGroup: draft.commandButtonGroup ?? null,
-        pasteLineDelayMs: draft.pasteLineDelayMs ?? null,
-        pasteCharDelayMs: draft.pasteCharDelayMs ?? null,
-        pastePromptWait: pastePromptWaitFromDraft(draft.pastePromptWait),
-        antiIdle: antiIdleFromDraft(draft.antiIdle),
-        ...terminalInputModesPatch(draft.inputModes),
-        disableSftp: draft.disableSftp,
-        consoleCompatibility: draft.consoleCompatibility,
-        systemOpenSsh: draft.systemOpenSsh,
-        discoverEnvironments: environmentDiscoveryFromDraft(draft.discoverEnvironments),
-        keywordHighlights:
-          highlights.inheritGlobal &&
-          !highlights.profileId &&
-          highlights.rules.length === 0
-            ? null
-            : highlights,
-        loginSequence: loginSequenceFromDraft(draft.loginSequence),
-      },
-    });
+    updateMetadata.mutate({ alias: req.aliases[0] ?? '', patch: metadataPatch(draft) });
   });
   const saveProfile = useSaveHostProfile((profile) => {
     savedProfile.current = profile;
-    const highlights = draft.keywordHighlights;
-    updateProfileMetadata.mutate({
-      id: profile.id,
-      patch: {
-        displayName: draft.displayName.trim() || null,
-        group: draft.group.trim() || null,
-        color: draft.color ?? null,
-        terminalScheme: draft.terminalScheme ?? null,
-        terminalFontColor: draft.terminalFontColor ?? null,
-        terminalBackgroundColor: draft.terminalBackgroundColor ?? null,
-        commandButtonGroup: draft.commandButtonGroup ?? null,
-        pasteLineDelayMs: draft.pasteLineDelayMs ?? null,
-        pasteCharDelayMs: draft.pasteCharDelayMs ?? null,
-        pastePromptWait: pastePromptWaitFromDraft(draft.pastePromptWait),
-        antiIdle: antiIdleFromDraft(draft.antiIdle),
-        ...terminalInputModesPatch(draft.inputModes),
-        disableSftp: draft.disableSftp,
-        consoleCompatibility: draft.consoleCompatibility,
-        systemOpenSsh: draft.systemOpenSsh,
-        discoverEnvironments: environmentDiscoveryFromDraft(draft.discoverEnvironments),
-        keywordHighlights:
-          highlights.inheritGlobal &&
-          !highlights.profileId &&
-          highlights.rules.length === 0
-            ? null
-            : highlights,
-        loginSequence: loginSequenceFromDraft(draft.loginSequence),
-      },
-    });
+    updateProfileMetadata.mutate({ id: profile.id, patch: metadataPatch(draft) });
   });
   const deleteHost = useDeleteHost(close);
   const deleteProfile = useDeleteHostProfile(close);
 
+  // New and duplicated hosts may name a range, e.g. app[2-10], to create one
+  // host per number in a single save.
+  const creating = state.mode === 'new' || state.mode === 'duplicate' || state.mode === 'duplicate-profile';
+  const sourceName =
+    state.mode === 'duplicate'
+      ? state.entry.alias
+      : state.mode === 'duplicate-profile'
+        ? state.entry.name
+        : undefined;
+  const existingNames = useMemo(
+    () =>
+      new Set(
+        (draft.storage === 'openssh'
+          ? (config?.hosts ?? []).flatMap((host) => host.aliases)
+          : (savedData?.profiles ?? []).map((profile) => profile.name)
+        ).map((name) => name.toLowerCase()),
+      ),
+    [draft.storage, config, savedData],
+  );
+  const range = useMemo(
+    () => (creating ? expandDraftRange(draft, sourceName, existingNames) : undefined),
+    [creating, draft, sourceName, existingNames],
+  );
+  const [rangeProgress, setRangeProgress] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
   const loading = draft.sessionLogging.loaded ? null : 'Loading session logging settings…';
-  const problem = loading ? null : draftProblem(draft);
+  const problem = loading ? null : range ? rangeProblem(range) : draftProblem(draft);
+  const previewDraft = range?.drafts[0] ?? draft;
 
   useEffect(() => {
     if (!loggingPolicy || draft.sessionLogging.loaded) return;
@@ -435,9 +447,9 @@ function SshHostEditorContent({
 
   // Live preview of the exact block text, rendered by the server (debounced).
   useEffect(() => {
-    if (problem || draft.storage !== 'openssh') return;
+    if (problem || previewDraft.storage !== 'openssh') return;
     const timer = setTimeout(() => {
-      fetchHostPreview(draftToRequest(draft, previousAlias))
+      fetchHostPreview(draftToRequest(previewDraft, previousAlias))
         .then((text) => {
           setPreview(text);
           setPreviewError(null);
@@ -445,10 +457,40 @@ function SshHostEditorContent({
         .catch((err: unknown) => setPreviewError(err instanceof Error ? err.message : String(err)));
     }, 350);
     return () => clearTimeout(timer);
-  }, [draft, problem, previousAlias]);
+  }, [previewDraft, problem, previousAlias]);
 
   const set = (patch: Partial<HostDraft>) => setDraft((d) => ({ ...d, ...patch }));
+  const saveRange = async (drafts: HostDraft[], connect: boolean) => {
+    rangeSaveRunning.current = true;
+    let report;
+    try {
+      report = await saveHostRange(drafts, rangeSaveSteps, setRangeProgress);
+    } finally {
+      rangeSaveRunning.current = false;
+      setRangeProgress(null);
+      void queryClient.invalidateQueries({ queryKey: ['ssh-config'] });
+      void queryClient.invalidateQueries({ queryKey: ['saved-host-profiles'] });
+      void queryClient.invalidateQueries({ queryKey: ['session-logging-policy'] });
+    }
+    const summary = summarizeRangeSave(report);
+    if (report.created.length === 0) {
+      // Nothing changed: keep the dialog so the range can be fixed.
+      showToast('error', summary.message, summary.detail);
+      return;
+    }
+    // Close this editor only; the dialog could not be closed meanwhile.
+    if (useUiStore.getState().hostEditor === state) close();
+    showToast(summary.severity, summary.message, summary.detail);
+    if (!connect || summary.severity !== 'success') return;
+    if (report.firstProfile) connectSavedHost(report.firstProfile);
+    else if (drafts[0]) connectTarget(drafts[0].aliasText);
+  };
+
   const save = (connect: boolean) => {
+    if (range) {
+      void saveRange(range.drafts, connect);
+      return;
+    }
     connectAfter.current = connect;
     if (draft.storage === 'muxus') {
       saveProfile.mutate(
@@ -557,7 +599,8 @@ function SshHostEditorContent({
         updateMetadata.isPending ||
         saveProfile.isPending ||
         updateProfileMetadata.isPending ||
-        saveLoggingPolicy.isPending
+        saveLoggingPolicy.isPending ||
+        rangeProgress !== null
       }
       onDelete={
         state.mode === 'edit'
@@ -578,7 +621,9 @@ function SshHostEditorContent({
             : undefined
       }
       deletePending={deleteHost.isPending || deleteProfile.isPending}
-      onClose={close}
+      onClose={() => {
+        if (!rangeSaveRunning.current) close();
+      }}
       onSave={save}
     >
       {section === 'general' && (
@@ -587,6 +632,14 @@ function SshHostEditorContent({
           set={set}
           config={config}
           canChooseStorage={state.mode === 'new'}
+          nameHelper={
+            rangeProgress ??
+            (range && !range.problem
+              ? describeDraftRange(range.drafts)
+              : state.mode === 'duplicate' || state.mode === 'duplicate-profile'
+                ? `Tip: ${rangeExample(sourceName)} creates one copy per number`
+                : undefined)
+          }
         />
       )}
       {section === 'auth' && <AuthSection draft={draft} set={set} keys={keys} />}
@@ -640,3 +693,62 @@ function SshHostEditorContent({
     </EditorShell>
   );
 }
+
+/** The Muxus-owned metadata both storages save next to the connection. */
+function metadataPatch(draft: HostDraft): OpenSshMetadataPatch {
+  const highlights = draft.keywordHighlights;
+  return {
+    displayName: draft.displayName.trim() || null,
+    group: draft.group.trim() || null,
+    color: draft.color ?? null,
+    terminalScheme: draft.terminalScheme ?? null,
+    terminalFontColor: draft.terminalFontColor ?? null,
+    terminalBackgroundColor: draft.terminalBackgroundColor ?? null,
+    commandButtonGroup: draft.commandButtonGroup ?? null,
+    pasteLineDelayMs: draft.pasteLineDelayMs ?? null,
+    pasteCharDelayMs: draft.pasteCharDelayMs ?? null,
+    pastePromptWait: pastePromptWaitFromDraft(draft.pastePromptWait),
+    antiIdle: antiIdleFromDraft(draft.antiIdle),
+    ...terminalInputModesPatch(draft.inputModes),
+    disableSftp: draft.disableSftp,
+    consoleCompatibility: draft.consoleCompatibility,
+    systemOpenSsh: draft.systemOpenSsh,
+    discoverEnvironments: environmentDiscoveryFromDraft(draft.discoverEnvironments),
+    keywordHighlights:
+      highlights.inheritGlobal && !highlights.profileId && highlights.rules.length === 0
+        ? null
+        : highlights,
+    loginSequence: loginSequenceFromDraft(draft.loginSequence),
+    // ssh_config cannot hold fallback routes, so Muxus keeps them for the
+    // alias; a Muxus host has them in its profile instead.
+    ...(draft.storage === 'openssh' ? { proxyJumpFallbacks: draftJumpFallbacks(draft) ?? null } : {}),
+  };
+}
+
+/**
+ * What stops a range from being saved: the range itself, or any one of its
+ * hosts (a later name can be longer than the first, say).
+ */
+function rangeProblem(range: DraftRange): string | null {
+  if (range.problem) return range.problem;
+  for (const draft of range.drafts) {
+    const problem = draftProblem(draft);
+    if (problem) return range.drafts.length > 1 ? `${draft.aliasText}: ${problem}` : problem;
+  }
+  return null;
+}
+
+/** A range save makes the same requests, in the same order, as a single save. */
+const rangeSaveSteps: RangeSaveSteps = {
+  createConfigHosts: (requests: HostUpsertRequest[]) => createHosts(requests),
+  saveProfile: saveHostProfile,
+  saveSettings: async (draft, profile) => {
+    const alias = draft.aliasText;
+    if (profile) await patchHostProfileMetadata(profile.id, metadataPatch(draft));
+    else await patchSshMetadata(alias, metadataPatch(draft));
+    await saveSessionLoggingPolicy({
+      profileKey: profile ? `profile:${profile.id}` : `ssh:${alias}`,
+      policy: draft.sessionLogging.inherit ? null : sessionLoggingPolicyInput(draft.sessionLogging),
+    });
+  },
+};

@@ -71,7 +71,7 @@ try {
   const isDom = (s) => s.domRows > 0 && (s.canvases?.length ?? 0) === 0;
 
   const initial = await layers(page);
-  expect('default pref renders on DOM', isDom(initial), JSON.stringify(initial));
+  expect('default pref renders on WebGL', isWebgl(initial), JSON.stringify(initial));
 
   const toggle = async () => {
     await page.click('[aria-label="Settings"]');
@@ -92,6 +92,12 @@ try {
   };
 
   await toggle();
+  await page.waitForTimeout(600);
+  const off = await layers(page);
+  expect('toggle off → DOM renderer live', isDom(off), JSON.stringify(off));
+  await page.screenshot({ path: '/tmp/muxus-webgl-perf/toggle-off.png' });
+
+  await toggle();
   await page.waitForTimeout(1200); // lazy addon import
   const on = await layers(page);
   expect('toggle on → WebGL renderer live', isWebgl(on), JSON.stringify(on));
@@ -99,9 +105,8 @@ try {
 
   await toggle();
   await page.waitForTimeout(600);
-  const off = await layers(page);
-  expect('toggle off → DOM renderer live', isDom(off), JSON.stringify(off));
-  await page.screenshot({ path: '/tmp/muxus-webgl-perf/toggle-off.png' });
+  const offAgain = await layers(page);
+  expect('toggle off again → DOM renderer live', isDom(offAgain), JSON.stringify(offAgain));
 
   // The session itself must survive the round-trip; read the echo from the
   // DOM rows, which only exist while the DOM renderer is active.

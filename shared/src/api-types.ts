@@ -527,9 +527,10 @@ export type SavedHostSessionProfile =
   | import('./ws-protocol.js').RdpProfile
   | import('./ws-protocol.js').VncProfile
   | import('./ws-protocol.js').GnmiProfile
-  | import('./ws-protocol.js').NetconfProfile;
+  | import('./ws-protocol.js').NetconfProfile
+  | import('./ws-protocol.js').WebProfile;
 
-/** SSH/Telnet/serial/RDP/VNC/gNMI/NETCONF host stored natively by Muxus rather than in ssh_config. */
+/** SSH/Telnet/serial/RDP/VNC/gNMI/NETCONF/web host stored natively by Muxus rather than in ssh_config. */
 export interface SavedHostProfile {
   id: string;
   kind: SavedHostSessionProfile['kind'];
@@ -873,6 +874,11 @@ export interface OpenSshProfileMetadata {
   discoverEnvironments?: boolean;
   /** The host's own login sequence; absent inherits the folder's. */
   loginSequence?: LoginSequence;
+  /**
+   * Jump routes tried in order when the ProxyJump in ssh_config fails, each a
+   * whole chain. Kept by Muxus: ssh_config has no way to say it.
+   */
+  proxyJumpFallbacks?: string[][];
   lastConnectedAt?: string;
   connectCount: number;
 }
@@ -905,6 +911,8 @@ export interface OpenSshMetadataPatch {
   discoverEnvironments?: boolean | null;
   /** Null goes back to the folder's sequence. */
   loginSequence?: LoginSequence | null;
+  /** Null or empty removes the fallback jump routes. */
+  proxyJumpFallbacks?: string[][] | null;
 }
 
 /**
@@ -1089,6 +1097,15 @@ export interface HostBulkUpdateResponse {
   updated: number;
 }
 
+/** Body of POST /api/ssh/config/hosts/batch: new Host blocks, written in one go. */
+export interface HostBatchCreateRequest {
+  hosts: HostUpsertRequest[];
+}
+
+export interface HostBatchCreateResponse {
+  created: number;
+}
+
 /** Body of DELETE /api/ssh/config/hosts: the Host blocks of many aliases. */
 export interface HostBulkDeleteRequest {
   aliases: string[];
@@ -1194,6 +1211,11 @@ export interface ForwardRequest {
   targetPort?: number;
   /** Saved tunnel this forward realizes (running-state matching in the UI). */
   tunnelId?: string;
+  /**
+   * Keep running when the terminal sessions on its connection close, until
+   * stopped (a web page's proxy, which its window stops).
+   */
+  independent?: boolean;
 }
 
 export interface ForwardInfo {
@@ -1395,4 +1417,53 @@ export interface LinkHandlerRegistration {
    * installation), so its settings were opened for the user to pick Muxus.
    */
   openedSystemSettings?: boolean;
+}
+
+/** Largest script Muxus stores or runs, in characters. */
+export const MAX_SCRIPT_BYTES = 1024 * 1024;
+/** Longest per-host time limit for a script run: a week. */
+export const MAX_SCRIPT_TIMEOUT_SECONDS = 7 * 24 * 3600;
+
+/** A script kept in Muxus to run on hosts. */
+export interface SavedScript {
+  id: string;
+  name: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SavedScriptInput {
+  /** Omit to create; supply to replace. */
+  id?: string;
+  name: string;
+  body: string;
+}
+
+export interface SavedScriptsResponse {
+  scripts: SavedScript[];
+}
+
+/** Run a script on one live SSH connection (POST /api/script-runs). */
+export interface ScriptRunRequest {
+  connId: string;
+  body: string;
+  /** Stop the run after this long; absent or 0 lets it run. */
+  timeoutSeconds?: number;
+}
+
+export type ScriptRunState = 'running' | 'completed' | 'failed' | 'cancelled' | 'timed-out';
+
+/** A run's progress (GET /api/script-runs/:id?since=<offset>). */
+export interface ScriptRunStatus {
+  id: string;
+  state: ScriptRunState;
+  exitCode?: number;
+  /** Output (stdout and stderr, interleaved) from `since` on. */
+  output: string;
+  /** Pass back as `since` to get only what came after. */
+  offset: number;
+  /** The run printed more than Muxus keeps; the start was dropped. */
+  truncated: boolean;
+  error?: string;
 }

@@ -7,6 +7,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DriveFileMoveOutlinedIcon from '@mui/icons-material/DriveFileMoveOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 import {
   loadFolderDialog,
   loadHostBulkEditDialog,
@@ -23,12 +24,15 @@ export function SelectionBar({
   onEdit,
   onMove,
   onDelete,
+  onRunScript,
   onClear,
 }: {
   count: number;
   onEdit: () => void;
   onMove: () => void;
   onDelete: () => void;
+  /** Open Scripts with the selected SSH hosts. */
+  onRunScript: () => void;
   onClear: () => void;
 }) {
   const preload = () => void (count === 1 ? loadHostEditorDialog() : loadHostBulkEditDialog());
@@ -61,6 +65,15 @@ export function SelectionBar({
           onClick={onMove}
         >
           <DriveFileMoveOutlinedIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+      <Tooltip title="Run script…">
+        <IconButton
+          size="small"
+          aria-label={`Run a script on ${count === 1 ? 'the selected host' : `${count} selected hosts`}`}
+          onClick={onRunScript}
+        >
+          <TerminalOutlinedIcon fontSize="small" />
         </IconButton>
       </Tooltip>
       <Tooltip title="Delete">

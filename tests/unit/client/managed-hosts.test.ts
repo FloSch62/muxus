@@ -160,7 +160,7 @@ describe('managed host identity and clipboard actions', () => {
     ).toEqual(ssh);
     expect(
       editableManagedHostForProfile(
-        { ...telnet.entry.profile, profileId: telnet.entry.id },
+        { ...(telnet.entry.profile as import('@muxus/shared').TelnetProfile), profileId: telnet.entry.id },
         [ssh.entry],
         [nativeSsh.entry, telnet.entry],
       ),
@@ -302,6 +302,24 @@ describe('managed host identity and clipboard actions', () => {
     expect(hostDetailLines(routed, [bastion])[0]).toBe(
       'via Bastion EU → edge → Deleted Muxus host',
     );
+  });
+
+  it('folds fallback routes into the one route line of the hover card', () => {
+    const routed = {
+      ...nativeSsh,
+      entry: {
+        ...nativeSsh.entry,
+        profile: {
+          ...nativeSsh.entry.profile,
+          proxyJump: ['edge'],
+          proxyJumpFallbacks: [['backup'], ['dr-1', 'dr-2']],
+        },
+      },
+    };
+
+    const lines = hostDetailLines(routed);
+    expect(lines[0]).toBe('via edge (then backup, dr-1 → dr-2)');
+    expect(lines.filter((line) => line.includes('backup'))).toHaveLength(1);
   });
 
   it('offers SFTP only for SSH hosts where it is not explicitly disabled', () => {

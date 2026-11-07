@@ -86,6 +86,8 @@ export interface HostDraft {
   forwardX11: ForwardX11Mode;
   routeMode: 'direct' | 'jump' | 'command';
   proxyJump: string[];
+  /** Jump routes tried in order when `proxyJump` fails, each a whole chain. */
+  proxyJumpFallbacks: string[][];
   proxyCommand: string;
   forwards: ConfigForward[];
   remoteCommandMode: RemoteCommandMode;
@@ -145,6 +147,7 @@ export function blankDraft(
     forwardX11: 'inherit',
     routeMode: 'direct',
     proxyJump: [],
+    proxyJumpFallbacks: [],
     proxyCommand: '',
     forwards: [],
     remoteCommandMode: 'inherit',
@@ -206,6 +209,7 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
         ? 'jump'
         : 'direct',
     proxyJump: o.proxyJump ?? [],
+    proxyJumpFallbacks: entry.metadata?.proxyJumpFallbacks ?? [],
     proxyCommand: o.proxyCommand ?? '',
     forwards: o.forwards ?? [],
     remoteCommandMode: remoteCommand.mode,
@@ -276,6 +280,7 @@ export function draftFromSavedSshProfile(
         ? 'jump'
         : 'direct',
     proxyJump: profile.proxyJump ?? [],
+    proxyJumpFallbacks: profile.proxyJumpFallbacks ?? [],
     proxyCommand: profile.proxyCommand ?? '',
     forwards: profile.forwards ?? [],
     remoteCommandMode: remoteCommand.mode,
@@ -290,6 +295,13 @@ export function draftFromSavedSshProfile(
     sessionLogging: blankHostSessionLoggingDraft(),
     loginSequence: loginSequenceDraft(saved.metadata.loginSequence),
   };
+}
+
+/** The fallback routes to save: only a jump route has any. */
+export function draftJumpFallbacks(draft: HostDraft): string[][] | undefined {
+  return draft.routeMode === 'jump' && draft.proxyJumpFallbacks.length > 0
+    ? draft.proxyJumpFallbacks
+    : undefined;
 }
 
 export function draftAliases(draft: HostDraft): string[] {
@@ -328,6 +340,15 @@ export function draftProblem(draft: HostDraft): string | null {
     draft.proxyJump.some((hop) => savedHostHopId(hop) !== undefined)
   ) {
     return 'Jump hosts saved in Muxus need Muxus app data storage; ssh_config cannot reach them.';
+  }
+  if (draft.routeMode === 'jump' && draft.proxyJumpFallbacks.length > 0) {
+    if (draft.proxyJump.length === 0) return 'Add a jump host before adding fallback routes.';
+    if (
+      draft.storage === 'openssh' &&
+      draft.proxyJumpFallbacks.some((route) => route.some((hop) => savedHostHopId(hop) !== undefined))
+    ) {
+      return 'Fallback routes through hosts saved in Muxus need Muxus app data storage.';
+    }
   }
   if (draft.remoteCommandMode === 'command' && !draft.remoteCommand.trim()) {
     return 'Enter a startup command or choose a login shell.';
@@ -385,6 +406,7 @@ export function draftToSavedSshInput(
         draft.routeMode === 'jump' && draft.proxyJump.length > 0
           ? draft.proxyJump
           : undefined,
+      proxyJumpFallbacks: draftJumpFallbacks(draft),
       proxyCommand:
         draft.routeMode === 'command' ? text(draft.proxyCommand) : undefined,
       forwards: draft.forwards.length > 0 ? draft.forwards : undefined,

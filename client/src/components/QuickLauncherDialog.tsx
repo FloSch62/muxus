@@ -142,6 +142,7 @@ type LauncherAction =
   | 'workspaces'
   | 'history'
   | 'commands'
+  | 'scripts'
   | 'tunnels'
   | 'environments'
   | 'sftp'
@@ -431,6 +432,9 @@ export function QuickLauncherDialog() {
         break;
       case 'commands':
         ui.setCommandButtonsOpen(true);
+        break;
+      case 'scripts':
+        ui.setScriptsDialog({});
         break;
       case 'tunnels':
         ui.setForwardingOpen(true);
@@ -1168,6 +1172,12 @@ function buildActionResults({
       'buttons',
       'snippets',
     ]),
+    actionResult('scripts', 'Run a script on hosts', 'All at once, in batches or one by one, with each host\'s output', [
+      'script',
+      'batch',
+      'bulk',
+      'many hosts',
+    ]),
     actionResult('tunnels', 'Open port forwarding', 'Manage saved tunnels and live forwards', [
       'ssh',
       'forward',
@@ -1315,6 +1325,7 @@ function ResultIcon({ result }: { result: LauncherResult }) {
   if (result.action === 'workspaces') return <WorkspacesOutlinedIcon {...props} />;
   if (result.action === 'history') return <HistoryOutlinedIcon {...props} />;
   if (result.action === 'commands') return <BoltOutlinedIcon {...props} />;
+  if (result.action === 'scripts') return <TerminalOutlinedIcon {...props} />;
   if (result.action === 'tunnels') return <SwapHorizOutlinedIcon {...props} />;
   if (result.action === 'sftp') return <FolderOutlinedIcon {...props} />;
   if (result.action === 'new-host') return <DnsOutlinedIcon {...props} />;

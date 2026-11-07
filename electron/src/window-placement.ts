@@ -10,6 +10,16 @@ export interface Size {
   height: number;
 }
 
+/** Left inset of the macOS traffic lights. */
+const TRAFFIC_LIGHT_X = 16;
+/** Height of the native button frame the macOS traffic lights are drawn in. */
+const TRAFFIC_LIGHT_HEIGHT = 16;
+
+/** macOS traffic lights, vertically centered in a titlebar of this on-screen height. */
+export function trafficLightPosition(titleBarHeight: number): { x: number; y: number } {
+  return { x: TRAFFIC_LIGHT_X, y: Math.round((titleBarHeight - TRAFFIC_LIGHT_HEIGHT) / 2) };
+}
+
 /** How a window was last left: its restored (not maximized) size. */
 export interface WindowPlacement extends Size {
   maximized?: boolean;

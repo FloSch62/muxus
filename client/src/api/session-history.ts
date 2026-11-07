@@ -16,6 +16,22 @@ export interface SaveSessionLoggingPolicyRequest {
   policy: SessionLoggingPolicyInput | null;
 }
 
+/** Save a host's logging override, or remove it when `policy` is null. */
+export async function saveSessionLoggingPolicy(
+  request: SaveSessionLoggingPolicyRequest,
+): Promise<SessionLoggingPolicy | undefined> {
+  const url = '/api/session-history/policy?profileKey=' + encodeURIComponent(request.profileKey);
+  if (request.policy === null) {
+    await apiFetch<{ deleted: boolean }>(url, { method: 'DELETE' });
+    return undefined;
+  }
+  return apiFetch<SessionLoggingPolicy>(url, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(request.policy),
+  });
+}
+
 export function useSaveSessionLoggingPolicy(
   onSuccess?: (
     policy: SessionLoggingPolicy | undefined,
@@ -24,20 +40,7 @@ export function useSaveSessionLoggingPolicy(
 ) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (request: SaveSessionLoggingPolicyRequest) => {
-      const url =
-        '/api/session-history/policy?profileKey=' +
-        encodeURIComponent(request.profileKey);
-      if (request.policy === null) {
-        await apiFetch<{ deleted: boolean }>(url, { method: 'DELETE' });
-        return undefined;
-      }
-      return apiFetch<SessionLoggingPolicy>(url, {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(request.policy),
-      });
-    },
+    mutationFn: saveSessionLoggingPolicy,
     onSuccess: (policy, request) => {
       void queryClient.invalidateQueries({
         queryKey:

@@ -1,6 +1,7 @@
 import net from 'node:net';
 import { nanoid } from 'nanoid';
 import type { FastifyBaseLogger } from 'fastify';
+import type { ClientChannel } from 'ssh2';
 import type { ForwardInfo, ForwardRequest, SshProfile, TunnelRecord } from '@muxus/shared';
 import { DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS } from '@muxus/shared/ws-protocol';
 import type {
@@ -92,7 +93,7 @@ export class ForwardManager {
       targetHost: req.targetHost,
       targetPort: req.targetPort,
       origin,
-      lifecycle: req.tunnelId ? 'independent' : 'session',
+      lifecycle: req.tunnelId || req.independent ? 'independent' : 'session',
       status: 'active',
       tunnelId: req.tunnelId,
     };
@@ -384,18 +385,17 @@ export class ForwardManager {
   /** -L: listen locally, open a direct-tcpip channel per client. */
   private async startLocal(conn: ManagedConnection, info: ForwardInfo): Promise<() => void> {
     const server = net.createServer((socket) => {
-      conn.client.forwardOut(socket.localAddress ?? '127.0.0.1', socket.localPort ?? 0, info.targetHost!, info.targetPort!, (err, stream) => {
-        if (err) {
+      // The client can reset before its channel is open.
+      socket.on('error', () => socket.destroy());
+      openChannel(conn, socket.localAddress ?? '127.0.0.1', socket.localPort ?? 0, info.targetHost!, info.targetPort!).then(
+        (stream) => carry(socket, stream),
+        (err: unknown) => {
           this.log.warn({ err, forward: info.id }, 'forwardOut failed');
           socket.destroy();
-          return;
-        }
-        socket.pipe(stream).pipe(socket);
-        stream.on('error', () => socket.destroy());
-        socket.on('error', () => stream.destroy());
-      });
+        },
+      );
     });
-    await listen(server, info.bindPort);
+    info.bindPort = await listen(server, info.bindPort);
     return () => server.close();
   }
 
@@ -441,19 +441,18 @@ export class ForwardManager {
   private async startDynamic(conn: ManagedConnection, info: ForwardInfo): Promise<() => void> {
     const server = net.createServer((socket) => {
       socks5Connect(socket, (host, port, done) => {
-        conn.client.forwardOut(socket.remoteAddress ?? '127.0.0.1', socket.remotePort ?? 0, host, port, (err, stream) => {
-          if (err) {
-            done(false);
-            return;
-          }
-          done(true);
-          socket.pipe(stream).pipe(socket);
-          stream.on('error', () => socket.destroy());
-          socket.on('error', () => stream.destroy());
-        });
+        openChannel(conn, socket.remoteAddress ?? '127.0.0.1', socket.remotePort ?? 0, host, port).then(
+          (stream) => {
+            done(true);
+            carry(socket, stream);
+          },
+          () => done(false),
+        );
       });
     });
-    await listen(server, info.bindPort);
+    // Port 0 lets the system pick a free one (a web host's private proxy);
+    // the forward then reports the port it got.
+    info.bindPort = await listen(server, info.bindPort);
     return () => server.close();
   }
 }
@@ -461,6 +460,35 @@ export class ForwardManager {
 function discard(active: ActiveForward): void {
   active.cancelReconnect?.();
   active.unbind();
+}
+
+/**
+ * A direct-tcpip channel for a local client. ssh2 throws from forwardOut once
+ * its transport stops being writable, which can be well before the connection
+ * reports its close, and a client accepted earlier can still ask after that.
+ * These requests run in socket callbacks, where the throw would be uncaught.
+ */
+function openChannel(
+  conn: ManagedConnection,
+  srcAddr: string,
+  srcPort: number,
+  host: string,
+  port: number,
+): Promise<ClientChannel> {
+  return new Promise((resolve, reject) => {
+    conn.client.forwardOut(srcAddr, srcPort, host, port, (err, stream) => (err ? reject(err) : resolve(stream)));
+  });
+}
+
+/** Join a local client to its channel, unless the client left while it opened. */
+function carry(socket: net.Socket, stream: ClientChannel): void {
+  if (socket.destroyed) {
+    stream.destroy();
+    return;
+  }
+  socket.pipe(stream).pipe(socket);
+  stream.on('error', () => socket.destroy());
+  socket.on('error', () => stream.destroy());
 }
 
 /** The dial a saved tunnel's start makes (see the client's dialConnection). */
@@ -489,10 +517,14 @@ function configForwardKey(
   ]);
 }
 
-function listen(server: net.Server, port: number): Promise<void> {
+/** Listen on 127.0.0.1 and resolve with the bound port (the picked one for port 0). */
+function listen(server: net.Server, port: number): Promise<number> {
   return new Promise((resolve, reject) => {
     server.once('error', (err) => reject(new HttpProblem(400, `could not listen on 127.0.0.1:${port}: ${err.message}`)));
-    server.listen(port, '127.0.0.1', () => resolve());
+    server.listen(port, '127.0.0.1', () => {
+      const address = server.address();
+      resolve(typeof address === 'object' && address ? address.port : port);
+    });
   });
 }
 

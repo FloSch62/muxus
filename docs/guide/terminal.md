@@ -69,8 +69,8 @@ Dark**.
 ### Custom colour schemes
 
 **Settings → Appearance → Custom color schemes** holds schemes of your own. **New** starts
-one as a copy of any built-in or custom scheme; **Import** reads a colour scheme file in
-one of three formats:
+one as a copy of any built-in or custom scheme; **Import** reads one or more colour scheme
+files, in any of three formats:
 
 - a **Windows Terminal** colour scheme, as a single JSON object, a list of them, or a
   `settings.json` with a `schemes` list;
@@ -78,7 +78,9 @@ one of three formats:
 - a scheme file **exported** from Muxus.
 
 Most published themes ship in at least one of these, so a palette such as Catppuccin
-Frappé is one import away. The editor shows the scheme on a sample of terminal output
+Frappé is one import away. Select several files to import a whole collection: a file that
+can't be read doesn't stop the others, and a scheme whose colours you already have is
+skipped. You can keep up to 100 custom schemes. The editor shows the scheme on a sample of terminal output
 and edits the background, text, cursor and selection colours and the sixteen ANSI
 colours; changes reach open terminals as you make them.
 

@@ -85,7 +85,13 @@ import { initMainLog, installCrashCapture, mainLog, mainLogPath } from './main-l
 import { readLocalMobaXtermSessions } from './mobaxterm.js';
 import { workspaceOwnershipUpdate } from './workspace-window-state.js';
 import { pointInsideAnyWindow } from './tab-detach.js';
-import { parseWindowPlacement, windowBounds, type WindowPlacement } from './window-placement.js';
+import { closeAllWebWindows, handleWebCertificateError, registerWebWindows } from './web-windows.js';
+import {
+  parseWindowPlacement,
+  trafficLightPosition,
+  windowBounds,
+  type WindowPlacement,
+} from './window-placement.js';
 import { checkStoreUpdate, isStoreDistribution, storePageUrl, type DistributionMetadata } from './store-updates.js';
 import { DesktopUpdater, updateDisabledReason } from './updater.js';
 import { StoreUpdater } from './store-updater.js';
@@ -416,7 +422,7 @@ function appWindowOptions(): BrowserWindowConstructorOptions {
     backgroundColor: overlayColors().color,
     icon: windowIcon(),
     titleBarStyle: 'hidden',
-    trafficLightPosition: { x: 16, y: 18 },
+    trafficLightPosition: trafficLightPosition(TITLEBAR_HEIGHT),
     titleBarOverlay: isMac ? true : { ...overlayColors(), height: TITLEBAR_HEIGHT },
     webPreferences: {
       preload: path.join(moduleDir, 'preload.js'),
@@ -502,8 +508,12 @@ function createWindow(
     activeWorkspaceByWebContents.delete(webContentsId);
     if (primaryWindow === win) primaryWindow = undefined;
     if (lastFocusedWindow === win) lastFocusedWindow = undefined;
-    // Settings outliving every app window would keep Muxus running headless.
-    if (appWindows().length === 0) settingsWindow?.close();
+    // Settings or web pages outliving every app window would keep Muxus
+    // running headless.
+    if (appWindows().length === 0) {
+      settingsWindow?.close();
+      closeAllWebWindows();
+    }
   });
   confineToAppOrigin(win, new URL(url).origin);
   // Cmd+W is the macOS "close window" accelerator: hand it to the renderer so
@@ -618,23 +628,25 @@ interface TitleBarOverlayOptions {
 
 const overlayOptionsByWindow = new WeakMap<BrowserWindow, TitleBarOverlayOptions>();
 
-/** Repaint the native overlay, sized to the window's current scale. */
+/**
+ * Fit the native window controls to the titlebar at the window's current scale:
+ * repaint the overlay, or on macOS, which has none, recenter the traffic lights.
+ */
 function applyTitleBarOverlay(win: BrowserWindow, options: TitleBarOverlayOptions): void {
-  if (isMac) return;
   overlayOptionsByWindow.set(win, options);
   try {
-    win.setTitleBarOverlay({
-      color: options.color,
-      symbolColor: options.symbolColor,
-      height: Math.round(options.height * win.webContents.getZoomFactor()),
-    });
+    const height = Math.round(options.height * win.webContents.getZoomFactor());
+    if (isMac) {
+      win.setWindowButtonPosition(trafficLightPosition(height));
+    } else {
+      win.setTitleBarOverlay({ color: options.color, symbolColor: options.symbolColor, height });
+    }
   } catch {
     /* overlay not supported in this environment */
   }
 }
 
 ipcMain.on('muxus:set-titlebar-overlay', (event, options: unknown) => {
-  if (isMac) return;
   const win = senderWindow(event);
   if (!win) return;
   const { color, symbolColor, height } = (options ?? {}) as {
@@ -1020,6 +1032,29 @@ function systemLinkHandlers(): LinuxLinkHandlers | SystemLinkHandlers | null {
  * in-app route travels: a path that cannot reach another origin.
  */
 const KUBUS_ROUTE = /^\/(?!\/)[A-Za-z0-9/._~%|=&?:@+-]*$/;
+
+// Saved web hosts open in their own browser windows (see web-windows.ts).
+registerWebWindows(
+  isManagedWindowSender,
+  () => ({ icon: windowIcon() }),
+  (forwardId) => {
+    const running = server;
+    if (!running) return;
+    void running.app
+      .inject({
+        method: 'DELETE',
+        url: `/api/forwards/${encodeURIComponent(forwardId)}`,
+        headers: { authorization: `Bearer ${running.token}` },
+      })
+      .catch(() => undefined);
+  },
+);
+app.on('certificate-error', (event, contents, url, error, certificate, callback) => {
+  // Only web host windows may accept a certificate; app windows keep the refusal.
+  if (handleWebCertificateError(contents, url, error, certificate.fingerprint, callback)) {
+    event.preventDefault();
+  }
+});
 
 ipcMain.handle('muxus:kubus:available', async (event): Promise<boolean> => {
   if (!isManagedWindowSender(event)) return false;

@@ -76,6 +76,7 @@ import {
 import { confirmAction } from '../state/dialogs.js';
 import { usePrefsStore } from '../state/prefs.js';
 import { useTabsStore } from '../state/tabs.js';
+import { openScriptsFor } from '../scripts/script-jobs.js';
 import { useUiStore } from '../state/ui.js';
 import { clickOpensRow, type HostActivation } from './sidebar/row-clicks.js';
 import { treeLabelSx, treeRowSx } from './sidebar/tree-row-style.js';
@@ -813,6 +814,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
           onEdit={() => editHosts(selectedHosts)}
           onMove={() => moveHosts(selectedHosts)}
           onDelete={() => requestDeleteHosts(selectedHosts)}
+          onRunScript={() => openScriptsFor(selectedHosts, 'The selection')}
           onClear={clearSelection}
         />
       ) : null}
@@ -838,6 +840,11 @@ export const SessionSidebar = memo(function SessionSidebar() {
               onEditSelected: () => editHosts(selectedHosts),
               onMoveSelected: () => moveHosts(selectedHosts),
               onDeleteSelected: () => requestDeleteHosts(selectedHosts),
+              onRunScript: (host) => {
+                const inSelection = selection.has(managedHostKey(host)) && selectedHosts.length > 1;
+                if (inSelection) openScriptsFor(selectedHosts, 'The selection');
+                else openScriptsFor([host], 'This host');
+              },
               onMoveToFolder: (host) => moveHosts([host]),
             }}
             sessions={{
@@ -853,6 +860,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
               onEdit: (node) => setFolderDialog({ mode: 'edit', path: node.path }),
               onLaunch: launchNode,
               onEditHosts: (node) => editHosts(collectHosts(node)),
+              onRunScript: (node) => openScriptsFor(collectHosts(node), `“${node.label}”`),
               onCollapseAll: collapseSubtree,
               onDelete: deleteFolder,
               onMove: (node, delta) => moveFolderByKey(node.key, delta),

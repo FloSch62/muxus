@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MAX_JUMP_FALLBACKS, MAX_JUMP_HOPS } from '@muxus/shared/ws-protocol';
 import {
   ANTI_IDLE_MAX_INTERVAL_SECONDS,
   ANTI_IDLE_MIN_INTERVAL_SECONDS,
@@ -150,5 +151,11 @@ export const metadataPatchSchema = z
     // Null follows the global setting.
     discoverEnvironments: z.boolean().nullable().optional(),
     loginSequence: loginSequenceSchema.nullable().optional(),
+    // Null or empty removes them; each route is a whole ProxyJump chain.
+    proxyJumpFallbacks: z
+      .array(z.array(z.string().trim().min(1).max(500)).min(1).max(MAX_JUMP_HOPS))
+      .max(MAX_JUMP_FALLBACKS)
+      .nullable()
+      .optional(),
   })
   .refine((patch) => Object.keys(patch).length > 0, 'at least one metadata field is required');

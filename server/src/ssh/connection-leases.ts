@@ -7,7 +7,8 @@ export type ConnectionLeaseOwner =
   | 'desktop'
   | 'management'
   | 'stats'
-  | 'environments';
+  | 'environments'
+  | 'script';
 
 export interface LeaseableConnection {
   readonly id: string;

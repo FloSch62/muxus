@@ -8,6 +8,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DriveFileMoveOutlinedIcon from '@mui/icons-material/DriveFileMoveOutlined';
 import EditNoteOutlinedIcon from '@mui/icons-material/EditNoteOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
@@ -26,6 +27,7 @@ import {
 } from '../../environments.js';
 import {
   managedHostUsesSystemOpenSsh,
+  SYSTEM_OPENSSH_UNAVAILABLE,
   SYSTEM_OPENSSH_WINDOWS_UNAVAILABLE,
 } from '../../system-openssh.js';
 import { useSavedHostProfiles } from '../../api/queries.js';
@@ -71,6 +73,7 @@ export function HostContextMenu({
   onMoveToFolder,
   selectedCount,
   onEditSelected,
+  onRunScript,
   onMoveSelected,
   onDeleteSelected,
 }: {
@@ -86,6 +89,8 @@ export function HostContextMenu({
   onEditSelected: () => void;
   onMoveSelected: () => void;
   onDeleteSelected: () => void;
+  /** Open Scripts for this host, or for the selection it is part of. */
+  onRunScript: (host: ManagedHost) => void;
 }) {
   const platform = useAppInfo().data?.platform;
   const setHostEditor = useUiStore((s) => s.setHostEditor);
@@ -142,6 +147,20 @@ export function HostContextMenu({
         </ListItemIcon>
         Open in new window
       </MenuItem>
+      {menu && isScriptHost(menu.host) ? (
+        <MenuItem disabled={systemHost && !forSelection} onClick={run(onRunScript)}>
+          <ListItemIcon>
+            <TerminalOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          {forSelection ? (
+            `Run script on ${selectedCount} selected hosts…`
+          ) : systemHost ? (
+            <ListItemText primary="Run script…" secondary={SYSTEM_OPENSSH_UNAVAILABLE} />
+          ) : (
+            'Run script…'
+          )}
+        </MenuItem>
+      ) : null}
       {menu && managedHostSupportsSftp(menu.host) ? (
         <MenuItem
           onMouseEnter={() => {
@@ -319,5 +338,10 @@ export function HostContextMenu({
 }
 
 function isSshHost(host: ManagedHost): boolean {
+  return host.kind === 'ssh' || host.entry.profile.kind === 'ssh';
+}
+
+/** Scripts run over SSH: config hosts and SSH hosts saved in Muxus. */
+function isScriptHost(host: ManagedHost): boolean {
   return host.kind === 'ssh' || host.entry.profile.kind === 'ssh';
 }
