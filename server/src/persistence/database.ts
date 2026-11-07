@@ -573,10 +573,15 @@ const MIGRATIONS = [
       ) STRICT;
     `,
   },
+  {
+    version: 36,
+    name: 'web-hosts',
+    run: addWebHosts,
+  },
 ] as const;
 
 /** Kinds stored as Muxus-owned saved hosts (everything but OpenSSH metadata rows). */
-const SAVED_HOST_KINDS = ['ssh', 'serial', 'telnet', 'rdp', 'vnc', 'gnmi', 'netconf'] as const;
+const SAVED_HOST_KINDS = ['ssh', 'serial', 'telnet', 'rdp', 'vnc', 'gnmi', 'netconf', 'web'] as const;
 const SAVED_HOST_KINDS_SQL = `(${SAVED_HOST_KINDS.map((kind) => `'${kind}'`).join(', ')})`;
 
 /**
@@ -634,6 +639,21 @@ function addManagementHosts(db: DatabaseSync): void {
     ) STRICT;
     CREATE INDEX management_requests_scope ON management_requests(protocol, profile_id);
   `);
+}
+
+/** Web pages join the saved host kinds. */
+function addWebHosts(db: DatabaseSync): void {
+  const table = db
+    .prepare(`SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'connection_profiles'`)
+    .get();
+  // A database that already admits them (restored from a newer copy) needs no rebuild.
+  if (String(table?.sql ?? '').includes(`'netconf', 'web')`)) return;
+  rebuildConnectionProfileKinds(
+    db,
+    `kind IN ('openssh', 'ssh', 'local', 'serial', 'telnet', 'rdp', 'vnc', 'gnmi', 'netconf')`,
+    `kind IN ('openssh', 'ssh', 'local', 'serial', 'telnet', 'rdp', 'vnc', 'gnmi', 'netconf', 'web')`,
+    'web hosts',
+  );
 }
 
 /**

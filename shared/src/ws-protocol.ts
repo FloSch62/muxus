@@ -315,6 +315,26 @@ export const netconfProfileSchema = z.object({
   sshGatewayFallbacks: sshGatewayFallbacksSchema.optional(),
 });
 
+/**
+ * A web page, opened in a Muxus browser window. With an SSH gateway the
+ * window's traffic goes through a SOCKS proxy on that gateway, so names and
+ * addresses only the gateway can reach work, and HTTPS stays end to end.
+ * Saved hosts only: it has no session of its own.
+ */
+export const webProfileSchema = z.object({
+  kind: z.literal('web'),
+  /** Stable Muxus database profile when this is a saved host. */
+  profileId: z.string().min(1).max(200).optional(),
+  url: z
+    .string()
+    .trim()
+    .min(1)
+    .max(4096)
+    .refine((value) => /^https?:\/\/[^\s/]+/i.test(value), 'Enter an http:// or https:// address'),
+  sshGateway: sshGatewaySchema.optional(),
+});
+export type WebProfile = z.infer<typeof webProfileSchema>;
+
 /** Sessions rendered by xterm.js over /ws/terminal. */
 export const terminalProfileSchema = z.discriminatedUnion('kind', [
   localProfileSchema,

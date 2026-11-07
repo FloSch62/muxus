@@ -1160,7 +1160,8 @@ function validateConnections(
               host.profile.kind === 'rdp' ||
               host.profile.kind === 'vnc' ||
               host.profile.kind === 'gnmi' ||
-              host.profile.kind === 'netconf'))) &&
+              host.profile.kind === 'netconf' ||
+              host.profile.kind === 'web'))) &&
         isRecord(host.metadata),
     ) ||
     !data.hostOrder.every(

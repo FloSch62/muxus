@@ -527,9 +527,10 @@ export type SavedHostSessionProfile =
   | import('./ws-protocol.js').RdpProfile
   | import('./ws-protocol.js').VncProfile
   | import('./ws-protocol.js').GnmiProfile
-  | import('./ws-protocol.js').NetconfProfile;
+  | import('./ws-protocol.js').NetconfProfile
+  | import('./ws-protocol.js').WebProfile;
 
-/** SSH/Telnet/serial/RDP/VNC/gNMI/NETCONF host stored natively by Muxus rather than in ssh_config. */
+/** SSH/Telnet/serial/RDP/VNC/gNMI/NETCONF/web host stored natively by Muxus rather than in ssh_config. */
 export interface SavedHostProfile {
   id: string;
   kind: SavedHostSessionProfile['kind'];
@@ -1207,6 +1208,11 @@ export interface ForwardRequest {
   targetPort?: number;
   /** Saved tunnel this forward realizes (running-state matching in the UI). */
   tunnelId?: string;
+  /**
+   * Keep running when the terminal sessions on its connection close, until
+   * stopped (a web page's proxy, which its window stops).
+   */
+  independent?: boolean;
 }
 
 export interface ForwardInfo {

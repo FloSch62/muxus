@@ -234,6 +234,7 @@ export function managedHostCopyCommand(
     const user = profile.username ? `${profile.username}@` : '';
     return { label: 'Copy ssh command', text: `ssh -p ${profile.port} ${user}${profile.host} -s netconf` };
   }
+  if (profile.kind === 'web') return { label: 'Copy address', text: profile.url };
   return profile.kind === 'telnet'
     ? { label: 'Copy telnet command', text: `telnet ${profile.host} ${profile.port}` }
     : { label: 'Copy device path', text: profile.path };

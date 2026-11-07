@@ -7,10 +7,14 @@ import { sendError } from '../util/errors.js';
 const forwardRequestSchema = z.object({
   connId: z.string().min(1),
   type: z.enum(['local', 'remote', 'dynamic']),
-  bindPort: z.number().int().min(1).max(65535),
+  // 0 asks for any free port, for a local or dynamic forward only.
+  bindPort: z.number().int().min(0).max(65535),
   targetHost: z.string().min(1).optional(),
   targetPort: z.number().int().min(1).max(65535).optional(),
   tunnelId: z.string().min(1).optional(),
+  independent: z.boolean().optional(),
+}).refine((req) => req.bindPort > 0 || req.type !== 'remote', {
+  message: 'bindPort must be 1–65535',
 });
 
 export function registerForwardRoutes(app: FastifyInstance, ctx: AppContext): void {
