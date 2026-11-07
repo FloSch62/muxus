@@ -21,7 +21,10 @@
     "react/no-object-type-as-default-prop": "error",
     // Oxlint 1.80 added these React Compiler rules to its correctness set.
     // Keep the established lint baseline until the UI can be migrated as a
-    // focused change with dedicated interaction testing.
+    // focused change with dedicated interaction testing. Oxlint 1.91 added
+    // react/immutability, which flags the cancellation flags effects reset in
+    // their cleanup.
+    "react/immutability": "off",
     "react/preserve-manual-memoization": "off",
     "react/purity": "off",
     "react/refs": "off",
