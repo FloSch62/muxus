@@ -20,13 +20,13 @@ let
 in
 stdenv.mkDerivation (finalAttrs: {
   pname = "muxus";
-  version = "0.15.0";
+  version = "0.15.1";
 
   src = fetchFromGitHub {
     owner = "FloSch62";
     repo = "muxus";
     tag = "v${finalAttrs.version}";
-    hash = "sha256-bm5uBKzKjXmsQb4Hz27EtNEtxkTspmBVkT/vyM1len0=";
+    hash = "sha256-qBA8YMzG72yllSLNv1iErArYoBU3sMuP0yia/V/Od4Q=";
   };
 
   # Everything the desktop app needs; leaves out the test workspace.
