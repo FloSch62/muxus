@@ -159,9 +159,12 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
       // A read error after headers are out can only abort the transfer; the
       // client sees a truncated download rather than a JSON error.
       stream.once('error', () => reply.raw.destroy());
+      // Last-Modified alone lets the browser cache serve a stale copy of a
+      // file rewritten under the same path.
       void reply
         .header('content-type', 'application/octet-stream')
-        .header('content-disposition', `attachment; filename="${encodeURIComponent(path.basename(file))}"`);
+        .header('content-disposition', `attachment; filename="${encodeURIComponent(path.basename(file))}"`)
+        .header('cache-control', 'no-store');
       if (stat.size !== undefined) void reply.header('content-length', stat.size);
       // Lets a client that opens the file locally upload it back with a
       // check that nobody changed the remote file in between.
