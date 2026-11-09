@@ -411,6 +411,7 @@ describe('SFTP download transport ownership', () => {
     expect(result).toBe(stream);
     expect(headers.get('content-length')).toBe(7);
     expect(headers.get('last-modified')).toBe('Thu, 09 Oct 2025 08:53:20 GMT');
+    expect(headers.get('cache-control')).toBe('no-store');
     expect(release).not.toHaveBeenCalled();
 
     raw.emit('close');
