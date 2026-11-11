@@ -324,6 +324,14 @@ export function registerTerminalSocket(
   });
 }
 
+/** The frames a session waits for: the opening request and the answers to its prompts. */
+const CONTROL_ANSWER_OPS = new Set<TerminalClientMessage['op']>([
+  'connect',
+  'dial',
+  'auth-response',
+  'host-key-response',
+]);
+
 /** Control frames split from the binary stream, with a waiter for the auth round-trips. */
 class ControlChannel {
   private waiters: Array<{
@@ -331,17 +339,39 @@ class ControlChannel {
     reject: (error: Error) => void;
   }> = [];
   private closed = false;
+  private handler: ((msg: TerminalClientMessage) => void) | undefined;
+  /** The newest size the window reported before a session could take it. */
+  private pendingResize: TerminalClientMessage | undefined;
   intercept: ((msg: TerminalClientMessage) => boolean) | undefined;
-  onMessage: ((msg: TerminalClientMessage) => void) | undefined;
+
+  get onMessage(): ((msg: TerminalClientMessage) => void) | undefined {
+    return this.handler;
+  }
+
+  /** Attaching a session hands it the size the window reached while it connected. */
+  set onMessage(handler: ((msg: TerminalClientMessage) => void) | undefined) {
+    this.handler = handler;
+    const resize = this.pendingResize;
+    if (!handler || !resize) return;
+    this.pendingResize = undefined;
+    handler(resize);
+  }
 
   push(msg: TerminalClientMessage): void {
     if (this.intercept?.(msg)) return;
-    // A BREAK has no line to go to until the session is attached, and must
-    // not be taken as the answer to an auth or host-key prompt.
-    if (msg.op === 'send-break' && !this.onMessage) return;
-    const waiter = this.waiters.shift();
-    if (waiter) waiter.resolve(msg);
-    else this.onMessage?.(msg);
+    // Only an answer may settle a waiter: a window resized while a password
+    // or host-key dialog is open must not cancel the login.
+    if (CONTROL_ANSWER_OPS.has(msg.op)) {
+      const waiter = this.waiters.shift();
+      if (waiter) {
+        waiter.resolve(msg);
+        return;
+      }
+    }
+    if (this.handler) this.handler(msg);
+    // A BREAK has no line to go to until the session is attached; a resize
+    // waits for it.
+    else if (msg.op === 'resize') this.pendingResize = msg;
   }
 
   /** Await the next control frame (connect / auth-response / host-key-response). */
