@@ -71,6 +71,10 @@ succeeds:
 4. **Keyboard-interactive**: 2FA codes, challenge/response.
 5. **Password**, with retries.
 
+A server that needs more than one method gets each in turn, in whatever order it asks. A
+host that takes the password first and only then offers a keyboard-interactive passcode
+(a common Duo setup) logs in the same way as one that asks for the code first.
+
 Agent approval time does not consume `ConnectTimeout`. If an agent accepts a request but
 never answers, Muxus shows what it is waiting for and moves to the next authentication
 method after a bounded wait. Choosing the host editor's **Specific key file** mode, or
