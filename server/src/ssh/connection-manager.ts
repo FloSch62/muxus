@@ -2138,16 +2138,20 @@ class PausableDeadline {
  * IdentitiesOnly) → configured certificates with their matching private keys
  * → identity files (config ones first, else the default id_* files) with
  * passphrase prompts → keyboard-interactive → password.
+ * That order is a preference, not a single pass: each reply from the server
+ * picks the first untried attempt it currently accepts, so a multi-step login
+ * can ask for a method it did not advertise until an earlier one succeeded.
  * Every attempt happens inside one TCP connection, like the real client.
  */
 class AuthLadder {
   private readonly attempts: AuthAttempt[];
+  /** Attempts already offered, or found to have nothing to offer. */
+  private readonly tried = new Set<AuthAttempt>();
   private readonly privateKeys = new Map<string, Promise<ParsedKey | undefined>>();
   private readonly certificateKeys = new Map<
     OpenSshCertificate,
     Promise<ParsedKey | undefined>
   >();
-  private index = 0;
   private agentIdentityPrints: Promise<Set<string>> | undefined;
   private lastPasswordCandidate: RememberedPasswordCandidate | undefined;
   private partialPasswordCandidate: RememberedPasswordCandidate | undefined;
@@ -2224,26 +2228,27 @@ class AuthLadder {
     cb: (method: AnyAuthMethod | false) => void,
   ): void {
     const host = this.hop.resolved.hostname;
-    const attempt = this.attempts[this.index++];
-    if (!attempt || this.cancelled) {
+    // The server told us which methods can still succeed; pass over the rest
+    // without spending them, since a later step may start accepting them.
+    // Agent auth is publickey on the wire — servers never advertise "agent".
+    const attempt = this.cancelled
+      ? undefined
+      : this.attempts.find(
+          (candidate) =>
+            !this.tried.has(candidate) &&
+            (!authsLeft ||
+              candidate.type === 'none' ||
+              authsLeft.includes(candidate.type === 'agent' ? 'publickey' : candidate.type)),
+        );
+    if (!attempt) {
       this.log?.debug(
-        { host, cancelled: this.cancelled },
+        { host, cancelled: this.cancelled, authsLeft },
         'ssh auth ladder exhausted',
       );
       cb(false);
       return;
     }
-    // The server told us which methods can still succeed; skip the rest.
-    // Agent auth is publickey on the wire — servers never advertise "agent".
-    const wireType = attempt.type === 'agent' ? 'publickey' : attempt.type;
-    if (authsLeft && attempt.type !== 'none' && !authsLeft.includes(wireType)) {
-      this.log?.debug(
-        { host, method: attempt.type, authsLeft },
-        'ssh auth method not accepted by server; skipping',
-      );
-      this.advance(authsLeft, cb);
-      return;
-    }
+    this.tried.add(attempt);
     attempt
       .get()
       .then((method) => {

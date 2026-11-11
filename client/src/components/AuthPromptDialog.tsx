@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import Alert from '@mui/material/Alert';
 import Button from '@mui/material/Button';
 import Checkbox from '@mui/material/Checkbox';
@@ -14,6 +14,7 @@ import type {
   AuthPromptInfo,
   AuthPromptResponse,
 } from '@muxus/shared';
+import { authPromptText } from '../auth-prompt-text.js';
 import { usePrefsStore } from '../state/prefs.js';
 
 export type AuthPromptRequest = AuthPromptInfo;
@@ -95,21 +96,30 @@ export function AuthPromptDialog({
             </Typography>
           )}
           {error ? <Alert severity="error">{error}</Alert> : null}
-          {request.prompts.map((p, i) => (
-            <TextField
-              key={`${p.prompt}-${i}`}
-              label={p.prompt.replace(/:\s*$/, '')}
-              type={p.echo ? 'text' : 'password'}
-              autoFocus={i === 0}
-              value={answers[i] ?? ''}
-              onChange={(e) => setAnswers((a) => a.map((v, j) => (j === i ? e.target.value : v)))}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') submit();
-              }}
-              fullWidth
-              autoComplete="off"
-            />
-          ))}
+          {request.prompts.map((p, i) => {
+            const { label, text } = authPromptText(p.prompt);
+            return (
+              <Fragment key={`${p.prompt}-${i}`}>
+                {text && (
+                  <Typography variant="body2" color="textSecondary" sx={{ whiteSpace: 'pre-wrap' }}>
+                    {text}
+                  </Typography>
+                )}
+                <TextField
+                  label={label}
+                  type={p.echo ? 'text' : 'password'}
+                  autoFocus={i === 0}
+                  value={answers[i] ?? ''}
+                  onChange={(e) => setAnswers((a) => a.map((v, j) => (j === i ? e.target.value : v)))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') submit();
+                  }}
+                  fullWidth
+                  autoComplete="off"
+                />
+              </Fragment>
+            );
+          })}
           {request.rememberPassword ? (
             <FormControlLabel
               control={

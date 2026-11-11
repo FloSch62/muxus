@@ -23,6 +23,7 @@ const tmp = mkdtempSync(path.join(os.tmpdir(), 'muxus-session-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
 const PASSWORD = 'secret';
+const PASSCODE = '1';
 
 const HOST_KEY = generateKeyPairSync('rsa', {
   modulusLength: 2048,
@@ -247,6 +248,44 @@ function startTwoFactorServer(): Promise<{ server: Server; port: number }> {
   return new Promise((resolve) => {
     server.listen(0, '127.0.0.1', () => {
       resolve({ server, port: (server.address() as net.AddressInfo).port });
+    });
+  });
+}
+
+/** Takes the password first and only then offers a keyboard-interactive passcode. */
+function startPasswordThenPasscodeServer(): Promise<{
+  server: Server;
+  port: number;
+  authMethods: string[];
+}> {
+  const authMethods: string[] = [];
+  const server = new Server({ hostKeys: [HOST_KEY] }, (conn) => {
+    conn.on('error', () => undefined);
+    let passwordAccepted = false;
+    conn.on('authentication', (authCtx) => {
+      if (authCtx.method !== 'none') authMethods.push(authCtx.method);
+      if (!passwordAccepted) {
+        passwordAccepted = authCtx.method === 'password' && authCtx.password === PASSWORD;
+        if (passwordAccepted) authCtx.reject(['keyboard-interactive'], true);
+        else authCtx.reject(['password']);
+      } else if (authCtx.method === 'keyboard-interactive') {
+        authCtx.prompt([{ prompt: 'Passcode or option (1-3): ', echo: true }], (answers) => {
+          if (answers[0] === PASSCODE) authCtx.accept();
+          else authCtx.reject(['keyboard-interactive']);
+        });
+      } else {
+        authCtx.reject(['keyboard-interactive']);
+      }
+    });
+    conn.on('ready', () => {
+      conn.on('session', (acceptSession) => {
+        acceptSession().on('shell', (acceptShell) => acceptShell().write('shell ok\n'));
+      });
+    });
+  });
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => {
+      resolve({ server, port: (server.address() as net.AddressInfo).port, authMethods });
     });
   });
 }
@@ -683,6 +722,56 @@ describe('session settings from ssh config', () => {
     second.release();
   }, 15_000);
 
+  it('reuses a saved password when the passcode is only requested after it', async () => {
+    const started = await startPasswordThenPasscodeServer();
+    server = started.server;
+    const config = writeConfig(started.port, []);
+    database = new MuxusDatabase(':memory:');
+    vault = new PasswordVault(database, {
+      kdf: { cost: 1024, blockSize: 8, parallelism: 1 },
+      keyStore: new MemoryVaultKeyStore(),
+    });
+    manager = makeManager(config, vault);
+    const master = 'correct horse battery staple';
+
+    const firstIo = makeIo({
+      prompt: (info) => {
+        if (info.purpose === 'ssh-password') {
+          return Promise.resolve({ answers: [PASSWORD], rememberPassword: true });
+        }
+        if (info.purpose === 'authentication') {
+          return Promise.resolve({ answers: [PASSCODE] });
+        }
+        if (info.purpose === 'vault-create') {
+          return Promise.resolve({ answers: [master, master] });
+        }
+        throw new Error(`unexpected prompt: ${info.purpose}`);
+      },
+    });
+    const first = await manager.connect(profile, firstIo);
+    await vi.waitFor(() => expect(vault!.status().credentialCount).toBe(1));
+    first.release();
+    manager.closeAll();
+
+    manager = makeManager(config, vault);
+    const purposes: Array<string | undefined> = [];
+    const secondIo = makeIo({
+      prompt: (info) => {
+        purposes.push(info.purpose);
+        return Promise.resolve({ answers: [PASSCODE] });
+      },
+    });
+    const second = await manager.connect(profile, secondIo);
+    expect(purposes).toEqual(['authentication']);
+    expect(started.authMethods).toEqual([
+      'password',
+      'keyboard-interactive',
+      'password',
+      'keyboard-interactive',
+    ]);
+    second.release();
+  }, 15_000);
+
   it('replaces a rejected saved password only after the new password succeeds', async () => {
     const started = await startCapturingServer();
     server = started.server;
@@ -936,6 +1025,24 @@ describe('session summary', () => {
     const shell = await manager.connectShell(profile, makeIo(), 80, 24, 'xterm-256color');
     expect(await firstData(shell.stream)).toContain('shell ok');
     expect(shell.summary.authMethods).toEqual(['keyboard-interactive', 'password']);
+    shell.stream.close();
+    shell.lease.release();
+  }, 15_000);
+
+  it('logs in when the second factor is only offered after the password', async () => {
+    const started = await startPasswordThenPasscodeServer();
+    server = started.server;
+    manager = makeManager(writeConfig(started.port, plain));
+    const io = makeIo({
+      prompt: (info) =>
+        Promise.resolve({
+          answers: [info.purpose === 'authentication' ? PASSCODE : PASSWORD],
+        }),
+    });
+
+    const shell = await manager.connectShell(profile, io, 80, 24, 'xterm-256color');
+    expect(await firstData(shell.stream)).toContain('shell ok');
+    expect(shell.summary.authMethods).toEqual(['password', 'keyboard-interactive']);
     shell.stream.close();
     shell.lease.release();
   }, 15_000);
