@@ -79,6 +79,7 @@ import {
   startDetached,
   type LocalCopy,
 } from './local-open.js';
+import { allowRestrictedFolders } from './file-system-access.js';
 import { LinuxLinkHandlers, SystemLinkHandlers, withoutAppImagePaths } from './link-handlers.js';
 import { importLoginShellEnvironment } from './login-shell-environment.js';
 import { initMainLog, installCrashCapture, mainLog, mainLogPath } from './main-log.js';
@@ -1740,6 +1741,7 @@ if (!app.requestSingleInstanceLock(initialCommandLineLaunch ?? {})) {
     await session.defaultSession
       .setProxy({ mode: 'direct' })
       .catch((err: unknown) => mainLog('warn', 'could not bypass the system proxy for app windows', err));
+    allowRestrictedFolders(session.defaultSession);
     try {
       if (isDevelopment) {
         const seed = await seedDevelopmentDatabase(
