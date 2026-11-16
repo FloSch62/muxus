@@ -241,8 +241,8 @@ importers:
         specifier: ^0.17.0-beta.330
         version: 0.17.0-beta.330(@xterm/xterm@6.1.0-beta.336)
       '@xterm/addon-serialize':
-        specifier: ^0.15.0-beta.330
-        version: 0.15.0-beta.330(@xterm/xterm@6.1.0-beta.336)
+        specifier: ^0.15.0-beta.331
+        version: 0.15.0-beta.331(@xterm/xterm@6.1.0-beta.336)
       '@xterm/addon-unicode11':
         specifier: ^0.10.0-beta.330
         version: 0.10.0-beta.330(@xterm/xterm@6.1.0-beta.336)
@@ -1823,10 +1823,10 @@ packages:
     peerDependencies:
       '@xterm/xterm': ^6.1.0-beta.336
 
-  '@xterm/addon-serialize@0.15.0-beta.330':
-    resolution: {integrity: sha512-1QTLBgv8aC3Lbr87DzCQN78+lUB156LXLS2qTVNZyisznCrXdCam9tiL1+jVkVPnsJlSLzt0K8KMHdwQjoLAsg==}
+  '@xterm/addon-serialize@0.15.0-beta.331':
+    resolution: {integrity: sha512-UQL26TFwWulbhrvdLE21hx32hju5B6B9tTihqvd1XwfB7Fbje459/gC2Eha2Dane7YU+SZ+PIcsloA5zd4AwnQ==}
     peerDependencies:
-      '@xterm/xterm': ^6.1.0-beta.336
+      '@xterm/xterm': ^6.1.0-beta.337
 
   '@xterm/addon-unicode11@0.10.0-beta.330':
     resolution: {integrity: sha512-Tc9R1oYVYvTAUNIsHzcis1J51reG4CHQIYeXiAS+YRMsJe9nnnR2tIW/RHh7MZiMza1w7toAp1SKH+97WgnDaQ==}
@@ -4684,7 +4684,7 @@ snapshots:
     dependencies:
       '@xterm/xterm': 6.1.0-beta.336
 
-  '@xterm/addon-serialize@0.15.0-beta.330(@xterm/xterm@6.1.0-beta.336)':
+  '@xterm/addon-serialize@0.15.0-beta.331(@xterm/xterm@6.1.0-beta.336)':
     dependencies:
       '@xterm/xterm': 6.1.0-beta.336
 
