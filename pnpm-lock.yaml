@@ -238,8 +238,8 @@ importers:
         specifier: ^0.10.0-beta.331
         version: 0.10.0-beta.331(@xterm/xterm@6.1.0-beta.336)
       '@xterm/addon-search':
-        specifier: ^0.17.0-beta.330
-        version: 0.17.0-beta.330(@xterm/xterm@6.1.0-beta.336)
+        specifier: ^0.17.0-beta.331
+        version: 0.17.0-beta.331(@xterm/xterm@6.1.0-beta.336)
       '@xterm/addon-serialize':
         specifier: ^0.15.0-beta.330
         version: 0.15.0-beta.330(@xterm/xterm@6.1.0-beta.336)
@@ -1818,10 +1818,10 @@ packages:
     peerDependencies:
       '@xterm/xterm': ^6.1.0-beta.336
 
-  '@xterm/addon-search@0.17.0-beta.330':
-    resolution: {integrity: sha512-uyJ/NXcgN7BrKsMRdb1DarDTkZBOTEcwTgXlRw5fsnW1eMaygXvZiE1d8assEM1aW+vMXZynDl8KVpYcAOp0Tw==}
+  '@xterm/addon-search@0.17.0-beta.331':
+    resolution: {integrity: sha512-oYdFS2BXVXzwosRJ9kf9niHABDaLBBk2YgAmCyYz3gQgqXb5omgQH2NcBESc1qqf0G5SzJRWTcFaNWE7aakd6A==}
     peerDependencies:
-      '@xterm/xterm': ^6.1.0-beta.336
+      '@xterm/xterm': ^6.1.0-beta.337
 
   '@xterm/addon-serialize@0.15.0-beta.330':
     resolution: {integrity: sha512-1QTLBgv8aC3Lbr87DzCQN78+lUB156LXLS2qTVNZyisznCrXdCam9tiL1+jVkVPnsJlSLzt0K8KMHdwQjoLAsg==}
@@ -4680,7 +4680,7 @@ snapshots:
     dependencies:
       '@xterm/xterm': 6.1.0-beta.336
 
-  '@xterm/addon-search@0.17.0-beta.330(@xterm/xterm@6.1.0-beta.336)':
+  '@xterm/addon-search@0.17.0-beta.331(@xterm/xterm@6.1.0-beta.336)':
     dependencies:
       '@xterm/xterm': 6.1.0-beta.336
 
