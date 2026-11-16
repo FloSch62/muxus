@@ -27,8 +27,8 @@
     "record-docs": "node hack/record.mjs && THEME=dark node hack/record.mjs"
   },
   "devDependencies": {
-    "oxlint": "^1.91.0",
-    "oxlint-tsgolint": "^7.0.2006",
+    "oxlint": "^1.93.0",
+    "oxlint-tsgolint": "^7.0.2007",
     "playwright-core": "^1.65.0",
     "typescript": "^7.0.2"
   }
