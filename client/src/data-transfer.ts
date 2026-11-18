@@ -131,6 +131,7 @@ const PREFERENCE_KEYS = [
   'sidebarFolderOrder',
   'sidebarEmptyFolders',
   'sftpPanelWidth',
+  'showHiddenFiles',
 ] as const satisfies readonly (keyof PrefsState)[];
 
 export type BackupPreferences = Pick<
@@ -1077,6 +1078,9 @@ export function sanitizePreferences(
   }
   if (finiteRange(input.sftpPanelWidth, MIN_SFTP_PANEL_WIDTH, 1200)) {
     output.sftpPanelWidth = input.sftpPanelWidth;
+  }
+  if (typeof input.showHiddenFiles === 'boolean') {
+    output.showHiddenFiles = input.showHiddenFiles;
   }
   if (boundedPathList(input.sidebarCollapsedFolders)) {
     output.sidebarCollapsedFolders = input.sidebarCollapsedFolders;
