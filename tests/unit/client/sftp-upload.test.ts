@@ -176,6 +176,23 @@ describe('uploading a drop over SFTP', () => {
     expect(result).toEqual({ uploaded: 1, directories: 0 });
   });
 
+  it('sends nothing for a file cancelled while it is being fingerprinted', async () => {
+    const { deps } = harness();
+    const controller = new AbortController();
+    const image = new File([new Uint8Array(1024 * 1024)], 'image.bin');
+
+    // The fingerprint is the first thing the upload waits for.
+    const upload = uploadToRemote('conn-1', '/srv', { files: [{ file: image, relativePath: 'image.bin' }], directories: [] }, {
+      signal: controller.signal,
+      onProgress: () => undefined,
+      deps,
+    });
+    controller.abort();
+
+    await expect(upload).rejects.toMatchObject({ name: 'AbortError' });
+    expect(deps.upload).not.toHaveBeenCalled();
+  });
+
   it('fingerprints 64 KiB windows spread over the whole file, at most 1 MiB apart', async () => {
     const MiB = 1024 * 1024;
     const base = new Uint8Array(3 * MiB);

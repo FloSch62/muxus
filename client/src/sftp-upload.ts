@@ -211,6 +211,8 @@ export async function uploadToRemote(
     const source = item.file.size >= MIN_RESUMABLE_UPLOAD_BYTES
       ? `&size=${item.file.size}&lastModified=${item.file.lastModified}&fingerprint=${await uploadFingerprint(item.file)}`
       : '';
+    // A cancel while the file was read for its fingerprint must stop the request too.
+    signal.throwIfAborted();
     const request = (overwrite: boolean, resumable: boolean) =>
       deps.upload(
         `/api/sftp/${connId}/upload?path=${encodeURIComponent(destination)}${resumable ? source : ''}${overwrite ? '&overwrite=true' : ''}`,

@@ -65,6 +65,8 @@ export function uploadRawWithProgress(
   },
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
+    // The abort listener below only hears aborts still to come.
+    options.signal?.throwIfAborted();
     const xhr = new XMLHttpRequest();
     const report = progressReporter(options.onProgress);
     report(0, file.size, true);
