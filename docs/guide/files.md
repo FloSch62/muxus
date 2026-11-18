@@ -152,6 +152,14 @@ Uploads are written to a temporary name in the destination directory and then re
 place, so an interrupted transfer cannot leave a partially written file at the destination
 path. Where the server supports it, the atomic `posix-rename` extension is used.
 
+A lost connection leaves the temporary file behind, named after the destination and ending
+in `.upload`. For a file of 1 MiB or more, uploading the same local file to the same folder
+again, from the file browser or onto the terminal, continues it, and only the missing part
+crosses the network. Muxus continues only when the file's size, modification time and
+samples of its contents are unchanged and the last bytes that reached the server match it;
+otherwise the file is uploaded from the start. The temporary file of a file that changed
+since is not reused: delete it like any other file. **Cancel** removes the temporary file.
+
 The SFTP channel belongs to the connection rather than the panel. Closing the browser
 leaves it available for the [remote editor](editor.md), and closing the tab releases it
 with the rest of the session's lease.

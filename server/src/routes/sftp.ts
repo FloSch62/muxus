@@ -1,5 +1,5 @@
 import path from 'node:path/posix';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -23,6 +23,8 @@ const MAX_RECURSIVE_DELETE = 10_000;
 const MAX_EDITOR_BYTES = 8 * 1024 * 1024;
 const CLIPBOARD_IMAGE_MODE = 0o600;
 const CLIPBOARD_IMAGE_TEMP_DIR = '/tmp';
+/** How many bytes just before where an upload continues must match the staged file. */
+const RESUME_CHECK_BYTES = 64 * 1024;
 
 interface ConnParams {
   connId: string;
@@ -283,12 +285,17 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
     },
   );
 
+  // Staged uploads in progress, by connection: the same file sent twice at once
+  // goes under a random name the second time instead of into the same file.
+  const stagedUploads = new Set<string>();
+
   app.post('/api/sftp/:connId/upload', async (req, reply) => {
     try {
-      return await withSftp(req, async (sftp) => {
+      return await withSftp(req, async (sftp, connection) => {
         const file = requirePath(req);
         const overwrite = requireOverwrite(req);
         const expectedMtimeMs = optionalMtime(req);
+        const source = optionalSource(req);
         const body = req.body;
         if (!body || typeof (body as NodeJS.ReadableStream).pipe !== 'function') {
           throw new HttpProblem(400, 'expected an application/octet-stream body');
@@ -311,14 +318,21 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
           throw new HttpProblem(409, 'a file already exists at the upload destination', 'SFTP_DESTINATION_EXISTS');
         }
 
+        const staging = source && { source, key: `${connection.id}\0${file}\0${sourceKey(source)}` };
+        const resumable = staging && !stagedUploads.has(staging.key) ? staging : undefined;
+        if (resumable) stagedUploads.add(resumable.key);
         try {
-          await atomicStreamUpload(
-            sftp,
-            file,
-            body as NodeJS.ReadableStream,
-            overwrite,
-            existing?.mode,
-          );
+          if (resumable) {
+            await resumableUpload(sftp, file, body as NodeJS.ReadableStream, overwrite, existing?.mode, resumable.source);
+          } else {
+            await atomicStreamUpload(
+              sftp,
+              file,
+              body as NodeJS.ReadableStream,
+              overwrite,
+              existing?.mode,
+            );
+          }
         } catch (err) {
           // A different client may have created the destination while the
           // request was streaming into its temporary file. Return the same
@@ -327,6 +341,8 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
             throw new HttpProblem(409, 'a file already exists at the upload destination', 'SFTP_DESTINATION_EXISTS');
           }
           throw err;
+        } finally {
+          if (resumable) stagedUploads.delete(resumable.key);
         }
         const mtimeMs = await call<SftpAttrs>((cb) => sftp.stat(file, cb)).then(
           (saved) => (saved.mtime ? saved.mtime * 1000 : undefined),
@@ -475,6 +491,154 @@ async function atomicStreamUpload(
   }
 }
 
+/** The local file an upload sends, as the browser describes it. */
+interface UploadSource {
+  size: number;
+  lastModified: number;
+  /** SHA-256 of samples from the start, middle and end of the file. */
+  fingerprint: string;
+}
+
+function sourceKey({ size, lastModified, fingerprint }: UploadSource): string {
+  return createHash('sha256').update(`${size}:${lastModified}:${fingerprint}`).digest('hex').slice(0, 12);
+}
+
+/** What an interrupted attempt left in a staged file: open where it ends, with its last bytes. */
+interface StagedPart {
+  handle: Buffer;
+  offset: number;
+  tail: Buffer;
+}
+
+/**
+ * {@link atomicStreamUpload} into a temporary file named after the local file,
+ * so that the next upload of it continues one a lost connection cut short. A
+ * staged file that does not match the body is never written to: the client
+ * sends the file again as a new upload. Anything else under that name is
+ * removed, or left alone when it cannot be, and the upload goes under a random
+ * name.
+ */
+async function resumableUpload(
+  sftp: SFTPWrapper,
+  file: string,
+  body: NodeJS.ReadableStream,
+  overwrite: boolean,
+  mode: number | undefined,
+  source: UploadSource,
+): Promise<void> {
+  const staged = `${file}.muxus-${sourceKey(source)}.upload`;
+  const found = await lstatIfPresent(sftp, staged);
+  // Only a regular file is opened: opening a FIFO or a device can block, or act on it.
+  const part = found && entryType(found.mode ?? 0) === 'file'
+    ? await openStaged(sftp, staged, source.size)
+    : undefined;
+  const temp = !found || part || (await removed(sftp, staged))
+    ? staged
+    : `${file}.muxus-${randomBytes(6).toString('hex')}.upload`;
+  const options = mode === undefined
+    ? { flags: 'wx' as const }
+    : { flags: 'wx' as const, mode: mode & 0o7777 };
+  try {
+    if (part) await continueUpload(sftp, temp, body, part, source.size);
+    else await pipeline(body, sftp.createWriteStream(temp, options));
+    await commitTempFile(sftp, temp, file, overwrite);
+  } catch (error) {
+    await unlinkIfPresent(sftp, temp);
+    throw error;
+  }
+}
+
+/**
+ * Open the staged file of an interrupted attempt, if it is a regular file no
+ * larger than the upload. Its type, size and last bytes are read again through
+ * the handle that is written to, whatever the name pointed to by then.
+ */
+async function openStaged(sftp: SFTPWrapper, staged: string, size: number): Promise<StagedPart | undefined> {
+  let handle: Buffer;
+  try {
+    handle = await call<Buffer>((cb) => sftp.open(staged, 'r+', cb));
+  } catch {
+    return undefined;
+  }
+  try {
+    const attrs = await call<SftpAttrs>((cb) => sftp.fstat(handle, cb));
+    const offset = attrs.size ?? 0;
+    if (entryType(attrs.mode ?? 0) === 'file' && offset > 0 && offset <= size) {
+      const tail = await readRange(sftp, handle, Math.max(0, offset - RESUME_CHECK_BYTES), offset);
+      if (tail) return { handle, offset, tail };
+    }
+  } catch {
+    // Unreadable: it starts over, like anything else that cannot be continued.
+  }
+  await call<void>((cb) => sftp.close(handle, cb)).catch(() => undefined);
+  return undefined;
+}
+
+/**
+ * Write what the staged file lacks. The body's bytes before that point are
+ * dropped, but the last of them must equal the file's; if they differ, the rest
+ * is dropped too and the client is told to send the file again as a new upload.
+ */
+async function continueUpload(
+  sftp: SFTPWrapper,
+  temp: string,
+  body: NodeJS.ReadableStream,
+  { handle, offset, tail }: StagedPart,
+  size: number,
+): Promise<void> {
+  const tailStart = offset - tail.length;
+  let diverged = false;
+  async function* rest(chunks: AsyncIterable<string | Buffer>) {
+    let position = 0;
+    for await (const chunk of chunks) {
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      const start = position;
+      position += bytes.length;
+      const from = Math.max(start, tailStart);
+      const to = Math.min(position, offset);
+      if (from < to && !bytes.subarray(from - start, to - start).equals(tail.subarray(from - tailStart, to - tailStart))) {
+        diverged = true;
+      }
+      if (!diverged && position > offset) yield bytes.subarray(Math.max(0, offset - start));
+    }
+  }
+  const target = sftp.createWriteStream(temp, { handle, start: offset, autoClose: false });
+  try {
+    await pipeline(body, rest, target);
+    // A server that wrote anywhere but where it was asked shows in the size.
+    const written = await call<SftpAttrs>((cb) => sftp.fstat(handle, cb));
+    if (diverged || written.size !== size) {
+      throw new HttpProblem(409, 'the upload kept on the server does not match this file', 'SFTP_UPLOAD_MISMATCH');
+    }
+  } finally {
+    // A destroyed stream has closed the handle itself, and OpenSSH hands a freed handle out again.
+    if (!target.destroyed) await call<void>((cb) => sftp.close(handle, cb)).catch(() => undefined);
+  }
+}
+
+/** Bytes `start` to `end` of an open file, or undefined when the file ends sooner. */
+async function readRange(sftp: SFTPWrapper, handle: Buffer, start: number, end: number): Promise<Buffer | undefined> {
+  const bytes = Buffer.alloc(end - start);
+  for (let filled = 0; filled < bytes.length;) {
+    const read = await call<number>((cb) =>
+      sftp.read(handle, bytes, filled, bytes.length - filled, start + filled, cb),
+    );
+    if (read === 0) return undefined;
+    filled += read;
+  }
+  return bytes;
+}
+
+/** Whether nothing is left at `file`: removed now, or never there. */
+async function removed(sftp: SFTPWrapper, file: string): Promise<boolean> {
+  try {
+    await call<void>((cb) => sftp.unlink(file, cb));
+    return true;
+  } catch (err) {
+    return isNoSuchFile(err);
+  }
+}
+
 async function commitTempFile(
   sftp: SFTPWrapper,
   temp: string,
@@ -559,6 +723,22 @@ function optionalMtime(req: FastifyRequest): number | undefined {
   return parsed;
 }
 
+/** `size`, `lastModified` and `fingerprint` of the local file: an interrupted upload of the same file continues. */
+function optionalSource(req: FastifyRequest): UploadSource | undefined {
+  const { size, lastModified, fingerprint } = req.query as Record<string, unknown>;
+  if (size === undefined && lastModified === undefined && fingerprint === undefined) return undefined;
+  const source = { size: Number(size), lastModified: Number(lastModified), fingerprint: String(fingerprint) };
+  if (
+    !Number.isSafeInteger(source.size) ||
+    source.size < 0 ||
+    !Number.isSafeInteger(source.lastModified) ||
+    !/^[0-9a-f]{64}$/.test(source.fingerprint)
+  ) {
+    throw new HttpProblem(400, 'size, lastModified and fingerprint must describe the local file');
+  }
+  return source;
+}
+
 function requireOverwrite(req: FastifyRequest): boolean {
   const value = (req.query as { overwrite?: unknown }).overwrite;
   if (value === undefined || value === 'false' || value === false) return false;
@@ -570,10 +750,14 @@ async function lstatIfPresent(sftp: SFTPWrapper, file: string): Promise<SftpAttr
   try {
     return await call<SftpAttrs>((cb) => sftp.lstat(file, cb));
   } catch (err) {
-    const code = (err as { code?: unknown } | undefined)?.code;
-    if (code === 2 || code === 'ENOENT') return undefined;
+    if (isNoSuchFile(err)) return undefined;
     throw err;
   }
+}
+
+function isNoSuchFile(err: unknown): boolean {
+  const code = (err as { code?: unknown } | undefined)?.code;
+  return code === 2 || code === 'ENOENT';
 }
 
 async function deleteTree(sftp: SFTPWrapper, dir: string, budget: { remaining: number }): Promise<void> {

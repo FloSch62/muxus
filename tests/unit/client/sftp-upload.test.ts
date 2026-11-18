@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../../../client/src/api/http.js';
 import {
   collectDrop,
+  uploadFingerprint,
   uploadSummary,
   uploadToRemote,
   type DropPayload,
@@ -127,6 +128,100 @@ describe('uploading a drop over SFTP', () => {
       }),
     ).rejects.toMatchObject({ name: 'AbortError' });
     expect(calls).toEqual([]);
+  });
+
+  it('describes a file of 1 MiB or more to the server, so it can continue an interrupted upload', async () => {
+    const { deps } = harness();
+    const image = new File([new Uint8Array(1024 * 1024)], 'image.bin', { lastModified: 1_760_000_000_000 });
+    const note = new File(['payload'], 'note.txt', { lastModified: 1_760_000_000_000 });
+    const files = [image, note].map((file) => ({ file, relativePath: file.name }));
+    await uploadToRemote('conn-1', '/srv', { files, directories: [] }, {
+      signal: new AbortController().signal,
+      onProgress: () => undefined,
+      deps,
+    });
+
+    const [imageUrl, noteUrl] = vi.mocked(deps.upload).mock.calls.map(([url]) => new URL(url, 'http://muxus'));
+    expect(Object.fromEntries(imageUrl!.searchParams)).toEqual({
+      path: '/srv/image.bin',
+      size: String(1024 * 1024),
+      lastModified: '1760000000000',
+      fingerprint: await uploadFingerprint(image),
+    });
+    expect([...noteUrl!.searchParams.keys()]).toEqual(['path']);
+  });
+
+  it('sends a file again as a new upload when what the server kept of it does not match', async () => {
+    const { deps } = harness();
+    const upload = deps.upload;
+    deps.upload = vi.fn(async (url: string, blob: Blob, options: Parameters<UploadDeps['upload']>[2]) => {
+      if (new URL(url, 'http://muxus').searchParams.has('fingerprint')) {
+        throw new ApiError(409, 'the upload kept on the server does not match this file', {
+          message: 'the upload kept on the server does not match this file',
+          code: 'SFTP_UPLOAD_MISMATCH',
+        });
+      }
+      return upload(url, blob, options);
+    });
+    const image = new File([new Uint8Array(1024 * 1024)], 'image.bin');
+
+    const result = await uploadToRemote('conn-1', '/srv', { files: [{ file: image, relativePath: 'image.bin' }], directories: [] }, {
+      signal: new AbortController().signal,
+      onProgress: () => undefined,
+      deps,
+    });
+
+    const sent = vi.mocked(deps.upload).mock.calls.map(([url]) => new URL(url, 'http://muxus').searchParams);
+    expect(sent.map((params) => params.has('fingerprint'))).toEqual([true, false]);
+    expect(result).toEqual({ uploaded: 1, directories: 0 });
+  });
+
+  it('fingerprints 64 KiB windows spread over the whole file, at most 1 MiB apart', async () => {
+    const MiB = 1024 * 1024;
+    const base = new Uint8Array(3 * MiB);
+    const changedAt = (offset: number) => {
+      const copy = base.slice();
+      copy[offset] = 1;
+      return uploadFingerprint(new Blob([copy]));
+    };
+    const fingerprint = await uploadFingerprint(new Blob([base]));
+
+    expect(fingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(await uploadFingerprint(new Blob([base.slice()]))).toBe(fingerprint);
+    for (const offset of [0, MiB, 2 * MiB, 3 * MiB - 1]) expect(await changedAt(offset)).not.toBe(fingerprint);
+    // Between windows a change goes unseen; the server checks the bytes before where it continues.
+    expect(await changedAt(1.5 * MiB)).toBe(fingerprint);
+  });
+
+  it('reads at most 256 windows, the first and the last among them', async () => {
+    const size = 10 * 1024 ** 3;
+    const starts: number[] = [];
+    const huge = {
+      size,
+      slice: (start: number, end: number) => {
+        starts.push(start);
+        return new Blob([new Uint8Array(end - start)]);
+      },
+    } as unknown as Blob;
+
+    await uploadFingerprint(huge);
+
+    expect(starts).toHaveLength(256);
+    expect(starts[0]).toBe(0);
+    expect(starts.at(-1)).toBe(size - 64 * 1024);
+  });
+
+  it('tells apart full-flash images that share their boot loader and padding', async () => {
+    const MiB = 1024 * 1024;
+    // 8 MiB: the same 512 KiB boot loader, a different 2 MiB firmware, then erased flash.
+    const image = (firmware: number) => {
+      const bytes = new Uint8Array(8 * MiB).fill(0xff);
+      for (let index = 0; index < 512 * 1024; index++) bytes[index] = index % 251;
+      for (let index = 0; index < 2 * MiB; index++) bytes[512 * 1024 + index] = (index + firmware) % 253;
+      return new Blob([bytes]);
+    };
+
+    expect(await uploadFingerprint(image(1))).not.toBe(await uploadFingerprint(image(2)));
   });
 
   it('keeps file names from climbing out of the directory', async () => {
