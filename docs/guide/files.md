@@ -19,7 +19,10 @@ operation, so no second connection or authentication is required.
 - The path field is editable. Enter a path and press ++enter++.
 - :material-arrow-up: goes to the parent directory, :material-home: to the remote home
   directory, and :material-refresh: re-reads the current directory.
-- Double-click a directory to enter it. Sorting is by name, size or modification time.
+- Double-click a directory to enter it.
+- Click **Name**, **Size** or **Modified** to sort by that column, and click it again to
+  reverse the order. **Size** and **Modified** start with the largest and newest. Folders
+  always stay above files, and the browser opens sorted by name.
 - **Follow terminal folder** is enabled by default. The browser opens at the shell's current
   directory and follows later `cd` commands; clear it to browse independently.
 - **Open in new window** moves the browser into its own window on the same connection.
