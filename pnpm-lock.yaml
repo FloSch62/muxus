@@ -171,7 +171,7 @@ patchedDependencies:
   '@novnc/novnc@1.7.0': ffde8e6453e76045b5c2ea6b0a74b1799c63b1463ffa5814f8fbc79086d4c5aa
   '@serialport/bindings-cpp@13.0.1': ccb198c80fb1ddcec527a44a9df5ada0b5b49112eaf75cb0fbd0397b15ff2cf4
   '@xterm/addon-webgl@0.20.0-beta.329': 1b8bfcae2978e8efe2a80a8a9eefe0ccd1bbbdbe020bed14669acdca5ccd2712
-  ssh2@1.17.0: 22820db09827b0887e8e0b34478d28895a3219a5cf824e54faafe383a4b72620
+  ssh2@1.17.0: 3238c57aff2aa205a5362311b2913132d41013c80168b879d3baa1bd36d2b891
 
 importers:
 
@@ -401,7 +401,7 @@ importers:
         version: 13.0.0(supports-color@7.2.0)
       ssh2:
         specifier: ^1.17.0
-        version: 1.17.0(patch_hash=22820db09827b0887e8e0b34478d28895a3219a5cf824e54faafe383a4b72620)
+        version: 1.17.0(patch_hash=3238c57aff2aa205a5362311b2913132d41013c80168b879d3baa1bd36d2b891)
       ws:
         specifier: ^8.22.1
         version: 8.22.1
@@ -460,7 +460,7 @@ importers:
         version: 0.9.12
       ssh2:
         specifier: ^1.17.0
-        version: 1.17.0(patch_hash=22820db09827b0887e8e0b34478d28895a3219a5cf824e54faafe383a4b72620)
+        version: 1.17.0(patch_hash=3238c57aff2aa205a5362311b2913132d41013c80168b879d3baa1bd36d2b891)
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -6253,7 +6253,7 @@ snapshots:
   sprintf-js@1.1.3:
     optional: true
 
-  ssh2@1.17.0(patch_hash=22820db09827b0887e8e0b34478d28895a3219a5cf824e54faafe383a4b72620):
+  ssh2@1.17.0(patch_hash=3238c57aff2aa205a5362311b2913132d41013c80168b879d3baa1bd36d2b891):
     dependencies:
       asn1: 0.2.6
       bcrypt-pbkdf: 1.0.2

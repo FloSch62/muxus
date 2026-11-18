@@ -94,6 +94,23 @@ index 7302488102161b5b627f6f089d502caa6df0f356..795dc20dd463ee1671939c35a0c7796e
  
        // Servers shouldn't send packet type 60 in response to signed publickey
        // attempts, but if they do, interpret as type 60.
+diff --git a/lib/protocol/SFTP.js b/lib/protocol/SFTP.js
+index 9f33c0213040ad226f6ca4d18656fe902464952d..7822cd8c79708f59e7275f09feecf164c591d102 100644
+--- a/lib/protocol/SFTP.js
++++ b/lib/protocol/SFTP.js
+@@ -2638,6 +2638,12 @@ function readAttrs(biOpt) {
+ }
+ 
+ function sendOrBuffer(sftp, payload) {
++  // No reply can arrive once the channel's incoming side has ended, so fail
++  // the request (and any other still waiting) rather than leave it pending.
++  if (!sftp.server && sftp.incoming.state !== 'open') {
++    process.nextTick(cleanupRequests, sftp);
++    return true;
++  }
+   const ret = tryWritePayload(sftp, payload);
+   if (ret !== undefined) {
+     sftp._buffer.push(ret);
 diff --git a/lib/protocol/kex.js b/lib/protocol/kex.js
 index 811e631b8ab78d32776e540919d25aae56d628f7..0c2a1184342d67a539761ef06963def4a56b3e90 100644
 --- a/lib/protocol/kex.js
