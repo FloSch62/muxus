@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  downloadResume,
+  forgetInterruptedDownload,
   localFileName,
   numberedFileName,
   pickDownloadFolder,
   saveIntoFolder,
+  TRANSFER_CANCELLED,
 } from '../../../client/src/sftp-download.js';
 
 /** A folder in memory with the parts of FileSystemDirectoryHandle the download uses. */
@@ -95,5 +98,70 @@ describe('picking the download folder', () => {
 
     showDirectoryPicker.mockRejectedValueOnce(new DOMException('Dismissed', 'AbortError'));
     expect(await pickDownloadFolder()).toBeNull();
+  });
+});
+
+describe('continuing interrupted downloads', () => {
+  const used = new Set<string>();
+  const resume = (file: string, signal = new AbortController().signal) => {
+    used.add(file);
+    return downloadResume(file, signal);
+  };
+  const partial = (text: string) => ({ blob: new Blob([text]), etag: '"v1"' });
+
+  afterEach(() => {
+    for (const file of used) forgetInterruptedDownload(file);
+    used.clear();
+  });
+
+  it('offers what a broken download received to the next download of the file', () => {
+    const first = resume('/srv/a.iso');
+    expect(first.partial).toBeUndefined();
+    const kept = partial('abc');
+    first.onInterrupted(kept);
+
+    expect(resume('/srv/a.iso').partial).toBe(kept);
+    expect(resume('/srv/other.iso').partial).toBeUndefined();
+
+    forgetInterruptedDownload('/srv/a.iso');
+    expect(resume('/srv/a.iso').partial).toBeUndefined();
+  });
+
+  it('keeps a download stopped by the file browser closing, and drops a cancelled one', () => {
+    const closing = new AbortController();
+    const closed = resume('/srv/a.iso', closing.signal);
+    closing.abort();
+    const kept = partial('abc');
+    closed.onInterrupted(kept);
+    expect(resume('/srv/a.iso').partial).toBe(kept);
+
+    const cancelling = new AbortController();
+    const cancelled = resume('/srv/a.iso', cancelling.signal);
+    cancelling.abort(TRANSFER_CANCELLED);
+    cancelled.onInterrupted(partial('abcdef'));
+    expect(resume('/srv/a.iso').partial).toBeUndefined();
+  });
+
+  it('drops what was kept when Cancel comes before the server answers', () => {
+    resume('/srv/a.iso').onInterrupted(partial('abc'));
+
+    const cancelling = new AbortController();
+    resume('/srv/a.iso', cancelling.signal);
+    cancelling.abort(TRANSFER_CANCELLED);
+
+    expect(resume('/srv/a.iso').partial).toBeUndefined();
+  });
+
+  it('keeps the newest within 256 MiB, and nothing larger', () => {
+    const MiB = 1024 * 1024;
+    // Only the size is read; a real 256 MiB blob is not needed.
+    const sized = (size: number) => ({ blob: { size } as Blob, etag: '"v1"' });
+    for (const [file, size] of [['/srv/1.iso', 100], ['/srv/2.iso', 100], ['/srv/3.iso', 100]] as const) {
+      resume(file).onInterrupted(sized(size * MiB));
+    }
+    resume('/srv/huge.iso').onInterrupted(sized(257 * MiB));
+
+    expect(['/srv/1.iso', '/srv/2.iso', '/srv/3.iso', '/srv/huge.iso'].map((file) => !!resume(file).partial))
+      .toEqual([false, true, true, false]);
   });
 });

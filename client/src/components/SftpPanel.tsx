@@ -59,7 +59,13 @@ import {
   MIN_SFTP_PANEL_WIDTH,
 } from '../sftp-panel-width.js';
 import { initialSftpPath } from '../sftp-panel-state.js';
-import { pickDownloadFolder, saveIntoFolder } from '../sftp-download.js';
+import {
+  downloadResume,
+  forgetInterruptedDownload,
+  pickDownloadFolder,
+  saveIntoFolder,
+  TRANSFER_CANCELLED,
+} from '../sftp-download.js';
 import {
   EMPTY_SFTP_SELECTION,
   selectAllSftpEntries,
@@ -429,7 +435,9 @@ export function SftpPanel({
             const modified = Date.parse(headers.get('last-modified') ?? '');
             remoteMtimeMs = Number.isNaN(modified) ? undefined : modified;
           },
+          downloadResume(file, controller.signal),
         );
+        forgetInterruptedDownload(file);
         setTransfer({
           id,
           direction: 'download',
@@ -509,7 +517,10 @@ export function SftpPanel({
             `/api/sftp/${connId}/download?path=${encodeURIComponent(file)}`,
             (progress) => setTransfer({ ...current, ...progress, phase: 'transferring' }),
             controller.signal,
+            undefined,
+            downloadResume(file, controller.signal),
           );
+          forgetInterruptedDownload(file);
           if (folder) await saveIntoFolder(folder, entry.name, blob);
           else saveDownload(entry.name, blob);
           bytes += blob.size;
@@ -932,7 +943,7 @@ export function SftpPanel({
             setTransfer((current) =>
               current ? { ...current, phase: 'cancelling', bytesPerSecond: 0 } : current,
             );
-            transferControllerRef.current?.abort();
+            transferControllerRef.current?.abort(TRANSFER_CANCELLED);
           }}
           sx={{ mx: 0.75, mb: 0.75 }}
         />
