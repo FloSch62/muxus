@@ -7,7 +7,8 @@ type RouteHandler = (request: unknown, reply: unknown) => Promise<unknown>;
 
 interface FakeSftp {
   lstat(path: string, callback: (error: Error | null, attrs?: unknown) => void): void;
-  createWriteStream(path: string, options: { flags: string; mode?: number }): Writable;
+  open?(path: string, flags: string, attrs: { mode?: number }, callback: (error: Error | null, handle?: Buffer) => void): void;
+  createWriteStream(path: string, options: { flags?: string; mode?: number; handle?: Buffer }): Writable;
   rename?(from: string, to: string, callback: (error?: Error | null) => void): void;
   ext_openssh_rename?(from: string, to: string, callback: (error?: Error | null) => void): void;
   unlink?(path: string, callback: (error?: Error | null) => void): void;
@@ -124,6 +125,10 @@ const regularFile = {
   isSymbolicLink: () => false,
 };
 
+/** Creates the file it is asked for, as in a folder the user may write to. */
+const openNewFile: NonNullable<FakeSftp['open']> = (_path, _flags, _attrs, callback) =>
+  callback(null, Buffer.from('handle'));
+
 describe('SFTP upload overwrite policy', () => {
   it('returns a conflict without opening an existing destination', async () => {
     const createWriteStream = vi.fn();
@@ -157,6 +162,7 @@ describe('SFTP upload overwrite policy', () => {
     );
     const handler = captureUploadHandler({
       lstat: (_path, callback) => callback(Object.assign(new Error('not found'), { code: 2 })),
+      open: openNewFile,
       createWriteStream,
       rename,
       unlink: vi.fn(),
@@ -168,7 +174,7 @@ describe('SFTP upload overwrite policy', () => {
     expect(createWriteStream.mock.calls[0]?.[0]).toMatch(
       /^\/remote\/report\.txt\.muxus-[a-f0-9]+\.upload$/,
     );
-    expect(createWriteStream.mock.calls[0]?.[1]).toEqual({ flags: 'wx' });
+    expect(createWriteStream.mock.calls[0]?.[1]).toEqual({ handle: Buffer.from('handle') });
     expect(Buffer.concat(chunks).toString()).toBe('payload');
     expect(rename).toHaveBeenCalledWith(
       expect.stringMatching(/^\/remote\/report\.txt\.muxus-[a-f0-9]+\.upload$/),
@@ -229,6 +235,7 @@ describe('SFTP upload overwrite policy', () => {
     );
     const handler = captureUploadHandler({
       lstat: (_path, callback) => callback(null, regularFile),
+      open: openNewFile,
       createWriteStream,
       ext_openssh_rename: atomicRename,
       unlink: vi.fn(),
@@ -240,7 +247,7 @@ describe('SFTP upload overwrite policy', () => {
     expect(createWriteStream.mock.calls[0]?.[0]).toMatch(
       /^\/remote\/report\.txt\.muxus-[a-f0-9]+\.upload$/,
     );
-    expect(createWriteStream.mock.calls[0]?.[1]).toEqual({ flags: 'wx' });
+    expect(createWriteStream.mock.calls[0]?.[1]).toEqual({ handle: Buffer.from('handle') });
     expect(atomicRename).toHaveBeenCalledWith(
       expect.stringMatching(/^\/remote\/report\.txt\.muxus-[a-f0-9]+\.upload$/),
       '/remote/report.txt',
@@ -253,6 +260,7 @@ describe('SFTP upload overwrite policy', () => {
     const handler = captureUploadHandler({
       lstat: (_path, callback) => callback(null, { ...regularFile, mtime: 1_700_000_000 }),
       stat: (_path, callback) => callback(null, { ...regularFile, mtime: 1_700_000_050 }),
+      open: openNewFile,
       createWriteStream,
       ext_openssh_rename: (_from, _to, callback) => callback(null),
       unlink: vi.fn(),
@@ -306,6 +314,7 @@ describe('SFTP upload overwrite policy', () => {
     );
     const handler = captureUploadHandler({
       lstat: (_path, callback) => callback(null, regularFile),
+      open: openNewFile,
       createWriteStream: () => new Writable({ write: (_c, _e, cb) => cb() }),
       ext_openssh_rename: () => {
         throw new Error('Server does not support this extended request');
@@ -354,6 +363,7 @@ describe('SFTP upload overwrite policy', () => {
     const rename = vi.fn();
     const handler = captureUploadHandler({
       lstat: (_path, callback) => callback(Object.assign(new Error('not found'), { code: 2 })),
+      open: openNewFile,
       createWriteStream: () => new Writable({ write: (_chunk, _encoding, callback) => callback() }),
       rename,
       unlink,
@@ -552,6 +562,70 @@ describe('SFTP drag-out download tickets', () => {
     expect((await routes.download('forged')).status).toBe(401);
     expect((await routes.download(undefined)).status).toBe(401);
     expect(routes.opened).toEqual([]);
+  });
+});
+
+describe('SFTP file modes', () => {
+  const sink = () => vi.fn((_path: string, _options: unknown) => new Writable({ write: (_c, _e, cb) => cb() }));
+
+  it('opens a new file itself, 0644 less the umask, so ssh2 does not chmod it to 0666', async () => {
+    const open = vi.fn(openNewFile);
+    const createWriteStream = sink();
+    const handler = captureUploadHandler({
+      lstat: (_path, callback) => callback(Object.assign(new Error('not found'), { code: 2 })),
+      open,
+      createWriteStream,
+      rename: (_from, _to, callback) => callback(null),
+      unlink: vi.fn(),
+    });
+
+    expect((await invoke(handler, { path: '/remote/report.txt' })).result).toEqual({ ok: true });
+
+    expect(open).toHaveBeenCalledWith(
+      expect.stringMatching(/^\/remote\/report\.txt\.muxus-[a-f0-9]+\.upload$/),
+      'wx',
+      { mode: 0o644 },
+      expect.any(Function),
+    );
+    // Given a handle, ssh2's write stream neither opens nor chmods the file.
+    expect(createWriteStream).toHaveBeenCalledWith(expect.any(String), { handle: Buffer.from('handle') });
+  });
+
+  it('gives a replaced file the mode it had', async () => {
+    const open = vi.fn(openNewFile);
+    const createWriteStream = sink();
+    const handler = captureUploadHandler({
+      lstat: (_path, callback) => callback(null, { ...regularFile, mode: 0o100750 }),
+      open,
+      createWriteStream,
+      ext_openssh_rename: (_from, _to, callback) => callback(null),
+      unlink: vi.fn(),
+    });
+
+    await invoke(handler, { path: '/remote/run.sh', overwrite: 'true' });
+
+    expect(open).not.toHaveBeenCalled();
+    expect(createWriteStream).toHaveBeenCalledWith(expect.any(String), { flags: 'wx', mode: 0o750 });
+  });
+
+  it('saves from the editor as a new file when the server reports no mode', async () => {
+    const open = vi.fn(openNewFile);
+    const createWriteStream = sink();
+    const { save } = captureEditorHandlers({
+      lstat: (_path: string, callback: (error: Error | null, attrs?: unknown) => void) =>
+        callback(null, { ...regularFile, mtime: 123 }),
+      stat: (_path: string, callback: (error: Error | null, attrs?: unknown) => void) =>
+        callback(null, { size: 9, mtime: 125 }),
+      open,
+      createWriteStream,
+      ext_openssh_rename: (_from: string, _to: string, callback: (error?: Error | null) => void) => callback(null),
+      unlink: vi.fn(),
+    });
+
+    await save({ params: { connId: 'connection-1' }, query: { path: '/etc/motd' }, body: { content: 'hello' } }, {});
+
+    expect(open).toHaveBeenCalledWith(expect.stringMatching(/\.tmp$/), 'wx', { mode: 0o644 }, expect.any(Function));
+    expect(createWriteStream).toHaveBeenCalledWith(expect.any(String), { handle: Buffer.from('handle') });
   });
 });
 
