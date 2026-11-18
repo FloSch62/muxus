@@ -63,7 +63,7 @@ a row of its own; widen the sidebar by dragging its edge to bring them back.
 | **Drag files in** | Upload them to the current directory |
 | **Drag a file out** | Download it to the drop location |
 | :material-upload: | Upload with a file picker |
-| :material-download: | Download the selected files |
+| :material-download: | Download the selected files and folders |
 | Double-click a file | Open it in the [remote editor](editor.md) |
 
 Uploads and downloads report progress, and large transfers do not block the terminal in the
@@ -73,10 +73,27 @@ same tab.
 its tab. A lost connection ends a transfer with an error, such as *Upload stopped:
 connection lost*.
 
-Downloading several files asks once for a folder and saves them all there. A file of the
-same name already in the folder is kept, and the new one is numbered, as in
-`report (1).txt`. Browsers that cannot write to a folder, such as Firefox and Safari, save
-the files to their downloads folder instead. Dragging out takes one file at a time.
+Downloading several files or a folder asks once for a folder and saves everything there. A
+file or folder of the same name already there is kept, and the new one is numbered, as in
+`report (1).txt` or `logs (1)`. Browsers that cannot write to a folder, such as Firefox and
+Safari, save the files to their downloads folder instead and cannot download folders.
+Dragging out takes one file at a time; folders cannot be dragged out.
+
+A folder arrives with everything inside it, hidden files and empty subfolders included:
+
+1. Muxus first lists the folder and everything below it.
+2. It asks before downloading, with the totals, for example *Download 46 files (120 MiB)?*
+3. One progress bar covers the whole download. **Cancel** stops it; the files and folders
+   saved so far stay, and the notification counts them.
+
+Symbolic links and special files inside a folder are skipped, so a link cannot bring a
+folder in twice. So are names that cannot be created in a local folder, on Linux and macOS
+too, such as `aux.c`, `con.txt` or `desktop.ini`; a folder with such a name is skipped with
+everything inside it. The notification at the end lists what was skipped under **Details**,
+each with the reason. A folder or file that cannot be read or saved stops the download
+instead, and the notification names it, as in *Could not list logs/private: Permission
+denied*; what was saved stays. A download with folders takes at most 10,000 files and
+folders, and at most 10 GiB. For more, download the subfolders one at a time.
 
 A download stopped by a lost connection continues where it stopped when you download the
 same file again in the same window once the session is back, and only the missing part
@@ -84,7 +101,8 @@ crosses the network. The window keeps up to 256 MiB of what interrupted download
 a download that had received more than 256 MiB is not kept at all and starts over.
 **Cancel**, closing the window or quitting Muxus discards what was kept. A file whose size
 or modification time changed on the server is downloaded whole, and so is a file dragged
-out.
+out. Downloading a folder again continues the file that was cut off; its other files are
+downloaded whole again.
 
 !!! warning "Overwrite confirmation"
 
@@ -128,10 +146,10 @@ clears the selection. The toolbar shows how many rows are selected.
 Only rows on show can be selected. A row that the filter or the hidden-files button hides
 leaves the selection, so downloads and deletes never reach a file you cannot see.
 
-With several rows selected, :material-download: downloads every selected file, and the row
-menu of a selected row offers **Download** for the files and **Delete** for all of them.
-++delete++ (++cmd+backspace++ on macOS) deletes the selection too. Folders are skipped by
-downloads.
+With several rows selected, :material-download: downloads every selected file and folder,
+and the row menu of a selected row offers **Download** for the files and folders and
+**Delete** for all of them. ++delete++ (++cmd+backspace++ on macOS) deletes the selection
+too.
 
 ## Managing
 
