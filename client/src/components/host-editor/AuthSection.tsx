@@ -112,6 +112,8 @@ export function AuthSection({
           })}
           <Autocomplete
             freeSolo
+            // Holds no value, so MUI never writes the added key back into the input.
+            value={null}
             options={available}
             getOptionLabel={(o) => (typeof o === 'string' ? o : o.path)}
             inputValue={pending}
