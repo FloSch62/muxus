@@ -936,6 +936,41 @@ ipcMain.handle('muxus:select-private-key', async (event): Promise<string | undef
   return result.canceled ? undefined : result.filePaths[0];
 });
 
+ipcMain.handle(
+  'muxus:select-password-manager-file',
+  async (event, target: unknown): Promise<string | undefined> => {
+    const win = senderWindow(event);
+    if (!win) return undefined;
+    const options: Electron.OpenDialogOptions =
+      target === 'database'
+        ? {
+            title: 'Choose KeePass database',
+            buttonLabel: 'Use database',
+            properties: ['openFile', 'showHiddenFiles'],
+            filters: [
+              { name: 'KeePass databases', extensions: ['kdbx'] },
+              { name: 'All files', extensions: ['*'] },
+            ],
+          }
+        : target === 'key-file'
+          ? {
+              title: 'Choose KeePass key file',
+              buttonLabel: 'Use key file',
+              properties: ['openFile', 'showHiddenFiles'],
+            }
+          : target === 'store'
+            ? {
+                title: 'Choose password store folder',
+                buttonLabel: 'Use folder',
+                properties: ['openDirectory', 'showHiddenFiles'],
+              }
+            : { properties: [] };
+    if (!options.title) return undefined;
+    const result = await dialog.showOpenDialog(win, { defaultPath: app.getPath('home'), ...options });
+    return result.canceled ? undefined : result.filePaths[0];
+  },
+);
+
 const CERTIFICATE_FILE_TITLES: Record<string, string> = {
   ca: 'Choose CA certificate',
   cert: 'Choose client certificate',

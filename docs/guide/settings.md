@@ -266,6 +266,12 @@ the operating-system credential store.
   and editing a secret take the master password; typing one follows the prompt policy.
   Deleting a secret that command buttons or login sequences still use warns first and names
   them.
+- **Password managers** lists the managers Muxus can read login passwords from: KeePass
+  and KeePassXC databases, 1Password, Bitwarden, Proton Pass, LastPass, Dashlane and pass.
+  **Connect** adds one; a KeePass database or Bitwarden vault can be unlocked and locked
+  here. Hosts and folders then
+  [pick an entry](connecting.md#passwords-from-a-password-manager) to log in with. This
+  works without a Muxus vault.
 - **View or edit password** asks for the master password before revealing the saved value.
 - **Change master password** changes that management password without rewriting every
   credential.

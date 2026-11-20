@@ -162,6 +162,108 @@ export interface SendVaultSecretResult {
   sent: number;
 }
 
+/** Password managers Muxus can read passwords from. */
+export const PASSWORD_MANAGER_KINDS = [
+  'keepass',
+  'onepassword',
+  'bitwarden',
+  'protonpass',
+  'lastpass',
+  'dashlane',
+  'pass',
+] as const;
+export type PasswordManagerKind = (typeof PASSWORD_MANAGER_KINDS)[number];
+
+/** What a password manager is called, and the program Muxus runs to read from it. */
+export const PASSWORD_MANAGER_LABELS: Record<PasswordManagerKind, string> = {
+  keepass: 'KeePass / KeePassXC',
+  onepassword: '1Password',
+  bitwarden: 'Bitwarden',
+  protonpass: 'Proton Pass',
+  lastpass: 'LastPass',
+  dashlane: 'Dashlane',
+  pass: 'pass / gopass',
+};
+
+/**
+ * How one password manager is reached. KeePass and pass read files; the others
+ * run the manager's own command-line program, which holds the sign-in.
+ */
+export interface PasswordManagerConfig {
+  /** KeePass: the .kdbx database. pass: the store directory; empty uses the default. */
+  path?: string;
+  /** KeePass: an optional key file used together with the database password. */
+  keyFile?: string;
+  /** Command-line program to run when it is not on PATH. pass: the gpg program. */
+  program?: string;
+  /** 1Password: sign-in address or account ID when several accounts are added. */
+  account?: string;
+}
+
+/** Where a password manager stands right now. */
+export type PasswordManagerState =
+  /** Entries can be read. */
+  | 'ready'
+  /** Muxus can unlock it with the password the manager itself asks for. */
+  | 'locked'
+  /** Its command-line program is not signed in; that happens outside Muxus. */
+  | 'signed-out'
+  /** The database, store or program is missing. */
+  | 'unavailable';
+
+/** One connected password manager and its current state. */
+export interface PasswordManagerSource {
+  id: string;
+  kind: PasswordManagerKind;
+  name: string;
+  config: PasswordManagerConfig;
+  state: PasswordManagerState;
+  /** Why it is not ready, in words for the person. */
+  message?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PasswordManagersResponse {
+  sources: PasswordManagerSource[];
+  /** Kinds whose command-line program was found on this computer. */
+  installed: PasswordManagerKind[];
+}
+
+/** Body of POST /api/password-managers and PUT /api/password-managers/:id. */
+export interface PasswordManagerInput {
+  kind: PasswordManagerKind;
+  name?: string;
+  config: PasswordManagerConfig;
+}
+
+/** One entry offered in the picker. The password itself never leaves the backend. */
+export interface PasswordManagerEntry {
+  /** Stable within its password manager: a KeePass UUID, an item ID, a pass path. */
+  id: string;
+  title: string;
+  username?: string;
+  url?: string;
+  /** Group, vault or folder the entry sits in. */
+  group?: string;
+}
+
+export interface PasswordManagerEntriesResponse {
+  entries: PasswordManagerEntry[];
+}
+
+/**
+ * Points a host or folder at one password-manager entry. Only the reference
+ * is stored; the password is read from the manager each time it is needed.
+ */
+export interface ExternalPasswordRef {
+  sourceId: string;
+  entryId: string;
+  /** The entry's title and user name when it was picked, for display. */
+  title: string;
+  username?: string;
+}
+
 /** Raw bookmark data discovered from a local Windows MobaXterm installation. */
 export interface MobaXtermSessionSource {
   /** Human-readable origin shown before the user confirms the import. */
@@ -874,6 +976,8 @@ export interface OpenSshProfileMetadata {
   discoverEnvironments?: boolean;
   /** The host's own login sequence; absent inherits the folder's. */
   loginSequence?: LoginSequence;
+  /** Password-manager entry this host logs in with; absent uses saved or folder passwords. */
+  passwordRef?: ExternalPasswordRef;
   /**
    * Jump routes tried in order when the ProxyJump in ssh_config fails, each a
    * whole chain. Kept by Muxus: ssh_config has no way to say it.
@@ -911,6 +1015,8 @@ export interface OpenSshMetadataPatch {
   discoverEnvironments?: boolean | null;
   /** Null goes back to the folder's sequence. */
   loginSequence?: LoginSequence | null;
+  /** Null unlinks the password-manager entry. */
+  passwordRef?: ExternalPasswordRef | null;
   /** Null or empty removes the fallback jump routes. */
   proxyJumpFallbacks?: string[][] | null;
 }
@@ -920,7 +1026,8 @@ export interface OpenSshMetadataPatch {
  * field is optional: a folder only overrides what it sets. At connect time
  * these apply *below* everything in ssh_config — a host's own options and
  * `Host *` blocks always win — with the nearest folder beating its ancestors.
- * The folder password is not here; it lives in the encrypted vault.
+ * The folder password is not here; it lives in the encrypted vault, or in a
+ * password manager that `passwordRef` points into.
  */
 export interface FolderAuthSettings {
   user?: string;
@@ -930,6 +1037,8 @@ export interface FolderAuthSettings {
   /** Agent socket override: a path, `$VAR`/`${VAR}`, `SSH_AUTH_SOCK`, or `none`. */
   identityAgent?: string;
   forwardAgent?: boolean;
+  /** Password-manager entry offered as the folder's shared password. */
+  passwordRef?: ExternalPasswordRef;
 }
 
 /** One folder's stored credential defaults. */

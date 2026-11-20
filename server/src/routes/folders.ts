@@ -6,7 +6,7 @@ import type {
   FolderSettingsResponse,
 } from '@muxus/shared';
 import type { AppContext } from '../app.js';
-import type { FolderSettingsRow } from '../persistence/database.js';
+import { cleanPasswordRef, type FolderSettingsRow } from '../persistence/database.js';
 import {
   folderPasswordAccount,
   folderPasswordLabel,
@@ -17,7 +17,7 @@ import {
   normalizeFolderPath,
 } from '../util/folder-paths.js';
 import { sendError } from '../util/errors.js';
-import { loginSequenceSchema } from './metadata-schema.js';
+import { loginSequenceSchema, passwordRefSchema } from './metadata-schema.js';
 import { sendVaultError } from './password-vault.js';
 
 // Mirrors the metadata group cap: a path covers several nested folder names.
@@ -31,6 +31,7 @@ const authSchema = z.object({
   identitiesOnly: z.boolean().optional(),
   identityAgent: z.string().max(1024).optional(),
   forwardAgent: z.boolean().optional(),
+  passwordRef: passwordRefSchema.optional(),
 });
 
 // A missing loginSequence keeps the folder's current one; null clears it.
@@ -200,5 +201,6 @@ function cleanAuth(auth: FolderAuthSettings): FolderAuthSettings {
   const identityAgent = auth.identityAgent?.trim();
   if (identityAgent) out.identityAgent = identityAgent;
   if (auth.forwardAgent !== undefined) out.forwardAgent = auth.forwardAgent;
+  if (auth.passwordRef) out.passwordRef = cleanPasswordRef(auth.passwordRef);
   return out;
 }

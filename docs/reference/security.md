@@ -130,6 +130,28 @@ Patterns are matched in the backend against a bounded window of output, and a re
 expression is abandoned after a short time limit, so a pathological pattern cannot stall
 other sessions.
 
+### External password managers
+
+A host or folder linked to a [password-manager entry](../guide/connecting.md#passwords-from-a-password-manager)
+stores a reference: which connected manager, the entry's ID, and its title and user name
+for display. The password is never written to the database, the ssh config or a backup.
+
+- The entry picker receives titles, user names, addresses and groups. No API route returns
+  a password; the backend reads it at the moment a login asks and hands it to that login.
+- Muxus only reads. It never creates, changes or deletes anything in a password manager.
+- A KeePass database is decrypted in the backend with the password you type. The open
+  database and that password stay in memory until it is locked or Muxus quits, and are
+  never stored. The file is re-read when KeePass saves it.
+- For Bitwarden, the master password is passed to `bw unlock` in the environment, and the
+  session key it returns is kept in memory and passed to later runs the same way, so
+  neither appears in a process list. **Lock** runs `bw lock`.
+- The command-line programs are started directly, without a shell and without a terminal,
+  and are killed if they do not answer: 2 minutes where an approval prompt may be open,
+  otherwise 1 minute. Entries are always addressed by ID, never by a name the program
+  would search for.
+- Listing Bitwarden and Dashlane entries makes their programs print decrypted items to
+  Muxus; the passwords in that output are dropped as it is parsed.
+
 ## Host keys
 
 Verification uses `~/.ssh/known_hosts` and the read-only `/etc/ssh/ssh_known_hosts`, hashed

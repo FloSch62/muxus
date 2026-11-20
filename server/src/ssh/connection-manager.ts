@@ -26,6 +26,7 @@ import {
   type AuthPromptResponse,
   type ConfigForward,
   type ConnectionInfo,
+  type ExternalPasswordRef,
   type SshProfile,
   type SshSessionSummary,
   type TerminalBackspaceKey,
@@ -47,6 +48,7 @@ import {
   hostKeyMatchesFingerprint,
   hostKeyType,
 } from './known-hosts.js';
+import type { PasswordManagers } from '../password-managers/password-managers.js';
 import { listAgentKeys, resolveAgentSocket } from './key-scan.js';
 import {
   DEFAULT_AGENT_OPERATION_TIMEOUT_MS,
@@ -348,7 +350,9 @@ export interface ChainHop {
   port: number;
   /** Display label for prompts when this is an intermediate hop. */
   hopLabel?: string;
-  /** Folder passwords in the vault this hop may fall back to, nearest first. */
+  /** The password-manager entry this host itself logs in with. */
+  passwordRef?: ExternalPasswordRef;
+  /** Folder passwords this hop may fall back to, nearest first. */
   folderPasswords?: readonly FolderPasswordRef[];
   /** Target only: the host key an ssh:// link pinned, in canonical form. */
   hostKeyFingerprint?: string;
@@ -383,6 +387,8 @@ export class SshConnectionManager {
   private readonly loadConfig: () => ConfigDocument;
   private readonly vault: PasswordVault | undefined;
   private readonly savedSshProfile: ((id: string) => SshProfile | undefined) | undefined;
+  private readonly passwordManagers: PasswordManagers | undefined;
+  private readonly passwordRefs: PasswordRefLookups | undefined;
   private readonly folderAuth: FolderAuthLookup | undefined;
   private readonly profileFolderAuth: FolderAuthLookup | undefined;
   private readonly disableSftpForHost: ((alias: string) => boolean) | undefined;
@@ -405,6 +411,10 @@ export class SshConnectionManager {
       knownHosts?: KnownHostsStore;
       loadConfig?: () => ConfigDocument;
       vault?: PasswordVault;
+      /** External password managers that linked entries are read from. */
+      passwordManagers?: PasswordManagers;
+      /** The password-manager entry linked to an alias or a saved host. */
+      passwordRefs?: PasswordRefLookups;
       /** Current database-owned SSH profile, keyed by stable profile ID. */
       savedSshProfile?: (id: string) => SshProfile | undefined;
       /** Folder-inherited connection defaults per alias (Muxus sidebar folders). */
@@ -436,6 +446,8 @@ export class SshConnectionManager {
     this.knownHosts = options.knownHosts ?? new KnownHostsStore();
     this.loadConfig = options.loadConfig ?? (() => loadConfigDocument());
     this.vault = options.vault;
+    this.passwordManagers = options.passwordManagers;
+    this.passwordRefs = options.passwordRefs;
     this.savedSshProfile = options.savedSshProfile;
     this.folderAuth = options.folderAuth;
     this.profileFolderAuth = options.profileFolderAuth;
@@ -610,7 +622,7 @@ export class SshConnectionManager {
   /** "bastion-a → bastion-b" for the jump hosts a route dials, '' when direct. */
   private routeLabel(doc: ConfigDocument, profile: SshProfile): string {
     try {
-      return buildChain(doc, profile, this.folderAuth, this.profileFolderAuth, this.savedSshProfile)
+      return buildChain(doc, profile, this.folderAuth, this.profileFolderAuth, this.savedSshProfile, this.passwordRefs)
         .slice(0, -1)
         .map((hop) => hop.spec.host)
         .join(' → ');
@@ -651,6 +663,7 @@ export class SshConnectionManager {
       this.folderAuth,
       this.profileFolderAuth,
       this.savedSshProfile,
+      this.passwordRefs,
     );
     const target = chain[chain.length - 1]!;
     const metadataAlias =
@@ -777,6 +790,7 @@ export class SshConnectionManager {
       this.folderAuth,
       this.profileFolderAuth,
       this.savedSshProfile,
+      this.passwordRefs,
     );
   }
 
@@ -1414,6 +1428,7 @@ export class SshConnectionManager {
       authAgent,
       this.log,
       agentHooks,
+      this.passwordManagers,
     );
     const { algorithms, notes } = connectionAlgorithms(pinnedHostKeyPreference(hop));
     for (const note of notes) {
@@ -1725,6 +1740,12 @@ function mergeConfigForwards(
   return merged;
 }
 
+/** The password-manager entry linked to an OpenSSH alias or to a saved Muxus host. */
+export interface PasswordRefLookups {
+  forHost?: (alias: string) => ExternalPasswordRef | undefined;
+  forProfile?: (id: string) => ExternalPasswordRef | undefined;
+}
+
 /**
  * Expand a profile into the ordered list of hosts to dial: every ProxyJump
  * hop (each recursively resolved through the config, like the `ssh -W`
@@ -1739,6 +1760,7 @@ export function buildChain(
   folderAuthFor?: FolderAuthLookup,
   profileFolderAuthFor?: FolderAuthLookup,
   savedProfileFor?: (id: string) => SshProfile | undefined,
+  passwordRefs?: PasswordRefLookups,
 ): ChainHop[] {
   const chain: ChainHop[] = [];
   const visited = new Set<string>();
@@ -1768,6 +1790,11 @@ export function buildChain(
       ? folderAuthFor?.(spec.host)
       : owner?.profileId
         ? profileFolderAuthFor?.(owner.profileId)
+        : undefined;
+    const hostPasswordRef = fromConfig
+      ? passwordRefs?.forHost?.(spec.host)
+      : owner?.profileId
+        ? passwordRefs?.forProfile?.(owner.profileId)
         : undefined;
     const configuredBase = fromConfig
       ? resolveHost(doc, spec.host, folder?.optionLines)
@@ -1803,6 +1830,7 @@ export function buildChain(
       port: owner?.port ?? spec.port ?? resolved.port,
       hopLabel: final ? undefined : spec.host,
       folderPasswords: folder?.passwords,
+      ...(hostPasswordRef ? { passwordRef: hostPasswordRef } : {}),
       ...(final && profile.hostKeyFingerprint
         ? { hostKeyFingerprint: profile.hostKeyFingerprint }
         : {}),
@@ -2177,6 +2205,7 @@ class AuthLadder {
     private readonly log?: FastifyBaseLogger,
     /** Deadline and touch-prompt hooks for agents signing on this hop. */
     private readonly agentHooks: ResponsiveAgentOptions = {},
+    private readonly passwordManagers?: PasswordManagers,
   ) {
     this.attempts = this.build();
   }
@@ -2567,24 +2596,38 @@ class AuthLadder {
   private async availableSavedPassword(
     credential: PasswordCredential,
   ): Promise<string | undefined> {
-    if (this.savedPasswordAttempted || !this.vault) return undefined;
-    // The host's own saved password wins; folder passwords are the shared
-    // default the host falls back to, nearest folder first.
-    const source = credential.existing
-      ? { account: credential.account, label: credential.label }
-      : (this.hop.folderPasswords ?? []).find((folder) =>
-          this.vault!.hasSshPassword(folder.account),
-        );
-    if (!source) return undefined;
-
-    this.savedPasswordAttempted = true;
-    const saved = await this.savedPassword(source.account, source.label);
-    if (saved !== undefined) {
-      this.io.status(`Using the saved password for ${source.label}.`, {
-        transient: true,
-      });
+    if (this.savedPasswordAttempted) return undefined;
+    // The host's own password wins: its linked password-manager entry, then
+    // its saved vault password. Folder passwords are the shared default the
+    // host falls back to, nearest folder first.
+    const sources: Array<{ entry: ExternalPasswordRef } | { account: string; label: string }> = [];
+    if (this.hop.passwordRef && this.passwordManagers) sources.push({ entry: this.hop.passwordRef });
+    if (credential.existing) sources.push({ account: credential.account, label: credential.label });
+    for (const folder of this.hop.folderPasswords ?? []) {
+      if (folder.entry && this.passwordManagers) sources.push({ entry: folder.entry });
+      else if (this.vault?.hasSshPassword(folder.account)) sources.push(folder);
     }
-    return saved;
+
+    for (const source of sources) {
+      this.savedPasswordAttempted = true;
+      if ('entry' in source) {
+        // Reading may wait on the manager's own approval or unlock prompt.
+        const password = await this.runInteraction(() =>
+          this.passwordManagers!.passwordFor(source.entry, this.io),
+        );
+        if (password !== undefined) return password;
+        // An entry that cannot be read leaves the next saved password its turn.
+        continue;
+      }
+      const saved = await this.savedPassword(source.account, source.label);
+      if (saved !== undefined) {
+        this.io.status(`Using the saved password for ${source.label}.`, {
+          transient: true,
+        });
+      }
+      return saved;
+    }
+    return undefined;
   }
 
   private capturePasswordCandidate(

@@ -48,6 +48,7 @@ import { commandButtonLabel } from '../command-buttons.js';
 import { commandButtonsUsingSecret } from '../vault-secrets.js';
 import { fetchLoginSequenceOwners } from '../api/folder-settings.js';
 import { loginSequencesUsingSecret } from '../login-sequence.js';
+import { PasswordManagersGroup } from './PasswordManagersGroup.js';
 import { VaultSecretDialog } from './VaultSecretDialog.js';
 import {
   SettingRow,
@@ -262,6 +263,8 @@ export function PasswordVaultSection() {
           </>
         ) : null}
       </SettingsGroup>
+
+      <PasswordManagersGroup />
 
       {status.configured ? (
         <SettingsGroup

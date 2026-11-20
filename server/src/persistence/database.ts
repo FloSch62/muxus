@@ -8,6 +8,7 @@ import {
 import { nanoid } from 'nanoid';
 import type {
   AntiIdle,
+  ExternalPasswordRef,
   FolderAuthSettings,
   ForwardType,
   HostKeywordHighlightConfig,
@@ -15,6 +16,8 @@ import type {
   ManagedHostRef,
   ManagementProtocol,
   OpenSshMetadataPatch,
+  PasswordManagerConfig,
+  PasswordManagerKind,
   PasswordVaultUnlockPolicy,
   PastePromptWait,
   SavedHostProfile,
@@ -587,6 +590,26 @@ const MIGRATIONS = [
         CHECK(system_openssh IN (0, 1));
     `,
   },
+  {
+    version: 38,
+    name: 'password-managers',
+    // Connected password managers, and the entry a host logs in with. Only
+    // references are stored; passwords stay in the manager.
+    sql: `
+      CREATE TABLE password_manager_sources (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK(length(kind) BETWEEN 1 AND 40),
+        name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 200),
+        config_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(config_json)),
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) STRICT;
+
+      ALTER TABLE connection_profiles
+        ADD COLUMN password_ref_json TEXT
+        CHECK(password_ref_json IS NULL OR json_valid(password_ref_json));
+    `,
+  },
 ] as const;
 
 /** Kinds stored as Muxus-owned saved hosts (everything but OpenSSH metadata rows). */
@@ -805,9 +828,20 @@ export interface OpenSshMetadata {
   systemOpenSsh?: boolean;
   discoverEnvironments?: boolean;
   loginSequence?: LoginSequence;
+  passwordRef?: ExternalPasswordRef;
   proxyJumpFallbacks?: string[][];
   lastConnectedAt?: string;
   connectCount: number;
+}
+
+/** One connected password manager, as stored. */
+export interface PasswordManagerSourceRow {
+  id: string;
+  kind: PasswordManagerKind;
+  name: string;
+  config: PasswordManagerConfig;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** One folder's shared SSH defaults, keyed by its case-folded path. */
@@ -1008,6 +1042,7 @@ export class MuxusDatabase {
         profiles.system_openssh,
         profiles.discover_environments,
         profiles.login_sequence_json,
+        profiles.password_ref_json,
         profiles.proxy_jump_fallbacks_json,
         profiles.last_connected_at,
         profiles.connect_count,
@@ -1087,6 +1122,77 @@ export class MuxusDatabase {
       )
       .get(id);
     return Number(row?.system_openssh) === 1;
+  }
+
+  /** The password-manager entry an OpenSSH alias logs in with, when one is linked. */
+  passwordRefForAlias(alias: string): ExternalPasswordRef | undefined {
+    return passwordRefFromJson(this.metadataByAlias.get(alias)?.password_ref_json);
+  }
+
+  /** The password-manager entry a Muxus-owned host logs in with, when one is linked. */
+  passwordRefForSavedHost(id: string): ExternalPasswordRef | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT password_ref_json FROM connection_profiles
+         WHERE id = ? AND kind IN ${SAVED_HOST_KINDS_SQL}`,
+      )
+      .get(id);
+    return passwordRefFromJson(row?.password_ref_json);
+  }
+
+  /** Undefined keeps the linked entry, null unlinks it. */
+  private setPasswordRef(profileId: string, ref: ExternalPasswordRef | null | undefined): void {
+    if (ref === undefined) return;
+    this.db
+      .prepare('UPDATE connection_profiles SET password_ref_json = ? WHERE id = ?')
+      .run(ref === null ? null : JSON.stringify(cleanPasswordRef(ref)), profileId);
+  }
+
+  listPasswordManagerSources(): PasswordManagerSourceRow[] {
+    return this.db
+      .prepare('SELECT * FROM password_manager_sources ORDER BY name COLLATE NOCASE, created_at')
+      .all()
+      .map(passwordManagerSourceFromRow);
+  }
+
+  passwordManagerSource(id: string): PasswordManagerSourceRow | undefined {
+    const row = this.db.prepare('SELECT * FROM password_manager_sources WHERE id = ?').get(id);
+    return row ? passwordManagerSourceFromRow(row) : undefined;
+  }
+
+  createPasswordManagerSource(input: {
+    kind: PasswordManagerKind;
+    name: string;
+    config: PasswordManagerConfig;
+  }): PasswordManagerSourceRow {
+    requireNonEmpty(input.name, 'name');
+    assertSecretFree(input.config, 'passwordManager.config');
+    const id = nanoid();
+    this.db
+      .prepare('INSERT INTO password_manager_sources(id, kind, name, config_json) VALUES (?, ?, ?, ?)')
+      .run(id, input.kind, input.name.trim(), JSON.stringify(input.config));
+    return this.passwordManagerSource(id)!;
+  }
+
+  updatePasswordManagerSource(
+    id: string,
+    input: { name: string; config: PasswordManagerConfig },
+  ): PasswordManagerSourceRow | undefined {
+    requireNonEmpty(input.name, 'name');
+    assertSecretFree(input.config, 'passwordManager.config');
+    this.db
+      .prepare(`
+        UPDATE password_manager_sources
+        SET name = ?, config_json = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `)
+      .run(input.name.trim(), JSON.stringify(input.config), id);
+    return this.passwordManagerSource(id);
+  }
+
+  /** Hosts and folders keep their reference; it reports the missing manager when used. */
+  deletePasswordManagerSource(id: string): boolean {
+    return this.db.prepare('DELETE FROM password_manager_sources WHERE id = ?').run(id).changes > 0;
   }
 
   /** Jump routes to try, in order, when this OpenSSH alias's ProxyJump fails. */
@@ -1229,6 +1335,7 @@ export class MuxusDatabase {
             : JSON.stringify(patch.proxyJumpFallbacks),
         String(current.id),
       );
+    this.setPasswordRef(String(current.id), patch.passwordRef);
     return metadataFromRow(this.metadataByAlias.get(alias)!);
   }
 
@@ -1800,6 +1907,7 @@ export class MuxusDatabase {
         loginSequenceColumn(patch.loginSequence, current.login_sequence_json),
         id,
       );
+    this.setPasswordRef(id, patch.passwordRef);
     return this.savedHostProfile(id)!;
   }
 
@@ -2851,6 +2959,7 @@ function metadataFromRow(row: SqlRow): OpenSshMetadata {
     ...(Number(row.system_openssh) === 1 ? { systemOpenSsh: true } : {}),
     ...discoverEnvironmentsFromRow(row),
     loginSequence: loginSequenceFromJson(row.login_sequence_json),
+    passwordRef: passwordRefFromJson(row.password_ref_json),
     proxyJumpFallbacks: jumpFallbacksFromJson(row.proxy_jump_fallbacks_json),
     lastConnectedAt: optionalString(row.last_connected_at),
     connectCount: Number(row.connect_count),
@@ -2927,6 +3036,7 @@ function savedHostFromRow(row: SqlRow): SavedHostProfile {
       ...(Number(row.system_openssh) === 1 ? { systemOpenSsh: true } : {}),
       ...discoverEnvironmentsFromRow(row),
       loginSequence: loginSequenceFromJson(row.login_sequence_json),
+      passwordRef: passwordRefFromJson(row.password_ref_json),
       lastConnectedAt: optionalString(row.last_connected_at),
       connectCount: Number(row.connect_count),
     },
@@ -3015,6 +3125,39 @@ function antiIdleFromJson(value: unknown): AntiIdle | undefined {
   } catch {
     return undefined;
   }
+}
+
+function passwordManagerSourceFromRow(row: SqlRow): PasswordManagerSourceRow {
+  return {
+    id: String(row.id),
+    kind: String(row.kind) as PasswordManagerKind,
+    name: String(row.name),
+    config: JSON.parse(String(row.config_json)) as PasswordManagerConfig,
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
+
+function passwordRefFromJson(value: unknown): ExternalPasswordRef | undefined {
+  if (typeof value !== 'string' || !value) return undefined;
+  try {
+    const ref = JSON.parse(value) as Partial<ExternalPasswordRef>;
+    return typeof ref.sourceId === 'string' && typeof ref.entryId === 'string'
+      ? cleanPasswordRef(ref as ExternalPasswordRef)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Exactly the reference fields, so nothing else rides along into the database. */
+export function cleanPasswordRef(ref: ExternalPasswordRef): ExternalPasswordRef {
+  return {
+    sourceId: ref.sourceId,
+    entryId: ref.entryId,
+    title: typeof ref.title === 'string' ? ref.title : '',
+    ...(typeof ref.username === 'string' && ref.username ? { username: ref.username } : {}),
+  };
 }
 
 /** A metadata patch's sequence as the column value: undefined keeps the current one. */

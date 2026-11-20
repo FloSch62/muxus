@@ -95,7 +95,10 @@ export class LoginSequenceSession {
       return true;
     }
     if (message.op === 'auth-response' && this.answer) {
-      this.answer({ answers: message.answers, skipped: message.skipped });
+      // A dismissed prompt answers nothing, like a window that went away.
+      this.answer(
+        message.cancelled ? undefined : { answers: message.answers, skipped: message.skipped },
+      );
       return true;
     }
     return false;

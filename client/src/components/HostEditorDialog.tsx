@@ -642,7 +642,7 @@ function SshHostEditorContent({
           }
         />
       )}
-      {section === 'auth' && <AuthSection draft={draft} set={set} keys={keys} />}
+      {section === 'auth' && <AuthSection draft={draft} set={set} keys={keys} passwordEntry />}
       {section === 'appearance' && (
         <TerminalAppearanceSection value={draft} onChange={set} />
       )}
@@ -719,6 +719,7 @@ function metadataPatch(draft: HostDraft): OpenSshMetadataPatch {
         ? null
         : highlights,
     loginSequence: loginSequenceFromDraft(draft.loginSequence),
+    passwordRef: draft.passwordRef ?? null,
     // ssh_config cannot hold fallback routes, so Muxus keeps them for the
     // alias; a Muxus host has them in its profile instead.
     ...(draft.storage === 'openssh' ? { proxyJumpFallbacks: draftJumpFallbacks(draft) ?? null } : {}),

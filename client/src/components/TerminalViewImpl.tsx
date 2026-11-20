@@ -1991,8 +1991,16 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     setAuthPrompt(null);
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    if (response === null) ws.close();
-    else ws.send(JSON.stringify({ op: 'auth-response', ...response }));
+    // Cancelling is said to the backend rather than done by closing the
+    // socket: a closed socket looks like a dropped window, which reattaches
+    // to the waiting login and is shown this prompt again.
+    ws.send(
+      JSON.stringify(
+        response === null
+          ? { op: 'auth-response', answers: [], cancelled: true }
+          : { op: 'auth-response', ...response },
+      ),
+    );
   };
 
   function cancelLoginSequence(): boolean {

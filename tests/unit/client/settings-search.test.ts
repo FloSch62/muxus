@@ -94,6 +94,7 @@ describe('the settings search index', () => {
     'HighlightProfilesSection.tsx': 'highlighting',
     'LinkHandlerSettings.tsx': 'behavior',
     'LocalShellProfilesSection.tsx': 'local-shells',
+    'PasswordManagersGroup.tsx': 'passwords',
     'PasswordVaultSection.tsx': 'passwords',
     'X11Section.tsx': 'x11',
   };

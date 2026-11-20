@@ -1,12 +1,14 @@
-import type { FolderAuthSettings } from '@muxus/shared';
+import type { ExternalPasswordRef, FolderAuthSettings } from '@muxus/shared';
 import { folderChain } from '../util/folder-paths.js';
 import { folderPasswordAccount, folderPasswordLabel } from '../security/password-vault.js';
 import type { OptionLine } from './ssh-config.js';
 
-/** A folder password candidate in the encrypted vault. */
+/** A folder password candidate: in the encrypted vault, or an entry in a password manager. */
 export interface FolderPasswordRef {
   account: string;
   label: string;
+  /** The password-manager entry the folder points at; used before a vault copy. */
+  entry?: ExternalPasswordRef;
 }
 
 /** Folder-inherited connection defaults for one dial target. */
@@ -76,6 +78,7 @@ function folderAuthForGroup(
     passwords: rows.map((row) => ({
       account: folderPasswordAccount(row.id),
       label: folderPasswordLabel(row.path),
+      ...(row.auth.passwordRef ? { entry: row.auth.passwordRef } : {}),
     })),
   };
 }

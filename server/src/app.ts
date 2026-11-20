@@ -36,6 +36,7 @@ import { registerScriptRoutes } from './routes/scripts.js';
 import { ScriptRuns } from './scripts/script-runs.js';
 import { registerHostOrderRoutes } from './routes/host-order.js';
 import { registerSessionHistoryRoutes } from './routes/session-history.js';
+import { registerPasswordManagerRoutes } from './routes/password-managers.js';
 import { registerPasswordVaultRoutes } from './routes/password-vault.js';
 import { registerFolderRoutes } from './routes/folders.js';
 import { registerLogRoutes } from './routes/logs.js';
@@ -49,6 +50,7 @@ import {
   defaultHistoryRoot,
   SessionHistoryStore,
 } from './session-logging/history-store.js';
+import { PasswordManagers } from './password-managers/password-managers.js';
 import { PasswordVault } from './security/password-vault.js';
 
 export interface AppContext {
@@ -61,6 +63,8 @@ export interface AppContext {
   database: MuxusDatabase;
   history: SessionHistoryStore;
   vault: PasswordVault;
+  /** Connected external password managers (KeePass, 1Password, Bitwarden, …). */
+  passwordManagers: PasswordManagers;
   x11: LocalX11;
   /** Live terminal sessions the backend can type into (vault secrets). */
   terminalInputs: TerminalInputs;
@@ -121,9 +125,15 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   const database = new MuxusDatabase(config.databasePath);
   const vault = new PasswordVault(database);
   await vault.initialize();
+  const passwordManagers = new PasswordManagers(database);
   const x11 = new LocalX11({ log: app.log, bundledServerDirectory: config.x11ServerDirectory });
   const connections = new SshConnectionManager(app.log, {
     vault,
+    passwordManagers,
+    passwordRefs: {
+      forHost: (alias) => database.passwordRefForAlias(alias),
+      forProfile: (id) => database.passwordRefForSavedHost(id),
+    },
     x11,
     savedSshProfile: (id) => {
       const profile = database.savedHostProfile(id)?.profile;
@@ -167,6 +177,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
     database,
     history,
     vault,
+    passwordManagers,
     x11,
     terminalInputs: new TerminalInputs(),
   };
@@ -253,6 +264,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   registerHostOrderRoutes(app, ctx);
   registerSessionHistoryRoutes(app, ctx);
   registerPasswordVaultRoutes(app, ctx);
+  registerPasswordManagerRoutes(app, ctx);
   registerFolderRoutes(app, ctx);
   registerLogRoutes(app);
   registerLocalFileRoutes(app);
@@ -286,6 +298,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
     systemOpenSsh.closeAll();
     x11.close();
     vault.dispose();
+    passwordManagers.dispose();
     await history.close();
     database.close();
   });

@@ -85,7 +85,12 @@ describe('RDP/VNC host editor draft', () => {
         shareClipboard: false,
       },
     });
-    expect(desktopDraftMetadataPatch(draft)).toEqual({ group: 'Windows', color: '#4488ff' });
+    expect(desktopDraftMetadataPatch(draft)).toEqual({
+      group: 'Windows',
+      color: '#4488ff',
+      // No password-manager entry is linked.
+      passwordRef: null,
+    });
     expect(desktopDraftFromProfile(rdpHost, true).name).toBe('Build server copy');
   });
 

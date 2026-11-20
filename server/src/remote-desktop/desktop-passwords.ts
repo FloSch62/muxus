@@ -2,7 +2,9 @@ import {
   DEFAULT_PASSWORD_VAULT_UNLOCK_POLICY,
   type AuthPromptInfo,
   type AuthPromptResponse,
+  type ExternalPasswordRef,
 } from '@muxus/shared';
+import type { PasswordManagers } from '../password-managers/password-managers.js';
 import {
   CredentialVaultCorruptError,
   InvalidMasterPasswordError,
@@ -31,6 +33,11 @@ export class DesktopPasswords {
   constructor(
     private readonly vault: PasswordVault | undefined,
     private readonly io: PromptIo,
+    /** The password-manager entry the host being logged in to is linked to, if any. */
+    private readonly linked?: {
+      managers: PasswordManagers;
+      ref: () => ExternalPasswordRef | undefined;
+    },
   ) {}
 
   get available(): boolean {
@@ -41,8 +48,16 @@ export class DesktopPasswords {
     return this.vault?.hasSshPassword(ref.account) ?? false;
   }
 
-  /** The saved password, unlocking the vault first when its policy asks for that. */
+  /**
+   * The host's linked password-manager entry, or else the saved password,
+   * unlocking the vault first when its policy asks for that.
+   */
   async read(ref: VaultPasswordRef): Promise<string | undefined> {
+    const entry = this.linked?.ref();
+    if (entry) {
+      const password = await this.linked!.managers.passwordFor(entry, this.io);
+      if (password !== undefined) return password;
+    }
     const vault = this.vault;
     if (!vault || !vault.hasSshPassword(ref.account)) return undefined;
     try {
