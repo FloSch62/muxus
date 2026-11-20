@@ -295,6 +295,8 @@ export interface PrefsState {
   sidebarEmptyFolders: string[];
   /** Width of the per-session remote file browser. */
   sftpPanelWidth: number;
+  /** List names starting with a dot in every file browser. */
+  showHiddenFiles: boolean;
   /** Width of the containers and VMs panel. */
   environmentsPanelWidth: number;
   /** Verbose diagnostic logging plus access to the log viewer and export. */
@@ -430,6 +432,7 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   if (typeof state.dimInactivePanes !== 'boolean') delete state.dimInactivePanes;
   if (typeof state.webglRenderer !== 'boolean') delete state.webglRenderer;
   if (typeof state.showWslDistributions !== 'boolean') delete state.showWslDistributions;
+  if (typeof state.showHiddenFiles !== 'boolean') delete state.showHiddenFiles;
   if (
     typeof state.inactivePaneDimStrength !== 'number' ||
     !Number.isFinite(state.inactivePaneDimStrength) ||
@@ -674,6 +677,7 @@ export const usePrefsStore = create<PrefsState>()(
       sidebarFolderOrder: {},
       sidebarEmptyFolders: [],
       sftpPanelWidth: DEFAULT_SFTP_PANEL_WIDTH,
+      showHiddenFiles: true,
       environmentsPanelWidth: DEFAULT_ENVIRONMENTS_PANEL_WIDTH,
       debugMode: false,
       set: (patch) => set(patch),

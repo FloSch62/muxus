@@ -175,6 +175,16 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   // SFTP uploads stream through as-is — no buffering, no size limit.
   app.addContentTypeParser('application/octet-stream', (_req, payload, done) => done(null, payload));
 
+  // A browser reads no answer before it has sent the whole body. An upload
+  // that fails before its body has arrived closes the connection, or its error
+  // would only show when the keep-alive timeout closes it 72 s later.
+  // `complete` alone is false for a body-less request answered while it is
+  // parsed, and undefined under inject().
+  app.addHook('onSend', async (req, reply) => {
+    const hasBody = Number(req.headers['content-length']) > 0 || req.headers['transfer-encoding'] !== undefined;
+    if (hasBody && req.raw.complete === false) void reply.header('connection', 'close');
+  });
+
   await app.register(fastifyWebsocket, {
     options: {
       maxPayload: 16 * 1024 * 1024,

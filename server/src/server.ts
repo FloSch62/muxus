@@ -9,6 +9,9 @@ import { serverUrls } from './auth.js';
 export { appendAppLog } from './logging/log-buffer.js';
 export { SystemVaultKeyStore } from './security/vault-key-store.js';
 
+/** How long requests still running when the server closes get to finish. */
+const CLOSE_GRACE_MS = 2_000;
+
 export interface RunningServer {
   app: FastifyInstance;
   port: number;
@@ -35,6 +38,15 @@ export async function startServer(overrides: Partial<ServerConfig> = {}): Promis
     token: config.token,
     url: urls.publicUrl,
     browserUrl: urls.browserUrl,
-    close: () => app.close(),
+    close: async () => {
+      // Fastify waits for every open request to end; an upload whose body is
+      // no longer read can hold its connection for good, and Muxus with it.
+      const force = setTimeout(() => app.server.closeAllConnections(), CLOSE_GRACE_MS);
+      try {
+        await app.close();
+      } finally {
+        clearTimeout(force);
+      }
+    },
   };
 }

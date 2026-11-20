@@ -4,6 +4,7 @@ import Checkbox from '@mui/material/Checkbox';
 import CircularProgress from '@mui/material/CircularProgress';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import IconButton from '@mui/material/IconButton';
+import InputAdornment from '@mui/material/InputAdornment';
 import ListItemIcon from '@mui/material/ListItemIcon';
 import ListItemText from '@mui/material/ListItemText';
 import Menu from '@mui/material/Menu';
@@ -14,6 +15,7 @@ import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
+import TableSortLabel from '@mui/material/TableSortLabel';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
@@ -32,9 +34,12 @@ import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
 import LaunchOutlinedIcon from '@mui/icons-material/LaunchOutlined';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import SearchIcon from '@mui/icons-material/Search';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined';
 import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
+import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
+import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import { useQueryClient } from '@tanstack/react-query';
 import type { LocalOpenTarget, SftpEntry } from '@muxus/shared';
 import { apiFetch } from '../api/http.js';
@@ -58,8 +63,14 @@ import {
   maxSftpPanelWidth,
   MIN_SFTP_PANEL_WIDTH,
 } from '../sftp-panel-width.js';
-import { initialSftpPath } from '../sftp-panel-state.js';
-import { pickDownloadFolder, saveIntoFolder } from '../sftp-download.js';
+import { emptySftpListingLabel, initialSftpPath, visibleSftpEntries } from '../sftp-panel-state.js';
+import {
+  downloadResume,
+  forgetInterruptedDownload,
+  pickDownloadFolder,
+  saveIntoFolder,
+  TRANSFER_CANCELLED,
+} from '../sftp-download.js';
 import {
   EMPTY_SFTP_SELECTION,
   selectAllSftpEntries,
@@ -68,9 +79,17 @@ import {
   sftpContextSelection,
   sftpEntryCount,
   sftpSelectGesture,
+  visibleSftpSelection,
   type SftpSelectGesture,
   type SftpSelection,
 } from '../sftp-selection.js';
+import {
+  DEFAULT_SFTP_SORT,
+  nextSftpSort,
+  sortedSftpEntries,
+  type SftpSort,
+  type SftpSortKey,
+} from '../sftp-sort.js';
 import {
   cleanRelativePath,
   collectDrop,
@@ -136,32 +155,61 @@ function saveDownload(name: string, blob: Blob): void {
 }
 
 /**
- * A panel too narrow for the modification times and the drag hint, such as the
- * browser docked in the sidebar. The panel is the size container.
+ * A panel too narrow for the modification times and for the filter beside the
+ * toolbar buttons, such as the browser docked in the sidebar. The panel is the
+ * size container.
  */
 const NARROW_PANEL = '@container (max-width: 359px)';
+/** No room for the drag hint between the toolbar buttons and the filter, as at the default width. */
+const COMPACT_PANEL = '@container (max-width: 479px)';
 
 const SftpEntryTable = memo(function SftpEntryTable({
   connId,
   currentPath,
   entries,
   isFetching,
+  emptyLabel,
   selectedNames,
   onNavigate,
   onOpenFile,
   onSelect,
   onContextMenu,
+  sort,
+  onSortChange,
 }: {
   connId: string;
   currentPath: string;
   entries: SftpEntry[];
   isFetching: boolean;
+  emptyLabel: string;
   selectedNames: ReadonlySet<string>;
   onNavigate: (path: string) => void;
   onOpenFile: (path: string) => void;
   onSelect: (name: string, gesture: SftpSelectGesture) => void;
   onContextMenu: (entry: SftpEntry, x: number, y: number) => void;
+  sort: SftpSort;
+  onSortChange: (sort: SftpSort) => void;
 }) {
+  const direction = sort.descending ? 'desc' : 'asc';
+  const sortLabel = (key: SftpSortKey, label: string) => {
+    // On hover, an unsorted column's faint arrow shows where a click starts.
+    const shown = sort.key === key ? sort : nextSftpSort(sort, key);
+    return (
+      <TableSortLabel
+        component="button"
+        active={sort.key === key}
+        direction={shown.descending ? 'desc' : 'asc'}
+        onClick={() => onSortChange(nextSftpSort(sort, key))}
+        sx={{
+          font: 'inherit',
+          '& .MuiTableSortLabel-icon': { fontSize: 14, mx: 0.25 },
+          '&:focus-visible': { outline: 2, outlineColor: 'primary.main' },
+        }}
+      >
+        {label}
+      </TableSortLabel>
+    );
+  };
   return (
     <Table
       size="small"
@@ -173,12 +221,15 @@ const SftpEntryTable = memo(function SftpEntryTable({
     >
       <TableHead>
         <TableRow>
-          <TableCell>Name</TableCell>
-          <TableCell align="right" sx={{ width: 72 }}>
-            Size
+          <TableCell sortDirection={sort.key === 'name' && direction}>
+            {sortLabel('name', 'Name')}
           </TableCell>
-          <TableCell className="sftp-modified" sx={{ width: 112 }}>
-            Modified
+          {/* The arrow sits in the left padding, so the narrow column keeps its width. */}
+          <TableCell align="right" sortDirection={sort.key === 'size' && direction} sx={{ width: 72, pl: 0.5 }}>
+            {sortLabel('size', 'Size')}
+          </TableCell>
+          <TableCell className="sftp-modified" sortDirection={sort.key === 'modified' && direction} sx={{ width: 112 }}>
+            {sortLabel('modified', 'Modified')}
           </TableCell>
         </TableRow>
       </TableHead>
@@ -249,7 +300,7 @@ const SftpEntryTable = memo(function SftpEntryTable({
               <Stack spacing={0.5} sx={{ alignItems: 'center' }}>
                 <FolderOffOutlinedIcon sx={{ fontSize: 26, color: 'text.disabled' }} />
                 <Typography variant="caption" color="textSecondary">
-                  Empty directory
+                  {emptyLabel}
                 </Typography>
               </Stack>
             </TableCell>
@@ -305,7 +356,9 @@ export function SftpPanel({
   const [path, setPath] = useState(startingPath);
   const [pathInput, setPathInput] = useState(startingPath);
   const [dragOver, setDragOver] = useState(false);
+  const [sort, setSort] = useState<SftpSort>(DEFAULT_SFTP_SORT);
   const [selection, setSelection] = useState<SftpSelection>(EMPTY_SFTP_SELECTION);
+  const [filter, setFilter] = useState('');
   const [menu, setMenu] = useState<{ x: number; y: number; entry: SftpEntry } | null>(null);
   const [openWithFile, setOpenWithFile] = useState<{ entry: SftpEntry; path: string }>();
   const [busy, setBusy] = useState(false);
@@ -319,6 +372,7 @@ export function SftpPanel({
   const queryClient = useQueryClient();
   const panelWidth = usePrefsStore((state) => state.sftpPanelWidth);
   const sidebarOnLeft = usePrefsStore((state) => state.sidebarPosition === 'left');
+  const showHiddenFiles = usePrefsStore((state) => state.showHiddenFiles);
   const setPrefs = usePrefsStore((state) => state.set);
   // The sidebar sizes itself; only the panel beside a terminal has its own width.
   const fillsParent = fill || inSidebar;
@@ -334,6 +388,7 @@ export function SftpPanel({
     setPath(terminalPath);
     setPathInput(terminalPath);
     setSelection(EMPTY_SFTP_SELECTION);
+    setFilter('');
   }, [followTerminalFolder, terminalPath]);
   useEffect(() => () => transferControllerRef.current?.abort(), []);
   // Files dropped onto a terminal of this connection report their upload here.
@@ -344,15 +399,21 @@ export function SftpPanel({
   );
 
   const entries = useMemo(
-    () =>
-      (data?.entries ?? []).toSorted((a, b) => {
-        if ((a.type === 'dir') !== (b.type === 'dir')) return a.type === 'dir' ? -1 : 1;
-        return a.name.localeCompare(b.name);
-      }),
-    [data?.entries],
+    () => sortedSftpEntries(data?.entries ?? [], sort),
+    [data?.entries, sort],
   );
-  const entryNames = useMemo(() => entries.map((entry) => entry.name), [entries]);
-  const selectedEntries = useMemo(() => selectedSftpEntries(entries, selection), [entries, selection]);
+  const visibleEntries = useMemo(
+    () => visibleSftpEntries(entries, showHiddenFiles, filter),
+    [entries, showHiddenFiles, filter],
+  );
+  const emptyLabel = useMemo(() => emptySftpListingLabel(entries, filter), [entries, filter]);
+  const entryNames = useMemo(() => visibleEntries.map((entry) => entry.name), [visibleEntries]);
+  // Rows the filter or the hidden-files button hides drop out of the selection and close their menu.
+  useEffect(() => {
+    setSelection((current) => visibleSftpSelection(current, entryNames));
+    setMenu((current) => (current && entryNames.includes(current.entry.name) ? current : null));
+  }, [entryNames]);
+  const selectedEntries = useMemo(() => selectedSftpEntries(visibleEntries, selection), [visibleEntries, selection]);
   const selectedFiles = selectedEntries.filter((entry) => entry.type === 'file');
   const single = selectedEntries.length === 1 ? selectedEntries[0] : undefined;
   const currentPath = data?.path ?? path;
@@ -362,6 +423,7 @@ export function SftpPanel({
     setPath(next);
     setPathInput(next);
     setSelection(EMPTY_SFTP_SELECTION);
+    setFilter('');
   }, []);
   const select = useCallback(
     (name: string, gesture: SftpSelectGesture) =>
@@ -429,7 +491,9 @@ export function SftpPanel({
             const modified = Date.parse(headers.get('last-modified') ?? '');
             remoteMtimeMs = Number.isNaN(modified) ? undefined : modified;
           },
+          downloadResume(file, controller.signal),
         );
+        forgetInterruptedDownload(file);
         setTransfer({
           id,
           direction: 'download',
@@ -509,7 +573,10 @@ export function SftpPanel({
             `/api/sftp/${connId}/download?path=${encodeURIComponent(file)}`,
             (progress) => setTransfer({ ...current, ...progress, phase: 'transferring' }),
             controller.signal,
+            undefined,
+            downloadResume(file, controller.signal),
           );
+          forgetInterruptedDownload(file);
           if (folder) await saveIntoFolder(folder, entry.name, blob);
           else saveDownload(entry.name, blob);
           bytes += blob.size;
@@ -856,7 +923,12 @@ export function SftpPanel({
           </IconButton>
         </Tooltip>
       </Stack>
-      <Stack direction="row" spacing={0.25} sx={{ px: 0.75, pb: 0.75, alignItems: 'center' }}>
+      <Stack
+        direction="row"
+        spacing={0.25}
+        useFlexGap
+        sx={{ px: 0.75, pb: 0.75, alignItems: 'center', flexWrap: 'wrap', rowGap: 0.75 }}
+      >
         <Tooltip title="New folder">
           <IconButton size="small" aria-label="New folder" disabled={busy} onClick={mkdir}>
             <CreateNewFolderOutlinedIcon fontSize="small" />
@@ -888,6 +960,18 @@ export function SftpPanel({
             event.target.value = '';
           }}
         />
+        <Tooltip title={downloadLabel}>
+          <span>
+            <IconButton
+              size="small"
+              aria-label={downloadLabel}
+              disabled={busy || selectedFiles.length === 0}
+              onClick={() => downloadFiles(selectedFiles)}
+            >
+              <DownloadOutlinedIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
         <Tooltip title="Open selected file in editor">
           <span>
             <IconButton
@@ -902,28 +986,71 @@ export function SftpPanel({
             </IconButton>
           </span>
         </Tooltip>
-        <Tooltip title={downloadLabel}>
-          <span>
-            <IconButton
-              size="small"
-              aria-label={downloadLabel}
-              disabled={busy || selectedFiles.length === 0}
-              onClick={() => downloadFiles(selectedFiles)}
-            >
-              <DownloadOutlinedIcon fontSize="small" />
-            </IconButton>
-          </span>
-        </Tooltip>
-        <Box sx={{ flex: 1 }} />
         {selectedEntries.length > 1 ? (
-          <Typography variant="caption" color="textSecondary" noWrap>
+          <Typography
+            variant="caption"
+            color="textSecondary"
+            noWrap
+            sx={{ ml: 0.5, [NARROW_PANEL]: { flex: '1 1 0' } }}
+          >
             {selectedEntries.length} selected
           </Typography>
         ) : (
-          <Typography variant="caption" color="textDisabled" sx={{ [NARROW_PANEL]: { display: 'none' } }}>
+          <Typography
+            variant="caption"
+            color="textDisabled"
+            noWrap
+            sx={{ ml: 0.5, flex: '1 1 0', [COMPACT_PANEL]: { display: 'none' } }}
+          >
             Drag in to upload · drag out to download
           </Typography>
         )}
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.25,
+            ml: 'auto',
+            flex: '1 1 140px',
+            maxWidth: 232,
+            [NARROW_PANEL]: { flexBasis: '100%', maxWidth: 'none' },
+          }}
+        >
+          <TextField
+            fullWidth
+            placeholder="Filter by name"
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && filter) setFilter('');
+            }}
+            slotProps={{
+              htmlInput: { 'aria-label': 'Filter files by name' },
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon sx={{ fontSize: 16 }} />
+                  </InputAdornment>
+                ),
+                sx: { fontSize: 12 },
+              },
+            }}
+          />
+          <Tooltip title={showHiddenFiles ? 'Hide hidden files' : 'Show hidden files'}>
+            <IconButton
+              size="small"
+              aria-label="Show hidden files"
+              aria-pressed={showHiddenFiles}
+              onClick={() => setPrefs({ showHiddenFiles: !showHiddenFiles })}
+            >
+              {showHiddenFiles ? (
+                <VisibilityOutlinedIcon fontSize="small" />
+              ) : (
+                <VisibilityOffOutlinedIcon fontSize="small" />
+              )}
+            </IconButton>
+          </Tooltip>
+        </Box>
       </Stack>
       {transfer && (
         <TransferProgress
@@ -932,7 +1059,7 @@ export function SftpPanel({
             setTransfer((current) =>
               current ? { ...current, phase: 'cancelling', bytesPerSecond: 0 } : current,
             );
-            transferControllerRef.current?.abort();
+            transferControllerRef.current?.abort(TRANSFER_CANCELLED);
           }}
           sx={{ mx: 0.75, mb: 0.75 }}
         />
@@ -971,13 +1098,16 @@ export function SftpPanel({
           <SftpEntryTable
             connId={connId}
             currentPath={currentPath}
-            entries={entries}
+            entries={visibleEntries}
             isFetching={isFetching}
+            emptyLabel={emptyLabel}
             selectedNames={selection.names}
             onNavigate={navigate}
             onOpenFile={onOpenFile}
             onSelect={select}
             onContextMenu={openContextMenu}
+            sort={sort}
+            onSortChange={setSort}
           />
         )}
       </Box>
