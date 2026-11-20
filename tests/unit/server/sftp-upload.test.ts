@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../../../server/src/app.js';
 import { resolveConfig } from '../../../server/src/config.js';
 import { registerSftpRoutes } from '../../../server/src/routes/sftp.js';
+import { sftpOverStdio } from '../../../server/src/ssh/sftp-over-stdio.js';
+import { SFTP } from '../../../server/src/ssh/ssh2-internals.js';
 
 type RouteHandler = (request: unknown, reply: unknown) => Promise<unknown>;
 
@@ -1137,5 +1139,56 @@ describe('SFTP remote editor', () => {
       '/etc/example.conf',
       expect.any(Function),
     );
+  });
+});
+
+/** ssh2's SFTP server side, answering the requests of the client under test. */
+interface SftpServerSide extends EventEmitter {
+  handle(id: number, handle: Buffer): void;
+  status(id: number, code: number): void;
+}
+
+/**
+ * ssh2's SFTP client and server talking over a pair of streams. `cut` drops
+ * the connection the way a dying transport does.
+ */
+async function sftpSession() {
+  const toServer = new PassThrough();
+  const toClient = new PassThrough();
+  const ServerSftp = SFTP as unknown as new (
+    client: unknown,
+    channel: unknown,
+    config: { server: true },
+  ) => SftpServerSide & { push(data: Buffer): void };
+  const server = new ServerSftp(
+    { _protocol: { channelData: (_id: number, data: Buffer) => toClient.write(data), channelClose: () => toClient.end() } },
+    {
+      type: 'sftp',
+      incoming: { id: 0, state: 'open' },
+      outgoing: { id: 0, state: 'open', window: Number.MAX_SAFE_INTEGER, packetSize: Number.MAX_SAFE_INTEGER },
+    },
+    { server: true },
+  );
+  toServer.on('data', (data: Buffer) => server.push(data));
+  const client = await sftpOverStdio(toServer, toClient);
+  return { client, server: server as SftpServerSide, cut: () => toClient.destroy() };
+}
+
+describe('SFTP upload on a connection that drops', () => {
+  it('answers with an error instead of waiting for replies that cannot come', async () => {
+    const { client, server, cut } = await sftpSession();
+    server.on('LSTAT', (id: number) => server.status(id, 2));
+    server.on('OPEN', (id: number) => server.handle(id, Buffer.from('handle')));
+    server.on('FSETSTAT', (id: number) => server.status(id, 0));
+    // The connection drops while the first write waits for its reply.
+    server.on('WRITE', () => cut());
+    const handler = captureUploadHandler(client as never);
+
+    const response = await Promise.race([
+      invoke(handler, { path: '/remote/report.txt' }),
+      new Promise((resolve) => setTimeout(() => resolve('no answer'), 2_000)),
+    ]);
+
+    expect(response).toMatchObject({ status: 500, body: { message: 'No response from server' } });
   });
 });
