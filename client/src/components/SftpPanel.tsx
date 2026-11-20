@@ -15,6 +15,7 @@ import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
+import TableSortLabel from '@mui/material/TableSortLabel';
 import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
@@ -76,6 +77,13 @@ import {
   type SftpSelectGesture,
   type SftpSelection,
 } from '../sftp-selection.js';
+import {
+  DEFAULT_SFTP_SORT,
+  nextSftpSort,
+  sortedSftpEntries,
+  type SftpSort,
+  type SftpSortKey,
+} from '../sftp-sort.js';
 import {
   cleanRelativePath,
   collectDrop,
@@ -160,6 +168,8 @@ const SftpEntryTable = memo(function SftpEntryTable({
   onOpenFile,
   onSelect,
   onContextMenu,
+  sort,
+  onSortChange,
 }: {
   connId: string;
   currentPath: string;
@@ -171,7 +181,29 @@ const SftpEntryTable = memo(function SftpEntryTable({
   onOpenFile: (path: string) => void;
   onSelect: (name: string, gesture: SftpSelectGesture) => void;
   onContextMenu: (entry: SftpEntry, x: number, y: number) => void;
+  sort: SftpSort;
+  onSortChange: (sort: SftpSort) => void;
 }) {
+  const direction = sort.descending ? 'desc' : 'asc';
+  const sortLabel = (key: SftpSortKey, label: string) => {
+    // On hover, an unsorted column's faint arrow shows where a click starts.
+    const shown = sort.key === key ? sort : nextSftpSort(sort, key);
+    return (
+      <TableSortLabel
+        component="button"
+        active={sort.key === key}
+        direction={shown.descending ? 'desc' : 'asc'}
+        onClick={() => onSortChange(nextSftpSort(sort, key))}
+        sx={{
+          font: 'inherit',
+          '& .MuiTableSortLabel-icon': { fontSize: 14, mx: 0.25 },
+          '&:focus-visible': { outline: 2, outlineColor: 'primary.main' },
+        }}
+      >
+        {label}
+      </TableSortLabel>
+    );
+  };
   return (
     <Table
       size="small"
@@ -183,12 +215,15 @@ const SftpEntryTable = memo(function SftpEntryTable({
     >
       <TableHead>
         <TableRow>
-          <TableCell>Name</TableCell>
-          <TableCell align="right" sx={{ width: 72 }}>
-            Size
+          <TableCell sortDirection={sort.key === 'name' && direction}>
+            {sortLabel('name', 'Name')}
           </TableCell>
-          <TableCell className="sftp-modified" sx={{ width: 112 }}>
-            Modified
+          {/* The arrow sits in the left padding, so the narrow column keeps its width. */}
+          <TableCell align="right" sortDirection={sort.key === 'size' && direction} sx={{ width: 72, pl: 0.5 }}>
+            {sortLabel('size', 'Size')}
+          </TableCell>
+          <TableCell className="sftp-modified" sortDirection={sort.key === 'modified' && direction} sx={{ width: 112 }}>
+            {sortLabel('modified', 'Modified')}
           </TableCell>
         </TableRow>
       </TableHead>
@@ -315,6 +350,7 @@ export function SftpPanel({
   const [path, setPath] = useState(startingPath);
   const [pathInput, setPathInput] = useState(startingPath);
   const [dragOver, setDragOver] = useState(false);
+  const [sort, setSort] = useState<SftpSort>(DEFAULT_SFTP_SORT);
   const [selection, setSelection] = useState<SftpSelection>(EMPTY_SFTP_SELECTION);
   const [filter, setFilter] = useState('');
   const [menu, setMenu] = useState<{ x: number; y: number; entry: SftpEntry } | null>(null);
@@ -357,12 +393,8 @@ export function SftpPanel({
   );
 
   const entries = useMemo(
-    () =>
-      (data?.entries ?? []).toSorted((a, b) => {
-        if ((a.type === 'dir') !== (b.type === 'dir')) return a.type === 'dir' ? -1 : 1;
-        return a.name.localeCompare(b.name);
-      }),
-    [data?.entries],
+    () => sortedSftpEntries(data?.entries ?? [], sort),
+    [data?.entries, sort],
   );
   const visibleEntries = useMemo(
     () => visibleSftpEntries(entries, showHiddenFiles, filter),
@@ -1063,6 +1095,8 @@ export function SftpPanel({
             onOpenFile={onOpenFile}
             onSelect={select}
             onContextMenu={openContextMenu}
+            sort={sort}
+            onSortChange={setSort}
           />
         )}
       </Box>
