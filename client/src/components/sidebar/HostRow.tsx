@@ -19,7 +19,13 @@ import { loadTerminalViewImpl } from '../../lazy-features.js';
 import { hostKindIcon } from '../host-kind-icon.js';
 import { hostDetailLines } from './host-details.js';
 import type { HostActivation } from './row-clicks.js';
-import { TREE_BASE_INSET, indentPx, treeLabelSx, treeRowSx } from './tree-row-style.js';
+import {
+  TREE_BASE_INSET,
+  TREE_CHEVRON_SLOT,
+  indentPx,
+  treeLabelSx,
+  treeRowSx,
+} from './tree-row-style.js';
 import type { LiveCounts } from './useLiveHostCounts.js';
 
 export interface HostRowProps {
@@ -208,7 +214,9 @@ export const HostRow = memo(function HostRow({
           },
         ]}
       >
-        <Box sx={{ position: 'relative', display: 'flex', flexShrink: 0 }}>
+        <Box
+          sx={{ position: 'relative', display: 'flex', flexShrink: 0, ml: `${TREE_CHEVRON_SLOT}px` }}
+        >
           <Icon sx={{ fontSize: 16, color: color ?? 'text.secondary' }} />
           {connected + connecting > 0 && (
             <Box
