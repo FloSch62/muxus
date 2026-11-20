@@ -1,3 +1,5 @@
+import type { DownloadResume, PartialDownload } from './api/transfers.js';
+
 /**
  * Saving several downloaded files at once. A download link asks where to save
  * each file in the desktop app, so where the page may write to a folder (the
@@ -93,4 +95,52 @@ async function folderHas(folder: FileSystemDirectoryHandle, name: string): Promi
     if (error.name === 'NotFoundError') return false;
     throw error;
   }
+}
+
+// What downloads that stopped early received, by remote path, so that
+// downloading the file again continues them. They are held in memory, so only
+// the newest are kept, up to this many bytes in all.
+const MAX_INTERRUPTED_DOWNLOAD_BYTES = 256 * 1024 * 1024;
+const interruptedDownloads = new Map<string, PartialDownload>();
+
+/** The reason Cancel aborts with: unlike the file browser closing, it drops what a download received. */
+export const TRANSFER_CANCELLED = new DOMException('Transfer cancelled', 'AbortError');
+
+/**
+ * Continue an interrupted download of the remote `file`, and keep what this one
+ * receives if it stops early other than by Cancel.
+ */
+export function downloadResume(file: string, signal: AbortSignal): DownloadResume {
+  // Cancel also drops what an earlier attempt received, even before an answer arrives.
+  signal.addEventListener(
+    'abort',
+    () => {
+      if (signal.reason === TRANSFER_CANCELLED) interruptedDownloads.delete(file);
+    },
+    { once: true },
+  );
+  return {
+    partial: interruptedDownloads.get(file),
+    onInterrupted: (partial) => {
+      if (signal.reason !== TRANSFER_CANCELLED) keepInterruptedDownload(file, partial);
+    },
+  };
+}
+
+function keepInterruptedDownload(file: string, partial: PartialDownload): void {
+  interruptedDownloads.delete(file);
+  if (partial.blob.size > MAX_INTERRUPTED_DOWNLOAD_BYTES) return;
+  interruptedDownloads.set(file, partial);
+  let kept = 0;
+  for (const { blob } of interruptedDownloads.values()) kept += blob.size;
+  for (const [oldest, { blob }] of interruptedDownloads) {
+    if (kept <= MAX_INTERRUPTED_DOWNLOAD_BYTES) break;
+    interruptedDownloads.delete(oldest);
+    kept -= blob.size;
+  }
+}
+
+/** A download of the remote `file` finished; nothing of it is left to continue. */
+export function forgetInterruptedDownload(file: string): void {
+  interruptedDownloads.delete(file);
 }

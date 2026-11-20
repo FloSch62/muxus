@@ -15,6 +15,7 @@ import {
   scriptSshArgs,
   sftpSshArgs,
   sshDestination,
+  systemOpenSshMuxKey,
   SystemOpenSshSessions,
   terminalSshArgs,
 } from '../../../server/src/ssh/system-openssh.js';
@@ -105,6 +106,15 @@ describe('ssh arguments', () => {
       expect.arrayContaining(['-s', 'ControlMaster=no', 'ControlPath=/tmp/d/c', 'RemoteCommand=none', 'BatchMode=yes']),
     );
     expect(args.slice(-3)).toEqual(['--', 'build-box', 'sftp']);
+  });
+
+  it('names the host alike for every session that reaches it the same way', () => {
+    const key = systemOpenSshMuxKey(saved);
+
+    expect(systemOpenSshMuxKey({ ...saved, forwards: [{ type: 'dynamic', bindPort: 1080 }] })).toBe(key);
+    expect(systemOpenSshMuxKey({ ...saved, user: 'bob' })).not.toBe(key);
+    expect(systemOpenSshMuxKey({ ...saved, proxyJump: ['jump1'] })).not.toBe(key);
+    expect(systemOpenSshMuxKey(alias)).not.toBe(key);
   });
 });
 

@@ -19,7 +19,18 @@ operation, so no second connection or authentication is required.
 - The path field is editable. Enter a path and press ++enter++.
 - :material-arrow-up: goes to the parent directory, :material-home: to the remote home
   directory, and :material-refresh: re-reads the current directory.
-- Double-click a directory to enter it. Sorting is by name, size or modification time.
+- Double-click a directory to enter it.
+- Click **Name**, **Size** or **Modified** to sort by that column, and click it again to
+  reverse the order. **Size** and **Modified** start with the largest and newest. Folders
+  always stay above files, and the browser opens sorted by name.
+- Type in **Filter by name**, at the end of the toolbar, to show only the entries whose
+  names contain the text, ignoring case. The filter clears when you change folders, and
+  ++esc++ clears it too. When nothing on show matches, the list says *No files match*, or
+  *Only hidden files match* when a hidden one does.
+- Hidden files and folders, whose names start with a dot such as `.bashrc`, are listed while
+  the button beside the filter shows :material-eye-outline:. Click it to hide them; it then
+  shows :material-eye-off-outline:, and a folder holding nothing else says *Only hidden
+  files*. Every file browser follows the choice, and Muxus remembers it.
 - **Follow terminal folder** is enabled by default. The browser opens at the shell's current
   directory and follows later `cd` commands; clear it to browse independently.
 - **Open in new window** moves the browser into its own window on the same connection.
@@ -41,8 +52,8 @@ SSH session is active:
   and the folder is unchanged when you switch back.
 - **Move beside the terminal** in the header puts it back next to the terminal.
 
-In a narrow sidebar the **Modified** column and the drag hint are hidden; widen the sidebar
-by dragging its edge to bring them back.
+In a narrow sidebar the **Modified** column and the drag hint are hidden and the filter gets
+a row of its own; widen the sidebar by dragging its edge to bring them back.
 
 ## Transferring
 
@@ -65,6 +76,14 @@ Downloading several files asks once for a folder and saves them all there. A fil
 same name already in the folder is kept, and the new one is numbered, as in
 `report (1).txt`. Browsers that cannot write to a folder, such as Firefox and Safari, save
 the files to their downloads folder instead. Dragging out takes one file at a time.
+
+A download stopped by a lost connection continues where it stopped when you download the
+same file again in the same window once the session is back, and only the missing part
+crosses the network. The window keeps up to 256 MiB of what interrupted downloads received;
+a download that had received more than 256 MiB is not kept at all and starts over.
+**Cancel**, closing the window or quitting Muxus discards what was kept. A file whose size
+or modification time changed on the server is downloaded whole, and so is a file dragged
+out.
 
 !!! warning "Overwrite confirmation"
 
@@ -102,8 +121,11 @@ managers. Dropping onto a [local terminal](terminal.md#dropping-files) always ty
 
 Click a row to select it. ++ctrl++ + click (++cmd++ + click on macOS) adds a row or takes it
 out again, ++shift++ + click selects every row from the one clicked last, and ++ctrl+a++
-(++cmd+a++) selects the whole folder. ++esc++ or a click on the empty space below the rows
+(++cmd+a++) selects every row shown. ++esc++ or a click on the empty space below the rows
 clears the selection. The toolbar shows how many rows are selected.
+
+Only rows on show can be selected. A row that the filter or the hidden-files button hides
+leaves the selection, so downloads and deletes never reach a file you cannot see.
 
 With several rows selected, :material-download: downloads every selected file, and the row
 menu of a selected row offers **Download** for the files and **Delete** for all of them.
@@ -155,6 +177,14 @@ so you can upload it by hand.
 Uploads are written to a temporary name in the destination directory and then renamed into
 place, so an interrupted transfer cannot leave a partially written file at the destination
 path. Where the server supports it, the atomic `posix-rename` extension is used.
+
+A lost connection leaves the temporary file behind, named after the destination and ending
+in `.upload`. For a file of 1 MiB or more, uploading the same local file to the same folder
+again, from the file browser or onto the terminal, continues it, and only the missing part
+crosses the network. Muxus continues only when the file's size, modification time and
+samples of its contents are unchanged and the last bytes that reached the server match it;
+otherwise the file is uploaded from the start. The temporary file of a file that changed
+since is not reused: delete it like any other file. **Cancel** removes the temporary file.
 
 The SFTP channel belongs to the connection rather than the panel. Closing the browser
 leaves it available for the [remote editor](editor.md), and closing the tab releases it
