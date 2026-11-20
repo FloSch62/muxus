@@ -10,3 +10,4 @@ export * from './management.js';
 export * from './gnmi-path.js';
 export * from './environments.js';
 export * from './appimage-env.js';
+export * from './text-decoding.js';
