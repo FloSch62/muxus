@@ -30,6 +30,7 @@ import FlashOnOutlinedIcon from '@mui/icons-material/FlashOnOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import SearchOutlinedIcon from '@mui/icons-material/SearchOutlined';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
+import { decodeImportedText } from '@muxus/shared';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
 import {
   importedCommandBarGroup,
@@ -196,7 +197,7 @@ export function SessionImportDialog<T extends ImportedSession>({
     setBusy('file');
     setError(null);
     try {
-      review(await file.text(), file.name);
+      review(decodeImportedText(await file.arrayBuffer()), file.name);
     } catch (fileError) {
       setError(messageFrom(fileError, `Could not read that ${vendorName} file.`));
     } finally {

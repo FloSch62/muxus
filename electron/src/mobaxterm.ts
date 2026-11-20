@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { MobaXtermSessionSource } from '@muxus/shared';
+import { decodeImportedText, type MobaXtermSessionSource } from '@muxus/shared';
 
 const MAX_MOBAXTERM_FILE_BYTES = 10 * 1024 * 1024;
 
@@ -69,8 +69,10 @@ async function readPortableIni(): Promise<MobaXtermSessionSource | undefined> {
   if (!appData) return undefined;
   const filename = path.join(appData, 'MobaXterm', 'MobaXterm.ini');
   try {
-    const content = await readFile(filename, 'utf8');
-    if (!content.trim() || Buffer.byteLength(content) > MAX_MOBAXTERM_FILE_BYTES) return undefined;
+    const bytes = await readFile(filename);
+    if (bytes.byteLength > MAX_MOBAXTERM_FILE_BYTES) return undefined;
+    const content = decodeImportedText(bytes);
+    if (!content.trim()) return undefined;
     return { source: filename, content };
   } catch {
     return undefined;
