@@ -1,3 +1,7 @@
+---
+description: "Install Muxus on Nix and NixOS: try it with nix run, or add the flake as an input and use the package or overlay."
+---
+
 # Nix and NixOS
 
 Muxus ships a flake that builds the latest release from source and runs it on the Electron from nixpkgs, which can be older than the version the release is tested with.

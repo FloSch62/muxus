@@ -1,4 +1,5 @@
 ---
+description: "RDP and VNC remote desktops in Muxus tabs, in the same host list and split panes as your SSH, Telnet and serial sessions."
 icon: lucide/monitor
 ---
 

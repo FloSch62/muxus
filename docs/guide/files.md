@@ -1,4 +1,5 @@
 ---
+description: "An SFTP file browser beside every SSH terminal in Muxus, using the session's existing connection with no second login."
 icon: lucide/folder-tree
 ---
 

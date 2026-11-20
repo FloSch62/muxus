@@ -1,4 +1,5 @@
 ---
+description: "Telnet and serial console sessions in Muxus, next to your SSH hosts: console servers, lab switches and boards attached over USB serial."
 icon: lucide/cable
 ---
 

@@ -53,7 +53,7 @@ describe('app routes', () => {
       publishedAt: '2026-07-26T08:00:00Z',
     });
     expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(
-      /^https:\/\/flosch62\.github\.io\/muxus\/latest\.json\?t=\d+$/,
+      /^https:\/\/muxus\.app\/latest\.json\?t=\d+$/,
     );
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
       headers: { Accept: 'application/json', 'User-Agent': 'Muxus/0.15.1' },

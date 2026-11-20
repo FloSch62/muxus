@@ -1,4 +1,5 @@
 ---
+description: "SSH tunnels and port forwarding in Muxus: saved persistent tunnels plus local, remote and dynamic forwards on each live connection."
 icon: lucide/arrow-left-right
 ---
 

@@ -15,7 +15,7 @@ const x11SettingsSchema = z.object({
   clipboard: z.boolean(),
 });
 
-const UPDATE_MANIFEST_URL = 'https://flosch62.github.io/muxus/latest.json';
+const UPDATE_MANIFEST_URL = 'https://muxus.app/latest.json';
 const UPDATE_CHECK_TIMEOUT_MS = 10_000;
 
 interface UpdateManifest {

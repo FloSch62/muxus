@@ -4,17 +4,17 @@ Muxus is a free, open-source SSH, Telnet and serial client with RDP and VNC remo
 and a NETCONF, gNMI, gNOI and gNSI workbench for network devices.
 Split panes, saved workspaces, SFTP, a remote editor, saved tunnels, and images in the terminal.
 
-**The docs are the main entry point:** [flosch62.github.io/muxus](https://flosch62.github.io/muxus/)
+**The docs are the main entry point:** [muxus.app](https://muxus.app/)
 
 ![The Muxus window](docs/assets/screenshots/overview.png)
 
 ## Start Here
 
-- [Install Muxus](https://flosch62.github.io/muxus/install/)
-- [Quickstart](https://flosch62.github.io/muxus/quickstart/)
-- [User guide](https://flosch62.github.io/muxus/guide/)
-- [Reference](https://flosch62.github.io/muxus/reference/)
-- [Contributing and development](https://flosch62.github.io/muxus/community/)
+- [Install Muxus](https://muxus.app/install/)
+- [Quickstart](https://muxus.app/quickstart/)
+- [User guide](https://muxus.app/guide/)
+- [Reference](https://muxus.app/reference/)
+- [Contributing and development](https://muxus.app/community/)
 - [Desktop releases](https://github.com/FloSch62/muxus/releases)
 
 ## Run From Source

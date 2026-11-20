@@ -1,4 +1,5 @@
 ---
+description: "Edit remote files over SSH in Monaco, the VS Code editor, straight from a terminal path or the SFTP browser in Muxus."
 icon: lucide/file-pen
 ---
 

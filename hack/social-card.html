@@ -1,0 +1,46 @@
+<!doctype html>
+<!--
+  Source for docs/assets/social-card.png, the 1200x630 link preview image.
+  Regenerate with:
+    google-chrome --headless --hide-scrollbars --window-size=1200,630 \
+      --screenshot=docs/assets/social-card.png "file://$PWD/hack/social-card.html"
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@450;600;700&display=block" rel="stylesheet">
+<style>
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    font-family: Inter, system-ui, sans-serif;
+    color: #e8ebf7;
+    background:
+      radial-gradient(900px 500px at 105% 110%, rgba(110, 139, 251, 0.35), transparent 60%),
+      radial-gradient(600px 400px at -10% -20%, rgba(34, 211, 238, 0.18), transparent 60%),
+      #0d1020;
+    position: relative;
+  }
+  .text { position: absolute; left: 72px; top: 0; bottom: 0; width: 470px;
+          display: flex; flex-direction: column; justify-content: center; }
+  .brand { display: flex; align-items: center; gap: 18px; margin-bottom: 36px; }
+  .brand img { width: 76px; height: 76px; }
+  .brand span { font-size: 56px; font-weight: 700; letter-spacing: -0.02em; }
+  h1 { font-size: 40px; line-height: 1.18; font-weight: 600; letter-spacing: -0.015em;
+       margin: 0 0 22px; }
+  p { font-size: 22px; line-height: 1.45; font-weight: 450; color: #aab2d5; margin: 0; }
+  .url { margin-top: 40px; font-size: 22px; font-weight: 600; color: #6e8bfb; }
+  .shot { position: absolute; left: 590px; top: 92px; width: 760px; border-radius: 14px;
+          box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.08); }
+</style>
+</head>
+<body>
+  <div class="text">
+    <div class="brand"><img src="../docs/assets/muxus.svg" alt=""><span>Muxus</span></div>
+    <h1>SSH, Telnet, serial, RDP &amp; VNC in one client</h1>
+    <p>SFTP, split panes, tunnels and a NETCONF/gNMI workbench. Free and open source for Windows, macOS and Linux.</p>
+    <div class="url">muxus.app</div>
+  </div>
+  <img class="shot" src="../docs/assets/screenshots/tour-dark-poster.png" alt="">
+</body>
+</html>

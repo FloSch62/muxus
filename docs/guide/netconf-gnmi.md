@@ -1,4 +1,5 @@
 ---
+description: "A NETCONF and gNMI workbench for network devices: browse config and state, Get, Set and Subscribe, commit changes, plus gNOI and gNSI operations."
 icon: lucide/network
 ---
 
