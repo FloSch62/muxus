@@ -19,6 +19,7 @@ import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import type { SavedHostProfile, SerialPortInfo, SerialProfile } from '@muxus/shared';
 import { MAX_BREAK_DURATION_MS } from '@muxus/shared/ws-protocol';
 import { useDeleteHostProfile, useSaveHostProfile, useUpdateHostProfileMetadata } from '../api/profiles.js';
+import { useSharedHostCaption } from '../api/shared-sessions.js';
 import { useSaveSessionLoggingPolicy } from '../api/session-history.js';
 import { useSerialPorts, useSessionLoggingPolicy } from '../api/queries.js';
 import { confirmDeleteHost } from '../host-actions.js';
@@ -73,6 +74,7 @@ export function NativeHostEditorContent({
     state.mode === 'edit-profile' || state.mode === 'duplicate-profile'
       ? state.entry
       : undefined;
+  const sharedCaption = useSharedHostCaption(state.mode === 'edit-profile' ? existing : undefined);
   const [section, setSection] = useState<NativeSection>('general');
   // The line-settings section only exists for serial; snap back if the
   // connection type flips underneath it.
@@ -184,7 +186,7 @@ export function NativeHostEditorContent({
   return (
     <EditorShell
       title={title}
-      storage="Saved in Muxus app data"
+      storage={sharedCaption ?? 'Saved in Muxus app data'}
       typeKind={state.mode === 'new' ? kind : undefined}
       onTypeChange={
         state.mode === 'new'

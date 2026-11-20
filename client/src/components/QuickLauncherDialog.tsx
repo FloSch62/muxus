@@ -25,6 +25,7 @@ import Typography from '@mui/material/Typography';
 import BoltOutlinedIcon from '@mui/icons-material/BoltOutlined';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
+import FolderSharedOutlinedIcon from '@mui/icons-material/FolderSharedOutlined';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import KeyboardOutlinedIcon from '@mui/icons-material/KeyboardOutlined';
@@ -138,6 +139,7 @@ type LauncherResult = ResultBase &
 type LauncherAction =
   | 'new-local'
   | 'new-host'
+  | 'shared-sessions'
   | 'settings'
   | 'workspaces'
   | 'history'
@@ -420,6 +422,9 @@ export function QuickLauncherDialog() {
         break;
       case 'new-host':
         ui.setHostEditor({ mode: 'new' });
+        break;
+      case 'shared-sessions':
+        ui.setSharedSessionsDialog({ mode: 'link' });
         break;
       case 'settings':
         ui.setSettingsOpen(true);
@@ -1155,6 +1160,12 @@ function buildActionResults({
       'connection',
       'profile',
     ]),
+    actionResult(
+      'shared-sessions',
+      'Follow shared sessions',
+      'Keep a folder of hosts up to date from a link or a shared file',
+      ['link', 'url', 'subscribe', 'team', 'lab', 'mobaxterm', 'mxtsessions', 'sync'],
+    ),
     actionResult('settings', 'Open settings', 'Appearance, terminal, behavior, and shortcuts', [
       'preferences',
       'configure',
@@ -1329,6 +1340,7 @@ function ResultIcon({ result }: { result: LauncherResult }) {
   if (result.action === 'tunnels') return <SwapHorizOutlinedIcon {...props} />;
   if (result.action === 'sftp') return <FolderOutlinedIcon {...props} />;
   if (result.action === 'new-host') return <DnsOutlinedIcon {...props} />;
+  if (result.action === 'shared-sessions') return <FolderSharedOutlinedIcon {...props} />;
   return <TerminalOutlinedIcon {...props} />;
 }
 

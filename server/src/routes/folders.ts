@@ -113,6 +113,7 @@ export function registerFolderRoutes(app: FastifyInstance, ctx: AppContext): voi
       const destinationPreserved =
         sourceKey !== targetKey && !!ctx.database.folderSettingsForPath(parsed.data.to);
       const { moved, dropped } = ctx.database.moveFolderSettings(parsed.data.from, parsed.data.to);
+      ctx.database.moveSharedSessionFolders(parsed.data.from, parsed.data.to);
       for (const row of dropped) {
         ctx.vault.deleteSshPassword(folderPasswordAccount(row.id));
       }

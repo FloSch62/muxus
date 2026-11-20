@@ -301,9 +301,14 @@ Muxus-only settings remain in the backup.
 **Import from other clients** reviews and imports sessions from **MobaXterm** (a local
 Windows installation or a session file) and **SecureCRT** (an XML settings export).
 
+**Shared sessions** lists the session lists you follow, each read from a link or a file on
+a shared drive, with their state and the actions that are also on each one's folder in the
+sidebar. See [shared sessions](hosts.md#shared-sessions).
+
 !!! info "What a backup excludes"
 
     Private key files, passwords and recorded session history are never part of a backup.
+    The links of your shared sessions are, including a personal one.
 
     A backup can contain a saved SSH `ProxyCommand`. Restoring it does not run the command,
     but opening that connection later does. Restore backups only from sources you trust.

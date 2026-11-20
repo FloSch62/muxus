@@ -4,6 +4,7 @@ import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import CreateNewFolderOutlinedIcon from '@mui/icons-material/CreateNewFolderOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
+import FolderSharedOutlinedIcon from '@mui/icons-material/FolderSharedOutlined';
 import SortByAlphaIcon from '@mui/icons-material/SortByAlpha';
 import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import { loadFolderDialog, loadHostEditorDialog } from '../../lazy-features.js';
@@ -19,6 +20,7 @@ export function PanelContextMenu({
   onClose,
   onNewHost,
   onNewFolder,
+  onFollowLink,
   onSortHosts,
   folderEditsEnabled,
   canSortHosts,
@@ -29,6 +31,8 @@ export function PanelContextMenu({
   onClose: () => void;
   onNewHost: () => void;
   onNewFolder: () => void;
+  /** Follow a shared sessions link. */
+  onFollowLink: () => void;
   onSortHosts: () => void;
   /** Folder paths are rewritten across the full list, never a filtered one. */
   folderEditsEnabled: boolean;
@@ -70,6 +74,12 @@ export function PanelContextMenu({
           <CreateNewFolderOutlinedIcon fontSize="small" />
         </ListItemIcon>
         New folder…
+      </MenuItem>
+      <MenuItem onClick={run(onFollowLink)}>
+        <ListItemIcon>
+          <FolderSharedOutlinedIcon fontSize="small" />
+        </ListItemIcon>
+        Shared sessions link…
       </MenuItem>
       <Divider />
       <MenuItem disabled={!canSortHosts} onClick={run(onSortHosts)}>

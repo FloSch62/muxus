@@ -63,6 +63,8 @@ export interface HostTreeProps {
   setExpanded: (key: string, expanded: boolean) => void;
   folderColor: (key: string) => string | undefined;
   folderIconId: (key: string) => string | undefined;
+  /** The shared sessions link a folder follows: what its tooltip says and whether it is failing. */
+  folderLink?: (key: string) => { tooltip: string; failing: boolean } | undefined;
   liveByKey: Map<string, LiveCounts>;
   reorderEnabled: boolean;
   /** Single click opens a host, or selects it and a double-click opens it. */
@@ -143,6 +145,7 @@ export function HostTree({
   setExpanded,
   folderColor,
   folderIconId,
+  folderLink,
   liveByKey,
   reorderEnabled,
   openGesture,
@@ -477,12 +480,15 @@ export function HostTree({
 
     const node = row.node;
     const isFolder = node.kind === 'folder';
+    const link = isFolder ? folderLink?.(row.key) : undefined;
     return (
       <FolderRow
         key={row.key}
         row={row}
         label={node.label}
-        tooltip={isFolder ? undefined : node.tooltip}
+        tooltip={isFolder ? link?.tooltip : node.tooltip}
+        shared={!!link}
+        sharedFailing={link?.failing}
         tooltipPlacement={hoverPlacement}
         count={node.descendantHostCount}
         color={isFolder ? folderColor(row.key) : undefined}

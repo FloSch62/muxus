@@ -96,6 +96,7 @@ describe('the settings search index', () => {
     'LocalShellProfilesSection.tsx': 'local-shells',
     'PasswordManagersGroup.tsx': 'passwords',
     'PasswordVaultSection.tsx': 'passwords',
+    'SharedSessionsGroup.tsx': 'data',
     'X11Section.tsx': 'x11',
   };
   /** The section components inside SettingsDialog.tsx. */

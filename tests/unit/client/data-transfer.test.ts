@@ -222,6 +222,7 @@ function mockBackupSnapshot(
   folders: unknown[] = [],
   profiles: unknown[] = [],
   policies: unknown[] = [],
+  sharedSessionSources: unknown[] = [],
 ): void {
   apiFetchMock
     .mockResolvedValueOnce({ hosts: [] })
@@ -247,7 +248,8 @@ function mockBackupSnapshot(
       },
       activeDirectory: '/home/test/logs',
     })
-    .mockResolvedValueOnce({ folders });
+    .mockResolvedValueOnce({ folders })
+    .mockResolvedValueOnce({ sources: sharedSessionSources });
 }
 
 describe('backing up session log files', () => {
@@ -1586,5 +1588,95 @@ describe('restoring manual folder order', () => {
     expect(
       sanitizePreferences(prefs({ sidebarFolderOrder: tooMany })).sidebarFolderOrder,
     ).toBeUndefined();
+  });
+});
+
+describe('backing up shared sessions links', () => {
+  const link = {
+    id: 'lab-link',
+    name: 'Lab hosts',
+    url: 'https://portal.example.net/me.mxtsessions',
+    folder: 'Lab',
+    refreshMinutes: 60,
+  };
+
+  it('keeps each link with its ID and leaves its status behind', async () => {
+    mockBackupSnapshot([], [], [], [
+      { ...link, hostCount: 12, lastSyncedAt: '2026-11-20T08:00:00.000Z', lastError: 'gone', createdAt: 'x', updatedAt: 'y' },
+    ]);
+
+    const document = await createBackupDocument();
+
+    expect(document.data.sharedSessionSources).toEqual([link]);
+    expect(parseTransferDocument(JSON.stringify(document)).data.sharedSessionSources).toEqual([link]);
+  });
+
+  it('restores links with the connections, keeping or replacing one that is already there', async () => {
+    const backup = (sources: unknown[]) =>
+      parseTransferDocument(
+        JSON.stringify({
+          format: 'muxus-backup',
+          version: 2,
+          createdAt: '2026-11-20T00:00:00.000Z',
+          data: {
+            sshHosts: [],
+            savedHosts: [],
+            hostOrder: [],
+            preferences: {},
+            tunnels: [],
+            loggingPolicies: [],
+            historySettings: { maxTotalBytes: 1, minFreeBytes: 0, minFreePercent: 0 },
+            sharedSessionSources: sources,
+          },
+        }),
+      );
+    const restore = async (strategy: 'keep' | 'replace') => {
+      apiFetchMock.mockReset();
+      apiFetchMock.mockImplementation(async (url, init) => {
+        if (url === '/api/ssh/config') return { hosts: [] } as never;
+        if (url === '/api/profiles') return { profiles: [] } as never;
+        if (url === '/api/shared-sessions' && !init?.method) return { sources: [{ id: 'lab-link' }] } as never;
+        return {} as never;
+      });
+      const result = await restoreTransferDocument(
+        backup([link, { ...link, id: 'new-link', name: 'New', hostCount: 3 }]),
+        { preferences: false, connections: true, tunnels: false, logging: false },
+        strategy,
+      );
+      const puts = apiFetchMock.mock.calls
+        .filter(([url, init]) => url === '/api/shared-sessions' && init?.method === 'PUT')
+        .map(([, init]) => JSON.parse(init?.body as string) as unknown);
+      return { result, puts };
+    };
+
+    const kept = await restore('keep');
+    expect(kept.puts).toEqual([{ ...link, id: 'new-link', name: 'New' }]);
+    expect(kept.result).toEqual({ added: 1, updated: 0, skipped: 1 });
+
+    const replaced = await restore('replace');
+    expect(replaced.puts).toEqual([link, { ...link, id: 'new-link', name: 'New' }]);
+    expect(replaced.result).toEqual({ added: 1, updated: 1, skipped: 0 });
+  });
+
+  it('refuses a backup whose links are malformed', () => {
+    expect(() =>
+      parseTransferDocument(
+        JSON.stringify({
+          format: 'muxus-backup',
+          version: 2,
+          createdAt: '2026-11-20T00:00:00.000Z',
+          data: {
+            sshHosts: [],
+            savedHosts: [],
+            hostOrder: [],
+            preferences: {},
+            tunnels: [],
+            loggingPolicies: [],
+            historySettings: { maxTotalBytes: 1, minFreeBytes: 0, minFreePercent: 0 },
+            sharedSessionSources: [{ ...link, refreshMinutes: -5 }],
+          },
+        }),
+      ),
+    ).toThrow('The backup data is incomplete or too large.');
   });
 });

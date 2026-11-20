@@ -119,6 +119,7 @@ export const SETTINGS_SEARCH_INDEX: readonly SettingsSearchEntry[] = [
   { section: 'data', group: 'Export', label: 'OpenSSH config', keywords: ['ssh_config', 'export hosts'] },
   { section: 'data', group: 'Import from other clients', label: 'MobaXterm', keywords: ['import sessions', 'migrate'] },
   { section: 'data', group: 'Import from other clients', label: 'SecureCRT', keywords: ['import sessions', 'migrate', 'button bar'] },
+  { section: 'data', kind: 'group', label: 'Shared sessions', keywords: ['link', 'url', 'subscribe', 'shared hosts', 'lab', 'team', 'mobaxterm', 'mxtsessions', 'auto update', 'sync'] },
 
   // Debug
   { section: 'debug', label: 'Capture verbose diagnostic logs', keywords: ['debug mode', 'logging', 'troubleshoot'] },

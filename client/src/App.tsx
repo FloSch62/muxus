@@ -76,6 +76,16 @@ const ToastHost = lazy(() =>
     default: module.ToastHost,
   })),
 );
+const SharedSessionsWindowDialog = lazy(() =>
+  import('./components/SharedSessionsWindowDialog.js').then((module) => ({
+    default: module.SharedSessionsWindowDialog,
+  })),
+);
+const SharedSessionsSync = lazy(() =>
+  import('./components/SharedSessionsSync.js').then((module) => ({
+    default: module.SharedSessionsSync,
+  })),
+);
 const LocalCopySync = lazy(() =>
   import('./components/LocalCopySync.js').then((module) => ({
     default: module.LocalCopySync,
@@ -132,6 +142,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
   const hostOrganizerOpen = useUiStore((s) => !!s.hostOrganizer);
   const hostBulkEditorOpen = useUiStore((s) => !!s.hostBulkEditor);
   const folderDialogOpen = useUiStore((s) => !!s.folderDialog);
+  const sharedSessionsDialogOpen = useUiStore((s) => !!s.sharedSessionsDialog);
   const settingsOpen = useUiStore((s) => s.settingsOpen);
   const commandButtonMenuOpen = useUiStore((s) => s.commandButtonMenuOpen);
   const commandButtonsOpen = useUiStore((s) => s.commandButtonsOpen);
@@ -226,6 +237,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
         {hostOrganizerOpen ? <HostOrganizationDialog /> : null}
         {hostBulkEditorOpen ? <HostBulkEditDialog /> : null}
         {folderDialogOpen ? <FolderDialog /> : null}
+        {sharedSessionsDialogOpen ? <SharedSessionsWindowDialog /> : null}
         {settingsOpen ? <SettingsDialog /> : null}
         {commandButtonMenuOpen ? <CommandButtonMenu /> : null}
         {commandButtonsOpen ? <CommandButtonsDialog /> : null}
@@ -248,6 +260,7 @@ export default function App({ launch }: { launch?: AppWindowLaunch }) {
         {dialogOpen ? <DialogHost /> : null}
         {toastOpen ? <ToastHost /> : null}
         {localCopiesOpened ? <LocalCopySync /> : null}
+        {!launch || launch.kind === 'workspace' ? <SharedSessionsSync /> : null}
       </Suspense>
       {/* Its own boundary: a dialog or toast loading must not hide upload progress. */}
       {terminalUploading ? (

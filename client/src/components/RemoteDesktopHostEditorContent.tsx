@@ -12,6 +12,7 @@ import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
 import ScreenShareOutlinedIcon from '@mui/icons-material/ScreenShareOutlined';
 import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
 import { useDeleteHostProfile, useSaveHostProfile, useUpdateHostProfileMetadata } from '../api/profiles.js';
+import { useSharedHostCaption } from '../api/shared-sessions.js';
 import { confirmDeleteHost } from '../host-actions.js';
 import { connectSavedHost } from '../session-actions.js';
 import type { HostEditorState } from '../state/ui.js';
@@ -52,6 +53,7 @@ export function RemoteDesktopHostEditorContent({
   const setState = useUiStore((s) => s.setHostEditor);
   const existing =
     state.mode === 'edit-profile' || state.mode === 'duplicate-profile' ? state.entry : undefined;
+  const sharedCaption = useSharedHostCaption(state.mode === 'edit-profile' ? existing : undefined);
   const [section, setSection] = useState<Section>('general');
   const connectAfter = useRef(false);
   const close = () => setState(false);
@@ -103,7 +105,7 @@ export function RemoteDesktopHostEditorContent({
   return (
     <EditorShell
       title={title}
-      storage="Saved in Muxus app data"
+      storage={sharedCaption ?? 'Saved in Muxus app data'}
       typeKind={state.mode === 'new' ? kind : undefined}
       onTypeChange={state.mode === 'new' ? (next) => setState({ ...state, kind: next }) : undefined}
       sections={sections}

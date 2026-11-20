@@ -52,6 +52,7 @@ import { saveTextFile } from '../save-file.js';
 import { muxusStateStorage } from '../state/persist-storage.js';
 import { errorDetails, showToast } from '../state/toast.js';
 import { SettingRow, SettingsGroup, SettingsPage } from './SettingsLayout.js';
+import { SharedSessionsGroup } from './SharedSessionsGroup.js';
 
 const LAST_BACKUP_KEY = 'muxus-last-backup-at';
 
@@ -323,11 +324,14 @@ export function DataTransferSection({
         />
       </SettingsGroup>
 
+      <SharedSessionsGroup />
+
       <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start', mt: -1.5 }}>
         <LockOutlinedIcon sx={{ fontSize: 15, mt: '2px', color: 'text.secondary' }} />
         <Typography variant="caption" color="textSecondary">
           Backups never include private key files, passwords or recorded session history. Key
-          file paths are kept so profiles still know where to look.
+          file paths are kept so profiles still know where to look, and the links of your shared
+          sessions are included.
         </Typography>
       </Stack>
 
