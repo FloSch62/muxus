@@ -65,10 +65,13 @@ import {
 } from '../sftp-panel-width.js';
 import { emptySftpListingLabel, initialSftpPath, visibleSftpEntries } from '../sftp-panel-state.js';
 import {
+  canPickDownloadFolder,
+  downloadFromRemote,
   downloadResume,
+  downloadSummary,
   forgetInterruptedDownload,
   pickDownloadFolder,
-  saveIntoFolder,
+  saveDownload,
 } from '../sftp-download.js';
 import {
   EMPTY_SFTP_SELECTION,
@@ -146,14 +149,8 @@ function formatMtime(ms?: number): string {
   return label;
 }
 
-function saveDownload(name: string, blob: Blob): void {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = name;
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-}
+const FOLDER_DOWNLOADS_UNAVAILABLE =
+  'This browser cannot download folders. The desktop app and Chromium browsers can.';
 
 /**
  * A panel too narrow for the modification times and for the filter beside the
@@ -425,7 +422,11 @@ export function SftpPanel({
     setMenu((current) => (current && entryNames.includes(current.entry.name) ? current : null));
   }, [entryNames]);
   const selectedEntries = useMemo(() => selectedSftpEntries(visibleEntries, selection), [visibleEntries, selection]);
-  const selectedFiles = selectedEntries.filter((entry) => entry.type === 'file');
+  // A folder is downloaded into a picked folder, which Firefox and Safari cannot pick.
+  const folderDownloads = canPickDownloadFolder();
+  const downloadable = (entry: SftpEntry) =>
+    entry.type === 'file' || (folderDownloads && entry.type === 'dir');
+  const selectedDownloads = selectedEntries.filter(downloadable);
   const single = selectedEntries.length === 1 ? selectedEntries[0] : undefined;
   const currentPath = data?.path ?? path;
   const homePath = homePathRef.current ?? (path === '.' ? data?.path : undefined) ?? '.';
@@ -541,14 +542,15 @@ export function SftpPanel({
     });
 
   /**
-   * Several files at once: into one folder picked up front where the page can
-   * write to one, so the desktop app does not ask where to save each file, and
-   * otherwise one by one to the browser's downloads.
+   * Several files, or folders with everything in them: into one folder picked
+   * up front where the page can write to one, so the desktop app does not ask
+   * where to save each file, and otherwise one by one to the browser's
+   * downloads.
    */
-  const downloadFiles = (files: SftpEntry[]) => {
-    const [first] = files;
+  const downloadFiles = (items: SftpEntry[]) => {
+    const [first] = items;
     if (!first) return;
-    if (files.length === 1) {
+    if (items.length === 1 && first.type === 'file') {
       download(first);
       return;
     }
@@ -557,7 +559,7 @@ export function SftpPanel({
       return;
     }
     // Taken now: a followed terminal can change folders while the folder is picked.
-    const targets = files.map((entry) => ({ entry, file: remotePath(entry) }));
+    const targets = items.map((entry) => ({ entry, path: remotePath(entry) }));
     void (async () => {
       let folder: FileSystemDirectoryHandle | null | undefined;
       try {
@@ -572,41 +574,20 @@ export function SftpPanel({
       transferControllerRef.current = controller;
       setBusy(true);
       try {
-        let bytes = 0;
-        for (const [index, { entry, file }] of targets.entries()) {
-          const current = {
-            id,
-            direction: 'download' as const,
-            name: entry.name,
-            fileIndex: index + 1,
-            fileCount: targets.length,
-          };
-          setTransfer({ ...current, loaded: 0, total: entry.size, bytesPerSecond: 0, phase: 'preparing' });
-          const blob = await downloadBlobWithProgress(
-            `/api/sftp/${connId}/download?path=${encodeURIComponent(file)}`,
-            (progress) => setTransfer({ ...current, ...progress, phase: 'transferring' }),
-            controller.signal,
-            undefined,
-            downloadResume(file, controller.signal),
-          );
-          forgetInterruptedDownload(file);
-          if (folder) await saveIntoFolder(folder, entry.name, blob);
-          else saveDownload(entry.name, blob);
-          bytes += blob.size;
-        }
-        const summary = `${targets.length} files`;
-        setTransfer({
-          id,
-          direction: 'download',
-          name: summary,
-          loaded: bytes,
-          total: bytes,
-          bytesPerSecond: 0,
-          phase: 'complete',
-          fileIndex: targets.length,
-          fileCount: targets.length,
+        const result = await downloadFromRemote(connId, targets, folder, {
+          signal: controller.signal,
+          onProgress: (progress) => setTransfer({ id, ...progress }),
         });
-        showToast('success', folder?.name ? `Downloaded ${summary} to ${folder.name}` : `Downloaded ${summary}`);
+        if (!result || result.cancelled) {
+          setTransfer(undefined);
+          if (result) showToast('info', downloadSummary(result, folder?.name));
+          return;
+        }
+        showToast(
+          result.skipped.length > 0 ? 'warning' : 'success',
+          downloadSummary(result, folder?.name),
+          result.skipped.join('\n') || undefined,
+        );
         setTimeout(
           () => setTransfer((current) => (current?.id === id ? undefined : current)),
           1_200,
@@ -795,8 +776,16 @@ export function SftpPanel({
 
   const hasLocalFiles = (event: React.DragEvent) =>
     Array.from(event.dataTransfer.types).includes('Files');
+  const downloadNoun = (targets: SftpEntry[]) =>
+    targets.some((entry) => entry.type === 'dir') ? 'items' : 'files';
   const downloadLabel =
-    selectedFiles.length > 1 ? `Download ${selectedFiles.length} selected files` : 'Download selected file';
+    selectedDownloads.length > 1
+      ? `Download ${selectedDownloads.length} selected ${downloadNoun(selectedDownloads)}`
+      : selectedDownloads[0]?.type === 'dir'
+        ? 'Download selected folder'
+        : 'Download selected file';
+  const foldersUnavailable = !folderDownloads && selectedEntries.some((entry) => entry.type === 'dir');
+  const downloadTooltip = foldersUnavailable ? FOLDER_DOWNLOADS_UNAVAILABLE : downloadLabel;
   // A right-click inside a selection of several acts on all of them.
   const menuTargets = !menu
     ? []
@@ -804,7 +793,7 @@ export function SftpPanel({
       ? selectedEntries
       : [menu.entry];
   const menuFile = menuTargets.length === 1 && menu?.entry.type === 'file' ? menu.entry : undefined;
-  const menuFiles = menuTargets.filter((entry) => entry.type === 'file');
+  const menuDownloads = menuTargets.filter(downloadable);
   return (
     <Box
       ref={panelRef}
@@ -977,13 +966,14 @@ export function SftpPanel({
             event.target.value = '';
           }}
         />
-        <Tooltip title={downloadLabel}>
+        <Tooltip title={downloadTooltip}>
           <span>
             <IconButton
               size="small"
-              aria-label={downloadLabel}
-              disabled={busy || selectedFiles.length === 0}
-              onClick={() => downloadFiles(selectedFiles)}
+              // With nothing it can download, it reads as its tooltip, which says why.
+              aria-label={selectedDownloads.length > 0 ? downloadLabel : downloadTooltip}
+              disabled={busy || selectedDownloads.length === 0}
+              onClick={() => downloadFiles(selectedDownloads)}
             >
               <DownloadOutlinedIcon fontSize="small" />
             </IconButton>
@@ -1222,10 +1212,10 @@ export function SftpPanel({
             <ListItemText>Open with…</ListItemText>
           </MenuItem>
         )}
-        {menuFiles.length > 0 && (
+        {menuDownloads.length > 0 && (
           <MenuItem
             onClick={() => {
-              downloadFiles(menuFiles);
+              downloadFiles(menuDownloads);
               setMenu(null);
             }}
           >
@@ -1233,7 +1223,9 @@ export function SftpPanel({
               <DownloadOutlinedIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText>
-              {menuFiles.length > 1 ? `Download ${menuFiles.length} files` : 'Download'}
+              {menuDownloads.length > 1
+                ? `Download ${menuDownloads.length} ${downloadNoun(menuDownloads)}`
+                : 'Download'}
             </ListItemText>
           </MenuItem>
         )}
