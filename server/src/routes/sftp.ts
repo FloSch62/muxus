@@ -21,6 +21,8 @@ import { HttpProblem, sendError } from '../util/errors.js';
 const MAX_RECURSIVE_DELETE = 10_000;
 /** Monaco is a text editor, not a way to accidentally buffer huge remote artifacts. */
 const MAX_EDITOR_BYTES = 8 * 1024 * 1024;
+/** A new file's mode, less the server's umask: what `sftp put` gives a typical file. */
+const NEW_FILE_MODE = 0o644;
 const CLIPBOARD_IMAGE_MODE = 0o600;
 const CLIPBOARD_IMAGE_TEMP_DIR = '/tmp';
 /** How many bytes just before where an upload continues must match the staged file. */
@@ -463,16 +465,29 @@ async function atomicTextSave(
   mode: number | undefined,
 ): Promise<void> {
   const temp = `${file}.muxus-${randomBytes(6).toString('hex')}.tmp`;
-  const options = mode === undefined
-    ? { flags: 'wx' as const }
-    : { flags: 'wx' as const, mode: mode & 0o7777 };
   try {
-    await pipeline(Readable.from(bytes), sftp.createWriteStream(temp, options));
+    await pipeline(Readable.from(bytes), await createTempFile(sftp, temp, mode));
     await commitTempFile(sftp, temp, file, true);
   } catch (error) {
     await unlinkIfPresent(sftp, temp);
     throw error;
   }
+}
+
+/**
+ * A write stream into a new temporary file. It gets `mode`, the mode of the
+ * file it replaces, exactly. Otherwise it is opened here with NEW_FILE_MODE,
+ * which the server's umask may narrow: ssh2 chmods a file it opens itself, to
+ * 0666 unless told otherwise, past the umask.
+ */
+async function createTempFile(
+  sftp: SFTPWrapper,
+  temp: string,
+  mode: number | undefined,
+): Promise<NodeJS.WritableStream> {
+  if (mode !== undefined) return sftp.createWriteStream(temp, { flags: 'wx', mode: mode & 0o7777 });
+  const handle = await call<Buffer>((cb) => sftp.open(temp, 'wx', { mode: NEW_FILE_MODE }, cb));
+  return sftp.createWriteStream(temp, { handle });
 }
 
 /**
@@ -488,11 +503,8 @@ async function atomicStreamUpload(
   mode: number | undefined,
 ): Promise<void> {
   const temp = `${file}.muxus-${randomBytes(6).toString('hex')}.upload`;
-  const options = mode === undefined
-    ? { flags: 'wx' as const }
-    : { flags: 'wx' as const, mode: mode & 0o7777 };
   try {
-    await pipeline(body, sftp.createWriteStream(temp, options));
+    await pipeline(body, await createTempFile(sftp, temp, mode));
     await commitTempFile(sftp, temp, file, overwrite);
   } catch (error) {
     await unlinkIfPresent(sftp, temp);
