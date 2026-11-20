@@ -94,6 +94,18 @@ export function sshDestination(profile: SshProfile): { options: string[]; destin
   };
 }
 
+/** The host as `ssh` is told to reach it, standing in for an ssh2 transport's mux key. */
+export function systemOpenSshMuxKey(profile: SshProfile): string {
+  const { options, destination } = sshDestination(profile);
+  return JSON.stringify([
+    'system-openssh',
+    ...options,
+    destination,
+    profile.proxyJump ?? [],
+    profile.proxyCommand ?? null,
+  ]);
+}
+
 function forwardTarget(host: string | undefined, port: number | undefined): string {
   const name = host?.includes(':') ? `[${host}]` : (host ?? 'localhost');
   return `${name}:${port ?? 0}`;
@@ -240,6 +252,8 @@ export function commandProbeArgs(profile: SshProfile): string[] {
 /** What the file routes use of a connection; the ssh2 kind has the same members. */
 export interface SftpConnection {
   id: string;
+  /** The same for every connection that reaches the host the same way, so a download can continue on the next. */
+  muxKey: string;
   sftp(): Promise<SFTPWrapper>;
   onClose(listener: (reason?: string) => void): () => void;
 }
@@ -283,20 +297,7 @@ export class SystemOpenSshSession implements TerminalTransport {
   private leases = 0;
   private finished = false;
 
-  readonly connection: SystemOpenSshConnection = {
-    id: this.id,
-    sftp: () => this.sftp(),
-    runsCommands: () => this.runsCommands(),
-    runScript: (script) => this.runScript(script),
-    onClose: (listener) => {
-      if (this.finished) {
-        queueMicrotask(() => listener());
-        return () => undefined;
-      }
-      this.connectionListeners.add(listener);
-      return () => this.connectionListeners.delete(listener);
-    },
-  };
+  readonly connection: SystemOpenSshConnection;
 
   constructor(
     private readonly profile: SshProfile,
@@ -306,6 +307,22 @@ export class SystemOpenSshSession implements TerminalTransport {
     tools: SessionTools,
     private readonly onFinished: (session: SystemOpenSshSession) => void,
   ) {
+    // Not a field initializer: those run before `profile` is set.
+    this.connection = {
+      id: this.id,
+      muxKey: systemOpenSshMuxKey(profile),
+      sftp: () => this.sftp(),
+      runsCommands: () => this.runsCommands(),
+      runScript: (script) => this.runScript(script),
+      onClose: (listener) => {
+        if (this.finished) {
+          queueMicrotask(() => listener());
+          return () => undefined;
+        }
+        this.connectionListeners.add(listener);
+        return () => this.connectionListeners.delete(listener);
+      },
+    };
     this.env = withoutAppImagePaths(ptyEnvironment());
     const binary = tools.binary ?? findSshBinary(this.env);
     if (!binary) {

@@ -8,14 +8,27 @@ export interface ByteProgress {
   bytesPerSecond: number;
 }
 
+/** What a download that stopped early received, and the version of the file it came from. */
+export interface PartialDownload {
+  blob: Blob;
+  etag: string;
+}
+
+export interface DownloadResume {
+  /** Bytes an earlier attempt received: only the rest is asked for, unless the file changed. */
+  partial?: PartialDownload;
+  /** Receives everything this attempt has when it stops early. */
+  onInterrupted: (partial: PartialDownload) => void;
+}
+
 /**
  * Smooth and throttle noisy browser progress events. Ten UI updates per
  * second look continuous without rerendering the SFTP table for every chunk.
  */
-function progressReporter(onProgress: (progress: ByteProgress) => void) {
+function progressReporter(onProgress: (progress: ByteProgress) => void, startBytes = 0) {
   const startedAt = performance.now();
   let sampledAt = startedAt;
-  let sampledBytes = 0;
+  let sampledBytes = startBytes;
   let emittedAt = 0;
   let smoothedSpeed = 0;
 
@@ -107,30 +120,44 @@ export async function downloadBlobWithProgress(
   onProgress: (progress: ByteProgress) => void,
   signal?: AbortSignal,
   onHeaders?: (headers: Headers) => void,
+  resume?: DownloadResume,
 ): Promise<Blob> {
-  const response = await apiFetchRaw(path, { signal });
+  const partial = resume?.partial;
+  const response = await apiFetchRaw(path, {
+    signal,
+    ...(partial ? { headers: { range: `bytes=${partial.blob.size}-`, 'if-range': partial.etag } } : {}),
+  });
   onHeaders?.(response.headers);
+  // The server sends the rest with 206, or the whole file once it changed.
+  const prefix = response.status === 206 ? partial?.blob : undefined;
+  const offset = prefix?.size ?? 0;
+  const etag = response.headers.get('etag');
   const headerValue = response.headers.get('content-length');
   const header = headerValue === null ? undefined : Number(headerValue);
-  const total = header !== undefined && Number.isFinite(header) && header >= 0 ? header : undefined;
-  const report = progressReporter(onProgress);
-  report(0, total, true);
+  const total = header !== undefined && Number.isFinite(header) && header >= 0 ? offset + header : undefined;
+  const report = progressReporter(onProgress, offset);
+  report(offset, total, true);
   if (!response.body) {
     const blob = await response.blob();
-    report(blob.size, total ?? blob.size, true);
-    return blob;
+    report(offset + blob.size, total ?? offset + blob.size, true);
+    return prefix ? new Blob([prefix, blob], { type: blob.type }) : blob;
   }
 
   const reader = response.body.getReader();
-  const chunks: ArrayBuffer[] = [];
-  let loaded = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const copy = value.slice();
-    chunks.push(copy.buffer as ArrayBuffer);
-    loaded += copy.byteLength;
-    report(loaded, total);
+  const chunks: BlobPart[] = prefix ? [prefix] : [];
+  let loaded = offset;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const copy = value.slice();
+      chunks.push(copy.buffer as ArrayBuffer);
+      loaded += copy.byteLength;
+      report(loaded, total);
+    }
+  } catch (error) {
+    if (etag && loaded > 0) resume?.onInterrupted({ blob: new Blob(chunks), etag });
+    throw error;
   }
   report(loaded, total ?? loaded, true);
   return new Blob(chunks, {

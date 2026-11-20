@@ -1,5 +1,5 @@
 import path from 'node:path/posix';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -150,7 +150,12 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
       releaseLease = once(lease.release);
       const file = requirePath(req);
       const stat = await call<{ size?: number; mtime?: number }>((cb) => lease.sftp.stat(file, cb));
-      const stream = lease.sftp.createReadStream(file);
+      const etag = downloadEtag(lease.connection, file, stat);
+      const start = etag && stat.size !== undefined ? rangeStart(req, etag, stat.size) : 0;
+      // Opened before anything is sent, so a file the user may not read is
+      // answered with that error instead of a dropped connection.
+      const handle = await call<Buffer>((cb) => lease.sftp.open(file, 'r', cb));
+      const stream = lease.sftp.createReadStream(file, { handle, start });
       // Streaming outlives the route handler. Keep the SFTP lease until the
       // remote stream or HTTP response closes so a closed terminal tab cannot
       // tear the shared transport out from under an active download.
@@ -165,7 +170,11 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
         .header('content-type', 'application/octet-stream')
         .header('content-disposition', `attachment; filename="${encodeURIComponent(path.basename(file))}"`)
         .header('cache-control', 'no-store');
-      if (stat.size !== undefined) void reply.header('content-length', stat.size);
+      if (stat.size !== undefined) {
+        void reply.header('content-length', stat.size - start);
+        if (start > 0) void reply.code(206).header('content-range', `bytes ${start}-${stat.size - 1}/${stat.size}`);
+      }
+      if (etag) void reply.header('accept-ranges', 'bytes').header('etag', etag);
       // Lets a client that opens the file locally upload it back with a
       // check that nobody changed the remote file in between.
       if (stat.mtime) void reply.header('last-modified', new Date(stat.mtime * 1000).toUTCString());
@@ -536,6 +545,29 @@ async function mkdirRecursive(sftp: SFTPWrapper, target: string): Promise<void> 
       if (!existing?.isDirectory() || existing.isSymbolicLink()) throw err;
     }
   }
+}
+
+/**
+ * A download's validator: the host, path, size and modification time. A
+ * download continues from a byte only while all of them still match.
+ */
+function downloadEtag(
+  connection: SftpConnection,
+  file: string,
+  stat: { size?: number; mtime?: number },
+): string | undefined {
+  if (stat.size === undefined || stat.mtime === undefined) return undefined;
+  const digest = createHash('sha256')
+    .update(JSON.stringify([connection.muxKey, file, stat.size, stat.mtime]))
+    .digest('base64url');
+  return `"${digest.slice(0, 27)}"`;
+}
+
+/** Where a download starts: `Range: bytes=N-` counts only under an `If-Range` with the current validator. */
+function rangeStart(req: FastifyRequest, etag: string, size: number): number {
+  if (req.headers['if-range'] !== etag) return 0;
+  const start = Number(/^bytes=(\d+)-$/.exec(req.headers.range ?? '')?.[1] ?? 0);
+  return start < size ? start : 0;
 }
 
 function formatBytes(bytes: number): string {

@@ -73,6 +73,14 @@ same name already in the folder is kept, and the new one is numbered, as in
 `report (1).txt`. Browsers that cannot write to a folder, such as Firefox and Safari, save
 the files to their downloads folder instead. Dragging out takes one file at a time.
 
+A download stopped by a lost connection continues where it stopped when you download the
+same file again in the same window once the session is back, and only the missing part
+crosses the network. The window keeps up to 256 MiB of what interrupted downloads received;
+a download that had received more than 256 MiB is not kept at all and starts over.
+**Cancel**, closing the window or quitting Muxus discards what was kept. A file whose size
+or modification time changed on the server is downloaded whole, and so is a file dragged
+out.
+
 !!! warning "Overwrite confirmation"
 
     Uploading onto an existing path asks for confirmation and names the file it would

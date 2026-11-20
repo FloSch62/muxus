@@ -1,6 +1,8 @@
 import { EventEmitter } from 'node:events';
 import { PassThrough, Readable, Writable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { buildApp } from '../../../server/src/app.js';
+import { resolveConfig } from '../../../server/src/config.js';
 import { registerSftpRoutes } from '../../../server/src/routes/sftp.js';
 
 type RouteHandler = (request: unknown, reply: unknown) => Promise<unknown>;
@@ -57,6 +59,8 @@ function captureDownloadHandler(stream: PassThrough): {
           sftp: async () => ({
             stat: (_path: string, callback: (error: Error | null, attrs?: unknown) => void) =>
               callback(null, { size: 7, mtime: 1_760_000_000 }),
+            open: (_path: string, _flags: string, callback: (error: Error | null, handle?: Buffer) => void) =>
+              callback(null, Buffer.from('handle')),
             createReadStream: () => stream,
           }),
         },
@@ -404,6 +408,7 @@ describe('SFTP download transport ownership', () => {
       {
         params: { connId: 'connection-1' },
         query: { path: '/remote/report.txt' },
+        headers: {},
       },
       reply,
     );
@@ -419,6 +424,144 @@ describe('SFTP download transport ownership', () => {
 
     stream.destroy();
     expect(release).toHaveBeenCalledOnce();
+  });
+});
+
+/** The download route for a 7-byte file on the host that `muxKey` names. */
+function captureResumableDownload(muxKey = 'deploy@web-01:22') {
+  const gets = new Map<string, RouteHandler>();
+  const app = {
+    get: (route: string, handler: RouteHandler) => gets.set(route, handler),
+    post: vi.fn(),
+    put: vi.fn(),
+  };
+  const reads: Array<{ start?: number }> = [];
+  const ctx = {
+    systemOpenSsh: { acquire: () => undefined },
+    connections: {
+      acquire: () => ({
+        connection: {
+          muxKey,
+          sftp: async () => ({
+            stat: (_path: string, callback: (error: Error | null, attrs?: unknown) => void) =>
+              callback(null, { size: 7, mtime: 1_760_000_000 }),
+            open: (_path: string, _flags: string, callback: (error: Error | null, handle?: Buffer) => void) =>
+              callback(null, Buffer.from('handle')),
+            createReadStream: (_path: string, { start }: { start?: number }) => {
+              reads.push({ start });
+              return new PassThrough();
+            },
+          }),
+        },
+        owner: 'sftp',
+        release: vi.fn(),
+      }),
+    },
+  };
+  registerSftpRoutes(app as never, ctx as never);
+  const handler = gets.get('/api/sftp/:connId/download')!;
+  const download = async (headers: Record<string, string> = {}) => {
+    const response = { status: 200, headers: new Map<string, unknown>() };
+    const reply = {
+      raw: new EventEmitter(),
+      header(name: string, value: unknown) {
+        response.headers.set(name, value);
+        return this;
+      },
+      code(status: number) {
+        response.status = status;
+        return this;
+      },
+      send(body: unknown) {
+        return body;
+      },
+    };
+    await handler({ params: { connId: 'connection-1' }, query: { path: '/srv/image.bin' }, headers }, reply);
+    return response;
+  };
+  return { download, reads };
+}
+
+describe('SFTP download resume', () => {
+  it('sends only the rest of a file that is unchanged since the first attempt', async () => {
+    const { download, reads } = captureResumableDownload();
+
+    const first = await download();
+    const etag = first.headers.get('etag');
+    expect(first.status).toBe(200);
+    expect(first.headers.get('accept-ranges')).toBe('bytes');
+    expect(etag).toMatch(/^"[\w-]+"$/);
+
+    const rest = await download({ range: 'bytes=3-', 'if-range': String(etag) });
+    expect(rest.status).toBe(206);
+    expect(rest.headers.get('content-range')).toBe('bytes 3-6/7');
+    expect(rest.headers.get('content-length')).toBe(4);
+    expect(reads).toEqual([{ start: 0 }, { start: 3 }]);
+  });
+
+  it('sends the whole file once it changed, without a validator, or for any other range', async () => {
+    const { download, reads } = captureResumableDownload();
+    const etag = String((await download()).headers.get('etag'));
+
+    const responses = [
+      await download({ range: 'bytes=3-', 'if-range': '"an older version"' }),
+      await download({ range: 'bytes=3-' }),
+      await download({ range: 'bytes=7-', 'if-range': etag }),
+      await download({ range: 'bytes=1-2', 'if-range': etag }),
+    ];
+
+    expect(responses.map(({ status }) => status)).toEqual([200, 200, 200, 200]);
+    expect(responses.map(({ headers }) => headers.get('content-length'))).toEqual([7, 7, 7, 7]);
+    expect(reads.every(({ start }) => start === 0)).toBe(true);
+  });
+
+  it('gives the same file on another host another validator', async () => {
+    const here = await captureResumableDownload('deploy@web-01:22').download();
+    const there = await captureResumableDownload('deploy@web-02:22').download();
+
+    expect(here.headers.get('etag')).not.toBe(there.headers.get('etag'));
+  });
+
+  it('answers a file that cannot be opened with the error instead of dropping the connection', async () => {
+    const token = 'sftp-download-test';
+    const { app, ctx } = await buildApp(
+      resolveConfig({
+        token,
+        databasePath: ':memory:',
+        openBrowser: false,
+        prettyLogs: false,
+        staticRoot: '/path/that/does/not/exist',
+      }),
+    );
+    const denied = () => Object.assign(new Error('Permission denied'), { code: 3 });
+    const sftp = {
+      stat: (_path: string, callback: (error: Error | null, attrs?: unknown) => void) =>
+        callback(null, { size: 7, mtime: 1_760_000_000 }),
+      open: (_path: string, _flags: string, callback: (error: Error | null) => void) =>
+        setImmediate(() => callback(denied())),
+      // As in ssh2, a stream without a handle opens the file itself, once headers may be out.
+      createReadStream: (_path: string, { handle }: { handle?: Buffer }) => {
+        const stream = new PassThrough();
+        if (!handle) setImmediate(() => stream.destroy(denied()));
+        return stream;
+      },
+    };
+    vi.spyOn(ctx.systemOpenSsh, 'acquire').mockReturnValue({
+      connection: { id: 'connection-1', muxKey: 'deploy@web-01:22', sftp: async () => sftp },
+      release: () => undefined,
+    } as never);
+    try {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/sftp/connection-1/download?path=%2Fsrv%2Fsecret.key',
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(response.statusCode).toBe(500);
+      expect(response.json()).toMatchObject({ message: 'Permission denied' });
+    } finally {
+      await app.close();
+    }
   });
 });
 
