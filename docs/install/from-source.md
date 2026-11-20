@@ -1,4 +1,5 @@
 ---
+description: "Build and run Muxus from source: requirements, pnpm workspace setup and serving the UI to a browser from a local server."
 icon: lucide/terminal
 ---
 

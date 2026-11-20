@@ -1,4 +1,5 @@
 ---
+description: "Download Muxus for Windows (installer or Microsoft Store), macOS (universal DMG) or Linux (AppImage or .deb), and see how updates and your SSH setup carry over."
 icon: lucide/download
 ---
 

@@ -1,4 +1,5 @@
 ---
+description: "From install to a split-pane SSH session in five minutes. Muxus reads your existing ~/.ssh/config, so if ssh myhost works in a terminal, it works here."
 icon: lucide/rocket
 ---
 

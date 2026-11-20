@@ -1,4 +1,5 @@
 ---
+description: "Muxus reference: keyboard shortcuts, command-line flags, ssh_config support, architecture, security model and privacy policy."
 icon: lucide/book-marked
 ---
 

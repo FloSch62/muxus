@@ -1,4 +1,5 @@
 ---
+description: "The Muxus user guide: hosts, SSH, Telnet, serial, RDP and VNC, split panes, workspaces, SFTP, the remote editor, tunnels and multi-host commands."
 icon: lucide/book-open
 ---
 

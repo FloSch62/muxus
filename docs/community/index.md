@@ -1,4 +1,5 @@
 ---
+description: "Muxus is free and open source under the MIT license. How to contribute code, docs, bug reports and feature ideas."
 icon: lucide/users
 ---
 

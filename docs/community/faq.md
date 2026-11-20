@@ -1,4 +1,5 @@
 ---
+description: "Common questions about Muxus: how it uses ~/.ssh/config, whether command-line ssh keeps working, where data lives and more."
 icon: lucide/circle-help
 ---
 

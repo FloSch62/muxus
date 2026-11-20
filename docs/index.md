@@ -1,4 +1,6 @@
 ---
+description: "Muxus is a free, open-source SSH client for Windows, macOS and Linux, with Telnet, serial, RDP and VNC, SFTP, split panes, tunnels and a NETCONF/gNMI workbench."
+seo_title: "Muxus: free SSH, Telnet, serial and RDP client for Windows, macOS and Linux"
 icon: lucide/house
 hero: true
 hide:

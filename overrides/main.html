@@ -5,6 +5,61 @@
 #}
 {% extends "base.html" %}
 
+{#
+  `seo_title` in a page's front matter replaces the <title> (and the social
+  card title) without changing the nav label or the page heading.
+#}
+{% if page.meta and page.meta.seo_title %}
+  {% set muxus_title = page.meta.seo_title %}
+{% elif page.title and page.canonical_url != config.site_url %}
+  {% set muxus_title = (page.title | striptags) ~ " - " ~ config.site_name %}
+{% else %}
+  {% set muxus_title = config.site_name %}
+{% endif %}
+{% set muxus_description = (page.meta.description if page.meta and page.meta.description else config.site_description) %}
+{% set muxus_card = config.site_url ~ "assets/social-card.png" %}
+
+{% block htmltitle %}
+  <title>{{ muxus_title | e }}</title>
+{% endblock %}
+
+{% block extrahead %}
+  {{ super() }}
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="{{ config.site_name }}">
+  <meta property="og:title" content="{{ muxus_title | e }}">
+  <meta property="og:description" content="{{ muxus_description | e }}">
+  {% if page.canonical_url %}
+    <meta property="og:url" content="{{ page.canonical_url }}">
+  {% endif %}
+  <meta property="og:image" content="{{ muxus_card }}">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Muxus: SSH, Telnet, serial, RDP and VNC in one client">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{{ muxus_title | e }}">
+  <meta name="twitter:description" content="{{ muxus_description | e }}">
+  <meta name="twitter:image" content="{{ muxus_card }}">
+  {% if page.canonical_url == config.site_url %}
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Muxus",
+        "url": "{{ config.site_url }}",
+        "description": {{ config.site_description | tojson }},
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Windows, macOS, Linux",
+        "license": "https://opensource.org/licenses/MIT",
+        "downloadUrl": "https://github.com/FloSch62/muxus/releases",
+        "image": "{{ muxus_card }}",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+      }
+    </script>
+  {% endif %}
+{% endblock %}
+
 {% block tabs %}
   {{ super() }}
   {% if page.meta and page.meta.hero %}

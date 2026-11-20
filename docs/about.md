@@ -1,4 +1,5 @@
 ---
+description: "Who builds Muxus and why: an open-source SSH and terminal client made for network automation work."
 icon: lucide/user-round
 hide:
   - navigation
