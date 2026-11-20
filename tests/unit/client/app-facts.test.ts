@@ -13,15 +13,15 @@ const appInfo: AppInfo = {
 
 describe('releaseNotesUrl', () => {
   it('links the release notes of the running minor version', () => {
-    expect(releaseNotesUrl('0.8.1')).toBe('https://flosch62.github.io/muxus/release-notes/0.8/');
+    expect(releaseNotesUrl('0.8.1')).toBe('https://muxus.app/release-notes/0.8/');
     expect(releaseNotesUrl('0.10.0-beta.1')).toBe(
-      'https://flosch62.github.io/muxus/release-notes/0.10/',
+      'https://muxus.app/release-notes/0.10/',
     );
   });
 
   it('falls back to the release notes index without a version', () => {
-    expect(releaseNotesUrl(undefined)).toBe('https://flosch62.github.io/muxus/release-notes/');
-    expect(releaseNotesUrl('dev')).toBe('https://flosch62.github.io/muxus/release-notes/');
+    expect(releaseNotesUrl(undefined)).toBe('https://muxus.app/release-notes/');
+    expect(releaseNotesUrl('dev')).toBe('https://muxus.app/release-notes/');
   });
 });
 

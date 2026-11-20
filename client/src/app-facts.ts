@@ -1,6 +1,6 @@
 import type { AppInfo } from '@muxus/shared';
 
-export const DOCS_URL = 'https://flosch62.github.io/muxus/';
+export const DOCS_URL = 'https://muxus.app/';
 
 /** The docs page with this version's release notes: `0.8.1` → `/release-notes/0.8/`. */
 export function releaseNotesUrl(version?: string): string {

@@ -140,7 +140,7 @@ const EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 
 // Must match the client TopBar height: its toolbar doubles as the titlebar.
 const TITLEBAR_HEIGHT = 52;
-const UPDATE_MANIFEST_URL = 'https://flosch62.github.io/muxus/latest.json';
+const UPDATE_MANIFEST_URL = 'https://muxus.app/latest.json';
 const UPDATE_CHECK_TIMEOUT_MS = 10_000;
 const CLIPBOARD_IMAGE_MAX_BYTES = 18 * 1024 * 1024;
 const CLIPBOARD_IMAGE_MAX_PIXELS = 32 * 1024 * 1024;
