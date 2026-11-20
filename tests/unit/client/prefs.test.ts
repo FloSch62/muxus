@@ -224,6 +224,19 @@ describe('sidebar open gesture preference', () => {
   });
 });
 
+describe('file browser hidden files preference', () => {
+  it('lists hidden files by default, also for preferences saved before it existed', () => {
+    const initial = usePrefsStore.getInitialState();
+    expect(initial.showHiddenFiles).toBe(true);
+    expect(mergePersistedPrefs({ sftpPanelWidth: 420 }, initial).showHiddenFiles).toBe(true);
+  });
+
+  it('drops a stored value that is not a boolean', () => {
+    expect(migratePrefsState({ showHiddenFiles: 'no' }, 17)).not.toHaveProperty('showHiddenFiles');
+    expect(migratePrefsState({ showHiddenFiles: false }, 17)).toMatchObject({ showHiddenFiles: false });
+  });
+});
+
 describe('status bar preferences', () => {
   it('starts shown, with every item chosen in bar order', () => {
     const initial = usePrefsStore.getInitialState();

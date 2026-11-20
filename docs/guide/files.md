@@ -19,7 +19,18 @@ operation, so no second connection or authentication is required.
 - The path field is editable. Enter a path and press ++enter++.
 - :material-arrow-up: goes to the parent directory, :material-home: to the remote home
   directory, and :material-refresh: re-reads the current directory.
-- Double-click a directory to enter it. Sorting is by name, size or modification time.
+- Double-click a directory to enter it.
+- Click **Name**, **Size** or **Modified** to sort by that column, and click it again to
+  reverse the order. **Size** and **Modified** start with the largest and newest. Folders
+  always stay above files, and the browser opens sorted by name.
+- Type in **Filter by name**, at the end of the toolbar, to show only the entries whose
+  names contain the text, ignoring case. The filter clears when you change folders, and
+  ++esc++ clears it too. When nothing on show matches, the list says *No files match*, or
+  *Only hidden files match* when a hidden one does.
+- Hidden files and folders, whose names start with a dot such as `.bashrc`, are listed while
+  the button beside the filter shows :material-eye-outline:. Click it to hide them; it then
+  shows :material-eye-off-outline:, and a folder holding nothing else says *Only hidden
+  files*. Every file browser follows the choice, and Muxus remembers it.
 - **Follow terminal folder** is enabled by default. The browser opens at the shell's current
   directory and follows later `cd` commands; clear it to browse independently.
 - **Open in new window** moves the browser into its own window on the same connection.
@@ -41,8 +52,8 @@ SSH session is active:
   and the folder is unchanged when you switch back.
 - **Move beside the terminal** in the header puts it back next to the terminal.
 
-In a narrow sidebar the **Modified** column and the drag hint are hidden; widen the sidebar
-by dragging its edge to bring them back.
+In a narrow sidebar the **Modified** column and the drag hint are hidden and the filter gets
+a row of its own; widen the sidebar by dragging its edge to bring them back.
 
 ## Transferring
 
@@ -106,8 +117,11 @@ managers. Dropping onto a [local terminal](terminal.md#dropping-files) always ty
 
 Click a row to select it. ++ctrl++ + click (++cmd++ + click on macOS) adds a row or takes it
 out again, ++shift++ + click selects every row from the one clicked last, and ++ctrl+a++
-(++cmd+a++) selects the whole folder. ++esc++ or a click on the empty space below the rows
+(++cmd+a++) selects every row shown. ++esc++ or a click on the empty space below the rows
 clears the selection. The toolbar shows how many rows are selected.
+
+Only rows on show can be selected. A row that the filter or the hidden-files button hides
+leaves the selection, so downloads and deletes never reach a file you cannot see.
 
 With several rows selected, :material-download: downloads every selected file, and the row
 menu of a selected row offers **Download** for the files and **Delete** for all of them.

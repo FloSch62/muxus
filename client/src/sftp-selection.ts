@@ -68,6 +68,22 @@ export function selectAllSftpEntries(order: readonly string[]): SftpSelection {
   return { names: new Set(order) };
 }
 
+/**
+ * The selection without names the listing no longer shows, such as rows a
+ * filter hides, so a later Shift-click run cannot bring them back either.
+ */
+export function visibleSftpSelection(
+  selection: SftpSelection,
+  order: readonly string[],
+): SftpSelection {
+  const shown = new Set(order);
+  const allShown = (names: ReadonlySet<string>) => [...names].every((name) => shown.has(name));
+  const { names, anchor } = selection;
+  if (allShown(names) && (!anchor || allShown(anchor.base))) return selection;
+  const keep = (from: ReadonlySet<string>) => new Set([...from].filter((name) => shown.has(name)));
+  return { names: keep(names), ...(anchor ? { anchor: { ...anchor, base: keep(anchor.base) } } : {}) };
+}
+
 /** The selected entries in listing order; names gone since the last refresh drop out. */
 export function selectedSftpEntries(
   entries: readonly SftpEntry[],
