@@ -69,7 +69,6 @@ import {
   forgetInterruptedDownload,
   pickDownloadFolder,
   saveIntoFolder,
-  TRANSFER_CANCELLED,
 } from '../sftp-download.js';
 import {
   EMPTY_SFTP_SELECTION,
