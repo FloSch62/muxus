@@ -14,8 +14,14 @@ export const TREE_ROW_GAP = 1;
  * spacers for the rest from it.
  */
 export const TREE_ROW_PITCH = TREE_ROW_HEIGHT + TREE_ROW_GAP;
-export const TREE_INDENT_STEP = 14;
+export const TREE_INDENT_STEP = 18;
 export const TREE_BASE_INSET = 8;
+/**
+ * Width of a folder's expand chevron plus the gap after it. Host rows have no
+ * chevron and leave this much space instead, so a host's icon lines up with
+ * the folder icons at its level and sits clearly inside its parent.
+ */
+export const TREE_CHEVRON_SLOT = 20;
 
 /**
  * Label typography every row shares — hosts, folders and the fixed rows above
