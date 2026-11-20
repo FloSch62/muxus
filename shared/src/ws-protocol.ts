@@ -470,6 +470,12 @@ export const terminalClientMessageSchema = z.discriminatedUnion('op', [
     answers: z.array(z.string().max(8192)).max(16),
     rememberPassword: z.boolean().optional(),
     skipped: z.boolean().optional(),
+    /**
+     * The prompt was dismissed: give up the login. Said in so many words
+     * because a socket that merely closes is taken for a dropped window,
+     * which reattaches and is shown the same prompt again.
+     */
+    cancelled: z.boolean().optional(),
   }),
   /** Verdict on the last `host-key` challenge. */
   z.object({ op: z.literal('host-key-response'), accept: z.boolean() }),

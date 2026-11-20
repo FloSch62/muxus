@@ -109,6 +109,32 @@ describe('sign-in prompts over the terminal socket', () => {
     socket.close(1000, TERMINAL_SESSION_CLOSE_REASON);
   });
 
+  it('gives up the login when a prompt is cancelled, and does not ask again', async () => {
+    const failures: string[] = [];
+    const { socket } = openSocket(async (io) => {
+      try {
+        await io.prompt({ host: 'bastion', prompts: [{ prompt: 'Password', echo: false }] });
+      } catch (err) {
+        failures.push((err as Error).message);
+        throw err;
+      }
+    });
+    await vi.waitFor(() => expect(sent(socket, 'auth-prompt')).toBe(true));
+
+    socket.control({ op: 'auth-response', answers: [], cancelled: true });
+    await vi.waitFor(() => expect(sent(socket, 'exit')).toBe(true));
+
+    expect(failures).toEqual(['authentication cancelled']);
+    expect(sent(socket, 'ready')).toBe(false);
+    // The session is over: the window is told why and is not left to reattach
+    // to a login that would show it the same prompt.
+    expect(socket.frames().filter((frame) => frame.op === 'auth-prompt')).toHaveLength(1);
+    expect(socket.frames().find((frame) => frame.op === 'exit')).toMatchObject({
+      message: 'authentication cancelled',
+    });
+    expect(socket.readyState).not.toBe(socket.OPEN);
+  });
+
   it('does not take a resize for the answer to a host-key question', async () => {
     const decisions: boolean[] = [];
     const { socket } = openSocket(async (io) => {

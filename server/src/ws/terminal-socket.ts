@@ -449,7 +449,9 @@ async function handleSession(
     prompt: async (info) => {
       sendControl(socket, { op: 'auth-prompt', ...info });
       const reply = await control.next();
-      if (reply.op !== 'auth-response') throw new Error('authentication cancelled');
+      if (reply.op !== 'auth-response' || reply.cancelled) {
+        throw new Error('authentication cancelled');
+      }
       return {
         answers: reply.answers,
         rememberPassword: reply.rememberPassword,
