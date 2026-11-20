@@ -405,6 +405,8 @@ describe('SFTP upload overwrite policy', () => {
  * for writing, as hack/demo-env.mjs does; `stuck` entries belong to someone
  * else, who neither lets them be opened nor removed.
  */
+type OpenCallback = (error: Error | null, handle?: Buffer) => void;
+
 function memorySftp(
   options: { truncateOnOpen?: boolean; stuck?: string[]; failWrites?: boolean; fifos?: string[] } = {},
 ) {
@@ -427,10 +429,17 @@ function memorySftp(
       else if (bytes) callback(null, attrs(bytes));
       else callback(noSuchFile());
     },
-    open(file: string, _flags: string, callback: (error: Error | null, handle?: Buffer) => void) {
+    open(
+      file: string,
+      flags: string,
+      attrsOrCallback: { mode?: number } | OpenCallback,
+      maybeCallback?: OpenCallback,
+    ) {
+      const callback = typeof attrsOrCallback === 'function' ? attrsOrCallback : maybeCallback!;
       if (options.stuck?.includes(file)) return callback(denied());
       if (fifos.has(file)) throw new Error('a FIFO was opened');
       const target = links.get(file) ?? file;
+      if (flags === 'wx' && !files.has(target)) files.set(target, Buffer.alloc(0));
       if (!files.has(target)) return callback(noSuchFile());
       if (options.truncateOnOpen) files.set(target, Buffer.alloc(0));
       const handle = Buffer.from(`handle-${opens.length}`);
@@ -706,7 +715,7 @@ describe('SFTP upload resume', () => {
 
     expect((await upload(handler, { path: '/remote/image.bin' }, source)).result).toEqual({ ok: true });
     expect(lstat.mock.calls.map(([file]) => file)).toEqual(['/remote/image.bin', '/remote/image.bin']);
-    expect(remote.opens).toEqual([]);
+    expect(remote.opens.map(({ path }) => path)).not.toContain(staged);
     expect(remote.writes[0]?.path).not.toBe(staged);
     expect(remote.files.get('/remote/image.bin')).toEqual(source);
   });
