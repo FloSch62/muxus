@@ -403,7 +403,8 @@ describe('SFTP upload overwrite policy', () => {
  * An SFTP server in memory with what staged uploads use: files and symbolic
  * links by path, files opened by handle. `truncateOnOpen` empties a file opened
  * for writing, as hack/demo-env.mjs does; `stuck` entries belong to someone
- * else, who neither lets them be opened nor removed.
+ * else, who neither lets them be opened nor removed. `modes` holds the mode
+ * each file was created with.
  */
 type OpenCallback = (error: Error | null, handle?: Buffer) => void;
 
@@ -413,9 +414,10 @@ function memorySftp(
   const files = new Map<string, Buffer>();
   const links = new Map<string, string>();
   const fifos = new Set(options.fifos);
+  const modes = new Map<string, number>();
   const handles = new Map<string, string>();
   const writes: Array<{ path: string; start: number; bytes: number }> = [];
-  const opens: Array<{ path: string; handle: string }> = [];
+  const opens: Array<{ path: string; flags: string; handle: string }> = [];
   const closes: string[] = [];
   const noSuchFile = () => Object.assign(new Error('No such file'), { code: 2 });
   const denied = () => Object.assign(new Error('Permission denied'), { code: 3 });
@@ -436,15 +438,19 @@ function memorySftp(
       maybeCallback?: OpenCallback,
     ) {
       const callback = typeof attrsOrCallback === 'function' ? attrsOrCallback : maybeCallback!;
+      const mode = typeof attrsOrCallback === 'function' ? undefined : attrsOrCallback.mode;
       if (options.stuck?.includes(file)) return callback(denied());
       if (fifos.has(file)) throw new Error('a FIFO was opened');
       const target = links.get(file) ?? file;
-      if (flags === 'wx' && !files.has(target)) files.set(target, Buffer.alloc(0));
+      if (flags === 'wx' && !files.has(target)) {
+        files.set(target, Buffer.alloc(0));
+        modes.set(target, mode ?? 0o666);
+      }
       if (!files.has(target)) return callback(noSuchFile());
       if (options.truncateOnOpen) files.set(target, Buffer.alloc(0));
       const handle = Buffer.from(`handle-${opens.length}`);
       handles.set(handle.toString(), target);
-      opens.push({ path: file, handle: handle.toString() });
+      opens.push({ path: file, flags, handle: handle.toString() });
       callback(null, handle);
     },
     fstat(handle: Buffer, callback: (error: Error | null, attrs?: unknown) => void) {
@@ -475,13 +481,16 @@ function memorySftp(
       if (!bytes) return callback(noSuchFile());
       files.delete(from);
       files.set(to, bytes);
+      if (modes.has(from)) modes.set(to, modes.get(from)!);
       callback(null);
     },
-    createWriteStream(file: string, streamOptions: { flags?: string; start?: number; handle?: Buffer }) {
+    createWriteStream(file: string, streamOptions: { flags?: string; mode?: number; start?: number; handle?: Buffer }) {
       const target = streamOptions.handle ? opened(streamOptions.handle) : file;
       if (!streamOptions.handle) {
         if (files.has(file) || links.has(file) || fifos.has(file)) throw new Error('Failure');
         files.set(file, Buffer.alloc(0));
+        // As in ssh2, which chmods a file it opens itself: to 0666 unless given a mode.
+        modes.set(file, streamOptions.mode ?? 0o666);
       }
       let position = streamOptions.start ?? 0;
       const write = { path: file, start: position, bytes: 0 };
@@ -507,7 +516,7 @@ function memorySftp(
       });
     },
   };
-  return { sftp, files, links, writes, opens, closes };
+  return { sftp, files, links, modes, writes, opens, closes };
 }
 
 /** An upload of `body` in 64 KiB chunks, as a browser's request arrives. */
@@ -573,6 +582,26 @@ describe('SFTP upload resume', () => {
     expect(remote.files.has(staged)).toBe(false);
   });
 
+  it('creates a new staged file with 0644 itself, so ssh2 does not chmod it to 0666', async () => {
+    const remote = memorySftp();
+    const open = vi.spyOn(remote.sftp, 'open');
+    const handler = captureUploadHandler(remote.sftp);
+
+    expect((await upload(handler, query, source)).result).toEqual({ ok: true });
+    expect(open).toHaveBeenCalledWith(staged, 'wx', { mode: 0o644 }, expect.any(Function));
+    expect(remote.modes.get('/remote/image.bin')).toBe(0o644);
+  });
+
+  it('keeps the mode a continued staged file was created with', async () => {
+    const remote = memorySftp();
+    remote.files.set(staged, source.subarray(0, 700_000));
+    remote.modes.set(staged, 0o600);
+    const handler = captureUploadHandler(remote.sftp);
+
+    expect((await upload(handler, query, source)).result).toEqual({ ok: true });
+    expect(remote.modes.get('/remote/image.bin')).toBe(0o600);
+  });
+
   it('writes nothing into a staged file that differs, and has the file sent again', async () => {
     const remote = memorySftp();
     const other = Buffer.concat([source.subarray(0, 600_000), randomBytes(100_000)]);
@@ -594,7 +623,8 @@ describe('SFTP upload resume', () => {
     const handler = captureUploadHandler(remote.sftp);
 
     expect((await upload(handler, query, source)).result).toEqual({ ok: true });
-    expect(remote.opens).toEqual([]);
+    // Only the staged file it creates itself is opened.
+    expect(remote.opens).toEqual([expect.objectContaining({ path: staged, flags: 'wx' })]);
     expect(remote.files.get('/remote/image.bin')).toEqual(source);
 
     const linked = memorySftp();
@@ -603,7 +633,7 @@ describe('SFTP upload resume', () => {
     linked.links.set(staged, '/home/admin/.ssh/authorized_keys');
 
     expect((await upload(captureUploadHandler(linked.sftp), query, source)).result).toEqual({ ok: true });
-    expect(linked.opens).toEqual([]);
+    expect(linked.opens).toEqual([expect.objectContaining({ path: staged, flags: 'wx' })]);
     expect(linked.files.get('/home/admin/.ssh/authorized_keys')).toEqual(keys);
     expect(linked.files.get('/remote/image.bin')).toEqual(source);
   });
