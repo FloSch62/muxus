@@ -109,6 +109,7 @@ export const SETTINGS_SEARCH_INDEX: readonly SettingsSearchEntry[] = [
   { section: 'passwords', group: 'Vault', label: 'Ask for the master password', keywords: ['unlock', 'startup'] },
   { section: 'passwords', group: 'Vault', label: 'Master password', keywords: ['change password'] },
   { section: 'passwords', group: 'Vault', label: 'Delete the vault', keywords: ['reset', 'forgot password', 'remove'] },
+  { section: 'passwords', kind: 'group', label: 'Password managers', keywords: ['keepass', 'keepassxc', 'kdbx', '1password', 'bitwarden', 'vaultwarden', 'proton pass', 'lastpass', 'dashlane', 'pass', 'gopass', 'external'] },
   { section: 'passwords', kind: 'group', label: 'Secrets', keywords: ['enable password', 'sudo', 'pin', 'send secret'] },
   { section: 'passwords', kind: 'group', label: 'Saved SSH passwords', keywords: ['credentials', 'remembered passwords'] },
 

@@ -17,7 +17,7 @@ import Typography from '@mui/material/Typography';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import UndoOutlinedIcon from '@mui/icons-material/UndoOutlined';
-import type { FolderAuthSettings, LoginSequence } from '@muxus/shared';
+import type { ExternalPasswordRef, FolderAuthSettings, LoginSequence } from '@muxus/shared';
 import {
   folderSettingsForPath,
   useFolderSettings,
@@ -54,6 +54,7 @@ import { useUiStore } from '../../state/ui.js';
 import { HostColorPicker } from '../HostColorPicker.js';
 import { FolderPathField } from '../FolderPathField.js';
 import { LoginSequenceEditor } from '../LoginSequenceEditor.js';
+import { PasswordEntryField } from '../password-managers/PasswordEntryField.js';
 import { folderIcon, FOLDER_ICONS } from './folder-icons.js';
 import {
   folderProblemMessage,
@@ -89,6 +90,7 @@ export function FolderDialog() {
   const [authPassword, setAuthPassword] = useState('');
   const [removePassword, setRemovePassword] = useState(false);
   const [masterPassword, setMasterPassword] = useState('');
+  const [passwordRef, setPasswordRef] = useState<ExternalPasswordRef | undefined>();
   const [loginSequence, setLoginSequence] = useState<LoginSequenceDraft>(() => loginSequenceDraft(undefined));
 
   // Load the folder's current shape once, when the dialog opens on it.
@@ -133,6 +135,7 @@ export function FolderDialog() {
   const seedKey = settingsRecord?.auth.identityFiles?.[0] ?? '';
   // Compared as text: a refetch hands back an equal but new object.
   const seedSequence = JSON.stringify(settingsRecord?.loginSequence ?? null);
+  const seedPasswordRef = JSON.stringify(settingsRecord?.auth.passwordRef ?? null);
   useEffect(() => {
     if (state === false || state.mode === 'move-hosts') return;
     const editing = state.mode === 'edit';
@@ -142,10 +145,13 @@ export function FolderDialog() {
     setAuthPassword('');
     setRemovePassword(false);
     setMasterPassword('');
+    setPasswordRef(
+      editing ? ((JSON.parse(seedPasswordRef) as ExternalPasswordRef | null) ?? undefined) : undefined,
+    );
     setLoginSequence(
       loginSequenceDraft(editing ? ((JSON.parse(seedSequence) as LoginSequence | null) ?? undefined) : undefined),
     );
-  }, [state, seedUser, seedPort, seedKey, seedSequence]);
+  }, [state, seedUser, seedPort, seedKey, seedSequence, seedPasswordRef]);
 
   const target = movingHosts
     ? normalizeGroupPath(parent)
@@ -191,6 +197,7 @@ export function FolderDialog() {
       // A folder key means "log in with exactly this key", like the host
       // editor's specific-key mode.
       ...(authKey.trim() ? { identityFiles: [authKey.trim()], identitiesOnly: true } : {}),
+      ...(passwordRef ? { passwordRef } : {}),
     };
     const password = authPassword
       ? authPassword
@@ -532,6 +539,16 @@ export function FolderDialog() {
                     fullWidth
                   />
                 )}
+                <PasswordEntryField
+                  value={passwordRef}
+                  onChange={setPasswordRef}
+                  suggestion={sanitizeFolderName(name)}
+                  helperText={
+                    passwordRef
+                      ? 'Used as the shared password, ahead of one saved in the vault.'
+                      : 'Or take the shared password from a password-manager entry.'
+                  }
+                />
 
                 <Divider sx={{ mt: 0.5 }} />
                 <Box>

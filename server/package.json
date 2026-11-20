@@ -18,6 +18,8 @@
     "@muxus/shared": "workspace:*",
     "@napi-rs/keyring": "^2.1.2",
     "fastify": "^5.12.8",
+    "hash-wasm": "^4.13.0",
+    "kdbxweb": "^2.1.1",
     "nanoid": "^6.0.2",
     "node-pty": "^1.1.0",
     "open": "^11.0.4",

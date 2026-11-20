@@ -1,4 +1,5 @@
 import {
+  type ExternalPasswordRef,
   savedHostHopId,
   type ConfigForward,
   type HostKeywordHighlightConfig,
@@ -67,6 +68,8 @@ export interface HostDraft {
   /** Muxus-only console mode: also no env requests, with PTY rejection fallback. */
   consoleCompatibility: boolean;
   systemOpenSsh: boolean;
+  /** Password-manager entry the host logs in with; a reference, never the password. */
+  passwordRef: ExternalPasswordRef | undefined;
   /** Look for containers, clusters and VMs on connect; 'default' follows Settings. */
   discoverEnvironments: EnvironmentDiscoveryDraft;
   /** Target config file; '' keeps the block's file (or the root for new hosts). */
@@ -130,6 +133,7 @@ export function blankDraft(
     disableSftp: false,
     consoleCompatibility: false,
     systemOpenSsh: false,
+    passwordRef: undefined,
     discoverEnvironments: 'default',
     file: '',
     hostname: parsed?.host ?? (storage === 'muxus' ? target : ''),
@@ -185,6 +189,7 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
     disableSftp: entry.metadata?.disableSftp ?? false,
     consoleCompatibility: entry.metadata?.consoleCompatibility ?? false,
     systemOpenSsh: entry.metadata?.systemOpenSsh ?? false,
+    passwordRef: entry.metadata?.passwordRef,
     discoverEnvironments: environmentDiscoveryDraft(entry.metadata?.discoverEnvironments),
     file: entry.file,
     hostname: o.hostname ?? '',
@@ -256,6 +261,7 @@ export function draftFromSavedSshProfile(
     disableSftp: saved.metadata.disableSftp ?? false,
     consoleCompatibility: saved.metadata.consoleCompatibility ?? false,
     systemOpenSsh: saved.metadata.systemOpenSsh ?? false,
+    passwordRef: saved.metadata.passwordRef,
     discoverEnvironments: environmentDiscoveryDraft(saved.metadata.discoverEnvironments),
     file: '',
     hostname: profile.target,

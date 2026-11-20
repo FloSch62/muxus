@@ -62,6 +62,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 35, name: 'scripts' },
       { version: 36, name: 'web-hosts' },
       { version: 37, name: 'host-system-openssh' },
+      { version: 38, name: 'password-managers' },
     ]);
   });
 
@@ -201,8 +202,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 37,
-      name: 'host-system-openssh',
+      version: 38,
+      name: 'password-managers',
     });
     expect(database.savedHostProfile(telnet.id)).toMatchObject({
       name: 'Core switch',
@@ -308,8 +309,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 37,
-      name: 'host-system-openssh',
+      version: 38,
+      name: 'password-managers',
     });
     expect(database.savedHostProfile(rdp.id)).toMatchObject({ name: 'Build server', metadata: { group: 'Lab' } });
     const gnmi = database.saveSavedHostProfile({
@@ -462,6 +463,8 @@ describe('MuxusDatabase migrations', () => {
       legacy.exec(`
         DELETE FROM schema_migrations WHERE version >= 30;
         DROP TABLE scripts;
+        DROP TABLE password_manager_sources;
+        ALTER TABLE connection_profiles DROP COLUMN password_ref_json;
         ALTER TABLE connection_profiles DROP COLUMN proxy_jump_fallbacks_json;
         ALTER TABLE connection_profiles DROP COLUMN discover_environments;
         ALTER TABLE connection_profiles DROP COLUMN system_openssh;
@@ -478,7 +481,7 @@ describe('MuxusDatabase migrations', () => {
     }
 
     database = new MuxusDatabase(filename);
-    expect(database.appliedMigrations().slice(-8)).toEqual([
+    expect(database.appliedMigrations().slice(-9)).toEqual([
       { version: 30, name: 'host-paste-prompt-wait' },
       { version: 31, name: 'host-anti-idle' },
       { version: 32, name: 'host-terminal-input-modes' },
@@ -487,6 +490,7 @@ describe('MuxusDatabase migrations', () => {
       { version: 35, name: 'scripts' },
       { version: 36, name: 'web-hosts' },
       { version: 37, name: 'host-system-openssh' },
+      { version: 38, name: 'password-managers' },
     ]);
     const metadata = database.openSshMetadata(['legacy']).get('legacy');
     expect(metadata).toMatchObject({ group: 'Core', pasteLineDelayMs: 250 });
@@ -619,8 +623,8 @@ describe('MuxusDatabase migrations', () => {
 
     database = new MuxusDatabase(filename);
     expect(database.appliedMigrations().at(-1)).toEqual({
-      version: 37,
-      name: 'host-system-openssh',
+      version: 38,
+      name: 'password-managers',
     });
     expect(database.passwordVaultConfig()).toMatchObject({
       formatVersion: 2,

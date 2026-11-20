@@ -74,6 +74,8 @@ declare global {
       readClipboardContent(): Promise<DesktopClipboardContent | undefined>;
       /** Choose an SSH private key with the operating system's file picker. */
       selectPrivateKey(): Promise<string | undefined>;
+      /** Pick a KeePass database, its key file, or a password store folder. */
+      selectPasswordManagerFile?(target: 'database' | 'key-file' | 'store'): Promise<string | undefined>;
       /** Pick a PEM file for gNMI TLS: a CA bundle, a client certificate or its key. */
       selectCertificateFile?(kind: 'ca' | 'cert' | 'key'): Promise<string | undefined>;
       /** Choose where a session log file goes, starting from `defaultPath`. */

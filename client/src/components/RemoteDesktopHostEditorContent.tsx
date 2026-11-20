@@ -20,6 +20,7 @@ import { FolderPathField } from './FolderPathField.js';
 import { HostColorPicker } from './HostColorPicker.js';
 import { EditorShell, type EditorSectionDef } from './host-editor/EditorShell.js';
 import { SshGatewayRouteField } from './host-editor/SshGatewayRouteField.js';
+import { PasswordEntryField } from './password-managers/PasswordEntryField.js';
 import {
   DEFAULT_DESKTOP_PORTS,
   desktopDraftMetadataPatch,
@@ -209,8 +210,18 @@ function LogonSection({ kind, draft, set }: SectionProps) {
       )}
       <Typography variant="body2" color="textSecondary">
         Muxus asks for the password when it connects. Tick “Remember this password” there to keep it in the
-        encrypted password vault.
+        encrypted password vault, or take it from a password manager:
       </Typography>
+      <PasswordEntryField
+        value={draft.passwordRef}
+        onChange={(passwordRef) => set({ passwordRef })}
+        suggestion={draft.host || draft.name}
+        helperText={
+          kind === 'rdp' && draft.passwordRef && !draft.username.trim()
+            ? 'Enter the user name above as well: the entry supplies only the password.'
+            : undefined
+        }
+      />
     </Stack>
   );
 }

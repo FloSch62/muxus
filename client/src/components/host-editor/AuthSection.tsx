@@ -22,6 +22,7 @@ import KeyOutlinedIcon from '@mui/icons-material/KeyOutlined';
 import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import VerifiedUserOutlinedIcon from '@mui/icons-material/VerifiedUserOutlined';
 import type { SshKeysResponse } from '@muxus/shared';
+import { PasswordEntryField } from '../password-managers/PasswordEntryField.js';
 import {
   authChoice,
   keyFilesCaption,
@@ -40,10 +41,13 @@ export function AuthSection({
   draft,
   set,
   keys,
+  passwordEntry = false,
 }: {
   draft: HostDraft;
   set: (patch: Partial<HostDraft>) => void;
   keys: SshKeysResponse | undefined;
+  /** Offer to log in with a password-manager entry; only saved hosts keep one. */
+  passwordEntry?: boolean;
 }) {
   const [pending, setPending] = useState('');
   const [pendingCertificate, setPendingCertificate] = useState('');
@@ -222,6 +226,32 @@ export function AuthSection({
           </Typography>
         </Stack>
       )}
+
+      {passwordEntry ? (
+        <>
+          <Divider />
+          <Stack spacing={1.5}>
+            <Box>
+              <Typography variant="subtitle2">Password from a password manager</Typography>
+              <Typography variant="caption" color="textSecondary">
+                When this host asks for a password, Muxus reads it from the entry you choose
+                instead of prompting. Keys and the agent are still tried first unless you picked
+                password login above.
+              </Typography>
+            </Box>
+            <PasswordEntryField
+              value={draft.passwordRef}
+              onChange={(passwordRef) => set({ passwordRef })}
+              suggestion={draft.hostname || draft.aliasText}
+              helperText={
+                draft.systemOpenSsh
+                  ? 'Not used while this host connects with the system OpenSSH program, which asks for the password itself.'
+                  : undefined
+              }
+            />
+          </Stack>
+        </>
+      ) : null}
 
       <Divider />
 

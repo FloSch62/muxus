@@ -70,6 +70,14 @@ const loginSequenceStepSchema = z.discriminatedUnion('kind', [
 ]);
 
 /** Steps only; a secret step names its vault secret and never carries the value. */
+/** A password-manager entry a host or folder logs in with; never the password itself. */
+export const passwordRefSchema = z.object({
+  sourceId: z.string().min(1).max(200),
+  entryId: z.string().min(1).max(2048),
+  title: z.string().max(500),
+  username: z.string().max(500).optional(),
+});
+
 export const loginSequenceSchema = z.object({
   steps: z.array(loginSequenceStepSchema).max(LOGIN_SEQUENCE_MAX_STEPS),
 });
@@ -151,6 +159,8 @@ export const metadataPatchSchema = z
     // Null follows the global setting.
     discoverEnvironments: z.boolean().nullable().optional(),
     loginSequence: loginSequenceSchema.nullable().optional(),
+    // Null unlinks the password-manager entry.
+    passwordRef: passwordRefSchema.nullable().optional(),
     // Null or empty removes them; each route is a whole ProxyJump chain.
     proxyJumpFallbacks: z
       .array(z.array(z.string().trim().min(1).max(500)).min(1).max(MAX_JUMP_HOPS))

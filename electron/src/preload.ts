@@ -203,6 +203,10 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   selectPrivateKey(): Promise<string | undefined> {
     return ipcRenderer.invoke('muxus:select-private-key');
   },
+  /** Pick a KeePass database, its key file, or a password store folder. */
+  selectPasswordManagerFile(target: 'database' | 'key-file' | 'store'): Promise<string | undefined> {
+    return ipcRenderer.invoke('muxus:select-password-manager-file', target);
+  },
   /** Pick a PEM file for gNMI TLS: a CA bundle, a client certificate or its key. */
   selectCertificateFile(kind: 'ca' | 'cert' | 'key'): Promise<string | undefined> {
     return ipcRenderer.invoke('muxus:select-certificate-file', kind);

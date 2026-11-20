@@ -93,10 +93,20 @@ export class DesktopSession {
     private readonly log: FastifyBaseLogger,
     private readonly tickets: DesktopTickets,
   ) {
-    this.passwords = new DesktopPasswords(ctx.vault, {
-      status: (message, options) => this.status(message, options?.transient),
-      prompt: (info) => this.prompt(info),
-    });
+    this.passwords = new DesktopPasswords(
+      ctx.vault,
+      {
+        status: (message, options) => this.status(message, options?.transient),
+        prompt: (info) => this.prompt(info),
+      },
+      {
+        managers: ctx.passwordManagers,
+        ref: () =>
+          this.profile?.profileId
+            ? ctx.database.passwordRefForSavedHost(this.profile.profileId)
+            : undefined,
+      },
+    );
   }
 
   start(): void {

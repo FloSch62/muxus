@@ -1,4 +1,5 @@
 import type {
+  ExternalPasswordRef,
   OpenSshMetadataPatch,
   SavedHostProfile,
   SavedHostProfileInput,
@@ -34,6 +35,8 @@ export interface DesktopHostDraft {
   shareClipboard: boolean;
   resizeRemote: boolean;
   viewOnly: boolean;
+  /** Password-manager entry the logon takes its password from. */
+  passwordRef?: ExternalPasswordRef;
 }
 
 export function blankDesktopDraft(prefillTarget = '', group = ''): DesktopHostDraft {
@@ -67,6 +70,7 @@ export function desktopDraftFromProfile(saved: SavedHostProfile, duplicate: bool
     port: profile.port === DEFAULT_DESKTOP_PORTS[profile.kind] ? '' : String(profile.port),
     username: profile.username ?? '',
     domain: profile.kind === 'rdp' ? (profile.domain ?? '') : '',
+    passwordRef: saved.metadata.passwordRef,
     sshGateway: profile.sshGateway,
     sshGatewayFallbacks: profile.sshGatewayFallbacks ?? [],
     shareClipboard: profile.shareClipboard !== false,
@@ -126,5 +130,6 @@ export function desktopDraftMetadataPatch(draft: DesktopHostDraft): OpenSshMetad
   return {
     group: draft.group.trim() || null,
     color: draft.color ?? null,
+    passwordRef: draft.passwordRef ?? null,
   };
 }

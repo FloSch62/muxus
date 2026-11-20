@@ -170,6 +170,11 @@ automatically when a host falls back to password login; a password remembered fo
 host itself still wins. Folder credentials move with the folder when it is renamed or
 dragged, and deleting the folder deletes them.
 
+Instead of a password typed here, the folder can point at a
+[password-manager entry](connecting.md#passwords-from-a-password-manager) with **Choose
+from a password manager…**. The entry is then used as the shared password, ahead of one
+saved in the vault.
+
 ### Shared login sequence
 
 The same dialog's **Login sequence** section sets a

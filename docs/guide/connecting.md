@@ -104,6 +104,46 @@ the prompt policy can also be changed or the vault reset. Private-key passphrase
 codes and all other keyboard-interactive answers remain transient and are never
 remembered. See the [security model](../reference/security.md#password-vault).
 
+## Passwords from a password manager
+
+A host can take its password from an entry in a password manager instead of the Muxus
+vault. Muxus stores only which entry to use. The password is read from the manager each
+time a login needs it, so changing it there is enough.
+
+1. In **Settings → Passwords**, under **Password managers**, choose **Connect** and pick
+   the manager. The same dialog opens from the entry picker when none is connected yet.
+2. Edit the host, open **Authentication** and choose **Choose from a password manager…**.
+   Search by title, user name, address or group and pick the entry. RDP and VNC hosts have
+   the same field under **Logon**, and a folder has it under
+   [**Shared SSH credentials**](hosts.md#shared-credentials).
+3. Connect. When the server asks for a password, Muxus answers with the entry's.
+
+| Manager | How Muxus reads it | Before first use |
+| --- | --- | --- |
+| **KeePass, KeePassXC** and other `.kdbx` apps | Opens the database file itself; no app has to be running | Choose the `.kdbx` file, and its key file if it has one |
+| **1Password** | `op`, the 1Password CLI | Turn on **Integrate with 1Password CLI** in the 1Password app |
+| **Bitwarden**, Vaultwarden | `bw`, the Bitwarden CLI | Run `bw login` once in a terminal |
+| **Proton Pass** | `pass-cli` | Run `pass-cli login` once |
+| **LastPass** | `lpass` | Run `lpass login <email>` once |
+| **Dashlane** | `dcli` | Run `dcli sync` once |
+| **pass, gopass** | Lists the password store and decrypts with `gpg` | A working GnuPG key and pinentry |
+
+A KeePass database and a Bitwarden vault are unlocked in Muxus with their own password:
+in the picker, in **Settings → Passwords**, or in the prompt a connection shows when it
+needs a locked one. They stay unlocked until you choose **Lock** or quit Muxus. The other
+managers are unlocked by their own app or agent, for example a fingerprint prompt from
+1Password or a pinentry window from GnuPG.
+
+The linked entry is tried before a password saved in the vault and before a folder's
+shared password. If it cannot be read, because the manager is locked and you skip the
+prompt, the entry was deleted or the program is missing, Muxus says why and asks for the
+password as usual. An entry supplies the password only; the user name still comes from
+the host. Hosts set to connect with the
+[system OpenSSH program](adding-hosts.md) are not covered, because `ssh` asks for the
+password itself. KeePass databases that need a hardware key (YubiKey challenge-response)
+cannot be opened. See the
+[security model](../reference/security.md#external-password-managers).
+
 ## Security keys
 
 FIDO2 keys on a YubiKey, SoloKey or similar authenticator (`ssh-keygen -t ed25519-sk` or
