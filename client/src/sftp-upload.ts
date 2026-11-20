@@ -109,6 +109,29 @@ export function isEmptyPayload(payload: DropPayload): boolean {
   return payload.files.length === 0 && payload.directories.length === 0;
 }
 
+/** Smaller files are sent whole again: continuing them would save less than the checks cost. */
+const MIN_RESUMABLE_UPLOAD_BYTES = 1024 * 1024;
+const FINGERPRINT_WINDOW_BYTES = 64 * 1024;
+const FINGERPRINT_SPACING_BYTES = 1024 * 1024;
+/** Bounds what is read to 16 MiB; larger files get their windows further apart. */
+const MAX_FINGERPRINT_WINDOWS = 256;
+
+/**
+ * SHA-256 of 64 KiB windows spread evenly over `file`, from its first to its last
+ * bytes, at most 1 MiB apart. With its size and time, it tells the server which
+ * interrupted upload is this file's, without reading the whole file first.
+ */
+export async function uploadFingerprint(file: Blob): Promise<string> {
+  const span = Math.max(0, file.size - FINGERPRINT_WINDOW_BYTES);
+  const gaps = Math.min(MAX_FINGERPRINT_WINDOWS - 1, Math.ceil(span / FINGERPRINT_SPACING_BYTES));
+  const windows = Array.from({ length: gaps + 1 }, (_, index) => {
+    const start = gaps === 0 ? 0 : Math.round((index * span) / gaps);
+    return file.slice(start, start + FINGERPRINT_WINDOW_BYTES);
+  });
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', await new Blob(windows).arrayBuffer()));
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 export const defaultUploadDeps: UploadDeps = {
   mkdir: (connId, path, signal) =>
     apiFetch(`/api/sftp/${connId}/mkdir`, {
@@ -121,11 +144,11 @@ export const defaultUploadDeps: UploadDeps = {
   confirm: confirmAction,
 };
 
-function isDestinationExists(error: unknown): boolean {
+function isConflict(error: unknown, code: string): boolean {
   return (
     error instanceof ApiError &&
     error.status === 409 &&
-    error.body?.code === 'SFTP_DESTINATION_EXISTS'
+    error.body?.code === code
   );
 }
 
@@ -184,9 +207,15 @@ export async function uploadToRemote(
     fileIndex++;
     const relative = cleanRelativePath(item.relativePath || item.file.name);
     const destination = joinRemotePath(directory, relative);
-    const send = (overwrite: boolean) =>
+    // What identifies the file lets the server continue an upload of it that a lost connection cut short.
+    const source = item.file.size >= MIN_RESUMABLE_UPLOAD_BYTES
+      ? `&size=${item.file.size}&lastModified=${item.file.lastModified}&fingerprint=${await uploadFingerprint(item.file)}`
+      : '';
+    // A cancel while the file was read for its fingerprint must stop the request too.
+    signal.throwIfAborted();
+    const request = (overwrite: boolean, resumable: boolean) =>
       deps.upload(
-        `/api/sftp/${connId}/upload?path=${encodeURIComponent(destination)}${overwrite ? '&overwrite=true' : ''}`,
+        `/api/sftp/${connId}/upload?path=${encodeURIComponent(destination)}${resumable ? source : ''}${overwrite ? '&overwrite=true' : ''}`,
         item.file,
         {
           signal,
@@ -203,11 +232,18 @@ export async function uploadToRemote(
             report({ loaded: completedBytes + item.file.size, phase: 'finalizing' }),
         },
       );
+    // What the server kept of an interrupted upload may not be this file's; then it goes whole, as a new upload.
+    const send = (overwrite: boolean) =>
+      request(overwrite, true).catch((error: unknown) => {
+        if (!isConflict(error, 'SFTP_UPLOAD_MISMATCH')) throw error;
+        signal.throwIfAborted();
+        return request(overwrite, false);
+      });
     try {
       await send(false);
       uploaded++;
     } catch (uploadError) {
-      if (!isDestinationExists(uploadError)) throw uploadError;
+      if (!isConflict(uploadError, 'SFTP_DESTINATION_EXISTS')) throw uploadError;
       const replace = await deps.confirm({
         title: 'Replace the existing file?',
         description: `${relative} already exists on the remote host.`,

@@ -1,6 +1,6 @@
 import type {} from '../../../client/src/desktop.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { downloadBlobWithProgress } from '../../../client/src/api/transfers.js';
+import { downloadBlobWithProgress, uploadRawWithProgress } from '../../../client/src/api/transfers.js';
 
 declare global {
   interface ImportMeta {
@@ -13,6 +13,33 @@ afterEach(() => {
 });
 
 describe('SFTP transfer progress', () => {
+  it('does not send an upload that was cancelled before it started', async () => {
+    const send = vi.fn();
+    vi.stubGlobal(
+      'XMLHttpRequest',
+      class {
+        upload = {};
+        status = 200;
+        responseText = '';
+        onload?: () => void;
+        open() {}
+        setRequestHeader() {}
+        abort() {}
+        send() {
+          send();
+          queueMicrotask(() => this.onload?.());
+        }
+      },
+    );
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      uploadRawWithProgress('/upload', new Blob(['payload']), { signal: controller.signal, onProgress: vi.fn() }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it('streams downloads and reports their final byte count', async () => {
     const payload = new TextEncoder().encode('payload');
     vi.stubGlobal(
