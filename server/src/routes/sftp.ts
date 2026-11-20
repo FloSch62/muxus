@@ -556,12 +556,9 @@ async function resumableUpload(
   const temp = !found || part || (await removed(sftp, staged))
     ? staged
     : `${file}.muxus-${randomBytes(6).toString('hex')}.upload`;
-  const options = mode === undefined
-    ? { flags: 'wx' as const }
-    : { flags: 'wx' as const, mode: mode & 0o7777 };
   try {
     if (part) await continueUpload(sftp, temp, body, part, source.size);
-    else await pipeline(body, sftp.createWriteStream(temp, options));
+    else await pipeline(body, await createTempFile(sftp, temp, mode));
     await commitTempFile(sftp, temp, file, overwrite);
   } catch (error) {
     await unlinkIfPresent(sftp, temp);
