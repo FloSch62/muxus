@@ -49,6 +49,7 @@ beforeEach(() => {
     newSshHostStorage: 'openssh',
     keywordHighlightProfiles: [],
     pasteWarnLookalikes: true,
+    showHiddenFiles: true,
   });
 });
 
@@ -509,6 +510,15 @@ describe('backing up preferences', () => {
     const document = await createBackupDocument();
 
     expect(document.data.preferences.closeTabOnCleanExit).toBe(true);
+  });
+
+  it('includes whether the file browser lists hidden files', async () => {
+    usePrefsStore.setState({ showHiddenFiles: false });
+    mockBackupSnapshot();
+
+    const document = await createBackupDocument();
+
+    expect(document.data.preferences.showHiddenFiles).toBe(false);
   });
 });
 
@@ -1547,6 +1557,14 @@ describe('restoring the layout preferences', () => {
     expect(
       sanitizePreferences(prefs({ sidebarOpenGesture: 'hover' })).sidebarOpenGesture,
     ).toBeUndefined();
+  });
+
+  it('restores whether the file browser lists hidden files, and leaves older backups at the default', () => {
+    expect(sanitizePreferences(prefs({ showHiddenFiles: false }))).toMatchObject({
+      showHiddenFiles: false,
+    });
+    expect(sanitizePreferences(prefs({ showHiddenFiles: 'no' })).showHiddenFiles).toBeUndefined();
+    expect(sanitizePreferences(prefs({})).showHiddenFiles).toBeUndefined();
   });
 });
 

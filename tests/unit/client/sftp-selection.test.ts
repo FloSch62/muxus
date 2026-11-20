@@ -8,6 +8,7 @@ import {
   sftpContextSelection,
   sftpEntryCount,
   sftpSelectGesture,
+  visibleSftpSelection,
   type SftpSelection,
 } from '../../../client/src/sftp-selection.js';
 
@@ -86,6 +87,29 @@ describe('sftpContextSelection', () => {
     );
     expect(sftpContextSelection(selection, 'b.txt')).toBe(selection);
     expect(names(sftpContextSelection(selection, 'd.txt'))).toEqual(['d.txt']);
+  });
+});
+
+describe('visibleSftpSelection', () => {
+  const LISTED = ['.ssh', 'logs', '.bashrc', 'a.txt', 'b.txt'];
+  const SHOWN = ['logs', 'a.txt', 'b.txt'];
+
+  it('drops selected entries the listing no longer shows', () => {
+    expect(names(visibleSftpSelection(selectAllSftpEntries(LISTED), SHOWN))).toEqual(['a.txt', 'b.txt', 'logs']);
+  });
+
+  it('returns the same selection while every selected entry is shown', () => {
+    const selection = selectSftpEntry(EMPTY_SFTP_SELECTION, 'a.txt', 'only', LISTED);
+    expect(visibleSftpSelection(selection, SHOWN)).toBe(selection);
+    expect(visibleSftpSelection(EMPTY_SFTP_SELECTION, [])).toBe(EMPTY_SFTP_SELECTION);
+  });
+
+  it('keeps a hidden entry out of a later Shift-click run', () => {
+    const first = selectSftpEntry(EMPTY_SFTP_SELECTION, 'a.txt', 'only', LISTED);
+    const anchored = selectSftpEntry(first, '.bashrc', 'toggle', LISTED);
+    const visible = visibleSftpSelection(anchored, SHOWN);
+    expect(names(visible)).toEqual(['a.txt']);
+    expect(names(selectSftpEntry(visible, 'b.txt', 'extend', SHOWN))).toEqual(['a.txt', 'b.txt']);
   });
 });
 
