@@ -1,4 +1,5 @@
 import type { DownloadResume, PartialDownload } from './api/transfers.js';
+import { TRANSFER_CANCELLED } from './transfer-progress.js';
 
 /**
  * Saving several downloaded files at once. A download link asks where to save
@@ -103,8 +104,6 @@ async function folderHas(folder: FileSystemDirectoryHandle, name: string): Promi
 const MAX_INTERRUPTED_DOWNLOAD_BYTES = 256 * 1024 * 1024;
 const interruptedDownloads = new Map<string, PartialDownload>();
 
-/** The reason Cancel aborts with: unlike the file browser closing, it drops what a download received. */
-export const TRANSFER_CANCELLED = new DOMException('Transfer cancelled', 'AbortError');
 
 /**
  * Continue an interrupted download of the remote `file`, and keep what this one

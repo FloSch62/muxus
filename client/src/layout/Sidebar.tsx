@@ -273,6 +273,7 @@ function SidebarFileBrowser({ shown }: { shown: boolean }) {
         <SftpPanel
           key={connId}
           connId={connId}
+          tabId={tab.id}
           inSidebar
           shown={shown}
           hostLabel={tab.title}

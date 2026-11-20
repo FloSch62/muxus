@@ -233,6 +233,12 @@ export function isMultiExecTarget(tab: TerminalTab): boolean {
   return !!tab.profile && tab.status === 'connected' && isTerminalProfile(tab.profile);
 }
 
+/** Whether the tab's session lost its connection, which its terminal reports as "connection lost". */
+export function tabLostConnection(tabs: readonly TerminalTab[], tabId: string): boolean {
+  const reason = tabs.find((tab) => tab.id === tabId)?.disconnectReason;
+  return reason !== undefined && reason !== 'completed';
+}
+
 /**
  * Shared patch for dialing a replacement session into an existing tab. An
  * unfulfilled fresh-transport request survives retries — the ready handler

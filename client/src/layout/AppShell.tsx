@@ -345,6 +345,7 @@ function PaneCanvas({
                     <SftpPanel
                       key={tab.connId}
                       connId={tab.connId}
+                      tabId={tab.id}
                       hostLabel={tab.title}
                       terminalPath={tab.terminalCwd}
                       followTerminalFolder={tab.sftpFollowTerminal !== false && !tab.systemOpenSsh}

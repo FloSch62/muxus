@@ -6,8 +6,8 @@ import {
   numberedFileName,
   pickDownloadFolder,
   saveIntoFolder,
-  TRANSFER_CANCELLED,
 } from '../../../client/src/sftp-download.js';
+import { TRANSFER_CANCELLED } from '../../../client/src/transfer-progress.js';
 
 /** A folder in memory with the parts of FileSystemDirectoryHandle the download uses. */
 function memoryFolder(existing: Record<string, 'file' | 'directory'> = {}) {

@@ -13,6 +13,7 @@ import { useDialogStore } from '../../../client/src/state/dialogs.js';
 import { usePrefsStore } from '../../../client/src/state/prefs.js';
 import {
   closableTabIdsToRight,
+  tabLostConnection,
   useTabsStore,
 } from '../../../client/src/state/tabs.js';
 import { useUiStore } from '../../../client/src/state/ui.js';
@@ -1280,5 +1281,32 @@ describe('pane and tab symbiosis', () => {
     useTabsStore.getState().resizeActivePane(0.2);
     expect(useTabsStore.getState().equalizePanes()).toBe(true);
     expect(useTabsStore.getState().root).toMatchObject({ ratio: 0.5 });
+  });
+});
+
+describe('lost connections', () => {
+  it('counts a dropped connection, not an ended shell, a reconnect or a closed tab', () => {
+    const id = useTabsStore.getState().open({ kind: 'ssh', target: 'router' }, 'Router');
+    const { update } = useTabsStore.getState();
+    const lost = () => tabLostConnection(useTabsStore.getState().tabs, id);
+
+    update(id, { status: 'connected', connId: 'conn-1' });
+    expect(lost()).toBe(false);
+
+    // Updated as the terminal does when the transport drops.
+    update(id, { status: 'interrupted', connId: undefined, disconnectReason: 'disconnected' });
+    expect(lost()).toBe(true);
+    update(id, { status: 'closed', disconnectReason: 'failed' });
+    expect(lost()).toBe(true);
+
+    update(id, { disconnectReason: 'completed' });
+    expect(lost()).toBe(false);
+
+    update(id, { disconnectReason: 'disconnected' });
+    useTabsStore.getState().reconnect([id]);
+    expect(lost()).toBe(false);
+
+    useTabsStore.getState().close(id);
+    expect(lost()).toBe(false);
   });
 });

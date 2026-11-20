@@ -68,6 +68,10 @@ a row of its own; widen the sidebar by dragging its edge to bring them back.
 Uploads and downloads report progress, and large transfers do not block the terminal in the
 same tab.
 
+**Cancel** stops a transfer. So does closing or moving the browser, or switching away from
+its tab. A lost connection ends a transfer with an error, such as *Upload stopped:
+connection lost*.
+
 Downloading several files asks once for a folder and saves them all there. A file of the
 same name already in the folder is kept, and the new one is numbered, as in
 `report (1).txt`. Browsers that cannot write to a folder, such as Firefox and Safari, save

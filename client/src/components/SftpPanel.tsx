@@ -69,7 +69,6 @@ import {
   forgetInterruptedDownload,
   pickDownloadFolder,
   saveIntoFolder,
-  TRANSFER_CANCELLED,
 } from '../sftp-download.js';
 import {
   EMPTY_SFTP_SELECTION,
@@ -101,6 +100,12 @@ import {
 } from '../sftp-upload.js';
 import { useLocalCopiesStore } from '../state/local-copies.js';
 import { useSftpUploadsStore } from '../state/sftp-uploads.js';
+import { tabLostConnection, useTabsStore } from '../state/tabs.js';
+import {
+  CONNECTION_LOST,
+  reportStoppedTransfer,
+  TRANSFER_CANCELLED,
+} from '../transfer-progress.js';
 import { FileTypeIcon } from './FileTypeIcon.js';
 import { OpenWithDialog } from './OpenWithDialog.js';
 import { formatSize, TransferProgress } from './TransferProgress.js';
@@ -139,10 +144,6 @@ function formatMtime(ms?: number): string {
   if (MTIME_LABELS.size >= MTIME_CACHE_LIMIT) MTIME_LABELS.clear();
   MTIME_LABELS.set(ms, label);
   return label;
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === 'AbortError';
 }
 
 function saveDownload(name: string, blob: Blob): void {
@@ -329,6 +330,7 @@ export function SftpPanel({
   onOpenInNewWindow,
   hostLabel,
   shown = true,
+  tabId,
 }: {
   connId: string;
   onOpenFile: (path: string) => void;
@@ -351,6 +353,8 @@ export function SftpPanel({
   hostLabel?: string;
   /** False while kept mounted out of sight, as in the sidebar behind the hosts. */
   shown?: boolean;
+  /** The tab whose session the browser shows, so a transfer cut by its lost connection says so. */
+  tabId?: string;
 }) {
   const startingPath = initialSftpPath(initialPath, terminalPath, followTerminalFolder);
   const [path, setPath] = useState(startingPath);
@@ -391,6 +395,13 @@ export function SftpPanel({
     setFilter('');
   }, [followTerminalFolder, terminalPath]);
   useEffect(() => () => transferControllerRef.current?.abort(), []);
+  // A lost connection also closes the browser: abort before that, so the transfer reports the loss.
+  useEffect(() => {
+    if (!tabId) return undefined;
+    return useTabsStore.subscribe((state) => {
+      if (tabLostConnection(state.tabs, tabId)) transferControllerRef.current?.abort(CONNECTION_LOST);
+    });
+  }, [tabId]);
   // Files dropped onto a terminal of this connection report their upload here.
   const terminalUpload = useSftpUploadsStore((state) => state.uploads[connId]);
   useEffect(
@@ -512,8 +523,10 @@ export function SftpPanel({
         );
       } catch (downloadError) {
         setTransfer(undefined);
-        if (isAbortError(downloadError)) showToast('info', `Cancelled download of ${entry.name}`);
-        else showErrorToast(downloadError);
+        reportStoppedTransfer(downloadError, controller.signal, {
+          cancelled: `Cancelled download of ${entry.name}`,
+          connectionLost: `Download of ${entry.name} stopped: connection lost`,
+        });
       } finally {
         if (transferControllerRef.current === controller) transferControllerRef.current = undefined;
         setBusy(false);
@@ -600,8 +613,10 @@ export function SftpPanel({
         );
       } catch (downloadError) {
         setTransfer(undefined);
-        if (isAbortError(downloadError)) showToast('info', 'Download cancelled');
-        else showErrorToast(downloadError);
+        reportStoppedTransfer(downloadError, controller.signal, {
+          cancelled: 'Download cancelled',
+          connectionLost: 'Download stopped: connection lost',
+        });
       } finally {
         if (transferControllerRef.current === controller) transferControllerRef.current = undefined;
         setBusy(false);
@@ -661,8 +676,10 @@ export function SftpPanel({
         );
       } catch (uploadError) {
         setTransfer(undefined);
-        if (isAbortError(uploadError)) showToast('info', 'Upload cancelled');
-        else showErrorToast(uploadError);
+        reportStoppedTransfer(uploadError, controller.signal, {
+          cancelled: 'Upload cancelled',
+          connectionLost: 'Upload stopped: connection lost',
+        });
       } finally {
         if (transferControllerRef.current === controller) transferControllerRef.current = undefined;
         setBusy(false);
