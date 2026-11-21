@@ -27,6 +27,13 @@ const workspaceTabSchema = z.discriminatedUnion('kind', [
   }),
   z.object({
     id: z.string().min(1),
+    kind: z.literal('monitor'),
+    title: z.string().max(500),
+    color: z.string().max(32).optional(),
+    pinned: z.boolean().optional(),
+  }),
+  z.object({
+    id: z.string().min(1),
     kind: z.literal('sftp'),
     title: z.string().max(500),
     connection: connectionRefSchema,

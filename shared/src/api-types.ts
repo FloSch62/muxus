@@ -1175,6 +1175,14 @@ export type WorkspaceTabLayout =
       /** Restoring a layout may offer a fresh connection; it never resumes a process. */
       offerReconnect: boolean;
     }
+  /** The host monitor: a view of Muxus itself, with no session to restore. */
+  | {
+      id: string;
+      kind: 'monitor';
+      title: string;
+      color?: string;
+      pinned?: boolean;
+    }
   | {
       id: string;
       kind: 'sftp';
@@ -1524,6 +1532,10 @@ export interface ConnectionInfo {
   user: string;
   /** Config alias when the target matches a Host block in ~/.ssh/config. */
   metadataAlias?: string;
+  /** The saved host this transport was dialed for. */
+  profileId?: string;
+  /** False when the dial ignored ~/.ssh/config. */
+  useConfig?: boolean;
   /** False when this transport belongs to a host with SFTP disabled. */
   sftpAvailable: boolean;
 }
@@ -1560,6 +1572,20 @@ export interface HostStatsSample {
   users?: string[];
   /** The filesystem holding `/` (the system drive on Windows). */
   disk?: { mount: string; totalBytes: number; usedBytes: number; availableBytes: number };
+  /** Bytes read and written since boot, summed over the whole disks (Linux). */
+  diskIo?: { readBytes: number; writtenBytes: number };
+  /** NVIDIA cards, as nvidia-smi reports them. */
+  gpus?: HostGpuSample[];
+}
+
+export interface HostGpuSample {
+  index: number;
+  name?: string;
+  /** Share of the last sample period the card was busy, 0–1. */
+  utilization?: number;
+  memoryUsedBytes?: number;
+  memoryTotalBytes?: number;
+  temperatureCelsius?: number;
 }
 
 export type HostStatsResponse =

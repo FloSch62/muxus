@@ -23,6 +23,8 @@ import { registerTunnelRoutes } from './routes/tunnels.js';
 import { registerTerminalSocket } from './ws/terminal-socket.js';
 import { TerminalInputs } from './ws/terminal-inputs.js';
 import { registerSftpLeaseSocket } from './ws/sftp-lease-socket.js';
+import { registerHostMonitorSocket } from './ws/host-monitor-socket.js';
+import { hostStatsReaderFor, type HostStatsReader } from './stats/host-stats-reader.js';
 import { registerDesktopSockets } from './remote-desktop/desktop-socket.js';
 import { registerManagementSocket } from './management/management-socket.js';
 import { registerManagementRequestRoutes } from './routes/management-requests.js';
@@ -58,6 +60,8 @@ export interface AppContext {
   config: ServerConfig;
   connections: SshConnectionManager;
   systemOpenSsh: SystemOpenSshSessions;
+  /** Host statistics for the status bar and the monitor, read once for both. */
+  hostStats: HostStatsReader;
   forwards: ForwardManager;
   /** Scripts running on live SSH connections. */
   scriptRuns: ScriptRuns;
@@ -173,6 +177,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
     config,
     connections,
     systemOpenSsh,
+    hostStats: hostStatsReaderFor({ connections, systemOpenSsh }),
     forwards,
     scriptRuns: new ScriptRuns({ acquire: (connId) => connections.acquire(connId, 'script') }),
     database,
@@ -276,6 +281,7 @@ export async function buildApp(config: ServerConfig): Promise<{ app: FastifyInst
   registerSharedSessionRoutes(app, ctx);
   registerTerminalSocket(app, ctx);
   registerSftpLeaseSocket(app, ctx);
+  registerHostMonitorSocket(app, ctx);
   registerDesktopSockets(app, ctx);
   registerManagementSocket(app, ctx);
   registerManagementRequestRoutes(app, ctx);

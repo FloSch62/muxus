@@ -95,16 +95,39 @@ export interface SessionTab extends TabBase {
   status: TabStatus;
   /** Whether this tab should establish its session when the terminal view mounts. */
   connectOnMount: boolean;
+  view?: undefined;
 }
 
 export interface EmptyTab extends TabBase {
   profile: null;
   status: 'idle';
   connectOnMount: false;
+  view?: undefined;
 }
 
-export type TerminalTab = SessionTab | EmptyTab;
-export type TransferableTab = Omit<SessionTab, 'paneId'> | Omit<EmptyTab, 'paneId'>;
+/** Tabs that show a view of Muxus itself instead of a session. */
+export type TabView = 'monitor';
+
+/** A tab without a session of its own, such as the host monitor. */
+export interface ViewTab extends TabBase {
+  profile: null;
+  status: 'idle';
+  connectOnMount: false;
+  view: TabView;
+}
+
+export type TerminalTab = SessionTab | EmptyTab | ViewTab;
+export type TransferableTab =
+  | Omit<SessionTab, 'paneId'>
+  | Omit<EmptyTab, 'paneId'>
+  | Omit<ViewTab, 'paneId'>;
+
+/** A tab still waiting for the user to choose a session. */
+export function isEmptyTab(tab: TerminalTab): tab is EmptyTab {
+  return tab.profile === null && tab.view === undefined;
+}
+
+export const HOST_MONITOR_TAB_TITLE = 'Host monitor';
 
 type TabUpdate = Partial<{
   title: string;
@@ -157,6 +180,8 @@ interface TabsState {
   zoomedPaneId: string | null;
   open: (profile: SessionProfile, title: string) => string;
   openEmpty: () => string;
+  /** Show the host monitor: the window's one monitor tab, opened if there is none. */
+  openMonitor: () => string;
   replaceEmpty: (id: string, profile: SessionProfile, title: string) => boolean;
   close: (id: string) => void;
   activate: (id: string) => void;
@@ -468,11 +493,50 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
     });
     return id;
   },
+  openMonitor: () => {
+    const existing = get().tabs.find((tab) => tab.view === 'monitor');
+    if (existing) {
+      get().activate(existing.id);
+      return existing.id;
+    }
+    const id = newId('tab');
+    set((state) => {
+      const pane = findPane(state.root, state.activePaneId) ?? firstPane(state.root);
+      const monitor: ViewTab = {
+        id,
+        paneId: pane.id,
+        title: HOST_MONITOR_TAB_TITLE,
+        profile: null,
+        status: 'idle',
+        connectOnMount: false,
+        view: 'monitor',
+        sftpOpen: false,
+        searchRequest: 0,
+        editorPaths: [],
+        loggingPaused: false,
+        captureInput: false,
+        reconnectRequest: 0,
+      };
+      // An untouched "New tab" in front is what the monitor was opened into.
+      const active = state.tabs.find((tab) => tab.id === pane.activeTabId);
+      const tabs =
+        active && isEmptyTab(active)
+          ? state.tabs.map((tab) => (tab.id === active.id ? { ...monitor, pinned: tab.pinned } : tab))
+          : [...state.tabs, monitor];
+      return {
+        tabs,
+        root: updatePane(state.root, pane.id, (leaf) => ({ ...leaf, activeTabId: id })),
+        activePaneId: pane.id,
+        activeId: id,
+      };
+    });
+    return id;
+  },
   replaceEmpty: (id, profile, title) => {
     let replaced = false;
     set((state) => ({
       tabs: state.tabs.map((tab) => {
-        if (tab.id !== id || tab.profile !== null) return tab;
+        if (tab.id !== id || !isEmptyTab(tab)) return tab;
         replaced = true;
         return {
           ...tab,
@@ -880,7 +944,22 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
         ...restored,
         zoomedPaneId: null,
         unreadOutputIds: new Set(),
-        tabs: restored.tabs.map((tab) => ({
+        tabs: restored.tabs.map((tab): TerminalTab => {
+          if ('view' in tab) {
+            return {
+              ...tab,
+              profile: null,
+              status: 'idle',
+              connectOnMount: false,
+              sftpOpen: false,
+              searchRequest: 0,
+              editorPaths: [],
+              loggingPaused: false,
+              captureInput: false,
+              reconnectRequest: 0,
+            };
+          }
+          return {
           ...tab,
           restored: true,
           status: tab.connectOnMount ? 'connecting' as const : 'closed' as const,
@@ -899,7 +978,8 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
           captureInput: false,
           logFilePath: undefined,
           reconnectRequest: 0,
-        })),
+          };
+        }),
       };
     }),
   launchSet: (entries, layout) => {

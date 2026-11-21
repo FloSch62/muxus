@@ -137,8 +137,63 @@ describe('docker and podman', () => {
       kind: 'nokia_srlinux',
       topologyFile: '/labs/evpn.clab.yml',
     });
-    // Containerlab's own helpers are not nodes.
-    expect(containers[1]!.containerlab).toBeUndefined();
+    // Containerlab's own helpers belong to the lab without being nodes of it.
+    expect(containers[1]!.containerlab).toEqual({ lab: 'evpn', node: 'sshx', kind: '', internal: true });
+  });
+
+  it('hides a lab’s helper containers behind the lab and counts them', () => {
+    const line = (name: string, fields: Record<string, string>) =>
+      JSON.stringify({ id: `${name}-0123456789`, name, image: 'ghcr.io/nokia/srlinux:25.10', state: 'running', status: 'Up 12 days', ports: '', ...fields });
+    const containers = parseDockerPs(
+      [
+        line('leaf1', { clab: 'st', clabNode: 'leaf1', clabKind: 'nokia_srlinux' }),
+        // The container that holds leaf1's network namespace while the node restarts.
+        line('leaf1-netns', { clab: 'st', clabNode: 'leaf1-netns', clabKind: 'nokia_srlinux', clabInternal: 'true' }),
+        line('spine1-netns', { clab: 'st', clabNode: 'spine1-netns', clabKind: 'nokia_srlinux', clabInternal: 'true' }),
+        line('buildkit', {}),
+      ].join('\n'),
+    );
+    // Neither a node of the lab …
+    expect(containerlabLabs('docker', containers)).toEqual([
+      {
+        name: 'st',
+        runtime: 'docker',
+        nodes: [expect.objectContaining({ name: 'leaf1', container: 'leaf1' })],
+        helpers: 2,
+      },
+    ]);
+    // … nor a container of its own: only what belongs to no lab is left for the runtime's list.
+    expect(containers.filter((container) => !container.containerlab).map((container) => container.name)).toEqual(['buildkit']);
+  });
+
+  it('keeps a helper whose lab has no node here as an ordinary container', () => {
+    const containers = parseDockerPs(
+      JSON.stringify({
+        id: 'feedfacecafe0000',
+        name: 'clab-gone-gotty',
+        image: 'ghcr.io/srl-labs/network-multitool',
+        state: 'running',
+        status: 'Up 2 hours',
+        ports: '0.0.0.0:8080->8080/tcp',
+        clab: 'gone',
+        clabNode: 'gotty',
+        clabInternal: 'true',
+      }),
+    );
+    // Hidden behind nothing, it would be in no list at all.
+    expect(containers[0]!.containerlab).toBeUndefined();
+    expect(containerlabLabs('docker', containers)).toEqual([]);
+  });
+
+  it('hides podman helpers the same way', () => {
+    const containers = parsePodmanPs(
+      JSON.stringify([
+        { Id: 'a'.repeat(16), Names: ['leaf1'], Image: 'srl', State: 'running', Status: 'Up', Labels: { containerlab: 'st', 'clab-node-name': 'leaf1', 'clab-node-kind': 'nokia_srlinux' } },
+        { Id: 'b'.repeat(16), Names: ['leaf1-netns'], Image: 'srl', State: 'running', Status: 'Up', Labels: { containerlab: 'st', 'clab-node-name': 'leaf1-netns', 'clab-internal-node': 'true' } },
+      ]),
+    );
+    expect(containers[1]!.containerlab).toMatchObject({ lab: 'st', internal: true });
+    expect(containerlabLabs('podman', containers)).toMatchObject([{ name: 'st', helpers: 1, nodes: [{ name: 'leaf1' }] }]);
   });
 
   it('reads podman ps JSON', () => {
@@ -405,6 +460,29 @@ describe('discoverEnvironments', () => {
     );
     expect(calls.at(-1)?.slice(0, 2)).toEqual(['docker', 'inspect']);
     expect(calls.at(-1)?.at(-1)).toBe('clab-x-n1');
+  });
+
+  it('leaves a lab’s helper containers out of the lab and out of the address lookup', async () => {
+    const calls: string[][] = [];
+    const { environments } = await discoverEnvironments(
+      fakeRunner(
+        {
+          'docker-ps': ran(
+            [
+              JSON.stringify({ id: 'a', name: 'leaf1', state: 'running', clab: 'st', clabNode: 'leaf1', clabKind: 'nokia_srlinux' }),
+              JSON.stringify({ id: 'b', name: 'leaf1-netns', state: 'running', clab: 'st', clabNode: 'leaf1-netns', clabInternal: 'true' }),
+            ].join('\n'),
+          ),
+        },
+        calls,
+      ),
+    );
+    // Only the node's address is asked for.
+    expect(calls.at(-1)).toContain('leaf1');
+    expect(calls.at(-1)).not.toContain('leaf1-netns');
+    expect(environments.find((environment) => environment.kind === 'containerlab')).toMatchObject({
+      labs: [{ name: 'st', helpers: 1, nodes: [{ name: 'leaf1' }] }],
+    });
   });
 });
 

@@ -212,6 +212,11 @@ export interface ContainerlabLabels {
   kind: string;
   topologyFile?: string;
   owner?: string;
+  /**
+   * One of containerlab's own helper containers, such as the one that holds a
+   * node's network namespace: part of the lab, not a node of its topology.
+   */
+  internal?: boolean;
 }
 
 export interface ContainerInfo {
@@ -253,6 +258,8 @@ export interface ContainerlabLab {
   topologyFile?: string;
   owner?: string;
   nodes: ContainerlabNode[];
+  /** How many helper containers of containerlab's own the lab has; they are not listed. */
+  helpers?: number;
 }
 
 export interface ContainerlabEnvironment {
@@ -409,4 +416,47 @@ export interface EnvironmentActionResponse {
 export interface EnvironmentPortResponse {
   forwardId: string;
   localPort: number;
+}
+
+// ---------------------------------------------------------------------------
+// Listening ports
+// ---------------------------------------------------------------------------
+
+/** A TCP port a host listens on. */
+export interface ListeningPort {
+  port: number;
+  /**
+   * Addresses it is bound to, without brackets or zone names. `*`, `0.0.0.0`
+   * and `::` mean every address of their family and come first.
+   */
+  addresses: string[];
+  /** The program behind it, when the host tells: other users' programs need root. */
+  process?: string;
+  pid?: number;
+}
+
+export type ListeningPortsResponse =
+  | { status: 'ok'; tool: 'ss' | 'netstat' | 'lsof'; ports: ListeningPort[] }
+  /** The host has none of the tools, or none of them answered. */
+  | { status: 'unavailable'; message: string };
+
+const ANY_IPV4 = new Set(['*', '0.0.0.0']);
+
+/** Whether only the host itself can reach the port: every address it is bound to is loopback. */
+export function isLoopbackOnlyPort(port: ListeningPort): boolean {
+  return port.addresses.every((address) => address === '::1' || address.startsWith('127.'));
+}
+
+/**
+ * The address to reach a listening port at from the host itself, which is
+ * where an SSH forward connects from: loopback when the port accepts it,
+ * else the one address it is bound to.
+ */
+export function listeningPortTarget(port: ListeningPort): string {
+  const { addresses } = port;
+  if (addresses.some((address) => ANY_IPV4.has(address))) return '127.0.0.1';
+  const loopback = addresses.find((address) => address.startsWith('127.'));
+  if (loopback) return loopback;
+  if (addresses.includes('::') || addresses.includes('::1')) return '::1';
+  return addresses[0] ?? '127.0.0.1';
 }

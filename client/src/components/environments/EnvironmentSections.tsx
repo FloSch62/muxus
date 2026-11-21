@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import Box from '@mui/material/Box';
 import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
 import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined';
@@ -30,6 +31,7 @@ import { useSavedHostProfiles, useSshConfig } from '../../api/queries.js';
 import { copyToClipboard } from '../../clipboard.js';
 import { addAddressToHosts, addEnvironmentToHosts, type HostDirectory } from '../../environment-hosts.js';
 import { environmentSource, isRunning, plainContainers } from '../../environments.js';
+import { publishedContainerPorts } from '../../listening-ports.js';
 import {
   nodeUsesSsh,
   openContainerlabNode,
@@ -438,6 +440,8 @@ function LabLines({
           ['Topology', lab.topologyFile],
           ['Owner', lab.owner],
           ['Nodes', `${running.length} of ${lab.nodes.length} running`],
+          // Containerlab's own containers, such as the ones holding a node's network namespace.
+          ['Helpers', lab.helpers ? `${lab.helpers} container${lab.helpers === 1 ? '' : 's'}, not listed` : undefined],
         ]}
         emphasis
         actions={
@@ -455,95 +459,116 @@ function LabLines({
         ? nodes.map((node) => {
             const up = isRunning(node.state);
             const ssh = nodeUsesSsh(node);
+            const published = publishedContainerPorts(host.environments, lab.runtime, node.container);
             return (
-              <TreeLine
-                key={node.container}
-                depth={depth + 1}
-                icon={<StatusDot health={up ? 'up' : 'off'} />}
-                title={node.name}
-                detail={node.kind}
-                status={node.ipv4 ? <Box component="span" sx={MONO}>{node.ipv4}</Box> : node.state}
-                hint={[
-                  ['Kind', node.kind],
-                  ['Image', node.image],
-                  ['State', node.state],
-                  ['IPv4', node.ipv4],
-                  ['IPv6', node.ipv6],
-                  ['Container', node.container],
-                ]}
-                dim={!up}
-                onOpen={up && !(ssh && host.systemOpenSsh) ? () => openContainerlabNode(host, lab, node) : undefined}
-                actions={
-                  <>
-                    <LineAction
-                      label={
-                        ssh
-                          ? host.systemOpenSsh
-                            ? unavailableWithSystemOpenSsh(`SSH to ${node.ipv4} as admin`)
-                            : `SSH to ${node.ipv4} as admin`
-                          : 'Open shell'
-                      }
-                      Icon={ssh ? LoginOutlinedIcon : TerminalOutlinedIcon}
-                      disabled={!up || (ssh && host.systemOpenSsh)}
-                      onClick={() => openContainerlabNode(host, lab, node)}
-                    />
-                    <LineMenu
-                      label={`More actions for ${node.name}`}
-                      entries={[
-                        {
-                          label: 'Shell in the container',
-                          disabled: !up,
-                          onClick: () =>
-                            void openEnvironmentTarget(host, {
-                              kind: 'container',
-                              runtime: lab.runtime,
-                              container: node.container,
-                            }),
-                        },
-                        ...(node.ipv4
-                          ? [
-                              {
-                                label: 'SSH as…',
-                                disabled: !up,
-                                onClick: () => void openSshToAddress(host, node.ipv4!, node.name),
-                              },
-                            ]
-                          : []),
-                        {
-                          label: 'Follow container logs',
-                          divider: true,
-                          onClick: () =>
-                            void openEnvironmentTarget(host, {
-                              kind: 'container-logs',
-                              runtime: lab.runtime,
-                              container: node.container,
-                            }),
-                        },
-                        ...(node.ipv4
-                          ? [{ label: 'Copy management address', onClick: () => void copyToClipboard(node.ipv4!) }]
-                          : []),
-                        {
-                          label: 'Add to hosts',
-                          disabled: ssh && jumpUnavailable(host),
-                          onClick: () =>
-                            ssh
-                              ? addAddressToHosts(host, hosts, {
-                                  name: `${lab.name}-${node.name}`,
-                                  address: node.ipv4!,
-                                  user: 'admin',
-                                  group: lab.name,
-                                })
-                              : addEnvironmentToHosts(host, hosts, `${lab.name}-${node.name}`, {
-                                  kind: 'container',
-                                  runtime: lab.runtime,
-                                  container: node.container,
-                                }),
-                        },
-                      ]}
-                    />
-                  </>
-                }
-              />
+              <Fragment key={node.container}>
+                <TreeLine
+                  depth={depth + 1}
+                  icon={<StatusDot health={up ? 'up' : 'off'} />}
+                  title={node.name}
+                  detail={node.kind}
+                  status={node.ipv4 ? <Box component="span" sx={MONO}>{node.ipv4}</Box> : node.state}
+                  hint={[
+                    ['Kind', node.kind],
+                    ['Image', node.image],
+                    ['State', node.state],
+                    ['IPv4', node.ipv4],
+                    ['IPv6', node.ipv6],
+                    ['Container', node.container],
+                    ['Ports', published.map((port) => `${port.hostPort}→${port.containerPort}/${port.protocol}`).join(', ')],
+                  ]}
+                  dim={!up}
+                  onOpen={up && !(ssh && host.systemOpenSsh) ? () => openContainerlabNode(host, lab, node) : undefined}
+                  actions={
+                    <>
+                      <LineAction
+                        label={
+                          ssh
+                            ? host.systemOpenSsh
+                              ? unavailableWithSystemOpenSsh(`SSH to ${node.ipv4} as admin`)
+                              : `SSH to ${node.ipv4} as admin`
+                            : 'Open shell'
+                        }
+                        Icon={ssh ? LoginOutlinedIcon : TerminalOutlinedIcon}
+                        disabled={!up || (ssh && host.systemOpenSsh)}
+                        onClick={() => openContainerlabNode(host, lab, node)}
+                      />
+                      <LineMenu
+                        label={`More actions for ${node.name}`}
+                        entries={[
+                          {
+                            label: 'Shell in the container',
+                            disabled: !up,
+                            onClick: () =>
+                              void openEnvironmentTarget(host, {
+                                kind: 'container',
+                                runtime: lab.runtime,
+                                container: node.container,
+                              }),
+                          },
+                          ...(node.ipv4
+                            ? [
+                                {
+                                  label: 'SSH as…',
+                                  disabled: !up,
+                                  onClick: () => void openSshToAddress(host, node.ipv4!, node.name),
+                                },
+                              ]
+                            : []),
+                          {
+                            label: 'Follow container logs',
+                            divider: true,
+                            onClick: () =>
+                              void openEnvironmentTarget(host, {
+                                kind: 'container-logs',
+                                runtime: lab.runtime,
+                                container: node.container,
+                              }),
+                          },
+                          ...(node.ipv4
+                            ? [{ label: 'Copy management address', onClick: () => void copyToClipboard(node.ipv4!) }]
+                            : []),
+                          {
+                            label: 'Add to hosts',
+                            disabled: ssh && jumpUnavailable(host),
+                            onClick: () =>
+                              ssh
+                                ? addAddressToHosts(host, hosts, {
+                                    name: `${lab.name}-${node.name}`,
+                                    address: node.ipv4!,
+                                    user: 'admin',
+                                    group: lab.name,
+                                  })
+                                : addEnvironmentToHosts(host, hosts, `${lab.name}-${node.name}`, {
+                                    kind: 'container',
+                                    runtime: lab.runtime,
+                                    container: node.container,
+                                  }),
+                          },
+                        ]}
+                      />
+                    </>
+                  }
+                />
+                {/* A node that publishes ports, such as a lab's Grafana, opens them like any container. */}
+                {up && published.length > 0 ? (
+                  <ChipRow depth={depth + 1}>
+                    {published.map((port) => (
+                      <PortChip
+                        key={`${port.hostPort}:${port.containerPort}`}
+                        label={`${port.hostPort} → ${port.containerPort}`}
+                        disabled={host.systemOpenSsh}
+                        title={
+                          host.systemOpenSsh
+                            ? unavailableWithSystemOpenSsh('Open this port')
+                            : `Open ${portScheme(port.hostPort!)}://…:${port.hostPort}${host.profile ? `, forwarded from ${host.label}` : ''}`
+                        }
+                        onClick={() => void openHostPort(host, port.hostIp, port.hostPort!)}
+                      />
+                    ))}
+                  </ChipRow>
+                ) : null}
+              </Fragment>
             );
           })
         : null}

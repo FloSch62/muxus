@@ -76,6 +76,7 @@ resetting them.
 | Quick launcher | ++ctrl+k++ |
 | Toggle hosts sidebar | ++ctrl+b++ |
 | Toggle [status bar](../guide/the-window.md#status-bar) | *(unbound by default)* |
+| Open [host monitor](../guide/host-monitor.md) | *(unbound by default)* |
 | Settings | ++ctrl+comma++ |
 | Keyboard shortcuts | ++ctrl+shift+slash++ |
 

@@ -12,6 +12,7 @@ import {
   PROXMOX_MIN_VMID,
   type EnvironmentPortResponse,
   type EnvironmentsResponse,
+  type ListeningPortsResponse,
 } from '@muxus/shared';
 import type { AppContext } from '../app.js';
 import {
@@ -24,6 +25,7 @@ import {
   proxmoxAddresses,
   runEnvironmentAction,
 } from '../environments/discovery.js';
+import { listeningPorts } from '../environments/ports.js';
 import {
   localProbeRunner,
   remoteProbeRunner,
@@ -86,12 +88,27 @@ const portSchema = z.object({
     .max(253)
     .regex(/^[A-Za-z0-9.:_-]+$/),
   port: z.number().int().min(1).max(65535),
+  /** Listen on the same port number here when it is free, as `ssh -L 8080:…:8080` would. */
+  samePort: z.boolean().optional(),
 });
+
+/** Ports below this need privileges to listen on. */
+const FIRST_UNPRIVILEGED_PORT = 1024;
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const parsed = schema.safeParse(value);
   if (!parsed.success) throw new HttpProblem(400, parsed.error.issues[0]?.message ?? 'invalid request');
   return parsed.data;
+}
+
+/** Whether nothing listens on a loopback port yet. */
+function localPortFree(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.unref();
+    server.once('error', () => resolve(false));
+    server.listen(port, '127.0.0.1', () => server.close(() => resolve(true)));
+  });
 }
 
 /** A free loopback port for a new listener. */
@@ -236,6 +253,14 @@ export function registerEnvironmentRoutes(app: FastifyInstance, ctx: AppContext)
       }),
     );
 
+    app.get(
+      `${prefix}/ports`,
+      handle(
+        (req) =>
+          withRunner(req, (run) => listeningPorts(run)) as Promise<ListeningPortsResponse>,
+      ),
+    );
+
     app.post(
       `${prefix}/actions`,
       handle(async (req) => {
@@ -254,7 +279,7 @@ export function registerEnvironmentRoutes(app: FastifyInstance, ctx: AppContext)
     '/api/environments/ssh/:connId/ports',
     handle(async (req): Promise<EnvironmentPortResponse> => {
       const { connId } = req.params as { connId: string };
-      const { host, port } = parse(portSchema, req.body);
+      const { host, port, samePort } = parse(portSchema, req.body);
       const system = ctx.systemOpenSsh.acquire(connId);
       if (system) {
         system.release();
@@ -270,8 +295,17 @@ export function registerEnvironmentRoutes(app: FastifyInstance, ctx: AppContext)
             forward.targetPort === port,
         );
       if (existing) return { forwardId: existing.id, localPort: existing.bindPort };
-      const bindPort = await freeLocalPort();
-      const info = await ctx.forwards.start({ connId, type: 'local', bindPort, targetHost: host, targetPort: port });
+      const request = { connId, type: 'local' as const, targetHost: host, targetPort: port };
+      if (samePort && port >= FIRST_UNPRIVILEGED_PORT && (await localPortFree(port))) {
+        try {
+          const info = await ctx.forwards.start({ ...request, bindPort: port });
+          return { forwardId: info.id, localPort: info.bindPort };
+        } catch (error) {
+          // Someone took the number meanwhile: any free one will do.
+          if (!(error instanceof HttpProblem) || error.status !== 400) throw error;
+        }
+      }
+      const info = await ctx.forwards.start({ ...request, bindPort: await freeLocalPort() });
       return { forwardId: info.id, localPort: info.bindPort };
     }),
   );

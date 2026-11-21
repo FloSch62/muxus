@@ -15,7 +15,7 @@ import type { HostStatsSample } from '@muxus/shared';
  * Linux reports everything from /proc; macOS and the BSDs fall back to
  * sysctl, vm_stat, route and netstat for what they have.
  */
-export const HOST_STATS_SCRIPT = `LC_ALL=C
+const SCRIPT_HEAD = `LC_ALL=C
 PATH="$PATH:/usr/bin:/bin:/usr/sbin:/sbin"
 export LC_ALL PATH
 muxus_section() { printf '\\n@@muxus:%s\\n' "$1"; }
@@ -43,16 +43,55 @@ else
   muxus_section bsd-route; route -n get default 2>/dev/null
   muxus_section netstat; netstat -ibn 2>/dev/null
 fi
-muxus_section end
 `;
+
+/** Disk counters. /sys/block names the whole disks, which /proc/diskstats mixes with their partitions. */
+const SCRIPT_DISK_IO = `if [ -r /proc/diskstats ]; then
+  muxus_section blockdevs; ls /sys/block 2>/dev/null
+  muxus_section diskstats; cat /proc/diskstats 2>/dev/null
+fi
+`;
+
+/** NVIDIA cards, where the driver's own tool is installed. */
+const SCRIPT_GPU = `if command -v nvidia-smi >/dev/null 2>&1; then
+  muxus_section gpu; nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu --format=csv,noheader,nounits 2>/dev/null
+fi
+`;
+
+const SCRIPT_TAIL = `muxus_section end
+`;
+
+/** What a reading asks for beyond the status bar's items. */
+export interface HostStatsDetail {
+  /** Disk read and write counters (Linux). */
+  diskIo?: boolean;
+  /** GPU load from nvidia-smi, which takes a moment to answer on some hosts. */
+  gpu?: boolean;
+}
+
+export function hostStatsScript(detail: HostStatsDetail = {}): string {
+  return `${SCRIPT_HEAD}${detail.diskIo ? SCRIPT_DISK_IO : ''}${detail.gpu ? SCRIPT_GPU : ''}${SCRIPT_TAIL}`;
+}
+
+/** The status bar's script: the cheapest reading. */
+export const HOST_STATS_SCRIPT = hostStatsScript();
 
 const SCRIPT_TIMEOUT_MS = 5_000;
 const MAX_OUTPUT = 256 * 1024;
 
 export type HostStatsReading =
-  | { supported: true; sample: HostStatsSample }
-  /** The probe printed none of its markers: no POSIX shell answered it. */
-  | { supported: false };
+  | {
+      supported: true;
+      sample: HostStatsSample;
+      /** How long the host took to start answering, in milliseconds. */
+      latencyMs?: number;
+    }
+  /**
+   * The probe printed none of its markers: no POSIX shell answered it.
+   * `timedOut` tells a host that said nothing in time from one that answered
+   * with something else.
+   */
+  | { supported: false; timedOut?: boolean };
 
 /** Split script output into its marked sections; text before the first marker is dropped. */
 function sections(output: string): Map<string, string[]> {
@@ -256,6 +295,69 @@ function dfDisk(lines: readonly string[]): HostStatsSample['disk'] {
   return undefined;
 }
 
+/** Devices that are views of other disks or hold no data of their own. */
+const VIRTUAL_BLOCK_DEVICE = /^(?:dm-|loop|ram|zram|md|sr|fd|nbd|zd)\d/;
+/** A partition's name, for hosts where /sys/block could not be listed. */
+const PARTITION_NAME = /^(?:(?:sd|vd|xvd|hd)[a-z]+\d+|(?:nvme\d+n\d+|mmcblk\d+)p\d+)$/;
+/** /proc/diskstats counts sectors of 512 bytes whatever the disk's own sector size is. */
+const DISKSTATS_SECTOR_BYTES = 512;
+
+/**
+ * Bytes read and written since boot, summed over whole disks. Partitions
+ * would count their disk's traffic a second time, and device-mapper, RAID and
+ * loop devices that of the disks beneath them.
+ */
+function diskIo(
+  lines: readonly string[],
+  blockDevices: readonly string[],
+): HostStatsSample['diskIo'] {
+  const whole = new Set(blockDevices.flatMap((line) => line.trim().split(/\s+/)).filter(Boolean));
+  let readBytes = 0;
+  let writtenBytes = 0;
+  let disks = 0;
+  for (const line of lines) {
+    // major minor name reads merged sectors-read ms writes merged sectors-written …
+    const fields = line.trim().split(/\s+/);
+    const name = fields[2];
+    if (!name || fields.length < 10 || VIRTUAL_BLOCK_DEVICE.test(name)) continue;
+    if (whole.size > 0 ? !whole.has(name) : PARTITION_NAME.test(name)) continue;
+    const read = Number(fields[5]);
+    const written = Number(fields[9]);
+    if (!Number.isFinite(read) || !Number.isFinite(written)) continue;
+    readBytes += read * DISKSTATS_SECTOR_BYTES;
+    writtenBytes += written * DISKSTATS_SECTOR_BYTES;
+    disks += 1;
+  }
+  return disks > 0 ? { readBytes, writtenBytes } : undefined;
+}
+
+const MEBIBYTE = 1024 * 1024;
+
+/** nvidia-smi CSV rows: index, name, utilization %, memory used MiB, memory total MiB, temperature °C. */
+function nvidiaGpus(lines: readonly string[]): HostStatsSample['gpus'] {
+  const gpus: NonNullable<HostStatsSample['gpus']> = [];
+  for (const line of lines) {
+    const fields = line.split(',').map((field) => field.trim());
+    if (fields.length < 6) continue;
+    // A value the driver cannot read is "[N/A]" or "[Not Supported]".
+    const number = (value: string | undefined) => (value && /^\d+(\.\d+)?$/.test(value) ? Number(value) : undefined);
+    const index = number(fields[0]);
+    if (index === undefined) continue;
+    // The name may hold commas of its own; the numbers are counted from the end.
+    const [utilization, memoryUsed, memoryTotal, temperature] = fields.slice(-4).map(number);
+    const name = fields.slice(1, -4).join(', ');
+    gpus.push({
+      index,
+      ...(name ? { name } : {}),
+      ...(utilization !== undefined ? { utilization: Math.min(1, utilization / 100) } : {}),
+      ...(memoryUsed !== undefined ? { memoryUsedBytes: memoryUsed * MEBIBYTE } : {}),
+      ...(memoryTotal !== undefined ? { memoryTotalBytes: memoryTotal * MEBIBYTE } : {}),
+      ...(temperature !== undefined ? { temperatureCelsius: temperature } : {}),
+    });
+  }
+  return gpus.length > 0 ? gpus : undefined;
+}
+
 /** Turn the script's output into a sample; `undefined` when no marker came back. */
 export function parseHostStats(output: string): HostStatsSample | undefined {
   const parts = sections(output);
@@ -305,29 +407,45 @@ export function parseHostStats(output: string): HostStatsSample | undefined {
   }
   const disk = dfDisk(lines('df'));
   if (disk) sample.disk = disk;
+  const io = diskIo(lines('diskstats'), lines('blockdevs'));
+  if (io) sample.diskIo = io;
+  const gpus = nvidiaGpus(lines('gpu'));
+  if (gpus) sample.gpus = gpus;
   return sample;
+}
+
+interface CollectedOutput {
+  output: string;
+  /** When the first byte arrived, by `performance.now()`. */
+  firstByteAt?: number;
+  /** The run was stopped before the stream ended. */
+  timedOut: boolean;
 }
 
 /** Collect a script run's stdout, giving up on a host that never finishes. */
 function collectOutput(
   stream: NodeJS.ReadableStream,
   stop: () => void,
-): Promise<string> {
+): Promise<CollectedOutput> {
   return new Promise((resolve) => {
     let output = '';
+    let firstByteAt: number | undefined;
+    let timedOut = false;
     let settled = false;
     const finish = () => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve(output);
+      resolve({ output, firstByteAt, timedOut });
     };
     const timer = setTimeout(() => {
+      timedOut = true;
       stop();
       finish();
     }, SCRIPT_TIMEOUT_MS);
     timer.unref();
     stream.on('data', (chunk: Buffer | string) => {
+      firstByteAt ??= performance.now();
       if (output.length < MAX_OUTPUT) output += chunk.toString();
     });
     stream.once('close', finish);
@@ -341,22 +459,37 @@ function collectOutput(
  * out of the script's syntax, so fish or tcsh users are covered too. Channel
  * failures (a refused exec, MaxSessions reached) reject; a host that answers
  * without the markers is reported as unsupported.
+ *
+ * The time until the host starts answering is the reading's latency: opening
+ * a channel, starting a shell and the way there and back, with none of the
+ * script's own work in it.
  */
-export async function readRemoteHostStats(transport: SshTransport): Promise<HostStatsReading> {
+export async function readRemoteHostStats(
+  transport: SshTransport,
+  script: string = HOST_STATS_SCRIPT,
+): Promise<HostStatsReading> {
+  const startedAt = performance.now();
   const channel = await transport.exec('sh -s');
   // Unread stderr would hold the channel window open on a chatty host.
   channel.stderr.resume();
-  const output = collectOutput(channel, () => channel.destroy());
-  channel.end(HOST_STATS_SCRIPT);
-  const sample = parseHostStats(await output);
-  return sample ? { supported: true, sample } : { supported: false };
+  const collected = collectOutput(channel, () => channel.destroy());
+  channel.end(script);
+  const { output, firstByteAt, timedOut } = await collected;
+  const sample = parseHostStats(output);
+  if (!sample) return { supported: false, ...(timedOut ? { timedOut } : {}) };
+  return {
+    supported: true,
+    sample,
+    ...(firstByteAt !== undefined ? { latencyMs: Math.max(0, firstByteAt - startedAt) } : {}),
+  };
 }
 
 /** The same reading through anything that can feed a script to the host's sh. */
 export async function readHostStatsWith(
   runScript: (script: string) => Promise<string>,
+  script: string = HOST_STATS_SCRIPT,
 ): Promise<HostStatsReading> {
-  const sample = parseHostStats(await runScript(HOST_STATS_SCRIPT));
+  const sample = parseHostStats(await runScript(script));
   return sample ? { supported: true, sample } : { supported: false };
 }
 
@@ -405,14 +538,16 @@ async function readWindowsHostStats(): Promise<HostStatsSample> {
 }
 
 /** Read the machine local terminals run on: the computer running the Muxus backend. */
-export async function readLocalHostStats(): Promise<HostStatsSample> {
+export async function readLocalHostStats(
+  script: string = HOST_STATS_SCRIPT,
+): Promise<HostStatsSample> {
   if (process.platform === 'win32') return readWindowsHostStats();
   const child = spawn('sh', ['-s'], { stdio: ['pipe', 'pipe', 'ignore'] });
-  const output = collectOutput(child.stdout, () => child.kill());
+  const collected = collectOutput(child.stdout, () => child.kill());
   child.once('error', () => child.stdout.destroy());
   child.stdin.on('error', () => {});
-  child.stdin.end(HOST_STATS_SCRIPT);
-  const sample = parseHostStats(await output) ?? {};
+  child.stdin.end(script);
+  const sample = parseHostStats((await collected).output) ?? {};
   // macOS has no cumulative CPU counters in the script; Node has them everywhere.
   if (!sample.cpuTime) Object.assign(sample, nodeCpuTime());
   sample.hostname ??= os.hostname();

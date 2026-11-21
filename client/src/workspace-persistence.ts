@@ -9,7 +9,7 @@ import { ApiError, apiFetch, authToken } from './api/http.js';
 import { useMultiExecStore } from './state/multi-exec.js';
 import { usePrefsStore } from './state/prefs.js';
 import { useTabsStore, type SessionTab } from './state/tabs.js';
-import { serializeWorkspace } from './state/workspace-layout.js';
+import { serializeWorkspace, type PersistableTab } from './state/workspace-layout.js';
 import { useWorkspacesStore } from './state/workspaces.js';
 import { WorkspaceWindowSync } from './workspace-sync.js';
 import {
@@ -37,7 +37,15 @@ export type WorkspaceInitialSelection =
 function currentSnapshot(): WorkspaceSnapshot {
   const { root, tabs, activePaneId } = useTabsStore.getState();
   const sessionTabs = tabs.filter((tab): tab is SessionTab => tab.profile !== null);
-  const layout = serializeWorkspace(root, sessionTabs, activePaneId);
+  // The monitor is part of the layout too; a tab still choosing a session is not.
+  const kept = tabs.flatMap((tab): PersistableTab[] =>
+    tab.profile !== null
+      ? [tab]
+      : tab.view
+        ? [{ id: tab.id, paneId: tab.paneId, title: tab.title, view: tab.view, color: tab.color, pinned: tab.pinned }]
+        : [],
+  );
+  const layout = serializeWorkspace(root, kept, activePaneId);
   const tabIds = new Set(sessionTabs.map((tab) => tab.id));
   const multiExecGroups = useMultiExecStore.getState().groups.flatMap((group) => {
     const ids = [...new Set(group.tabIds)].filter((id) => tabIds.has(id));

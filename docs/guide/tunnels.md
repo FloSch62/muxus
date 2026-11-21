@@ -62,8 +62,8 @@ The lower section lists each connected host and the forwards running on it:
 - **`config`-badged** forwards come from the host's `LocalForward`, `RemoteForward` or
   `DynamicForward` lines. They start and stop with the session. Stopping one manually
   affects only the current session; the configuration rule is unchanged.
-- **Ad-hoc** forwards are those started from the panel with **+**. Two actions make them
-  durable:
+- **Ad-hoc** forwards are those started from the panel with **+**, or from a host's
+  [listening ports](environments.md#listening-ports). Two actions make them durable:
     - :material-content-save: **Save as tunnel** moves it into the persistent list, so it
       can be started later without a terminal;
     - :material-bookmark-plus: **Save to ssh config** writes it into that host's `Host`

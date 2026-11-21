@@ -543,6 +543,17 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
     },
   },
   {
+    id: 'app.host-monitor',
+    title: 'Open host monitor',
+    category: 'app',
+    defaultChords: [],
+    keywords: ['monitor', 'statistics', 'cpu', 'memory', 'disk', 'network', 'latency', 'load', 'gpu', 'hosts', 'fleet'],
+    run: () => {
+      useTabsStore.getState().openMonitor();
+      return true;
+    },
+  },
+  {
     id: 'app.focus-mode',
     title: 'Toggle focus mode',
     category: 'app',

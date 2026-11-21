@@ -13,7 +13,7 @@ import {
   type LocalShellProfileConfig,
 } from './state/prefs.js';
 import { useMultiExecStore } from './state/multi-exec.js';
-import { isMultiExecTarget, isRemoteSessionTab, useTabsStore } from './state/tabs.js';
+import { isEmptyTab, isMultiExecTarget, isRemoteSessionTab, useTabsStore } from './state/tabs.js';
 import type { PaneDirection, SessionSetEntry, SessionSetLayout } from './state/tabs.js';
 import { confirmAction, promptForText } from './state/dialogs.js';
 import { showErrorToast, showToast } from './state/toast.js';
@@ -66,7 +66,7 @@ function replaceActiveEmpty(
 ): string | undefined {
   const state = useTabsStore.getState();
   const activeTab = state.tabs.find((tab) => tab.id === state.activeId);
-  const id = requestedTabId ?? (activeTab?.profile === null ? activeTab.id : undefined);
+  const id = requestedTabId ?? (activeTab && isEmptyTab(activeTab) ? activeTab.id : undefined);
   return id && state.replaceEmpty(id, profile, title) ? id : undefined;
 }
 

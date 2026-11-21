@@ -41,6 +41,7 @@ import { TabStrip } from '../components/TabStrip.js';
 import { TerminalView } from '../components/TerminalView.js';
 import { RemoteDesktopView } from '../components/RemoteDesktopView.js';
 import { ManagementView } from '../components/ManagementView.js';
+import { HostMonitorView } from '../components/HostMonitorView.js';
 import {
   loadEnvironmentsPanel,
   loadForwardingPanel,
@@ -330,6 +331,10 @@ function PaneCanvas({
                       />
                     </Box>
                   </Box>
+                </ErrorBoundary>
+              ) : tab.view === 'monitor' ? (
+                <ErrorBoundary label="The host monitor">
+                  <HostMonitorView visible={visible} />
                 </ErrorBoundary>
               ) : (
                 <EmptyPane onAddHost={onAddHost} replaceTabId={tab.id} />

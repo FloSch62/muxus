@@ -59,6 +59,7 @@ import {
 } from './EnvironmentSections.js';
 import { LineAction, LineMenu, NoteLine, TreeLine, useExpansion, type Expansion } from './EnvironmentTree.js';
 import { KubernetesSection } from './KubernetesSection.js';
+import { PortsSection } from './PortsSection.js';
 
 const PROVIDER_LABELS = {
   docker: 'Docker',
@@ -482,6 +483,10 @@ function HostCard({
                 return <LibvirtSection key="libvirt" {...sectionProps} depth={1} environment={environment} />;
             }
           })}
+          {/* Any host that runs commands has ports worth a look, with or without containers. */}
+          {host.status === 'ready' || (host.status === 'loading' && host.sampledAt) ? (
+            <PortsSection host={host} depth={1} filter={filter} expansion={expansion} />
+          ) : null}
         </>
       ) : null}
     </Box>

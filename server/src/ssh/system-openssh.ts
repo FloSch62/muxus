@@ -301,7 +301,7 @@ export class SystemOpenSshSession implements TerminalTransport {
   readonly connection: SystemOpenSshConnection;
 
   constructor(
-    private readonly profile: SshProfile,
+    readonly profile: SshProfile,
     cols: number,
     rows: number,
     sharing: boolean,
@@ -645,6 +645,11 @@ export class SystemOpenSshSessions {
 
   acquire(connId: string): SystemOpenSshLease | undefined {
     return this.sessions.get(connId)?.acquire();
+  }
+
+  /** Running sessions and what each was dialed with, oldest first. */
+  list(): Array<{ id: string; profile: SshProfile }> {
+    return [...this.sessions.values()].map((session) => ({ id: session.id, profile: session.profile }));
   }
 
   closeAll(): void {

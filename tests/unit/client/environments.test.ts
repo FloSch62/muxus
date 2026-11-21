@@ -138,9 +138,19 @@ describe('environmentBadges', () => {
             ports: [],
             containerlab: { lab: 'x', node: 'n1', kind: 'nokia_srlinux' },
           },
+          {
+            // Containerlab's own helper for that node: counted nowhere.
+            id: '4',
+            name: 'clab-x-n1-netns',
+            image: 'srl',
+            state: 'running',
+            status: 'Up',
+            ports: [],
+            containerlab: { lab: 'x', node: 'n1-netns', kind: 'nokia_srlinux', internal: true },
+          },
         ],
       },
-      { kind: 'containerlab', labs: [{ name: 'x', runtime: 'docker', nodes: [] }] },
+      { kind: 'containerlab', labs: [{ name: 'x', runtime: 'docker', nodes: [], helpers: 1 }] },
       { kind: 'kubernetes', contexts: ['a', 'b'] },
       { kind: 'libvirt', domains: [{ name: 'off', state: 'shut off', uri: 'qemu:///session' }] },
     ];

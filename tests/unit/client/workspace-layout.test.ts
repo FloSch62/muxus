@@ -322,4 +322,30 @@ describe('workspace serialization', () => {
     ]);
     expect(pane?.tabs[0]?.kind === 'terminal' && 'term' in pane.tabs[0].profile).toBe(true);
   });
+
+  it('keeps the host monitor in its place in the strip, pinned or coloured as it was', () => {
+    const layout = serializeWorkspace(
+      { id: 'pane', type: 'pane', activeTabId: 'monitor-tab' },
+      [
+        { id: 'monitor-tab', paneId: 'pane', title: 'Host monitor', view: 'monitor', pinned: true, color: '#42a5f5' },
+        { id: 'ssh-tab', paneId: 'pane', title: 'Router', profile: { kind: 'ssh', target: 'router' } },
+      ],
+      'pane',
+    );
+    expect(layout.root).toMatchObject({
+      type: 'pane',
+      activeTabId: 'monitor-tab',
+      tabs: [
+        { id: 'monitor-tab', kind: 'monitor', title: 'Host monitor', pinned: true, color: '#42a5f5' },
+        { id: 'ssh-tab', kind: 'terminal' },
+      ],
+    });
+
+    const restored = restoreWorkspace(layout)!;
+    expect(restored.activeId).toBe('monitor-tab');
+    expect(restored.tabs).toMatchObject([
+      { id: 'monitor-tab', paneId: 'pane', view: 'monitor', title: 'Host monitor', pinned: true, color: '#42a5f5' },
+      { id: 'ssh-tab', profile: { kind: 'ssh', target: 'router' }, connectOnMount: false },
+    ]);
+  });
 });

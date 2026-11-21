@@ -3,6 +3,7 @@ import {
   savedHostHop,
   type ContainerlabLab,
   type ContainerlabNode,
+  type EnvironmentPortResponse,
   type EnvironmentTarget,
   type SessionProfile,
   type SshProfile,
@@ -184,6 +185,37 @@ export async function openHostPort(
     view?.close();
     showToast('error', `Could not open port ${port}: ${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+/**
+ * Forward a port an SSH host listens on to this computer without opening
+ * anything, on the same port number when that is free here. A forward that
+ * already carries the port is reused.
+ */
+export async function forwardHostPort(
+  host: EnvironmentHost,
+  target: string,
+  port: number,
+): Promise<(EnvironmentPortResponse & { connId: string }) | undefined> {
+  try {
+    const source = await environmentSource(host, true);
+    if (source?.kind !== 'ssh') throw new Error(`${host.label} is not connected`);
+    const forward = await openRemotePort(source.connId, target, port, true);
+    return { ...forward, connId: source.connId };
+  } catch (error) {
+    showToast('error', `Could not forward port ${port}: ${error instanceof Error ? error.message : String(error)}`);
+    return undefined;
+  }
+}
+
+/** Where a forwarded port answers on this computer. */
+export function forwardedPortUrl(localPort: number, scheme: 'http' | 'https'): string {
+  return `${scheme}://127.0.0.1:${localPort}/`;
+}
+
+/** Where a port of this computer answers. */
+export function localPortUrl(target: string, port: number, scheme: 'http' | 'https'): string {
+  return `${scheme}://${target === '127.0.0.1' ? 'localhost' : bracketed(target)}:${port}/`;
 }
 
 // ---------------------------------------------------------------------------
