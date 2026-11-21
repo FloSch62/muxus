@@ -20,6 +20,8 @@ overrides:
   '@serialport/bindings-cpp': 13.0.1
   'brace-expansion@>=5.0.0 <5.0.8': 5.0.8
   'dompurify@<3.4.17': 3.4.17
+  # kdbxweb (no release since 2021) still asks for the unpatched 0.7 line.
+  'kdbxweb>@xmldom/xmldom': 0.8.15
 allowBuilds:
   esbuild: true
   electron: true

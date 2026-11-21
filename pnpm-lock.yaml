@@ -175,6 +175,7 @@ overrides:
   '@serialport/bindings-cpp': 13.0.1
   brace-expansion@>=5.0.0 <5.0.8: 5.0.8
   dompurify@<3.4.17: 3.4.17
+  kdbxweb>@xmldom/xmldom: 0.8.15
 
 patchedDependencies:
   '@novnc/novnc@1.7.0': ffde8e6453e76045b5c2ea6b0a74b1799c63b1463ffa5814f8fbc79086d4c5aa
@@ -2394,11 +2395,6 @@ packages:
 
   '@vitest/spy@5.1.1':
     resolution: {integrity: sha512-6K8C6alQG1/Yc8/ZI22iJS7JEsxPdVzqtqDq+/xM4Z0mGVykemMVjLhqMy/q6/IHYG3kKD8hKSwRen/ZdyI9vQ==}
-
-  '@xmldom/xmldom@0.7.13':
-    resolution: {integrity: sha512-lm2GW5PkosIzccsaZIz7tp8cPADSIlIHWDFTR1N0SzfinhhYgeIQjFMz4rYzanCScr3DqQLeomUDArp6MWKm+g==}
-    engines: {node: '>=10.0.0'}
-    deprecated: this version has critical issues, please update to the latest version
 
   '@xmldom/xmldom@0.8.15':
     resolution: {integrity: sha512-/5NV/vDALVFDXgLmfsy9TRCBlKwO2LNBFzpzvb9iIj+jR+eSc6DLYYvVOdivT/jm7MtU6TebYuRmzEOI7w40UA==}
@@ -5827,8 +5823,6 @@ snapshots:
 
   '@vitest/spy@5.1.1': {}
 
-  '@xmldom/xmldom@0.7.13': {}
-
   '@xmldom/xmldom@0.8.15': {}
 
   '@xmldom/xmldom@0.9.12': {}
@@ -6803,7 +6797,7 @@ snapshots:
 
   kdbxweb@2.1.1:
     dependencies:
-      '@xmldom/xmldom': 0.7.13
+      '@xmldom/xmldom': 0.8.15
       fflate: 0.7.5
 
   keyv@4.5.4:
