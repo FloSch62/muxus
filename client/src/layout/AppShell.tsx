@@ -43,6 +43,7 @@ import { RemoteDesktopView } from '../components/RemoteDesktopView.js';
 import { ManagementView } from '../components/ManagementView.js';
 import { HostMonitorView } from '../components/HostMonitorView.js';
 import { HostsView } from '../components/hosts/HostsView.js';
+import { useForwardingRefresh } from '../forwarding-refresh.js';
 import { loadRemoteEditorWorkspace } from '../lazy-features.js';
 import { useEnvironmentDiscovery } from '../components/environments/useEnvironmentDiscovery.js';
 import { layout } from '../theme.js';
@@ -63,6 +64,7 @@ export function AppShell({
 }) {
   useWorkspacePersistence(persistWorkspace, initialWorkspace);
   useEnvironmentDiscovery();
+  useForwardingRefresh();
   const sidebarCollapsed = usePrefsStore((state) => state.sidebarCollapsed);
   const sidebarOnRight = usePrefsStore((state) => state.sidebarPosition === 'right');
   const commandBarAtBottom = usePrefsStore((state) => state.commandBarPosition === 'bottom');

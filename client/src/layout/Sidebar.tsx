@@ -32,7 +32,8 @@ import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
 import ViewInArOutlinedIcon from '@mui/icons-material/ViewInArOutlined';
 import type { ForwardInfo } from '@muxus/shared';
-import { useForwards } from '../api/queries.js';
+import { useQueryClient } from '@tanstack/react-query';
+import { connectionsQuery, tunnelsQuery, useForwards } from '../api/queries.js';
 import { ErrorBoundary } from '../components/ErrorBoundary.js';
 import { PanelResizeHandle } from '../components/PanelResizeHandle.js';
 import { SessionSidebar } from '../components/SessionSidebar.js';
@@ -108,11 +109,8 @@ const VIEW_META: Record<SidebarView, { label: string; icon: ReactNode; preload?:
     icon: <ViewInArOutlinedIcon />,
     preload: () => void loadEnvironmentsPanel(),
   },
-  forwarding: {
-    label: 'Port forwarding',
-    icon: <SwapHorizOutlinedIcon />,
-    preload: () => void loadForwardingPanel(),
-  },
+  // Preloaded by the rail itself, together with the data the panel lists.
+  forwarding: { label: 'Port forwarding', icon: <SwapHorizOutlinedIcon /> },
 };
 
 const APPEARANCE_OPTIONS = [
@@ -385,8 +383,17 @@ function SidebarRail({
   const openMonitor = useTabsStore((state) => state.openMonitor);
   const [appearanceMenu, setAppearanceMenu] = useState<HTMLElement | null>(null);
   const tabRefs = useRef(new Map<SidebarView, HTMLButtonElement>());
+  const queryClient = useQueryClient();
   const { data: forwardsData } = useForwards();
   const forwards = forwardsData?.forwards ?? [];
+  // The badge already follows the forwards; the panel also lists connections
+  // and saved tunnels. Asked for on the way to the icon, they are there when
+  // it opens.
+  const preloadForwarding = () => {
+    void loadForwardingPanel();
+    void queryClient.prefetchQuery(connectionsQuery);
+    void queryClient.prefetchQuery(tunnelsQuery);
+  };
   const connectedView = panelOpen ? view : undefined;
   const tabViews = VIEW_ORDER;
   const rovingView = connectedView ?? tabViews[0];
@@ -468,7 +475,7 @@ function SidebarRail({
                 else tabRefs.current.delete(entry);
               }}
               onKeyDown={(event) => onTabKeyDown(event, entry)}
-              onIntent={meta.preload}
+              onIntent={entry === 'forwarding' ? preloadForwarding : meta.preload}
               onClick={() => toggleSidebarView(entry)}
             />
           );
