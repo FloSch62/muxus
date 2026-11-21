@@ -3,13 +3,13 @@
   "version": "0.15.1",
   "private": true,
   "packageManager": "pnpm@12.21.0",
-  "description": "Free, open-source SSH, Telnet, and serial client — kitty graphics, split-pane sessions, SFTP, port forwarding",
+  "description": "Free, open-source SSH, Telnet, and serial client \u2014 kitty graphics, split-pane sessions, SFTP, port forwarding",
   "license": "MIT",
   "engines": {
     "node": ">=24.20.0"
   },
   "scripts": {
-    "dev": "pnpm -r --parallel --stream dev",
+    "dev": "pnpm --filter @muxus/ssh-engine build && pnpm -r --parallel --stream dev",
     "build": "pnpm -r build",
     "start": "node server/dist/index.js",
     "electron": "pnpm build && pnpm --filter @muxus/electron start",
@@ -20,7 +20,10 @@
     "test": "pnpm --filter @muxus/tests test",
     "test:watch": "pnpm --filter @muxus/tests test:watch",
     "test:coverage": "pnpm --filter @muxus/tests test:coverage",
+    "test:engine": "pnpm --filter @muxus/ssh-engine test",
+    "test:openssh": "pnpm --filter @muxus/tests test:openssh",
     "lint": "oxlint . --deny-warnings",
+    "lint:engine": "pnpm --filter @muxus/ssh-engine lint",
     "serve-docs": "uvx --native-tls zensical serve --open",
     "build-docs": "uvx --native-tls zensical build --clean",
     "capture-docs": "node hack/capture.mjs && THEME=dark node hack/capture.mjs",

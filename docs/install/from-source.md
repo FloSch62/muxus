@@ -14,6 +14,9 @@ to a browser from a local Fastify server.
 - **pnpm**, with the version pinned by `packageManager` in the repository
 - A C/C++ toolchain for the two native modules (`node-pty`, `serialport`). On Debian and
   Ubuntu, `build-essential` and `python3` are sufficient.
+- **Rust**, through [rustup](https://rustup.rs), for the SSH engine in `engine/`. The version
+  is pinned in `engine/rust-toolchain.toml`, and rustup installs it on the first build. On
+  Windows the build also needs [NASM](https://www.nasm.us).
 
 Serial ports and SSH agents need the same setup as in the desktop app; see the
 [platform notes](index.md#platform-notes).

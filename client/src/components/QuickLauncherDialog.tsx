@@ -104,7 +104,7 @@ import { useEnvironmentsStore } from '../state/environments.js';
 import { environmentLaunchItems, type EnvironmentLaunchItem } from '../environment-launcher.js';
 import { ENVIRONMENT_KINDS, EnvironmentLogo } from './environments/environment-icons.js';
 import { useWorkspacesStore } from '../state/workspaces.js';
-import { sessionAttached, supportsBreak } from '../terminal/send-break.js';
+import { isLineSession, sessionAttached, supportsBreak } from '../terminal/send-break.js';
 import { formatTimestamp } from '../time-format.js';
 import { findVaultSecret, runCommandButton, vaultSecretMissing } from '../vault-secrets.js';
 import { focusOpenWorkspace, openWorkspace } from '../workspace-persistence.js';
@@ -213,11 +213,12 @@ export function QuickLauncherDialog() {
     activeTab.profile.kind === 'ssh' &&
     !!activeTab.connId &&
     activeTab.sftpAvailable !== false;
-  const activeBreak = supportsBreak(activeTab)
+  const activeLine = isLineSession(activeTab)
     ? sessionAttached(activeTab)
       ? 'ready'
       : 'waiting'
     : 'none';
+  const activeBreak = supportsBreak(activeTab);
   const activeSystemOpenSsh = activeTab?.systemOpenSsh === true;
   const liveCount = tabs.filter(
     (tab) =>
@@ -303,11 +304,12 @@ export function QuickLauncherDialog() {
       buildActionResults({
         activeConnected: !!activeConnected,
         activeSsh: !!activeSsh,
+        activeLine,
         activeBreak,
         activeSystemOpenSsh,
         keybindings,
       }),
-    [activeBreak, activeConnected, activeSsh, activeSystemOpenSsh, keybindings],
+    [activeBreak, activeConnected, activeLine, activeSsh, activeSystemOpenSsh, keybindings],
   );
   const allResults = useMemo(
     () => [...catalogResults, ...queryResults, ...environmentResults, ...actionResults],
@@ -1136,14 +1138,17 @@ function buildQueryResults({
 function buildActionResults({
   activeConnected,
   activeSsh,
+  activeLine,
   activeBreak,
   activeSystemOpenSsh,
   keybindings,
 }: {
   activeConnected: boolean;
   activeSsh: boolean;
-  /** Send BREAK and Send text file only exist for serial, Telnet and SSH tabs. */
-  activeBreak: 'none' | 'waiting' | 'ready';
+  /** Send text file only exists for serial, Telnet and SSH tabs. */
+  activeLine: 'none' | 'waiting' | 'ready';
+  /** Send BREAK only exists for serial and Telnet tabs. */
+  activeBreak: boolean;
   activeSystemOpenSsh: boolean;
   keybindings: KeybindingOverrides;
 }): LauncherResult[] {
@@ -1228,9 +1233,10 @@ function buildActionResults({
   // the palette doubles as the discovery path for the keymap.
   for (const command of KEY_COMMANDS) {
     if (command.palette === false) continue;
-    const sendsBreak =
+    const forLine =
       command.id === 'terminal.send-break' || command.id === 'terminal.send-text-file';
-    if (sendsBreak && activeBreak === 'none') continue;
+    if (forLine && activeLine === 'none') continue;
+    if (command.id === 'terminal.send-break' && !activeBreak) continue;
     const chords = chordLabels(command.id, keybindings);
     results.push({
       id: `keymap:${command.id}`,
@@ -1243,11 +1249,7 @@ function buildActionResults({
       priority: 60,
       showWhenEmpty: false,
       disabledReason:
-        command.id === 'terminal.send-break' && activeSystemOpenSsh
-          ? SYSTEM_OPENSSH_UNAVAILABLE
-          : sendsBreak && activeBreak === 'waiting'
-            ? 'Wait for the session to connect first'
-            : undefined,
+        forLine && activeLine === 'waiting' ? 'Wait for the session to connect first' : undefined,
     });
   }
 

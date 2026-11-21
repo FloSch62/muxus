@@ -4,9 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { generateKeyPairSync } from 'node:crypto';
 import type net from 'node:net';
-import { Client, Server } from 'ssh2';
+import { Server } from 'ssh2';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ScriptRuns, scriptCommand } from '../../../server/src/scripts/script-runs.js';
+import { SshTransport } from '../../../server/src/ssh/engine.js';
 
 const HOST_KEY = generateKeyPairSync('rsa', {
   modulusLength: 2048,
@@ -15,7 +16,7 @@ const HOST_KEY = generateKeyPairSync('rsa', {
 }).privateKey;
 
 let server: Server;
-let client: Client;
+let transport: SshTransport;
 const commands: string[] = [];
 /** Answer every exec like a Windows host whose shell is cmd.exe. */
 let windowsHost = false;
@@ -55,23 +56,21 @@ beforeAll(async () => {
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = (server.address() as net.AddressInfo).port;
-  client = new Client();
-  await new Promise<void>((resolve, reject) => {
-    client.on('ready', () => resolve());
-    client.on('error', reject);
-    client.connect({ host: '127.0.0.1', port, username: 'tester', password: 'x' });
-  });
+  // The server above has a fresh host key each run; there is nothing to check it against.
+  transport = new SshTransport({ host: '127.0.0.1', port, verifyHostKey: async () => true });
+  await transport.connect();
+  expect((await transport.authPassword('tester', 'x')).success).toBe(true);
 });
 
 afterAll(async () => {
-  client.end();
+  transport.close();
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 
 function runs() {
   const release = vi.fn();
   const unsubscribe = vi.fn();
-  const connection = { client, onClose: vi.fn(() => unsubscribe) };
+  const connection = { transport, onClose: vi.fn(() => unsubscribe) };
   const manager = new ScriptRuns({ acquire: (id) => (id === 'c1' ? ({ connection, release } as never) : undefined) });
   return { manager, release, unsubscribe };
 }

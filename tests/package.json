@@ -8,6 +8,7 @@
     "build": "exit 0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:openssh": "vitest run --config vitest.openssh.config.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
   },

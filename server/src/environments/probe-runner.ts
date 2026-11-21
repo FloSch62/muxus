@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import type { Client, ClientChannel } from 'ssh2';
+import type { SshTransport } from '../ssh/engine.js';
 import { shellQuote } from '@muxus/shared';
 
 /**
@@ -127,12 +127,10 @@ function collect(stream: NodeJS.ReadableStream, stop: () => void): Promise<strin
 }
 
 /** Probes over an exec channel on a live SSH transport; `sh -s` keeps the login shell's syntax out of it. */
-export function remoteProbeRunner(client: Client): ProbeRunner {
+export function remoteProbeRunner(transport: SshTransport): ProbeRunner {
   return async (probes) => {
     if (probes.length === 0) return new Map();
-    const channel = await new Promise<ClientChannel>((resolve, reject) => {
-      client.exec('sh -s', (error, stream) => (error ? reject(error) : resolve(stream)));
-    });
+    const channel = await transport.exec('sh -s');
     channel.stderr.resume();
     const output = collect(channel, () => channel.destroy());
     channel.end(probeScript(probes));

@@ -19,7 +19,8 @@ import { chartPng, kittySequence } from './demo-image.mjs';
 import { startDemoVnc } from './demo-vnc.mjs';
 
 const require = createRequire(path.join(process.cwd(), 'server/'));
-const ssh2 = require('ssh2');
+// The sandbox hosts are ssh2 servers; the tests package is what installs it.
+const ssh2 = createRequire(path.join(process.cwd(), 'tests/'))('ssh2');
 const pty = require('node-pty');
 
 const { Server, utils } = ssh2;

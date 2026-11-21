@@ -121,6 +121,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Set up the SSH engine toolchain
+        uses: ./.github/actions/setup-ssh-engine
+
       - name: Build workspace
         run: pnpm build
 
@@ -191,7 +194,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Verify universal keyring binaries
+      - name: Verify universal native binaries
         if: runner.os == 'macOS'
         run: |
           app="electron/release/mac-universal/Muxus.app"
@@ -202,6 +205,7 @@ jobs:
           fi
           for arch in x64 arm64; do
             ls "$app/Contents/Resources/app.asar.unpacked/node_modules/@napi-rs/keyring-darwin-$arch/"*.node
+            ls "$app/Contents/Resources/app.asar.unpacked/dist/muxus-ssh-engine.darwin-$arch.node"
           done
 
       - name: Store installers

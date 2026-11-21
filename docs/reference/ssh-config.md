@@ -118,10 +118,10 @@ The program is found on `PATH`, then at `/usr/bin/ssh`, or
 | `*Forward` lines and `ProxyJump` | Applied by `ssh` |
 | Tunnels started in Muxus, opening a container's port | Not available |
 | Running scripts, fallback jump routes | Not available |
-| Folder credentials, password vault, BREAK, `ssh://` links that pin a host key | Not available |
+| Folder credentials, password vault, `ssh://` links that pin a host key | Not available |
 | New tabs and split panes | Each logs in on its own instead of sharing a connection |
 
-What such a host cannot do is greyed out wherever it is offered: **Send BREAK**, **Follow
+What such a host cannot do is greyed out wherever it is offered: **Follow
 terminal folder**, starting a tunnel through it, choosing it as a gateway, running a script on it, adding fallback
 jump routes, and the container actions that open a port or jump through it. So is **console compatibility**, which shapes the
 built-in client's session and has no effect here. A host set to use the built-in client cannot

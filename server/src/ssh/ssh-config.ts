@@ -381,7 +381,7 @@ export interface ResolvedTarget extends ResolvedHostSettings {
   connectTimeout?: number;
   serverAliveInterval?: number;
   serverAliveCountMax?: number;
-  /** Raw ssh_config algorithm lists; translated to ssh2 form at dial time. */
+  /** Raw ssh_config algorithm lists; turned into the lists a connection offers at dial time. */
   ciphers?: string;
   kexAlgorithms?: string;
   hostKeyAlgorithms?: string;

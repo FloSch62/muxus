@@ -3,10 +3,11 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import type net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { Client, Server, type ServerConfig } from 'ssh2';
+import { Server, type ServerConfig } from 'ssh2';
 import { afterEach, afterAll, describe, expect, it, vi } from 'vitest';
 import type { SshProfile } from '@muxus/shared/ws-protocol';
 import { SshConnectionManager, type ConnectIo } from '../../../server/src/ssh/connection-manager.js';
+import { SshTransport } from '../../../server/src/ssh/engine.js';
 import { KnownHostsStore } from '../../../server/src/ssh/known-hosts.js';
 import { loadConfigDocument } from '../../../server/src/ssh/ssh-config.js';
 import { MuxusDatabase } from '../../../server/src/persistence/database.js';
@@ -386,9 +387,9 @@ describe('session settings from ssh config', () => {
   }, 15_000);
 
   it("advertises the host's Backspace as the erase character of each session's pty", async () => {
-    // ssh2's server skips the first terminal mode when it parses pty-req, so
+    // The test server skips the first terminal mode when it parses pty-req, so
     // the request is read where the client makes it.
-    const shellRequests = vi.spyOn(Client.prototype, 'shell');
+    const shellRequests = vi.spyOn(SshTransport.prototype, 'shell');
     const started = await startCapturingServer();
     server = started.server;
     manager = makeManager(writeConfig(started.port, []));
@@ -397,7 +398,7 @@ describe('session settings from ssh config', () => {
       const del = await manager.connectShell(profile, makeIo(), 80, 24, 'xterm-256color');
       expect(await firstData(del.stream)).toContain('shell ok');
       expect(started.capture.ptyRequested).toBe(true);
-      expect(shellRequests.mock.calls.at(-1)?.[0]).toMatchObject({ modes: { VERASE: 0x7f } });
+      expect(shellRequests.mock.calls.at(-1)?.[0]).toMatchObject({ pty: { erase: 0x7f } });
 
       // A second session on the same connection asks for its own erase character.
       const ctrlH = await manager.connectShell(profile, makeIo(), 80, 24, 'xterm-256color', {
@@ -405,7 +406,7 @@ describe('session settings from ssh config', () => {
       });
       expect(await firstData(ctrlH.stream)).toContain('shell ok');
       expect(ctrlH.transport).toBe('shared');
-      expect(shellRequests.mock.calls.at(-1)?.[0]).toMatchObject({ modes: { VERASE: 0x08 } });
+      expect(shellRequests.mock.calls.at(-1)?.[0]).toMatchObject({ pty: { erase: 0x08 } });
       for (const shell of [del, ctrlH]) {
         shell.stream.close();
         shell.lease.release();

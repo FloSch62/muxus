@@ -1,0 +1,32 @@
+name: Set up the SSH engine toolchain
+description: >-
+  Rust and what its crypto library needs, so `pnpm build` can build the native
+  SSH engine in engine/.
+
+runs:
+  using: composite
+  steps:
+    # aws-lc-sys assembles its crypto code with NASM on Windows.
+    - name: Install NASM
+      if: runner.os == 'Windows' && runner.arch == 'X64'
+      uses: ilammy/setup-nasm@v1
+
+    - name: Install the Rust toolchain
+      shell: bash
+      working-directory: engine
+      # The version is pinned in engine/rust-toolchain.toml.
+      run: rustup show active-toolchain || rustup toolchain install
+
+    # The macOS app is universal, so it carries one engine binary per CPU.
+    - name: Build the engine for both macOS CPUs
+      if: runner.os == 'macOS'
+      shell: bash
+      working-directory: engine
+      run: |
+        rustup target add aarch64-apple-darwin x86_64-apple-darwin
+        echo "MUXUS_ENGINE_TARGETS=aarch64-apple-darwin,x86_64-apple-darwin" >> "$GITHUB_ENV"
+
+    - name: Cache the engine build
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: engine

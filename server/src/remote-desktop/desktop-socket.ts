@@ -484,7 +484,7 @@ export class DesktopSession {
       return connectTcp(profile.host, profile.port);
     }
     this.status(`Connecting to ${target} through ${this.usedGateway?.target} …`, true);
-    return connectThroughGateway(gateway.connection.client, profile.host, profile.port);
+    return connectThroughGateway(gateway.connection.transport, profile.host, profile.port);
   }
 
   private async acceptCertificate(certificate: PresentedCertificate): Promise<boolean> {

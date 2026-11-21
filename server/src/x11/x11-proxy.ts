@@ -1,5 +1,4 @@
 import { timingSafeEqual } from 'node:crypto';
-import type { Duplex } from 'node:stream';
 import { MIT_MAGIC_COOKIE, type X11Auth } from './xauthority.js';
 
 /** Setup requests carry two short strings; anything larger is not X11. */
@@ -65,62 +64,66 @@ export function rewriteX11Setup(setup: Buffer, littleEndian: boolean, auth?: X11
   return out;
 }
 
+/** What the splice uses of a forwarded channel; the SSH engine's channel has it. */
+export interface X11Channel<Local> {
+  read(): Promise<{ kind: string; data?: Buffer }>;
+  close(): Promise<void>;
+  /** Join the channel to `local` until either ends; `head` goes to `local` first. */
+  splice(local: Local, head?: Buffer): Promise<void>;
+}
+
 /**
  * Join a forwarded X11 channel to the local X server the way ssh(1) does:
  * the remote side must present the fake cookie Muxus sent in x11-req, which
  * is swapped for the local server's real credentials before any bytes reach
- * it. Anything else closes both streams.
+ * it. Anything else closes both ends. Once the setup has passed, the engine
+ * carries the connection, and the promise settles when it has ended.
  */
-export function spliceX11Connection(
-  remote: Duplex,
-  local: Duplex,
+export async function spliceX11Connection<Local extends { close(): void }>(
+  remote: X11Channel<Local>,
+  local: Local,
   options: { cookie: Buffer; auth?: X11Auth; onRejected?: (reason: string) => void },
-): void {
-  let pending: Buffer = Buffer.alloc(0);
-  let settled = false;
-  const closeBoth = () => {
-    remote.destroy();
-    local.destroy();
+): Promise<void> {
+  const closeBoth = async () => {
+    local.close();
+    await remote.close().catch(() => undefined);
   };
-  const reject = (reason: string) => {
-    settled = true;
-    remote.off('data', onData);
+  const reject = async (reason: string) => {
     options.onRejected?.(reason);
-    closeBoth();
+    await closeBoth();
   };
-  const onData = (chunk: Buffer) => {
-    pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
+  let pending: Buffer = Buffer.alloc(0);
+  for (;;) {
+    let event: { kind: string; data?: Buffer };
+    try {
+      event = await remote.read();
+    } catch {
+      return closeBoth();
+    }
+    // Ended before it said who it is.
+    if (event.kind === 'close' || event.kind === 'eof') return closeBoth();
+    if (event.kind !== 'data' || !event.data) continue;
+    pending = pending.length ? Buffer.concat([pending, event.data]) : event.data;
     const setup = parseX11Setup(pending);
     if (setup.kind === 'incomplete') {
-      if (pending.length > MAX_SETUP_BYTES) reject('oversized connection setup');
-      return;
+      if (pending.length > MAX_SETUP_BYTES) return reject('oversized connection setup');
+      continue;
     }
-    if (setup.kind === 'invalid') {
-      reject('not an X11 connection setup');
-      return;
-    }
+    if (setup.kind === 'invalid') return reject('not an X11 connection setup');
     if (
       setup.authName !== MIT_MAGIC_COOKIE ||
       setup.authData.length !== options.cookie.length ||
       !timingSafeEqual(setup.authData, options.cookie)
     ) {
-      reject('wrong X11 authentication cookie');
-      return;
+      return reject('wrong X11 authentication cookie');
     }
-    settled = true;
-    remote.off('data', onData);
-    local.write(rewriteX11Setup(pending, setup.littleEndian, options.auth));
-    if (pending.length > setup.length) local.write(pending.subarray(setup.length));
-    remote.pipe(local);
-    local.pipe(remote);
-  };
-
-  remote.on('data', onData);
-  remote.once('close', closeBoth);
-  local.once('close', closeBoth);
-  remote.on('error', closeBoth);
-  local.on('error', closeBoth);
-  remote.once('end', () => {
-    if (!settled) closeBoth();
-  });
+    const rewritten = rewriteX11Setup(pending, setup.littleEndian, options.auth);
+    const head = pending.length > setup.length ? Buffer.concat([rewritten, pending.subarray(setup.length)]) : rewritten;
+    try {
+      await remote.splice(local, head);
+    } catch {
+      await closeBoth();
+    }
+    return;
+  }
 }

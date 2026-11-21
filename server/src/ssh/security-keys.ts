@@ -1,8 +1,6 @@
 import os from 'node:os';
-import ssh2, { type ParsedKey } from 'ssh2';
+import type { SshIdentity } from './identity.js';
 import { fingerprintSha256 } from './known-hosts.js';
-
-const { utils } = ssh2;
 
 /**
  * FIDO2/U2F security keys (`ssh-keygen -t ed25519-sk`/`ecdsa-sk`): the
@@ -62,8 +60,8 @@ export function plainKeyBlob(blob: Buffer): Buffer {
 }
 
 /** "ED25519-SK SHA256:…", the way OpenSSH names a key when it asks for a touch. */
-export function securityKeyLabel(key: ParsedKey): string {
-  return `${securityKeyTypeName(key.type)} ${fingerprintSha256(plainKeyBlob(key.getPublicSSH()))}`;
+export function securityKeyLabel(key: SshIdentity): string {
+  return `${securityKeyTypeName(key.type)} ${fingerprintSha256(plainKeyBlob(key.blob))}`;
 }
 
 /** The algorithm a signature was made with, as the server sees it. */
@@ -106,19 +104,21 @@ export function readOpenSshKeyFile(content: Buffer | string): OpenSshKeyFile | u
 }
 
 /** The public key of a security key file, or undefined for any other file. */
-export function securityKeyFile(content: Buffer | string): ParsedKey | undefined {
+export function securityKeyFile(content: Buffer | string): SshIdentity | undefined {
   const header = readOpenSshKeyFile(content);
   if (!header || !isSecurityKeyType(header.type)) return undefined;
-  const parsed = utils.parseKey(header.publicBlob);
-  return parsed instanceof Error ? undefined : parsed;
+  return { type: header.type, blob: header.publicBlob };
 }
 
 /** A CertificateFile for a security key, or undefined for any other file. */
-export function securityKeyCertificate(content: Buffer | string): ParsedKey | undefined {
-  const [type] = content.toString().trim().split(/\s+/, 1);
-  if (!type || !isSecurityKeyType(type) || !type.includes('-cert-')) return undefined;
-  const parsed = utils.parseKey(content);
-  return parsed instanceof Error ? undefined : parsed;
+export function securityKeyCertificate(content: Buffer | string): SshIdentity | undefined {
+  const [type, encoded, ...comment] = content.toString().trim().split(/\s+/);
+  if (!type || !encoded || !isSecurityKeyType(type) || !type.includes('-cert-')) return undefined;
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) return undefined;
+  const blob = Buffer.from(encoded, 'base64');
+  // The line's type must be the one the blob itself carries.
+  if (readField(blob, 0)?.value.toString('latin1') !== type) return undefined;
+  return { type, blob, ...(comment.length ? { comment: comment.join(' ') } : {}) };
 }
 
 /**
@@ -128,7 +128,7 @@ export function securityKeyCertificate(content: Buffer | string): ParsedKey | un
 export class SecurityKeyError extends Error {
   constructor(
     message: string,
-    readonly key?: ParsedKey,
+    readonly key?: SshIdentity,
   ) {
     super(message);
     this.name = 'SecurityKeyError';

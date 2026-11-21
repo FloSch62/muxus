@@ -3,7 +3,6 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { Duplex } from 'node:stream';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { parseDisplay } from '../../../server/src/x11/display.js';
 import { LocalX11 } from '../../../server/src/x11/local-x11.js';
@@ -193,55 +192,97 @@ describe('X11 setup rewriting', () => {
   });
 });
 
-/** Two connected in-memory duplex endpoints. */
-function duplexPair(): [Duplex, Duplex] {
-  const a = new Duplex({ read() {}, write(chunk, _enc, done) { b.push(chunk); done(); }, final(done) { b.push(null); done(); } });
-  const b = new Duplex({ read() {}, write(chunk, _enc, done) { a.push(chunk); done(); }, final(done) { a.push(null); done(); } });
-  return [a, b];
-}
-
-function nextChunk(stream: Duplex): Promise<Buffer> {
-  return new Promise((resolve) => stream.once('data', (chunk: Buffer) => resolve(chunk)));
+/** A forwarded channel as the splice sees it, fed by hand. */
+function fakeChannel() {
+  type Event = { kind: string; data?: Buffer };
+  const queue: Event[] = [];
+  let waiting: ((event: Event) => void) | undefined;
+  const push = (event: Event) => {
+    if (waiting) {
+      waiting(event);
+      waiting = undefined;
+    } else {
+      queue.push(event);
+    }
+  };
+  const local = { close: vi.fn() };
+  return {
+    local,
+    data: (chunk: Buffer) => push({ kind: 'data', data: chunk }),
+    end: () => push({ kind: 'close' }),
+    channel: {
+      read: () =>
+        new Promise<Event>((resolve) => {
+          const next = queue.shift();
+          if (next) resolve(next);
+          else waiting = resolve;
+        }),
+      close: vi.fn(async () => undefined),
+      // The engine carries the bytes from here on; the test only sees what it is handed.
+      splice: vi.fn(async (_local: typeof local, _head?: Buffer) => undefined),
+    },
+  };
 }
 
 describe('spliceX11Connection', () => {
   const fake = Buffer.alloc(16, 0xaa);
   const real = { name: MIT_MAGIC_COOKIE, data: Buffer.alloc(16, 0x55) };
 
-  it('swaps the fake cookie for the real one and then relays both ways', async () => {
-    const [remote, remoteClient] = duplexPair();
-    const [local, xServer] = duplexPair();
-    spliceX11Connection(remote, local, { cookie: fake, auth: real });
+  it('swaps the fake cookie for the real one and then joins the two ends', async () => {
+    const remote = fakeChannel();
+    const done = spliceX11Connection(remote.channel, remote.local, { cookie: fake, auth: real });
 
     const firstRequest = Buffer.from([1, 2, 3, 4]);
-    const received = nextChunk(xServer);
     // The setup and the first request may arrive split across channel packets.
     const setup = Buffer.concat([setupRequest(true, MIT_MAGIC_COOKIE, fake), firstRequest]);
-    remoteClient.write(setup.subarray(0, 10));
-    remoteClient.write(setup.subarray(10));
-    const forwarded = await received;
-    const parsed = parseX11Setup(forwarded);
-    expect(parsed).toMatchObject({ kind: 'complete', authName: MIT_MAGIC_COOKIE, authData: real.data });
+    remote.data(setup.subarray(0, 10));
+    remote.data(setup.subarray(10));
+    await done;
 
-    const reply = nextChunk(remoteClient);
-    xServer.write(Buffer.from('reply'));
-    expect((await reply).toString()).toBe('reply');
+    expect(remote.channel.splice).toHaveBeenCalledOnce();
+    const [joined, head] = remote.channel.splice.mock.calls[0]!;
+    expect(joined).toBe(remote.local);
+    // The X server sees its own credentials first, then what the client sent after the setup.
+    const parsed = parseX11Setup(head!);
+    expect(parsed).toMatchObject({ kind: 'complete', authName: MIT_MAGIC_COOKIE, authData: real.data });
+    if (parsed.kind !== 'complete') return;
+    expect(head!.subarray(parsed.length)).toEqual(firstRequest);
+    expect(remote.channel.close).not.toHaveBeenCalled();
+    expect(remote.local.close).not.toHaveBeenCalled();
   });
 
   it('closes both sides when the remote presents the wrong cookie', async () => {
-    const [remote, remoteClient] = duplexPair();
-    const [local, xServer] = duplexPair();
+    const remote = fakeChannel();
     const onRejected = vi.fn();
-    const xServerData = vi.fn();
-    xServer.on('data', xServerData);
-    spliceX11Connection(remote, local, { cookie: fake, auth: real, onRejected });
+    const done = spliceX11Connection(remote.channel, remote.local, { cookie: fake, auth: real, onRejected });
 
-    remoteClient.write(setupRequest(false, MIT_MAGIC_COOKIE, Buffer.alloc(16, 0xab)));
-    await new Promise((resolve) => setImmediate(resolve));
+    remote.data(setupRequest(false, MIT_MAGIC_COOKIE, Buffer.alloc(16, 0xab)));
+    await done;
     expect(onRejected).toHaveBeenCalledWith('wrong X11 authentication cookie');
-    expect(remote.destroyed).toBe(true);
-    expect(local.destroyed).toBe(true);
-    expect(xServerData).not.toHaveBeenCalled();
+    expect(remote.channel.close).toHaveBeenCalledOnce();
+    expect(remote.local.close).toHaveBeenCalledOnce();
+    // Nothing reached the X server.
+    expect(remote.channel.splice).not.toHaveBeenCalled();
+  });
+
+  it('closes both sides when what arrives is not an X11 setup, or ends before one', async () => {
+    const http = fakeChannel();
+    const onRejected = vi.fn();
+    const rejected = spliceX11Connection(http.channel, http.local, { cookie: fake, auth: real, onRejected });
+    http.data(Buffer.from('GET / HTTP/1.1\r\n'));
+    await rejected;
+    expect(onRejected).toHaveBeenCalledWith('not an X11 connection setup');
+    expect(http.channel.splice).not.toHaveBeenCalled();
+
+    const early = fakeChannel();
+    const ended = spliceX11Connection(early.channel, early.local, { cookie: fake, auth: real, onRejected });
+    early.data(setupRequest(true, MIT_MAGIC_COOKIE, fake).subarray(0, 6));
+    early.end();
+    await ended;
+    expect(early.channel.close).toHaveBeenCalledOnce();
+    expect(early.local.close).toHaveBeenCalledOnce();
+    expect(early.channel.splice).not.toHaveBeenCalled();
+    expect(onRejected).toHaveBeenCalledOnce();
   });
 });
 
@@ -491,9 +532,10 @@ describe('LocalX11', () => {
       env: { DISPLAY: `${path.join(socketDir, 'xsock')}:3`, XAUTHORITY: xauthority },
       platform: 'linux',
     });
-    const { socket, auth } = await x11.connect();
+    const connection = await x11.connect();
     (await accepted).destroy();
-    socket.destroy();
-    expect(auth).toEqual({ name: MIT_MAGIC_COOKIE, data: Buffer.alloc(16, 3) });
+    connection.stream.close();
+    connection.release();
+    expect(connection.auth).toEqual({ name: MIT_MAGIC_COOKIE, data: Buffer.alloc(16, 3) });
   });
 });

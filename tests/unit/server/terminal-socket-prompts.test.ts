@@ -34,7 +34,7 @@ function openSocket(login: (io: ConnectIo) => Promise<void>) {
   const stream = Object.assign(new EventEmitter(), {
     close: vi.fn(),
     write: vi.fn(),
-    setWindow: vi.fn(),
+    resize: vi.fn(),
     pause: vi.fn(),
     resume: vi.fn(),
   });
@@ -105,7 +105,7 @@ describe('sign-in prompts over the terminal socket', () => {
     expect(answers).toEqual([['secret']]);
     expect(sent(socket, 'exit')).toBe(false);
     // The shell opens at the size the window reached while the dialog was up.
-    expect(stream.setWindow.mock.calls).toEqual([[43, 132, 0, 0]]);
+    expect(stream.resize.mock.calls).toEqual([[132, 43]]);
     socket.close(1000, TERMINAL_SESSION_CLOSE_REASON);
   });
 

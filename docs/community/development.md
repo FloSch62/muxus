@@ -9,6 +9,9 @@ icon: lucide/hammer
 - **Node.js ≥ 24.17** (CI builds on 24.18)
 - **pnpm**, with the version pinned in `package.json` through `packageManager`
 - A C/C++ toolchain for the two native modules (`node-pty`, `serialport`)
+- **Rust**, through [rustup](https://rustup.rs), for the SSH engine in `engine/` (and
+  [NASM](https://www.nasm.us) on Windows)
+- **Docker**, only for `pnpm test:openssh`
 
 ## Setup
 
@@ -19,8 +22,9 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` runs three processes in parallel: `shared` in `tsc --watch`, the server on
-**:3002**, and the Vite client on **:5174**. Open <http://localhost:5174>.
+`pnpm dev` builds the SSH engine if it has changed, then runs three processes in parallel:
+`shared` in `tsc --watch`, the server on **:3002**, and the Vite client on **:5174**. Open
+<http://localhost:5174>.
 
 In dev the API token is the fixed string `dev`, because the Vite client cannot learn a
 random one at startup. The server still binds loopback only.
@@ -46,6 +50,8 @@ hack/       Documentation sandbox and screenshot capture
 | `pnpm start` | Serve the built client from the server |
 | `pnpm electron` | Run the desktop shell in dev |
 | `pnpm test`, `pnpm test:watch` | vitest |
+| `pnpm test:engine`, `pnpm lint:engine` | The SSH engine's own tests, and `cargo fmt` plus clippy |
+| `pnpm test:openssh` | The connection stack against a real OpenSSH server in a container: logins, sessions, forwards, files and X11. Needs Docker |
 | `pnpm lint` | oxlint (`--deny-warnings`) |
 | `pnpm typecheck` | Types across the workspace |
 
@@ -58,6 +64,10 @@ The desktop build rebuilds `node-pty` and `serialport` against Electron's ABI. B
 pnpm --filter @muxus/electron run rebuild
 ```
 
+The SSH engine needs no rebuild for Electron: it is an N-API addon, and the same binary loads
+in Node and in Electron. `pnpm build` builds it for the computer it runs on and the desktop
+bundle carries it beside `main.js`.
+
 ## Installers
 
 ```bash
@@ -65,6 +75,23 @@ make deb    # Linux .deb
 make win    # Windows NSIS installers (x64 and ARM64)
 make dmg    # macOS .dmg
 make all    # everything electron-builder is configured for
+```
+
+The Windows and macOS installers cover two CPUs each, so `make win` and `make dmg` build the
+SSH engine for both. Add the Rust targets once:
+
+```bash
+rustup target add x86_64-pc-windows-msvc aarch64-pc-windows-msvc   # for make win
+rustup target add aarch64-apple-darwin x86_64-apple-darwin         # for make dmg
+```
+
+A Windows installer is built on Windows: it compiles `node-pty` and `serialport` from source,
+and `node-pty` needs the **MSVC Spectre-mitigated libs** component of the Visual Studio Build
+Tools on top of the C++ tools. For one CPU only:
+
+```bash
+pnpm build
+pnpm --filter @muxus/electron dist --win nsis --x64
 ```
 
 Artifacts are written to `electron/release/`.

@@ -1,11 +1,16 @@
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
-import type { Socket } from 'node:net';
 import path from 'node:path';
 import type { FastifyBaseLogger } from 'fastify';
-import type { Client, ClientChannel, X11Details, X11Options } from 'ssh2';
 import type { X11SettingsUpdate, X11Status } from '@muxus/shared';
+import {
+  acceptIncoming,
+  type IncomingChannel,
+  type LocalStream,
+  type SshTransport,
+  type X11Request,
+} from '../ssh/engine.js';
 import { connectX11Endpoint, parseDisplay, xauthTarget, type ParsedDisplay } from './display.js';
 import {
   BundledXServer,
@@ -127,25 +132,36 @@ export class LocalX11 {
 
   /**
    * Open a connection to the local X server and the credentials it expects.
-   * `domain` (the SSH transport) selects its own bundled display.
+   * `domain` (the SSH transport) selects its own bundled display. Call
+   * `release` once the connection has ended.
    */
-  async connect(domain: object = this): Promise<{ socket: Socket; auth?: X11Auth }> {
+  async connect(domain: object = this): Promise<{ stream: LocalStream; auth?: X11Auth; release(): void }> {
     const source = this.source();
     if (source.kind === 'display') {
-      const socket = await connectX11Endpoint(source.parsed.endpoint);
-      const target = xauthTarget(source.parsed.endpoint, socket);
-      return { socket, auth: readXauthCookie(source.parsed.number, target, xauthorityPath(this.env)) };
+      const stream = await connectX11Endpoint(source.parsed.endpoint);
+      const target = xauthTarget(source.parsed.endpoint, stream);
+      return {
+        stream,
+        auth: readXauthCookie(source.parsed.number, target, xauthorityPath(this.env)),
+        release: () => undefined,
+      };
     }
     if (source.kind === 'none') throw new Error('no local X server is available');
 
     const bundled = this.bundledDisplay(domain, source.directory);
     const running = await this.bundledServer(domain);
-    const socket = await connectX11Endpoint({ kind: 'tcp', host: '127.0.0.1', port: running.port });
+    const stream = await connectX11Endpoint({ kind: 'tcp', host: '127.0.0.1', port: running.port });
     bundled.open += 1;
-    socket.once('close', () => {
-      bundled.open -= 1;
-    });
-    return { socket, auth: running.auth };
+    let released = false;
+    return {
+      stream,
+      auth: running.auth,
+      release: () => {
+        if (released) return;
+        released = true;
+        bundled.open -= 1;
+      },
+    };
   }
 
   /** The bundled X server for `domain`, started when needed. */
@@ -222,8 +238,8 @@ export class LocalX11 {
   }
 
   /** Per-transport state: one fake cookie and the handler for incoming X11 channels. */
-  attach(client: Client): X11Transport {
-    return new X11Transport(this, client, this.log);
+  attach(transport: SshTransport): X11Transport {
+    return new X11Transport(this, transport, this.log);
   }
 }
 
@@ -237,16 +253,16 @@ export class X11Transport {
 
   constructor(
     private readonly local: LocalX11,
-    client: Client,
+    transport: SshTransport,
     private readonly log: FastifyBaseLogger,
   ) {
-    client.on('x11', (info, accept, reject) => this.onChannel(info, accept, reject));
+    transport.onX11((incoming) => void this.onChannel(incoming));
     // Its X clients are gone with the transport; so is their display.
-    client.once('close', () => this.local.release(this));
+    transport.onClose(() => this.local.release(this));
   }
 
   /** x11-req options for a new session channel, or undefined when X11 should not be requested. */
-  request(forwardX11: boolean | undefined): X11Options | undefined {
+  request(forwardX11: boolean | undefined): X11Request | undefined {
     if (this.refusedByServer || !this.local.wanted(forwardX11)) return undefined;
     return {
       single: false,
@@ -265,33 +281,31 @@ export class X11Transport {
     return this.refusedByServer;
   }
 
-  private onChannel(info: X11Details, accept: () => ClientChannel, reject: () => void): void {
-    this.local.connect(this).then(
-      ({ socket, auth }) => {
-        let channel: ClientChannel;
-        try {
-          channel = accept();
-        } catch (err) {
-          socket.destroy();
-          this.log.warn({ err }, 'could not accept a forwarded X11 connection');
-          return;
-        }
-        spliceX11Connection(channel, socket, {
-          cookie: this.cookie,
-          auth,
-          onRejected: (reason) =>
-            this.log.warn({ from: `${info.srcIP}:${info.srcPort}`, reason }, 'rejected a forwarded X11 connection'),
-        });
-      },
-      (err: unknown) => {
-        reject();
-        this.log.warn({ err }, 'forwarded X11 connection refused: the local X server is unavailable');
-      },
-    );
+  private async onChannel(incoming: IncomingChannel): Promise<void> {
+    let local: Awaited<ReturnType<LocalX11['connect']>>;
+    try {
+      local = await this.local.connect(this);
+    } catch (err) {
+      incoming.reject();
+      this.log.warn({ err }, 'forwarded X11 connection refused: the local X server is unavailable');
+      return;
+    }
+    try {
+      const channel = await acceptIncoming(incoming);
+      await spliceX11Connection(channel, local.stream, {
+        cookie: this.cookie,
+        auth: local.auth,
+        onRejected: (reason) =>
+          this.log.warn(
+            { from: `${incoming.originAddress}:${incoming.originPort}`, reason },
+            'rejected a forwarded X11 connection',
+          ),
+      });
+    } catch (err) {
+      local.stream.close();
+      this.log.warn({ err }, 'could not accept a forwarded X11 connection');
+    } finally {
+      local.release();
+    }
   }
-}
-
-/** ssh2's error when the server answers x11-req with failure. */
-export function isX11Rejection(err: unknown): boolean {
-  return err instanceof Error && /Unable to request X11/.test(err.message);
 }

@@ -5,6 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../../../server/src/app.js';
 import { resolveConfig } from '../../../server/src/config.js';
+import { SshError } from '../../../server/src/ssh/engine.js';
 
 const TOKEN = 'upload-early-reply-test-token';
 let built: Awaited<ReturnType<typeof buildApp>>;
@@ -32,19 +33,14 @@ afterEach(async () => {
 
 /** Uploads into a folder the user may write to, or into one they may not. */
 function useSftp(writable: boolean): void {
-  const denied = () => Object.assign(new Error('Permission denied'), { code: 3 });
   const sftp = {
-    lstat: (_path: string, callback: (error: Error) => void) =>
-      callback(Object.assign(new Error('No such file'), { code: 2 })),
-    open: (_path: string, _flags: string, _attrs: unknown, callback: (error: Error | null, handle?: Buffer) => void) =>
-      writable ? callback(null, Buffer.from('handle')) : callback(denied()),
-    createWriteStream: () =>
-      writable
-        ? new Writable({ write: (_chunk, _encoding, callback) => callback() })
-        : new Writable({ construct: (callback) => callback(denied()) }),
-    rename: (_from: string, _to: string, callback: (error?: Error | null) => void) => callback(null),
-    stat: (_path: string, callback: (error: Error | null, attrs?: unknown) => void) => callback(null, {}),
-    unlink: (_path: string, callback: (error?: Error | null) => void) => callback(null),
+    lstat: () => Promise.reject(new SshError('No such file', 'SFTP_STATUS', 2)),
+    open: () =>
+      writable ? Promise.resolve(Buffer.from('handle')) : Promise.reject(new SshError('Permission denied', 'SFTP_STATUS', 3)),
+    createWriteStream: () => new Writable({ write: (_chunk, _encoding, callback) => callback() }),
+    rename: async () => undefined,
+    stat: async () => ({}),
+    unlink: async () => undefined,
   };
   vi.spyOn(built.ctx.connections, 'acquire').mockReturnValue({
     connection: { sftp: async () => sftp },

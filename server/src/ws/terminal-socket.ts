@@ -4,13 +4,11 @@ import type { WebSocket } from 'ws';
 import { nanoid } from 'nanoid';
 import type { ConfigForward, TerminalServerMessage } from '@muxus/shared';
 import {
-  DEFAULT_BREAK_DURATION_MS,
   TERMINAL_SESSION_CLOSE_REASON,
   terminalClientMessageSchema,
   type TerminalClientMessage,
 } from '@muxus/shared/ws-protocol';
 import type { AppContext } from '../app.js';
-import { requestChannelBreak } from '../ssh/channel-break.js';
 import type { ConnectIo } from '../ssh/connection-manager.js';
 import {
   localShellPromptReady,
@@ -882,14 +880,10 @@ async function handleSession(
     });
   control.onMessage = (msg) => {
     if (handleLoggingControl(msg)) return;
-    if (msg.op === 'resize') stream.setWindow(msg.rows, msg.cols, 0, 0);
+    if (msg.op === 'resize') stream.resize(msg.cols, msg.rows);
     else if (msg.op === 'send-break') {
-      answerBreak(socket, async () => {
-        const result = await requestChannelBreak(stream, DEFAULT_BREAK_DURATION_MS);
-        if (result === 'refused') return 'The SSH server refused the BREAK request';
-        if (result === 'unanswered') return 'The SSH server did not answer the BREAK request';
-        return undefined;
-      });
+      // The window offers BREAK on serial and Telnet lines only.
+      answerBreak(socket, () => Promise.resolve('BREAK is not available over SSH.'));
     }
   };
   const sshHost = (): LoginSequenceHost | undefined => {

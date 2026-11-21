@@ -5,6 +5,7 @@
 //   node hack/smoke-x11-server.mjs   (after `pnpm build` and `pack:dir`)
 import assert from 'node:assert/strict';
 import { readdirSync } from 'node:fs';
+import net from 'node:net';
 import path from 'node:path';
 import { LocalX11 } from '../server/dist/x11/local-x11.js';
 import { rewriteX11Setup } from '../server/dist/x11/x11-proxy.js';
@@ -23,8 +24,8 @@ const x11 = new LocalX11({ log, bundledServerDirectory: directory, env: {}, plat
  * which can arrive in several chunks: an 8-byte header whose bytes 6-7 give
  * the length of the rest in 4-byte units.
  */
-async function handshake(auth) {
-  const { socket } = await x11.connect();
+async function handshake(port, auth) {
+  const socket = net.connect(port, '127.0.0.1');
   try {
     const header = Buffer.from([0x6c, 0, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     socket.write(rewriteX11Setup(header, true, auth));
@@ -46,15 +47,22 @@ async function handshake(auth) {
 
 try {
   assert.equal(x11.status().source, 'bundled');
-  const { auth } = await x11.connect().then(({ socket, auth }) => (socket.destroy(), { auth }));
+  // The way a session reaches the display: a connection made by the SSH engine,
+  // whose bytes stay out of JavaScript. It proves the display answers; the
+  // setup below needs to read the reply, so it brings a socket of its own.
+  const local = await x11.connect();
+  local.stream.close();
+  local.release();
+  const { auth } = local;
   assert.ok(auth, 'the bundled server must use a cookie');
+  const { port } = await x11.bundledServer(x11);
 
-  const accepted = await handshake(auth);
+  const accepted = await handshake(port, auth);
   assert.equal(accepted[0], 1, `X server refused the Muxus cookie: ${accepted.subarray(8).toString('latin1')}`);
   const vendorLength = accepted.readUInt16LE(24);
   console.log(`X11 setup accepted by "${accepted.subarray(40, 40 + vendorLength).toString('latin1')}"`);
 
-  const refused = await handshake({ name: auth.name, data: Buffer.alloc(auth.data.length, 0) });
+  const refused = await handshake(port, { name: auth.name, data: Buffer.alloc(auth.data.length, 0) });
   assert.equal(refused[0], 0, 'X server accepted a connection with the wrong cookie');
   console.log('X11 setup with a wrong cookie refused');
 } finally {

@@ -4,7 +4,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { nanoid } from 'nanoid';
 import pty from 'node-pty';
-import type { SFTPWrapper } from 'ssh2';
 import {
   environmentCommandLine,
   savedHostHopId,
@@ -13,12 +12,12 @@ import {
 } from '@muxus/shared';
 import { DEFAULT_TERM, ptyEnvironment } from '../local/pty-manager.js';
 import type { TerminalTransport } from '../transports/terminal-transport.js';
-import { sftpOverStdio } from './sftp-over-stdio.js';
+import { spawnSftp, type SftpClient } from './engine.js';
 import { parseHostSpec } from './ssh-config.js';
 
 /**
  * A host set to "Use system OpenSSH" connects through the `ssh` program of the
- * computer rather than ssh2. The terminal is `ssh` under a PTY, so every prompt
+ * computer rather than the built-in engine. The terminal is `ssh` under a PTY, so every prompt
  * and error is OpenSSH's own and all authentication it knows works, GSSAPI
  * included.
  *
@@ -94,7 +93,7 @@ export function sshDestination(profile: SshProfile): { options: string[]; destin
   };
 }
 
-/** The host as `ssh` is told to reach it, standing in for an ssh2 transport's mux key. */
+/** The host as `ssh` is told to reach it, standing in for a built-in transport's mux key. */
 export function systemOpenSshMuxKey(profile: SshProfile): string {
   const { options, destination } = sshDestination(profile);
   return JSON.stringify([
@@ -249,17 +248,17 @@ export function commandProbeArgs(profile: SshProfile): string[] {
   ];
 }
 
-/** What the file routes use of a connection; the ssh2 kind has the same members. */
+/** What the file routes use of a connection; the built-in kind has the same members. */
 export interface SftpConnection {
   id: string;
   /** The same for every connection that reaches the host the same way, so a download can continue on the next. */
   muxKey: string;
-  sftp(): Promise<SFTPWrapper>;
+  sftp(): Promise<SftpClient>;
   onClose(listener: (reason?: string) => void): () => void;
 }
 
 export interface SystemOpenSshConnection extends SftpConnection {
-  /** Whether scripts may run here; automatic readings ask first, as they do on ssh2. */
+  /** Whether scripts may run here; automatic readings ask first, as they do on a built-in connection. */
   runsCommands(): Promise<boolean>;
   /** Feed a script to the host's sh over the shared login and return what it prints. */
   runScript: (script: string) => Promise<string>;
@@ -291,7 +290,9 @@ export class SystemOpenSshSession implements TerminalTransport {
   private readonly errorListeners = new Set<(error: Error) => void>();
   private readonly connectionListeners = new Set<(reason?: string) => void>();
   private readonly children = new Set<ChildProcess>();
-  private sftpPromise: Promise<SFTPWrapper> | undefined;
+  /** The file browser's session; the `ssh` that carries it ends with it. */
+  private sftpSession: SftpClient | undefined;
+  private sftpPromise: Promise<SftpClient> | undefined;
   private commandProbe: Promise<boolean> | undefined;
   private terminalRunning = true;
   private leases = 0;
@@ -437,6 +438,7 @@ export class SystemOpenSshSession implements TerminalTransport {
     if (this.finished) return;
     this.finished = true;
     for (const child of this.children) child.kill();
+    this.sftpSession?.close();
     for (const listener of this.connectionListeners) listener();
     this.connectionListeners.clear();
     this.onFinished(this);
@@ -481,7 +483,7 @@ export class SystemOpenSshSession implements TerminalTransport {
     stop.once('close', done);
   }
 
-  private sftp(): Promise<SFTPWrapper> {
+  private sftp(): Promise<SftpClient> {
     if (!this.sftpAvailable || !this.controlPath) {
       return Promise.reject(new Error('The file browser is not available for this session.'));
     }
@@ -491,7 +493,7 @@ export class SystemOpenSshSession implements TerminalTransport {
     const forget = () => {
       if (this.sftpPromise === pending) this.sftpPromise = undefined;
     };
-    pending.then((sftp) => sftp.once('close', forget), forget);
+    pending.then((sftp) => sftp.onClose(forget), forget);
     return pending;
   }
 
@@ -584,32 +586,28 @@ export class SystemOpenSshSession implements TerminalTransport {
     }
   }
 
-  private async openSftp(controlPath: string): Promise<SFTPWrapper> {
+  private async openSftp(controlPath: string): Promise<SftpClient> {
     await this.waitForLogin(controlPath);
     if (this.finished) throw new Error('The terminal session has ended.');
-    const child = this.spawnJob(sftpSshArgs(this.profile, controlPath));
-    let stderr = '';
-    child.stderr.on('data', (data: Buffer) => {
-      stderr = `${stderr}${data.toString('utf8')}`.slice(-2048);
+    // The engine runs this `ssh` itself, so file transfers go straight between
+    // it and the program. What `ssh` says on stderr is the error when it fails.
+    const sftp = await spawnSftp(
+      this.binary,
+      [...this.extraArgs, ...sftpSshArgs(this.profile, controlPath)],
+      this.env,
+      SFTP_START_TIMEOUT_MS,
+    ).catch((err: unknown) => {
+      throw new Error(err instanceof Error ? err.message : String(err));
     });
-    let timer: NodeJS.Timeout | undefined;
-    try {
-      return await Promise.race([
-        sftpOverStdio(child.stdin, child.stdout),
-        new Promise<never>((_resolve, reject) => {
-          child.once('error', reject);
-          timer = setTimeout(
-            () => reject(new Error('The SFTP session did not start in time.')),
-            SFTP_START_TIMEOUT_MS,
-          );
-        }),
-      ]);
-    } catch (err) {
-      child.kill();
-      throw new Error(stderr.trim() || (err instanceof Error ? err.message : String(err)));
-    } finally {
-      clearTimeout(timer);
+    if (this.finished) {
+      sftp.close();
+      throw new Error('The terminal session has ended.');
     }
+    this.sftpSession = sftp;
+    sftp.onClose(() => {
+      if (this.sftpSession === sftp) this.sftpSession = undefined;
+    });
+    return sftp;
   }
 }
 

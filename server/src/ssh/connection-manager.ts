@@ -1,22 +1,6 @@
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Duplex } from 'node:stream';
-import ssh2, {
-  Client,
-  type AnyAuthMethod,
-  type AuthenticationType,
-  type BaseAgent,
-  type ClientChannel,
-  type ConnectConfig,
-  type NegotiatedAlgorithms,
-  type ParsedKey,
-  type Prompt,
-  type PseudoTtyOptions,
-  type SFTPWrapper,
-  type X11Options,
-} from 'ssh2';
 import { nanoid } from 'nanoid';
 import type { FastifyBaseLogger } from 'fastify';
 import {
@@ -36,11 +20,27 @@ import {
 import {
   certificateAlgorithms,
   certificateMatchesKey,
-  certifiedKey,
+  certificateRsaHash,
+  isEncryptedKeyError,
   parseOpenSshCertificate,
   parseSshKey,
   type OpenSshCertificate,
 } from './certificates.js';
+import {
+  isSshError,
+  SshError,
+  SshTransport,
+  type AuthOutcome,
+  type KeyboardPrompt,
+  type PtyRequest,
+  type SessionOptions,
+  type SftpClient,
+  type SshChannel,
+  type SshPrivateKey,
+  type SshTunnel,
+  type TransportHealth,
+} from './engine.js';
+import type { SshAgent, SshIdentity } from './identity.js';
 import {
   KnownHostsStore,
   fingerprintLike,
@@ -102,7 +102,7 @@ import {
   type ResolvedTarget,
 } from './ssh-config.js';
 import type { FolderAuthLookup, FolderPasswordRef } from './folder-auth.js';
-import { isX11Rejection, type LocalX11, type X11Transport } from '../x11/local-x11.js';
+import type { LocalX11, X11Transport } from '../x11/local-x11.js';
 
 export interface HostKeyChallenge {
   host: string;
@@ -163,13 +163,19 @@ function wantsPty(requestTty: ResolvedTarget['requestTty'], hasCommand: boolean)
   return !hasCommand;
 }
 
+/** A login method as the session summary names it. */
+type AuthMethodName = 'none' | 'agent' | 'publickey' | 'keyboard-interactive' | 'password';
+
 /** What one dialed hop learned while connecting, kept for the session summary. */
 interface HandshakeFacts {
   /** Server software from its identification string. */
   serverSoftware?: string;
-  negotiated?: NegotiatedAlgorithms;
+  kex?: string;
+  cipher?: string;
+  /** Client-to-server compression as negotiated. */
+  compression?: string;
   /** Methods the server accepted, in order. */
-  authMethods: AuthenticationType[];
+  authMethods: AuthMethodName[];
   /** Signature algorithm of the key that logged in, when known. */
   authKeyAlgorithm?: string;
   /** The config asked for compression (`Compression yes`). */
@@ -187,7 +193,8 @@ export interface TransportFacts extends HandshakeFacts {
 
 export interface ManagedConnection {
   id: string;
-  client: Client;
+  /** The SSH connection itself: commands, tunnels and forwards open on it. */
+  transport: SshTransport;
   profile: SshProfile;
   host: string;
   port: number;
@@ -217,7 +224,7 @@ export interface ManagedConnection {
   /** Whether the server answered an x11-req on this transport with failure. */
   x11Refused(): boolean;
   /** Whether the server accepted X11 forwarding on this session channel. */
-  x11Forwarded(channel: ClientChannel): boolean;
+  x11Forwarded(channel: SshChannel): boolean;
   facts: TransportFacts;
   /**
    * Session defaults come from the dialed target when none are passed. `cwd`
@@ -231,8 +238,8 @@ export interface ManagedConnection {
     session?: SessionSettings,
     cwd?: string,
     backspaceKey?: TerminalBackspaceKey,
-  ): Promise<ClientChannel>;
-  sftp(): Promise<SFTPWrapper>;
+  ): Promise<SshChannel>;
+  sftp(): Promise<SftpClient>;
   /** Subscribe to passive keepalive health; returns an unsubscribe function. */
   onHealth(listener: (state: SshTransportHealth) => void): () => void;
   /** Subscribe to transport loss; returns an unsubscribe function. */
@@ -244,16 +251,17 @@ export interface ManagedConnection {
 }
 
 export type ConnectionLease = TransportLease<ManagedConnection>;
-export type SshTransportHealth = 'healthy' | 'suspect';
+export type SshTransportHealth = TransportHealth;
 
 /**
- * Translate OpenSSH keepalive settings to ssh2 without inventing a probe
- * interval. OpenSSH's ServerAliveInterval default is zero (disabled), while
+ * Translate OpenSSH keepalive settings without inventing a probe interval.
+ * OpenSSH's ServerAliveInterval default is zero (disabled), while
  * ServerAliveCountMax defaults to three when an interval is explicitly set.
+ * The interval is in milliseconds.
  */
 export function sshKeepaliveOptions(
   resolved: Pick<ResolvedTarget, 'serverAliveInterval' | 'serverAliveCountMax'>,
-): Required<Pick<ConnectConfig, 'keepaliveInterval' | 'keepaliveCountMax'>> {
+): { keepaliveInterval: number; keepaliveCountMax: number } {
   return {
     keepaliveInterval: (resolved.serverAliveInterval ?? 0) * 1000,
     keepaliveCountMax: resolved.serverAliveCountMax ?? 3,
@@ -270,7 +278,7 @@ export interface MuxedConnectionLease extends TransportLease<ManagedConnection> 
 
 export interface TerminalShell {
   lease: MuxedConnectionLease;
-  stream: ClientChannel;
+  stream: SshChannel;
   /**
    * 'new' — fresh transport, this session owns starting its config forwards;
    * 'shared' — multiplexed onto a live transport that already has them;
@@ -289,44 +297,6 @@ const MAX_PASSPHRASE_ATTEMPTS = 3;
 const DEFAULT_IDENTITY_NAMES = ['id_ed25519', 'id_ecdsa', 'id_rsa', 'id_ed25519_sk', 'id_ecdsa_sk'];
 
 /**
- * Observe replies to ssh2's existing keepalives without sending any probes of
- * our own. Two silent intervals mean at least one keepalive went unanswered.
- */
-export function observeSshTransportHealth(
-  stream: Pick<Duplex, 'on' | 'off'>,
-  keepaliveIntervalMs: number,
-  listener: (state: SshTransportHealth) => void,
-): () => void {
-  if (keepaliveIntervalMs <= 0) return () => undefined;
-
-  let state: SshTransportHealth = 'healthy';
-  let timer: NodeJS.Timeout | undefined;
-  const arm = () => {
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => {
-      timer = undefined;
-      if (state === 'suspect') return;
-      state = 'suspect';
-      listener(state);
-    }, keepaliveIntervalMs * 2);
-  };
-  const onData = () => {
-    if (state === 'suspect') {
-      state = 'healthy';
-      listener(state);
-    }
-    arm();
-  };
-
-  stream.on('data', onData);
-  arm();
-  return () => {
-    if (timer) clearTimeout(timer);
-    stream.off('data', onData);
-  };
-}
-
-/**
  * xterm sends DEL for Backspace, or ^H when the host asks for it. Advertising
  * the same erase character while requesting the remote PTY prevents it from
  * being echoed as visible input (and advancing the cursor) on hosts with a
@@ -337,8 +307,8 @@ export function terminalPtyOptions(
   rows: number,
   term: string,
   backspaceKey: TerminalBackspaceKey = 'del',
-): PseudoTtyOptions {
-  return { term, cols, rows, modes: { VERASE: backspaceKey === 'ctrl-h' ? 0x08 : 0x7f } };
+): PtyRequest {
+  return { term, cols, rows, erase: backspaceKey === 'ctrl-h' ? 0x08 : 0x7f };
 }
 
 /** One node of the dial plan: the final target or a ProxyJump hop before it. */
@@ -369,9 +339,9 @@ export interface ChainHop {
 export class SshConnectionManager {
   private readonly connections = new ConnectionLeaseRegistry<ManagedConnection>();
   private readonly jumpHops: JumpHopRegistry;
-  private readonly closeReasons = new WeakMap<Client, string>();
-  private readonly postAuth = new WeakMap<Client, Promise<void>>();
-  private readonly handshakes = new WeakMap<Client, HandshakeFacts>();
+  private readonly closeReasons = new WeakMap<SshTransport, string>();
+  private readonly postAuth = new WeakMap<SshTransport, Promise<void>>();
+  private readonly handshakes = new WeakMap<SshTransport, HandshakeFacts>();
   /**
    * In-flight dials by mux key, so simultaneous sessions share one TCP
    * connection and one auth round-trip. A list, not a single slot: overlapping
@@ -959,14 +929,14 @@ export class SshConnectionManager {
   /** Report X11 trouble and describe what the new session ended up with. */
   private opened(
     lease: MuxedConnectionLease,
-    stream: ClientChannel,
+    stream: SshChannel,
     transport: TerminalShell['transport'],
     io: ConnectIo,
   ): TerminalShell {
     this.reportX11(lease, io);
     const conn = lease.connection;
     const { facts } = conn;
-    const compression = facts.negotiated?.cs.compress;
+    const compression = facts.compression;
     return {
       lease,
       stream,
@@ -981,8 +951,8 @@ export class SshConnectionManager {
         serverSoftware: facts.serverSoftware,
         authMethods: facts.authMethods,
         authKeyAlgorithm: facts.authKeyAlgorithm,
-        cipher: facts.negotiated?.cs.cipher,
-        kex: facts.negotiated?.kex,
+        cipher: facts.cipher,
+        kex: facts.kex,
         compression:
           compression && compression !== 'none'
             ? 'on'
@@ -999,7 +969,7 @@ export class SshConnectionManager {
   /** Mirrors reportX11: a reason is given only when the session asked for X11. */
   private x11State(
     lease: MuxedConnectionLease,
-    stream: ClientChannel,
+    stream: SshChannel,
   ): SshSessionSummary['x11'] {
     if (lease.connection.x11Forwarded(stream)) return 'on';
     if (!this.x11?.enabled()) return 'off';
@@ -1091,7 +1061,7 @@ export class SshConnectionManager {
     const reused = route;
     reused?.retain();
     const postAuth: Promise<void>[] = [];
-    let dialed: Client | undefined;
+    let dialed: SshTransport | undefined;
     // Where a failure happened decides whether another jump route may help.
     let failingHop = first;
     let openingChannel = false;
@@ -1107,11 +1077,11 @@ export class SshConnectionManager {
           `Connecting to ${hop.user}@${hop.resolved.hostname}:${hop.port}${via} …`,
           { transient: true },
         );
-        let sock: Duplex | undefined;
+        let tunnel: SshTunnel | undefined;
         if (route) {
           openingChannel = true;
           try {
-            sock = await openJumpChannel(route.client, hop.resolved.hostname, hop.port);
+            tunnel = await openJumpChannel(route.transport, hop.resolved.hostname, hop.port);
             openingChannel = false;
           } catch (err) {
             // A refusal from a live jump host is about the target. Anything
@@ -1122,20 +1092,19 @@ export class SshConnectionManager {
             throw err;
           }
         }
-        const client = await this.dial(hop, sock, io);
-        const pendingPostAuth = this.postAuth.get(client);
+        const transport = await this.dial(hop, tunnel, io);
+        const pendingPostAuth = this.postAuth.get(transport);
         if (pendingPostAuth) postAuth.push(pendingPostAuth);
         if (i === chain.length - 1) {
-          dialed = client;
+          dialed = transport;
           break;
         }
         const next = this.jumpHops.add({
           key: muxKey(chain.slice(0, i + 1)),
           label: hop.spec.host,
-          client,
+          transport,
           parent: route,
           replacementToken: freshToken,
-          watchHealth: (update) => this.watchHealth(client, hop, update),
         });
         next.retain();
         route?.release();
@@ -1178,7 +1147,7 @@ export class SshConnectionManager {
     }
 
     const target = chain[chain.length - 1]!;
-    const client = dialed!;
+    const transport = dialed!;
     const jumpRoute = route;
     const jumps = jumpRoute?.route() ?? [];
     const healthListeners = new Set<(state: SshTransportHealth) => void>();
@@ -1194,7 +1163,7 @@ export class SshConnectionManager {
       for (const listener of healthListeners) listener(next);
     };
     const stopHealthObservers = [
-      this.watchHealth(client, target, (state) => {
+      transport.onHealth((state) => {
         targetHealth = state;
         updateHealth();
       }),
@@ -1203,25 +1172,22 @@ export class SshConnectionManager {
     const stopHealth = () => {
       for (const stop of stopHealthObservers.splice(0)) stop();
     };
-    const x11: X11Transport | undefined = this.x11?.attach(client);
-    const x11Channels = new WeakSet<ClientChannel>();
+    const x11: X11Transport | undefined = this.x11?.attach(transport);
     const id = nanoid(10);
     const closeListeners = new Set<(reason?: string) => void>();
     const postAuthSettled = Promise.all(postAuth).then(() => undefined);
-    let sftpPromise: Promise<SFTPWrapper> | undefined;
+    let sftpPromise: Promise<SftpClient> | undefined;
     const shellProbe: ShellProbeMemo = { ranCommand: false, execRefused: false };
     let closed = false;
     let ending = false;
 
     const getSftp = () => {
       if (sftpPromise) return sftpPromise;
-      const pending = new Promise<SFTPWrapper>((resolve, reject) => {
-        client.sftp((err, sftp) => (err ? reject(err) : resolve(sftp)));
-      });
+      const pending = transport.sftp();
       sftpPromise = pending;
       void pending.then(
         (sftp) => {
-          sftp.once('close', () => {
+          sftp.onClose(() => {
             if (sftpPromise === pending) sftpPromise = undefined;
           });
         },
@@ -1236,7 +1202,7 @@ export class SshConnectionManager {
 
     const managed: ManagedConnection = {
       id,
-      client,
+      transport,
       profile,
       host: target.resolved.hostname,
       port: target.port,
@@ -1248,9 +1214,9 @@ export class SshConnectionManager {
       health: () => transportHealth,
       configForwards: target.resolved.forwards,
       x11Refused: () => x11?.refused ?? false,
-      x11Forwarded: (channel) => x11Channels.has(channel),
+      x11Forwarded: (channel) => channel.x11Forwarded,
       facts: {
-        ...this.handshakes.get(client)!,
+        ...this.handshakes.get(transport)!,
         jumpHosts: chain.slice(0, -1).map((hop) => hop.spec.host),
         proxyCommand: chain[0]!.resolved.proxyCommand !== undefined,
       },
@@ -1266,43 +1232,29 @@ export class SshConnectionManager {
           ? terminalPtyOptions(cols, rows, term, backspaceKey)
           : undefined;
         const env = consoleCompatibility ? undefined : session.env;
-        const open = (x11Request?: X11Options) => {
-          if (session.remoteCommand) {
-            return openSessionExec(
-              client,
-              session.remoteCommand,
-              pty,
-              env,
-              consoleCompatibility,
-              x11Request,
-            );
-          }
-          if (pty && !disableSftp) {
-            return openRemoteShell(client, getSftp, pty, env, x11Request, cwd, shellProbe);
-          }
-          // Console compatibility drops SendEnv/SetEnv: ssh2 can only send env
-          // requests before pty-req, an order some appliances answer with a
-          // protocol-error disconnect, and a serial console has no environment.
-          return openPlainShell(client, pty, env, consoleCompatibility, x11Request);
-        };
+        // A serial console has no environment, and appliances behind console
+        // servers are the hosts least sure what to do with an env request.
         // For the same reason console hosts only get x11-req when they ask for it.
         const x11Request =
           consoleCompatibility && session.forwardX11 !== true
             ? undefined
             : x11?.request(session.forwardX11);
-        if (!x11Request) return open();
-        try {
-          const channel = await open(x11Request);
-          x11Channels.add(channel);
-          return channel;
-        } catch (err) {
-          if (!isX11Rejection(err)) throw err;
-          // Like ssh(1), a refused x11-req costs X11, not the session. ssh2
-          // closed that channel, so the retry opens a fresh one.
+        const options: SessionOptions = {
+          ...(pty ? { pty } : {}),
+          ...(env ? { env } : {}),
+          ...(x11Request ? { x11: x11Request } : {}),
+        };
+        const channel = session.remoteCommand
+          ? await openSessionExec(transport, session.remoteCommand, options, consoleCompatibility)
+          : pty && !disableSftp
+            ? await openRemoteShell(transport, getSftp, { ...options, pty }, cwd, shellProbe)
+            : await openPlainShell(transport, options, consoleCompatibility);
+        if (x11Request && !channel.x11Forwarded) {
+          // Like ssh(1), a refused x11-req costs X11, not the session.
           x11!.markRefused();
           this.log.info({ host: target.resolved.hostname }, 'ssh server refused X11 forwarding');
-          return open();
         }
+        return channel;
       },
       // One SFTP channel per connection, shared by every file operation.
       sftp: () =>
@@ -1320,7 +1272,7 @@ export class SshConnectionManager {
       },
       onClose: (listener) => {
         if (closed) {
-          queueMicrotask(() => listener(this.closeReasons.get(client)));
+          queueMicrotask(() => listener(this.closeReasons.get(transport)));
           return () => undefined;
         }
         closeListeners.add(listener);
@@ -1330,7 +1282,7 @@ export class SshConnectionManager {
       close: () => {
         if (ending) return;
         ending = true;
-        client.end();
+        transport.close();
       },
     };
 
@@ -1338,18 +1290,23 @@ export class SshConnectionManager {
     const stopJumpWatch = jumps.map((hop) =>
       hop.onClose(() => {
         if (closed || ending) return;
-        this.closeReasons.set(client, `SSH jump host ${hop.label} disconnected.`);
-        client.end();
+        this.closeReasons.set(transport, `SSH jump host ${hop.label} disconnected.`);
+        transport.close();
       }),
     );
-    client.on('close', () => {
+    transport.onClose((failure) => {
       closed = true;
       stopHealth();
       for (const stop of stopJumpWatch) stop();
       this.connections.markClosed(managed);
       // Jump hops end with the last chain routed through them.
       jumpRoute?.release();
-      const reason = this.closeReasons.get(client);
+      if (failure && !ending && !this.closeReasons.has(transport)) {
+        const reason = friendlyConnectError(new Error(failure), target).message;
+        this.closeReasons.set(transport, reason);
+        this.log.warn({ err: failure, host: target.resolved.hostname }, 'ssh connection error');
+      }
+      const reason = this.closeReasons.get(transport);
       for (const listener of closeListeners) listener(reason);
       closeListeners.clear();
       healthListeners.clear();
@@ -1362,22 +1319,11 @@ export class SshConnectionManager {
     this.jumpHops.closeAll();
   }
 
-  /** Passive keepalive health of one dialed hop's own transport. */
-  private watchHealth(
-    client: Client,
-    hop: ChainHop,
-    update: (state: SshTransportHealth) => void,
-  ): () => void {
-    const transport = (client as Client & { _sock?: Duplex })._sock;
-    if (!transport) return () => undefined;
-    return observeSshTransportHealth(
-      transport,
-      sshKeepaliveOptions(hop.resolved).keepaliveInterval,
-      update,
-    );
-  }
-
-  private dial(hop: ChainHop, sock: Duplex | undefined, io: ConnectIo): Promise<Client> {
+  /**
+   * Reach one hop and log in to it: over `tunnel` when it sits behind a jump
+   * host, else through its ProxyCommand or a TCP connection of its own.
+   */
+  private async dial(hop: ChainHop, tunnel: SshTunnel | undefined, io: ConnectIo): Promise<SshTransport> {
     const agentSocket = resolveAgentSocket(hop.resolved.identityAgent);
     const hopName = hop.hopLabel ?? hop.spec.host;
     let readyDeadline: PausableDeadline | undefined;
@@ -1402,7 +1348,7 @@ export class SshConnectionManager {
     };
     const authAgent =
       agentSocket && !hop.resolved.identitiesOnly
-        ? new ResponsiveAgent(ssh2.createAgent(agentSocket) as BaseAgent<ParsedKey>, {
+        ? new ResponsiveAgent(agentSocket, {
             ...agentHooks,
             onWaiting: (operation) => {
               this.log.info(
@@ -1435,10 +1381,9 @@ export class SshConnectionManager {
       this.log.debug({ host: hop.resolved.hostname }, note);
       io.status(note);
     }
-    const proxySocket =
-      !sock && hop.resolved.proxyCommand ? openProxyCommand(expandedProxyCommand(hop)!) : undefined;
-    const transport = sock ?? proxySocket;
+    const proxyCommand = !tunnel && hop.resolved.proxyCommand ? expandedProxyCommand(hop) : undefined;
     const readyTimeoutMs = (hop.resolved.connectTimeout ?? 20) * 1000;
+    const keepalive = sshKeepaliveOptions(hop.resolved);
     this.log.debug(
       {
         host: hop.resolved.hostname,
@@ -1447,149 +1392,87 @@ export class SshConnectionManager {
         agent: !!agentSocket,
         identitiesOnly: !!hop.resolved.identitiesOnly,
         proxyCommand: !!hop.resolved.proxyCommand,
-        viaJump: !!sock,
+        viaJump: !!tunnel,
         readyTimeoutMs,
       },
       'dialing ssh host',
     );
-    const config: ConnectConfig = {
-      username: hop.user,
-      // ssh2's deadline includes time spent in UI prompts and cannot be
-      // paused. An equivalent pausable deadline is installed below.
-      readyTimeout: 0,
-      ...sshKeepaliveOptions(hop.resolved),
-      ...(algorithms ? { algorithms } : {}),
-      hostVerifier: (key: Buffer, verify: (valid: boolean) => void) => {
-        void this.verifyHostKey(hop, key, io, runInteraction).then(verify, (err) => {
-          this.log.warn(
-            { err, host: hop.resolved.hostname },
-            'host key verification failed',
-          );
-          verify(false);
-        });
-      },
-      authHandler: (authsLeft, partialSuccess, next) => {
-        auth.next(
-          authsLeft,
-          partialSuccess,
-          next as (method: AnyAuthMethod | false) => void,
-        );
-      },
-      ...(transport ? { sock: transport } : { host: hop.resolved.hostname, port: hop.port }),
-      ...(agentSocket
-        ? { agent: agentSocket, agentForward: hop.resolved.forwardAgent }
-        : {}),
-    };
-
-    return new Promise((resolve, reject) => {
-      const client = new Client();
-      let settled = false;
-      let ready = false;
-      const rejectBeforeReady = (err: Error) => {
-        if (settled) return;
-        settled = true;
-        // The raw error, before friendlyConnectError() rewrites it — an agent
-        // stall and a network timeout look identical to the user otherwise.
-        this.log.warn(
-          { err, host: hop.resolved.hostname, port: hop.port, user: hop.user },
-          'ssh dial failed',
-        );
-        readyDeadline?.clear();
-        auth.dispose();
-        proxySocket?.destroy();
-        reject(friendlyConnectError(err, hop, auth.securityKeyProblem()));
-      };
-      readyDeadline = new PausableDeadline(readyTimeoutMs, () => {
-        rejectBeforeReady(new Error('Timed out while waiting for SSH readiness.'));
-        client.destroy();
-      });
-      let negotiated: NegotiatedAlgorithms | undefined;
-      client.on('banner', (message: string) => io.status(message.trimEnd()));
-      client.on('handshake', (algorithms) => {
-        negotiated = algorithms;
-      });
-      client.on('ready', () => {
-        if (settled) return;
-        ready = true;
-        settled = true;
-        this.handshakes.set(client, {
-          // ssh2 keeps the software part of the server's identification
-          // string privately; it publishes no accessor for it.
-          serverSoftware: (client as Client & { _remoteVer?: string })._remoteVer,
-          negotiated,
-          authMethods: auth.acceptedMethods(),
-          authKeyAlgorithm: auth.acceptedKeyAlgorithm(),
-          compressionRequested: hop.resolved.compression === true,
-          agentForwarding: !hop.resolved.forwardAgent ? 'off' : agentSocket ? 'on' : 'no-agent',
-        });
-        this.log.debug(
-          { host: hop.resolved.hostname, port: hop.port, user: hop.user },
-          'ssh connection ready',
-        );
-        readyDeadline?.clear();
-        const postAuth = auth
-          .commitRememberedPassword()
-          .catch((err) => {
-            io.status(
-              err instanceof Error
-                ? `Connected, but the password was not remembered: ${err.message}`
-                : 'Connected, but the password was not remembered.',
-            );
-          })
-          .finally(() => {
-            auth.dispose();
-          });
-        this.postAuth.set(client, postAuth);
-        resolve(client);
-      });
-      client.on('error', (err) => {
-        if (!settled && err.level === 'agent' && err instanceof SecurityKeyError) {
-          // ssh2 moves on to the next key itself; say why this one failed.
-          if (auth.cancelled) return;
-          const message = describeSecurityKeyError(err, hopName);
-          this.log.warn({ err, host: hop.resolved.hostname }, 'security key did not sign');
-          auth.noteSecurityKeyProblem(message);
-          io.status(`${message} — trying other authentication methods`);
-          return;
-        }
-        if (!settled && err.level === 'agent') {
-          // ssh2 reports an unreachable agent mid-auth and then moves on to
-          // the next method itself. This is an expected fallback when a stale
-          // agent socket is inherited, so keep it out of user-facing status.
-          if (err.message === 'Failed to connect to agent') {
-            this.log.debug(
-              { err, host: hop.resolved.hostname },
-              'ssh-agent unavailable; trying other authentication methods',
-            );
-            return;
-          }
-          this.log.warn(
-            { err, host: hop.resolved.hostname },
-            'ssh-agent unavailable; trying other authentication methods',
-          );
-          io.status(`ssh-agent unavailable (${err.message}) — trying other authentication methods`);
-          return;
-        }
-        if (!settled) {
-          rejectBeforeReady(
-            auth.cancelled ? new Error('authentication cancelled') : err,
-          );
-        } else if (ready) {
-          this.closeReasons.set(client, friendlyConnectError(err, hop).message);
-          this.log.warn({ err, host: hop.resolved.hostname }, 'ssh connection error');
-        }
-      });
-      client.on('close', () => {
-        proxySocket?.destroy();
-        rejectBeforeReady(
-          new Error('SSH connection closed before it became ready.'),
-        );
-      });
-      client.connect(config);
-      // Interactive input consists of tiny packets. Disable Nagle explicitly
-      // so a keystroke never waits for a previous packet's acknowledgement.
-      client.setNoDelay(true);
+    const transport = new SshTransport({
+      host: hop.resolved.hostname,
+      port: hop.port,
+      ...(proxyCommand ? { proxyCommand } : {}),
+      ...(tunnel ? { tunnel } : {}),
+      ...algorithms,
+      keepaliveIntervalMs: keepalive.keepaliveInterval,
+      keepaliveCountMax: keepalive.keepaliveCountMax,
+      // Sessions ask for agent forwarding, and the server's agent channels reach this agent.
+      ...(agentSocket && hop.resolved.forwardAgent ? { agentForward: agentSocket } : {}),
+      verifyHostKey: (key) =>
+        this.verifyHostKey(hop, key, io, runInteraction).catch((err: unknown) => {
+          this.log.warn({ err, host: hop.resolved.hostname }, 'host key verification failed');
+          return false;
+        }),
+      onBanner: (message) => io.status(message.trimEnd()),
     });
+
+    // The deadline covers reaching the host and logging in, less the time
+    // spent in prompts, which only the user controls.
+    let timedOut = false;
+    readyDeadline = new PausableDeadline(readyTimeoutMs, () => {
+      timedOut = true;
+      transport.close();
+    });
+    try {
+      const handshake = await transport.connect();
+      await auth.login(transport);
+      this.handshakes.set(transport, {
+        serverSoftware: handshake.serverSoftware,
+        kex: handshake.kex,
+        cipher: handshake.cipher,
+        compression: handshake.compression,
+        authMethods: auth.acceptedMethods(),
+        authKeyAlgorithm: auth.acceptedKeyAlgorithm(),
+        compressionRequested: hop.resolved.compression === true,
+        agentForwarding: !hop.resolved.forwardAgent ? 'off' : agentSocket ? 'on' : 'no-agent',
+      });
+    } catch (err) {
+      readyDeadline.clear();
+      auth.dispose();
+      transport.close();
+      const failure = timedOut
+        ? new Error('Timed out while waiting for SSH readiness.')
+        : auth.cancelled
+          ? new Error('authentication cancelled')
+          : err instanceof Error
+            ? err
+            : new Error(String(err));
+      // The raw error, before friendlyConnectError() rewrites it — an agent
+      // stall and a network timeout look identical to the user otherwise.
+      this.log.warn(
+        { err: failure, host: hop.resolved.hostname, port: hop.port, user: hop.user },
+        'ssh dial failed',
+      );
+      throw friendlyConnectError(failure, hop, auth.securityKeyProblem());
+    }
+    readyDeadline.clear();
+    this.log.debug(
+      { host: hop.resolved.hostname, port: hop.port, user: hop.user },
+      'ssh connection ready',
+    );
+    const postAuth = auth
+      .commitRememberedPassword()
+      .catch((err) => {
+        io.status(
+          err instanceof Error
+            ? `Connected, but the password was not remembered: ${err.message}`
+            : 'Connected, but the password was not remembered.',
+        );
+      })
+      .finally(() => {
+        auth.dispose();
+      });
+    this.postAuth.set(transport, postAuth);
+    return transport;
   }
 
   /** The default store, or a per-host one when the config redirects the files. */
@@ -1947,44 +1830,6 @@ export function expandedProxyCommand(hop: ChainHop): string | undefined {
   });
 }
 
-const PROXY_STDERR_LIMIT = 8 * 1024;
-
-/**
- * Run ProxyCommand with the user's platform shell and expose its stdin/stdout
- * as the byte stream ssh2 expects. This matches OpenSSH's shell-command
- * semantics, including pipes and quoted arguments.
- */
-function openProxyCommand(command: string): Duplex {
-  const child = spawn(command, {
-    shell: true,
-    stdio: ['pipe', 'pipe', 'pipe'],
-    windowsHide: true,
-  });
-  const stream = Duplex.from({
-    readable: child.stdout,
-    writable: child.stdin,
-  });
-  let stderr = '';
-  child.stderr.on('data', (chunk: Buffer) => {
-    stderr = `${stderr}${chunk.toString()}`.slice(-PROXY_STDERR_LIMIT);
-  });
-  child.once('error', (err) => {
-    stream.destroy(new Error(`ProxyCommand could not start: ${err.message}`));
-  });
-  child.once('exit', (code, signal) => {
-    if (code === 0 || stream.destroyed) return;
-    const reason = signal ? `signal ${signal}` : `exit code ${code ?? 'unknown'}`;
-    const detail = stderr.trim();
-    stream.destroy(
-      new Error(`ProxyCommand failed with ${reason}${detail ? `: ${detail}` : ''}`),
-    );
-  });
-  stream.once('close', () => {
-    if (child.exitCode === null && !child.killed) child.kill();
-  });
-  return stream;
-}
-
 /**
  * Ad-hoc targets never masquerade as OpenSSH-backed database profiles. Same
  * answer as looking the target up in listHosts(), without resolving every
@@ -2008,22 +1853,18 @@ export function listedMetadataAlias(doc: ConfigDocument, target: string): string
 }
 
 /** direct-tcpip channel from a jump host to the next hop — the `ssh -W` equivalent. */
-function openJumpChannel(client: Client, host: string, port: number): Promise<Duplex> {
-  return new Promise((resolve, reject) => {
-    client.forwardOut('127.0.0.1', 0, host, port, (err, stream) => {
-      if (err) {
-        reject(new Error(`jump host could not reach ${host}:${port}: ${err.message}`, { cause: err }));
-      } else {
-        resolve(stream);
-      }
-    });
-  });
+async function openJumpChannel(transport: SshTransport, host: string, port: number): Promise<SshTunnel> {
+  try {
+    return await transport.openTunnel(host, port);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`jump host could not reach ${host}:${port}: ${message}`, { cause: err });
+  }
 }
 
 /** The server answered a channel open with an explicit refusal (RFC 4254 reason code). */
 function isChannelOpenRefusal(err: unknown): boolean {
-  const cause = err instanceof Error ? err.cause : undefined;
-  return typeof (cause as { reason?: unknown } | undefined)?.reason === 'number';
+  return isSshError(err instanceof Error ? err.cause : undefined, 'CHANNEL_OPEN_FAILED');
 }
 
 /**
@@ -2038,7 +1879,7 @@ const routeFailures = new WeakMap<Error, string>();
 export const STOP_FALLBACK = /authentication cancelled|host key verification failed|host denied/i;
 
 const NETWORK_FAILURE =
-  /connection refused|could not resolve|timed out|ECONNRESET|EHOSTUNREACH|ENETUNREACH|EPIPE|socket hang up/i;
+  /connection refused|could not resolve|timed out|connection reset|no route to|network is unreachable|ECONNRESET|EHOSTUNREACH|ENETUNREACH|EPIPE/i;
 
 export function isRouteFailure(
   err: Error,
@@ -2070,8 +1911,9 @@ class StaleJumpHopError extends Error {
 // ---------------------------------------------------------------------------
 
 interface AuthAttempt {
-  type: AuthenticationType;
-  get(): Promise<AnyAuthMethod | undefined>;
+  type: AuthMethodName;
+  /** Offer the method to the server; undefined when there is nothing to offer. */
+  run(transport: SshTransport): Promise<AuthOutcome | undefined>;
 }
 
 interface RememberedPasswordCandidate {
@@ -2090,7 +1932,7 @@ interface PasswordCredential {
  * Keyboard-interactive is also used for OTPs and arbitrary challenges. Only
  * treat an unambiguous, single hidden password field as an SSH password.
  */
-function isKeyboardInteractivePasswordPrompt(prompts: readonly Prompt[]): boolean {
+function isKeyboardInteractivePasswordPrompt(prompts: readonly KeyboardPrompt[]): boolean {
   if (prompts.length !== 1 || prompts[0]?.echo !== false) return false;
   const label = prompts[0].prompt.trim().replace(/:\s*$/, '').trim();
   return (
@@ -2103,7 +1945,12 @@ type InteractionRunner = <T>(interaction: () => Promise<T>) => Promise<T>;
 
 type LoadedCertificate =
   | { file: string; certificate: OpenSshCertificate }
-  | { file: string; securityKey: ParsedKey };
+  | { file: string; securityKey: SshIdentity };
+
+/** The server's own word for a method: agents and key files both log in as publickey. */
+function wireMethod(type: AuthMethodName): string {
+  return type === 'agent' ? 'publickey' : type;
+}
 
 class PausableDeadline {
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -2162,10 +2009,10 @@ class PausableDeadline {
 }
 
 /**
- * OpenSSH's client auth order as an ssh2 authHandler: none → agent (unless
- * IdentitiesOnly) → configured certificates with their matching private keys
- * → identity files (config ones first, else the default id_* files) with
- * passphrase prompts → keyboard-interactive → password.
+ * OpenSSH's client auth order: none → agent (unless IdentitiesOnly) →
+ * configured certificates with their matching private keys → identity files
+ * (config ones first, else the default id_* files) with passphrase prompts →
+ * keyboard-interactive → password.
  * That order is a preference, not a single pass: each reply from the server
  * picks the first untried attempt it currently accepts, so a multi-step login
  * can ask for a method it did not advertise until an earlier one succeeded.
@@ -2175,10 +2022,10 @@ class AuthLadder {
   private readonly attempts: AuthAttempt[];
   /** Attempts already offered, or found to have nothing to offer. */
   private readonly tried = new Set<AuthAttempt>();
-  private readonly privateKeys = new Map<string, Promise<ParsedKey | undefined>>();
+  private readonly privateKeys = new Map<string, Promise<SshPrivateKey | undefined>>();
   private readonly certificateKeys = new Map<
     OpenSshCertificate,
-    Promise<ParsedKey | undefined>
+    Promise<SshPrivateKey | undefined>
   >();
   private agentIdentityPrints: Promise<Set<string>> | undefined;
   private lastPasswordCandidate: RememberedPasswordCandidate | undefined;
@@ -2186,8 +2033,8 @@ class AuthLadder {
   private savedPasswordAttempted = false;
   private retryKeyboardInteractive = false;
   /** The method last offered to the server, and those it partially accepted. */
-  private lastMethod: AuthenticationType | undefined;
-  private readonly partialMethods: AuthenticationType[] = [];
+  private lastMethod: AuthMethodName | undefined;
+  private readonly partialMethods: AuthMethodName[] = [];
   /** Signature algorithm of the key in the attempt in flight, and of a partially accepted one. */
   private keyAlgorithm: string | undefined;
   private partialKeyAlgorithm: string | undefined;
@@ -2201,7 +2048,7 @@ class AuthLadder {
     private readonly vault?: PasswordVault,
     private readonly runInteraction: InteractionRunner = (interaction) =>
       interaction(),
-    private readonly agent?: BaseAgent<ParsedKey>,
+    private readonly agent?: ResponsiveAgent,
     private readonly log?: FastifyBaseLogger,
     /** Deadline and touch-prompt hooks for agents signing on this hop. */
     private readonly agentHooks: ResponsiveAgentOptions = {},
@@ -2210,26 +2057,64 @@ class AuthLadder {
     this.attempts = this.build();
   }
 
-  next(
-    authsLeft: AuthenticationType[] | null,
-    partialSuccess: boolean,
-    cb: (method: AnyAuthMethod | false) => void,
-  ): void {
-    if (this.lastPasswordCandidate) {
-      if (partialSuccess) {
-        this.partialPasswordCandidate = this.lastPasswordCandidate;
+  /**
+   * Log in, or throw: `authentication cancelled` when the user dismissed a
+   * prompt, `All configured authentication methods failed` when the server
+   * took none of them, or the engine's own error when the connection broke.
+   */
+  async login(transport: SshTransport): Promise<void> {
+    const host = this.hop.resolved.hostname;
+    /** Methods the server said can still succeed; unknown before its first reply. */
+    let authsLeft: string[] | undefined;
+    for (;;) {
+      // The server told us which methods can still succeed; pass over the rest
+      // without spending them, since a later step may start accepting them.
+      const attempt = this.cancelled
+        ? undefined
+        : this.attempts.find(
+            (candidate) =>
+              !this.tried.has(candidate) &&
+              (!authsLeft || candidate.type === 'none' || authsLeft.includes(wireMethod(candidate.type))),
+          );
+      if (!attempt) {
+        this.log?.debug({ host, cancelled: this.cancelled, authsLeft }, 'ssh auth ladder exhausted');
+        throw new Error(
+          this.cancelled ? 'authentication cancelled' : 'All configured authentication methods failed',
+        );
       }
-      this.lastPasswordCandidate = undefined;
+      this.tried.add(attempt);
+      this.lastMethod = undefined;
+      this.keyAlgorithm = undefined;
+      let outcome: AuthOutcome | undefined;
+      try {
+        outcome = await attempt.run(transport);
+      } catch (err) {
+        // The connection itself failed; nothing is left to try on it.
+        if (err instanceof SshError) throw err;
+        // A dismissed prompt gives the login up.
+        this.cancelled = true;
+        continue;
+      }
+      if (!outcome) {
+        this.log?.debug({ host, method: attempt.type }, 'ssh auth method unavailable; skipping');
+        continue;
+      }
+      this.lastMethod = attempt.type;
+      if (outcome.success) return;
+      if (this.lastPasswordCandidate) {
+        if (outcome.partial) this.partialPasswordCandidate = this.lastPasswordCandidate;
+        this.lastPasswordCandidate = undefined;
+      }
+      if (outcome.partial) {
+        this.partialMethods.push(attempt.type);
+        if (this.keyAlgorithm) this.partialKeyAlgorithm = this.keyAlgorithm;
+      }
+      authsLeft = outcome.remaining;
     }
-    if (partialSuccess && this.lastMethod) this.partialMethods.push(this.lastMethod);
-    if (partialSuccess && this.keyAlgorithm) this.partialKeyAlgorithm = this.keyAlgorithm;
-    this.lastMethod = undefined;
-    this.keyAlgorithm = undefined;
-    this.advance(authsLeft, cb);
   }
 
   /** Once the connection is ready: the methods that logged in, in order. */
-  acceptedMethods(): AuthenticationType[] {
+  acceptedMethods(): AuthMethodName[] {
     return this.lastMethod ? [...this.partialMethods, this.lastMethod] : [...this.partialMethods];
   }
 
@@ -2243,66 +2128,94 @@ class AuthLadder {
     this.keyAlgorithm = algorithm;
   }
 
-  noteSecurityKeyProblem(message: string): void {
-    this.lastSecurityKeyProblem = message;
-  }
-
   /** Why a security key could not log in, for the error when nothing else did. */
   securityKeyProblem(): string | undefined {
     return this.lastSecurityKeyProblem;
   }
 
-  private advance(
-    authsLeft: AuthenticationType[] | null,
-    cb: (method: AnyAuthMethod | false) => void,
-  ): void {
+  /**
+   * Offer the identities an agent holds, one after the other. An identity
+   * the agent cannot sign with costs that identity, not the login; an agent
+   * that is not there ends the round. Undefined when nothing was offered.
+   */
+  private async offerAgentIdentities(
+    transport: SshTransport,
+    agent: SshAgent,
+  ): Promise<AuthOutcome | undefined> {
     const host = this.hop.resolved.hostname;
-    // The server told us which methods can still succeed; pass over the rest
-    // without spending them, since a later step may start accepting them.
-    // Agent auth is publickey on the wire — servers never advertise "agent".
-    const attempt = this.cancelled
-      ? undefined
-      : this.attempts.find(
-          (candidate) =>
-            !this.tried.has(candidate) &&
-            (!authsLeft ||
-              candidate.type === 'none' ||
-              authsLeft.includes(candidate.type === 'agent' ? 'publickey' : candidate.type)),
+    const hopName = this.hop.hopLabel ?? this.hop.spec.host;
+    let identities: SshIdentity[];
+    try {
+      identities = await agent.identities();
+    } catch (err) {
+      this.agentUnavailable(err);
+      return undefined;
+    }
+    let last: AuthOutcome | undefined;
+    for (const identity of identities) {
+      if (this.cancelled) break;
+      if (last && !last.remaining.includes('publickey')) break;
+      const rsa = identity.type === 'ssh-rsa' || identity.type.startsWith('ssh-rsa-cert-');
+      const hash = rsa ? await transport.rsaHash() : undefined;
+      let signFailure: unknown;
+      let outcome: AuthOutcome;
+      try {
+        outcome = await transport.authSigner(
+          this.hop.user,
+          identity.blob,
+          hash,
+          async (data) => {
+            try {
+              return await agent.sign(identity, data, hash === 'sha1' ? {} : { hash });
+            } catch (err) {
+              signFailure = err ?? new Error('the agent did not sign');
+              throw err;
+            }
+          },
         );
-    if (!attempt) {
-      this.log?.debug(
-        { host, cancelled: this.cancelled, authsLeft },
-        'ssh auth ladder exhausted',
-      );
-      cb(false);
+      } catch (err) {
+        // An identity of a type the engine does not know is passed over, like one the server refuses.
+        if (isSshError(err, 'KEY_INVALID')) continue;
+        if (!isSshError(err, 'SIGN_FAILED')) throw err;
+        if (this.cancelled) break;
+        if (signFailure instanceof SecurityKeyError) {
+          const message = describeSecurityKeyError(signFailure, hopName);
+          this.log?.warn({ err: signFailure, host }, 'security key did not sign');
+          this.lastSecurityKeyProblem = message;
+          this.io.status(`${message} — trying other authentication methods`);
+          continue;
+        }
+        this.agentUnavailable(signFailure);
+        // An agent that is gone will not sign with its other keys either.
+        if (agent instanceof ResponsiveAgent && agent.unavailable) break;
+        continue;
+      }
+      last = outcome;
+      if (outcome.success || outcome.partial) return outcome;
+      this.keyAlgorithm = undefined;
+    }
+    return last;
+  }
+
+  /** Say that the agent could not help, unless it simply is not running. */
+  private agentUnavailable(err: unknown): void {
+    const host = this.hop.resolved.hostname;
+    // An unreachable agent is an expected fallback when a stale agent socket
+    // is inherited, so keep it out of user-facing status.
+    if (isSshError(err, 'AGENT_UNAVAILABLE')) {
+      this.log?.debug({ err, host }, 'ssh-agent unavailable; trying other authentication methods');
       return;
     }
-    this.tried.add(attempt);
-    attempt
-      .get()
-      .then((method) => {
-        if (method) {
-          this.log?.debug({ host, method: attempt.type }, 'trying ssh auth method');
-          this.lastMethod = attempt.type;
-          // A key file signs inside ssh2, which picks the RSA hash itself.
-          this.keyAlgorithm =
-            method.type === 'publickey' && typeof method.key === 'object' && !Buffer.isBuffer(method.key)
-              && method.key.type !== 'ssh-rsa'
-              ? method.key.type
-              : undefined;
-          cb(method);
-        } else {
-          this.log?.debug(
-            { host, method: attempt.type },
-            'ssh auth method unavailable; skipping',
-          );
-          this.advance(authsLeft, cb);
-        }
-      })
-      .catch(() => {
-        this.cancelled = true;
-        cb(false);
-      });
+    if (err instanceof SecurityKeyError) {
+      const message = describeSecurityKeyError(err, this.hop.hopLabel ?? this.hop.spec.host);
+      this.log?.warn({ err, host }, 'security key did not sign');
+      this.lastSecurityKeyProblem = message;
+      this.io.status(`${message} — trying other authentication methods`);
+      return;
+    }
+    const message = err instanceof Error ? err.message : String(err);
+    this.log?.warn({ err, host }, 'ssh-agent unavailable; trying other authentication methods');
+    this.io.status(`ssh-agent unavailable (${message}) — trying other authentication methods`);
   }
 
   async commitRememberedPassword(): Promise<void> {
@@ -2354,20 +2267,13 @@ class AuthLadder {
   private build(): AuthAttempt[] {
     const { resolved, user, hopLabel } = this.hop;
     const label = hopLabel ?? this.hop.spec.host;
-    const attempts: AuthAttempt[] = [{ type: 'none', get: () => Promise.resolve({ type: 'none', username: user }) }];
+    const attempts: AuthAttempt[] = [{ type: 'none', run: (transport) => transport.authNone(user) }];
     const agentSocket = resolveAgentSocket(resolved.identityAgent);
 
     if (!resolved.passwordOnly) {
-      if (agentSocket && this.agent && !resolved.identitiesOnly) {
-        attempts.push({
-          type: 'agent',
-          get: () =>
-            Promise.resolve({
-              type: 'agent',
-              username: user,
-              agent: this.agent!,
-            }),
-        });
+      const agent = this.agent;
+      if (agentSocket && agent && !resolved.identitiesOnly) {
+        attempts.push({ type: 'agent', run: (transport) => this.offerAgentIdentities(transport, agent) });
       }
       const explicit = resolved.identityFiles.length > 0;
       const files = explicit ? resolved.identityFiles : defaultIdentityFiles();
@@ -2379,7 +2285,10 @@ class AuthLadder {
         if ('securityKey' in loaded) {
           attempts.push({
             type: 'publickey',
-            get: () => this.securityKeyCertificateMethod(file, loaded.securityKey, files, agentSocket, label),
+            run: async (transport) => {
+              const signer = await this.securityKeyCertificateAgent(file, loaded.securityKey, files, agentSocket, label);
+              return signer && this.offerAgentIdentities(transport, signer);
+            },
           });
           continue;
         }
@@ -2387,7 +2296,7 @@ class AuthLadder {
         for (const algorithm of certificateAlgorithms(certificate)) {
           attempts.push({
             type: 'publickey',
-            get: async () => {
+            run: async (transport) => {
               const privateKey = await this.findCertificateKey(
                 file,
                 certificate,
@@ -2397,12 +2306,8 @@ class AuthLadder {
                 label,
               );
               if (!privateKey) return undefined;
-              const key = certifiedKey(privateKey, certificate, algorithm);
-              if (key instanceof Error) {
-                this.io.status(`could not load ${path.basename(file)}: ${key.message}`);
-                return undefined;
-              }
-              return { type: 'publickey', username: user, key };
+              this.keyAlgorithm = algorithm;
+              return transport.authCertificate(user, privateKey, certificate.publicBlob, certificateRsaHash(algorithm));
             },
           });
         }
@@ -2410,16 +2315,23 @@ class AuthLadder {
       for (const file of files) {
         attempts.push({
           type: 'publickey',
-          get: async () => {
-            const securityKey = await this.securityKeyMethod(file, agentSocket, label);
-            if (securityKey !== null) return securityKey;
+          run: async (transport) => {
+            const securityKey = await this.securityKeyAgent(file, agentSocket, label);
+            if (securityKey !== null) return securityKey && this.offerAgentIdentities(transport, securityKey);
             const key = await this.loadPrivateKey(
               file,
               explicit,
               agentSocket,
               label,
             );
-            return key ? { type: 'publickey', username: user, key } : undefined;
+            if (!key) return undefined;
+            if (key.keyType !== 'ssh-rsa') {
+              this.keyAlgorithm = key.keyType;
+              return transport.authPublicKey(user, key);
+            }
+            const hash = await transport.rsaHash();
+            this.keyAlgorithm = hash === 'sha1' ? 'ssh-rsa' : `rsa-sha2-${hash.slice(3)}`;
+            return transport.authPublicKey(user, key, hash);
           },
         });
       }
@@ -2429,7 +2341,7 @@ class AuthLadder {
       for (let attempt = 0; attempt < MAX_KEYBOARD_INTERACTIVE_ATTEMPTS; attempt++) {
         attempts.push({
           type: 'keyboard-interactive',
-          get: () => {
+          run: (transport) => {
             // Arbitrary challenges get one attempt; only a recognized password
             // flow may retry for stale-password replacement.
             if (attempt > 0 && !this.retryKeyboardInteractive) {
@@ -2437,24 +2349,21 @@ class AuthLadder {
             }
             this.retryKeyboardInteractive = false;
             let challengeRound = 0;
-            return Promise.resolve({
-              type: 'keyboard-interactive',
-              username: user,
-              prompt: (name, instructions, _lang, prompts, finish) => {
-                challengeRound += 1;
-                void this.keyboardInteractiveAnswers(
+            return transport.authKeyboardInteractive(user, async (name, instructions, prompts) => {
+              challengeRound += 1;
+              try {
+                return await this.keyboardInteractiveAnswers(
                   name,
                   instructions,
                   label,
                   prompts,
                   challengeRound === 1,
-                )
-                  .then(finish)
-                  .catch(() => {
-                    this.cancelled = true;
-                    finish(prompts.map(() => ''));
-                  });
-              },
+                );
+              } catch {
+                // The exchange still has to be answered; the login ends after it.
+                this.cancelled = true;
+                return prompts.map(() => '');
+              }
             });
           },
         });
@@ -2465,23 +2374,22 @@ class AuthLadder {
       for (let attempt = 1; attempt <= MAX_PASSWORD_ATTEMPTS; attempt++) {
         attempts.push({
           type: 'password',
-          get: () => this.passwordMethod(attempt, label),
+          run: async (transport) => transport.authPassword(user, await this.passwordMethod(attempt, label)),
         });
       }
     }
     return attempts;
   }
 
+  /** The password to offer: a saved one first, else what the user types. */
   private async passwordMethod(
     attempt: number,
     promptLabel: string,
-  ): Promise<AnyAuthMethod> {
+  ): Promise<string> {
     const { user } = this.hop;
     const credential = this.passwordCredential();
     const saved = await this.availableSavedPassword(credential);
-    if (saved !== undefined) {
-      return { type: 'password', username: user, password: saved };
-    }
+    if (saved !== undefined) return saved;
 
     const response = await this.runInteraction(() =>
       this.io.prompt({
@@ -2512,18 +2420,14 @@ class AuthLadder {
     );
     if (response.skipped) throw new Error('authentication cancelled');
     this.capturePasswordCandidate(response, credential);
-    return {
-      type: 'password',
-      username: user,
-      password: response.answers[0] ?? '',
-    };
+    return response.answers[0] ?? '';
   }
 
   private async keyboardInteractiveAnswers(
     name: string,
     instructions: string,
     promptLabel: string,
-    prompts: Prompt[],
+    prompts: KeyboardPrompt[],
     firstChallengeRound: boolean,
   ): Promise<string[]> {
     const mappedPrompts = prompts.map((prompt) => ({
@@ -2780,7 +2684,7 @@ class AuthLadder {
     explicit: boolean,
     agent: string | undefined,
     label: string,
-  ): Promise<ParsedKey | undefined> {
+  ): Promise<SshPrivateKey | undefined> {
     const cached = this.certificateKeys.get(certificate);
     if (cached) return cached;
     const pending = (async () => {
@@ -2810,7 +2714,7 @@ class AuthLadder {
     explicit: boolean,
     agent: string | undefined,
     label: string,
-  ): Promise<ParsedKey | undefined> {
+  ): Promise<SshPrivateKey | undefined> {
     const cached = this.privateKeys.get(file);
     if (cached) return cached;
     const pending = this.readPrivateKey(file, explicit, agent, label);
@@ -2823,7 +2727,7 @@ class AuthLadder {
     explicit: boolean,
     agent: string | undefined,
     label: string,
-  ): Promise<ParsedKey | undefined> {
+  ): Promise<SshPrivateKey | undefined> {
     let content: Buffer;
     try {
       content = fs.readFileSync(file);
@@ -2834,7 +2738,7 @@ class AuthLadder {
     // Security key files are signed through an agent, never parsed here.
     if (securityKeyFile(content)) return undefined;
     let parsed = parseSshKey(content);
-    if (parsed instanceof Error && /passphrase|encrypted/i.test(parsed.message)) {
+    if (isEncryptedKeyError(parsed)) {
       // Encrypted. A default (unconfigured) key the agent already holds was
       // covered by the agent attempt — skip it silently. Anything else
       // prompts for its passphrase, like ssh(1).
@@ -2863,14 +2767,14 @@ class AuthLadder {
       this.io.status(`could not load ${path.basename(file)}: ${parsed.message}`);
       return undefined;
     }
-    return parsed as ParsedKey;
+    return parsed;
   }
 
   /** True when the key's .pub sibling names an identity the agent holds. */
   private async agentHoldsKey(
     file: string,
     agentSocket: string,
-    agent: BaseAgent<ParsedKey>,
+    agent: SshAgent,
   ): Promise<boolean> {
     let fingerprint: string;
     try {
@@ -2886,7 +2790,7 @@ class AuthLadder {
   private async agentHoldsFingerprint(
     fingerprint: string,
     agentSocket: string,
-    agent: BaseAgent<ParsedKey>,
+    agent: SshAgent,
   ): Promise<boolean> {
     this.agentIdentityPrints ??= listAgentKeys(agentSocket, agent).then(
       (keys) => new Set(keys.map((k) => k.fingerprint)),
@@ -2896,14 +2800,14 @@ class AuthLadder {
 
   /**
    * A security key IdentityFile signs through a private ssh-agent (see
-   * SecurityKeyFileAgent), offered to ssh2 as agent auth. null when the file
-   * is not a security key.
+   * SecurityKeyFileAgent). null when the file is not a security key, and
+   * undefined when the login agent has already offered it.
    */
-  private async securityKeyMethod(
+  private async securityKeyAgent(
     file: string,
     agentSocket: string | undefined,
     label: string,
-  ): Promise<AnyAuthMethod | undefined | null> {
+  ): Promise<SecurityKeyFileAgent | undefined | null> {
     let content: Buffer;
     try {
       content = fs.readFileSync(file);
@@ -2912,18 +2816,18 @@ class AuthLadder {
     }
     const publicKey = securityKeyFile(content);
     if (!publicKey) return null;
-    return this.securityKeyAgentMethod(file, publicKey, undefined, agentSocket, label);
+    return this.securityKeyFileAgent(file, publicKey, undefined, agentSocket, label);
   }
 
   /** A security key CertificateFile, signed by its matching IdentityFile. */
-  private async securityKeyCertificateMethod(
+  private async securityKeyCertificateAgent(
     certificateFile: string,
-    certificate: ParsedKey,
+    certificate: SshIdentity,
     identityFiles: string[],
     agentSocket: string | undefined,
     label: string,
-  ): Promise<AnyAuthMethod | undefined> {
-    const keyBlob = plainKeyBlob(certificate.getPublicSSH());
+  ): Promise<SecurityKeyFileAgent | undefined> {
+    const keyBlob = plainKeyBlob(certificate.blob);
     for (const file of identityFiles) {
       let content: Buffer;
       try {
@@ -2932,23 +2836,23 @@ class AuthLadder {
         continue;
       }
       const publicKey = securityKeyFile(content);
-      if (publicKey?.getPublicSSH().equals(keyBlob)) {
-        return this.securityKeyAgentMethod(file, publicKey, certificate, agentSocket, label);
+      if (publicKey?.blob.equals(keyBlob)) {
+        return this.securityKeyFileAgent(file, publicKey, certificate, agentSocket, label);
       }
     }
     this.io.status(`certificate ${certificateFile} has no matching identity file — skipping`);
     return undefined;
   }
 
-  private async securityKeyAgentMethod(
+  private async securityKeyFileAgent(
     file: string,
-    publicKey: ParsedKey,
-    certificate: ParsedKey | undefined,
+    publicKey: SshIdentity,
+    certificate: SshIdentity | undefined,
     agentSocket: string | undefined,
     label: string,
-  ): Promise<AnyAuthMethod | undefined> {
+  ): Promise<SecurityKeyFileAgent | undefined> {
     // The login agent already offered this identity, and signs it the same way.
-    const fingerprint = fingerprintSha256((certificate ?? publicKey).getPublicSSH());
+    const fingerprint = fingerprintSha256((certificate ?? publicKey).blob);
     if (agentSocket && this.agent && (await this.agentHoldsFingerprint(fingerprint, agentSocket, this.agent))) {
       return undefined;
     }
@@ -2961,7 +2865,7 @@ class AuthLadder {
       agentOptions: this.agentHooks,
     });
     this.securityKeyAgents.push(agent);
-    return { type: 'agent', username: this.hop.user, agent };
+    return agent;
   }
 
   /** OpenSSH asks for the key file's passphrase or the security key's PIN. */
@@ -3004,85 +2908,65 @@ function defaultIdentityFiles(): string[] {
 
 /** RemoteCommand session: exec instead of a shell, tty per RequestTTY. */
 async function openSessionExec(
-  client: Client,
+  transport: SshTransport,
   command: string,
-  pty: PseudoTtyOptions | undefined,
-  env?: Record<string, string>,
+  options: SessionOptions,
   retryWithoutPty = false,
-  x11?: X11Options,
-): Promise<ClientChannel> {
+): Promise<SshChannel> {
   try {
-    return await requestSessionExec(client, command, pty, env, x11);
+    return await transport.exec(command, options);
   } catch (err) {
-    if (!retryWithoutPty || !pty || !isPtyRejection(err)) throw err;
-    return requestSessionExec(client, command, undefined, env, x11);
+    if (!retryWithoutPty || !options.pty || !isSshError(err, 'PTY_REFUSED')) throw err;
+    return transport.exec(command, { ...options, pty: undefined });
   }
-}
-
-function requestSessionExec(
-  client: Client,
-  command: string,
-  pty: PseudoTtyOptions | undefined,
-  env?: Record<string, string>,
-  x11?: X11Options,
-): Promise<ClientChannel> {
-  return new Promise((resolve, reject) => {
-    client.exec(
-      command,
-      { ...(pty ? { pty } : {}), ...(env ? { env } : {}), ...(x11 ? { x11 } : {}) },
-      (err, stream) => (err ? reject(err) : resolve(stream)),
-    );
-  });
 }
 
 /**
  * Console appliances disagree about pty-req: some reject it, others refuse a
  * shell without one. Ask for the tty ssh(1) would and, like ssh(1), carry on
- * without it when the server says no. ssh2 closes the channel on a failed
- * pty-req, so the retry needs a fresh session channel.
+ * without it when the server says no. The refused request ended its channel,
+ * so the retry opens a fresh one.
  */
 async function openPlainShell(
-  client: Client,
-  pty: PseudoTtyOptions | undefined,
-  env?: Record<string, string>,
+  transport: SshTransport,
+  options: SessionOptions,
   retryWithoutPty = false,
-  x11?: X11Options,
-): Promise<ClientChannel> {
+): Promise<SshChannel> {
   try {
-    return await requestShell(client, pty ?? false, env, x11);
+    return await transport.shell(options);
   } catch (err) {
-    if (!retryWithoutPty || !pty || !isPtyRejection(err)) throw err;
-    return requestShell(client, false, env, x11);
+    if (!retryWithoutPty || !options.pty || !isSshError(err, 'PTY_REFUSED')) throw err;
+    return transport.shell({ ...options, pty: undefined });
   }
 }
 
-function requestShell(
-  client: Client,
-  pty: PseudoTtyOptions | false,
-  env?: Record<string, string>,
-  x11?: X11Options,
-): Promise<ClientChannel> {
-  return new Promise((resolve, reject) => {
-    client.shell(pty, { env, ...(x11 ? { x11 } : {}) }, (err, stream) =>
-      err ? reject(err) : resolve(stream),
-    );
-  });
-}
-
-function isPtyRejection(err: unknown): boolean {
-  return err instanceof Error && /Unable to request a pseudo-terminal/.test(err.message);
-}
-
 /**
- * Translate the common ssh2 failure modes into user-actionable messages.
+ * Translate the common connect failures into user-actionable messages.
  * `securityKeyProblem` explains why a security key could not take part.
  */
 function friendlyConnectError(err: Error, hop: ChainHop, securityKeyProblem?: string): Error {
   const msg = err.message;
+  const code = err instanceof SshError ? err.code : undefined;
   const where = `${hop.resolved.hostname}:${hop.port}`;
-  if (/ECONNREFUSED/.test(msg)) return new Error(`connection refused by ${where} — is sshd running?`);
-  if (/ENOTFOUND|EAI_AGAIN/.test(msg)) return new Error(`could not resolve host ${hop.resolved.hostname}`);
-  if (/ETIMEDOUT|Timed out/i.test(msg)) return new Error(`connection to ${where} timed out`);
+  if (code === 'ECONNREFUSED' || /ECONNREFUSED/.test(msg)) {
+    return new Error(`connection refused by ${where} — is sshd running?`);
+  }
+  if (code === 'ENOTFOUND' || /ENOTFOUND|EAI_AGAIN/.test(msg)) {
+    return new Error(`could not resolve host ${hop.resolved.hostname}`);
+  }
+  if (code === 'ETIMEDOUT' || /ETIMEDOUT|Timed out/i.test(msg)) {
+    return new Error(`connection to ${where} timed out`);
+  }
+  if (code === 'EHOSTUNREACH' || /EHOSTUNREACH/.test(msg)) return new Error(`no route to ${where}`);
+  if (code === 'ENETUNREACH' || /ENETUNREACH/.test(msg)) {
+    return new Error(`the network is unreachable for ${where}`);
+  }
+  if (code === 'ECONNRESET' || code === 'EPIPE' || /ECONNRESET|EPIPE/.test(msg)) {
+    return new Error(`connection reset by ${where}`);
+  }
+  if (code === 'KEEPALIVE_TIMEOUT' || /^Keepalive timeout$/.test(msg)) {
+    return new Error(`${where} stopped answering keepalives`);
+  }
   if (/All configured authentication methods failed/.test(msg)) {
     return new Error(
       securityKeyProblem
@@ -3090,10 +2974,11 @@ function friendlyConnectError(err: Error, hop: ChainHop, securityKeyProblem?: st
         : `authentication to ${where} failed`,
     );
   }
-  if (/Handshake failed: no matching/i.test(msg)) {
+  if (code === 'NO_MATCHING_ALGORITHM' || /Handshake failed: no matching/i.test(msg)) {
     return new Error(
       `${msg} — if ${where} only speaks legacy algorithms, add KexAlgorithms/Ciphers/HostKeyAlgorithms lines to this host's ssh config (Advanced options in the host editor)`,
     );
   }
-  return err;
+  // The engine's code names nothing the user needs; its message does.
+  return err instanceof SshError ? new Error(msg) : err;
 }

@@ -1,9 +1,8 @@
 import path from 'node:path/posix';
 import { createHash, randomBytes } from 'node:crypto';
-import { Readable } from 'node:stream';
+import { Readable, type Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { SFTPWrapper } from 'ssh2';
 import type {
   SftpEntry,
   SftpEntryType,
@@ -14,6 +13,13 @@ import type {
   SftpUploadResponse,
 } from '@muxus/shared';
 import type { AppContext } from '../app.js';
+import {
+  isSshError,
+  SFTP_NO_SUCH_FILE,
+  SFTP_OP_UNSUPPORTED,
+  type SftpClient,
+  type SftpStats,
+} from '../ssh/engine.js';
 import type { SftpConnection } from '../ssh/system-openssh.js';
 import { HttpProblem, sendError } from '../util/errors.js';
 
@@ -30,21 +36,6 @@ const RESUME_CHECK_BYTES = 64 * 1024;
 
 interface ConnParams {
   connId: string;
-}
-
-/** Shape of ssh2's readdir entries (its own types are callback-tangled). */
-interface SftpDirEntry {
-  filename: string;
-  longname: string;
-  attrs: { size?: number; mtime?: number; mode: number };
-}
-
-interface SftpAttrs {
-  isDirectory(): boolean;
-  isSymbolicLink(): boolean;
-  size?: number;
-  mtime?: number;
-  mode?: number;
 }
 
 /**
@@ -97,7 +88,7 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
 
   const withSftp = async <T>(
     req: FastifyRequest,
-    operation: (sftp: SFTPWrapper, connection: SftpConnection) => Promise<T> | T,
+    operation: (sftp: SftpClient, connection: SftpConnection) => Promise<T> | T,
   ): Promise<T> => {
     const lease = await acquireSftp(req);
     try {
@@ -112,7 +103,7 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
   app.get('/api/sftp/:connId/home', async (req, reply) => {
     try {
       return await withSftp(req, async (sftp) => {
-        const home = await call<string>((cb) => sftp.realpath('.', cb));
+        const home = await sftp.realpath('.');
         return { path: home };
       });
     } catch (err) {
@@ -124,17 +115,17 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
     try {
       return await withSftp(req, async (sftp, connection) => {
         const dir = requirePath(req);
-        const resolved = await call<string>((cb) => sftp.realpath(dir, cb));
-        const listing = await call<SftpDirEntry[]>((cb) => sftp.readdir(resolved, cb));
+        const resolved = await sftp.realpath(dir);
+        const listing = await sftp.readdir(resolved);
         const entries: SftpEntry[] = listing
           .map((item) => ({
             name: item.filename,
-            type: entryType(item.attrs.mode),
+            type: entryType(item.attrs.mode ?? 0),
             size: item.attrs.size,
             mtimeMs: item.attrs.mtime ? item.attrs.mtime * 1000 : undefined,
-            mode: item.attrs.mode & 0o7777,
+            mode: (item.attrs.mode ?? 0) & 0o7777,
             ...ownerFromLongname(item.longname),
-            ...(entryType(item.attrs.mode) === 'file'
+            ...(entryType(item.attrs.mode ?? 0) === 'file'
               ? { downloadTicket: issueDownloadTicket(connection, path.join(resolved, item.filename)) }
               : {}),
           }))
@@ -153,13 +144,13 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
       const lease = await acquireSftp(req);
       releaseLease = once(lease.release);
       const file = requirePath(req);
-      const stat = await call<{ size?: number; mtime?: number }>((cb) => lease.sftp.stat(file, cb));
+      const stat = await lease.sftp.stat(file);
       const etag = downloadEtag(lease.connection, file, stat);
       const start = etag && stat.size !== undefined ? rangeStart(req, etag, stat.size) : 0;
       // Opened before anything is sent, so a file the user may not read is
       // answered with that error instead of a dropped connection.
-      const handle = await call<Buffer>((cb) => lease.sftp.open(file, 'r', cb));
-      const stream = lease.sftp.createReadStream(file, { handle, start });
+      const handle = await lease.sftp.open(file, 'r');
+      const stream = lease.sftp.createReadStream(handle, { start });
       // Streaming outlives the route handler. Keep the SFTP lease until the
       // remote stream or HTTP response closes so a closed terminal tab cannot
       // tear the shared transport out from under an active download.
@@ -200,8 +191,8 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
       }
       const lease = await acquireSftp(req);
       releaseLease = once(lease.release);
-      const stat = await call<{ size?: number }>((cb) => lease.sftp.stat(ticket.path, cb));
-      const stream = lease.sftp.createReadStream(ticket.path);
+      const stat = await lease.sftp.stat(ticket.path);
+      const stream = lease.sftp.createReadStream(await lease.sftp.open(ticket.path, 'r'));
       stream.once('close', releaseLease);
       reply.raw.once('close', releaseLease);
       stream.once('error', () => reply.raw.destroy());
@@ -221,7 +212,7 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
     try {
       return await withSftp(req, async (sftp) => {
         const file = requirePath(req);
-        const attrs = await call<SftpAttrs>((cb) => sftp.lstat(file, cb));
+        const attrs = await sftp.lstat(file);
         if (attrs.isDirectory()) throw new HttpProblem(400, 'cannot edit a directory');
         if (attrs.isSymbolicLink()) {
           throw new HttpProblem(409, 'open the symbolic link target explicitly', 'SFTP_EDITOR_SYMLINK');
@@ -267,7 +258,7 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
             throw new HttpProblem(413, `files larger than ${formatBytes(MAX_EDITOR_BYTES)} cannot be saved from the editor`);
           }
 
-          const attrs = await call<SftpAttrs>((cb) => sftp.lstat(file, cb));
+          const attrs = await sftp.lstat(file);
           if (attrs.isDirectory()) throw new HttpProblem(400, 'cannot overwrite a directory');
           if (attrs.isSymbolicLink()) {
             throw new HttpProblem(409, 'refusing to overwrite a symbolic link', 'SFTP_DESTINATION_IS_SYMLINK');
@@ -282,7 +273,7 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
           }
 
           await atomicTextSave(sftp, file, bytes, attrs.mode);
-          const saved = await call<SftpAttrs>((cb) => sftp.stat(file, cb));
+          const saved = await sftp.stat(file);
           const response: SftpFileSaveResponse = {
             ok: true,
             size: saved.size ?? bytes.length,
@@ -355,7 +346,7 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
         } finally {
           if (resumable) stagedUploads.delete(resumable.key);
         }
-        const mtimeMs = await call<SftpAttrs>((cb) => sftp.stat(file, cb)).then(
+        const mtimeMs = await sftp.stat(file).then(
           (saved) => (saved.mtime ? saved.mtime * 1000 : undefined),
           () => undefined,
         );
@@ -398,7 +389,7 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
         const target = requirePath(req);
         const recursive = (req.body as { recursive?: unknown } | undefined)?.recursive === true;
         if (recursive) await mkdirRecursive(sftp, target);
-        else await call<void>((cb) => sftp.mkdir(target, cb));
+        else await sftp.mkdir(target);
         return { ok: true };
       });
     } catch (err) {
@@ -411,7 +402,7 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
       return await withSftp(req, async (sftp) => {
         const { from, to } = (req.body ?? {}) as { from?: string; to?: string };
         if (!from || !to) throw new HttpProblem(400, 'from and to are required');
-        await call<void>((cb) => sftp.rename(from, to, cb));
+        await sftp.rename(from, to);
         return { ok: true };
       });
     } catch (err) {
@@ -423,12 +414,12 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
     try {
       return await withSftp(req, async (sftp) => {
         const target = requirePath(req);
-        const stat = await call<{ isDirectory(): boolean }>((cb) => sftp.lstat(target, cb));
+        const stat = await sftp.lstat(target);
         if (stat.isDirectory()) {
           const budget = { remaining: MAX_RECURSIVE_DELETE };
           await deleteTree(sftp, target, budget);
         } else {
-          await call<void>((cb) => sftp.unlink(target, cb));
+          await sftp.unlink(target);
         }
         return { ok: true };
       });
@@ -438,10 +429,10 @@ export function registerSftpRoutes(app: FastifyInstance, ctx: AppContext): void 
   });
 }
 
-async function readBounded(sftp: SFTPWrapper, file: string, maxBytes: number): Promise<Buffer> {
+async function readBounded(sftp: SftpClient, file: string, maxBytes: number): Promise<Buffer> {
   const chunks: Buffer[] = [];
   let total = 0;
-  const stream = sftp.createReadStream(file);
+  const stream = sftp.createReadStream(await sftp.open(file, 'r'));
   for await (const chunk of stream) {
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
     total += bytes.length;
@@ -459,7 +450,7 @@ async function readBounded(sftp: SFTPWrapper, file: string, maxBytes: number): P
  * shared commit path prefers OpenSSH's atomic POSIX rename extension.
  */
 async function atomicTextSave(
-  sftp: SFTPWrapper,
+  sftp: SftpClient,
   file: string,
   bytes: Buffer,
   mode: number | undefined,
@@ -476,18 +467,21 @@ async function atomicTextSave(
 
 /**
  * A write stream into a new temporary file. It gets `mode`, the mode of the
- * file it replaces, exactly. Otherwise it is opened here with NEW_FILE_MODE,
- * which the server's umask may narrow: ssh2 chmods a file it opens itself, to
- * 0666 unless told otherwise, past the umask.
+ * file it replaces, exactly: the server's umask narrows the mode a file is
+ * opened with, so it is set again on the open file. A new file is opened with
+ * NEW_FILE_MODE and keeps what the umask leaves of it.
  */
 async function createTempFile(
-  sftp: SFTPWrapper,
+  sftp: SftpClient,
   temp: string,
   mode: number | undefined,
-): Promise<NodeJS.WritableStream> {
-  if (mode !== undefined) return sftp.createWriteStream(temp, { flags: 'wx', mode: mode & 0o7777 });
-  const handle = await call<Buffer>((cb) => sftp.open(temp, 'wx', { mode: NEW_FILE_MODE }, cb));
-  return sftp.createWriteStream(temp, { handle });
+): Promise<Writable> {
+  if (mode === undefined) return sftp.createWriteStream(await sftp.open(temp, 'wx', NEW_FILE_MODE));
+  const exact = mode & 0o7777;
+  const handle = await sftp.open(temp, 'wx', exact);
+  // Not every server lets a client change modes; the file is still written.
+  await sftp.fchmod(handle, exact).catch(() => undefined);
+  return sftp.createWriteStream(handle);
 }
 
 /**
@@ -496,7 +490,7 @@ async function createTempFile(
  * destination is never left truncated.
  */
 async function atomicStreamUpload(
-  sftp: SFTPWrapper,
+  sftp: SftpClient,
   file: string,
   body: NodeJS.ReadableStream,
   overwrite: boolean,
@@ -540,7 +534,7 @@ interface StagedPart {
  * name.
  */
 async function resumableUpload(
-  sftp: SFTPWrapper,
+  sftp: SftpClient,
   file: string,
   body: NodeJS.ReadableStream,
   overwrite: boolean,
@@ -571,15 +565,15 @@ async function resumableUpload(
  * larger than the upload. Its type, size and last bytes are read again through
  * the handle that is written to, whatever the name pointed to by then.
  */
-async function openStaged(sftp: SFTPWrapper, staged: string, size: number): Promise<StagedPart | undefined> {
+async function openStaged(sftp: SftpClient, staged: string, size: number): Promise<StagedPart | undefined> {
   let handle: Buffer;
   try {
-    handle = await call<Buffer>((cb) => sftp.open(staged, 'r+', cb));
+    handle = await sftp.open(staged, 'r+');
   } catch {
     return undefined;
   }
   try {
-    const attrs = await call<SftpAttrs>((cb) => sftp.fstat(handle, cb));
+    const attrs = await sftp.fstat(handle);
     const offset = attrs.size ?? 0;
     if (entryType(attrs.mode ?? 0) === 'file' && offset > 0 && offset <= size) {
       const tail = await readRange(sftp, handle, Math.max(0, offset - RESUME_CHECK_BYTES), offset);
@@ -588,7 +582,7 @@ async function openStaged(sftp: SFTPWrapper, staged: string, size: number): Prom
   } catch {
     // Unreadable: it starts over, like anything else that cannot be continued.
   }
-  await call<void>((cb) => sftp.close(handle, cb)).catch(() => undefined);
+  await sftp.closeHandle(handle).catch(() => undefined);
   return undefined;
 }
 
@@ -598,7 +592,7 @@ async function openStaged(sftp: SFTPWrapper, staged: string, size: number): Prom
  * is dropped too and the client is told to send the file again as a new upload.
  */
 async function continueUpload(
-  sftp: SFTPWrapper,
+  sftp: SftpClient,
   temp: string,
   body: NodeJS.ReadableStream,
   { handle, offset, tail }: StagedPart,
@@ -620,37 +614,36 @@ async function continueUpload(
       if (!diverged && position > offset) yield bytes.subarray(Math.max(0, offset - start));
     }
   }
-  const target = sftp.createWriteStream(temp, { handle, start: offset, autoClose: false });
+  // The handle stays this function's: it is read again once the stream is done.
+  const target = sftp.createWriteStream(handle, { start: offset, autoClose: false });
   try {
     await pipeline(body, rest, target);
     // A server that wrote anywhere but where it was asked shows in the size.
-    const written = await call<SftpAttrs>((cb) => sftp.fstat(handle, cb));
+    const written = await sftp.fstat(handle);
     if (diverged || written.size !== size) {
       throw new HttpProblem(409, 'the upload kept on the server does not match this file', 'SFTP_UPLOAD_MISMATCH');
     }
   } finally {
-    // A destroyed stream has closed the handle itself, and OpenSSH hands a freed handle out again.
-    if (!target.destroyed) await call<void>((cb) => sftp.close(handle, cb)).catch(() => undefined);
+    await sftp.closeHandle(handle).catch(() => undefined);
   }
 }
 
 /** Bytes `start` to `end` of an open file, or undefined when the file ends sooner. */
-async function readRange(sftp: SFTPWrapper, handle: Buffer, start: number, end: number): Promise<Buffer | undefined> {
+async function readRange(sftp: SftpClient, handle: Buffer, start: number, end: number): Promise<Buffer | undefined> {
   const bytes = Buffer.alloc(end - start);
   for (let filled = 0; filled < bytes.length;) {
-    const read = await call<number>((cb) =>
-      sftp.read(handle, bytes, filled, bytes.length - filled, start + filled, cb),
-    );
-    if (read === 0) return undefined;
-    filled += read;
+    const read = await sftp.read(handle, start + filled, bytes.length - filled);
+    if (!read?.length) return undefined;
+    read.copy(bytes, filled);
+    filled += read.length;
   }
   return bytes;
 }
 
 /** Whether nothing is left at `file`: removed now, or never there. */
-async function removed(sftp: SFTPWrapper, file: string): Promise<boolean> {
+async function removed(sftp: SftpClient, file: string): Promise<boolean> {
   try {
-    await call<void>((cb) => sftp.unlink(file, cb));
+    await sftp.unlink(file);
     return true;
   } catch (err) {
     return isNoSuchFile(err);
@@ -658,7 +651,7 @@ async function removed(sftp: SFTPWrapper, file: string): Promise<boolean> {
 }
 
 async function commitTempFile(
-  sftp: SFTPWrapper,
+  sftp: SftpClient,
   temp: string,
   destination: string,
   overwrite: boolean,
@@ -667,12 +660,12 @@ async function commitTempFile(
     if (await lstatIfPresent(sftp, destination)) {
       throw new HttpProblem(409, 'a file already exists at the upload destination', 'SFTP_DESTINATION_EXISTS');
     }
-    await call<void>((cb) => sftp.rename(temp, destination, cb));
+    await sftp.rename(temp, destination);
     return;
   }
 
   try {
-    await call<void>((cb) => sftp.ext_openssh_rename(temp, destination, cb));
+    await sftp.posixRename(temp, destination);
     return;
   } catch (error) {
     if (!isUnsupportedSftpOperation(error)) throw error;
@@ -681,30 +674,29 @@ async function commitTempFile(
   // Base SFTP v3 rename commonly refuses an existing destination. Try it
   // first for servers that replace, then use a short unlink/rename fallback.
   try {
-    await call<void>((cb) => sftp.rename(temp, destination, cb));
+    await sftp.rename(temp, destination);
   } catch {
-    await call<void>((cb) => sftp.unlink(destination, cb));
-    await call<void>((cb) => sftp.rename(temp, destination, cb));
+    await sftp.unlink(destination);
+    await sftp.rename(temp, destination);
   }
 }
 
-async function unlinkIfPresent(sftp: SFTPWrapper, file: string): Promise<void> {
+async function unlinkIfPresent(sftp: SftpClient, file: string): Promise<void> {
   try {
-    await call<void>((cb) => sftp.unlink(file, cb));
+    await sftp.unlink(file);
   } catch {
     /* best-effort cleanup */
   }
 }
 
 function isUnsupportedSftpOperation(err: unknown): boolean {
-  const code = (err as { code?: unknown } | undefined)?.code;
-  if (code === 8 || code === 'OP_UNSUPPORTED') return true;
-  // ssh2 refuses locally, without a status code, when the server never
-  // advertised the extension (servers other than OpenSSH).
-  return err instanceof Error && err.message === 'Server does not support this extended request';
+  // The engine refuses locally when the server never announced the extension
+  // (servers other than OpenSSH); one that announced it can still say no.
+  if (isSshError(err, 'SFTP_UNSUPPORTED')) return true;
+  return isSshError(err, 'SFTP_STATUS') && err.detail === SFTP_OP_UNSUPPORTED;
 }
 
-async function mkdirRecursive(sftp: SFTPWrapper, target: string): Promise<void> {
+async function mkdirRecursive(sftp: SftpClient, target: string): Promise<void> {
   const normalized = path.normalize(target);
   const absolute = normalized.startsWith('/');
   const parts = normalized.split('/').filter(Boolean);
@@ -712,7 +704,7 @@ async function mkdirRecursive(sftp: SFTPWrapper, target: string): Promise<void> 
   for (const part of parts) {
     current = path.join(current, part);
     try {
-      await call<void>((cb) => sftp.mkdir(current, cb));
+      await sftp.mkdir(current);
     } catch (err) {
       const existing = await lstatIfPresent(sftp, current);
       if (!existing?.isDirectory() || existing.isSymbolicLink()) throw err;
@@ -787,9 +779,9 @@ function requireOverwrite(req: FastifyRequest): boolean {
   throw new HttpProblem(400, 'overwrite must be true or false');
 }
 
-async function lstatIfPresent(sftp: SFTPWrapper, file: string): Promise<SftpAttrs | undefined> {
+async function lstatIfPresent(sftp: SftpClient, file: string): Promise<SftpStats | undefined> {
   try {
-    return await call<SftpAttrs>((cb) => sftp.lstat(file, cb));
+    return await sftp.lstat(file);
   } catch (err) {
     if (isNoSuchFile(err)) return undefined;
     throw err;
@@ -797,20 +789,19 @@ async function lstatIfPresent(sftp: SFTPWrapper, file: string): Promise<SftpAttr
 }
 
 function isNoSuchFile(err: unknown): boolean {
-  const code = (err as { code?: unknown } | undefined)?.code;
-  return code === 2 || code === 'ENOENT';
+  return isSshError(err, 'SFTP_STATUS') && err.detail === SFTP_NO_SUCH_FILE;
 }
 
-async function deleteTree(sftp: SFTPWrapper, dir: string, budget: { remaining: number }): Promise<void> {
-  const listing = await call<SftpDirEntry[]>((cb) => sftp.readdir(dir, cb));
+async function deleteTree(sftp: SftpClient, dir: string, budget: { remaining: number }): Promise<void> {
+  const listing = await sftp.readdir(dir);
   for (const item of listing) {
     if (item.filename === '.' || item.filename === '..') continue;
     if (--budget.remaining < 0) throw new HttpProblem(400, `refusing to delete more than ${MAX_RECURSIVE_DELETE} entries`);
     const child = path.join(dir, item.filename);
-    if (entryType(item.attrs.mode) === 'dir') await deleteTree(sftp, child, budget);
-    else await call<void>((cb) => sftp.unlink(child, cb));
+    if (entryType(item.attrs.mode ?? 0) === 'dir') await deleteTree(sftp, child, budget);
+    else await sftp.unlink(child);
   }
-  await call<void>((cb) => sftp.rmdir(dir, cb));
+  await sftp.rmdir(dir);
 }
 
 function entryType(mode: number): SftpEntryType {
@@ -825,11 +816,6 @@ function entryType(mode: number): SftpEntryType {
 function ownerFromLongname(longname: string): { owner?: string; group?: string } {
   const fields = longname.trim().split(/\s+/);
   return fields.length >= 4 ? { owner: fields[2], group: fields[3] } : {};
-}
-
-// Typing helper: ssh2's callback style, promisified per call site.
-function call<T>(fn: (cb: (err: Error | undefined | null, value: T) => void) => void): Promise<T> {
-  return new Promise((resolve, reject) => fn((err, value) => (err ? reject(err) : resolve(value))));
 }
 
 function once(operation: () => void): () => void {

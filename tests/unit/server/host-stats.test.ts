@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import { registerHostStatsRoutes } from '../../../server/src/routes/host-stats.js';
+import { SshError } from '../../../server/src/ssh/engine.js';
 import {
   HOST_STATS_SCRIPT,
   parseHostStats,
@@ -217,34 +218,34 @@ class StubChannel extends EventEmitter {
   }
 }
 
-function stubClient(reply: string | Error) {
+function stubTransport(reply: string | Error) {
   const channel = typeof reply === 'string' ? new StubChannel(reply) : undefined;
-  const exec = vi.fn(
-    (_command: string, callback: (error: Error | undefined, channel?: StubChannel) => void) => {
-      if (reply instanceof Error) callback(reply);
-      else callback(undefined, channel);
-    },
-  );
-  return { client: { exec } as never, exec, channel };
+  const exec = vi.fn(async (_command: string) => {
+    if (reply instanceof Error) throw reply;
+    return channel;
+  });
+  return { transport: { exec } as never, exec, channel };
 }
 
 describe('reading a remote host', () => {
   it('runs the script through sh on stdin, so the login shell never parses it', async () => {
-    const { client, exec, channel } = stubClient(LINUX_OUTPUT);
-    const reading = await readRemoteHostStats(client);
-    expect(exec).toHaveBeenCalledWith('sh -s', expect.any(Function));
+    const { transport, exec, channel } = stubTransport(LINUX_OUTPUT);
+    const reading = await readRemoteHostStats(transport);
+    expect(exec).toHaveBeenCalledWith('sh -s');
     expect(channel?.written).toBe(HOST_STATS_SCRIPT);
     expect(reading).toMatchObject({ supported: true, sample: { hostname: 'web-01' } });
   });
 
   it('reports a host that answers without the markers as unsupported', async () => {
-    const { client } = stubClient('Command not allowed\r\n');
-    await expect(readRemoteHostStats(client)).resolves.toEqual({ supported: false });
+    const { transport } = stubTransport('Command not allowed\r\n');
+    await expect(readRemoteHostStats(transport)).resolves.toEqual({ supported: false });
   });
 
   it('rejects when the server refuses the channel', async () => {
-    const { client } = stubClient(new Error('(SSH) Channel open failure: open failed'));
-    await expect(readRemoteHostStats(client)).rejects.toThrow('Channel open failure');
+    const { transport } = stubTransport(
+      new SshError('Channel open failure: administratively prohibited', 'CHANNEL_OPEN_FAILED', 1),
+    );
+    await expect(readRemoteHostStats(transport)).rejects.toThrow('Channel open failure');
   });
 });
 
@@ -288,9 +289,9 @@ function fakeReply() {
 describe('host statistics route', () => {
   it('reads a live connection under its own lease and releases it', async () => {
     const release = vi.fn();
-    const { client, exec } = stubClient(LINUX_OUTPUT);
+    const { transport, exec } = stubTransport(LINUX_OUTPUT);
     const acquire = vi.fn(() => ({
-      connection: { client, ranCommand: () => true },
+      connection: { transport, ranCommand: () => true },
       owner: 'stats',
       release,
     }));
@@ -306,8 +307,8 @@ describe('host statistics route', () => {
   });
 
   it('shares one reading between requests for the same connection', async () => {
-    const { client, exec } = stubClient(LINUX_OUTPUT);
-    const handler = captureRoutes(() => ({ connection: { client, ranCommand: () => true }, release: vi.fn() })).get(
+    const { transport, exec } = stubTransport(LINUX_OUTPUT);
+    const handler = captureRoutes(() => ({ connection: { transport, ranCommand: () => true }, release: vi.fn() })).get(
       '/api/host-stats/ssh/:connId',
     )!;
     const [first, second] = await Promise.all([
@@ -319,8 +320,8 @@ describe('host statistics route', () => {
   });
 
   it('answers unsupported for a host without a POSIX shell', async () => {
-    const { client } = stubClient('Invalid command\r\n');
-    const handler = captureRoutes(() => ({ connection: { client, ranCommand: () => true }, release: vi.fn() })).get(
+    const { transport } = stubTransport('Invalid command\r\n');
+    const handler = captureRoutes(() => ({ connection: { transport, ranCommand: () => true }, release: vi.fn() })).get(
       '/api/host-stats/ssh/:connId',
     )!;
     await expect(handler({ params: { connId: 'conn-1' } }, fakeReply())).resolves.toMatchObject({
@@ -331,9 +332,9 @@ describe('host statistics route', () => {
   it('never opens a channel on a connection whose server has not run a command', async () => {
     // Old SR OS releases drop the whole transport when a second channel asks to exec.
     const release = vi.fn();
-    const { client, exec } = stubClient(LINUX_OUTPUT);
+    const { transport, exec } = stubTransport(LINUX_OUTPUT);
     const handler = captureRoutes(() => ({
-      connection: { client, ranCommand: () => false },
+      connection: { transport, ranCommand: () => false },
       release,
     })).get('/api/host-stats/ssh/:connId')!;
     await expect(handler({ params: { connId: 'conn-1' } }, fakeReply())).resolves.toMatchObject({

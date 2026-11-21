@@ -1,4 +1,11 @@
-import { AgentProtocol, BaseAgent, type ParsedKey, type SigningRequestOptions } from 'ssh2';
+import { agentIdentities, agentSign, isSshError } from './engine.js';
+import {
+  identityFromBlob,
+  isUsableIdentityType,
+  type SigningOptions,
+  type SshAgent,
+  type SshIdentity,
+} from './identity.js';
 import { isSecurityKeyType, SecurityKeyError, signatureAlgorithm } from './security-keys.js';
 
 export const DEFAULT_AGENT_WAIT_STATUS_MS = 2_000;
@@ -15,205 +22,98 @@ export interface ResponsiveAgentOptions {
   waitStatusMs?: number;
   operationTimeoutMs?: number;
   /** Called as a signature with a security key starts; it waits for a touch. */
-  onSecurityKey?: (key: ParsedKey) => void;
+  onSecurityKey?: (key: SshIdentity) => void;
   /** Bound for a security key signature; 0 waits as long as the agent does. */
   securityKeyTimeoutMs?: number;
   /** Called with the signature algorithm of every signature the agent made. */
   onSignature?: (algorithm: string) => void;
 }
 
+/** The agent protocol's flags for the RSA signature variants. */
+const RSA_SHA2_256 = 2;
+const RSA_SHA2_512 = 4;
+
+/** Failures that say the agent itself is not there, rather than that it said no. */
+const AGENT_GONE = ['AGENT_UNAVAILABLE', 'AGENT_TIMEOUT', 'AGENT_CLOSED', 'AGENT_PROTOCOL'];
+
 /**
- * Runs ssh-agent requests over streams we own, so an agent that accepts a
- * connection but never replies cannot trap ssh2's authentication state
- * machine forever. The wrapped agent still supplies the platform-specific
- * stream (OpenSSH socket, Cygwin or Pageant).
+ * An ssh-agent that never hangs a login. Every request runs over a
+ * connection of its own with a time limit, so an agent that accepts a
+ * connection but never replies costs that one request. `endpoint` is the
+ * agent's socket path, a Windows pipe, or `pageant`.
  */
-export class ResponsiveAgent extends BaseAgent<ParsedKey> {
+export class ResponsiveAgent implements SshAgent {
   private unavailableError: Error | undefined;
 
   constructor(
-    private readonly agent: BaseAgent<ParsedKey>,
+    readonly endpoint: string,
     private readonly options: ResponsiveAgentOptions = {},
-  ) {
-    super();
+  ) {}
+
+  /** The agent could not be reached; it is not asked again. */
+  get unavailable(): boolean {
+    return this.unavailableError !== undefined;
   }
 
-  getIdentities(cb: (err: Error | undefined, keys?: ParsedKey[]) => void): void {
-    this.request(
-      'identities',
-      (protocol, done) => protocol.getIdentities(done),
-      cb,
-    );
+  async identities(): Promise<SshIdentity[]> {
+    const listed = await this.request('identities', (timeoutMs) => agentIdentities(this.endpoint, timeoutMs));
+    // Identities of a type the engine cannot offer are left out, so nothing
+    // lists or tries a key that could never log in.
+    return listed.flatMap((entry) => {
+      const identity = identityFromBlob(entry.blob, entry.comment);
+      return identity && isUsableIdentityType(identity.type) ? [identity] : [];
+    });
   }
 
-  sign(
-    pubKey: ParsedKey,
-    data: Buffer,
-    options: SigningRequestOptions,
-    cb?: (err?: Error | null, signature?: Buffer) => void,
-  ): void;
-  sign(
-    pubKey: ParsedKey,
-    data: Buffer,
-    cb: (err?: Error | null, signature?: Buffer) => void,
-  ): void;
-  sign(
-    pubKey: ParsedKey,
-    data: Buffer,
-    optionsOrCb:
-      | SigningRequestOptions
-      | ((err?: Error | null, signature?: Buffer) => void),
-    maybeCb?: (err?: Error | null, signature?: Buffer) => void,
-  ): void {
-    const options =
-      typeof optionsOrCb === 'function' ? undefined : optionsOrCb;
-    const cb = typeof optionsOrCb === 'function' ? optionsOrCb : maybeCb;
-    if (!cb) return;
-    const securityKey = isSecurityKeyType(pubKey.type);
-    if (securityKey) this.options.onSecurityKey?.(pubKey);
-    this.request<Buffer>(
-      'sign',
-      (protocol, done) => {
-        protocol.sign(pubKey, data, options, done);
-      },
-      (err, signature) => {
-        if (err) {
-          cb(securityKey && !(err instanceof SecurityKeyError) ? new SecurityKeyError(err.message, pubKey) : err);
-          return;
-        }
-        this.options.onSignature?.(signatureAlgorithm(pubKey.type, options?.hash));
-        cb(undefined, signature);
-      },
-      securityKey
-        ? {
-            waitStatusMs: -1,
-            timeoutMs: this.options.securityKeyTimeoutMs ?? DEFAULT_SECURITY_KEY_TIMEOUT_MS,
-          }
-        : undefined,
-    );
-  }
-
-  /** Agent forwarding remains a transparent stream, independent of login auth. */
-  override getStream(cb: Parameters<NonNullable<BaseAgent['getStream']>>[0]): void {
-    if (!this.agent.getStream) {
-      cb(new Error('SSH agent does not support stream access'));
-      return;
-    }
-    this.agent.getStream(cb);
-  }
-
-  private request<T>(
-    operation: 'identities' | 'sign',
-    send: (
-      protocol: AgentProtocol,
-      done: (err?: Error | null, value?: T) => void,
-    ) => void,
-    cb: (err: Error | undefined, value?: T) => void,
-    limits?: { waitStatusMs: number; timeoutMs: number },
-  ): void {
-    if (this.unavailableError) {
-      queueMicrotask(() => cb(this.unavailableError));
-      return;
-    }
-    if (!this.agent.getStream) {
-      queueMicrotask(() =>
-        cb(new Error('SSH agent does not support stream access')),
+  async sign(identity: SshIdentity, data: Buffer, options: SigningOptions = {}): Promise<Buffer> {
+    const securityKey = isSecurityKeyType(identity.type);
+    if (securityKey) this.options.onSecurityKey?.(identity);
+    const flags = options.hash === 'sha512' ? RSA_SHA2_512 : options.hash === 'sha256' ? RSA_SHA2_256 : 0;
+    try {
+      const signature = await this.request(
+        'sign',
+        (timeoutMs) => agentSign(this.endpoint, identity.blob, data, flags, timeoutMs),
+        securityKey
+          ? {
+              waitStatusMs: -1,
+              timeoutMs: this.options.securityKeyTimeoutMs ?? DEFAULT_SECURITY_KEY_TIMEOUT_MS,
+            }
+          : undefined,
       );
-      return;
+      this.options.onSignature?.(signatureAlgorithm(identity.type, options.hash));
+      return signature;
+    } catch (err) {
+      if (securityKey && !(err instanceof SecurityKeyError)) {
+        throw new SecurityKeyError(err instanceof Error ? err.message : String(err), identity);
+      }
+      throw err;
     }
+  }
 
-    const waitStatusMs =
-      limits?.waitStatusMs ?? this.options.waitStatusMs ?? DEFAULT_AGENT_WAIT_STATUS_MS;
+  private async request<T>(
+    operation: 'identities' | 'sign',
+    send: (timeoutMs: number) => Promise<T>,
+    limits?: { waitStatusMs: number; timeoutMs: number },
+  ): Promise<T> {
+    if (this.unavailableError) throw this.unavailableError;
+    const waitStatusMs = limits?.waitStatusMs ?? this.options.waitStatusMs ?? DEFAULT_AGENT_WAIT_STATUS_MS;
     const operationTimeoutMs =
       limits?.timeoutMs ?? this.options.operationTimeoutMs ?? DEFAULT_AGENT_OPERATION_TIMEOUT_MS;
-    let settled = false;
-    let stream: Awaited<Parameters<Parameters<NonNullable<BaseAgent['getStream']>>[0]>[1]>;
-    let protocol: AgentProtocol | undefined;
-
     const waitTimer =
-      waitStatusMs >= 0
-        ? setTimeout(() => this.options.onWaiting?.(operation), waitStatusMs)
-        : undefined;
+      waitStatusMs >= 0 ? setTimeout(() => this.options.onWaiting?.(operation), waitStatusMs) : undefined;
     waitTimer?.unref?.();
-
-    const finish = (
-      err?: Error | null,
-      value?: T,
-      agentUnavailable = false,
-    ) => {
-      if (settled) return;
-      settled = true;
-      if (waitTimer) clearTimeout(waitTimer);
-      if (timeoutTimer) clearTimeout(timeoutTimer);
-      if (agentUnavailable && err) this.unavailableError = err;
-
-      try {
-        protocol?.unpipe(stream);
-        stream?.unpipe(protocol);
-        protocol?.destroy();
-        stream?.destroy();
-      } catch {
-        // The operation result is already known; cleanup is best-effort.
-      }
-      this.options.resumeDeadline?.();
-      cb(err ?? undefined, value);
-    };
-
-    const timeoutTimer =
-      operationTimeoutMs > 0
-        ? setTimeout(() => {
-            finish(
-              new Error(
-                `SSH agent did not respond while ${
-                  operation === 'identities' ? 'listing identities' : 'signing'
-                }`,
-              ),
-              undefined,
-              true,
-            );
-          }, operationTimeoutMs)
-        : undefined;
-    timeoutTimer?.unref?.();
 
     this.options.pauseDeadline?.();
     try {
-      this.agent.getStream((err, connectedStream) => {
-        if (settled) {
-          connectedStream?.destroy();
-          return;
-        }
-        if (err || !connectedStream) {
-          finish(err ?? new Error('Failed to connect to SSH agent'), undefined, true);
-          return;
-        }
-        stream = connectedStream;
-        protocol = new AgentProtocol(true);
-        const onTransportFailure = (failure?: Error) => {
-          finish(
-            failure ?? new Error('SSH agent connection closed before replying'),
-            undefined,
-            true,
-          );
-        };
-        protocol.once('error', onTransportFailure);
-        stream.once('close', onTransportFailure);
-        stream.once('end', onTransportFailure);
-        stream.once('error', onTransportFailure);
-        protocol.pipe(stream).pipe(protocol);
-        try {
-          send(protocol, (requestError, value) =>
-            finish(requestError, value, operation === 'identities' && !!requestError),
-          );
-        } catch (requestError) {
-          finish(
-            requestError instanceof Error
-              ? requestError
-              : new Error(String(requestError)),
-          );
-        }
-      });
-    } catch (error) {
-      finish(error instanceof Error ? error : new Error(String(error)), undefined, true);
+      return await send(Math.max(0, operationTimeoutMs));
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      // An agent that cannot list its keys is of no use for the rest of the login either.
+      if (isSshError(error, ...AGENT_GONE) || operation === 'identities') this.unavailableError = error;
+      throw error;
+    } finally {
+      if (waitTimer) clearTimeout(waitTimer);
+      this.options.resumeDeadline?.();
     }
   }
 }

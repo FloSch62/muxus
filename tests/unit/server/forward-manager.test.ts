@@ -1,16 +1,51 @@
+import { generateKeyPairSync } from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
-import { PassThrough } from 'node:stream';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { TunnelRecord } from '@muxus/shared';
-import type { ConnectIo, ManagedConnection } from '../../../server/src/ssh/connection-manager.js';
+import os from 'node:os';
+import path from 'node:path';
+import { Server, type AcceptConnection, type RejectConnection, type ServerChannel } from 'ssh2';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import type { ForwardRequest, TunnelRecord } from '@muxus/shared';
 import { ForwardManager } from '../../../server/src/forwards/forward-manager.js';
+import {
+  SshConnectionManager,
+  type ConnectIo,
+  type ManagedConnection,
+} from '../../../server/src/ssh/connection-manager.js';
+import { SshError } from '../../../server/src/ssh/engine.js';
+import { KnownHostsStore } from '../../../server/src/ssh/known-hosts.js';
+import { loadConfigDocument } from '../../../server/src/ssh/ssh-config.js';
 
-/** A transport stand-in whose close the test triggers with drop(). */
-function fakeConnection(id: string, client: object = {}) {
+/**
+ * An engine stand-in whose forwards bind at once: on the port asked for, or
+ * on one of its own for port 0. `listeners` keeps each local one it handed
+ * out, so a test can see which of them were closed.
+ */
+function fakeTransport() {
+  let nextPort = 40_000;
+  const listeners: Array<{ port: number; close: ReturnType<typeof vi.fn> }> = [];
+  const listen = (_bindHost: string, bindPort: number) => {
+    const listener = { port: bindPort || nextPort++, close: vi.fn() };
+    listeners.push(listener);
+    return Promise.resolve(listener);
+  };
+  return {
+    listeners,
+    forwardLocal: vi.fn(listen),
+    forwardDynamic: vi.fn(listen),
+    forwardRemote: vi.fn((_bindHost: string, bindPort: number) =>
+      Promise.resolve({ port: bindPort, close: vi.fn(() => Promise.resolve()) }),
+    ),
+    onForwardError: vi.fn(() => () => undefined),
+  };
+}
+
+/** A connection stand-in whose close the test triggers with drop(). */
+function fakeConnection(id: string, transport: object = fakeTransport()) {
   const listeners = new Set<(reason?: string) => void>();
   const connection = {
     id,
-    client,
+    transport,
     profile: { kind: 'ssh', target: 'db', keepaliveIntervalSeconds: 25 },
     onClose: (listener: (reason?: string) => void) => {
       listeners.add(listener);
@@ -47,6 +82,104 @@ function savedTunnel(patch: Partial<TunnelRecord> = {}): TunnelRecord {
   };
 }
 
+// What only the engine can show (a listener that really listens, what happens
+// to each client) runs over a real connection to an sshd stand-in.
+
+const tmp = mkdtempSync(path.join(os.tmpdir(), 'muxus-forward-manager-'));
+const emptyConfig = path.join(tmp, 'ssh_config');
+writeFileSync(emptyConfig, '');
+
+const savedEnv = { HOME: process.env.HOME, SSH_AUTH_SOCK: process.env.SSH_AUTH_SOCK };
+beforeAll(() => {
+  // No real agent and no real ~/.ssh keys take part in the dial.
+  process.env.HOME = tmp;
+  delete process.env.SSH_AUTH_SOCK;
+});
+afterAll(() => {
+  process.env.HOME = savedEnv.HOME;
+  if (savedEnv.SSH_AUTH_SOCK !== undefined) process.env.SSH_AUTH_SOCK = savedEnv.SSH_AUTH_SOCK;
+  rmSync(tmp, { recursive: true, force: true });
+});
+
+const HOST_KEY = generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  publicKeyEncoding: { type: 'pkcs1', format: 'pem' },
+  privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+}).privateKey;
+
+/** What the sshd stand-in does with a client's direct-tcpip request. */
+type TcpipHandler = (accept: AcceptConnection<ServerChannel>, reject: RejectConnection) => void;
+
+/** sshd stand-in that lets everyone in and leaves each direct-tcpip request to the test. */
+function startSshd(onTcpip: TcpipHandler) {
+  const server = new Server({ hostKeys: [HOST_KEY] }, (conn) => {
+    conn.on('error', () => undefined);
+    conn.on('authentication', (ctx) => ctx.accept());
+    conn.on('ready', () => conn.on('tcpip', onTcpip));
+  });
+  return new Promise<{ server: Server; port: number }>((resolve) => {
+    server.listen(0, '127.0.0.1', () => resolve({ server, port: (server.address() as net.AddressInfo).port }));
+  });
+}
+
+/** Round-trip a line through the forwarded local port. */
+function echoThrough(port: number, text: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect(port, '127.0.0.1', () => socket.write(text));
+    socket.once('data', (data) => {
+      resolve(data.toString('utf8'));
+      socket.destroy();
+    });
+    socket.once('error', reject);
+  });
+}
+
+let knownHostsCounter = 0;
+
+const trustingIo: ConnectIo = {
+  status: () => undefined,
+  prompt: () => Promise.reject(new Error('the sshd stand-in asks for nothing')),
+  hostKey: () => Promise.resolve(true),
+};
+
+const closers: Array<() => void | Promise<void>> = [];
+afterEach(async () => {
+  for (const close of closers.splice(0).reverse()) await close();
+});
+
+/**
+ * A running forward on a real connection, started the way the forwarding
+ * panel starts one. Without a handler the sshd refuses every channel.
+ */
+async function startOverSsh(
+  request: Omit<ForwardRequest, 'connId'>,
+  onTcpip: TcpipHandler = (_accept, reject) => reject(),
+) {
+  const sshd = await startSshd(onTcpip);
+  const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+  const connections = new SshConnectionManager(log as never, {
+    knownHosts: new KnownHostsStore(path.join(tmp, `known_hosts-${knownHostsCounter++}`), path.join(tmp, 'no-global')),
+    loadConfig: () => loadConfigDocument(emptyConfig),
+  });
+  // A logger of its own, so `warn` holds only what the forwards said.
+  const warn = vi.fn();
+  const forwards = new ForwardManager(connections, { info: vi.fn(), warn } as never);
+  closers.push(
+    () => new Promise<void>((resolve) => sshd.server.close(() => resolve())),
+    () => connections.closeAll(),
+    () => forwards.stopAll(),
+  );
+
+  const dial = await connections.connect(
+    { kind: 'ssh', target: '127.0.0.1', useConfig: false, user: 'tester', port: sshd.port },
+    trustingIo,
+    'dial',
+  );
+  const started = await forwards.start({ ...request, connId: dial.connection.id });
+  dial.release();
+  return { forwards, started, warn };
+}
+
 describe('ForwardManager lifecycle', () => {
   let manager: ForwardManager | undefined;
 
@@ -54,7 +187,8 @@ describe('ForwardManager lifecycle', () => {
 
   it('stops terminal-owned forwards but preserves explicit tunnels', async () => {
     const release = vi.fn();
-    const { connection } = fakeConnection('connection-1');
+    const transport = fakeTransport();
+    const { connection } = fakeConnection('connection-1', transport);
     const connections = {
       acquire: () => ({ connection, owner: 'forward' as const, release }),
     };
@@ -75,16 +209,12 @@ describe('ForwardManager lifecycle', () => {
 
     expect(manager.list()).toEqual([tunnel]);
     expect(release).toHaveBeenCalledTimes(1);
+    // Only the session's listener went down with it.
+    expect(transport.listeners.map((listener) => listener.close.mock.calls.length)).toEqual([1, 0]);
   });
 
   it('reports the port a SOCKS5 forward on port 0 was given', async () => {
-    const { connection } = fakeConnection('connection-1');
-    const connections = {
-      acquire: () => ({ connection, owner: 'forward' as const, release: vi.fn() }),
-    };
-    manager = new ForwardManager(connections as never, { warn: vi.fn() } as never);
-
-    const forward = await manager.start({ connId: connection.id, type: 'dynamic', bindPort: 0 });
+    const { started: forward } = await startOverSsh({ type: 'dynamic', bindPort: 0 });
 
     expect(forward.bindPort).toBeGreaterThan(0);
     // Something really listens there.
@@ -152,66 +282,60 @@ describe('ForwardManager lifecycle', () => {
   });
 });
 
-describe('ForwardManager clients on a failing transport', () => {
-  let manager: ForwardManager | undefined;
-
-  afterEach(() => manager?.stopAll());
-
-  type ChannelOpened = (err: Error | undefined, stream: PassThrough) => void;
-
-  /** A running -L forward over a client whose forwardOut the test supplies. */
-  async function startLocal(forwardOut: (...args: never[]) => void) {
-    const { connection } = fakeConnection('connection-1', { forwardOut });
-    const warn = vi.fn();
-    manager = new ForwardManager(
-      { acquire: () => ({ connection, owner: 'forward', release: vi.fn() }) } as never,
-      { warn } as never,
-    );
+describe('ForwardManager clients of a local forward', () => {
+  /** A running -L forward to an sshd whose answer to each channel request the test supplies. */
+  async function startLocal(onTcpip: TcpipHandler) {
     const port = await freePort();
-    await manager.start({
-      connId: connection.id,
-      type: 'local',
-      bindPort: port,
-      targetHost: 'db',
-      targetPort: 5432,
-    });
-    return { port, warn };
+    const { started, warn } = await startOverSsh(
+      { type: 'local', bindPort: port, targetHost: 'db', targetPort: 5432 },
+      onTcpip,
+    );
+    return { port, started, warn };
   }
 
-  it('drops a local client when ssh2 reports the transport is not writable', async () => {
-    // A half-closed transport: ssh2 throws, and its close event has not fired yet.
-    const forwardOut = vi.fn(() => {
-      throw new Error('Not connected');
-    });
-    const { port, warn } = await startLocal(forwardOut);
+  it('drops a local client whose channel the server refuses', async () => {
+    const onTcpip = vi.fn<TcpipHandler>((_accept, reject) => reject());
+    const { port, started, warn } = await startLocal(onTcpip);
 
     await new Promise<void>((resolve) => {
       net.connect(port, '127.0.0.1').once('close', () => resolve());
     });
 
-    expect(forwardOut).toHaveBeenCalledTimes(1);
-    expect(warn).toHaveBeenCalledWith(
-      expect.objectContaining({ err: expect.objectContaining({ message: 'Not connected' }) }),
-      'forwardOut failed',
+    expect(onTcpip).toHaveBeenCalledTimes(1);
+    // The engine's report travels on its own and can arrive after the client is gone.
+    await vi.waitFor(() =>
+      expect(warn).toHaveBeenCalledWith(
+        { err: 'Channel open failure: connect failed', forward: started.id },
+        'forwardOut failed',
+      ),
     );
   });
 
   it('survives a local client resetting while its channel opens', async () => {
-    let opened: ChannelOpened | undefined;
-    const { port } = await startLocal((...args: never[]) => {
-      opened = args[4] as unknown as ChannelOpened;
+    let opened: AcceptConnection<ServerChannel> | undefined;
+    const { port } = await startLocal((accept) => {
+      // The first request waits for the test; the ones after it are echoed.
+      if (!opened) opened = accept;
+      else {
+        const stream = accept();
+        stream.pipe(stream);
+      }
     });
 
     const client = net.connect(port, '127.0.0.1');
     await vi.waitFor(() => expect(opened).toBeDefined());
     client.resetAndDestroy();
-    // Let the listener's side read the reset before the channel comes back.
+    // Let the reset reach the listener's side before the channel comes back.
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     // The channel opens for nobody and must not linger.
-    const channel = new PassThrough();
-    opened!(undefined, channel);
-    await vi.waitFor(() => expect(channel.destroyed).toBe(true));
+    const closed = vi.fn();
+    // Read it as an sshd would: ssh2 only reports the close of a channel it has read to its end.
+    opened!().on('close', closed).resume();
+    await vi.waitFor(() => expect(closed).toHaveBeenCalledTimes(1));
+
+    // The forward itself is unharmed.
+    expect(await echoThrough(port, 'after')).toBe('after');
   });
 });
 
@@ -410,14 +534,12 @@ describe('ForwardManager tunnel reconnect', () => {
   });
 
   it('releases a remote forward whose connection is already gone', async () => {
-    const client = {
-      on: vi.fn(),
-      forwardIn: vi.fn((_addr: string, _port: number, cb: (err?: Error) => void) => cb()),
-      unforwardIn: vi.fn(() => {
-        throw new Error('Not connected');
-      }),
+    // Cancelling the server's listener fails: nobody is left to hear it.
+    const close = vi.fn(() => Promise.reject(new SshError('Not connected', 'DISCONNECTED')));
+    const transport = {
+      forwardRemote: vi.fn((_bindHost: string, bindPort: number) => Promise.resolve({ port: bindPort, close })),
     };
-    const first = fakeConnection('connection-1', client);
+    const first = fakeConnection('connection-1', transport);
     const release = vi.fn();
     manager = new ForwardManager(
       { acquire: () => ({ connection: first.connection, owner: 'forward', release }) } as never,
@@ -426,6 +548,7 @@ describe('ForwardManager tunnel reconnect', () => {
 
     await manager.start({ connId: 'connection-1', type: 'remote', bindPort: 8080, targetHost: 'localhost', targetPort: 3000 });
     expect(() => first.drop()).not.toThrow();
+    expect(close).toHaveBeenCalledTimes(1);
     expect(release).toHaveBeenCalledTimes(1);
     expect(manager.list()).toEqual([]);
   });

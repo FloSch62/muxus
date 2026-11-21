@@ -5,7 +5,7 @@ import { showToast } from '../state/toast.js';
 import { sessionAttached } from './send-break.js';
 import { terminalHandle } from './terminal-registry.js';
 
-/** A file goes to the serial, Telnet and SSH sessions that take BREAK, once attached. */
+/** A file goes to a serial, Telnet or SSH session, once attached. */
 export const canSendTextFile = sessionAttached;
 
 const tabById = (tabId: string) =>

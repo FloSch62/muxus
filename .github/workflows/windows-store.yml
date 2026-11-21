@@ -18,6 +18,7 @@ jobs:
           node-version: 24.22.3
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-ssh-engine
       - run: pnpm build
       - name: Build Store submission (AppX)
         run: pnpm --filter @muxus/electron dist:store

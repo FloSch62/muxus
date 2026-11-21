@@ -80,8 +80,7 @@ import {
 import { findPane } from '../state/workspace-layout.js';
 import { layout, statusTextColor } from '../theme.js';
 import { useMultiExecStore } from '../state/multi-exec.js';
-import { canSendBreak, sendBreak, supportsBreak } from '../terminal/send-break.js';
-import { SYSTEM_OPENSSH_UNAVAILABLE } from '../system-openssh.js';
+import { canSendBreak, isLineSession, sendBreak, supportsBreak } from '../terminal/send-break.js';
 import { canSendTextFile, requestSendTextFile } from '../terminal/send-text-file.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
@@ -1469,15 +1468,11 @@ export function TabStrip({
             <ListItemIcon>
               <PowerInputOutlinedIcon fontSize="small" />
             </ListItemIcon>
-            {menuTab?.systemOpenSsh ? (
-              <ListItemText primary="Send BREAK" secondary={SYSTEM_OPENSSH_UNAVAILABLE} />
-            ) : (
-              <ListItemText>Send BREAK</ListItemText>
-            )}
+            <ListItemText>Send BREAK</ListItemText>
             <ChordHint chord={sendBreakChord} />
           </MenuItem>
         ) : null}
-        {supportsBreak(menuTab) ? (
+        {isLineSession(menuTab) ? (
           <MenuItem
             disabled={!canSendTextFile(menuTab)}
             onClick={() => {

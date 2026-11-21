@@ -17,7 +17,7 @@ jobs:
   validate:
     name: Validate
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Check out source
         uses: actions/checkout@v7
@@ -37,6 +37,21 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Set up the SSH engine toolchain
+        uses: ./.github/actions/setup-ssh-engine
+
+      - name: Lint SSH engine
+        run: pnpm lint:engine
+
+      - name: Test SSH engine
+        run: pnpm test:engine
+
+      # The tests load the engine, and its typings are checked in.
+      - name: Build SSH engine
+        run: |
+          pnpm --filter @muxus/ssh-engine build
+          git diff --exit-code engine/index.d.ts
+
       - name: Typecheck
         run: pnpm typecheck
 
@@ -45,6 +60,10 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      # The connection stack against a real sshd in a container.
+      - name: Test against OpenSSH
+        run: pnpm test:openssh
 
       - name: Test release submission safeguards
         run: pnpm test:release
@@ -105,6 +124,9 @@ jobs:
           MUXUS_OS_KEYRING_SMOKE: "1"
         run: pnpm --filter @muxus/tests exec vitest run unit/server/vault-key-store.os.test.ts
 
+      - name: Set up the SSH engine toolchain
+        uses: ./.github/actions/setup-ssh-engine
+
       - name: Build workspace
         run: pnpm build
 
@@ -155,8 +177,12 @@ jobs:
           if (-not (Get-ChildItem -Path "$app/@napi-rs/keyring-win32-arm64-msvc/*.node")) {
             throw "Windows ARM64 keyring binary not found"
           }
+          $engine = "electron/release/win-arm64-unpacked/resources/app.asar.unpacked/dist/muxus-ssh-engine.win32-arm64-msvc.node"
+          if (-not (Test-Path -LiteralPath $engine)) {
+            throw "Windows ARM64 SSH engine not found: $engine"
+          }
 
-      - name: Verify universal keyring binaries
+      - name: Verify universal native binaries
         if: runner.os == 'macOS'
         run: |
           app="electron/release/mac-universal/Muxus.app"
@@ -167,4 +193,5 @@ jobs:
           fi
           for arch in x64 arm64; do
             ls "$app/Contents/Resources/app.asar.unpacked/node_modules/@napi-rs/keyring-darwin-$arch/"*.node
+            ls "$app/Contents/Resources/app.asar.unpacked/dist/muxus-ssh-engine.darwin-$arch.node"
           done

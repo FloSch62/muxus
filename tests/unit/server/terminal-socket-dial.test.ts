@@ -252,7 +252,7 @@ describe('terminal socket connect mode', () => {
     const stream = Object.assign(new EventEmitter(), {
       close: vi.fn(),
       write: vi.fn(),
-      setWindow: vi.fn(),
+      resize: vi.fn(),
       pause: vi.fn(),
       resume: vi.fn(),
     });

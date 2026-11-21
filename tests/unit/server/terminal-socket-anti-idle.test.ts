@@ -87,7 +87,7 @@ async function sshSession(database: MuxusDatabase, history = historyStore().stor
       callback?.();
       return true;
     }),
-    setWindow: vi.fn(),
+    resize: vi.fn(),
     pause: vi.fn(),
     resume: vi.fn(),
   });

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import ssh2, { BaseAgent, type ParsedKey, type SigningRequestOptions } from 'ssh2';
+import type { SigningOptions, SshAgent, SshIdentity } from './identity.js';
 import { ResponsiveAgent, type ResponsiveAgentOptions } from './responsive-agent.js';
 import {
   classifyAskpassPrompt,
@@ -11,8 +11,6 @@ import {
   securityKeyTypeName,
   type SecurityKeyQuestion,
 } from './security-keys.js';
-
-type SignCallback = (err?: Error | null, signature?: Buffer) => void;
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
@@ -83,9 +81,9 @@ export function agentFailureReason(log: string): string | undefined {
 export interface SecurityKeyFileOptions {
   file: string;
   /** The key's public half, from the key file's header. */
-  publicKey: ParsedKey;
+  publicKey: SshIdentity;
   /** What to offer the server instead, such as a certificate for the key. */
-  identity?: ParsedKey;
+  identity?: SshIdentity;
   /** Resolved SecurityKeyProvider; undefined uses OpenSSH's built-in support. */
   provider?: string;
   /**
@@ -107,7 +105,7 @@ export interface SecurityKeyFileOptions {
  * SSH_ASKPASS) and the touch exactly as it does for `ssh`. Nothing starts
  * until the server accepts the key, and the agent ends with the login.
  */
-export class SecurityKeyFileAgent extends BaseAgent<ParsedKey> {
+export class SecurityKeyFileAgent implements SshAgent {
   private session: Promise<ResponsiveAgent> | undefined;
   private readonly processes = new Set<ChildProcess>();
   private directory: string | undefined;
@@ -118,52 +116,38 @@ export class SecurityKeyFileAgent extends BaseAgent<ParsedKey> {
   private lastQuestion: SecurityKeyQuestion | undefined;
   private disposed = false;
 
-  constructor(private readonly options: SecurityKeyFileOptions) {
-    super();
+  constructor(private readonly options: SecurityKeyFileOptions) {}
+
+  identities(): Promise<SshIdentity[]> {
+    return Promise.resolve([this.options.identity ?? this.options.publicKey]);
   }
 
-  getIdentities(cb: (err: Error | undefined, keys?: ParsedKey[]) => void): void {
-    queueMicrotask(() => cb(undefined, [this.options.identity ?? this.options.publicKey]));
-  }
-
-  sign(pubKey: ParsedKey, data: Buffer, options: SigningRequestOptions, cb?: SignCallback): void;
-  sign(pubKey: ParsedKey, data: Buffer, cb: SignCallback): void;
-  sign(
-    _pubKey: ParsedKey,
-    data: Buffer,
-    optionsOrCb: SigningRequestOptions | SignCallback,
-    maybeCb?: SignCallback,
-  ): void {
-    const options = typeof optionsOrCb === 'function' ? {} : optionsOrCb;
-    const cb = typeof optionsOrCb === 'function' ? optionsOrCb : maybeCb;
-    if (!cb) return;
+  async sign(_identity: SshIdentity, data: Buffer, options: SigningOptions = {}): Promise<Buffer> {
     // Loading the key, passphrase prompt included, is user time as well.
     const { pauseDeadline, resumeDeadline } = this.options.agentOptions ?? {};
     pauseDeadline?.();
-    this.session ??= this.start();
-    this.session.then(
-      (client) => {
-        resumeDeadline?.();
-        this.pinEntered = false;
-        this.agentLog = '';
-        // The agent holds the plain key; a certificate is signed by that key.
-        client.sign(this.options.publicKey, data, options, (err, signature) => {
-          if (err instanceof SecurityKeyError && err.key) {
-            // The private agent asks for the PIN at most once per signature.
-            const reason =
-              agentFailureReason(this.agentLog) ??
-              (this.pinEntered ? 'the PIN was wrong, or it was not touched in time' : undefined);
-            cb(reason ? new SecurityKeyError(reason, err.key) : err);
-            return;
-          }
-          cb(err, signature);
-        });
-      },
-      (err: Error) => {
-        resumeDeadline?.();
-        cb(err);
-      },
-    );
+    let client: ResponsiveAgent;
+    try {
+      this.session ??= this.start();
+      client = await this.session;
+    } finally {
+      resumeDeadline?.();
+    }
+    this.pinEntered = false;
+    this.agentLog = '';
+    try {
+      // The agent holds the plain key; a certificate is signed by that key.
+      return await client.sign(this.options.publicKey, data, options);
+    } catch (err) {
+      if (err instanceof SecurityKeyError && err.key) {
+        // The private agent asks for the PIN at most once per signature.
+        const reason =
+          agentFailureReason(this.agentLog) ??
+          (this.pinEntered ? 'the PIN was wrong, or it was not touched in time' : undefined);
+        if (reason) throw new SecurityKeyError(reason, err.key);
+      }
+      throw err;
+    }
   }
 
   dispose(): void {
@@ -245,7 +229,7 @@ export class SecurityKeyFileAgent extends BaseAgent<ParsedKey> {
       );
     }
     const { agentOptions, identity } = this.options;
-    return new ResponsiveAgent(ssh2.createAgent(agentSocket) as BaseAgent<ParsedKey>, {
+    return new ResponsiveAgent(agentSocket, {
       ...agentOptions,
       onSignature: (algorithm) => agentOptions?.onSignature?.(identity ? identity.type : algorithm),
       waitStatusMs: -1,

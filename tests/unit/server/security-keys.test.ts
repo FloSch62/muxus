@@ -11,10 +11,11 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import ssh2, { Server, type ParsedKey } from 'ssh2';
+import { Server } from 'ssh2';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { SshProfile } from '@muxus/shared/ws-protocol';
 import { SshConnectionManager, type ConnectIo } from '../../../server/src/ssh/connection-manager.js';
+import { identityFromBlob, type SshIdentity } from '../../../server/src/ssh/identity.js';
 import { KnownHostsStore } from '../../../server/src/ssh/known-hosts.js';
 import { listSshKeys, probeAgentKeys } from '../../../server/src/ssh/key-scan.js';
 import { ResponsiveAgent } from '../../../server/src/ssh/responsive-agent.js';
@@ -24,13 +25,15 @@ import {
   describeSecurityKeyError,
   readOpenSshKeyFile,
   SecurityKeyError,
+  securityKeyCertificate,
   securityKeyFile,
   securityKeyLabel,
   securityKeyProvider,
 } from '../../../server/src/ssh/security-keys.js';
 import { loadConfigDocument } from '../../../server/src/ssh/ssh-config.js';
 
-const { utils } = ssh2;
+/** A key as the code under test holds it: its type and wire-format blob. */
+const identity = (blob: Buffer): SshIdentity => identityFromBlob(blob)!;
 
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'muxus-sk-test-'));
 const PASSWORD = 'fallback-password';
@@ -91,11 +94,17 @@ function ecdsaSkKey(comment = 'test-ecdsa-sk', application = 'ssh:'): SoftKey {
   return { type: ECDSA_SK, application, blob, privateKey, line: `${ECDSA_SK} ${blob.toString('base64')} ${comment}` };
 }
 
-/** A user certificate for a security key; only its layout matters to the client. */
+const CERTIFICATE_AUTHORITY = generateKeyPairSync('ed25519');
+
+/** A user certificate for a security key, signed by a throwaway authority as ssh-keygen -s would. */
 function certificateFor(key: SoftKey): Buffer {
   const certType = key.type.replace('@openssh.com', '-cert-v01@openssh.com');
   const keyFields = key.blob.subarray(readField(key.blob, 0).next);
-  return Buffer.concat([
+  const authority = Buffer.concat([
+    sshString('ssh-ed25519'),
+    sshString(CERTIFICATE_AUTHORITY.publicKey.export({ format: 'der', type: 'spki' }).subarray(-32)),
+  ]);
+  const signed = Buffer.concat([
     sshString(certType),
     sshString(Buffer.alloc(32, 7)),
     keyFields,
@@ -108,9 +117,13 @@ function certificateFor(key: SoftKey): Buffer {
     sshString(''),
     sshString(''),
     sshString(''),
-    sshString(sshString('ssh-ed25519')),
-    sshString(Buffer.alloc(64)),
+    sshString(authority),
   ]);
+  const signature = Buffer.concat([
+    sshString('ssh-ed25519'),
+    sshString(cryptoSign(null, signed, CERTIFICATE_AUTHORITY.privateKey)),
+  ]);
+  return Buffer.concat([signed, sshString(signature)]);
 }
 
 /** The message a FIDO authenticator signs for OpenSSH (PROTOCOL.u2f). */
@@ -382,21 +395,13 @@ afterAll(() => {
 });
 
 describe('security key public keys', () => {
-  it('parses ed25519-sk and ecdsa-sk keys from text and agent blobs, keeping the application', () => {
+  it('reads the type of a security key from its blob and keeps the blob whole', () => {
     for (const key of [ed25519SkKey(), ecdsaSkKey()]) {
-      const text = utils.parseKey(key.line);
-      const binary = utils.parseKey(key.blob);
-      if (text instanceof Error) throw text;
-      if (binary instanceof Error) throw binary;
-      expect(String(text.type)).toBe(key.type);
-      expect(text.comment).toBe(key.type === ED25519_SK ? 'test-ed25519-sk' : 'test-ecdsa-sk');
-      expect(text.getPublicSSH().equals(key.blob)).toBe(true);
-      expect(String(binary.type)).toBe(key.type);
-      expect(binary.getPublicSSH().equals(key.blob)).toBe(true);
-      expect(text.isPrivateKey()).toBe(false);
-      expect(createPublicKey(text.getPublicPEM()).asymmetricKeyType).toBe(
-        key.type === ED25519_SK ? 'ed25519' : 'ec',
-      );
+      const parsed = identityFromBlob(key.blob, 'from-agent');
+      expect(parsed?.type).toBe(key.type);
+      // The application string is part of the blob the server is offered.
+      expect(parsed?.blob.equals(key.blob)).toBe(true);
+      expect(parsed?.comment).toBe('from-agent');
     }
   });
 
@@ -404,35 +409,31 @@ describe('security key public keys', () => {
     for (const key of [ed25519SkKey(), ecdsaSkKey()]) {
       const certificate = certificateFor(key);
       const certType = key.type.replace('@openssh.com', '-cert-v01@openssh.com');
-      const parsed = utils.parseKey(`${certType} ${certificate.toString('base64')} cert`);
-      const binary = utils.parseKey(certificate);
-      if (parsed instanceof Error) throw parsed;
-      if (binary instanceof Error) throw binary;
-      expect(String(parsed.type)).toBe(certType);
-      expect(parsed.getPublicSSH().equals(certificate)).toBe(true);
-      expect(binary.getPublicSSH().equals(certificate)).toBe(true);
+      const parsed = securityKeyCertificate(`${certType} ${certificate.toString('base64')} cert`);
+      expect(parsed?.type).toBe(certType);
+      expect(parsed?.blob.equals(certificate)).toBe(true);
+      expect(parsed?.comment).toBe('cert');
     }
   });
 
-  it('rejects malformed security keys', () => {
-    const shortKey = Buffer.concat([sshString(ED25519_SK), sshString(Buffer.alloc(31)), sshString('ssh:')]);
-    const noApplication = Buffer.concat([sshString(ED25519_SK), sshString(Buffer.alloc(32))]);
-    const wrongCurve = Buffer.concat([sshString(ECDSA_SK), sshString('nistp384'), sshString(Buffer.alloc(65, 4)), sshString('ssh:')]);
-    for (const blob of [shortKey, noApplication, wrongCurve]) {
-      expect(utils.parseKey(blob)).toBeInstanceOf(Error);
-      expect(utils.parseKey(`${readField(blob, 0).value.toString()} ${blob.toString('base64')}`)).toBeInstanceOf(Error);
-    }
+  it('takes only a security key certificate for one', () => {
+    const key = ed25519SkKey();
+    const certType = key.type.replace('@openssh.com', '-cert-v01@openssh.com');
+    // A plain key, a line whose blob is another type, and a line that is not base64.
+    expect(securityKeyCertificate(key.line)).toBeUndefined();
+    expect(securityKeyCertificate(`${certType} ${key.blob.toString('base64')} cert`)).toBeUndefined();
+    expect(securityKeyCertificate(`${certType} not*base64 cert`)).toBeUndefined();
+    expect(securityKeyCertificate('ssh-ed25519-cert-v01@openssh.com AAAA cert')).toBeUndefined();
+    expect(identityFromBlob(Buffer.from([0, 0, 0, 9, 1]))).toBeUndefined();
   });
 
   it('names a key the way OpenSSH asks for a touch', () => {
     const key = ed25519SkKey();
-    const parsed = utils.parseKey(key.line) as ParsedKey;
-    const certificate = utils.parseKey(certificateFor(key)) as ParsedKey;
     const fingerprint = `SHA256:${createHash('sha256').update(key.blob).digest('base64').replace(/=+$/, '')}`;
-    expect(securityKeyLabel(parsed)).toBe(`ED25519-SK ${fingerprint}`);
+    expect(securityKeyLabel(identity(key.blob))).toBe(`ED25519-SK ${fingerprint}`);
     // Like ssh-add -l, a certificate shows the fingerprint of its key.
-    expect(securityKeyLabel(certificate)).toBe(`ED25519-SK-CERT ${fingerprint}`);
-    expect(securityKeyLabel(utils.parseKey(ecdsaSkKey().line) as ParsedKey)).toMatch(/^ECDSA-SK SHA256:/);
+    expect(securityKeyLabel(identity(certificateFor(key)))).toBe(`ED25519-SK-CERT ${fingerprint}`);
+    expect(securityKeyLabel(identity(ecdsaSkKey().blob))).toMatch(/^ECDSA-SK SHA256:/);
   });
 });
 
@@ -447,11 +448,9 @@ describe('security keys in the ssh-agent', () => {
       { blob: Buffer.concat([sshString('unknown-type@example.com'), sshString('x')]), comment: 'unknown' },
     ]);
     try {
-      const responsive = new ResponsiveAgent(ssh2.createAgent(agent.socketPath) as never, { waitStatusMs: -1 });
-      const keys = await new Promise<ParsedKey[]>((resolve, reject) =>
-        responsive.getIdentities((err, list) => (err ? reject(err) : resolve(list ?? []))),
-      );
-      expect(keys.map((key) => [String(key.type), key.comment])).toEqual([
+      const responsive = new ResponsiveAgent(agent.socketPath, { waitStatusMs: -1 });
+      const keys = await responsive.identities();
+      expect(keys.map((key) => [key.type, key.comment])).toEqual([
         [ED25519_SK, 'ed'],
         ['sk-ssh-ed25519-cert-v01@openssh.com', 'ed-cert'],
         [ECDSA_SK, 'ecdsa'],
@@ -667,7 +666,7 @@ describe('security key IdentityFile', () => {
       let privateDirs: string[] = [];
       const agent = new SecurityKeyFileAgent({
         file,
-        publicKey: utils.parseKey(key.blob) as ParsedKey,
+        publicKey: identity(key.blob),
         ask: (question) => {
           questions.push(`${question.kind}:${question.retry}`);
           privateDirs = readdirSync(runtime);
@@ -675,8 +674,9 @@ describe('security key IdentityFile', () => {
         },
       });
       try {
-        const error = await new Promise<Error | null | undefined>((resolve) =>
-          agent.sign(utils.parseKey(key.blob) as ParsedKey, Buffer.from('data'), {}, (err) => resolve(err)),
+        const error = await agent.sign(identity(key.blob), Buffer.from('data')).then(
+          () => undefined,
+          (err: Error) => err,
         );
         // There is no authenticator here, so signing fails, but only after
         // ssh-add accepted the second passphrase and loaded the key.
@@ -738,7 +738,7 @@ describe('security key helpers', () => {
   });
 
   it('describes signing failures in terms of the key and the hop', () => {
-    const key = utils.parseKey(ed25519SkKey().line) as ParsedKey;
+    const key = identity(ed25519SkKey().blob);
     expect(describeSecurityKeyError(new SecurityKeyError('Agent responded with failure', key), 'bastion')).toMatch(
       /^the security key ED25519-SK SHA256:\S+ did not sign the login to bastion: it was not touched in time, its PIN was not accepted, or it is not plugged in$/,
     );

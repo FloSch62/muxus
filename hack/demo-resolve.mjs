@@ -3,9 +3,24 @@
 // maps them onto the loopback ports the sandbox sshds listen on. Nothing else in
 // the process changes — the SSH client still does a full connect, key exchange,
 // host-key check and authentication.
+import { createRequire } from 'node:module';
 import net from 'node:net';
+import path from 'node:path';
 
 const MAP = JSON.parse(process.env.MUXUS_DEMO_HOSTMAP || '{}');
+
+// SSH connections are dialed by the engine, not through Node's sockets: hand
+// it the loopback port in place of the invented name. Remote desktops still
+// connect through `net`, which the rest of this file covers.
+const engine = createRequire(path.join(process.cwd(), 'server/'))('@muxus/ssh-engine');
+const SshClient = engine.SshClient;
+engine.SshClient = class extends SshClient {
+  constructor(options, ...callbacks) {
+    const port = MAP[options.host];
+    super(port ? { ...options, host: '127.0.0.1', port } : options, ...callbacks);
+  }
+};
+
 const original = /** @type {Function} */ (net.Socket.prototype).connect;
 
 net.Socket.prototype.connect = function connect(...args) {

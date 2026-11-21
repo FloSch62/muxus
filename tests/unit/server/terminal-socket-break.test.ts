@@ -1,14 +1,9 @@
 import { EventEmitter } from 'node:events';
 import net, { type AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { TERMINAL_SESSION_CLOSE_REASON } from '@muxus/shared/ws-protocol';
 import { TerminalInputs } from '../../../server/src/ws/terminal-inputs.js';
 import { registerTerminalSocket } from '../../../server/src/ws/terminal-socket.js';
-
-const requestChannelBreak = vi.hoisted(() => vi.fn());
-vi.mock('../../../server/src/ssh/channel-break.js', () => ({ requestChannelBreak }));
-
-afterEach(() => requestChannelBreak.mockReset());
 
 class TestSocket extends EventEmitter {
   readonly OPEN = 1;
@@ -52,11 +47,11 @@ const loggingOff = {
 };
 
 describe('Send BREAK over the terminal socket', () => {
-  it('reports an SSH server that refuses the break request', async () => {
+  it('tells an SSH session that BREAK is for serial and Telnet lines', async () => {
     const stream = Object.assign(new EventEmitter(), {
       close: vi.fn(),
       write: vi.fn(),
-      setWindow: vi.fn(),
+      resize: vi.fn(),
       pause: vi.fn(),
       resume: vi.fn(),
     });
@@ -91,16 +86,12 @@ describe('Send BREAK over the terminal socket', () => {
     socket.control({ op: 'connect', profile: { kind: 'ssh', target: 'console-server' }, cols: 80, rows: 24 });
     await vi.waitFor(() => expect(socket.frames().some((frame) => frame.op === 'ready')).toBe(true));
 
-    requestChannelBreak.mockResolvedValueOnce('accepted').mockResolvedValueOnce('refused');
+    // The window offers no BREAK for SSH; a request that arrives anyway gets an answer.
     socket.control({ op: 'send-break' });
     await vi.waitFor(() => expect(socket.frames().filter((frame) => frame.op === 'break-result')).toHaveLength(1));
-    socket.control({ op: 'send-break' });
-    await vi.waitFor(() => expect(socket.frames().filter((frame) => frame.op === 'break-result')).toHaveLength(2));
 
-    expect(requestChannelBreak).toHaveBeenCalledWith(stream, 250);
     expect(socket.frames().filter((frame) => frame.op === 'break-result')).toEqual([
-      { op: 'break-result', ok: true },
-      { op: 'break-result', ok: false, message: 'The SSH server refused the BREAK request' },
+      { op: 'break-result', ok: false, message: 'BREAK is not available over SSH.' },
     ]);
     // A BREAK is never terminal input.
     expect(stream.write).not.toHaveBeenCalled();

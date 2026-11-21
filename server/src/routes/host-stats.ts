@@ -60,7 +60,7 @@ export function registerHostStatsRoutes(app: FastifyInstance, ctx: AppContext): 
         if (!lease) throw new HttpProblem(404, 'connection not found');
         try {
           if (!lease.connection.ranCommand()) return { supported: false };
-          return await readRemoteHostStats(lease.connection.client);
+          return await readRemoteHostStats(lease.connection.transport);
         } finally {
           lease.release();
         }

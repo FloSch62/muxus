@@ -1,6 +1,6 @@
 import { StringDecoder } from 'node:string_decoder';
 import { nanoid } from 'nanoid';
-import type { ClientChannel } from 'ssh2';
+import type { SshChannel } from '../ssh/engine.js';
 import { shellQuote, type ScriptRunState, type ScriptRunStatus } from '@muxus/shared';
 import type { ConnectionLease } from '../ssh/connection-manager.js';
 import { HttpProblem } from '../util/errors.js';
@@ -82,22 +82,14 @@ export class ScriptRuns {
     this.prune();
     const lease = this.options.acquire(connId);
     if (!lease) throw new HttpProblem(404, 'The SSH connection is gone. Run the script again.');
-    let channel: ClientChannel;
-    // A host that refuses at once (cmd.exe has no sh) can send its exit status
-    // with the exec reply, before the listeners below exist; keep it.
+    let channel: SshChannel;
+    // A host that refuses at once (cmd.exe has no sh) sends its exit status
+    // right behind the exec reply; this listener is there before it is read.
     let exit: { code: number | null; signal?: string } | undefined;
     try {
-      channel = await new Promise<ClientChannel>((resolve, reject) => {
-        lease.connection.client.exec(scriptCommand(), (err, stream) => {
-          if (err) {
-            reject(err);
-            return;
-          }
-          stream.once('exit', (code: number | null, signal?: string) => {
-            exit = { code, signal };
-          });
-          resolve(stream);
-        });
+      channel = await lease.connection.transport.exec(scriptCommand());
+      channel.once('exit', (code: number | null, signal?: string) => {
+        exit = { code, signal };
       });
     } catch (err) {
       lease.release();
@@ -167,11 +159,8 @@ export class ScriptRuns {
       // process group over the same connection, then let go of it.
       const stopped = job !== undefined && job > 1 ? this.killJob(lease, job) : Promise.resolve();
       void stopped.finally(() => {
-        try {
-          channel.signal('TERM');
-        } catch {
-          /* not every server takes signals */
-        }
+        // Not every server takes signals; the close ends the channel either way.
+        channel.signal('TERM');
         channel.close();
         release();
       });
@@ -211,24 +200,15 @@ export class ScriptRuns {
   private killJob(lease: ConnectionLease, job: number): Promise<void> {
     return new Promise((resolve) => {
       const timer = setTimeout(resolve, 5000);
-      try {
-        lease.connection.client.exec(killJobCommand(job), (err, stream) => {
-          if (err) {
-            clearTimeout(timer);
-            resolve();
-            return;
-          }
-          stream.on('close', () => {
-            clearTimeout(timer);
-            resolve();
-          });
-          stream.resume();
-          stream.stderr.resume();
-        });
-      } catch {
+      const done = () => {
         clearTimeout(timer);
         resolve();
-      }
+      };
+      lease.connection.transport.exec(killJobCommand(job)).then((stream) => {
+        stream.on('close', done);
+        stream.resume();
+        stream.stderr.resume();
+      }, done);
     });
   }
 

@@ -19,7 +19,7 @@ Split panes, saved workspaces, SFTP, a remote editor, saved tunnels, and images 
 
 ## Run From Source
 
-Requires Node.js >= 24.17 and pnpm:
+Requires Node.js >= 24.17, pnpm and Rust (for the SSH engine):
 
 ```bash
 pnpm install

@@ -530,8 +530,8 @@ describe('SSH connection multiplexing', () => {
     );
 
     expect(shell.lease.connection.sftpAvailable).toBe(false);
-    // ssh2 can only send env requests ahead of pty-req, so console mode sends
-    // none: appliances reject that order with a protocol-error disconnect.
+    // Console mode sends no env requests: a serial console has no environment,
+    // and appliances behind console servers are the least sure what to do with one.
     expect(started.stats).toMatchObject({
       envRequests: 0,
       execs: 0,
