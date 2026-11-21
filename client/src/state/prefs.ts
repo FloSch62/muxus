@@ -9,6 +9,16 @@ import {
 import { muxusStateStorage, onStateItemChange } from './persist-storage.js';
 import { isStatusBarItemList, STATUS_BAR_ITEMS, type StatusBarItem } from '../host-stats.js';
 import {
+  DEFAULT_HOST_MONITOR_INTERVAL_MS,
+  DEFAULT_MONITOR_COLUMNS,
+  DEFAULT_MONITOR_SORT,
+  isMonitorColumnList,
+  isMonitorInterval,
+  isMonitorSort,
+  type MonitorColumn,
+  type MonitorSort,
+} from '../host-monitor.js';
+import {
   BUILTIN_HIGHLIGHT_PROFILES,
   withBuiltinHighlightProfiles,
   withBuiltinRuleNames,
@@ -266,6 +276,17 @@ export interface PrefsState {
   showStatusBar: boolean;
   /** What the status bar shows, in bar order. */
   statusBarItems: StatusBarItem[];
+  /** The host monitor's columns after the host's name, in table order. */
+  monitorColumns: MonitorColumn[];
+  /** The column the host monitor is ordered by. */
+  monitorSort: MonitorSort;
+  /** How often the host monitor reads each host, in milliseconds. */
+  monitorIntervalMs: number;
+  /**
+   * Hosts, by their sidebar key, the monitor connects to by itself while it
+   * is open. Every other host is only read while a session is connected.
+   */
+  monitorKeptHosts: string[];
   /** Rules applied to every terminal; hosts may add to or replace these. */
   keywordHighlights: KeywordHighlightRule[];
   /** Named rule sets referenced by saved-host highlighting metadata. */
@@ -424,6 +445,15 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   }
   if (typeof state.showStatusBar !== 'boolean') delete state.showStatusBar;
   if (!isStatusBarItemList(state.statusBarItems)) delete state.statusBarItems;
+  if (!isMonitorColumnList(state.monitorColumns)) delete state.monitorColumns;
+  if (!isMonitorSort(state.monitorSort)) delete state.monitorSort;
+  if (!isMonitorInterval(state.monitorIntervalMs)) delete state.monitorIntervalMs;
+  if (
+    !Array.isArray(state.monitorKeptHosts) ||
+    state.monitorKeptHosts.some((key) => typeof key !== 'string')
+  ) {
+    delete state.monitorKeptHosts;
+  }
   if (typeof state.rememberPasswordsByDefault !== 'boolean') {
     delete state.rememberPasswordsByDefault;
   }
@@ -665,6 +695,10 @@ export const usePrefsStore = create<PrefsState>()(
       commandBarPosition: 'top',
       showStatusBar: true,
       statusBarItems: [...STATUS_BAR_ITEMS],
+      monitorColumns: [...DEFAULT_MONITOR_COLUMNS],
+      monitorSort: DEFAULT_MONITOR_SORT,
+      monitorIntervalMs: DEFAULT_HOST_MONITOR_INTERVAL_MS,
+      monitorKeptHosts: [],
       keywordHighlights: [],
       keywordHighlightProfiles: [...BUILTIN_HIGHLIGHT_PROFILES],
       sidebarCollapsed: false,

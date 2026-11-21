@@ -113,10 +113,10 @@ The program is found on `PATH`, then at `/usr/bin/ssh`, or
 | --- | --- |
 | Terminal, session logging, login sequences, anti-idle | Available |
 | File browser and file drops | Linux and macOS, over the terminal's own connection. Not on Windows, whose OpenSSH cannot share a connection |
-| Status bar statistics, listing containers and VMs | Linux and macOS, while a terminal to the host is open. Automatic readings first log in once on a separate connection to check that the host runs commands; if that login would need a password, they stay off |
+| Status bar and host monitor statistics, listing containers, VMs and listening ports | Linux and macOS, while a terminal to the host is open. Automatic readings first log in once on a separate connection to check that the host runs commands; if that login would need a password, they stay off |
 | Entering a container, pod or VM console | Available; a new `ssh` logs in for each one |
 | `*Forward` lines and `ProxyJump` | Applied by `ssh` |
-| Tunnels started in Muxus, opening a container's port | Not available |
+| Tunnels started in Muxus, opening a container's port, forwarding a listening port, keeping a host connected for the monitor | Not available |
 | Running scripts, fallback jump routes | Not available |
 | Folder credentials, password vault, `ssh://` links that pin a host key | Not available |
 | New tabs and split panes | Each logs in on its own instead of sharing a connection |

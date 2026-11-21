@@ -13,6 +13,11 @@ export interface DialHandlers {
   /** Resolve with answers and prompt options, or null to cancel the connection attempt. */
   onAuthPrompt(request: AuthPromptRequest): Promise<AuthPromptResult | null>;
   onHostKey(request: HostKeyRequest): Promise<boolean>;
+  /**
+   * The transport went away after the dial succeeded, with the server's
+   * reason when it gave one. Not called after {@link DialedConnection.close}.
+   */
+  onClosed?(reason?: string): void;
 }
 
 export interface DialedConnection {
@@ -61,7 +66,10 @@ export function dialProfile(
     }
     const ws = new WebSocket(wsUrl('/ws/terminal'), wsProtocols());
     let settled = false;
+    let ready = false;
+    let released = false;
     let lastStatus = '';
+    let exitMessage: string | undefined;
 
     const fail = (message: string) => {
       if (settled) return;
@@ -82,7 +90,13 @@ export function dialProfile(
       );
     };
     ws.onerror = () => fail('could not reach the Muxus backend');
-    ws.onclose = () => fail(lastStatus || 'connection closed before it was ready');
+    ws.onclose = () => {
+      if (ready) {
+        if (!released) handlers.onClosed?.(exitMessage);
+        return;
+      }
+      fail(lastStatus || 'connection closed before it was ready');
+    };
     ws.onmessage = (ev) => {
       if (typeof ev.data !== 'string') return;
       let msg: TerminalServerMessage;
@@ -120,10 +134,18 @@ export function dialProfile(
           break;
         case 'ready':
           settled = true;
+          ready = true;
           signal?.removeEventListener('abort', onAbort);
-          resolve({ connId: msg.connId, close: () => closeTerminalWebSocket(ws) });
+          resolve({
+            connId: msg.connId,
+            close: () => {
+              released = true;
+              closeTerminalWebSocket(ws);
+            },
+          });
           break;
         case 'exit':
+          exitMessage = msg.message || undefined;
           fail(msg.message || lastStatus || 'connection failed');
           break;
       }

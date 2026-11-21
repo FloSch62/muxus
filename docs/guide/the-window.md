@@ -25,6 +25,8 @@ window controls sit inside it. From left to right:
 | :material-checkbox-multiple-marked-outline: **Multi-exec** | Type once into several sessions at once. See [multi-exec](commands.md#multi-execution) |
 | :material-flash: | [Saved command buttons](commands.md) |
 | :material-folder-outline: | The [file browser](files.md) for the active SSH tab, beside the terminal or in the sidebar |
+| :material-pulse: | The [host monitor](host-monitor.md): statistics of every connected host in one tab |
+| :material-cube-outline: | The [containers and VMs panel](environments.md), with each host's listening ports |
 | :material-swap-horizontal: | The [forwarding panel](tunnels.md); the badge counts forwards and turns amber while a tunnel [reconnects or could not start](tunnels.md#starting-with-muxus-and-reconnecting) |
 | :material-console: | Terminal actions: find, select all, copy all, export, logging, [Send BREAK](telnet-serial.md#send-break), [send text file](terminal.md#sending-a-text-file), clear, zoom |
 | :material-history: | [Session history](session-history.md) |
@@ -122,6 +124,8 @@ installing anything. Linux hosts report every item. macOS and BSD hosts report t
 average in place of CPU usage, and BSD hosts leave out memory. A host that cannot run the
 script, such as a network device or a Windows server, shows **This host does not report
 statistics** and is not asked again on that connection.
+
+The [host monitor](host-monitor.md) shows the same numbers for every connected host at once.
 
 Muxus only opens that extra channel when the server already ran a command for it while the
 session opened. Routers and console servers that offer just their CLI are never asked, and

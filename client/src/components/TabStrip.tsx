@@ -47,6 +47,7 @@ import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutlineOutlined';
 import ReplayOutlinedIcon from '@mui/icons-material/ReplayOutlined';
 import RestartAltOutlinedIcon from '@mui/icons-material/RestartAltOutlined';
+import MonitorHeartOutlinedIcon from '@mui/icons-material/MonitorHeartOutlined';
 import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
@@ -128,6 +129,7 @@ const INITIAL_TAB_SCROLL_STATE: TabScrollState = {
 };
 
 function tabStatusLabel(tab: TerminalTab): string {
+  if (tab.view === 'monitor') return 'Statistics of every connected host';
   if (tab.profile === null) return 'Choose a session';
   switch (tab.status) {
     case 'connected':
@@ -501,7 +503,7 @@ export function TabStrip({
         const hasUnreadOutput = unreadOutputIds.has(tab.id);
         const TabIcon =
           tab.profile === null
-            ? AddIcon
+            ? tab.view === 'monitor' ? MonitorHeartOutlinedIcon : AddIcon
             : environmentTabIcon(tab.profile) ??
               (tab.profile.kind === 'local' ? TerminalIcon : hostKindIcon(tab.profile.kind));
         return (
@@ -992,7 +994,7 @@ export function TabStrip({
           const hasUnreadOutput = unreadOutputIds.has(tab.id);
           const TabIcon =
             tab.profile === null
-              ? AddIcon
+              ? tab.view === 'monitor' ? MonitorHeartOutlinedIcon : AddIcon
               : environmentTabIcon(tab.profile) ??
                 (tab.profile.kind === 'local' ? TerminalIcon : hostKindIcon(tab.profile.kind));
           return (

@@ -222,6 +222,15 @@ export function adoptTransferredTab(
   edge: 'before' | 'after' = 'after',
 ): boolean {
   const state = useTabsStore.getState();
+  // A window shows one host monitor: one arriving from another window joins
+  // the one that is already here.
+  if (tab.view === 'monitor') {
+    const present = state.tabs.find((candidate) => candidate.view === 'monitor');
+    if (present) {
+      state.activate(present.id);
+      return true;
+    }
+  }
   if (
     state.tabs.some((candidate) => candidate.id === tab.id) ||
     !findPane(state.root, paneId) ||

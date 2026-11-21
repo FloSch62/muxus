@@ -44,10 +44,25 @@ export interface PersistableTerminalTab {
   pinned?: boolean;
 }
 
+/** A tab that shows a view of Muxus itself, such as the host monitor. */
+export interface PersistableViewTab {
+  id: string;
+  paneId: string;
+  title: string;
+  view: 'monitor';
+  profile?: undefined;
+  color?: string;
+  pinned?: boolean;
+}
+
+export type PersistableTab = PersistableTerminalTab | PersistableViewTab;
+
 export interface RestoredTerminalTab extends PersistableTerminalTab {
   /** Local shells start fresh immediately; remote sessions dial only when the restore opts in. */
   connectOnMount: boolean;
 }
+
+export type RestoredTab = RestoredTerminalTab | PersistableViewTab;
 
 export interface RestoreWorkspaceOptions {
   /** Dial restored remote sessions instead of waiting for a key press. */
@@ -250,10 +265,10 @@ export function removePane(root: PaneNode, paneId: string): PaneNode | undefined
 
 export function serializeWorkspace(
   root: PaneNode,
-  tabs: readonly PersistableTerminalTab[],
+  tabs: readonly PersistableTab[],
   activePaneId: string,
 ): WorkspaceLayoutV1 {
-  const byPane = new Map<string, PersistableTerminalTab[]>();
+  const byPane = new Map<string, PersistableTab[]>();
   for (const tab of tabs) {
     const list = byPane.get(tab.paneId) ?? [];
     list.push(tab);
@@ -273,16 +288,20 @@ export function serializeWorkspace(
     return {
       id: node.id,
       type: 'pane',
-      tabs: paneTabs.map((tab) => ({
-        id: tab.id,
-        kind: 'terminal',
-        title: tab.title,
-        profile: tab.profile,
-        cwdHint: tab.profile.kind === 'local' ? tab.profile.cwd : undefined,
-        color: tab.color,
-        pinned: tab.pinned,
-        offerReconnect: true,
-      })),
+      tabs: paneTabs.map((tab) =>
+        'view' in tab
+          ? { id: tab.id, kind: tab.view, title: tab.title, color: tab.color, pinned: tab.pinned }
+          : {
+              id: tab.id,
+              kind: 'terminal',
+              title: tab.title,
+              profile: tab.profile,
+              cwdHint: tab.profile.kind === 'local' ? tab.profile.cwd : undefined,
+              color: tab.color,
+              pinned: tab.pinned,
+              offerReconnect: true,
+            },
+      ),
       activeTabId,
     };
   };
@@ -294,12 +313,12 @@ export function restoreWorkspace(
   options?: RestoreWorkspaceOptions,
 ): {
   root: PaneNode;
-  tabs: RestoredTerminalTab[];
+  tabs: RestoredTab[];
   activePaneId: string;
   activeId: string | null;
 } | undefined {
   if (!layout.root) return undefined;
-  const tabs: RestoredTerminalTab[] = [];
+  const tabs: RestoredTab[] = [];
   const restoreNode = (node: WorkspaceNode): PaneNode => {
     if (node.type === 'split') {
       return {
@@ -310,8 +329,19 @@ export function restoreWorkspace(
         children: [restoreNode(node.children[0]), restoreNode(node.children[1])],
       };
     }
-    const terminalTabs = node.tabs.filter((tab) => tab.kind === 'terminal');
+    const terminalTabs = node.tabs.filter((tab) => tab.kind === 'terminal' || tab.kind === 'monitor');
     for (const tab of terminalTabs) {
+      if (tab.kind === 'monitor') {
+        tabs.push({
+          id: tab.id,
+          paneId: node.id,
+          title: tab.title,
+          view: 'monitor',
+          color: tab.color,
+          pinned: tab.pinned,
+        });
+        continue;
+      }
       // Workspaces written before TERM became fixed may still carry an
       // override. Strip it at the restore boundary and persist the clean
       // profile on the next workspace save.

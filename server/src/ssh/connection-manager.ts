@@ -211,6 +211,12 @@ export interface ManagedConnection {
    * drop the whole connection when a second channel asks for one.
    */
   ranCommand(): boolean;
+  /**
+   * Whether the server is known not to run commands for Muxus: a shell here
+   * asked and got no answer, or the host is set to console compatibility.
+   * Such a host is left alone even when the user asks for it by name.
+   */
+  commandsDeclined(): boolean;
   /** *Forward lines resolved from ssh config — auto-started once the session is up. */
   configForwards: ConfigForward[];
   /** Force-reconnect group that dialed this transport, so sibling requests
@@ -460,6 +466,8 @@ export class SshConnectionManager {
       port: conn.port,
       user: conn.user,
       metadataAlias: conn.metadataAlias,
+      ...(conn.profile.profileId ? { profileId: conn.profile.profileId } : {}),
+      ...(conn.profile.useConfig === false ? { useConfig: false } : {}),
       sftpAvailable: conn.sftpAvailable,
     }));
   }
@@ -1178,6 +1186,7 @@ export class SshConnectionManager {
     const postAuthSettled = Promise.all(postAuth).then(() => undefined);
     let sftpPromise: Promise<SftpClient> | undefined;
     const shellProbe: ShellProbeMemo = { ranCommand: false, execRefused: false };
+    let probeUnanswered = false;
     let closed = false;
     let ending = false;
 
@@ -1211,6 +1220,8 @@ export class SshConnectionManager {
       metadataAlias,
       sftpAvailable: !disableSftp,
       ranCommand: () => shellProbe.ranCommand,
+      commandsDeclined: () =>
+        consoleCompatibility || (probeUnanswered && !shellProbe.ranCommand),
       health: () => transportHealth,
       configForwards: target.resolved.forwards,
       x11Refused: () => x11?.refused ?? false,
@@ -1244,11 +1255,13 @@ export class SshConnectionManager {
           ...(env ? { env } : {}),
           ...(x11Request ? { x11: x11Request } : {}),
         };
+        const probed = !session.remoteCommand && !!pty && !disableSftp;
         const channel = session.remoteCommand
           ? await openSessionExec(transport, session.remoteCommand, options, consoleCompatibility)
           : pty && !disableSftp
             ? await openRemoteShell(transport, getSftp, { ...options, pty }, cwd, shellProbe)
             : await openPlainShell(transport, options, consoleCompatibility);
+        if (probed && !shellProbe.ranCommand) probeUnanswered = true;
         if (x11Request && !channel.x11Forwarded) {
           // Like ssh(1), a refused x11-req costs X11, not the session.
           x11!.markRefused();

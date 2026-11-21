@@ -5,10 +5,12 @@ import { registerHostStatsRoutes } from '../../../server/src/routes/host-stats.j
 import { SshError } from '../../../server/src/ssh/engine.js';
 import {
   HOST_STATS_SCRIPT,
+  hostStatsScript,
   parseHostStats,
   readLocalHostStats,
   readRemoteHostStats,
 } from '../../../server/src/stats/host-stats.js';
+import { hostStatsReaderFor } from '../../../server/src/stats/host-stats-reader.js';
 
 const section = (name: string, ...lines: string[]) => [`@@muxus:${name}`, ...lines].join('\n');
 
@@ -265,12 +267,124 @@ describe.skipIf(process.platform !== 'linux')('reading this Linux machine', () =
   });
 });
 
+describe('readings for the host monitor', () => {
+  const withSections = (...extra: string[]) => [section('begin'), section('hostname', 'gpu-01'), ...extra, section('end')].join('\n');
+
+  it('asks for disk counters and GPUs only when told to', () => {
+    expect(HOST_STATS_SCRIPT).not.toContain('diskstats');
+    expect(HOST_STATS_SCRIPT).not.toContain('nvidia-smi');
+    expect(hostStatsScript({ diskIo: true })).toContain('cat /proc/diskstats');
+    expect(hostStatsScript({ diskIo: true })).not.toContain('nvidia-smi');
+    expect(hostStatsScript({ gpu: true })).toContain('command -v nvidia-smi');
+    // Whatever is added, the end marker stays last.
+    expect(hostStatsScript({ diskIo: true, gpu: true }).trimEnd().endsWith('muxus_section end')).toBe(true);
+  });
+
+  it('sums whole disks only: no partitions, device-mapper, RAID or loop devices', () => {
+    const sample = parseHostStats(
+      withSections(
+        section('blockdevs', 'dm-0', 'loop0', 'md0', 'nvme0n1', 'sda', 'sr0'),
+        section(
+          'diskstats',
+          '   7       0 loop0 100 0 2000 10 0 0 0 0 0 10 10',
+          '   8       0 sda 5000 10 100000 900 3000 20 60000 700 0 1500 1600',
+          '   8       1 sda1 4000 10 80000 800 2500 20 50000 600 0 1300 1400',
+          '   8       2 sda2 1000 0 20000 100 500 0 10000 100 0 200 200',
+          ' 259       0 nvme0n1 9000 0 400000 300 7000 0 200000 200 0 400 500',
+          ' 259       1 nvme0n1p1 9000 0 400000 300 7000 0 200000 200 0 400 500',
+          ' 253       0 dm-0 9000 0 400000 300 7000 0 200000 200 0 400 500',
+          '   9       0 md0 9000 0 400000 300 7000 0 200000 200 0 400 500',
+          '  11       0 sr0 5 0 40 1 0 0 0 0 0 1 1',
+        ),
+      ),
+    );
+    // sda + nvme0n1, in 512-byte sectors.
+    expect(sample?.diskIo).toEqual({ readBytes: (100000 + 400000) * 512, writtenBytes: (60000 + 200000) * 512 });
+  });
+
+  it('tells partitions by their names when /sys/block cannot be listed', () => {
+    const sample = parseHostStats(
+      withSections(
+        section(
+          'diskstats',
+          ' 252       0 vda 10 0 1000 0 10 0 2000 0 0 0 0',
+          ' 252       1 vda1 10 0 1000 0 10 0 2000 0 0 0 0',
+          ' 179       0 mmcblk0 10 0 300 0 10 0 400 0 0 0 0',
+          ' 179       1 mmcblk0p1 10 0 300 0 10 0 400 0 0 0 0',
+          ' 202       0 xvda 10 0 50 0 10 0 60 0 0 0 0',
+          ' 202       1 xvda1 10 0 50 0 10 0 60 0 0 0 0',
+        ),
+      ),
+    );
+    expect(sample?.diskIo).toEqual({ readBytes: 1350 * 512, writtenBytes: 2460 * 512 });
+  });
+
+  it('leaves disk counters out on a host without them', () => {
+    expect(parseHostStats(withSections())?.diskIo).toBeUndefined();
+    expect(parseHostStats(withSections(section('diskstats')))?.diskIo).toBeUndefined();
+  });
+
+  it('reads NVIDIA cards, including what the driver cannot tell', () => {
+    const sample = parseHostStats(
+      withSections(
+        section(
+          'gpu',
+          '0, NVIDIA GeForce RTX 4090, 37, 8123, 24564, 61',
+          '1, Tesla T4, [N/A], 15, 15360, [N/A]',
+          'NVIDIA-SMI has failed because it couldn\'t communicate with the NVIDIA driver.',
+        ),
+      ),
+    );
+    expect(sample?.gpus).toEqual([
+      {
+        index: 0,
+        name: 'NVIDIA GeForce RTX 4090',
+        utilization: 0.37,
+        memoryUsedBytes: 8123 * 1024 * 1024,
+        memoryTotalBytes: 24564 * 1024 * 1024,
+        temperatureCelsius: 61,
+      },
+      { index: 1, name: 'Tesla T4', memoryUsedBytes: 15 * 1024 * 1024, memoryTotalBytes: 15360 * 1024 * 1024 },
+    ]);
+  });
+
+  it('times how long the host takes to start answering', async () => {
+    const { transport, channel } = stubTransport(LINUX_OUTPUT);
+    const reading = await readRemoteHostStats(transport, hostStatsScript({ diskIo: true }));
+    expect(channel?.written).toBe(hostStatsScript({ diskIo: true }));
+    expect(reading.supported).toBe(true);
+    if (!reading.supported) return;
+    expect(reading.latencyMs).toBeTypeOf('number');
+    expect(reading.latencyMs).toBeGreaterThanOrEqual(0);
+    expect(reading.latencyMs).toBeLessThan(1000);
+  });
+});
+
 type RouteHandler = (request: unknown, reply: unknown) => Promise<unknown>;
+
+/** A live connection as the reader sees it: a transport, and what is known about the host. */
+function fakeConnection(transport: unknown, facts: { ranCommand?: boolean; commandsDeclined?: boolean } = {}) {
+  return {
+    id: 'conn-1',
+    transport,
+    profile: { kind: 'ssh', target: 'web-01' },
+    user: 'deploy',
+    host: 'web-01.example.net',
+    port: 22,
+    ranCommand: () => facts.ranCommand ?? true,
+    commandsDeclined: () => facts.commandsDeclined ?? false,
+    onClose: () => () => undefined,
+  };
+}
 
 function captureRoutes(acquire: (connId: string, owner: string) => unknown) {
   const gets = new Map<string, RouteHandler>();
   const app = { get: (path: string, handler: RouteHandler) => gets.set(path, handler) };
-  registerHostStatsRoutes(app as never, { systemOpenSsh: { acquire: () => undefined }, connections: { acquire } } as never);
+  const hostStats = hostStatsReaderFor({
+    systemOpenSsh: { acquire: () => undefined },
+    connections: { acquire: acquire as never },
+  });
+  registerHostStatsRoutes(app as never, { hostStats });
   return gets;
 }
 
@@ -290,11 +404,7 @@ describe('host statistics route', () => {
   it('reads a live connection under its own lease and releases it', async () => {
     const release = vi.fn();
     const { transport, exec } = stubTransport(LINUX_OUTPUT);
-    const acquire = vi.fn(() => ({
-      connection: { transport, ranCommand: () => true },
-      owner: 'stats',
-      release,
-    }));
+    const acquire = vi.fn(() => ({ connection: fakeConnection(transport), owner: 'stats', release }));
     const handler = captureRoutes(acquire).get('/api/host-stats/ssh/:connId')!;
 
     const response = await handler({ params: { connId: 'conn-1' } }, fakeReply());
@@ -308,7 +418,7 @@ describe('host statistics route', () => {
 
   it('shares one reading between requests for the same connection', async () => {
     const { transport, exec } = stubTransport(LINUX_OUTPUT);
-    const handler = captureRoutes(() => ({ connection: { transport, ranCommand: () => true }, release: vi.fn() })).get(
+    const handler = captureRoutes(() => ({ connection: fakeConnection(transport), release: vi.fn() })).get(
       '/api/host-stats/ssh/:connId',
     )!;
     const [first, second] = await Promise.all([
@@ -316,12 +426,12 @@ describe('host statistics route', () => {
       handler({ params: { connId: 'conn-1' } }, fakeReply()),
     ]);
     expect(exec).toHaveBeenCalledTimes(1);
-    expect(second).toEqual(first);
+    expect(second).toMatchObject({ status: 'ok', sample: (first as { sample: unknown }).sample });
   });
 
   it('answers unsupported for a host without a POSIX shell', async () => {
     const { transport } = stubTransport('Invalid command\r\n');
-    const handler = captureRoutes(() => ({ connection: { transport, ranCommand: () => true }, release: vi.fn() })).get(
+    const handler = captureRoutes(() => ({ connection: fakeConnection(transport), release: vi.fn() })).get(
       '/api/host-stats/ssh/:connId',
     )!;
     await expect(handler({ params: { connId: 'conn-1' } }, fakeReply())).resolves.toMatchObject({
@@ -334,7 +444,7 @@ describe('host statistics route', () => {
     const release = vi.fn();
     const { transport, exec } = stubTransport(LINUX_OUTPUT);
     const handler = captureRoutes(() => ({
-      connection: { transport, ranCommand: () => false },
+      connection: fakeConnection(transport, { ranCommand: false }),
       release,
     })).get('/api/host-stats/ssh/:connId')!;
     await expect(handler({ params: { connId: 'conn-1' } }, fakeReply())).resolves.toMatchObject({

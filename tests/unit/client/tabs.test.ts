@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  openSessionProfile,
   requestForceReconnect,
   requestForceReconnectAll,
   requestClosePane,
@@ -13,6 +14,7 @@ import { useDialogStore } from '../../../client/src/state/dialogs.js';
 import { usePrefsStore } from '../../../client/src/state/prefs.js';
 import {
   closableTabIdsToRight,
+  isEmptyTab,
   tabLostConnection,
   useTabsStore,
 } from '../../../client/src/state/tabs.js';
@@ -1308,5 +1310,70 @@ describe('lost connections', () => {
 
     useTabsStore.getState().close(id);
     expect(lost()).toBe(false);
+  });
+});
+
+describe('the host monitor tab', () => {
+  it('opens once per window: asking again goes to the tab that is there', () => {
+    const first = useTabsStore.getState().openMonitor();
+    const sessionId = useTabsStore.getState().open({ kind: 'local' }, 'Shell');
+    expect(useTabsStore.getState().activeId).toBe(sessionId);
+
+    const second = useTabsStore.getState().openMonitor();
+
+    expect(second).toBe(first);
+    const state = useTabsStore.getState();
+    expect(state.tabs.filter((tab) => tab.view === 'monitor')).toHaveLength(1);
+    expect(state.activeId).toBe(first);
+    expect(state.tabs[0]).toMatchObject({ title: 'Host monitor', profile: null, status: 'idle', view: 'monitor' });
+  });
+
+  it('takes the place of an untouched new tab in front', () => {
+    const emptyId = useTabsStore.getState().openEmpty();
+    const monitorId = useTabsStore.getState().openMonitor();
+    const state = useTabsStore.getState();
+    expect(state.tabs.map((tab) => tab.id)).toEqual([monitorId]);
+    expect(state.tabs.some((tab) => tab.id === emptyId)).toBe(false);
+    expect(findPane(state.root, 'pane-test')?.activeTabId).toBe(monitorId);
+  });
+
+  it('is not a tab still choosing its session: a host opened next gets a tab of its own', () => {
+    const monitorId = useTabsStore.getState().openMonitor();
+    expect(isEmptyTab(useTabsStore.getState().tabs[0]!)).toBe(false);
+    expect(useTabsStore.getState().replaceEmpty(monitorId, { kind: 'local' }, 'Shell')).toBe(false);
+
+    const sessionId = openSessionProfile({ kind: 'ssh', target: 'web-01' }, 'web-01');
+
+    const state = useTabsStore.getState();
+    expect(sessionId).not.toBe(monitorId);
+    expect(state.tabs.map((tab) => tab.view ?? tab.profile?.kind)).toEqual(['monitor', 'ssh']);
+  });
+
+  it('comes back from a saved layout as a monitor, not as a session', () => {
+    useTabsStore.getState().restore({
+      version: 1,
+      activePaneId: 'pane',
+      root: {
+        id: 'pane',
+        type: 'pane',
+        activeTabId: 'monitor-tab',
+        tabs: [
+          { id: 'monitor-tab', kind: 'monitor', title: 'Host monitor', pinned: true },
+          {
+            id: 'ssh-tab',
+            kind: 'terminal',
+            title: 'web-01',
+            profile: { kind: 'ssh', target: 'web-01' },
+            offerReconnect: true,
+          },
+        ],
+      },
+    });
+    const state = useTabsStore.getState();
+    expect(state.activeId).toBe('monitor-tab');
+    expect(state.tabs[0]).toMatchObject({ id: 'monitor-tab', view: 'monitor', profile: null, status: 'idle', pinned: true });
+    expect(state.tabs[1]).toMatchObject({ id: 'ssh-tab', status: 'closed', restored: true });
+    // Asking for the monitor afterwards finds the restored one.
+    expect(state.openMonitor()).toBe('monitor-tab');
   });
 });

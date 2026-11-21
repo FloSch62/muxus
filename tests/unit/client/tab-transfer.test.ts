@@ -88,6 +88,46 @@ describe('cross-window tab transfer', () => {
     expect(transfer.adoptTransferredTab(incoming, 'pane-test')).toBe(false);
   });
 
+  it('joins a host monitor arriving from another window with the one already here', async () => {
+    vi.resetModules();
+    const transfer = await import('../../../client/src/tab-transfer.js');
+    const { useTabsStore } = await import('../../../client/src/state/tabs.js');
+    useTabsStore.setState({
+      tabs: [],
+      unreadOutputIds: new Set(),
+      root: { id: 'pane-test', type: 'pane', activeTabId: null },
+      activePaneId: 'pane-test',
+      activeId: null,
+      zoomedPaneId: null,
+    });
+    const incoming = {
+      id: 'monitor-from-window',
+      title: 'Host monitor',
+      profile: null,
+      status: 'idle' as const,
+      connectOnMount: false as const,
+      view: 'monitor' as const,
+      sftpOpen: false,
+      searchRequest: 0,
+      editorPaths: [],
+      loggingPaused: false,
+      captureInput: false,
+      reconnectRequest: 0,
+    };
+
+    // A window without a monitor takes the tab as it is.
+    expect(transfer.adoptTransferredTab(incoming, 'pane-test')).toBe(true);
+    expect(useTabsStore.getState().tabs).toMatchObject([{ id: 'monitor-from-window', view: 'monitor' }]);
+
+    // A window that has one keeps a single monitor and shows it.
+    const sessionId = useTabsStore.getState().open({ kind: 'local' }, 'Shell');
+    expect(useTabsStore.getState().activeId).toBe(sessionId);
+    expect(transfer.adoptTransferredTab({ ...incoming, id: 'second-monitor' }, 'pane-test')).toBe(true);
+    const state = useTabsStore.getState();
+    expect(state.tabs.filter((tab) => tab.view === 'monitor')).toHaveLength(1);
+    expect(state.activeId).toBe('monitor-from-window');
+  });
+
   it('transfers an interrupted live tab and removes the source only after completion', async () => {
     vi.stubGlobal('BroadcastChannel', TestBroadcastChannel);
     vi.resetModules();

@@ -49,6 +49,7 @@ nav = [
     { "Remote editor" = "guide/editor.md" },
     { "Tunnels & port forwarding" = "guide/tunnels.md" },
     { "Containers & VMs" = "guide/environments.md" },
+    { "Host monitor" = "guide/host-monitor.md" },
     { "Graphical apps (X11)" = "guide/x11.md" },
     { "Command buttons & multi-exec" = "guide/commands.md" },
     { "Scripts on many hosts" = "guide/scripts.md" },

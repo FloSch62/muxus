@@ -35,6 +35,7 @@ import SelectAllIcon from '@mui/icons-material/SelectAll';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import WorkspacesOutlinedIcon from '@mui/icons-material/WorkspacesOutlined';
 import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
+import MonitorHeartOutlinedIcon from '@mui/icons-material/MonitorHeartOutlined';
 import ViewInArOutlinedIcon from '@mui/icons-material/ViewInArOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutlineOutlined';
@@ -67,6 +68,7 @@ import { MultiExecControl } from '../components/MultiExecControl.js';
 import {
   loadCommandButtonsDialog,
   loadEnvironmentsPanel,
+  loadHostMonitorViewImpl,
   loadForwardingPanel,
   loadSettingsDialog,
   loadSessionHistoryDialog,
@@ -101,6 +103,8 @@ export const TopBar = memo(function TopBar() {
   const setForwardingOpen = useUiStore((s) => s.setForwardingOpen);
   const activeTab = useTabsStore((s) => s.tabs.find((t) => t.id === s.activeId));
   const requestSearch = useTabsStore((s) => s.requestSearch);
+  const openMonitor = useTabsStore((s) => s.openMonitor);
+  const monitorInFront = activeTab?.view === 'monitor';
   const { data: forwardsData } = useForwards();
   const allForwards = forwardsData?.forwards ?? [];
   const countForwards = (status: ForwardInfo['status']) =>
@@ -236,6 +240,18 @@ export const TopBar = memo(function TopBar() {
             </IconButton>
           </Tooltip>
         )}
+        <Tooltip title="Host monitor">
+          <IconButton
+            size="small"
+            aria-label="Open host monitor"
+            color={monitorInFront ? 'primary' : 'default'}
+            onMouseEnter={() => void loadHostMonitorViewImpl()}
+            onFocus={() => void loadHostMonitorViewImpl()}
+            onClick={() => openMonitor()}
+          >
+            <MonitorHeartOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
         <Tooltip title="Containers & VMs">
           <IconButton
             size="small"
