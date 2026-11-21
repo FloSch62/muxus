@@ -42,8 +42,9 @@ beforeEach(() => {
   usePrefsStore.setState({
     confirmCloseConnected: true,
     splitInheritsSession: true,
-    fileBrowserPosition: 'pane',
+    sidebarCollapsed: false,
   });
+  useUiStore.setState({ sidebarView: 'hosts', sidebarPanelOpen: true });
   useDialogStore.setState({ queue: [] });
 });
 
@@ -213,20 +214,14 @@ describe('host SFTP action', () => {
     },
   };
 
-  it('connects with the file browser ready to open', () => {
+  it('connects with the file browser in front, ready for the session', () => {
     const id = openManagedHostSftp(host);
 
     expect(useTabsStore.getState()).toMatchObject({
       activeId: id,
-      tabs: [
-        {
-          id,
-          profile: { kind: 'ssh', target: 'router' },
-          status: 'connecting',
-          sftpOpen: true,
-        },
-      ],
+      tabs: [{ id, profile: { kind: 'ssh', target: 'router' }, status: 'connecting' }],
     });
+    expect(useUiStore.getState().sidebarView).toBe('files');
   });
 
   it('reuses and activates an existing suitable connection', () => {
@@ -243,25 +238,21 @@ describe('host SFTP action', () => {
     expect(openManagedHostSftp(host)).toBe(existingId);
     expect(useTabsStore.getState()).toMatchObject({
       activeId: existingId,
-      tabs: [
-        { id: existingId, sftpOpen: true },
-        { profile: { kind: 'local' } },
-      ],
+      tabs: [{ id: existingId }, { profile: { kind: 'local' } }],
     });
+    expect(useTabsStore.getState().tabs).toHaveLength(2);
+    expect(useUiStore.getState().sidebarView).toBe('files');
   });
 
-  it('brings the docked file browser forward instead of opening one beside the terminal', () => {
-    usePrefsStore.setState({ fileBrowserPosition: 'sidebar', sidebarCollapsed: true });
-    useUiStore.setState({ sidebarView: 'hosts' });
+  it('brings a hidden sidebar back for the file browser', () => {
+    usePrefsStore.setState({ sidebarCollapsed: true });
+    useUiStore.setState({ sidebarPanelOpen: false });
 
     const id = openManagedHostSftp(host);
 
-    expect(useTabsStore.getState()).toMatchObject({
-      activeId: id,
-      tabs: [{ id, profile: { kind: 'ssh', target: 'router' }, sftpOpen: false }],
-    });
+    expect(useTabsStore.getState().activeId).toBe(id);
     expect(usePrefsStore.getState().sidebarCollapsed).toBe(false);
-    expect(useUiStore.getState().sidebarView).toBe('files');
+    expect(useUiStore.getState()).toMatchObject({ sidebarView: 'files', sidebarPanelOpen: true });
   });
 
   it('does nothing when SFTP is explicitly disabled', () => {
@@ -1326,6 +1317,21 @@ describe('the host monitor tab', () => {
     expect(state.tabs.filter((tab) => tab.view === 'monitor')).toHaveLength(1);
     expect(state.activeId).toBe(first);
     expect(state.tabs[0]).toMatchObject({ title: 'Host monitor', profile: null, status: 'idle', view: 'monitor' });
+  });
+
+  it('opens the hosts as a tab of their own, once per window, beside the monitor', () => {
+    const monitorId = useTabsStore.getState().openMonitor();
+    const hostsId = useTabsStore.getState().openHosts();
+    expect(hostsId).not.toBe(monitorId);
+    useTabsStore.getState().activate(monitorId);
+
+    expect(useTabsStore.getState().openHosts()).toBe(hostsId);
+
+    const state = useTabsStore.getState();
+    expect(state.activeId).toBe(hostsId);
+    expect(state.tabs.map((tab) => tab.view)).toEqual(['monitor', 'hosts']);
+    expect(state.tabs[1]).toMatchObject({ title: 'Hosts', profile: null, status: 'idle' });
+    expect(isEmptyTab(state.tabs[1]!)).toBe(false);
   });
 
   it('takes the place of an untouched new tab in front', () => {

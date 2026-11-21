@@ -33,8 +33,6 @@ interface TabBase {
   terminalId?: string;
   /** Cross-window transfer awaiting acknowledgement from the source window. */
   transferId?: string;
-  /** SFTP file panel visible for this tab. */
-  sftpOpen: boolean;
   /** Server-advertised capability for the current SSH transport. */
   sftpAvailable?: boolean;
   /** The session runs the computer's `ssh` program: no features of the built-in client. */
@@ -106,7 +104,7 @@ export interface EmptyTab extends TabBase {
 }
 
 /** Tabs that show a view of Muxus itself instead of a session. */
-export type TabView = 'monitor';
+export type TabView = 'monitor' | 'hosts';
 
 /** A tab without a session of its own, such as the host monitor. */
 export interface ViewTab extends TabBase {
@@ -128,6 +126,12 @@ export function isEmptyTab(tab: TerminalTab): tab is EmptyTab {
 }
 
 export const HOST_MONITOR_TAB_TITLE = 'Host monitor';
+export const HOSTS_TAB_TITLE = 'Hosts';
+
+const VIEW_TAB_TITLES: Record<TabView, string> = {
+  monitor: HOST_MONITOR_TAB_TITLE,
+  hosts: HOSTS_TAB_TITLE,
+};
 
 type TabUpdate = Partial<{
   title: string;
@@ -135,7 +139,6 @@ type TabUpdate = Partial<{
   connId: string | undefined;
   terminalId: string | undefined;
   transferId: string | undefined;
-  sftpOpen: boolean;
   sftpAvailable: boolean | undefined;
   systemOpenSsh: boolean | undefined;
   terminalCwd: string | undefined;
@@ -182,6 +185,8 @@ interface TabsState {
   openEmpty: () => string;
   /** Show the host monitor: the window's one monitor tab, opened if there is none. */
   openMonitor: () => string;
+  /** Open the hosts as a tab, or bring the one this window has to the front. */
+  openHosts: () => string;
   replaceEmpty: (id: string, profile: SessionProfile, title: string) => boolean;
   close: (id: string) => void;
   activate: (id: string) => void;
@@ -428,7 +433,51 @@ export function insertIntoPane(
   return next;
 }
 
-export const useTabsStore = create<TabsState>()((set, get) => ({
+export const useTabsStore = create<TabsState>()((set, get) => {
+  /**
+   * Open a view of Muxus itself, or bring the one this window already has to
+   * the front: a window shows each view once.
+   */
+  const openViewTab = (view: TabView): string => {
+    const existing = get().tabs.find((tab) => tab.view === view);
+    if (existing) {
+      get().activate(existing.id);
+      return existing.id;
+    }
+    const id = newId('tab');
+    set((state) => {
+      const pane = findPane(state.root, state.activePaneId) ?? firstPane(state.root);
+      const viewTab: ViewTab = {
+        id,
+        paneId: pane.id,
+        title: VIEW_TAB_TITLES[view],
+        profile: null,
+        status: 'idle',
+        connectOnMount: false,
+        view,
+        searchRequest: 0,
+        editorPaths: [],
+        loggingPaused: false,
+        captureInput: false,
+        reconnectRequest: 0,
+      };
+      // An untouched "New tab" in front is what the view was opened into.
+      const active = state.tabs.find((tab) => tab.id === pane.activeTabId);
+      const tabs =
+        active && isEmptyTab(active)
+          ? state.tabs.map((tab) => (tab.id === active.id ? { ...viewTab, pinned: tab.pinned } : tab))
+          : [...state.tabs, viewTab];
+      return {
+        tabs,
+        root: updatePane(state.root, pane.id, (leaf) => ({ ...leaf, activeTabId: id })),
+        activePaneId: pane.id,
+        activeId: id,
+      };
+    });
+    return id;
+  };
+
+  return {
   tabs: [],
   unreadOutputIds: new Set(),
   root: initial,
@@ -449,7 +498,6 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
             profile,
             status: 'connecting',
             connectOnMount: true,
-            sftpOpen: false,
             searchRequest: 0,
             editorPaths: [],
             loggingPaused: false,
@@ -478,7 +526,6 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
             profile: null,
             status: 'idle',
             connectOnMount: false,
-            sftpOpen: false,
             searchRequest: 0,
             editorPaths: [],
             loggingPaused: false,
@@ -493,45 +540,8 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
     });
     return id;
   },
-  openMonitor: () => {
-    const existing = get().tabs.find((tab) => tab.view === 'monitor');
-    if (existing) {
-      get().activate(existing.id);
-      return existing.id;
-    }
-    const id = newId('tab');
-    set((state) => {
-      const pane = findPane(state.root, state.activePaneId) ?? firstPane(state.root);
-      const monitor: ViewTab = {
-        id,
-        paneId: pane.id,
-        title: HOST_MONITOR_TAB_TITLE,
-        profile: null,
-        status: 'idle',
-        connectOnMount: false,
-        view: 'monitor',
-        sftpOpen: false,
-        searchRequest: 0,
-        editorPaths: [],
-        loggingPaused: false,
-        captureInput: false,
-        reconnectRequest: 0,
-      };
-      // An untouched "New tab" in front is what the monitor was opened into.
-      const active = state.tabs.find((tab) => tab.id === pane.activeTabId);
-      const tabs =
-        active && isEmptyTab(active)
-          ? state.tabs.map((tab) => (tab.id === active.id ? { ...monitor, pinned: tab.pinned } : tab))
-          : [...state.tabs, monitor];
-      return {
-        tabs,
-        root: updatePane(state.root, pane.id, (leaf) => ({ ...leaf, activeTabId: id })),
-        activePaneId: pane.id,
-        activeId: id,
-      };
-    });
-    return id;
-  },
+  openMonitor: () => openViewTab('monitor'),
+  openHosts: () => openViewTab('hosts'),
   replaceEmpty: (id, profile, title) => {
     let replaced = false;
     set((state) => ({
@@ -545,7 +555,6 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
           status: 'connecting' as const,
           connectOnMount: true as const,
           connId: undefined,
-          sftpOpen: false,
           sftpAvailable: undefined,
           systemOpenSsh: undefined,
           terminalCwd: undefined,
@@ -951,7 +960,6 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
               profile: null,
               status: 'idle',
               connectOnMount: false,
-              sftpOpen: false,
               searchRequest: 0,
               editorPaths: [],
               loggingPaused: false,
@@ -963,7 +971,6 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
           ...tab,
           restored: true,
           status: tab.connectOnMount ? 'connecting' as const : 'closed' as const,
-          sftpOpen: false,
           sftpAvailable: undefined,
           systemOpenSsh: undefined,
           terminalCwd: undefined,
@@ -996,7 +1003,6 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
       profile: entry.profile,
       status: 'connecting',
       connectOnMount: true,
-      sftpOpen: false,
       searchRequest: 0,
       color: entry.color,
       editorPaths: [],
@@ -1104,7 +1110,6 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
         const {
           status: _status,
           connId: _connId,
-          sftpOpen: _sftpOpen,
           sftpAvailable: _sftpAvailable,
           systemOpenSsh: _systemOpenSsh,
           terminalCwd: _terminalCwd,
@@ -1114,7 +1119,8 @@ export const useTabsStore = create<TabsState>()((set, get) => ({
         return { ...tab, ...emptyPatch };
       }),
     })),
-}));
+  };
+});
 
 function buildSessionSetTree(
   panes: readonly PaneLeaf[],

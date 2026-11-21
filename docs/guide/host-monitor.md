@@ -9,7 +9,7 @@ connected to: latency, CPU, load, memory, disk, disk I/O, network traffic and up
 refreshed every few seconds. Each host is read over the SSH connection that is already
 open. Nothing is installed on it and no password is asked for again.
 
-Open it with the :material-pulse: control in the top bar, or with **Open host monitor** in
+Open it with the :material-pulse: icon in the sidebar rail, or with **Open host monitor** in
 the [quick launcher](quick-launcher.md); the command can be
 [bound to a key](../reference/keyboard-shortcuts.md). A window has one monitor tab: opening
 it again goes to the one that is there. It is an ordinary tab otherwise. It can be pinned,

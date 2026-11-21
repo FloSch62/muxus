@@ -70,6 +70,9 @@ import {
   requestLogSessionToFile,
   splitActivePane,
 } from '../session-actions.js';
+import { openDraggedHosts } from '../host-drop.js';
+import { useHostDragStore } from '../state/host-drag.js';
+import { useAllManagedHosts } from './sidebar/useAllManagedHosts.js';
 import {
   closableTabIdsToRight,
   isRemoteSessionTab,
@@ -128,8 +131,14 @@ const INITIAL_TAB_SCROLL_STATE: TabScrollState = {
   canScrollRight: false,
 };
 
+/** The icon of a tab without a session: one of Muxus's own views, or a tab still to be filled. */
+function viewTabIcon(view: TerminalTab['view']) {
+  return view === 'monitor' ? MonitorHeartOutlinedIcon : view === 'hosts' ? GridViewOutlinedIcon : AddIcon;
+}
+
 function tabStatusLabel(tab: TerminalTab): string {
   if (tab.view === 'monitor') return 'Statistics of every connected host';
+  if (tab.view === 'hosts') return 'Every saved host';
   if (tab.profile === null) return 'Choose a session';
   switch (tab.status) {
     case 'connected':
@@ -196,6 +205,15 @@ export function TabStrip({
   const toggleMultiExecTarget = useMultiExecStore((s) => s.toggleTarget);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   /** Insertion line for drops arriving from another pane or window; null targetId = end of strip. */
+  // Hosts in the air, from the sidebar or the hosts tab, open in the pane they are dropped on.
+  const hostDragging = useHostDragStore((state) => state.source?.kind === 'host');
+  const [hostDropOver, setHostDropOver] = useState(false);
+  const allHosts = useAllManagedHosts();
+  const allHostsRef = useRef(allHosts);
+  allHostsRef.current = allHosts;
+  useEffect(() => {
+    if (!hostDragging) setHostDropOver(false);
+  }, [hostDragging]);
   const [dropIndicator, setDropIndicator] = useState<
     { targetId: string | null; edge: 'before' | 'after' } | null
   >(null);
@@ -422,8 +440,20 @@ export function TabStrip({
         ...(focused && {
           borderBottomColor: (theme) => alpha(theme.palette.text.primary, 0.18),
         }),
+        '&[data-host-drop="true"]': {
+          bgcolor: (theme) => alpha(theme.palette.primary.main, 0.14),
+          boxShadow: (theme) => `inset 0 -2px ${theme.palette.primary.main}`,
+        },
       }}
+      data-host-drop={hostDropOver ? 'true' : undefined}
       onDragOver={(event) => {
+        // A host dragged from the sidebar or the hosts tab opens here.
+        if (hostDragging) {
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'copy';
+          if (!hostDropOver) setHostDropOver(true);
+          return;
+        }
         if (!hasTabTransfer(event.dataTransfer)) return;
         if ((event.target as HTMLElement).closest('[data-muxus-tab]')) return;
         event.preventDefault();
@@ -448,10 +478,17 @@ export function TabStrip({
       onDragLeave={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
           setDropIndicator(null);
+          setHostDropOver(false);
         }
       }}
       onDrop={(event) => {
         setDropIndicator(null);
+        if (hostDragging) {
+          event.preventDefault();
+          setHostDropOver(false);
+          openDraggedHosts(paneId, allHostsRef.current);
+          return;
+        }
         if ((event.target as HTMLElement).closest('[data-muxus-tab]')) return;
         const transferId = readTabTransfer(event.dataTransfer);
         if (!transferId) return;
@@ -503,7 +540,7 @@ export function TabStrip({
         const hasUnreadOutput = unreadOutputIds.has(tab.id);
         const TabIcon =
           tab.profile === null
-            ? tab.view === 'monitor' ? MonitorHeartOutlinedIcon : AddIcon
+            ? viewTabIcon(tab.view)
             : environmentTabIcon(tab.profile) ??
               (tab.profile.kind === 'local' ? TerminalIcon : hostKindIcon(tab.profile.kind));
         return (
@@ -994,7 +1031,7 @@ export function TabStrip({
           const hasUnreadOutput = unreadOutputIds.has(tab.id);
           const TabIcon =
             tab.profile === null
-              ? tab.view === 'monitor' ? MonitorHeartOutlinedIcon : AddIcon
+              ? viewTabIcon(tab.view)
               : environmentTabIcon(tab.profile) ??
                 (tab.profile.kind === 'local' ? TerminalIcon : hostKindIcon(tab.profile.kind));
           return (
@@ -1226,8 +1263,8 @@ export function TabStrip({
         {menuTabSupportsSftp ? (
           <MenuItem
             onClick={() => {
-              showFileBrowser(menuTab.id);
               activate(menuTab.id);
+              showFileBrowser();
               setMenu(null);
             }}
           >

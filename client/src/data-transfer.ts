@@ -42,6 +42,7 @@ import {
 } from './command-buttons.js';
 import { isKeywordHighlightProfileArray } from './highlight-profiles.js';
 import { isStatusBarItemList } from './host-stats.js';
+import { isHostsTableSort } from './hosts-table-sort.js';
 import { isLoginSequence } from './login-sequence.js';
 import { isCustomTerminalSchemeArray } from './terminal/custom-schemes.js';
 import {
@@ -56,14 +57,15 @@ import {
   MAX_SIDEBAR_WIDTH,
   MIN_SIDEBAR_WIDTH,
 } from './sidebar-width.js';
-import { MIN_SFTP_PANEL_WIDTH } from './sftp-panel-width.js';
 import {
   MAX_INACTIVE_PANE_DIM_STRENGTH,
   MIN_INACTIVE_PANE_DIM_STRENGTH,
   isCommandBarPosition,
-  isFileBrowserPosition,
   isLocalShellProfileArray,
   isNewSshHostStorage,
+  isHostsTabView,
+  isSidebarHostGrouping,
+  isSidebarHostView,
   isSidebarOpenGesture,
   isSidebarPosition,
   isTerminalFileLinkActivation,
@@ -127,14 +129,17 @@ const PREFERENCE_KEYS = [
   'keywordHighlightProfiles',
   'sidebarCollapsed',
   'sidebarPosition',
-  'fileBrowserPosition',
   'sidebarOpenGesture',
+  'sidebarRailPinned',
+  'sidebarHostView',
+  'sidebarHostGrouping',
+  'hostsTabView',
+  'hostsTabSort',
   'sidebarWidth',
   'sidebarCollapsedFolders',
   'sidebarFolderStyles',
   'sidebarFolderOrder',
   'sidebarEmptyFolders',
-  'sftpPanelWidth',
   'showHiddenFiles',
 ] as const satisfies readonly (keyof PrefsState)[];
 
@@ -1087,11 +1092,22 @@ export function sanitizePreferences(
   if (isSidebarPosition(input.sidebarPosition)) {
     output.sidebarPosition = input.sidebarPosition;
   }
-  if (isFileBrowserPosition(input.fileBrowserPosition)) {
-    output.fileBrowserPosition = input.fileBrowserPosition;
-  }
   if (isSidebarOpenGesture(input.sidebarOpenGesture)) {
     output.sidebarOpenGesture = input.sidebarOpenGesture;
+  }
+  if (typeof input.sidebarRailPinned === 'boolean') {
+    output.sidebarRailPinned = input.sidebarRailPinned;
+  }
+  if (isSidebarHostView(input.sidebarHostView)) output.sidebarHostView = input.sidebarHostView;
+  if (isSidebarHostGrouping(input.sidebarHostGrouping)) {
+    output.sidebarHostGrouping = input.sidebarHostGrouping;
+  }
+  if (isHostsTabView(input.hostsTabView)) output.hostsTabView = input.hostsTabView;
+  if (isHostsTableSort(input.hostsTabSort)) {
+    output.hostsTabSort = {
+      ...(input.hostsTabSort.column ? { column: input.hostsTabSort.column } : {}),
+      descending: input.hostsTabSort.descending,
+    };
   }
   if (
     finiteRange(
@@ -1101,9 +1117,6 @@ export function sanitizePreferences(
     )
   ) {
     output.sidebarWidth = input.sidebarWidth;
-  }
-  if (finiteRange(input.sftpPanelWidth, MIN_SFTP_PANEL_WIDTH, 1200)) {
-    output.sftpPanelWidth = input.sftpPanelWidth;
   }
   if (typeof input.showHiddenFiles === 'boolean') {
     output.showHiddenFiles = input.showHiddenFiles;

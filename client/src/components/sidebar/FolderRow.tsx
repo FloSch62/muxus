@@ -46,6 +46,11 @@ export interface FolderRowProps {
   onDragStart?: (event: DragEvent<HTMLElement>, row: VisibleNode) => void;
   onDragEnd?: () => void;
   dragging?: boolean;
+  /**
+   * A heading of a flat list rather than a folder: no icon, no actions, and a
+   * quieter label. It still folds and still counts what is under it.
+   */
+  section?: boolean;
 }
 
 /**
@@ -77,6 +82,7 @@ export const FolderRow = memo(function FolderRow({
   onDragStart,
   onDragEnd,
   dragging,
+  section = false,
 }: FolderRowProps) {
   const expanded = row.expanded ?? false;
   const Icon = folderIcon(iconId, expanded, shared);
@@ -154,16 +160,25 @@ export const FolderRow = memo(function FolderRow({
           transform: expanded || dropInto ? 'rotate(90deg)' : 'none',
         }}
       />
-      <Icon sx={{ fontSize: 16, flexShrink: 0, color: color ?? 'text.secondary' }} />
+      {section ? null : (
+        <Icon sx={{ fontSize: 16, flexShrink: 0, color: color ?? 'text.secondary' }} />
+      )}
       <Box
         component="span"
-        sx={{ ...treeLabelSx, flex: 1, minWidth: 0, fontWeight: 550 }}
+        sx={{
+          ...treeLabelSx,
+          flex: 1,
+          minWidth: 0,
+          fontWeight: 550,
+          ...(section ? { fontSize: 12, color: 'text.secondary' } : {}),
+        }}
       >
         {label}
       </Box>
       {sharedFailing ? (
         <ErrorOutlineIcon aria-hidden sx={{ fontSize: 14, flexShrink: 0, color: 'error.main' }} />
       ) : null}
+      {section ? null : (
       <Tooltip title={count > 0 ? `Launch all ${count} hosts…` : ''} disableInteractive>
         {/* Flex, not inline: an inline wrapper takes the body line height and
             makes folder rows taller than host rows. */}
@@ -185,6 +200,7 @@ export const FolderRow = memo(function FolderRow({
           </IconButton>
         </span>
       </Tooltip>
+      )}
       {onMenu && (
         <IconButton
           className="folder-action"

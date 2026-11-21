@@ -29,7 +29,6 @@ beforeEach(() => {
     showCommandBar: true,
     commandBarPosition: 'top',
     sidebarPosition: 'left',
-    fileBrowserPosition: 'pane',
     sidebarOpenGesture: 'click',
     showStatusBar: false,
     statusBarItems: ['hostname', 'cpu'],
@@ -406,7 +405,6 @@ describe('backing up preferences', () => {
       showCommandBar: false,
       commandBarPosition: 'bottom',
       sidebarPosition: 'right',
-      fileBrowserPosition: 'sidebar',
       sidebarOpenGesture: 'double-click',
       showStatusBar: true,
       statusBarItems: ['memory', 'network'],
@@ -427,7 +425,6 @@ describe('backing up preferences', () => {
     expect(document.data.preferences.showCommandBar).toBe(false);
     expect(document.data.preferences.commandBarPosition).toBe('bottom');
     expect(document.data.preferences.sidebarPosition).toBe('right');
-    expect(document.data.preferences.fileBrowserPosition).toBe('sidebar');
     expect(document.data.preferences.sidebarOpenGesture).toBe('double-click');
     expect(document.data.preferences.showStatusBar).toBe(true);
     expect(document.data.preferences.statusBarItems).toEqual(['memory', 'network']);
@@ -1516,28 +1513,26 @@ describe('restoring command button groups', () => {
 describe('restoring the layout preferences', () => {
   const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
 
-  it('restores the sidebar side, the file browser dock and the command bar position', () => {
+  it('restores the sidebar side and the command bar position', () => {
     expect(
-      sanitizePreferences(
-        prefs({
-          sidebarPosition: 'right',
-          fileBrowserPosition: 'sidebar',
-          commandBarPosition: 'bottom',
-        }),
-      ),
-    ).toMatchObject({
-      sidebarPosition: 'right',
-      fileBrowserPosition: 'sidebar',
-      commandBarPosition: 'bottom',
-    });
+      sanitizePreferences(prefs({ sidebarPosition: 'right', commandBarPosition: 'bottom' })),
+    ).toMatchObject({ sidebarPosition: 'right', commandBarPosition: 'bottom' });
+  });
+
+  it('leaves out the file browser dock and width of older backups', () => {
+    const restored = sanitizePreferences(
+      prefs({ fileBrowserPosition: 'pane', sftpPanelWidth: 420, sidebarPosition: 'right' }),
+    ) as Record<string, unknown>;
+    expect(restored.sidebarPosition).toBe('right');
+    expect(restored.fileBrowserPosition).toBeUndefined();
+    expect(restored.sftpPanelWidth).toBeUndefined();
   });
 
   it('drops positions it does not know', () => {
     const restored = sanitizePreferences(
-      prefs({ sidebarPosition: 'top', fileBrowserPosition: 'left', commandBarPosition: 'left' }),
+      prefs({ sidebarPosition: 'top', commandBarPosition: 'left' }),
     );
     expect(restored.sidebarPosition).toBeUndefined();
-    expect(restored.fileBrowserPosition).toBeUndefined();
     expect(restored.commandBarPosition).toBeUndefined();
   });
 
@@ -1559,6 +1554,31 @@ describe('restoring the layout preferences', () => {
     expect(
       sanitizePreferences(prefs({ sidebarOpenGesture: 'hover' })).sidebarOpenGesture,
     ).toBeUndefined();
+  });
+
+  it('restores the sidebar and hosts tab layout, and drops what it does not know', () => {
+    const layout = {
+      sidebarRailPinned: true,
+      sidebarHostView: 'list',
+      sidebarHostGrouping: 'name',
+      hostsTabView: 'table',
+      hostsTabSort: { column: 'address', descending: true },
+    };
+    expect(sanitizePreferences(prefs(layout))).toMatchObject(layout);
+    const unknown = sanitizePreferences(
+      prefs({
+        sidebarRailPinned: 1,
+        sidebarHostView: 'grid',
+        sidebarHostGrouping: 'size',
+        hostsTabView: 'list',
+        hostsTabSort: { column: 'owner', descending: true },
+      }),
+    );
+    expect(unknown.sidebarRailPinned).toBeUndefined();
+    expect(unknown.sidebarHostView).toBeUndefined();
+    expect(unknown.sidebarHostGrouping).toBeUndefined();
+    expect(unknown.hostsTabView).toBeUndefined();
+    expect(unknown.hostsTabSort).toBeUndefined();
   });
 
   it('restores whether the file browser lists hidden files, and leaves older backups at the default', () => {

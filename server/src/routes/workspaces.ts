@@ -27,7 +27,7 @@ const workspaceTabSchema = z.discriminatedUnion('kind', [
   }),
   z.object({
     id: z.string().min(1),
-    kind: z.literal('monitor'),
+    kind: z.enum(['monitor', 'hosts']),
     title: z.string().max(500),
     color: z.string().max(32).optional(),
     pinned: z.boolean().optional(),

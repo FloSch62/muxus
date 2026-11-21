@@ -244,6 +244,58 @@ Hosts for `ssh_config` are written in one go, so `config.muxus.bak` holds the fi
 the whole range. If a host is created but its folder, colour or logging settings cannot be
 saved, Muxus names it so you can set them by editing it. The same works in **Add host**.
 
+## Other layouts
+
+The strip under the search box chooses how the hosts are laid out. The choice is kept, and
+search, selection, the hover card and the right-click menu work the same in all three.
+
+- **Folder tree** is the layout described above: folders nest, and hosts keep the order
+  you gave them.
+- **Flat list** shows every host without unfolding anything, with the folder it is filed in
+  at the end of its row. Group it by **Recent** (open sessions first, then today, this
+  week, this month, earlier, and hosts never connected), **A–Z**, or **Kind** (SSH, Telnet,
+  serial, RDP, VNC, gNMI, NETCONF, web). A group's heading folds it away.
+- **One folder at a time** shows the folders directly inside the current one, then every
+  host anywhere below it in one alphabetical run, each with the subfolder it is in. Click
+  a folder to step into it; the breadcrumb, the arrow beside it and ++backspace++ lead back
+  out. It keeps the whole width for names however deep the folders go. Searching looks at
+  every host, wherever you are.
+
+Dragging to reorder belongs to the folder tree, where the order on screen is the hosts'
+own. In one folder at a time, a host can still be dropped onto a folder to file it there.
+
+## The hosts tab
+
+The last button of that strip, or **Open hosts tab** in the
+[quick launcher](quick-launcher.md), opens every saved host as a tab of its own. It is the
+same list with room to spread out, and it needs no sidebar: connect, select, right-click
+and search as in the sidebar.
+
+- **Cards** file the hosts under their folders, each card with the host's name and address.
+- **Table** adds the folder, the jump host, the kind and when the host was last used. Click
+  a column heading to sort by it, again to reverse, and a third time (or **Arrange by
+  folder**) to go back to the folders in the sidebar's order.
+- The chips beside the search box narrow the list to one kind of host.
+
+Arranging hosts is what the tab is for:
+
+- Drag a card or a row to another spot in its folder to reorder it, or into another folder
+  to file it there. A line shows where it will land and the folder it moves to lights up;
+  empty folders appear as places to drop while something is being dragged.
+- Drag one host of a selection and the whole selection comes along.
+- Drag between the tab and the sidebar in either direction: a card onto a folder of the
+  tree, or a row of the tree into a folder of the tab.
+- Drop hosts on the tab strip of any pane to open a session for each one there.
+
+Reordering needs the hosts' own order on screen, so it is off while a search or a kind
+filter is narrowing the list and while the table is sorted by a column. Hosts can still be
+dragged to the sidebar or onto a pane then.
+
+The arrow keys move between cards or rows, ++enter++ connects, ++shift++ + arrows extend a
+selection, ++ctrl+a++ selects everything shown, ++delete++ deletes the selection after
+asking, and ++escape++ clears it. The tab is saved with the [workspace](workspaces.md) like
+any other.
+
 ## Folders
 
 Folders are stored in the local database next to the host colour, not in `ssh_config`.
@@ -436,7 +488,7 @@ To select hosts from the keyboard, ++shift+space++ selects or deselects the focu
 ++escape++ clears a selection before it returns to the search box.
 
 ++ctrl+b++ hides the sidebar. The [quick launcher](quick-launcher.md) still reaches every
-host.
+host, and so does the [hosts tab](#the-hosts-tab).
 
 ## Local terminal
 

@@ -52,6 +52,10 @@ export interface HostRowProps {
   onDragEnd?: () => void;
   dragging?: boolean;
   dropEdge?: 'before' | 'after';
+  /** Listed outside the folder tree: no indent of its own, no guides. */
+  flat?: boolean;
+  /** Said quietly at the row's end, such as the folder a host of a flat list is in. */
+  detail?: string;
 }
 
 /**
@@ -82,7 +86,10 @@ export const HostRow = memo(function HostRow({
   onDragEnd,
   dragging,
   dropEdge,
+  flat = false,
+  detail,
 }: HostRowProps) {
+  const depth = flat ? 0 : row.depth;
   const title = managedHostDisplayName(host);
   const address = managedHostAddress(host);
   const color = host.entry.metadata?.color;
@@ -186,7 +193,7 @@ export const HostRow = memo(function HostRow({
           onMenu(host, event.currentTarget, { top: event.clientY, left: event.clientX });
         }}
         sx={[
-          treeRowSx(row.depth, row.railColor),
+          treeRowSx(depth, flat ? undefined : row.railColor),
           {
             gap: 0.75,
             opacity: dragging ? 0.45 : 1,
@@ -202,7 +209,7 @@ export const HostRow = memo(function HostRow({
               [`&::${dropEdge === 'before' ? 'before' : 'after'}`]: {
                 content: '""',
                 position: 'absolute',
-                left: indentPx(row.depth),
+                left: indentPx(depth),
                 right: TREE_BASE_INSET,
                 [dropEdge === 'before' ? 'top' : 'bottom']: -1,
                 height: 2,
@@ -237,7 +244,8 @@ export const HostRow = memo(function HostRow({
             />
           )}
         </Box>
-        <Box sx={{ flex: 1, minWidth: 0 }}>
+        {/* Beside a detail the name keeps its width: the detail gives way first. */}
+        <Box sx={{ flex: detail ? '1 1 auto' : 1, minWidth: 0 }}>
           <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', minWidth: 0 }}>
             <Box component="span" sx={{ ...treeLabelSx, minWidth: 0 }}>
               {title}
@@ -249,6 +257,23 @@ export const HostRow = memo(function HostRow({
             )}
           </Stack>
         </Box>
+        {detail ? (
+          <Box
+            component="span"
+            sx={{
+              flex: '0 100 auto',
+              minWidth: 0,
+              fontSize: 11.5,
+              letterSpacing: -0.1,
+              color: 'text.secondary',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {detail}
+          </Box>
+        ) : null}
         <EnvironmentBadges hostKey={managedHostKey(host)} />
         {match ? (
           <Typography

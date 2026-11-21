@@ -452,7 +452,7 @@ export function QuickLauncherDialog() {
       case 'sftp': {
         const tab = tabState.tabs.find((candidate) => candidate.id === tabState.activeId);
         if (tab?.profile && tab.profile.kind === 'ssh' && tab.connId) {
-          toggleFileBrowser(tab.id);
+          toggleFileBrowser();
         }
         break;
       }

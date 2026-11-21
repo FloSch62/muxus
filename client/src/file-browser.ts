@@ -1,81 +1,56 @@
-import { usePrefsStore, type FileBrowserPosition } from './state/prefs.js';
-import { useTabsStore, type TerminalTab } from './state/tabs.js';
+import { usePrefsStore } from './state/prefs.js';
+import type { TerminalTab } from './state/tabs.js';
 import { useUiStore, type SidebarView } from './state/ui.js';
 
 /**
- * The file browser either opens beside an SSH terminal, one tab at a time, or
- * sits behind a tab in the window sidebar and follows the active session.
- * Every way of opening it goes through here, so each behaves the same
- * wherever the browser is docked.
+ * The file browser is one of the sidebar's panels and shows the files of
+ * whichever SSH session is active. Every way of opening it goes through here,
+ * so each behaves the same.
  */
 export interface FileBrowserPlacement {
-  position: FileBrowserPosition;
   sidebarCollapsed: boolean;
   focusMode: boolean;
   sidebarView: SidebarView;
+  sidebarPanelOpen: boolean;
 }
 
-/** Whether the browser for a tab is on screen. */
-export function isFileBrowserShown(
-  placement: FileBrowserPlacement,
-  tab: Pick<TerminalTab, 'sftpOpen'> | undefined,
-): boolean {
-  if (placement.position === 'pane') return !!tab?.sftpOpen;
-  return !placement.sidebarCollapsed && !placement.focusMode && placement.sidebarView === 'files';
+/** Whether the browser is on screen. */
+export function isFileBrowserShown(placement: FileBrowserPlacement): boolean {
+  return (
+    !placement.sidebarCollapsed &&
+    !placement.focusMode &&
+    placement.sidebarPanelOpen &&
+    placement.sidebarView === 'files'
+  );
 }
 
 function currentPlacement(): FileBrowserPlacement {
   const prefs = usePrefsStore.getState();
   const ui = useUiStore.getState();
   return {
-    position: prefs.fileBrowserPosition,
     sidebarCollapsed: prefs.sidebarCollapsed,
     focusMode: ui.focusMode,
     sidebarView: ui.sidebarView,
+    sidebarPanelOpen: ui.sidebarPanelOpen,
   };
 }
 
-/** Reactive {@link isFileBrowserShown}, for controls that reflect it. */
-export function useFileBrowserShown(tab: Pick<TerminalTab, 'sftpOpen'> | undefined): boolean {
-  const position = usePrefsStore((state) => state.fileBrowserPosition);
-  const sidebarCollapsed = usePrefsStore((state) => state.sidebarCollapsed);
-  const focusMode = useUiStore((state) => state.focusMode);
-  const sidebarView = useUiStore((state) => state.sidebarView);
-  return isFileBrowserShown({ position, sidebarCollapsed, focusMode, sidebarView }, tab);
-}
-
-/** Bring the browser for a tab on screen. The caller activates the tab. */
-export function showFileBrowser(tabId: string): void {
-  if (usePrefsStore.getState().fileBrowserPosition === 'pane') {
-    useTabsStore.getState().update(tabId, { sftpOpen: true });
-    return;
-  }
-  if (usePrefsStore.getState().sidebarCollapsed) {
-    usePrefsStore.getState().set({ sidebarCollapsed: false });
-  }
+/**
+ * Bring the browser on screen: showing a view also brings back a hidden
+ * sidebar and a closed panel. It follows the active tab, so the caller
+ * activates the one whose files it wants.
+ */
+export function showFileBrowser(): void {
   useUiStore.getState().setSidebarView('files');
 }
 
-/** Show the browser for a tab, or put it away. Docked, that brings the hosts back. */
-export function toggleFileBrowser(tabId: string): void {
-  const tab = useTabsStore.getState().tabs.find((candidate) => candidate.id === tabId);
-  const placement = currentPlacement();
-  if (!isFileBrowserShown(placement, tab)) {
-    showFileBrowser(tabId);
-  } else if (placement.position === 'pane') {
-    useTabsStore.getState().update(tabId, { sftpOpen: false });
-  } else {
-    useUiStore.getState().setSidebarView('hosts');
-  }
+/** Show the browser, or put it away and bring the hosts back. */
+export function toggleFileBrowser(): void {
+  if (isFileBrowserShown(currentPlacement())) useUiStore.getState().setSidebarView('hosts');
+  else showFileBrowser();
 }
 
-/** Dock the browser elsewhere and keep the tab's browser in view there. */
-export function moveFileBrowser(position: FileBrowserPosition, tabId: string | undefined): void {
-  usePrefsStore.getState().set({ fileBrowserPosition: position });
-  if (tabId) showFileBrowser(tabId);
-}
-
-/** Why the sidebar's browser has no files to show for the active tab. */
+/** Why the browser has no files to show for the active tab. */
 export function fileBrowserUnavailableReason(
   tab: Pick<TerminalTab, 'profile' | 'status' | 'sftpAvailable' | 'systemOpenSsh'> | undefined,
 ): string {

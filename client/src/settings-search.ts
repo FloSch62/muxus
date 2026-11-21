@@ -27,8 +27,7 @@ export const SETTINGS_SEARCH_INDEX: readonly SettingsSearchEntry[] = [
   // Appearance
   { section: 'appearance', group: 'Window', label: 'Theme', keywords: ['dark mode', 'light mode', 'system', 'appearance'] },
   { section: 'appearance', group: 'Window', label: 'Interface scale', keywords: ['zoom', 'ui size', 'scaling', 'bigger', 'smaller'] },
-  { section: 'appearance', group: 'Layout', label: 'Hosts sidebar', keywords: ['left', 'right', 'position', 'dock'] },
-  { section: 'appearance', group: 'Layout', label: 'File browser', keywords: ['sftp', 'position', 'dock', 'sidebar'] },
+  { section: 'appearance', group: 'Layout', label: 'Sidebar', keywords: ['left', 'right', 'position', 'dock', 'rail', 'hosts', 'file browser'] },
   { section: 'appearance', group: 'Layout', label: 'Command bar', keywords: ['command buttons', 'top', 'bottom', 'position'] },
   { section: 'appearance', group: 'Status bar', label: 'Show status bar', keywords: ['cpu', 'memory', 'disk', 'uptime', 'statistics'] },
   { section: 'appearance', group: 'Status bar', label: 'Status bar items', row: 'Items', keywords: ['cpu', 'memory', 'disk', 'load', 'network', 'uptime', 'users'] },
