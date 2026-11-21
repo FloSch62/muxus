@@ -49,7 +49,7 @@ export interface PersistableViewTab {
   id: string;
   paneId: string;
   title: string;
-  view: 'monitor';
+  view: 'monitor' | 'hosts';
   profile?: undefined;
   color?: string;
   pinned?: boolean;
@@ -329,19 +329,22 @@ export function restoreWorkspace(
         children: [restoreNode(node.children[0]), restoreNode(node.children[1])],
       };
     }
-    const terminalTabs = node.tabs.filter((tab) => tab.kind === 'terminal' || tab.kind === 'monitor');
+    const terminalTabs = node.tabs.filter(
+      (tab) => tab.kind === 'terminal' || tab.kind === 'monitor' || tab.kind === 'hosts',
+    );
     for (const tab of terminalTabs) {
-      if (tab.kind === 'monitor') {
+      if (tab.kind === 'monitor' || tab.kind === 'hosts') {
         tabs.push({
           id: tab.id,
           paneId: node.id,
           title: tab.title,
-          view: 'monitor',
+          view: tab.kind,
           color: tab.color,
           pinned: tab.pinned,
         });
         continue;
       }
+      if (tab.kind !== 'terminal') continue;
       // Workspaces written before TERM became fixed may still carry an
       // override. Strip it at the restore boundary and persist the clean
       // profile on the next workspace save.

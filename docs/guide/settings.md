@@ -4,7 +4,7 @@ icon: lucide/settings
 
 # Settings
 
-Settings are opened with ++ctrl+comma++ or the gear control in the top bar. In the desktop
+Settings are opened with ++ctrl+comma++ or the gear icon in the sidebar rail. In the desktop
 app they open in a window of their own, centered over the window you opened them from and
 at the size you left it. You can keep it beside the main window or drag it onto another
 display while it is open. Opening settings again brings the window to the front. On Linux
@@ -37,10 +37,9 @@ policy should not change under a running recorder.
 - **Application theme**: light, dark, or follow the system.
 - **Interface scale**: the size of the whole window. Terminal text has a separate zoom
   (++ctrl+shift+equal++ / ++ctrl+shift+minus++ / ++ctrl+wheel++).
-- **Layout**: dock the hosts sidebar on the left (default) or right, open the
-  [file browser](files.md#docking-it-in-the-sidebar) beside the terminal (default) or in the
-  sidebar, and place the [command bar](commands.md) at the top (default) or bottom. A
-  miniature of the window previews the arrangement.
+- **Layout**: dock the sidebar on the left (default) or right, and place the
+  [command bar](commands.md) at the top (default) or bottom. A miniature of the window
+  previews the arrangement.
 - **Status bar**: **Show status bar** adds the [status bar](the-window.md#status-bar) with
   the active session's host statistics along the bottom of the window. On by default.
   **Items** picks what it shows: host name, operating system, CPU, memory, disk, network

@@ -61,13 +61,13 @@ word, so closing a tab is ++ctrl+shift+w++.
 
 ## 4. Open the files next to the session
 
-Click the folder icon in the top bar to open the **file browser** on the current SSH tab.
-It rides the session's existing SSH transport, so there is no new connection and no new
-authentication.
+Click the folder icon in the sidebar rail to open the **file browser** of the current SSH tab
+in the sidebar. It rides the session's existing SSH transport, so there is no new connection
+and no new authentication.
 
 <figure markdown="span">
-  ![The SFTP file browser beside a terminal](assets/screenshots/sftp.png#only-light){ .shadow }
-  ![The SFTP file browser beside a terminal](assets/screenshots/sftp-dark.png#only-dark){ .shadow }
+  ![The SFTP file browser in the sidebar, beside a terminal](assets/screenshots/sftp.png#only-light){ .shadow }
+  ![The SFTP file browser in the sidebar, beside a terminal](assets/screenshots/sftp-dark.png#only-dark){ .shadow }
   <figcaption>Drag files in to upload; double-click one to open it in the remote editor.</figcaption>
 </figure>
 

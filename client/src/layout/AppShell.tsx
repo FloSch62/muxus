@@ -42,28 +42,13 @@ import { TerminalView } from '../components/TerminalView.js';
 import { RemoteDesktopView } from '../components/RemoteDesktopView.js';
 import { ManagementView } from '../components/ManagementView.js';
 import { HostMonitorView } from '../components/HostMonitorView.js';
-import {
-  loadEnvironmentsPanel,
-  loadForwardingPanel,
-  loadRemoteEditorWorkspace,
-  loadSftpPanel,
-} from '../lazy-features.js';
+import { HostsView } from '../components/hosts/HostsView.js';
+import { loadRemoteEditorWorkspace } from '../lazy-features.js';
 import { useEnvironmentDiscovery } from '../components/environments/useEnvironmentDiscovery.js';
 import { layout } from '../theme.js';
-import { moveFileBrowser } from '../file-browser.js';
 import { Sidebar } from './Sidebar.js';
 import { TopBar } from './TopBar.js';
-import { openAppWindow } from '../window-management.js';
 
-const ForwardingPanel = lazy(() =>
-  loadForwardingPanel().then((module) => ({ default: module.ForwardingPanel })),
-);
-const SftpPanel = lazy(() =>
-  loadSftpPanel().then((module) => ({ default: module.SftpPanel })),
-);
-const EnvironmentsPanel = lazy(() =>
-  loadEnvironmentsPanel().then((module) => ({ default: module.EnvironmentsPanel })),
-);
 const RemoteEditorWorkspace = lazy(() =>
   loadRemoteEditorWorkspace().then((module) => ({ default: module.RemoteEditorWorkspace })),
 );
@@ -86,17 +71,8 @@ export function AppShell({
   const activePaneId = useTabsStore((state) => state.activePaneId);
   const zoomedPaneId = useTabsStore((state) => state.zoomedPaneId);
   const focusMode = useUiStore((state) => state.focusMode);
-  const forwardingOpen = useUiStore((state) => state.forwardingOpen);
-  const environmentsOpen = useUiStore((state) => state.environmentsPanel !== false);
   const setHostEditor = useUiStore((state) => state.setHostEditor);
   const showSidebar = !focusMode && !sidebarCollapsed;
-  const environmentsPanel = (
-    <ErrorBoundary label="The containers and VMs panel">
-      <Suspense fallback={null}>
-        <EnvironmentsPanel />
-      </Suspense>
-    </ErrorBoundary>
-  );
 
   return (
     <Box
@@ -106,10 +82,9 @@ export function AppShell({
       <CommandLineLaunchHandler />
       <TopBar />
       {focusMode || commandBarAtBottom ? null : <ActionBar position="top" />}
-      <Box sx={{ flex: 1, display: 'flex', minHeight: 0 }}>
+      {/* Positioned, so the sidebar's file browser can spread over the panes. */}
+      <Box sx={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
         {showSidebar && !sidebarOnRight ? <Sidebar /> : null}
-        {/* The containers and VMs panel opens beside the sidebar it grows out of. */}
-        {environmentsOpen && !focusMode && !sidebarOnRight ? environmentsPanel : null}
         <Box sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>
           <PaneCanvas
             root={root}
@@ -120,16 +95,6 @@ export function AppShell({
             onAddHost={() => setHostEditor({ mode: 'new' })}
           />
         </Box>
-        {forwardingOpen && !focusMode ? (
-          <ErrorBoundary label="The forwarding panel">
-            <Suspense fallback={null}>
-              <ForwardingPanel />
-            </Suspense>
-          </ErrorBoundary>
-        ) : null}
-        {/* Docked on the right, the sidebar keeps the window edge and the
-            forwarding panel opens between it and the panes. */}
-        {environmentsOpen && !focusMode && sidebarOnRight ? environmentsPanel : null}
         {showSidebar && sidebarOnRight ? <Sidebar /> : null}
       </Box>
       {focusMode || !commandBarAtBottom ? null : <ActionBar position="bottom" />}
@@ -166,13 +131,10 @@ function PaneCanvas({
   const activePaneBorderRefs = useRef(new Map<string, HTMLDivElement>());
   const focusPane = useTabsStore((state) => state.focusPane);
   const resizeSplit = useTabsStore((state) => state.resizeSplit);
-  const openEditor = useTabsStore((state) => state.openEditor);
   const activateEditor = useTabsStore((state) => state.activateEditor);
   const closeEditor = useTabsStore((state) => state.closeEditor);
   const showTerminal = useTabsStore((state) => state.showTerminal);
-  const updateTab = useTabsStore((state) => state.update);
   const tabNumberVisibility = usePrefsStore((state) => state.tabNumberVisibility);
-  const fileBrowserBesidePanes = usePrefsStore((state) => state.fileBrowserPosition === 'pane');
   const activePaneBorder = usePrefsStore((state) => state.activePaneBorder);
   const dimInactivePanes = usePrefsStore((state) => state.dimInactivePanes);
   const inactivePaneDimStrength = usePrefsStore((state) => state.inactivePaneDimStrength);
@@ -336,42 +298,14 @@ function PaneCanvas({
                 <ErrorBoundary label="The host monitor">
                   <HostMonitorView visible={visible} />
                 </ErrorBoundary>
+              ) : tab.view === 'hosts' ? (
+                <ErrorBoundary label="The hosts tab">
+                  <HostsView visible={visible} />
+                </ErrorBoundary>
               ) : (
                 <EmptyPane onAddHost={onAddHost} replaceTabId={tab.id} />
               )}
             </Box>
-            {fileBrowserBesidePanes &&
-              visible &&
-              tab.sftpOpen &&
-              tab.sftpAvailable !== false &&
-              tab.connId && (
-                <ErrorBoundary label="The file browser">
-                  <Suspense fallback={null}>
-                    <SftpPanel
-                      key={tab.connId}
-                      connId={tab.connId}
-                      tabId={tab.id}
-                      hostLabel={tab.title}
-                      terminalPath={tab.terminalCwd}
-                      followTerminalFolder={tab.sftpFollowTerminal !== false && !tab.systemOpenSsh}
-                      followTerminalFolderUnavailable={tab.systemOpenSsh === true}
-                      onFollowTerminalFolderChange={(sftpFollowTerminal) =>
-                        updateTab(tab.id, { sftpFollowTerminal })
-                      }
-                      onOpenFile={(path) => openEditor(tab.id, path)}
-                      onMove={() => moveFileBrowser('sidebar', tab.id)}
-                      onOpenInNewWindow={(path) =>
-                        openAppWindow({
-                          kind: 'sftp',
-                          connId: tab.connId!,
-                          title: tab.title,
-                          path,
-                        })
-                      }
-                    />
-                  </Suspense>
-                </ErrorBoundary>
-              )}
           </Box>
         );
       })}

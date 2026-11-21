@@ -55,6 +55,7 @@ const layout = {
         activeTabId: 'sftp-1',
         tabs: [
           { id: 'monitor-1', kind: 'monitor', title: 'Host monitor', pinned: true },
+          { id: 'hosts-1', kind: 'hosts', title: 'Hosts' },
           {
             id: 'sftp-1',
             kind: 'sftp',

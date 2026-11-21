@@ -33,10 +33,6 @@ import {
   useFolderSettings,
   useMoveFolderSettings,
 } from '../api/folder-settings.js';
-import { useDeleteManagedHosts } from '../api/host-delete.js';
-import { useApplyFolderMoves } from '../api/host-groups.js';
-import { useReorderManagedHosts } from '../api/host-order.js';
-import { useDeleteHostProfile } from '../api/profiles.js';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
 import {
   confirmRemoveSharedSessions,
@@ -47,16 +43,14 @@ import {
   useSharedSessionSources,
   useSharedSessionsBeingRead,
 } from '../api/shared-sessions.js';
-import { useDeleteHost } from '../api/ssh-config.js';
-import { confirmDeleteHost, confirmDeleteHosts } from '../host-actions.js';
 import { tabHostKey } from '../host-sessions.js';
 import { hostOrderAfterDrop } from '../host-organization.js';
 import {
   buildHostTree,
   folderKey,
   folderParentPath,
+  folderSegments,
   folderSiblings,
-  isSamePath,
   siblingHostKeys,
   type ContainerNode,
   type FolderNode,
@@ -66,11 +60,15 @@ import {
   alphabetizeManagedHosts,
   bestManagedHostMatch,
   groupManagedHosts,
-  managedHostDisplayName,
   managedHostKey,
-  managedHostRef,
   type ManagedHost,
 } from '../managed-hosts.js';
+import {
+  buildHostListTree,
+  buildHostScopeTree,
+  isSectionKey,
+} from '../host-views.js';
+import { hostFolderLabel } from '../hosts-table.js';
 import { useWslShellProfiles } from '../local-shell-launchers.js';
 import {
   connectManagedHost,
@@ -91,7 +89,7 @@ import { openScriptsFor } from '../scripts/script-jobs.js';
 import { useUiStore } from '../state/ui.js';
 import { clickOpensRow, type HostActivation } from './sidebar/row-clicks.js';
 import { treeLabelSx, treeRowSx } from './sidebar/tree-row-style.js';
-import { deleteFolderPlan, folderRewritePlan, moveHostsPlan } from './sidebar/folder-mutations.js';
+import { deleteFolderPlan, folderRewritePlan } from './sidebar/folder-mutations.js';
 import type { FolderMenuState } from './sidebar/FolderContextMenu.js';
 import type { HostMenuState } from './sidebar/HostContextMenu.js';
 import type { HostSessionsMenuState } from './sidebar/HostSessionsMenu.js';
@@ -100,11 +98,13 @@ import { LocalShellIcon } from './LocalShellIcon.js';
 import { EnvironmentBadges } from './environments/EnvironmentBadges.js';
 import { LOCAL_ENVIRONMENT_KEY } from '../state/environments.js';
 import { HostTree, type HostTreeHandle } from './sidebar/HostTree.js';
+import { HostViewBar } from './sidebar/HostViewBar.js';
 import { SelectionBar } from './sidebar/SelectionBar.js';
 import type { LaunchTarget } from './sidebar/LaunchGroupDialog.js';
 import { useAllManagedHosts } from './sidebar/useAllManagedHosts.js';
 import { useFolderPrefs } from './sidebar/useFolderPrefs.js';
 import { useLiveHostCounts } from './sidebar/useLiveHostCounts.js';
+import { useHostActions } from './sidebar/useHostActions.js';
 import { useTreeDnd, type FolderPlacement } from './sidebar/useTreeDnd.js';
 
 const SidebarMenus = lazy(() =>
@@ -130,11 +130,14 @@ export const SessionSidebar = memo(function SessionSidebar() {
   const { data: config, isSuccess: sshConfigReady } = useSshConfig();
   const { data: savedData, isSuccess: savedProfilesReady } = useSavedHostProfiles();
   const setHostEditor = useUiStore((s) => s.setHostEditor);
-  const setHostBulkEditor = useUiStore((s) => s.setHostBulkEditor);
   const setFolderDialog = useUiStore((s) => s.setFolderDialog);
   const setSharedSessionsDialog = useUiStore((s) => s.setSharedSessionsDialog);
   const sidebarPosition = usePrefsStore((state) => state.sidebarPosition);
   const openGesture = usePrefsStore((state) => state.sidebarOpenGesture);
+  const hostView = usePrefsStore((state) => state.sidebarHostView);
+  const hostGrouping = usePrefsStore((state) => state.sidebarHostGrouping);
+  const scopePath = useUiStore((state) => state.sidebarScopePath);
+  const setScopePath = useUiStore((state) => state.setSidebarScopePath);
   const localShellProfiles = usePrefsStore((state) => state.localShellProfiles);
   const wslShellProfiles = useWslShellProfiles();
   const setPrefs = usePrefsStore((state) => state.set);
@@ -151,13 +154,16 @@ export const SessionSidebar = memo(function SessionSidebar() {
   const [launchTarget, setLaunchTarget] = useState<LaunchTarget | null>(null);
   /** Folders collapsed during a search; discarded when the query changes. */
   const [searchCollapsed, setSearchCollapsed] = useState<ReadonlySet<string>>(EMPTY_KEYS);
+  /** Sections of the flat list folded away; they start open. */
+  const [collapsedSections, setCollapsedSections] = useState<ReadonlySet<string>>(EMPTY_KEYS);
+  /** "Today" has to roll over in a window that stays open for days. */
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 10 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, []);
   /** Hosts picked for a bulk action. Kept while searching, so a selection can span queries. */
   const [selection, setSelection] = useState<ReadonlySet<string>>(EMPTY_KEYS);
-  const deleteHost = useDeleteHost();
-  const deleteProfile = useDeleteHostProfile();
-  const deleteHosts = useDeleteManagedHosts();
-  const reorder = useReorderManagedHosts();
-  const applyFolderMoves = useApplyFolderMoves();
   const { data: folderSettingsData } = useFolderSettings();
   const moveFolderSettings = useMoveFolderSettings();
   const deleteFolderSettings = useDeleteFolderSettings();
@@ -194,6 +200,31 @@ export const SessionSidebar = memo(function SessionSidebar() {
       }),
     [groups, folders.emptyFolders, folders.folderOrder],
   );
+  // The other two layouts are views over the same tree. A search looks
+  // everywhere, so it steps out of the folder the list is narrowed to.
+  const scope = useMemo(
+    () => buildHostScopeTree(tree, needle ? '' : scopePath),
+    [tree, needle, scopePath],
+  );
+  const liveKeys = useMemo(() => new Set(liveByKey.keys()), [liveByKey]);
+  const shownTree = useMemo(
+    () =>
+      hostView === 'list'
+        ? buildHostListTree(tree, { grouping: hostGrouping, liveKeys, now })
+        : hostView === 'scope'
+          ? scope.tree
+          : tree,
+    [hostView, tree, hostGrouping, liveKeys, now, scope],
+  );
+  const scopeDepth = folderSegments(scope.path).length;
+  const hostDetail = useMemo(
+    () =>
+      hostView === 'tree'
+        ? undefined
+        : (host: ManagedHost) =>
+            hostFolderLabel(host, hostView === 'scope' ? scopeDepth : 0) || undefined,
+    [hostView, scopeDepth],
+  );
   // The list itself lags behind typing, but quick-connect must answer for the
   // text as typed, so the winner is scored against the flat host list instead.
   const bestMatch = useMemo(
@@ -218,22 +249,17 @@ export const SessionSidebar = memo(function SessionSidebar() {
   }, [allHosts, selection]);
   const clearSelection = useCallback(() => setSelection(EMPTY_KEYS), []);
 
-  /** One host opens its own editor; several open the bulk editor. */
-  const editHosts = (targets: readonly ManagedHost[]) => {
-    const [first] = targets;
-    if (!first) return;
-    if (targets.length > 1) {
-      setHostBulkEditor(targets.map(managedHostKey));
-      return;
-    }
-    setHostEditor(
-      first.kind === 'ssh'
-        ? { mode: 'edit', entry: first.entry }
-        : { mode: 'edit-profile', entry: first.entry },
-    );
-  };
+  const {
+    editHosts,
+    requestDelete,
+    requestDeleteHosts,
+    moveHosts,
+    commitOrder,
+    dropHosts,
+    applyFolderMoves,
+    mutating,
+  } = useHostActions(hostByKey, clearSelection);
 
-  const mutating = reorder.isPending || applyFolderMoves.isPending;
   const filtering = !!needle;
   // Both catalogs must be complete before an order can be persisted: writing
   // a partial list would leave the omitted source carrying conflicting ranks.
@@ -245,17 +271,6 @@ export const SessionSidebar = memo(function SessionSidebar() {
   // Folder edits rewrite paths across hosts the filter may be hiding, so they
   // are only offered against the full list.
   const folderEditsEnabled = hostCatalogsReady && !filtering && !mutating;
-
-  const commitOrder = useCallback(
-    (keys: readonly string[]) =>
-      reorder.mutate(
-        keys.flatMap((key) => {
-          const host = hostByKey.get(key);
-          return host ? [managedHostRef(host)] : [];
-        }),
-      ),
-    [reorder, hostByKey],
-  );
 
   const alphabetizeHosts = useCallback(
     (items: readonly ManagedHost[]) => {
@@ -285,34 +300,6 @@ export const SessionSidebar = memo(function SessionSidebar() {
   const moveHost = useCallback(
     (row: VisibleNode, delta: -1 | 1) => moveHostByKey(row.key, delta),
     [moveHostByKey],
-  );
-
-  /** Commit a drag: change the folder of every host that moved, then their order. */
-  const dropHosts = useCallback(
-    (hostKeys: readonly string[], path: string | undefined, order: string[]) => {
-      const moves =
-        path === undefined
-          ? []
-          : moveHostsPlan(
-              hostKeys.flatMap((key) => {
-                const host = hostByKey.get(key);
-                return host ? [host] : [];
-              }),
-              path,
-            );
-      if (moves.length === 0) {
-        commitOrder(order);
-        return;
-      }
-      // Order is only meaningful once the hosts actually belong to the folder.
-      void applyFolderMoves
-        .mutateAsync({ moves })
-        .then(({ failed }) => {
-          if (failed === 0) commitOrder(order);
-        })
-        .catch(() => undefined);
-    },
-    [hostByKey, commitOrder, applyFolderMoves],
   );
 
   const dropFolder = useCallback(
@@ -354,9 +341,19 @@ export const SessionSidebar = memo(function SessionSidebar() {
     [moveFolderByKey],
   );
 
+  // A folder in scope that is gone — deleted, renamed, emptied — leaves the
+  // list at the top; say so, or the bar would name a folder that no longer is.
+  useEffect(() => {
+    if (!hostCatalogsReady || filtering || hostView !== 'scope') return;
+    if (scope.path !== scopePath) setScopePath(scope.path);
+  }, [hostCatalogsReady, filtering, hostView, scope.path, scopePath, setScopePath]);
+
   const dnd = useTreeDnd({
     tree,
     enabled: reorderEnabled,
+    // Only the tree shows the hosts in their own order, so only there can a
+    // drop say where among them a host should go.
+    targets: hostView === 'tree' ? 'all' : hostView === 'scope' ? 'folders' : 'none',
     selection,
     onDropHosts: dropHosts,
     onDropFolder: dropFolder,
@@ -405,50 +402,6 @@ export const SessionSidebar = memo(function SessionSidebar() {
     else if (quickConnectable) connectTarget(filter.trim());
     else return;
     setFilter('');
-  };
-
-  const requestDelete = (host: ManagedHost) => {
-    void confirmDeleteHost({
-      name: managedHostDisplayName(host),
-      sshFile: host.kind === 'ssh' ? host.entry.file : undefined,
-    }).then((confirmed) => {
-      if (!confirmed) return;
-      if (host.kind === 'ssh') deleteHost.mutate(host.entry.alias);
-      else deleteProfile.mutate(host.entry.id);
-    });
-  };
-
-  /** One host takes the usual question; several are asked about, and deleted, together. */
-  const requestDeleteHosts = (targets: readonly ManagedHost[]) => {
-    const [first] = targets;
-    if (!first) return;
-    if (targets.length === 1) {
-      requestDelete(first);
-      return;
-    }
-    void confirmDeleteHosts(
-      targets.map((host) => ({
-        name: managedHostDisplayName(host),
-        sshFile: host.kind === 'ssh' ? host.entry.file : undefined,
-      })),
-    ).then((confirmed) => {
-      if (confirmed) deleteHosts.mutate(targets, { onSuccess: clearSelection });
-    });
-  };
-
-  /** Pick a folder for hosts, starting from the one they share, if any. */
-  const moveHosts = (targets: readonly ManagedHost[]) => {
-    const [first] = targets;
-    if (!first) return;
-    const path = first.entry.metadata?.group ?? '';
-    setFolderDialog({
-      mode: 'move-hosts',
-      hostKeys: targets.map(managedHostKey),
-      hostName: targets.length === 1 ? managedHostDisplayName(first) : undefined,
-      currentPath: targets.every((host) => isSamePath(host.entry.metadata?.group ?? '', path))
-        ? path
-        : '',
-    });
   };
 
   const openMenu = useCallback(
@@ -530,6 +483,36 @@ export const SessionSidebar = memo(function SessionSidebar() {
   const setExpanded = useCallback(
     (key: string, expanded: boolean) => setCollapsedKeys([key], !expanded),
     [setCollapsedKeys],
+  );
+
+  // Sections of the flat list fold in place and are never persisted. The
+  // folders of the scope view do not unfold at all: opening one steps into it.
+  const isExpandedShown = useCallback(
+    (key: string) => {
+      if (hostView === 'tree') return isExpanded(key);
+      return isSectionKey(key) ? !collapsedSections.has(key) : false;
+    },
+    [hostView, isExpanded, collapsedSections],
+  );
+  const setExpandedShown = useCallback(
+    (key: string, expanded: boolean) => {
+      if (hostView === 'tree') {
+        setExpanded(key, expanded);
+        return;
+      }
+      if (isSectionKey(key)) {
+        setCollapsedSections((current) => {
+          const next = new Set(current);
+          if (expanded) next.delete(key);
+          else next.add(key);
+          return next;
+        });
+        return;
+      }
+      const folder = tree.foldersByKey.get(key);
+      if (folder) setScopePath(folder.path);
+    },
+    [hostView, setExpanded, tree, setScopePath],
   );
 
   /** Collapse a folder and everything nested inside it, in one write. */
@@ -675,6 +658,17 @@ export const SessionSidebar = memo(function SessionSidebar() {
         </Tooltip>
       </Stack>
 
+      <HostViewBar
+        view={hostView}
+        onViewChange={(sidebarHostView) => setPrefs({ sidebarHostView })}
+        grouping={hostGrouping}
+        onGroupingChange={(sidebarHostGrouping) => setPrefs({ sidebarHostGrouping })}
+        scopePath={filtering ? '' : scope.path}
+        onScopeChange={setScopePath}
+        summary={hostSummary(allHosts.length, liveKeys.size)}
+        onOpenHostsTab={() => useTabsStore.getState().openHosts()}
+      />
+
       <Box
         ref={scrollRef}
         sx={{ flex: 1, overflowY: 'auto', pb: 1 }}
@@ -782,19 +776,27 @@ export const SessionSidebar = memo(function SessionSidebar() {
 
         <HostTree
           ref={treeRef}
-          tree={tree}
+          tree={shownTree}
+          flat={hostView !== 'tree'}
+          hostDetail={hostDetail}
+          onBack={
+            hostView === 'scope' && scope.path && !filtering
+              ? () => setScopePath(folderParentPath(scope.path))
+              : undefined
+          }
           scrollContainer={scrollRef}
           matchKey={matchKey}
           sessionsMenuKey={sessionsMenu ? managedHostKey(sessionsMenu.host) : undefined}
           selectedKeys={selection}
           onSelectionChange={setSelection}
-          isExpanded={isExpanded}
-          setExpanded={setExpanded}
+          isExpanded={isExpandedShown}
+          setExpanded={setExpandedShown}
           folderColor={folderColor}
           folderIconId={folderIconId}
           folderLink={folderLink}
           liveByKey={liveByKey}
-          reorderEnabled={reorderEnabled}
+          // Alt+Arrow moves a host among its siblings, which only the tree shows.
+          reorderEnabled={reorderEnabled && hostView === 'tree'}
           openGesture={openGesture}
           onActivate={activateHost}
           onHostMenu={openMenu}
@@ -957,6 +959,12 @@ export const SessionSidebar = memo(function SessionSidebar() {
     </Box>
   );
 });
+
+/** "13 hosts · 3 open": what the bar above the tree says. */
+function hostSummary(total: number, open: number): string {
+  const hosts = `${total} host${total === 1 ? '' : 's'}`;
+  return open > 0 ? `${hosts} · ${open} open` : hosts;
+}
 
 /** Depth-first walk of every container, so sibling lookups can scan once. */
 function* allContainers(nodes: readonly ContainerNode[]): Generator<ContainerNode> {

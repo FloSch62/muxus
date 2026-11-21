@@ -28,16 +28,16 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import DriveFileRenameOutlineIcon from '@mui/icons-material/DriveFileRenameOutline';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import CloseFullscreenIcon from '@mui/icons-material/CloseFullscreen';
 import FolderOffOutlinedIcon from '@mui/icons-material/FolderOffOutlined';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
 import HomeOutlinedIcon from '@mui/icons-material/HomeOutlined';
 import LaunchOutlinedIcon from '@mui/icons-material/LaunchOutlined';
+import OpenInFullIcon from '@mui/icons-material/OpenInFull';
 import OpenInNewOutlinedIcon from '@mui/icons-material/OpenInNewOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SearchIcon from '@mui/icons-material/Search';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
-import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined';
-import ViewSidebarOutlinedIcon from '@mui/icons-material/ViewSidebarOutlined';
 import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import { useQueryClient } from '@tanstack/react-query';
@@ -57,12 +57,6 @@ import {
   openDownloadedFile,
   openWithChooser,
 } from '../local-open.js';
-import {
-  clampSftpPanelWidth,
-  DEFAULT_SFTP_PANEL_WIDTH,
-  maxSftpPanelWidth,
-  MIN_SFTP_PANEL_WIDTH,
-} from '../sftp-panel-width.js';
 import { emptySftpListingLabel, initialSftpPath, visibleSftpEntries } from '../sftp-panel-state.js';
 import {
   canPickDownloadFolder,
@@ -112,7 +106,6 @@ import {
 import { FileTypeIcon } from './FileTypeIcon.js';
 import { OpenWithDialog } from './OpenWithDialog.js';
 import { formatSize, TransferProgress } from './TransferProgress.js';
-import { PanelResizeHandle } from './PanelResizeHandle.js';
 import { SYSTEM_OPENSSH_UNAVAILABLE } from '../system-openssh.js';
 
 interface TransferState {
@@ -321,9 +314,9 @@ export function SftpPanel({
   followTerminalFolder = false,
   followTerminalFolderUnavailable = false,
   onFollowTerminalFolderChange,
-  fill = false,
   inSidebar = false,
-  onMove,
+  full = false,
+  onFullChange,
   onOpenInNewWindow,
   hostLabel,
   shown = true,
@@ -339,12 +332,12 @@ export function SftpPanel({
   /** The terminal has no shell integration to report its folder with. */
   followTerminalFolderUnavailable?: boolean;
   onFollowTerminalFolderChange?: (follow: boolean) => void;
-  /** Fill a standalone window instead of using the saved side-panel width. */
-  fill?: boolean;
-  /** Docked in the window sidebar: it fills the sidebar and is titled with its session. */
+  /** A panel of the window sidebar rather than a window of its own: titled with its session. */
   inSidebar?: boolean;
-  /** Move the browser between the sidebar and its terminal. */
-  onMove?: () => void;
+  /** Spread over the panes instead of keeping to the sidebar's width. */
+  full?: boolean;
+  /** Offers the control that spreads the browser over the panes and back. */
+  onFullChange?: (full: boolean) => void;
   onOpenInNewWindow?: (path: string) => void;
   /** The session's name, for messages about files uploaded back to it. */
   hostLabel?: string;
@@ -371,12 +364,8 @@ export function SftpPanel({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
-  const panelWidth = usePrefsStore((state) => state.sftpPanelWidth);
-  const sidebarOnLeft = usePrefsStore((state) => state.sidebarPosition === 'left');
   const showHiddenFiles = usePrefsStore((state) => state.showHiddenFiles);
   const setPrefs = usePrefsStore((state) => state.set);
-  // The sidebar sizes itself; only the panel beside a terminal has its own width.
-  const fillsParent = fill || inSidebar;
 
   const { data, isFetching, error } = useSftpList(connId, path);
   useEffect(() => {
@@ -761,6 +750,8 @@ export function SftpPanel({
     if (mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'a') {
       setSelection(selectAllSftpEntries(entryNames));
     } else if (event.key === 'Escape' && selection.names.size > 0) {
+      // Taken: the same key shrinks a browser that fills the window, one step later.
+      event.preventDefault();
       setSelection(EMPTY_SFTP_SELECTION);
     } else if (
       (event.key === 'Delete' || (IS_MAC && event.metaKey && event.key === 'Backspace')) &&
@@ -798,14 +789,12 @@ export function SftpPanel({
     <Box
       ref={panelRef}
       sx={{
-        width: fillsParent ? '100%' : panelWidth,
-        maxWidth: fillsParent ? 'none' : '70%',
+        // Whatever holds it, the sidebar's card or a window, sets its size.
+        width: '100%',
         flexShrink: 0,
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        borderLeft: fillsParent ? 0 : 1,
-        borderColor: 'divider',
         bgcolor: inSidebar ? 'sidebar' : 'background.paper',
         position: 'relative',
         containerType: 'inline-size',
@@ -840,19 +829,6 @@ export function SftpPanel({
         void collectDrop(items).then(upload).catch(showErrorToast);
       }}
     >
-      {!fillsParent && (
-        <PanelResizeHandle
-          panelRef={panelRef}
-          edge="left"
-          width={panelWidth}
-          defaultWidth={DEFAULT_SFTP_PANEL_WIDTH}
-          minWidth={MIN_SFTP_PANEL_WIDTH}
-          maxWidth={maxSftpPanelWidth}
-          clampWidth={clampSftpPanelWidth}
-          onWidthChange={(sftpPanelWidth) => setPrefs({ sftpPanelWidth })}
-          label="Resize file browser"
-        />
-      )}
       <Stack direction="row" sx={{ px: 1.25, pt: 1, alignItems: 'center' }}>
         <FolderOpenOutlinedIcon sx={{ mr: 0.75, fontSize: 18, color: 'primary.main' }} />
         {/* Away from its terminal, the browser says whose files these are. */}
@@ -862,23 +838,19 @@ export function SftpPanel({
         <Typography variant="caption" color="textSecondary" sx={{ ml: 0.75 }}>
           SFTP
         </Typography>
-        {onMove && (
-          <Tooltip title={inSidebar ? 'Move beside the terminal' : 'Move to the sidebar'}>
+        {onFullChange && (
+          <Tooltip title={full ? 'Back to the sidebar (Esc)' : 'Fill the window'}>
             <IconButton
               size="small"
-              aria-label={
-                inSidebar ? 'Move file browser beside the terminal' : 'Move file browser to the sidebar'
-              }
-              onClick={onMove}
+              aria-label={full ? 'Shrink file browser back to the sidebar' : 'Fill the window with the file browser'}
+              aria-pressed={full}
+              onClick={() => onFullChange(!full)}
               sx={{ ml: 0.5 }}
             >
-              {inSidebar ? (
-                <VerticalSplitOutlinedIcon sx={{ fontSize: 17 }} />
+              {full ? (
+                <CloseFullscreenIcon sx={{ fontSize: 17 }} />
               ) : (
-                // The glyph draws its panel on the right; mirrored, it shows the left.
-                <ViewSidebarOutlinedIcon
-                  sx={{ fontSize: 17, transform: sidebarOnLeft ? 'scaleX(-1)' : undefined }}
-                />
+                <OpenInFullIcon sx={{ fontSize: 17 }} />
               )}
             </IconButton>
           </Tooltip>
@@ -1029,7 +1001,9 @@ export function SftpPanel({
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Escape' && filter) setFilter('');
+              if (event.key !== 'Escape' || !filter) return;
+              event.preventDefault();
+              setFilter('');
             }}
             slotProps={{
               htmlInput: { 'aria-label': 'Filter files by name' },

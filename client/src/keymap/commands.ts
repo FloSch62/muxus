@@ -520,7 +520,7 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
   },
   {
     id: 'app.sidebar',
-    title: 'Toggle hosts sidebar',
+    title: 'Toggle sidebar',
     category: 'app',
     defaultChords: ['Mod+B'],
     keywords: ['hosts', 'sessions', 'sidebar', 'hide', 'show'],
@@ -539,6 +539,17 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
     run: () => {
       const prefs = usePrefsStore.getState();
       prefs.set({ showStatusBar: !prefs.showStatusBar });
+      return true;
+    },
+  },
+  {
+    id: 'app.hosts-tab',
+    title: 'Open hosts tab',
+    category: 'app',
+    defaultChords: [],
+    keywords: ['hosts', 'inventory', 'cards', 'table', 'all hosts', 'arrange', 'folders'],
+    run: () => {
+      useTabsStore.getState().openHosts();
       return true;
     },
   },

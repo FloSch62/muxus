@@ -26,7 +26,7 @@ containers, labs, Kubernetes contexts, running VMs. A host that runs none of the
 nothing, so the tree stays as it was, and so does a host nobody is connected to. Clicking
 the logos opens the panel on that host.
 
-**In the panel.** The :material-cube-outline: control in the top bar opens the panel with
+**In the panel.** The :material-cube-outline: icon in the sidebar rail opens the panel with
 this computer and every connected host. Each host lists the tools it has, and each tool
 lists what runs there. Every line has its own actions at the end; double-click or
 ++enter++ runs the main one, usually opening a shell. Resting the pointer on a line shows

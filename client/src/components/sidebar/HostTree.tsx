@@ -18,6 +18,7 @@ import {
   type HostTree as HostTreeModel,
   type VisibleNode,
 } from '../../host-tree.js';
+import { isSectionKey } from '../../host-views.js';
 import { managedHostDisplayName, managedHostKey, type ManagedHost } from '../../managed-hosts.js';
 import type { SidebarOpenGesture } from '../../state/prefs.js';
 import { FolderRow } from './FolderRow.js';
@@ -92,6 +93,14 @@ export interface HostTreeProps {
   hoverPlacement: 'left' | 'right';
   /** Drag & drop wiring; absent until the tree is interactive. */
   dnd?: TreeDndBinding;
+  /**
+   * The rows are a flat list in sections rather than nested folders: hosts
+   * drop their indent, and `hostDetail` says where each one is filed.
+   */
+  flat?: boolean;
+  hostDetail?: (host: ManagedHost) => string | undefined;
+  /** Backspace: step out of the folder the list is narrowed to. */
+  onBack?: () => void;
 }
 
 export interface TreeDndBinding {
@@ -112,6 +121,8 @@ export interface TreeDndBinding {
   observeRows: (rows: readonly VisibleNode[]) => void;
   /** True while something is being dragged, so the root target can be shown. */
   dragging: boolean;
+  /** Whether empty space takes drops, filing hosts under no folder. */
+  rootTarget: boolean;
 }
 
 const EMPTY_SELECTION: ReadonlySet<string> = new Set();
@@ -158,6 +169,9 @@ export function HostTree({
   onEscape,
   hoverPlacement,
   dnd,
+  flat = false,
+  hostDetail,
+  onBack,
 }: HostTreeProps) {
   const [focusedKey, setFocusedKey] = useState<string | undefined>();
   const [rowWindow, setRowWindow] = useState(initialRowWindow);
@@ -389,6 +403,11 @@ export function HostTree({
 
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     const modifier = event.ctrlKey || event.metaKey;
+    if (onBack && event.key === 'Backspace' && !modifier && !event.altKey) {
+      event.preventDefault();
+      onBack();
+      return;
+    }
     if (modifier && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'a') {
       event.preventDefault();
       anchorRef.current = undefined;
@@ -474,6 +493,8 @@ export function HostTree({
           onDragEnd={dnd?.onDragEnd}
           dragging={dnd?.isDragging(row.key)}
           dropEdge={dnd?.dropEdgeFor(row.key)}
+          flat={flat}
+          detail={hostDetail?.(row.node.host)}
         />
       );
     }
@@ -506,6 +527,7 @@ export function HostTree({
         onDragStart={isFolder ? dnd?.onDragStart : undefined}
         onDragEnd={dnd?.onDragEnd}
         dragging={dnd?.isDragging(row.key)}
+        section={isSectionKey(row.key)}
       />
     );
   };
@@ -546,7 +568,7 @@ export function HostTree({
           />
         ),
       )}
-      {dnd?.dragging && (
+      {dnd?.dragging && dnd.rootTarget && (
         <Box
           component="li"
           aria-hidden

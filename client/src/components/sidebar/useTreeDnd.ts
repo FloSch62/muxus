@@ -8,6 +8,7 @@ import {
   type HostTree,
   type VisibleNode,
 } from '../../host-tree.js';
+import { useHostDragStore } from '../../state/host-drag.js';
 import type { TreeDndBinding } from './HostTree.js';
 import {
   canDrop,
@@ -19,7 +20,6 @@ import {
   isPureReorder,
   sameTarget,
   targetPath,
-  type DragSource,
   type DropTarget,
 } from './tree-dnd.js';
 
@@ -35,6 +35,12 @@ const AUTO_EXPAND_MS = 500;
 export interface TreeDndOptions {
   tree: HostTree;
   enabled: boolean;
+  /**
+   * What the rows on screen take: everything in the folder tree, only drops
+   * into a folder where the hosts are listed in an order of their own, or
+   * nothing at all. Rows can be dragged away in every case.
+   */
+  targets?: 'all' | 'folders' | 'none';
   /** Selected hosts; grabbing one of several drags them all. */
   selection: ReadonlySet<string>;
   /**
@@ -76,12 +82,15 @@ export interface TreeDnd {
 export function useTreeDnd({
   tree,
   enabled,
+  targets = 'all',
   selection,
   onDropHosts,
   onDropFolder,
   hostOrderAfterDrop,
 }: TreeDndOptions): TreeDnd {
-  const [source, setSource] = useState<DragSource | null>(null);
+  // Shared with the hosts tab, so a host can be dragged from one to the other.
+  const source = useHostDragStore((state) => state.source);
+  const setSource = useHostDragStore((state) => state.setSource);
   const [target, setTarget] = useState<DropTarget | null>(null);
   const [dragExpanded, setDragExpanded] = useState<ReadonlySet<string>>(new Set());
   const rowsRef = useRef<readonly VisibleNode[]>([]);
@@ -106,9 +115,17 @@ export function useTreeDnd({
     // Folders opened only to look inside during a drag close again: an
     // accidental hover must not permanently change what the sidebar shows.
     setDragExpanded(new Set());
-  }, []);
+  }, [setSource]);
 
   useEffect(() => clearTimer, []);
+
+  // A drag that started elsewhere ends elsewhere: let go of what it lit up here.
+  useEffect(() => {
+    if (source) return;
+    clearTimer();
+    setTarget(null);
+    setDragExpanded((current) => (current.size === 0 ? current : new Set()));
+  }, [source]);
 
   /**
    * Which row the pointer is over, resolved purely from geometry.
@@ -139,7 +156,8 @@ export function useTreeDnd({
       event.preventDefault();
       return;
     }
-    event.dataTransfer.effectAllowed = 'move';
+    // Moved within the lists; copied onto a pane, which opens a session there.
+    event.dataTransfer.effectAllowed = 'copyMove';
     // getData is unreadable during dragover in every browser, so the source
     // lives in state; this payload is only for the drag image and stray drops.
     event.dataTransfer.setData('text/plain', row.key);
@@ -148,13 +166,16 @@ export function useTreeDnd({
     }
     setSource(next);
     setTarget(null);
-  }, []);
+  }, [setSource]);
 
   const onDragOver = useCallback(
     (event: DragEvent<HTMLElement>) => {
-      if (!source) return;
+      if (!source || targets === 'none') return;
       const hit = rowFromEvent(event);
-      const next = hit ? dropTargetForRow(hit.row, hit.ratio) : { kind: 'root' as const };
+      const candidate = hit ? dropTargetForRow(hit.row, hit.ratio) : { kind: 'root' as const };
+      // Where the order on screen is not the hosts' own, a spot between two
+      // rows means nothing; only a folder is somewhere to drop.
+      const next = targets === 'folders' && candidate?.kind !== 'into-folder' ? undefined : candidate;
       if (!next || !canDrop(source, next, tree)) {
         clearTimer();
         setTarget((current) => (current ? null : current));
@@ -164,7 +185,9 @@ export function useTreeDnd({
       event.dataTransfer.dropEffect = 'move';
       setTarget((current) => (sameTarget(current, next) ? current : next));
 
-      // Hovering a collapsed folder opens it so its children become targets.
+      // Hovering a collapsed folder opens it so its children become targets —
+      // in the tree only: the other views show a folder's contents another way.
+      if (targets !== 'all') return;
       if (next.kind !== 'into-folder' || dragExpanded.has(next.folderKey)) return;
       const row = rowsRef.current.find((candidate) => candidate.key === next.folderKey);
       if (row?.expanded !== false) return;
@@ -174,7 +197,7 @@ export function useTreeDnd({
         setDragExpanded((current) => new Set([...current, next.folderKey]));
       }, AUTO_EXPAND_MS);
     },
-    [source, tree, rowFromEvent, dragExpanded],
+    [source, targets, tree, rowFromEvent, dragExpanded],
   );
 
   const onDragLeave = useCallback((event: DragEvent<HTMLElement>) => {
@@ -274,6 +297,7 @@ export function useTreeDnd({
             isDragExpanded,
             observeRows,
             dragging: !!source,
+            rootTarget: targets === 'all',
           }
         : undefined,
     [
@@ -289,6 +313,7 @@ export function useTreeDnd({
       isDragExpanded,
       observeRows,
       source,
+      targets,
     ],
   );
 
@@ -300,7 +325,7 @@ export function useTreeDnd({
  * under the pointer. The browser snapshots the element during dragstart, so it
  * only has to exist until then.
  */
-function setCountDragImage(event: DragEvent<HTMLElement>, label: string): void {
+export function setCountDragImage(event: DragEvent<HTMLElement>, label: string): void {
   const row = getComputedStyle(event.currentTarget);
   const image = document.createElement('div');
   image.textContent = label;

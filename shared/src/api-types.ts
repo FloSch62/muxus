@@ -1175,10 +1175,10 @@ export type WorkspaceTabLayout =
       /** Restoring a layout may offer a fresh connection; it never resumes a process. */
       offerReconnect: boolean;
     }
-  /** The host monitor: a view of Muxus itself, with no session to restore. */
+  /** The host monitor or the hosts tab: a view of Muxus itself, with no session to restore. */
   | {
       id: string;
-      kind: 'monitor';
+      kind: 'monitor' | 'hosts';
       title: string;
       color?: string;
       pinned?: boolean;

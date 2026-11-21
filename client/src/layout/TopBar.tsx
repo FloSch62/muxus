@@ -1,6 +1,5 @@
-import { memo, type ReactNode, useLayoutEffect, useState } from 'react';
+import { memo, useLayoutEffect, useState } from 'react';
 import AppBar from '@mui/material/AppBar';
-import Badge from '@mui/material/Badge';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Divider from '@mui/material/Divider';
@@ -13,30 +12,20 @@ import Stack from '@mui/material/Stack';
 import Toolbar from '@mui/material/Toolbar';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
-import BrightnessAutoOutlinedIcon from '@mui/icons-material/BrightnessAutoOutlined';
 import BoltOutlinedIcon from '@mui/icons-material/BoltOutlined';
 import CenterFocusStrongOutlinedIcon from '@mui/icons-material/CenterFocusStrongOutlined';
 import CodeOutlinedIcon from '@mui/icons-material/CodeOutlined';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
 import DeleteSweepOutlinedIcon from '@mui/icons-material/DeleteSweepOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import EditNoteOutlinedIcon from '@mui/icons-material/EditNoteOutlined';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
-import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import FullscreenExitOutlinedIcon from '@mui/icons-material/FullscreenExitOutlined';
-import HistoryOutlinedIcon from '@mui/icons-material/HistoryOutlined';
 import KeyboardAltOutlinedIcon from '@mui/icons-material/KeyboardAltOutlined';
-import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
 import MenuIcon from '@mui/icons-material/Menu';
-import KeyboardOutlinedIcon from '@mui/icons-material/KeyboardOutlined';
 import SearchOutlinedIcon from '@mui/icons-material/SearchOutlined';
 import SelectAllIcon from '@mui/icons-material/SelectAll';
-import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import WorkspacesOutlinedIcon from '@mui/icons-material/WorkspacesOutlined';
-import SwapHorizOutlinedIcon from '@mui/icons-material/SwapHorizOutlined';
-import MonitorHeartOutlinedIcon from '@mui/icons-material/MonitorHeartOutlined';
-import ViewInArOutlinedIcon from '@mui/icons-material/ViewInArOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutlineOutlined';
 import PlayCircleOutlineIcon from '@mui/icons-material/PlayCircleOutlineOutlined';
@@ -46,17 +35,14 @@ import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
-import type { ForwardInfo } from '@muxus/shared';
-import { useForwards } from '../api/queries.js';
 import { copyToClipboard } from '../clipboard.js';
-import { toggleFileBrowser, useFileBrowserShown } from '../file-browser.js';
 import { layout } from '../theme.js';
 import { setTitleBarHeight } from '../titlebar-overlay.js';
 import { useChordLabel } from '../keymap/hints.js';
 import { exportFilename, saveTextFile } from '../save-file.js';
 import { requestLogSessionToFile } from '../session-actions.js';
 import { showToast } from '../state/toast.js';
-import { usePrefsStore, type ThemeMode } from '../state/prefs.js';
+import { usePrefsStore } from '../state/prefs.js';
 import { useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
 import { useWorkspacesStore } from '../state/workspaces.js';
@@ -65,70 +51,21 @@ import { canSendTextFile, requestSendTextFile } from '../terminal/send-text-file
 import { terminalHandle } from '../terminal/terminal-registry.js';
 import { ChordHint, withChord } from '../components/ChordHint.js';
 import { MultiExecControl } from '../components/MultiExecControl.js';
-import {
-  loadCommandButtonsDialog,
-  loadEnvironmentsPanel,
-  loadHostMonitorViewImpl,
-  loadForwardingPanel,
-  loadSettingsDialog,
-  loadSessionHistoryDialog,
-  loadShortcutsDialog,
-  loadWorkspaceDialog,
-  loadSftpPanel,
-} from '../lazy-features.js';
-
-const APPEARANCE_OPTIONS = [
-  { mode: 'light', label: 'Light', icon: <LightModeOutlinedIcon fontSize="small" /> },
-  { mode: 'os', label: 'System', icon: <BrightnessAutoOutlinedIcon fontSize="small" /> },
-  { mode: 'dark', label: 'Dark', icon: <DarkModeOutlinedIcon fontSize="small" /> },
-] as const satisfies readonly { mode: ThemeMode; label: string; icon: ReactNode }[];
-const SYSTEM_APPEARANCE = APPEARANCE_OPTIONS[1];
+import { loadCommandButtonsDialog, loadWorkspaceDialog } from '../lazy-features.js';
 
 export const TopBar = memo(function TopBar() {
-  const mode = usePrefsStore((s) => s.themeMode);
   const sidebarCollapsed = usePrefsStore((s) => s.sidebarCollapsed);
   const setPrefs = usePrefsStore((s) => s.set);
   const focusMode = useUiStore((s) => s.focusMode);
   const setFocusMode = useUiStore((s) => s.setFocusMode);
-  const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
   const setCommandButtonsOpen = useUiStore((s) => s.setCommandButtonsOpen);
-  const setShortcutsOpen = useUiStore((s) => s.setShortcutsOpen);
-  const setHistoryOpen = useUiStore((s) => s.setHistoryOpen);
   const setWorkspacesOpen = useUiStore((s) => s.setWorkspacesOpen);
   const workspaceName = useWorkspacesStore((s) => s.activeName);
   const workspacesReady = useWorkspacesStore((s) => s.ready);
-  const forwardingOpen = useUiStore((s) => s.forwardingOpen);
-  const environmentsPanel = useUiStore((s) => s.environmentsPanel);
-  const setEnvironmentsPanel = useUiStore((s) => s.setEnvironmentsPanel);
-  const setForwardingOpen = useUiStore((s) => s.setForwardingOpen);
   const activeTab = useTabsStore((s) => s.tabs.find((t) => t.id === s.activeId));
   const requestSearch = useTabsStore((s) => s.requestSearch);
-  const openMonitor = useTabsStore((s) => s.openMonitor);
-  const monitorInFront = activeTab?.view === 'monitor';
-  const { data: forwardsData } = useForwards();
-  const allForwards = forwardsData?.forwards ?? [];
-  const countForwards = (status: ForwardInfo['status']) =>
-    allForwards.filter((forward) => forward.status === status).length;
-  const activeForwards = countForwards('active');
-  const startingForwards = countForwards('starting');
-  /** Tunnels whose connection dropped, or that could not start on their own. */
-  const interruptedForwards = countForwards('reconnecting') + countForwards('error');
-  const forwardsSummary = [
-    activeForwards ? `${activeForwards} active` : '',
-    startingForwards ? `${startingForwards} starting` : '',
-    interruptedForwards ? `${interruptedForwards} interrupted` : '',
-  ]
-    .filter(Boolean)
-    .join(', ');
-  const sshReady = !!activeTab?.connId && activeTab.sftpAvailable !== false;
-  const fileBrowserShown = useFileBrowserShown(activeTab);
-  // With the file browser docked in it, the sidebar is more than the hosts.
-  const sidebarName = usePrefsStore((s) =>
-    s.fileBrowserPosition === 'sidebar' ? 'sidebar' : 'hosts',
-  );
   const terminalReady = !!activeTab?.profile;
   const [terminalMenu, setTerminalMenu] = useState<HTMLElement | null>(null);
-  const [appearanceMenu, setAppearanceMenu] = useState<HTMLElement | null>(null);
   const focusModeChord = useChordLabel('app.focus-mode');
   const sidebarChord = useChordLabel('app.sidebar');
   const findChord = useChordLabel('terminal.find');
@@ -145,16 +82,10 @@ export const TopBar = memo(function TopBar() {
   const handle = () => terminalHandle(activeTab?.id);
   const closeMenu = () => setTerminalMenu(null);
   const toggleFocusMode = () => setFocusMode(!focusMode);
-  const currentAppearance =
-    APPEARANCE_OPTIONS.find((option) => option.mode === mode) ?? SYSTEM_APPEARANCE;
-
   useLayoutEffect(() => {
     // Focus mode can be entered through the global shortcut while a portaled
     // menu is open. Clear both anchors before paint for every entry path.
-    if (focusMode) {
-      setTerminalMenu(null);
-      setAppearanceMenu(null);
-    }
+    if (focusMode) setTerminalMenu(null);
     setTitleBarHeight(focusMode ? layout.focusTopBarHeight : layout.topBarHeight);
   }, [focusMode]);
 
@@ -187,9 +118,9 @@ export const TopBar = memo(function TopBar() {
       >
         <Box data-focus-mode-control sx={{ flex: 1, display: focusMode ? 'block' : 'none' }} />
         <Tooltip
-          title={withChord(`${sidebarCollapsed ? 'Show' : 'Hide'} ${sidebarName}`, sidebarChord)}
+          title={withChord(`${sidebarCollapsed ? 'Show' : 'Hide'} sidebar`, sidebarChord)}
         >
-          <IconButton size="small" aria-label="Toggle hosts sidebar" onClick={() => setPrefs({ sidebarCollapsed: !sidebarCollapsed })} sx={{ mr: 0.5 }}>
+          <IconButton size="small" aria-label="Toggle sidebar" onClick={() => setPrefs({ sidebarCollapsed: !sidebarCollapsed })} sx={{ mr: 0.5 }}>
             <MenuIcon fontSize="small" />
           </IconButton>
         </Tooltip>
@@ -226,63 +157,6 @@ export const TopBar = memo(function TopBar() {
             <BoltOutlinedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
-        {sshReady && (
-          <Tooltip title={fileBrowserShown ? 'Hide file browser' : 'Show file browser (SFTP)'}>
-            <IconButton
-              size="small"
-              aria-label="Toggle file browser"
-              color={fileBrowserShown ? 'primary' : 'default'}
-              onMouseEnter={() => void loadSftpPanel()}
-              onFocus={() => void loadSftpPanel()}
-              onClick={() => toggleFileBrowser(activeTab.id)}
-            >
-              <FolderOutlinedIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        )}
-        <Tooltip title="Host monitor">
-          <IconButton
-            size="small"
-            aria-label="Open host monitor"
-            color={monitorInFront ? 'primary' : 'default'}
-            onMouseEnter={() => void loadHostMonitorViewImpl()}
-            onFocus={() => void loadHostMonitorViewImpl()}
-            onClick={() => openMonitor()}
-          >
-            <MonitorHeartOutlinedIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Containers & VMs">
-          <IconButton
-            size="small"
-            aria-label="Toggle containers and VMs panel"
-            color={environmentsPanel === false ? 'default' : 'primary'}
-            onMouseEnter={() => void loadEnvironmentsPanel()}
-            onFocus={() => void loadEnvironmentsPanel()}
-            onClick={() => setEnvironmentsPanel(environmentsPanel === false ? {} : false)}
-          >
-            <ViewInArOutlinedIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title={`Port forwarding & tunnels${forwardsSummary ? ` — ${forwardsSummary}` : ''}`}>
-          <IconButton
-            size="small"
-            aria-label="Toggle forwarding panel"
-            color={forwardingOpen ? 'primary' : 'default'}
-            onMouseEnter={() => void loadForwardingPanel()}
-            onFocus={() => void loadForwardingPanel()}
-            onClick={() => setForwardingOpen(!forwardingOpen)}
-          >
-            <Badge
-              badgeContent={allForwards.length}
-              color={interruptedForwards ? 'warning' : 'success'}
-              max={99}
-              slotProps={{ badge: { sx: { fontSize: 9, height: 14, minWidth: 14 } } }}
-            >
-              <SwapHorizOutlinedIcon fontSize="small" />
-            </Badge>
-          </IconButton>
-        </Tooltip>
         {terminalReady && (
           <Tooltip title="Terminal actions">
             <IconButton size="small" aria-label="Terminal actions" onClick={(e) => setTerminalMenu(e.currentTarget)}>
@@ -290,51 +164,6 @@ export const TopBar = memo(function TopBar() {
             </IconButton>
           </Tooltip>
         )}
-        <Tooltip title="Session history">
-          <IconButton
-            size="small"
-            aria-label="Session history"
-            onMouseEnter={() => void loadSessionHistoryDialog()}
-            onFocus={() => void loadSessionHistoryDialog()}
-            onClick={() => setHistoryOpen(true)}
-          >
-            <HistoryOutlinedIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title={`Appearance: ${currentAppearance.label}`}>
-          <IconButton
-            size="small"
-            aria-label={`Appearance: ${currentAppearance.label}`}
-            aria-controls={appearanceMenu ? 'appearance-menu' : undefined}
-            aria-expanded={appearanceMenu ? 'true' : undefined}
-            aria-haspopup="menu"
-            onClick={(event) => setAppearanceMenu(event.currentTarget)}
-          >
-            {currentAppearance.icon}
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Keyboard shortcuts">
-          <IconButton
-            size="small"
-            aria-label="Keyboard shortcuts"
-            onMouseEnter={() => void loadShortcutsDialog()}
-            onFocus={() => void loadShortcutsDialog()}
-            onClick={() => setShortcutsOpen(true)}
-          >
-            <KeyboardOutlinedIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Settings">
-          <IconButton
-            size="small"
-            aria-label="Settings"
-            onMouseEnter={() => void loadSettingsDialog()}
-            onFocus={() => void loadSettingsDialog()}
-            onClick={() => setSettingsOpen(true)}
-          >
-            <SettingsOutlinedIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
         <Tooltip title={withChord(focusMode ? 'Exit focus mode' : 'Enter focus mode', focusModeChord)}>
           <IconButton
             data-focus-mode-control
@@ -351,27 +180,6 @@ export const TopBar = memo(function TopBar() {
           </IconButton>
         </Tooltip>
       </Toolbar>
-
-      <Menu
-        id="appearance-menu"
-        open={!!appearanceMenu}
-        anchorEl={appearanceMenu}
-        onClose={() => setAppearanceMenu(null)}
-      >
-        {APPEARANCE_OPTIONS.map((option) => (
-          <MenuItem
-            key={option.mode}
-            selected={option.mode === mode}
-            onClick={() => {
-              setPrefs({ themeMode: option.mode });
-              setAppearanceMenu(null);
-            }}
-          >
-            <ListItemIcon>{option.icon}</ListItemIcon>
-            <ListItemText>{option.label}</ListItemText>
-          </MenuItem>
-        ))}
-      </Menu>
 
       <Menu open={!!terminalMenu} anchorEl={terminalMenu} onClose={closeMenu}>
         <MenuItem

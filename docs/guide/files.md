@@ -1,18 +1,19 @@
 ---
-description: "An SFTP file browser beside every SSH terminal in Muxus, using the session's existing connection with no second login."
+description: "An SFTP file browser in the Muxus sidebar for every SSH session, using the session's existing connection with no second login."
 icon: lucide/folder-tree
 ---
 
 # File browser (SFTP)
 
-Every SSH tab can display the remote filesystem beside its terminal. The browser uses the
-session's existing SSH transport, with one SFTP channel per connection shared by every file
-operation, so no second connection or authentication is required.
+The file browser shows the remote filesystem of the active SSH session in the sidebar,
+beside the terminal. It uses the session's existing SSH transport, with one SFTP channel per
+connection shared by every file operation, so no second connection or authentication is
+required.
 
 <figure markdown="span">
-  ![The file browser next to a terminal](../assets/screenshots/sftp.png#only-light){ .shadow }
-  ![The file browser next to a terminal](../assets/screenshots/sftp-dark.png#only-dark){ .shadow }
-  <figcaption>The browser is opened with the folder button in the top bar and sized by dragging the divider.</figcaption>
+  ![The file browser in the sidebar, next to a terminal](../assets/screenshots/sftp.png#only-light){ .shadow }
+  ![The file browser in the sidebar, next to a terminal](../assets/screenshots/sftp-dark.png#only-dark){ .shadow }
+  <figcaption>The browser is opened with the folder icon in the sidebar rail and sized by dragging the sidebar's edge.</figcaption>
 </figure>
 
 ## Navigating
@@ -34,27 +35,33 @@ operation, so no second connection or authentication is required.
   files*. Every file browser follows the choice, and Muxus remembers it.
 - **Follow terminal folder** is enabled by default. The browser opens at the shell's current
   directory and follows later `cd` commands; clear it to browse independently.
-- **Open in new window** moves the browser into its own window on the same connection.
 
-## Docking it in the sidebar
+## In the sidebar
 
-By default the browser opens beside the terminal, separately for each SSH tab. It can live
-in the sidebar instead, one browser for the whole window that shows the files of whichever
-SSH session is active:
+The browser is a panel of the [sidebar](the-window.md#sidebar), one for the whole window,
+and shows the files of whichever SSH session is active:
 
-- Click **Move to the sidebar** in the browser's header, or choose **Sidebar** for **File
-  browser** under **Settings → Appearance → Layout**.
-- The sidebar gains vertical tabs along the window edge: **Hosts** and **File browser**.
-  Click one, or use the arrow keys once a tab has focus. The folder button in the top bar
-  switches to the file browser and back.
+- The folder icon in the sidebar rail opens it, like the hosts. Click the icon, or use the
+  arrow keys once a rail icon has focus; click it again to close the panel.
 - Switching to another SSH tab shows that session's files. A local, Telnet, serial or remote
   desktop tab has none, and the browser says so.
-- The browser stays where it was while the hosts are in front, so an upload keeps running
+- The browser stays where it was while another panel is in front, so an upload keeps running
   and the folder is unchanged when you switch back.
-- **Move beside the terminal** in the header puts it back next to the terminal.
 
 In a narrow sidebar the **Modified** column and the drag hint are hidden and the filter gets
 a row of its own; widen the sidebar by dragging its edge to bring them back.
+
+## Full size
+
+When the sidebar is too narrow for a long listing, the browser's header has two ways out of
+it:
+
+- :material-arrow-expand: **Fill the window** spreads the browser over the terminals, from
+  the rail to the far edge of the window. The terminals behind it keep their size, so nothing
+  reflows. The same button or ++esc++ shrinks it back to the sidebar; so does opening a file,
+  which appears in the session's tab, and switching to another panel of the sidebar.
+- :material-open-in-new: **Open in new window** moves the browser into its own window on the
+  same connection, to keep beside the terminals or on another screen.
 
 ## Transferring
 

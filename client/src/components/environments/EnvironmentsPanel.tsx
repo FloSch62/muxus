@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -11,7 +11,6 @@ import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import CloseFullscreenIcon from '@mui/icons-material/CloseFullscreen';
-import CloseIcon from '@mui/icons-material/Close';
 import OpenInFullIcon from '@mui/icons-material/OpenInFull';
 import ComputerOutlinedIcon from '@mui/icons-material/ComputerOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
@@ -38,14 +37,6 @@ import {
 import { showToast } from '../../state/toast.js';
 import { useUiStore } from '../../state/ui.js';
 import { layout, statusTextColor } from '../../theme.js';
-import { usePrefsStore } from '../../state/prefs.js';
-import {
-  DEFAULT_ENVIRONMENTS_PANEL_WIDTH,
-  MIN_ENVIRONMENTS_PANEL_WIDTH,
-  clampEnvironmentsPanelWidth,
-  maxEnvironmentsPanelWidth,
-} from '../../environments-panel-width.js';
-import { PanelResizeHandle } from '../PanelResizeHandle.js';
 import { AuthPromptDialog, type AuthPromptRequest, type AuthPromptResult } from '../AuthPromptDialog.js';
 import { HostKeyDialog, type HostKeyRequest } from '../HostKeyDialog.js';
 import { ClabTopologyDialog } from './ClabTopologyDialog.js';
@@ -85,7 +76,14 @@ function age(sampledAt: number | undefined, now: number): string | undefined {
  * then what runs there, each line with its own actions. Opened for one host
  * from its sidebar badge or menu, or for all of them from the top bar.
  */
-export function EnvironmentsPanel() {
+export function EnvironmentsPanel({
+  wide = false,
+  onWideChange,
+}: {
+  /** Widened past its set width to show more; the sidebar owns the frame. */
+  wide?: boolean;
+  onWideChange?: (wide: boolean) => void;
+}) {
   const panel = useUiStore((state) => state.environmentsPanel);
   const setPanel = useUiStore((state) => state.setEnvironmentsPanel);
   const entries = useEnvironmentsStore((state) => state.entries);
@@ -96,11 +94,6 @@ export function EnvironmentsPanel() {
   const [topology, setTopology] = useState<{ host: HostEnvironmentsEntry; lab: ContainerlabLab } | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const expansion = useExpansion();
-  const panelRef = useRef<HTMLElement>(null);
-  const panelWidth = usePrefsStore((state) => state.environmentsPanelWidth);
-  const sidebarOnRight = usePrefsStore((state) => state.sidebarPosition === 'right');
-  const setPrefs = usePrefsStore((state) => state.set);
-  const [expanded, setExpanded] = useState(false);
   const [dialAuth, setDialAuth] = useState<{
     request: AuthPromptRequest;
     resolve: (result: AuthPromptResult | null) => void;
@@ -178,23 +171,16 @@ export function EnvironmentsPanel() {
 
   return (
     <Box
-      ref={panelRef}
-      component="aside"
+      component="section"
       aria-label="Containers and VMs"
       sx={{
         position: 'relative',
-        // Expanded, it takes what the sidebar and a usable workspace leave.
-        width: expanded ? 'calc(100% - 560px)' : panelWidth,
-        minWidth: MIN_ENVIRONMENTS_PANEL_WIDTH,
-        maxWidth: expanded ? '75%' : 'calc(100% - 560px)',
-        flexShrink: 0,
-        height: '100%',
+        flex: 1,
+        minWidth: 0,
+        minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
         bgcolor: 'sidebar',
-        borderLeft: 1,
-        borderRight: 1,
-        borderColor: 'divider',
       }}
     >
       {/* As tall as the tab strip beside it, so their bottom lines meet. */}
@@ -237,19 +223,16 @@ export function EnvironmentsPanel() {
             <RefreshOutlinedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
-        <Tooltip title={expanded ? 'Back to the set width' : 'Widen to see more'}>
+        <Tooltip title={wide ? 'Back to the set width' : 'Widen to see more'}>
           <IconButton
             size="small"
-            aria-label={expanded ? 'Restore panel width' : 'Widen panel'}
-            aria-pressed={expanded}
-            onClick={() => setExpanded((value) => !value)}
+            aria-label={wide ? 'Restore panel width' : 'Widen panel'}
+            aria-pressed={wide}
+            onClick={() => onWideChange?.(!wide)}
           >
-            {expanded ? <CloseFullscreenIcon fontSize="small" /> : <OpenInFullIcon fontSize="small" />}
+            {wide ? <CloseFullscreenIcon fontSize="small" /> : <OpenInFullIcon fontSize="small" />}
           </IconButton>
         </Tooltip>
-        <IconButton size="small" aria-label="Close containers and VMs panel" onClick={() => setPanel(false)}>
-          <CloseIcon fontSize="small" />
-        </IconButton>
       </Stack>
 
       <Stack direction="row" spacing={1} sx={{ px: 1.5, py: 1, alignItems: 'center' }}>
@@ -333,20 +316,6 @@ export function EnvironmentsPanel() {
           onClose={() => setTopology(null)}
         />
       ) : null}
-      {expanded ? null : (
-        <PanelResizeHandle
-          panelRef={panelRef}
-          // The panel sits between the sidebar and the panes: it grows toward the panes.
-          edge={sidebarOnRight ? 'left' : 'right'}
-          width={panelWidth}
-          defaultWidth={DEFAULT_ENVIRONMENTS_PANEL_WIDTH}
-          minWidth={MIN_ENVIRONMENTS_PANEL_WIDTH}
-          maxWidth={maxEnvironmentsPanelWidth}
-          clampWidth={clampEnvironmentsPanelWidth}
-          onWidthChange={(environmentsPanelWidth) => setPrefs({ environmentsPanelWidth })}
-          label="Resize containers and VMs panel"
-        />
-      )}
     </Box>
   );
 }
