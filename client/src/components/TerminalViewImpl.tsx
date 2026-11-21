@@ -1894,11 +1894,13 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   // eager bundle, and a context loss (backgrounded tab, GPU driver reset)
   // disposes the addon, which also returns to the DOM renderer.
   //
-  // The renderers disagree on cell width: DOM keeps the fractional measured
-  // width (14px JetBrains Mono = 8.4px) while WebGL floors it to whole device
-  // pixels (8.0). Swapping without a refit leaves the grid sized for the other
-  // renderer — dead space beside the pane and a visibly different pitch — so
-  // every swap refits.
+  // Both renderers size the cell alike: WebGL floors the measured width to
+  // whole device pixels (14px JetBrains Mono = 8.4px becomes 8.0), and the
+  // xterm patch makes the DOM renderer do the same. A swap therefore keeps the
+  // grid, and the session is not resized: no redrawn prompt, no rewrapped
+  // lines. The refit after each swap finds nothing to do; it stays so that an
+  // xterm update that loses the patch shows up as a resize, not as dead space
+  // beside the pane.
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;

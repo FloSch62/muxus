@@ -179,7 +179,8 @@ overrides:
 patchedDependencies:
   '@novnc/novnc@1.7.0': ffde8e6453e76045b5c2ea6b0a74b1799c63b1463ffa5814f8fbc79086d4c5aa
   '@serialport/bindings-cpp@13.0.1': ccb198c80fb1ddcec527a44a9df5ada0b5b49112eaf75cb0fbd0397b15ff2cf4
-  '@xterm/addon-webgl@0.20.0-beta.331': f4968017db33e5c55adf07c28116acaadf367f6c6713c97ec35794785657650d
+  '@xterm/addon-webgl@0.20.0-beta.331': c00fb6769cb75d3a98b787a10b60c216ec4a553ce99152719ba227af64a0b19d
+  '@xterm/xterm@6.1.0-beta.338': c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc
 
 importers:
 
@@ -238,31 +239,31 @@ importers:
         version: 5.108.1(@types/react@19.3.0)(react@19.3.1)
       '@xterm/addon-clipboard':
         specifier: ^0.3.0-beta.336
-        version: 0.3.0-beta.336(@xterm/xterm@6.1.0-beta.338)
+        version: 0.3.0-beta.336(@xterm/xterm@6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc))
       '@xterm/addon-fit':
         specifier: ^0.12.0-beta.334
-        version: 0.12.0-beta.334(@xterm/xterm@6.1.0-beta.338)
+        version: 0.12.0-beta.334(@xterm/xterm@6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc))
       '@xterm/addon-image':
         specifier: ^0.10.0-beta.333
-        version: 0.10.0-beta.333(@xterm/xterm@6.1.0-beta.338)
+        version: 0.10.0-beta.333(@xterm/xterm@6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc))
       '@xterm/addon-search':
         specifier: ^0.17.0-beta.332
-        version: 0.17.0-beta.332(@xterm/xterm@6.1.0-beta.338)
+        version: 0.17.0-beta.332(@xterm/xterm@6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc))
       '@xterm/addon-serialize':
         specifier: ^0.15.0-beta.332
-        version: 0.15.0-beta.332(@xterm/xterm@6.1.0-beta.338)
+        version: 0.15.0-beta.332(@xterm/xterm@6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc))
       '@xterm/addon-unicode11':
         specifier: ^0.10.0-beta.332
-        version: 0.10.0-beta.332(@xterm/xterm@6.1.0-beta.338)
+        version: 0.10.0-beta.332(@xterm/xterm@6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc))
       '@xterm/addon-web-links':
         specifier: ^0.13.0-beta.332
-        version: 0.13.0-beta.332(@xterm/xterm@6.1.0-beta.338)
+        version: 0.13.0-beta.332(@xterm/xterm@6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc))
       '@xterm/addon-webgl':
         specifier: 0.20.0-beta.331
-        version: 0.20.0-beta.331(patch_hash=f4968017db33e5c55adf07c28116acaadf367f6c6713c97ec35794785657650d)(@xterm/xterm@6.1.0-beta.338)
+        version: 0.20.0-beta.331(patch_hash=c00fb6769cb75d3a98b787a10b60c216ec4a553ce99152719ba227af64a0b19d)(@xterm/xterm@6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc))
       '@xterm/xterm':
         specifier: ^6.1.0-beta.338
-        version: 6.1.0-beta.338
+        version: 6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc)
       monaco-editor:
         specifier: ^0.57.0
         version: 0.57.0
@@ -5832,39 +5833,39 @@ snapshots:
 
   '@xmldom/xmldom@0.9.12': {}
 
-  '@xterm/addon-clipboard@0.3.0-beta.336(@xterm/xterm@6.1.0-beta.338)':
+  '@xterm/addon-clipboard@0.3.0-beta.336(@xterm/xterm@6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.338
+      '@xterm/xterm': 6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc)
 
-  '@xterm/addon-fit@0.12.0-beta.334(@xterm/xterm@6.1.0-beta.338)':
+  '@xterm/addon-fit@0.12.0-beta.334(@xterm/xterm@6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.338
+      '@xterm/xterm': 6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc)
 
-  '@xterm/addon-image@0.10.0-beta.333(@xterm/xterm@6.1.0-beta.338)':
+  '@xterm/addon-image@0.10.0-beta.333(@xterm/xterm@6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.338
+      '@xterm/xterm': 6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc)
 
-  '@xterm/addon-search@0.17.0-beta.332(@xterm/xterm@6.1.0-beta.338)':
+  '@xterm/addon-search@0.17.0-beta.332(@xterm/xterm@6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.338
+      '@xterm/xterm': 6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc)
 
-  '@xterm/addon-serialize@0.15.0-beta.332(@xterm/xterm@6.1.0-beta.338)':
+  '@xterm/addon-serialize@0.15.0-beta.332(@xterm/xterm@6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.338
+      '@xterm/xterm': 6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc)
 
-  '@xterm/addon-unicode11@0.10.0-beta.332(@xterm/xterm@6.1.0-beta.338)':
+  '@xterm/addon-unicode11@0.10.0-beta.332(@xterm/xterm@6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.338
+      '@xterm/xterm': 6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc)
 
-  '@xterm/addon-web-links@0.13.0-beta.332(@xterm/xterm@6.1.0-beta.338)':
+  '@xterm/addon-web-links@0.13.0-beta.332(@xterm/xterm@6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.338
+      '@xterm/xterm': 6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc)
 
-  '@xterm/addon-webgl@0.20.0-beta.331(patch_hash=f4968017db33e5c55adf07c28116acaadf367f6c6713c97ec35794785657650d)(@xterm/xterm@6.1.0-beta.338)':
+  '@xterm/addon-webgl@0.20.0-beta.331(patch_hash=c00fb6769cb75d3a98b787a10b60c216ec4a553ce99152719ba227af64a0b19d)(@xterm/xterm@6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc))':
     dependencies:
-      '@xterm/xterm': 6.1.0-beta.338
+      '@xterm/xterm': 6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc)
 
-  '@xterm/xterm@6.1.0-beta.338': {}
+  '@xterm/xterm@6.1.0-beta.338(patch_hash=c56e86d0b4ad25ee43b33722dc09c93f66dfbc4f6056a11ee683a6377a727ccc)': {}
 
   abbrev@4.0.0: {}
 
