@@ -32,7 +32,7 @@ lists what runs there. Every line has its own actions at the end; double-click o
 ++enter++ runs the main one, usually opening a shell. Resting the pointer on a line shows
 its full name and details, such as a container's image, ports and ID or a pod's node and
 owner. **Stopped** shows what is not running, and the filter matches names, images and
-addresses.
+addresses. Each host also lists its [listening ports](#listening-ports).
 
 **In the quick launcher.** Press ++ctrl+k++ and type a container, lab node, VM or
 context name. A name that matches one is opened, not treated as an SSH target.
@@ -59,6 +59,33 @@ A tool that is installed but does not answer is listed under its host with its o
 error, for example Docker without access to its socket, or libvirt asking for polkit
 authentication.
 
+## Listening ports
+
+Every host in the panel ends in **Listening ports**. Opening that line lists the TCP ports
+the host listens on, each with the program behind it and who can reach it: **all
+addresses**, **this host only**, or the addresses it is bound to. A port that a container
+publishes is listed under the container's name, since on the host it belongs to
+`docker-proxy` or to no program at all. The panel's filter matches port numbers, program
+names and container names.
+
+On an SSH host, :material-swap-horizontal: **Forward to this computer** starts a local
+forward to the port. It listens on the same port number here when that is free, and on any
+free one otherwise. The line then shows where the port answers, such as `localhost:8080`:
+click that to open it in the browser, and :material-link-off: to stop the forward.
+Double-clicking a port forwards it and opens it in one step, and its
+:material-dots-horizontal: menu opens it as `http://` or `https://` and copies the forwarded
+address. A port that only listens on the host itself, such as a database on `127.0.0.1`, is
+forwarded the same way, because the forward connects from the host.
+
+These forwards appear in the [forwarding panel](tunnels.md#forwards-on-a-live-connection)
+and stop with the connection, like a container's port. On this computer a port opens in the
+browser directly.
+
+The list is read when the line is opened, not with the rest of the host, and
+:material-refresh: reads it again. Muxus asks `ss`, and `netstat` or `lsof` on hosts without
+it, such as macOS, the BSDs and BusyBox systems. A program is only named when the session's
+user may see it: other users' programs need root.
+
 ## Sessions
 
 A container shell starts bash when the image has it, then ash, then sh. Its tab is an
@@ -75,7 +102,8 @@ shell in their container. The
 annotations with the [containerlab topology viewer](https://github.com/srl-labs/containerlab-app/tree/main/packages/clab-viewer);
 selecting a node offers to open it.
 
-**Ports.** A published container port shows as a chip under its container. Clicking it
+**Ports.** A published container port shows as a chip under its container, or under its
+lab node when the container belongs to a Containerlab lab. Clicking it
 opens the port in the browser: directly on this computer, and through an SSH forward from
 a remote host. The forward appears in the [forwarding panel](tunnels.md) and stops with
 the connection. A Proxmox host offers its web interface the same way.

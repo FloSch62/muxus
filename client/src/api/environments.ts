@@ -10,6 +10,7 @@ import type {
   KubernetesPodsResponse,
   LibvirtDisplayResponse,
   LibvirtUri,
+  ListeningPortsResponse,
 } from '@muxus/shared';
 import { apiFetch } from './http.js';
 
@@ -96,11 +97,24 @@ export function runEnvironmentAction(
   });
 }
 
-/** Forward a port on the far side of an SSH connection to a free local port. */
-export function openRemotePort(connId: string, host: string, port: number): Promise<EnvironmentPortResponse> {
+/** The TCP ports the host listens on, with the program behind each where the host tells. */
+export function fetchListeningPorts(source: EnvironmentSource): Promise<ListeningPortsResponse> {
+  return apiFetch(`${base(source)}/ports`);
+}
+
+/**
+ * Forward a port on the far side of an SSH connection to a free local port.
+ * `samePort` asks for the same number here when nothing listens on it yet.
+ */
+export function openRemotePort(
+  connId: string,
+  host: string,
+  port: number,
+  samePort = false,
+): Promise<EnvironmentPortResponse> {
   return apiFetch(`/api/environments/ssh/${encodeURIComponent(connId)}/ports`, {
     method: 'POST',
     headers: JSON_HEADERS,
-    body: JSON.stringify({ host, port }),
+    body: JSON.stringify({ host, port, ...(samePort ? { samePort } : {}) }),
   });
 }
