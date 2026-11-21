@@ -1,24 +1,30 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, generateKeyPairSync, randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import net from 'node:net';
 import { PassThrough, Readable, Writable } from 'node:stream';
+import { Server, type SFTPWrapper } from 'ssh2';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../../../server/src/app.js';
 import { resolveConfig } from '../../../server/src/config.js';
 import { registerSftpRoutes } from '../../../server/src/routes/sftp.js';
-import { sftpOverStdio } from '../../../server/src/ssh/sftp-over-stdio.js';
-import { SFTP } from '../../../server/src/ssh/ssh2-internals.js';
+import { SshError, SshTransport } from '../../../server/src/ssh/engine.js';
 
 type RouteHandler = (request: unknown, reply: unknown) => Promise<unknown>;
 
 interface FakeSftp {
-  lstat(path: string, callback: (error: Error | null, attrs?: unknown) => void): void;
-  open?(path: string, flags: string, attrs: { mode?: number }, callback: (error: Error | null, handle?: Buffer) => void): void;
-  createWriteStream(path: string, options: { flags?: string; mode?: number; handle?: Buffer }): Writable;
-  rename?(from: string, to: string, callback: (error?: Error | null) => void): void;
-  ext_openssh_rename?(from: string, to: string, callback: (error?: Error | null) => void): void;
-  unlink?(path: string, callback: (error?: Error | null) => void): void;
-  stat?(path: string, callback: (error: Error | null, attrs?: unknown) => void): void;
+  lstat(path: string): Promise<unknown>;
+  open?(path: string, flags: string, mode?: number): Promise<Buffer>;
+  fchmod?(handle: Buffer, mode: number): Promise<void>;
+  createWriteStream(handle: Buffer, options?: { start?: number; autoClose?: boolean }): Writable;
+  rename?(from: string, to: string): Promise<void>;
+  posixRename?(from: string, to: string): Promise<void>;
+  unlink?(path: string): Promise<void>;
+  stat?(path: string): Promise<unknown>;
 }
+
+/** The server's answers as the engine reports them: an SFTP status, by its number. */
+const noSuchFile = () => new SshError('No such file', 'SFTP_STATUS', 2);
+const denied = () => new SshError('Permission denied', 'SFTP_STATUS', 3);
 
 function captureUploadHandler(
   sftp: FakeSftp,
@@ -61,10 +67,8 @@ function captureDownloadHandler(stream: PassThrough): {
       acquire: () => ({
         connection: {
           sftp: async () => ({
-            stat: (_path: string, callback: (error: Error | null, attrs?: unknown) => void) =>
-              callback(null, { size: 7, mtime: 1_760_000_000 }),
-            open: (_path: string, _flags: string, callback: (error: Error | null, handle?: Buffer) => void) =>
-              callback(null, Buffer.from('handle')),
+            stat: async () => ({ size: 7, mtime: 1_760_000_000 }),
+            open: async () => Buffer.from('handle'),
             createReadStream: () => stream,
           }),
         },
@@ -133,14 +137,18 @@ const regularFile = {
 };
 
 /** Creates the file it is asked for, as in a folder the user may write to. */
-const openNewFile: NonNullable<FakeSftp['open']> = (_path, _flags, _attrs, callback) =>
-  callback(null, Buffer.from('handle'));
+const openNewFile: NonNullable<FakeSftp['open']> = async () => Buffer.from('handle');
+
+/** The uploaded file as a server that reports no modification time describes it. */
+const statWithoutTime: NonNullable<FakeSftp['stat']> = async () => regularFile;
 
 describe('SFTP upload overwrite policy', () => {
   it('returns a conflict without opening an existing destination', async () => {
+    const open = vi.fn();
     const createWriteStream = vi.fn();
     const handler = captureUploadHandler({
-      lstat: (_path, callback) => callback(null, regularFile),
+      lstat: async () => regularFile,
+      open,
       createWriteStream,
     });
 
@@ -151,12 +159,14 @@ describe('SFTP upload overwrite policy', () => {
       message: 'a file already exists at the upload destination',
       code: 'SFTP_DESTINATION_EXISTS',
     });
+    expect(open).not.toHaveBeenCalled();
     expect(createWriteStream).not.toHaveBeenCalled();
   });
 
   it('stages a new destination before renaming it into place', async () => {
     const chunks: Buffer[] = [];
-    const createWriteStream = vi.fn((_path: string, _options: { flags: string }) =>
+    const open = vi.fn(openNewFile);
+    const createWriteStream = vi.fn((_handle: Buffer) =>
       new Writable({
         write(chunk, _encoding, callback) {
           chunks.push(Buffer.from(chunk));
@@ -164,12 +174,11 @@ describe('SFTP upload overwrite policy', () => {
         },
       }),
     );
-    const rename = vi.fn((_from: string, _to: string, callback: (error?: Error | null) => void) =>
-      callback(null),
-    );
+    const rename = vi.fn(async (_from: string, _to: string) => undefined);
     const handler = captureUploadHandler({
-      lstat: (_path, callback) => callback(Object.assign(new Error('not found'), { code: 2 })),
-      open: openNewFile,
+      lstat: () => Promise.reject(noSuchFile()),
+      stat: statWithoutTime,
+      open,
       createWriteStream,
       rename,
       unlink: vi.fn(),
@@ -178,31 +187,29 @@ describe('SFTP upload overwrite policy', () => {
     const response = await invoke(handler, { path: '/remote/report.txt' });
 
     expect(response.result).toEqual({ ok: true });
-    expect(createWriteStream.mock.calls[0]?.[0]).toMatch(
+    expect(open.mock.calls[0]?.[0]).toMatch(
       /^\/remote\/report\.txt\.muxus-[a-f0-9]+\.upload$/,
     );
-    expect(createWriteStream.mock.calls[0]?.[1]).toEqual({ handle: Buffer.from('handle') });
+    expect(createWriteStream.mock.calls[0]).toEqual([Buffer.from('handle')]);
     expect(Buffer.concat(chunks).toString()).toBe('payload');
     expect(rename).toHaveBeenCalledWith(
       expect.stringMatching(/^\/remote\/report\.txt\.muxus-[a-f0-9]+\.upload$/),
       '/remote/report.txt',
-      expect.any(Function),
     );
   });
 
   it('creates clipboard images with owner-only permissions', async () => {
+    const open = vi.fn(openNewFile);
+    const fchmod = vi.fn(async (_handle: Buffer, _mode: number) => undefined);
     const createWriteStream = vi.fn(
-      (_path: string, _options: { flags: string; mode?: number }) =>
-        new Writable({ write: (_chunk, _encoding, callback) => callback() }),
+      (_handle: Buffer) => new Writable({ write: (_chunk, _encoding, callback) => callback() }),
     );
-    const rename = vi.fn(
-      (_from: string, _to: string, callback: (error?: Error | null) => void) =>
-        callback(null),
-    );
+    const rename = vi.fn(async (_from: string, _to: string) => undefined);
     const handler = captureUploadHandler(
       {
-        lstat: (_path, callback) =>
-          callback(Object.assign(new Error('not found'), { code: 2 })),
+        lstat: () => Promise.reject(noSuchFile()),
+        open,
+        fchmod,
         createWriteStream,
         rename,
         unlink: vi.fn(),
@@ -224,52 +231,54 @@ describe('SFTP upload overwrite policy', () => {
       throw new Error('clipboard image route did not return a path');
     }
     const remotePath = response.result.path;
-    expect(createWriteStream.mock.calls[0]?.[0]).toMatch(
-      new RegExp(`^${remotePath.replaceAll('.', '\\.')}\\.muxus-[a-f0-9]+\\.upload$`),
-    );
-    expect(createWriteStream.mock.calls[0]?.[1]).toEqual({ flags: 'wx', mode: 0o600 });
+    expect(open.mock.calls[0]).toEqual([
+      expect.stringMatching(new RegExp(`^${remotePath.replaceAll('.', '\\.')}\\.muxus-[a-f0-9]+\\.upload$`)),
+      'wx',
+      0o600,
+    ]);
+    // Set on the open file as well, so that it is exactly this mode whatever the umask.
+    expect(fchmod).toHaveBeenCalledWith(Buffer.from('handle'), 0o600);
+    expect(createWriteStream.mock.calls[0]).toEqual([Buffer.from('handle')]);
     expect(rename).toHaveBeenCalledWith(
       expect.stringMatching(/\.muxus-[a-f0-9]+\.upload$/),
       remotePath,
-      expect.any(Function),
     );
   });
 
   it('atomically replaces an existing regular file after explicit overwrite consent', async () => {
-    const createWriteStream = vi.fn((_path: string, _options: { flags: string }) => new Writable({ write: (_c, _e, cb) => cb() }));
-    const atomicRename = vi.fn(
-      (_from: string, _to: string, callback: (error?: Error | null) => void) => callback(null),
-    );
+    const open = vi.fn(openNewFile);
+    const createWriteStream = vi.fn((_handle: Buffer) => new Writable({ write: (_c, _e, cb) => cb() }));
+    const atomicRename = vi.fn(async (_from: string, _to: string) => undefined);
     const handler = captureUploadHandler({
-      lstat: (_path, callback) => callback(null, regularFile),
-      open: openNewFile,
+      lstat: async () => regularFile,
+      stat: statWithoutTime,
+      open,
       createWriteStream,
-      ext_openssh_rename: atomicRename,
+      posixRename: atomicRename,
       unlink: vi.fn(),
     });
 
     const response = await invoke(handler, { path: '/remote/report.txt', overwrite: 'true' });
 
     expect(response.result).toEqual({ ok: true });
-    expect(createWriteStream.mock.calls[0]?.[0]).toMatch(
+    expect(open.mock.calls[0]?.[0]).toMatch(
       /^\/remote\/report\.txt\.muxus-[a-f0-9]+\.upload$/,
     );
-    expect(createWriteStream.mock.calls[0]?.[1]).toEqual({ handle: Buffer.from('handle') });
+    expect(createWriteStream.mock.calls[0]).toEqual([Buffer.from('handle')]);
     expect(atomicRename).toHaveBeenCalledWith(
       expect.stringMatching(/^\/remote\/report\.txt\.muxus-[a-f0-9]+\.upload$/),
       '/remote/report.txt',
-      expect.any(Function),
     );
   });
 
   it('replaces a file only while it keeps the modification time the client downloaded', async () => {
-    const createWriteStream = vi.fn((_path: string, _options: { flags: string }) => new Writable({ write: (_c, _e, cb) => cb() }));
+    const createWriteStream = vi.fn((_handle: Buffer) => new Writable({ write: (_c, _e, cb) => cb() }));
     const handler = captureUploadHandler({
-      lstat: (_path, callback) => callback(null, { ...regularFile, mtime: 1_700_000_000 }),
-      stat: (_path, callback) => callback(null, { ...regularFile, mtime: 1_700_000_050 }),
+      lstat: async () => ({ ...regularFile, mtime: 1_700_000_000 }),
+      stat: async () => ({ ...regularFile, mtime: 1_700_000_050 }),
       open: openNewFile,
       createWriteStream,
-      ext_openssh_rename: (_from, _to, callback) => callback(null),
+      posixRename: async () => undefined,
       unlink: vi.fn(),
     });
 
@@ -295,9 +304,11 @@ describe('SFTP upload overwrite policy', () => {
   });
 
   it('treats a removed remote file as changed when a version was expected', async () => {
+    const open = vi.fn();
     const createWriteStream = vi.fn();
     const handler = captureUploadHandler({
-      lstat: (_path, callback) => callback(Object.assign(new Error('not found'), { code: 2 })),
+      lstat: () => Promise.reject(noSuchFile()),
+      open,
       createWriteStream,
     });
 
@@ -308,24 +319,26 @@ describe('SFTP upload overwrite policy', () => {
     });
 
     expect(response.status).toBe(409);
+    expect(open).not.toHaveBeenCalled();
     expect(createWriteStream).not.toHaveBeenCalled();
     expect((await invoke(handler, { path: '/remote/plan.drawio', expectedMtimeMs: 'soon' })).status).toBe(400);
   });
 
   it('replaces a file on servers without the posix-rename extension', async () => {
-    const unlink = vi.fn((_path: string, callback: (error?: Error | null) => void) => callback(null));
+    const unlink = vi.fn(async (_path: string) => undefined);
     let renamed = 0;
-    const rename = vi.fn((_from: string, _to: string, callback: (error?: Error | null) => void) =>
+    const rename = vi.fn(async (_from: string, _to: string) => {
       // Plain SFTP v3 rename refuses an existing destination.
-      renamed++ === 0 ? callback(new Error('Failure')) : callback(null),
-    );
+      if (renamed++ === 0) throw new SshError('Failure', 'SFTP_STATUS', 4);
+    });
     const handler = captureUploadHandler({
-      lstat: (_path, callback) => callback(null, regularFile),
+      lstat: async () => regularFile,
+      stat: statWithoutTime,
       open: openNewFile,
       createWriteStream: () => new Writable({ write: (_c, _e, cb) => cb() }),
-      ext_openssh_rename: () => {
-        throw new Error('Server does not support this extended request');
-      },
+      // The engine refuses by itself when the server never announced the extension.
+      posixRename: () =>
+        Promise.reject(new SshError('Server does not support this extended request', 'SFTP_UNSUPPORTED')),
       rename,
       unlink,
     });
@@ -333,18 +346,19 @@ describe('SFTP upload overwrite policy', () => {
     const response = await invoke(handler, { path: '/remote/report.txt', overwrite: 'true' });
 
     expect(response.result).toEqual({ ok: true });
-    expect(unlink).toHaveBeenCalledWith('/remote/report.txt', expect.any(Function));
+    expect(unlink).toHaveBeenCalledWith('/remote/report.txt');
     expect(rename).toHaveBeenCalledTimes(2);
   });
 
   it('refuses to follow a destination symlink even with overwrite consent', async () => {
+    const open = vi.fn();
     const createWriteStream = vi.fn();
     const handler = captureUploadHandler({
-      lstat: (_path, callback) =>
-        callback(null, {
-          isDirectory: () => false,
-          isSymbolicLink: () => true,
-        }),
+      lstat: async () => ({
+        isDirectory: () => false,
+        isSymbolicLink: () => true,
+      }),
+      open,
       createWriteStream,
     });
 
@@ -355,6 +369,7 @@ describe('SFTP upload overwrite policy', () => {
       message: 'refusing to overwrite a symbolic link',
       code: 'SFTP_DESTINATION_IS_SYMLINK',
     });
+    expect(open).not.toHaveBeenCalled();
     expect(createWriteStream).not.toHaveBeenCalled();
   });
 
@@ -366,10 +381,10 @@ describe('SFTP upload overwrite policy', () => {
         this.destroy(interrupted);
       },
     });
-    const unlink = vi.fn((_path: string, callback: (error?: Error | null) => void) => callback(null));
+    const unlink = vi.fn(async (_path: string) => undefined);
     const rename = vi.fn();
     const handler = captureUploadHandler({
-      lstat: (_path, callback) => callback(Object.assign(new Error('not found'), { code: 2 })),
+      lstat: () => Promise.reject(noSuchFile()),
       open: openNewFile,
       createWriteStream: () => new Writable({ write: (_chunk, _encoding, callback) => callback() }),
       rename,
@@ -393,7 +408,6 @@ describe('SFTP upload overwrite policy', () => {
 
     expect(unlink).toHaveBeenCalledWith(
       expect.stringMatching(/^\/remote\/report\.txt\.muxus-[a-f0-9]+\.upload$/),
-      expect.any(Function),
     );
     expect(rename).not.toHaveBeenCalled();
   });
@@ -404,10 +418,8 @@ describe('SFTP upload overwrite policy', () => {
  * links by path, files opened by handle. `truncateOnOpen` empties a file opened
  * for writing, as hack/demo-env.mjs does; `stuck` entries belong to someone
  * else, who neither lets them be opened nor removed. `modes` holds the mode
- * each file was created with.
+ * each file was created with, or was given since.
  */
-type OpenCallback = (error: Error | null, handle?: Buffer) => void;
-
 function memorySftp(
   options: { truncateOnOpen?: boolean; stuck?: string[]; failWrites?: boolean; fifos?: string[] } = {},
 ) {
@@ -415,91 +427,81 @@ function memorySftp(
   const links = new Map<string, string>();
   const fifos = new Set(options.fifos);
   const modes = new Map<string, number>();
-  const handles = new Map<string, string>();
+  // By handle: the name it was opened under, and the file that name led to.
+  const handles = new Map<string, { path: string; target: string }>();
   const writes: Array<{ path: string; start: number; bytes: number }> = [];
   const opens: Array<{ path: string; flags: string; handle: string }> = [];
   const closes: string[] = [];
-  const noSuchFile = () => Object.assign(new Error('No such file'), { code: 2 });
-  const denied = () => Object.assign(new Error('Permission denied'), { code: 3 });
   const attrs = (bytes: Buffer) => ({ ...regularFile, size: bytes.length, mode: 0o100644 });
   const opened = (handle: Buffer) => handles.get(handle.toString())!;
   const sftp = {
-    lstat(file: string, callback: (error: Error | null, attrs?: unknown) => void) {
+    async lstat(file: string) {
       const bytes = files.get(file);
-      if (links.has(file)) callback(null, { isDirectory: () => false, isSymbolicLink: () => true, mode: 0o120777 });
-      else if (fifos.has(file)) callback(null, { isDirectory: () => false, isSymbolicLink: () => false, mode: 0o010644 });
-      else if (bytes) callback(null, attrs(bytes));
-      else callback(noSuchFile());
+      if (links.has(file)) return { isDirectory: () => false, isSymbolicLink: () => true, mode: 0o120777 };
+      if (fifos.has(file)) return { isDirectory: () => false, isSymbolicLink: () => false, mode: 0o010644 };
+      if (bytes) return attrs(bytes);
+      throw noSuchFile();
     },
-    open(
-      file: string,
-      flags: string,
-      attrsOrCallback: { mode?: number } | OpenCallback,
-      maybeCallback?: OpenCallback,
-    ) {
-      const callback = typeof attrsOrCallback === 'function' ? attrsOrCallback : maybeCallback!;
-      const mode = typeof attrsOrCallback === 'function' ? undefined : attrsOrCallback.mode;
-      if (options.stuck?.includes(file)) return callback(denied());
+    async stat(file: string) {
+      const bytes = files.get(links.get(file) ?? file);
+      if (!bytes) throw noSuchFile();
+      return attrs(bytes);
+    },
+    async open(file: string, flags: string, mode?: number) {
+      if (options.stuck?.includes(file)) throw denied();
       if (fifos.has(file)) throw new Error('a FIFO was opened');
+      // A new file is only made under a name that nothing holds.
+      if (flags === 'wx' && (files.has(file) || links.has(file))) throw new SshError('Failure', 'SFTP_STATUS', 4);
       const target = links.get(file) ?? file;
-      if (flags === 'wx' && !files.has(target)) {
+      if (flags === 'wx') {
         files.set(target, Buffer.alloc(0));
         modes.set(target, mode ?? 0o666);
       }
-      if (!files.has(target)) return callback(noSuchFile());
+      if (!files.has(target)) throw noSuchFile();
       if (options.truncateOnOpen) files.set(target, Buffer.alloc(0));
       const handle = Buffer.from(`handle-${opens.length}`);
-      handles.set(handle.toString(), target);
+      handles.set(handle.toString(), { path: file, target });
       opens.push({ path: file, flags, handle: handle.toString() });
-      callback(null, handle);
+      return handle;
     },
-    fstat(handle: Buffer, callback: (error: Error | null, attrs?: unknown) => void) {
-      callback(null, attrs(files.get(opened(handle))!));
+    async fstat(handle: Buffer) {
+      return attrs(files.get(opened(handle).target)!);
     },
-    read(
-      handle: Buffer,
-      buffer: Buffer,
-      offset: number,
-      length: number,
-      position: number,
-      callback: (error: Error | undefined, bytesRead: number) => void,
-    ) {
-      callback(undefined, files.get(opened(handle))!.copy(buffer, offset, position, position + length));
+    async fchmod(handle: Buffer, mode: number) {
+      modes.set(opened(handle).target, mode);
     },
-    close(handle: Buffer, callback: (error?: Error | null) => void) {
+    async read(handle: Buffer, offset: number, length: number) {
+      const bytes = files.get(opened(handle).target)!.subarray(offset, offset + length);
+      // The end of a file is reported as nothing, not as an empty read.
+      return bytes.length ? Buffer.from(bytes) : undefined;
+    },
+    async closeHandle(handle: Buffer) {
       closes.push(handle.toString());
       handles.delete(handle.toString());
-      callback(null);
     },
-    unlink(file: string, callback: (error?: Error | null) => void) {
-      if (options.stuck?.includes(file)) return callback(denied());
-      if (!links.delete(file) && !fifos.delete(file) && !files.delete(file)) return callback(noSuchFile());
-      callback(null);
+    async unlink(file: string) {
+      if (options.stuck?.includes(file)) throw denied();
+      if (!links.delete(file) && !fifos.delete(file) && !files.delete(file)) throw noSuchFile();
     },
-    rename(from: string, to: string, callback: (error?: Error | null) => void) {
+    async rename(from: string, to: string) {
       const bytes = files.get(from);
-      if (!bytes) return callback(noSuchFile());
+      if (!bytes) throw noSuchFile();
       files.delete(from);
       files.set(to, bytes);
       if (modes.has(from)) modes.set(to, modes.get(from)!);
-      callback(null);
     },
-    createWriteStream(file: string, streamOptions: { flags?: string; mode?: number; start?: number; handle?: Buffer }) {
-      const target = streamOptions.handle ? opened(streamOptions.handle) : file;
-      if (!streamOptions.handle) {
-        if (files.has(file) || links.has(file) || fifos.has(file)) throw new Error('Failure');
-        files.set(file, Buffer.alloc(0));
-        // As in ssh2, which chmods a file it opens itself: to 0666 unless given a mode.
-        modes.set(file, streamOptions.mode ?? 0o666);
-      }
+    // Replaces what holds the new name, as this server's plain rename does too.
+    posixRename(from: string, to: string) {
+      return sftp.rename(from, to);
+    },
+    createWriteStream(handle: Buffer, streamOptions: { start?: number; autoClose?: boolean } = {}) {
+      const { path: file, target } = opened(handle);
       let position = streamOptions.start ?? 0;
       const write = { path: file, start: position, bytes: 0 };
       writes.push(write);
       return new Writable({
-        // As in ssh2: a finished stream keeps its handle, a destroyed one closes it.
-        autoDestroy: false,
         write(chunk: Buffer, _encoding, callback) {
-          if (options.failWrites) return callback(Object.assign(new Error('Failure'), { code: 4 }));
+          if (options.failWrites) return callback(new SshError('Failure', 'SFTP_STATUS', 4));
           const current = files.get(target)!;
           const grown = Buffer.alloc(Math.max(current.length, position + chunk.length));
           current.copy(grown);
@@ -509,9 +511,10 @@ function memorySftp(
           write.bytes += chunk.length;
           callback();
         },
+        // As in the engine: the stream closes its handle when it ends, unless told to leave it.
         destroy(error, callback) {
-          if (streamOptions.handle) sftp.close(streamOptions.handle, () => callback(error));
-          else callback(error);
+          if (streamOptions.autoClose === false) return callback(error);
+          void sftp.closeHandle(handle).then(() => callback(error));
         },
       });
     },
@@ -582,13 +585,16 @@ describe('SFTP upload resume', () => {
     expect(remote.files.has(staged)).toBe(false);
   });
 
-  it('creates a new staged file with 0644 itself, so ssh2 does not chmod it to 0666', async () => {
+  it('creates a new staged file with 0644, which the server\'s umask may narrow', async () => {
     const remote = memorySftp();
     const open = vi.spyOn(remote.sftp, 'open');
+    const fchmod = vi.spyOn(remote.sftp, 'fchmod');
     const handler = captureUploadHandler(remote.sftp);
 
     expect((await upload(handler, query, source)).result).toEqual({ ok: true });
-    expect(open).toHaveBeenCalledWith(staged, 'wx', { mode: 0o644 }, expect.any(Function));
+    expect(open).toHaveBeenCalledWith(staged, 'wx', 0o644);
+    // A mode set on the open file would give back what the umask took away.
+    expect(fchmod).not.toHaveBeenCalled();
     expect(remote.modes.get('/remote/image.bin')).toBe(0o644);
   });
 
@@ -644,9 +650,9 @@ describe('SFTP upload resume', () => {
     remote.files.set('/home/admin/.ssh/authorized_keys', keys);
     remote.files.set(staged, source.subarray(0, 700_000));
     const open = remote.sftp.open.bind(remote.sftp);
-    remote.sftp.open = (file, flags, callback) => {
+    remote.sftp.open = (file, flags, mode) => {
       remote.links.set(file, '/home/admin/.ssh/authorized_keys');
-      open(file, flags, callback);
+      return open(file, flags, mode);
     };
     const handler = captureUploadHandler(remote.sftp);
 
@@ -819,11 +825,9 @@ function captureResumableDownload(muxKey = 'deploy@web-01:22') {
         connection: {
           muxKey,
           sftp: async () => ({
-            stat: (_path: string, callback: (error: Error | null, attrs?: unknown) => void) =>
-              callback(null, { size: 7, mtime: 1_760_000_000 }),
-            open: (_path: string, _flags: string, callback: (error: Error | null, handle?: Buffer) => void) =>
-              callback(null, Buffer.from('handle')),
-            createReadStream: (_path: string, { start }: { start?: number }) => {
+            stat: async () => ({ size: 7, mtime: 1_760_000_000 }),
+            open: async () => Buffer.from('handle'),
+            createReadStream: (_handle: Buffer, { start }: { start?: number }) => {
               reads.push({ start });
               return new PassThrough();
             },
@@ -909,14 +913,11 @@ describe('SFTP download resume', () => {
         staticRoot: '/path/that/does/not/exist',
       }),
     );
-    const denied = () => Object.assign(new Error('Permission denied'), { code: 3 });
     const sftp = {
-      stat: (_path: string, callback: (error: Error | null, attrs?: unknown) => void) =>
-        callback(null, { size: 7, mtime: 1_760_000_000 }),
-      open: (_path: string, _flags: string, callback: (error: Error | null) => void) =>
-        setImmediate(() => callback(denied())),
-      // As in ssh2, a stream without a handle opens the file itself, once headers may be out.
-      createReadStream: (_path: string, { handle }: { handle?: Buffer }) => {
+      stat: async () => ({ size: 7, mtime: 1_760_000_000 }),
+      open: () => new Promise<Buffer>((_resolve, reject) => setImmediate(() => reject(denied()))),
+      // A stream on a file that was never opened fails once headers may be out.
+      createReadStream: (handle?: Buffer) => {
         const stream = new PassThrough();
         if (!handle) setImmediate(() => stream.destroy(denied()));
         return stream;
@@ -952,22 +953,20 @@ function captureDragDownloadRoutes() {
   const closeListeners: Array<() => void> = [];
   const opened: string[] = [];
   const sftp = {
-    realpath: (dir: string, callback: (error: Error | null, resolved?: string) => void) =>
-      callback(null, dir === '.' ? '/home/deploy' : dir),
-    readdir: (_dir: string, callback: (error: Error | null, entries?: unknown) => void) =>
-      callback(null, [
-        {
-          filename: 'report.txt',
-          longname: '-rw-r--r--    1 deploy   deploy          7 Oct  9 08:53 report.txt',
-          attrs: { size: 7, mtime: 1_760_000_000, mode: 0o100644 },
-        },
-      ]),
-    stat: (_path: string, callback: (error: Error | null, attrs?: unknown) => void) =>
-      callback(null, { size: 7 }),
-    createReadStream: (file: string) => {
+    realpath: async (dir: string) => (dir === '.' ? '/home/deploy' : dir),
+    readdir: async () => [
+      {
+        filename: 'report.txt',
+        longname: '-rw-r--r--    1 deploy   deploy          7 Oct  9 08:53 report.txt',
+        attrs: { size: 7, mtime: 1_760_000_000, mode: 0o100644 },
+      },
+    ],
+    stat: async () => ({ size: 7 }),
+    open: async (file: string) => {
       opened.push(file);
-      return new PassThrough();
+      return Buffer.from('handle');
     },
+    createReadStream: () => new PassThrough(),
   };
   let closed = false;
   const connection = {
@@ -1075,16 +1074,20 @@ describe('SFTP drag-out download tickets', () => {
 });
 
 describe('SFTP file modes', () => {
-  const sink = () => vi.fn((_path: string, _options: unknown) => new Writable({ write: (_c, _e, cb) => cb() }));
+  const sink = () => vi.fn((_handle: Buffer) => new Writable({ write: (_c, _e, cb) => cb() }));
+  const chmod = () => vi.fn(async (_handle: Buffer, _mode: number) => undefined);
 
-  it('opens a new file itself, 0644 less the umask, so ssh2 does not chmod it to 0666', async () => {
+  it('opens a new file with 0644 less the umask, and does not set its mode again', async () => {
     const open = vi.fn(openNewFile);
+    const fchmod = chmod();
     const createWriteStream = sink();
     const handler = captureUploadHandler({
-      lstat: (_path, callback) => callback(Object.assign(new Error('not found'), { code: 2 })),
+      lstat: () => Promise.reject(noSuchFile()),
+      stat: statWithoutTime,
       open,
+      fchmod,
       createWriteStream,
-      rename: (_from, _to, callback) => callback(null),
+      rename: async () => undefined,
       unlink: vi.fn(),
     });
 
@@ -1093,62 +1096,72 @@ describe('SFTP file modes', () => {
     expect(open).toHaveBeenCalledWith(
       expect.stringMatching(/^\/remote\/report\.txt\.muxus-[a-f0-9]+\.upload$/),
       'wx',
-      { mode: 0o644 },
-      expect.any(Function),
+      0o644,
     );
-    // Given a handle, ssh2's write stream neither opens nor chmods the file.
-    expect(createWriteStream).toHaveBeenCalledWith(expect.any(String), { handle: Buffer.from('handle') });
+    // A mode set on the open file would give back what the umask took away.
+    expect(fchmod).not.toHaveBeenCalled();
+    expect(createWriteStream).toHaveBeenCalledWith(Buffer.from('handle'));
   });
 
   it('gives a replaced file the mode it had', async () => {
     const open = vi.fn(openNewFile);
+    const fchmod = chmod();
     const createWriteStream = sink();
     const handler = captureUploadHandler({
-      lstat: (_path, callback) => callback(null, { ...regularFile, mode: 0o100750 }),
+      lstat: async () => ({ ...regularFile, mode: 0o100750 }),
+      stat: statWithoutTime,
       open,
+      fchmod,
       createWriteStream,
-      ext_openssh_rename: (_from, _to, callback) => callback(null),
+      posixRename: async () => undefined,
       unlink: vi.fn(),
     });
 
     await invoke(handler, { path: '/remote/run.sh', overwrite: 'true' });
 
-    expect(open).not.toHaveBeenCalled();
-    expect(createWriteStream).toHaveBeenCalledWith(expect.any(String), { flags: 'wx', mode: 0o750 });
+    expect(open).toHaveBeenCalledWith(
+      expect.stringMatching(/^\/remote\/run\.sh\.muxus-[a-f0-9]+\.upload$/),
+      'wx',
+      0o750,
+    );
+    // The umask narrows the mode a file is opened with, so the open file is given it exactly.
+    expect(fchmod).toHaveBeenCalledWith(Buffer.from('handle'), 0o750);
+    expect(createWriteStream).toHaveBeenCalledWith(Buffer.from('handle'));
   });
 
   it('saves from the editor as a new file when the server reports no mode', async () => {
     const open = vi.fn(openNewFile);
+    const fchmod = chmod();
     const createWriteStream = sink();
     const { save } = captureEditorHandlers({
-      lstat: (_path: string, callback: (error: Error | null, attrs?: unknown) => void) =>
-        callback(null, { ...regularFile, mtime: 123 }),
-      stat: (_path: string, callback: (error: Error | null, attrs?: unknown) => void) =>
-        callback(null, { size: 9, mtime: 125 }),
+      lstat: async () => ({ ...regularFile, mtime: 123 }),
+      stat: async () => ({ size: 9, mtime: 125 }),
       open,
+      fchmod,
       createWriteStream,
-      ext_openssh_rename: (_from: string, _to: string, callback: (error?: Error | null) => void) => callback(null),
+      posixRename: async () => undefined,
       unlink: vi.fn(),
     });
 
     await save({ params: { connId: 'connection-1' }, query: { path: '/etc/motd' }, body: { content: 'hello' } }, {});
 
-    expect(open).toHaveBeenCalledWith(expect.stringMatching(/\.tmp$/), 'wx', { mode: 0o644 }, expect.any(Function));
-    expect(createWriteStream).toHaveBeenCalledWith(expect.any(String), { handle: Buffer.from('handle') });
+    expect(open).toHaveBeenCalledWith(expect.stringMatching(/\.tmp$/), 'wx', 0o644);
+    expect(fchmod).not.toHaveBeenCalled();
+    expect(createWriteStream).toHaveBeenCalledWith(Buffer.from('handle'));
   });
 });
 
 describe('SFTP remote editor', () => {
   it('reads bounded UTF-8 text with its optimistic concurrency metadata', async () => {
     const { read } = captureEditorHandlers({
-      lstat: (_path: string, callback: (error: Error | null, attrs?: unknown) => void) =>
-        callback(null, {
-          isDirectory: () => false,
-          isSymbolicLink: () => false,
-          size: 12,
-          mtime: 123,
-          mode: 0o100640,
-        }),
+      lstat: async () => ({
+        isDirectory: () => false,
+        isSymbolicLink: () => false,
+        size: 12,
+        mtime: 123,
+        mode: 0o100640,
+      }),
+      open: async () => Buffer.from('handle'),
       createReadStream: () => Readable.from([Buffer.from('hello remote')]),
     });
 
@@ -1164,15 +1177,16 @@ describe('SFTP remote editor', () => {
   });
 
   it('rejects a save when the remote file changed', async () => {
+    const open = vi.fn();
     const createWriteStream = vi.fn();
     const { save } = captureEditorHandlers({
-      lstat: (_path: string, callback: (error: Error | null, attrs?: unknown) => void) =>
-        callback(null, {
-          isDirectory: () => false,
-          isSymbolicLink: () => false,
-          mtime: 124,
-          mode: 0o100640,
-        }),
+      lstat: async () => ({
+        isDirectory: () => false,
+        isSymbolicLink: () => false,
+        mtime: 124,
+        mode: 0o100640,
+      }),
+      open,
       createWriteStream,
     });
     const response: { status?: number; body?: unknown } = {};
@@ -1202,13 +1216,16 @@ describe('SFTP remote editor', () => {
         code: 'SFTP_FILE_CHANGED',
       },
     });
+    expect(open).not.toHaveBeenCalled();
     expect(createWriteStream).not.toHaveBeenCalled();
   });
 
   it('atomically replaces the remote text when the version still matches', async () => {
     const written: Buffer[] = [];
+    const open = vi.fn(openNewFile);
+    const fchmod = vi.fn(async (_handle: Buffer, _mode: number) => undefined);
     const createWriteStream = vi.fn(
-      (_path: string, _options: { flags: string; mode?: number }) =>
+      (_handle: Buffer) =>
         new Writable({
           write(chunk, _encoding, callback) {
             written.push(Buffer.from(chunk));
@@ -1216,21 +1233,19 @@ describe('SFTP remote editor', () => {
           },
         }),
     );
-    const rename = vi.fn(
-      (_from: string, _to: string, callback: (error?: Error | null) => void) => callback(null),
-    );
+    const rename = vi.fn(async (_from: string, _to: string) => undefined);
     const { save } = captureEditorHandlers({
-      lstat: (_path: string, callback: (error: Error | null, attrs?: unknown) => void) =>
-        callback(null, {
-          isDirectory: () => false,
-          isSymbolicLink: () => false,
-          mtime: 123,
-          mode: 0o100640,
-        }),
-      stat: (_path: string, callback: (error: Error | null, attrs?: unknown) => void) =>
-        callback(null, { size: 9, mtime: 125 }),
+      lstat: async () => ({
+        isDirectory: () => false,
+        isSymbolicLink: () => false,
+        mtime: 123,
+        mode: 0o100640,
+      }),
+      stat: async () => ({ size: 9, mtime: 125 }),
+      open,
+      fchmod,
       createWriteStream,
-      ext_openssh_rename: rename,
+      posixRename: rename,
       unlink: vi.fn(),
     });
 
@@ -1245,63 +1260,94 @@ describe('SFTP remote editor', () => {
 
     expect(response).toEqual({ ok: true, size: 9, mtimeMs: 125_000 });
     expect(Buffer.concat(written).toString()).toBe('new value');
-    expect(createWriteStream.mock.calls[0]?.[0]).toMatch(/^\/etc\/example\.conf\.muxus-[a-f0-9]+\.tmp$/);
-    expect(createWriteStream.mock.calls[0]?.[1]).toEqual({ flags: 'wx', mode: 0o640 });
+    expect(open.mock.calls[0]).toEqual([
+      expect.stringMatching(/^\/etc\/example\.conf\.muxus-[a-f0-9]+\.tmp$/),
+      'wx',
+      0o640,
+    ]);
+    expect(fchmod).toHaveBeenCalledWith(Buffer.from('handle'), 0o640);
+    expect(createWriteStream.mock.calls[0]).toEqual([Buffer.from('handle')]);
     expect(rename).toHaveBeenCalledWith(
       expect.stringMatching(/^\/etc\/example\.conf\.muxus-[a-f0-9]+\.tmp$/),
       '/etc/example.conf',
-      expect.any(Function),
     );
   });
 });
 
-/** ssh2's SFTP server side, answering the requests of the client under test. */
-interface SftpServerSide extends EventEmitter {
-  handle(id: number, handle: Buffer): void;
-  status(id: number, code: number): void;
-}
+const HOST_KEY = generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  publicKeyEncoding: { type: 'pkcs1', format: 'pem' },
+  privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+}).privateKey;
 
 /**
- * ssh2's SFTP client and server talking over a pair of streams. `cut` drops
- * the connection the way a dying transport does.
+ * An sshd stand-in whose SFTP requests `serve` answers, and the engine's SFTP
+ * client on a connection to it. `cut` drops the connection the way a dying
+ * network does: the socket goes without a word of SSH. `close` ends both sides.
  */
-async function sftpSession() {
-  const toServer = new PassThrough();
-  const toClient = new PassThrough();
-  const ServerSftp = SFTP as unknown as new (
-    client: unknown,
-    channel: unknown,
-    config: { server: true },
-  ) => SftpServerSide & { push(data: Buffer): void };
-  const server = new ServerSftp(
-    { _protocol: { channelData: (_id: number, data: Buffer) => toClient.write(data), channelClose: () => toClient.end() } },
-    {
-      type: 'sftp',
-      incoming: { id: 0, state: 'open' },
-      outgoing: { id: 0, state: 'open', window: Number.MAX_SAFE_INTEGER, packetSize: Number.MAX_SAFE_INTEGER },
-    },
-    { server: true },
-  );
-  toServer.on('data', (data: Buffer) => server.push(data));
-  const client = await sftpOverStdio(toServer, toClient);
-  return { client, server: server as SftpServerSide, cut: () => toClient.destroy() };
+async function sftpSession(serve: (sftp: SFTPWrapper, cut: () => void) => void) {
+  // The sockets are accepted here, so that `cut` can take them from under the SSH server.
+  const sockets = new Set<net.Socket>();
+  const cut = () => {
+    for (const socket of sockets) socket.destroy();
+  };
+  const sshd = new Server({ hostKeys: [HOST_KEY] }, (conn) => {
+    conn.on('error', () => undefined);
+    conn.on('authentication', (ctx) => ctx.accept());
+    conn.on('ready', () => {
+      conn.on('session', (accept) => {
+        accept().on('sftp', (acceptSftp) => serve(acceptSftp(), cut));
+      });
+    });
+  });
+  const listener = net.createServer((socket) => {
+    sockets.add(socket);
+    socket.on('close', () => sockets.delete(socket));
+    sshd.injectSocket(socket);
+  });
+  await new Promise<void>((resolve) => listener.listen(0, '127.0.0.1', resolve));
+  const transport = new SshTransport({
+    host: '127.0.0.1',
+    port: (listener.address() as net.AddressInfo).port,
+    verifyHostKey: async () => true,
+  });
+  const close = async () => {
+    transport.close();
+    cut();
+    await new Promise<void>((resolve) => listener.close(() => resolve()));
+  };
+  try {
+    await transport.connect();
+    await transport.authNone('deploy');
+    return { client: await transport.sftp(), close };
+  } catch (err) {
+    await close();
+    throw err;
+  }
 }
 
 describe('SFTP upload on a connection that drops', () => {
+  let session: Awaited<ReturnType<typeof sftpSession>> | undefined;
+  afterEach(async () => {
+    await session?.close();
+    session = undefined;
+  });
+
   it('answers with an error instead of waiting for replies that cannot come', async () => {
-    const { client, server, cut } = await sftpSession();
-    server.on('LSTAT', (id: number) => server.status(id, 2));
-    server.on('OPEN', (id: number) => server.handle(id, Buffer.from('handle')));
-    server.on('FSETSTAT', (id: number) => server.status(id, 0));
-    // The connection drops while the first write waits for its reply.
-    server.on('WRITE', () => cut());
-    const handler = captureUploadHandler(client as never);
+    session = await sftpSession((server, cut) => {
+      server.on('LSTAT', (id) => server.status(id, 2));
+      server.on('OPEN', (id) => server.handle(id, Buffer.from('handle')));
+      server.on('FSETSTAT', (id) => server.status(id, 0));
+      // The connection drops while the first write waits for its reply.
+      server.on('WRITE', () => cut());
+    });
+    const handler = captureUploadHandler(session.client);
 
     const response = await Promise.race([
       invoke(handler, { path: '/remote/report.txt' }),
       new Promise((resolve) => setTimeout(() => resolve('no answer'), 2_000)),
     ]);
 
-    expect(response).toMatchObject({ status: 500, body: { message: 'No response from server' } });
+    expect(response).toMatchObject({ status: 500, body: { message: 'The SFTP session has ended.' } });
   });
 });

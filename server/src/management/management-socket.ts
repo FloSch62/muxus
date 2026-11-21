@@ -26,6 +26,7 @@ import { certificateChallenge, type PresentedCertificate } from '../remote-deskt
 import { DesktopPasswords, type VaultPasswordRef } from '../remote-desktop/desktop-passwords.js';
 import { desktopPasswordAccount, desktopPasswordLabel } from '../security/password-vault.js';
 import { connectFailureMessage, connectTcp, connectThroughGateway } from '../util/dial.js';
+import { isSshError } from '../ssh/engine.js';
 import { connectGateway, gatewayCandidates, type SshGatewayRef } from '../ssh/gateways.js';
 import { GnmiClient, type GnmiSubscription } from './gnmi/client.js';
 import { GrpcCode, GrpcError, type GrpcCall } from './gnmi/grpc.js';
@@ -453,7 +454,7 @@ export class ManagementSession {
     let stream: Duplex;
     if (this.lease) {
       this.status(`Connecting to ${target} through ${this.usedGateway?.target} …`, true);
-      stream = await connectThroughGateway(this.lease.connection.client, profile.host, profile.port);
+      stream = await connectThroughGateway(this.lease.connection.transport, profile.host, profile.port);
     } else {
       this.status(`Connecting to ${target} …`, true);
       stream = await connectTcp(profile.host, profile.port);
@@ -551,8 +552,8 @@ export class ManagementSession {
     await lease.connection.waitForPostAuth();
     if (this.closed) return;
     this.status('Opening the NETCONF subsystem …', true);
-    const channel = await new Promise<Duplex>((resolve, reject) => {
-      lease.connection.client.subsys('netconf', (err, stream) => (err ? reject(subsystemError(err)) : resolve(stream)));
+    const channel: Duplex = await lease.connection.transport.subsystem('netconf').catch((err: unknown) => {
+      throw subsystemError(err instanceof Error ? err : new Error(String(err)));
     });
     if (this.closed) {
       channel.destroy();
@@ -658,7 +659,7 @@ export class ManagementSession {
           throw new Error('This session does not use TLS.');
         }
         const stream = this.lease
-          ? await connectThroughGateway(this.lease.connection.client, profile.host, profile.port)
+          ? await connectThroughGateway(this.lease.connection.transport, profile.host, profile.port)
           : await connectTcp(profile.host, profile.port);
         const { socket, certificate } = await upgradeGnmiTls(stream, profile);
         socket.destroy();
@@ -848,7 +849,7 @@ export class ManagementSession {
 
 function subsystemError(err: Error): Error {
   return new Error(
-    /unknown|not supported|fail/i.test(err.message)
+    isSshError(err, 'SUBSYSTEM_REFUSED') || /unknown|not supported|fail/i.test(err.message)
       ? 'The SSH server has no NETCONF subsystem. Check that NETCONF is enabled on the device and the port is right (usually 830).'
       : `Could not open the NETCONF subsystem: ${err.message}`,
   );

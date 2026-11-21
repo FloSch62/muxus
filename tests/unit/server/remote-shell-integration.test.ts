@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { describe, expect, it, vi } from 'vitest';
+import { SshError } from '../../../server/src/ssh/engine.js';
 import {
   openRemoteShell,
   parseShellProbe,
@@ -13,8 +14,29 @@ class StubChannel extends EventEmitter {
   }
 }
 
-function stubClient(exec: unknown) {
-  return Object.assign(new EventEmitter(), { exec }) as never;
+/** The part of a transport that reports its own end, which a test brings about with `lose`. */
+class StubTransport {
+  closed = false;
+  private readonly closeListeners = new Set<(reason?: string) => void>();
+
+  onClose(listener: (reason?: string) => void): () => void {
+    this.closeListeners.add(listener);
+    return () => this.closeListeners.delete(listener);
+  }
+
+  closeListenerCount(): number {
+    return this.closeListeners.size;
+  }
+
+  /** As the engine ends a connection: closed first, then the listeners hear of it. */
+  lose(reason?: string): void {
+    this.closed = true;
+    for (const listener of this.closeListeners) listener(reason);
+  }
+}
+
+function stubTransport(exec: unknown) {
+  return Object.assign(new StubTransport(), { exec }) as never;
 }
 
 describe('remote shell integration', () => {
@@ -23,34 +45,24 @@ describe('remote shell integration', () => {
     const terminalChannel = new StubChannel();
     const commands: string[] = [];
     const setupOrder: string[] = [];
-    const exec = vi.fn((
-      command: string,
-      optionsOrCallback: unknown,
-      possibleCallback?: unknown,
-    ) => {
+    // The probe runs without session options; only the terminal gets them.
+    const exec = vi.fn(async (command: string, options?: unknown) => {
       commands.push(command);
-      const callback = (possibleCallback ?? optionsOrCallback) as (
-        error: Error | undefined,
-        channel: unknown,
-      ) => void;
-      if (possibleCallback) {
-        callback(undefined, terminalChannel);
-      } else {
-        setupOrder.push('probe-start');
-        callback(undefined, probeChannel);
-        setImmediate(() => {
-          setupOrder.push('probe-finish');
-          probeChannel.emit(
-            'data',
-            Buffer.from(
-              '__MUXUS_SHELL__=/usr/bin/zsh\n' +
-                '__MUXUS_ZDOTDIR__=\n' +
-                '__MUXUS_HOME__=/home/u\n',
-            ),
-          );
-          probeChannel.emit('close');
-        });
-      }
+      if (options) return terminalChannel;
+      setupOrder.push('probe-start');
+      setImmediate(() => {
+        setupOrder.push('probe-finish');
+        probeChannel.emit(
+          'data',
+          Buffer.from(
+            '__MUXUS_SHELL__=/usr/bin/zsh\n' +
+              '__MUXUS_ZDOTDIR__=\n' +
+              '__MUXUS_HOME__=/home/u\n',
+          ),
+        );
+        probeChannel.emit('close');
+      });
+      return probeChannel;
     });
     const writes: string[] = [];
     const directory = {
@@ -58,36 +70,23 @@ describe('remote shell integration', () => {
       isFile: () => false,
     };
     const sftp = {
-      stat: (
-        remotePath: string,
-        callback: (error: Error | undefined, value?: typeof directory) => void,
-      ) => {
-        if (remotePath.endsWith('/.complete')) callback(new Error('not found'));
-        else callback(undefined, directory);
+      stat: async (remotePath: string) => {
+        if (remotePath.endsWith('/.complete')) throw new Error('not found');
+        return directory;
       },
-      mkdir: (
-        _remotePath: string,
-        _attributes: unknown,
-        callback: (error?: Error) => void,
-      ) => callback(),
-      writeFile: (
-        remotePath: string,
-        _content: string,
-        _options: unknown,
-        callback: (error?: Error) => void,
-      ) => {
+      mkdir: async () => undefined,
+      writeFile: async (remotePath: string) => {
         writes.push(remotePath);
-        callback();
       },
     };
 
     const result = await openRemoteShell(
-      stubClient(exec),
+      stubTransport(exec),
       async () => {
         setupOrder.push('sftp-start');
         return sftp as never;
       },
-      { term: 'xterm-256color', cols: 80, rows: 24 },
+      { pty: { term: 'xterm-256color', cols: 80, rows: 24 } },
     );
 
     expect(result).toBe(terminalChannel);
@@ -108,21 +107,9 @@ describe('remote shell integration', () => {
     const probeChannel = new StubChannel();
     const terminalChannel = new StubChannel();
     const commands: string[] = [];
-    const exec = vi.fn((
-      command: string,
-      optionsOrCallback: unknown,
-      possibleCallback?: unknown,
-    ) => {
+    const exec = vi.fn(async (command: string, options?: unknown) => {
       commands.push(command);
-      const callback = (possibleCallback ?? optionsOrCallback) as (
-        error: Error | undefined,
-        channel: unknown,
-      ) => void;
-      if (possibleCallback) {
-        callback(undefined, terminalChannel);
-        return;
-      }
-      callback(undefined, probeChannel);
+      if (options) return terminalChannel;
       setImmediate(() => {
         probeChannel.emit(
           'data',
@@ -134,23 +121,19 @@ describe('remote shell integration', () => {
         );
         probeChannel.emit('close');
       });
+      return probeChannel;
     });
     const complete = { isFile: () => true };
     const sftp = {
-      stat: vi.fn(
-        (
-          _remotePath: string,
-          callback: (error: Error | undefined, value: typeof complete) => void,
-        ) => callback(undefined, complete),
-      ),
+      stat: vi.fn(async (_remotePath: string) => complete),
       mkdir: vi.fn(),
       writeFile: vi.fn(),
     };
 
     const result = await openRemoteShell(
-      stubClient(exec),
+      stubTransport(exec),
       async () => sftp as never,
-      { term: 'xterm-256color', cols: 80, rows: 24 },
+      { pty: { term: 'xterm-256color', cols: 80, rows: 24 } },
     );
 
     expect(result).toBe(terminalChannel);
@@ -166,33 +149,20 @@ describe('remote shell integration', () => {
     const probeChannel = new StubChannel();
     const plainChannel = new StubChannel();
     const getSftp = vi.fn();
-    const exec = vi.fn(
-      (
-        _command: string,
-        callback: (error: Error | undefined, channel: StubChannel) => void,
-      ) => {
-        callback(undefined, probeChannel);
-        setImmediate(() => {
-          probeChannel.emit('data', Buffer.from('console appliance\n'));
-          probeChannel.emit('close');
-        });
-      },
-    );
+    const exec = vi.fn(async (_command: string) => {
+      setImmediate(() => {
+        probeChannel.emit('data', Buffer.from('console appliance\n'));
+        probeChannel.emit('close');
+      });
+      return probeChannel;
+    });
 
-    const shell = vi.fn(
-      (
-        _pty: unknown,
-        _options: unknown,
-        callback: (error: Error | undefined, channel: StubChannel) => void,
-      ) => callback(undefined, plainChannel),
-    );
+    const shell = vi.fn(async (_options: unknown) => plainChannel);
     const probe = { ranCommand: false, execRefused: false };
     const result = await openRemoteShell(
-      Object.assign(stubClient(exec), { shell }),
+      Object.assign(stubTransport(exec), { shell }),
       getSftp,
-      { term: 'xterm-256color', cols: 80, rows: 24 },
-      undefined,
-      undefined,
+      { pty: { term: 'xterm-256color', cols: 80, rows: 24 } },
       undefined,
       probe,
     );
@@ -205,26 +175,20 @@ describe('remote shell integration', () => {
 
   it('records a server that ran the probe, even in a shell it does not integrate', async () => {
     const probe = { ranCommand: false, execRefused: false };
-    const exec = (
-      _command: string,
-      callback: (error: Error | undefined, channel: StubChannel) => void,
-    ) => {
+    const exec = async (_command: string) => {
       const probeChannel = new StubChannel();
-      callback(undefined, probeChannel);
       setImmediate(() => {
         probeChannel.emit('data', Buffer.from('__MUXUS_SHELL__=/usr/bin/fish\n__MUXUS_HOME__=/home/u\n'));
         probeChannel.emit('close');
       });
+      return probeChannel;
     };
     await openRemoteShell(
-      Object.assign(stubClient(exec), {
-        shell: (_pty: unknown, _options: unknown, callback: (e: undefined, c: StubChannel) => void) =>
-          callback(undefined, new StubChannel()),
+      Object.assign(stubTransport(exec), {
+        shell: async (_options: unknown) => new StubChannel(),
       }),
       vi.fn(),
-      { term: 'xterm-256color', cols: 80, rows: 24 },
-      undefined,
-      undefined,
+      { pty: { term: 'xterm-256color', cols: 80, rows: 24 } },
       undefined,
       probe,
     );
@@ -235,19 +199,16 @@ describe('remote shell integration', () => {
     // Nokia SR OS keeps a refused exec channel's slot until the connection
     // closes; a probe per shell would use up the few slots it allows.
     const probe = { ranCommand: false, execRefused: false };
-    const exec = vi.fn((_command: string, callback: (error: Error) => void) =>
-      callback(new Error('Unable to exec')),
-    );
-    const shell = vi.fn(
-      (_pty: unknown, _options: unknown, callback: (e: undefined, c: StubChannel) => void) =>
-        callback(undefined, new StubChannel()),
-    );
-    const client = Object.assign(stubClient(exec), { shell });
-    const pty = { term: 'xterm-256color', cols: 80, rows: 24 };
+    const exec = vi.fn(async (_command: string) => {
+      throw new SshError('Unable to exec', 'EXEC_REFUSED');
+    });
+    const shell = vi.fn(async (_options: unknown) => new StubChannel());
+    const transport = Object.assign(stubTransport(exec), { shell });
+    const options = { pty: { term: 'xterm-256color', cols: 80, rows: 24 } };
 
-    await openRemoteShell(client, vi.fn(), pty, undefined, undefined, undefined, probe);
+    await openRemoteShell(transport, vi.fn(), options, undefined, probe);
     expect(probe).toEqual({ ranCommand: false, execRefused: true });
-    await openRemoteShell(client, vi.fn(), pty, undefined, undefined, undefined, probe);
+    await openRemoteShell(transport, vi.fn(), options, undefined, probe);
 
     expect(exec).toHaveBeenCalledOnce();
     expect(shell).toHaveBeenCalledTimes(2);
@@ -255,18 +216,15 @@ describe('remote shell integration', () => {
 
   it('keeps probing after a channel open failure, such as a full MaxSessions', async () => {
     const probe = { ranCommand: false, execRefused: false };
-    const exec = vi.fn((_command: string, callback: (error: Error) => void) =>
-      callback(new Error('(SSH) Channel open failure: open failed')),
-    );
+    const exec = vi.fn(async (_command: string) => {
+      throw new SshError('Channel open failure: administratively prohibited', 'CHANNEL_OPEN_FAILED', 1);
+    });
     await openRemoteShell(
-      Object.assign(stubClient(exec), {
-        shell: (_pty: unknown, _options: unknown, callback: (e: undefined, c: StubChannel) => void) =>
-          callback(undefined, new StubChannel()),
+      Object.assign(stubTransport(exec), {
+        shell: async (_options: unknown) => new StubChannel(),
       }),
       vi.fn(),
-      { term: 'xterm-256color', cols: 80, rows: 24 },
-      undefined,
-      undefined,
+      { pty: { term: 'xterm-256color', cols: 80, rows: 24 } },
       undefined,
       probe,
     );
@@ -274,60 +232,52 @@ describe('remote shell integration', () => {
   });
 
   it('surfaces a transport lost during the optional shell probe', async () => {
-    const client = new EventEmitter() as EventEmitter & {
-      exec: (
-        command: string,
-        callback: (error: Error | undefined, channel: StubChannel) => void,
-      ) => void;
+    const transport = new StubTransport() as StubTransport & {
+      exec: (command: string) => Promise<StubChannel>;
     };
     const probeChannel = new StubChannel();
-    client.exec = (_command, callback) => {
-      callback(undefined, probeChannel);
+    transport.exec = async () => {
       setImmediate(() => {
-        client.emit('error', new Error('remote protocol disconnect'));
+        transport.lose('remote protocol disconnect');
         probeChannel.emit('close');
       });
+      return probeChannel;
     };
 
     await expect(
       openRemoteShell(
-        client as never,
+        transport as never,
         vi.fn(),
-        { term: 'xterm-256color', cols: 80, rows: 24 },
+        { pty: { term: 'xterm-256color', cols: 80, rows: 24 } },
       ),
     ).rejects.toBeInstanceOf(RemoteShellTransportLostError);
   });
 
   it('keeps watching for transport loss while the plain fallback opens', async () => {
-    const client = new EventEmitter() as EventEmitter & {
-      exec: (
-        command: string,
-        callback: (error: Error | undefined, channel: StubChannel) => void,
-      ) => void;
-      shell: (
-        pty: unknown,
-        options: unknown,
-        callback: (error: Error | undefined, channel?: StubChannel) => void,
-      ) => void;
+    const transport = new StubTransport() as StubTransport & {
+      exec: (command: string) => Promise<StubChannel>;
+      shell: (options: unknown) => Promise<StubChannel>;
     };
     const probeChannel = new StubChannel();
-    client.exec = (_command, callback) => {
-      callback(undefined, probeChannel);
+    transport.exec = async () => {
       setImmediate(() => probeChannel.emit('close'));
+      return probeChannel;
     };
-    client.shell = (_pty, _options, callback) => {
-      expect(client.listenerCount('end')).toBe(1);
-      setImmediate(() => {
-        client.emit('end');
-        callback(new Error('Not connected'));
+    transport.shell = () => {
+      expect(transport.closeListenerCount()).toBe(1);
+      return new Promise((_resolve, reject) => {
+        setImmediate(() => {
+          transport.lose();
+          reject(new SshError('Not connected', 'DISCONNECTED'));
+        });
       });
     };
 
     await expect(
       openRemoteShell(
-        client as never,
+        transport as never,
         vi.fn(),
-        { term: 'xterm-256color', cols: 80, rows: 24 },
+        { pty: { term: 'xterm-256color', cols: 80, rows: 24 } },
       ),
     ).rejects.toBeInstanceOf(RemoteShellTransportLostError);
   });
@@ -432,44 +382,29 @@ describe('remote shell integration', () => {
   it('changes into the reconnect directory at the end of shell startup', async () => {
     const contents = new Map<string, string>();
     const probeChannel = new StubChannel();
-    const exec = vi.fn((_command: string, optionsOrCallback: unknown, possibleCallback?: unknown) => {
-      const callback = (possibleCallback ?? optionsOrCallback) as (
-        error: Error | undefined,
-        channel: unknown,
-      ) => void;
-      if (possibleCallback) {
-        callback(undefined, new StubChannel());
-        return;
-      }
-      callback(undefined, probeChannel);
+    const exec = vi.fn(async (_command: string, options?: unknown) => {
+      if (options) return new StubChannel();
       setImmediate(() => {
         probeChannel.emit('data', Buffer.from('__MUXUS_SHELL__=/usr/bin/zsh\n__MUXUS_HOME__=/home/u\n'));
         probeChannel.emit('close');
       });
+      return probeChannel;
     });
     const sftp = {
-      stat: (remotePath: string, callback: (error?: Error, value?: unknown) => void) =>
-        remotePath.endsWith('/.complete')
-          ? callback(new Error('not found'))
-          : callback(undefined, { isDirectory: () => true, isFile: () => false }),
-      mkdir: (_path: string, _attributes: unknown, callback: (error?: Error) => void) => callback(),
-      writeFile: (
-        remotePath: string,
-        content: string,
-        _options: unknown,
-        callback: (error?: Error) => void,
-      ) => {
+      stat: async (remotePath: string) => {
+        if (remotePath.endsWith('/.complete')) throw new Error('not found');
+        return { isDirectory: () => true, isFile: () => false };
+      },
+      mkdir: async () => undefined,
+      writeFile: async (remotePath: string, content: string) => {
         contents.set(remotePath, content);
-        callback();
       },
     };
 
     await openRemoteShell(
-      stubClient(exec),
+      stubTransport(exec),
       async () => sftp as never,
-      { term: 'xterm-256color', cols: 80, rows: 24 },
-      undefined,
-      undefined,
+      { pty: { term: 'xterm-256color', cols: 80, rows: 24 } },
       '/srv/project',
     );
 

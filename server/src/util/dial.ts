@@ -1,6 +1,6 @@
 import net from 'node:net';
 import type { Duplex } from 'node:stream';
-import type { Client } from 'ssh2';
+import { isSshError, type SshTransport } from '../ssh/engine.js';
 
 /**
  * Opening a TCP connection to a service, directly or through an SSH
@@ -12,7 +12,8 @@ export const TCP_CONNECT_TIMEOUT_MS = 15_000;
 
 /** Give an SSH channel-open failure the errno a direct socket would have reported. */
 export function channelOpenError(err: Error): Error {
-  const reason = (err as { reason?: number }).reason;
+  // RFC 4254: 1 is "administratively prohibited", 2 "connect failed".
+  const reason = isSshError(err, 'CHANNEL_OPEN_FAILED') ? err.detail : undefined;
   const code =
     /refused/i.test(err.message) ? 'ECONNREFUSED'
     : /timed? ?out/i.test(err.message) ? 'ETIMEDOUT'
@@ -68,7 +69,7 @@ export function connectTcp(host: string, port: number): Promise<net.Socket> {
 }
 
 /** A direct-tcpip channel to host:port, resolved and dialed on the gateway's side. */
-export function connectThroughGateway(client: Client, host: string, port: number): Promise<Duplex> {
+export function connectThroughGateway(transport: SshTransport, host: string, port: number): Promise<Duplex> {
   const target = `${host}:${port}`;
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -76,16 +77,20 @@ export function connectThroughGateway(client: Client, host: string, port: number
       settled = true;
       reject(Object.assign(new Error(`Timed out connecting to ${target} through the SSH gateway`), { code: 'ETIMEDOUT' }));
     }, TCP_CONNECT_TIMEOUT_MS);
-    client.forwardOut('127.0.0.1', 0, host, port, (err, channel) => {
-      clearTimeout(timer);
-      // A channel that opens after the caller gave up must not linger.
-      if (settled) {
-        channel?.destroy();
-        return;
-      }
-      settled = true;
-      if (err) reject(channelOpenError(err));
-      else resolve(channel);
-    });
+    transport.openTcp(host, port).then(
+      (channel) => {
+        clearTimeout(timer);
+        // A channel that opens after the caller gave up must not linger.
+        if (settled) channel.destroy();
+        else resolve(channel);
+        settled = true;
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        if (settled) return;
+        settled = true;
+        reject(channelOpenError(err instanceof Error ? err : new Error(String(err))));
+      },
+    );
   });
 }

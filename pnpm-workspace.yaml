@@ -1,5 +1,6 @@
 packages:
   - shared
+  - engine
   - server
   - client
   - electron
@@ -24,7 +25,9 @@ allowBuilds:
   electron: true
   sharp: true
   node-pty: true
-  ssh2: true
+  # Only the tests use ssh2, as the server they connect to; its optional
+  # native speed-ups are not worth a compiler there.
+  ssh2: false
   core-js-pure: false
   electron-winstaller: false
   cpu-features: false
@@ -33,4 +36,3 @@ patchedDependencies:
   '@novnc/novnc@1.7.0': patches/@novnc__novnc@1.7.0.patch
   '@serialport/bindings-cpp@13.0.1': patches/@serialport__bindings-cpp@13.0.1.patch
   '@xterm/addon-webgl@0.20.0-beta.331': patches/@xterm__addon-webgl@0.20.0-beta.331.patch
-  ssh2@1.17.0: patches/ssh2@1.17.0.patch

@@ -145,7 +145,7 @@ export function registerEnvironmentRoutes(app: FastifyInstance, ctx: AppContext)
       if (options.auto && !lease.connection.ranCommand()) {
         return { status: 'unsupported', message: 'The host does not run commands.' };
       }
-      return await work(remoteProbeRunner(lease.connection.client));
+      return await work(remoteProbeRunner(lease.connection.transport));
     } finally {
       lease.release();
     }

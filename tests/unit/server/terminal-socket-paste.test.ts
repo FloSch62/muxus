@@ -54,7 +54,7 @@ async function sshSession(answer?: (line: string) => string) {
       }
       return true;
     }),
-    setWindow: vi.fn(),
+    resize: vi.fn(),
     pause: vi.fn(),
     resume: vi.fn(),
   });

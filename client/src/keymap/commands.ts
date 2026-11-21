@@ -440,7 +440,7 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
     title: 'Send BREAK',
     category: 'terminal',
     defaultChords: [],
-    keywords: ['break', 'serial', 'telnet', 'ssh', 'console', 'rommon', 'sysrq', 'openboot'],
+    keywords: ['break', 'serial', 'telnet', 'console', 'rommon', 'sysrq', 'openboot'],
     run: () => {
       const state = tabs();
       return sendBreak(state.tabs.find((tab) => tab.id === state.activeId));

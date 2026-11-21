@@ -49,6 +49,12 @@ rec {
       libsecret
       pkg-config
 
+      # The SSH engine (engine/) is a Rust addon
+      cargo
+      rustc
+      rustfmt
+      clippy
+
       # pnpm serve-docs / build-docs run `uvx zensical`
       uv
 

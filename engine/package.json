@@ -1,0 +1,27 @@
+{
+  "name": "@muxus/ssh-engine",
+  "version": "0.15.1",
+  "private": true,
+  "description": "SSH engine for Muxus: transport, channels, SFTP and port forwards on russh, as a Node addon",
+  "license": "MIT",
+  "main": "index.cjs",
+  "types": "index.d.ts",
+  "files": [
+    "index.cjs",
+    "index.d.ts",
+    "*.node"
+  ],
+  "napi": {
+    "binaryName": "muxus-ssh-engine"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:debug": "node scripts/build.mjs --debug",
+    "typecheck": "exit 0",
+    "test": "cargo test",
+    "lint": "cargo fmt --check && cargo clippy -- -D warnings && cargo clippy --tests -- -D warnings"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.10.12"
+  }
+}

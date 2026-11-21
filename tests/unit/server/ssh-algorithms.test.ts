@@ -1,55 +1,74 @@
-import type { KeyObject } from 'node:crypto';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { connectionAlgorithms, supportedAlgorithms } from '../../../server/src/ssh/algorithms.js';
+import { describe, expect, it } from 'vitest';
+import {
+  connectionAlgorithms,
+  hostKeyAlgorithmsPreferring,
+  supportedAlgorithms,
+} from '../../../server/src/ssh/algorithms.js';
+import { algorithmSupport } from '../../../server/src/ssh/engine.js';
+
+// What the engine offers when the config says nothing.
+const DEFAULTS = algorithmSupport();
 
 describe('connectionAlgorithms', () => {
   it('returns no override when the config sets nothing', () => {
     expect(connectionAlgorithms({})).toEqual({ algorithms: undefined, notes: [] });
   });
 
-  it('maps a bare list to an exact ssh2 list, order preserved', () => {
+  it('maps a bare list to exactly that list, order preserved', () => {
     const { algorithms, notes } = connectionAlgorithms({ ciphers: 'aes128-cbc,aes256-ctr' });
     expect(algorithms).toEqual({ cipher: ['aes128-cbc', 'aes256-ctr'] });
     expect(notes).toEqual([]);
   });
 
-  it('maps +/^/- prefixes to append/prepend/remove on the defaults', () => {
+  it('applies +/^/- prefixes to the defaults', () => {
     const { algorithms } = connectionAlgorithms({
       kexAlgorithms: '+diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1',
-      hostKeyAlgorithms: '^ssh-ed25519',
-      macs: '-hmac-md5',
+      hostKeyAlgorithms: '^ssh-rsa',
+      macs: '-hmac-sha1',
     });
     expect(algorithms).toEqual({
-      kex: { append: ['diffie-hellman-group14-sha1', 'diffie-hellman-group-exchange-sha1'] },
-      serverHostKey: { prepend: ['ssh-ed25519'] },
-      hmac: { remove: ['hmac-md5'] },
+      kex: [...DEFAULTS.kex.defaults, 'diffie-hellman-group14-sha1', 'diffie-hellman-group-exchange-sha1'],
+      // `^` moves an algorithm that is already offered to the head, as in OpenSSH.
+      hostKey: ['ssh-rsa', ...DEFAULTS.hostKey.defaults.filter((name) => name !== 'ssh-rsa')],
+      mac: DEFAULTS.mac.defaults.filter((name) => name !== 'hmac-sha1'),
     });
   });
 
   it('expands wildcard patterns against the supported table', () => {
-    const { algorithms } = connectionAlgorithms({ ciphers: '-*cbc' });
+    const { algorithms } = connectionAlgorithms({ ciphers: '+*cbc' });
     expect(algorithms).toEqual({
-      cipher: { remove: ['aes256-cbc', 'aes192-cbc', 'aes128-cbc', '3des-cbc'] },
+      cipher: [...DEFAULTS.cipher.defaults, 'aes256-cbc', 'aes192-cbc', 'aes128-cbc', '3des-cbc'],
+    });
+    expect(connectionAlgorithms({ ciphers: '-*ctr' }).algorithms).toEqual({
+      cipher: DEFAULTS.cipher.defaults.filter((name) => !name.endsWith('-ctr')),
     });
   });
 
-  it('drops entries ssh2 does not implement and reports them', () => {
+  it('drops entries the engine does not implement and reports them', () => {
     const { algorithms, notes } = connectionAlgorithms({
       kexAlgorithms: '+sntrup761x25519-sha512@openssh.com,diffie-hellman-group14-sha1',
     });
-    expect(algorithms).toEqual({ kex: { append: ['diffie-hellman-group14-sha1'] } });
+    expect(algorithms).toEqual({ kex: [...DEFAULTS.kex.defaults, 'diffie-hellman-group14-sha1'] });
     expect(notes).toHaveLength(1);
     expect(notes[0]).toContain('KexAlgorithms');
     expect(notes[0]).toContain('sntrup761x25519-sha512@openssh.com');
   });
 
   it('omits the category when nothing supported remains to append', () => {
-    const { algorithms, notes } = connectionAlgorithms({ kexAlgorithms: '+mlkem768x25519-sha256' });
+    const { algorithms, notes } = connectionAlgorithms({
+      kexAlgorithms: '+sntrup761x25519-sha512@openssh.com',
+    });
     expect(algorithms).toBeUndefined();
     expect(notes).toHaveLength(1);
   });
 
-  it('silently ignores removals of algorithms ssh2 never offers', () => {
+  it('omits the category when a list changes nothing about the defaults', () => {
+    expect(connectionAlgorithms({ kexAlgorithms: '+curve25519-sha256' })).toEqual({ algorithms: undefined, notes: [] });
+    // Nothing ending in cbc is offered unless a host asks for it.
+    expect(connectionAlgorithms({ ciphers: '-*cbc' })).toEqual({ algorithms: undefined, notes: [] });
+  });
+
+  it('silently ignores removals of algorithms the engine never offers', () => {
     const { algorithms, notes } = connectionAlgorithms({ macs: '-umac-64@openssh.com' });
     expect(algorithms).toBeUndefined();
     expect(notes).toEqual([]);
@@ -59,11 +78,15 @@ describe('connectionAlgorithms', () => {
     expect(() => connectionAlgorithms({ ciphers: 'chacha8-poly1305' })).toThrow(/Ciphers/);
   });
 
-  it('maps Compression yes/no to a compress preference and leaves unset alone', () => {
+  it('rejects a removal that leaves nothing to offer', () => {
+    expect(() => connectionAlgorithms({ macs: '-*' })).toThrow(/MACs/);
+  });
+
+  it('maps Compression yes/no to a compression preference and leaves unset alone', () => {
     expect(connectionAlgorithms({ compression: true }).algorithms).toEqual({
-      compress: ['zlib@openssh.com', 'zlib', 'none'],
+      compression: ['zlib@openssh.com', 'zlib', 'none'],
     });
-    expect(connectionAlgorithms({ compression: false }).algorithms).toEqual({ compress: ['none'] });
+    expect(connectionAlgorithms({ compression: false }).algorithms).toEqual({ compression: ['none'] });
     expect(connectionAlgorithms({}).algorithms).toBeUndefined();
   });
 
@@ -71,49 +94,42 @@ describe('connectionAlgorithms', () => {
     const { algorithms, notes } = connectionAlgorithms({
       ciphers: 'aes128-cbc',
       kexAlgorithms: '+diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1',
-      hostKeyAlgorithms: '+ssh-rsa',
+      hostKeyAlgorithms: '+ssh-dss',
     });
     expect(algorithms).toEqual({
       cipher: ['aes128-cbc'],
-      kex: { append: ['diffie-hellman-group14-sha1', 'diffie-hellman-group-exchange-sha1'] },
-      serverHostKey: { append: ['ssh-rsa'] },
+      kex: [...DEFAULTS.kex.defaults, 'diffie-hellman-group14-sha1', 'diffie-hellman-group-exchange-sha1'],
+      hostKey: [...DEFAULTS.hostKey.defaults, 'ssh-dss'],
     });
     expect(notes).toEqual([]);
   });
 });
 
-describe('ssh-dss availability', () => {
-  afterEach(() => {
-    vi.doUnmock('node:crypto');
-    vi.resetModules();
+describe('the engine\'s algorithm tables', () => {
+  it('keeps what old network gear needs within reach', () => {
+    const supported = supportedAlgorithms();
+    expect(supported.KexAlgorithms).toEqual(
+      expect.arrayContaining(['diffie-hellman-group1-sha1', 'diffie-hellman-group14-sha1', 'ecdh-sha2-nistp256']),
+    );
+    expect(supported.Ciphers).toEqual(expect.arrayContaining(['aes128-cbc', '3des-cbc', 'aes256-ctr']));
+    expect(supported.MACs).toEqual(expect.arrayContaining(['hmac-sha1', 'hmac-sha2-256']));
+    expect(supported.HostKeyAlgorithms).toEqual(expect.arrayContaining(['ssh-rsa', 'ssh-dss', 'ssh-ed25519']));
   });
 
-  it('keeps ssh-dss where the crypto backend verifies DSA', () => {
+  it('offers ssh-dss only to a host that asks for it', () => {
+    expect(DEFAULTS.hostKey.defaults).not.toContain('ssh-dss');
     expect(supportedAlgorithms().HostKeyAlgorithms).toContain('ssh-dss');
   });
 
-  it('drops ssh-dss and reports it where DSA verification is unavailable', async () => {
-    // BoringSSL (Electron) parses DSA keys but throws on every DSA verify.
-    vi.resetModules();
-    vi.doMock('node:crypto', async (importOriginal) => {
-      const actual = await importOriginal<typeof import('node:crypto')>();
-      const verify = (...args: Parameters<typeof actual.verify>) => {
-        if ((args[2] as KeyObject).asymmetricKeyType === 'dsa') {
-          throw Object.assign(new Error('unsupported algorithm'), {
-            code: 'ERR_OSSL_EVP_UNSUPPORTED_ALGORITHM',
-          });
-        }
-        return actual.verify(...args);
-      };
-      return { ...actual, verify };
-    });
-    const algorithms = await import('../../../server/src/ssh/algorithms.js');
-
-    expect(algorithms.supportedAlgorithms().HostKeyAlgorithms).not.toContain('ssh-dss');
-    expect(algorithms.supportedAlgorithms().HostKeyAlgorithms).toContain('ssh-rsa');
-    const result = algorithms.connectionAlgorithms({ hostKeyAlgorithms: '+ssh-dss,ssh-rsa' });
-    expect(result.algorithms).toEqual({ serverHostKey: { append: ['ssh-rsa'] } });
-    expect(result.notes).toEqual(['HostKeyAlgorithms: skipping ssh-dss — not supported by the SSH engine.']);
-    expect(() => algorithms.connectionAlgorithms({ hostKeyAlgorithms: 'ssh-dss' })).toThrow(/HostKeyAlgorithms/);
+  it('asks a pinned host for its key type first and keeps the usual order after it', () => {
+    expect(hostKeyAlgorithmsPreferring('ecdsa-sha2-nistp256').split(',')).toEqual([
+      'ecdsa-sha2-nistp256',
+      ...DEFAULTS.hostKey.defaults.filter((name) => name !== 'ecdsa-sha2-nistp256'),
+    ]);
+    expect(hostKeyAlgorithmsPreferring('ssh-rsa').split(',').slice(0, 3)).toEqual([
+      'rsa-sha2-512',
+      'rsa-sha2-256',
+      'ssh-rsa',
+    ]);
   });
 });

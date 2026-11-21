@@ -1,5 +1,5 @@
-import type { Client } from 'ssh2';
 import type { SshTransportHealth } from './connection-manager.js';
+import type { SshTransport } from './engine.js';
 
 /**
  * How long a jump hop outlives its last chain. A chain replaced right away —
@@ -13,12 +13,10 @@ export interface JumpHopOptions {
   key: string;
   /** What the user wrote for this hop ("bastion"), for status and close reasons. */
   label: string;
-  client: Client;
+  transport: SshTransport;
   parent?: JumpHop;
   /** Force-reconnect group that dialed this hop. */
   replacementToken?: string;
-  /** Start observing the hop's own keepalive health; returns a stop function. */
-  watchHealth: (update: (state: SshTransportHealth) => void) => () => void;
 }
 
 /**
@@ -46,7 +44,7 @@ export class JumpHop {
   private readonly stopHealth: () => void;
   readonly key: string;
   readonly label: string;
-  readonly client: Client;
+  readonly transport: SshTransport;
   readonly parent: JumpHop | undefined;
   readonly replacementToken: string | undefined;
 
@@ -57,16 +55,17 @@ export class JumpHop {
   ) {
     this.key = options.key;
     this.label = options.label;
-    this.client = options.client;
+    this.transport = options.transport;
     this.parent = options.parent;
     this.replacementToken = options.replacementToken;
     this.parent?.retain();
-    this.stopHealth = options.watchHealth((state) => {
+    this.healthState = this.transport.healthState();
+    this.stopHealth = this.transport.onHealth((state) => {
       if (state === this.healthState) return;
       this.healthState = state;
       for (const listener of this.healthListeners) listener(state);
     });
-    this.client.on('close', () => this.markClosed());
+    this.transport.onClose(() => this.markClosed());
   }
 
   /** Live, not winding down, and answering keepalives. */
@@ -126,7 +125,7 @@ export class JumpHop {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = undefined;
     this.ending = true;
-    this.client.end();
+    this.transport.close();
     this.releaseParent();
   }
 

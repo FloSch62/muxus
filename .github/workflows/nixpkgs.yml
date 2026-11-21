@@ -34,6 +34,9 @@ jobs:
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           nix run nixpkgs#nix-update -- --flake --version "${TAG#v}" muxus
+          # Once more at the new version: hashes of parts that only exist from
+          # some release on are not seen while the old version is evaluated.
+          nix run nixpkgs#nix-update -- --flake --version skip muxus
           nix build .#muxus --no-link
 
       - name: Open a PR with the bump

@@ -1,6 +1,13 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import type { Client, ClientChannel, PseudoTtyOptions, SFTPWrapper, Stats, X11Options } from 'ssh2';
+import {
+  isSshError,
+  type PtyRequest,
+  type SessionOptions,
+  type SftpClient,
+  type SshChannel,
+  type SshTransport,
+} from './engine.js';
 import { SHELL_CWD_REPORT, ZSHENV, ZSHRC } from '../local/shell-integration.js';
 
 const SHELL_PROBE = `command printf '\\n__MUXUS_SHELL__=%s\\n__MUXUS_ZDOTDIR__=%s\\n__MUXUS_HOME__=%s\\n' "\${SHELL-}" "\${ZDOTDIR-}" "\${HOME-}"`;
@@ -104,37 +111,29 @@ export interface ShellProbeMemo {
  * first and only disconnect the SSH transport while the plain shell opens.
  */
 export async function openRemoteShell(
-  client: Client,
-  getSftp: () => Promise<SFTPWrapper>,
-  pty: PseudoTtyOptions,
-  env?: Record<string, string>,
-  x11?: X11Options,
+  transport: SshTransport,
+  getSftp: () => Promise<SftpClient>,
+  options: SessionOptions & { pty: PtyRequest },
   cwd?: string,
   probe?: ShellProbeMemo,
-): Promise<ClientChannel> {
+): Promise<SshChannel> {
   let transportLost = false;
   let transportError: Error | undefined;
-  const onTransportError = (error: Error) => {
+  const stopWatching = transport.onClose((reason) => {
     transportLost = true;
-    transportError = error;
-  };
-  const onTransportClose = () => {
-    transportLost = true;
-  };
-  client.once('error', onTransportError);
-  client.once('close', onTransportClose);
-  client.once('end', onTransportClose);
+    if (reason) transportError = new Error(reason);
+  });
   try {
     const integrated = probe?.execRefused
       ? undefined
-      : await tryOpenIntegratedRemoteShell(client, getSftp, pty, env, x11, cwd, probe);
+      : await tryOpenIntegratedRemoteShell(transport, getSftp, options, cwd, probe);
     if (integrated) return integrated;
-    if (transportLost) throw new RemoteShellTransportLostError(transportError);
+    if (transportLost || transport.closed) throw new RemoteShellTransportLostError(transportError);
 
     try {
-      return await openShell(client, pty, env, x11);
+      return await transport.shell(options);
     } catch (error) {
-      if (transportLost || isDisconnectedError(error)) {
+      if (transportLost || transport.closed || isSshError(error, 'DISCONNECTED')) {
         throw new RemoteShellTransportLostError(
           transportError ?? (error instanceof Error ? error : undefined),
         );
@@ -142,46 +141,29 @@ export async function openRemoteShell(
       throw error;
     }
   } finally {
-    client.off('error', onTransportError);
-    client.off('close', onTransportClose);
-    client.off('end', onTransportClose);
+    stopWatching();
   }
 }
 
 async function tryOpenIntegratedRemoteShell(
-  client: Client,
-  getSftp: () => Promise<SFTPWrapper>,
-  pty: PseudoTtyOptions,
-  env?: Record<string, string>,
-  x11?: X11Options,
+  transport: SshTransport,
+  getSftp: () => Promise<SftpClient>,
+  options: SessionOptions & { pty: PtyRequest },
   cwd?: string,
   probe?: ShellProbeMemo,
-): Promise<ClientChannel | undefined> {
+): Promise<SshChannel | undefined> {
   try {
     // Do not speculatively open SFTP against console appliances. Many expose
     // only a plain shell channel and some disconnect the whole transport when
     // an unsupported subsystem is requested.
-    const shell = await probeShell(client, probe);
+    const shell = await probeShell(transport, probe);
     if (!shell) return undefined;
     const sftp = await getSftp();
     const root = await installIntegration(sftp, shell);
-    return await openExec(client, remoteShellCommand(shell, root, cwd), {
-      pty,
-      ...(env ? { env } : {}),
-      ...(x11 ? { x11 } : {}),
-    });
+    return await transport.exec(remoteShellCommand(shell, root, cwd), options);
   } catch {
     return undefined;
   }
-}
-
-/** ssh2's error when the server answers an exec request with failure. */
-function isExecRejection(error: unknown): boolean {
-  return error instanceof Error && /Unable to exec/.test(error.message);
-}
-
-function isDisconnectedError(error: unknown): boolean {
-  return error instanceof Error && /^(?:Not connected|Connection lost)/.test(error.message);
 }
 
 export function parseShellProbe(output: string): SupportedShell | undefined {
@@ -216,14 +198,14 @@ export function remoteShellCommand(shell: SupportedShell, root: string, cwd?: st
 }
 
 async function probeShell(
-  client: Client,
+  transport: SshTransport,
   memo?: ShellProbeMemo,
 ): Promise<SupportedShell | undefined> {
-  let channel: ClientChannel;
+  let channel: SshChannel;
   try {
-    channel = await openExec(client, SHELL_PROBE);
+    channel = await transport.exec(SHELL_PROBE);
   } catch (error) {
-    if (memo && isExecRejection(error)) memo.execRefused = true;
+    if (memo && isSshError(error, 'EXEC_REFUSED')) memo.execRefused = true;
     return undefined;
   }
 
@@ -251,7 +233,7 @@ async function probeShell(
   });
 }
 
-async function installIntegration(sftp: SFTPWrapper, shell: SupportedShell): Promise<string> {
+async function installIntegration(sftp: SftpClient, shell: SupportedShell): Promise<string> {
   const root = path.posix.join(
     shell.home,
     '.cache',
@@ -260,7 +242,7 @@ async function installIntegration(sftp: SFTPWrapper, shell: SupportedShell): Pro
     INTEGRATION_VERSION,
   );
   const completePath = path.posix.join(root, INSTALL_COMPLETE);
-  const complete = await call<Stats>((cb) => sftp.stat(completePath, cb)).catch(() => undefined);
+  const complete = await sftp.stat(completePath).catch(() => undefined);
   if (complete?.isFile()) return root;
 
   const directories =
@@ -274,69 +256,31 @@ async function installIntegration(sftp: SFTPWrapper, shell: SupportedShell): Pro
         { path: path.posix.join(root, 'zsh', '.zshrc'), content: REMOTE_ZSHRC },
       ]
     : [{ path: path.posix.join(root, 'bash-init.bash'), content: BASH_INIT }];
-  await Promise.all(files.map((file) => writeFile(sftp, file.path, file.content)));
+  await Promise.all(files.map((file) => sftp.writeFile(file.path, file.content, 0o600)));
   // Written last so interrupted installs are repaired on the next attempt.
-  await writeFile(sftp, completePath, INTEGRATION_VERSION);
+  await sftp.writeFile(completePath, INTEGRATION_VERSION, 0o600);
   return root;
 }
 
-async function ensureDirectory(sftp: SFTPWrapper, directory: string): Promise<void> {
+async function ensureDirectory(sftp: SftpClient, directory: string): Promise<void> {
   const normalized = path.posix.normalize(directory);
   const parts = normalized.split('/').filter(Boolean);
   let current = '/';
   for (const part of parts) {
     current = path.posix.join(current, part);
-    const existing = await call<Stats>((cb) => sftp.stat(current, cb)).catch(() => undefined);
+    const existing = await sftp.stat(current).catch(() => undefined);
     if (existing?.isDirectory()) continue;
     if (existing) throw new Error(`${current} is not a directory`);
     try {
-      await call<void>((cb) => sftp.mkdir(current, { mode: 0o700 }, cb));
+      await sftp.mkdir(current, 0o700);
     } catch (error) {
       // Another terminal may have created it between stat and mkdir.
-      const attrs = await call<Stats>((cb) => sftp.stat(current, cb)).catch(() => undefined);
+      const attrs = await sftp.stat(current).catch(() => undefined);
       if (!attrs?.isDirectory()) throw error;
     }
   }
 }
 
-function writeFile(sftp: SFTPWrapper, remotePath: string, content: string): Promise<void> {
-  return call<void>((cb) => sftp.writeFile(remotePath, content, { mode: 0o600 }, cb));
-}
-
-function openExec(
-  client: Client,
-  command: string,
-  options?: { pty: PseudoTtyOptions; env?: Record<string, string>; x11?: X11Options },
-): Promise<ClientChannel> {
-  return new Promise((resolve, reject) => {
-    const callback = (error: Error | undefined, channel: ClientChannel) =>
-      error ? reject(error) : resolve(channel);
-    if (options) client.exec(command, options, callback);
-    else client.exec(command, callback);
-  });
-}
-
-function openShell(
-  client: Client,
-  pty: PseudoTtyOptions,
-  env?: Record<string, string>,
-  x11?: X11Options,
-): Promise<ClientChannel> {
-  return new Promise((resolve, reject) => {
-    client.shell(pty, { env, ...(x11 ? { x11 } : {}) }, (error, channel) =>
-      error ? reject(error) : resolve(channel),
-    );
-  });
-}
-
 function quoteShellWord(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
-}
-
-function call<T>(
-  operation: (callback: (error: Error | undefined | null, value: T) => void) => void,
-): Promise<T> {
-  return new Promise((resolve, reject) =>
-    operation((error, value) => (error ? reject(error) : resolve(value))),
-  );
 }

@@ -14,7 +14,7 @@ flowchart LR
     Server["server/: Fastify on 127.0.0.1<br/>ssh_config engine · leases · SFTP · forwards"]
   end
   Client <-->|"REST + /ws/terminal"| Server
-  Server -->|ssh2| Hosts["Your hosts"]
+  Server -->|"SSH engine (russh)"| Hosts["Your hosts"]
   Server -->|node-pty| Local["Local shells"]
   Server -->|serialport| Serial["COM / TTY"]
   Server -->|"RDP (TLS) · VNC"| Desktops["Remote desktops"]
@@ -29,7 +29,8 @@ flowchart LR
 | Package | What it is |
 | --- | --- |
 | `shared/` | REST DTOs and the zod-validated WebSocket protocol. On `/ws/terminal`, **binary frames are bytes** and **text frames are control messages**, with no framing layered on top of either. |
-| `server/` | Fastify bound to `127.0.0.1` with a per-run bearer token; a versioned SQLite database; the line-preserving `ssh_config` parser/resolver/editor; leased `ssh2` transports with ProxyJump and OpenSSH-order authentication; `known_hosts` verification; `node-pty` local shells; Telnet negotiation; cross-platform `serialport` access; SFTP routes and the forward manager; the session-history worker; the RDCleanPath proxy for RDP and the VNC relay. |
+| `engine/` | The SSH engine: a native addon in Rust on [russh](https://github.com/Eugeny/russh). It speaks the protocol and carries the bytes (transport and crypto off the Node event loop, channels, jump hops, agent forwarding, SFTP transfers, and the port forwards and X11 connections, which never pass through JavaScript). What to trust, which login method to try and what to ask the user stay in `server/`. |
+| `server/` | Fastify bound to `127.0.0.1` with a per-run bearer token; a versioned SQLite database; the line-preserving `ssh_config` parser/resolver/editor; leased SSH transports with ProxyJump and OpenSSH-order authentication; `known_hosts` verification; `node-pty` local shells; Telnet negotiation; cross-platform `serialport` access; SFTP routes and the forward manager; the session-history worker; the RDCleanPath proxy for RDP and the VNC relay. |
 | `client/` | React 19 + MUI. A **flat pane canvas over a split tree**, so layout changes never remount a session; one declarative keymap dispatched ahead of the terminal; xterm.js with the Image Addon and native kitty keyboard support; IronRDP (WebAssembly, vendored in `client/src/vendor/ironrdp`) and noVNC for remote desktops, loaded with the first desktop tab. |
 | `electron/` | The hardened desktop shell: embeds the server in-process, bridges bootstrap credentials through an isolated preload, blocks unexpected navigation. |
 | `tests/` | vitest units for the security and auth boundaries, persistence and migrations, connection leases, workspace and pane behaviour, SFTP overwrite policy, paste safety and the terminal protocols. |
@@ -142,9 +143,11 @@ entries.
 ## Build
 
 ```bash
-pnpm build      # shared → server → client → electron
-pnpm test       # vitest
-pnpm lint       # oxlint
+pnpm build         # shared → engine → server → client → electron
+pnpm test          # vitest
+pnpm test:engine   # the engine's own tests (cargo)
+pnpm test:openssh  # the connection stack against a real sshd in a container (needs Docker)
+pnpm lint          # oxlint
 pnpm typecheck
 ```
 

@@ -13,12 +13,18 @@
   makeDesktopItem,
   python3,
   nix-update-script,
+  rustPlatform,
+  cargo,
+  rustc,
 }:
 
 let
   pnpm = pnpm_12;
 in
-stdenv.mkDerivation (finalAttrs: {
+stdenv.mkDerivation (finalAttrs: let
+  # Releases after 0.15 dial SSH through a Rust addon built from engine/.
+  hasEngine = lib.versionAtLeast finalAttrs.version "0.16";
+in {
   pname = "muxus";
   version = "0.15.1";
 
@@ -32,10 +38,28 @@ stdenv.mkDerivation (finalAttrs: {
   # Everything the desktop app needs; leaves out the test workspace.
   pnpmWorkspaces = [
     "@muxus/shared"
+  ]
+  ++ lib.optional hasEngine "@muxus/ssh-engine"
+  ++ [
     "@muxus/server"
     "@muxus/client"
     "@muxus/electron"
   ];
+
+  cargoRoot = "engine";
+  cargoDeps =
+    if hasEngine then
+      rustPlatform.fetchCargoVendor {
+        inherit (finalAttrs)
+          pname
+          version
+          src
+          cargoRoot
+          ;
+        hash = "sha256-L891FdF2Vlo9iWIhaI8QAnuoVX3SLkgjmjMe87PJXyM=";
+      }
+    else
+      null;
 
   pnpmDeps = fetchPnpmDeps {
     inherit (finalAttrs)
@@ -57,6 +81,11 @@ stdenv.mkDerivation (finalAttrs: {
     makeWrapper
     copyDesktopItems
     python3
+  ]
+  ++ lib.optionals hasEngine [
+    cargo
+    rustc
+    rustPlatform.cargoSetupHook
   ];
 
   strictDeps = true;

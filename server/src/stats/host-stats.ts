@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { statfs } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type { Client, ClientChannel } from 'ssh2';
+import type { SshTransport } from '../ssh/engine.js';
 import type { HostStatsSample } from '@muxus/shared';
 
 /**
@@ -342,10 +342,8 @@ function collectOutput(
  * failures (a refused exec, MaxSessions reached) reject; a host that answers
  * without the markers is reported as unsupported.
  */
-export async function readRemoteHostStats(client: Client): Promise<HostStatsReading> {
-  const channel = await new Promise<ClientChannel>((resolve, reject) => {
-    client.exec('sh -s', (error, stream) => (error ? reject(error) : resolve(stream)));
-  });
+export async function readRemoteHostStats(transport: SshTransport): Promise<HostStatsReading> {
+  const channel = await transport.exec('sh -s');
   // Unread stderr would hold the channel window open on a chatty host.
   channel.stderr.resume();
   const output = collectOutput(channel, () => channel.destroy());

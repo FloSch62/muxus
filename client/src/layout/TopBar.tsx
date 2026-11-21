@@ -59,7 +59,7 @@ import { usePrefsStore, type ThemeMode } from '../state/prefs.js';
 import { useTabsStore } from '../state/tabs.js';
 import { useUiStore } from '../state/ui.js';
 import { useWorkspacesStore } from '../state/workspaces.js';
-import { canSendBreak, sendBreak, supportsBreak } from '../terminal/send-break.js';
+import { canSendBreak, isLineSession, sendBreak, supportsBreak } from '../terminal/send-break.js';
 import { canSendTextFile, requestSendTextFile } from '../terminal/send-text-file.js';
 import { terminalHandle } from '../terminal/terminal-registry.js';
 import { ChordHint, withChord } from '../components/ChordHint.js';
@@ -516,7 +516,7 @@ export const TopBar = memo(function TopBar() {
             </ListItemText>
           </MenuItem>
         ) : null}
-        {supportsBreak(activeTab) ? <Divider /> : null}
+        {isLineSession(activeTab) ? <Divider /> : null}
         {supportsBreak(activeTab) ? (
           <MenuItem
             disabled={!canSendBreak(activeTab)}
@@ -532,7 +532,7 @@ export const TopBar = memo(function TopBar() {
             <ChordHint chord={sendBreakChord} />
           </MenuItem>
         ) : null}
-        {supportsBreak(activeTab) ? (
+        {isLineSession(activeTab) ? (
           <MenuItem
             disabled={!canSendTextFile(activeTab)}
             onClick={() => {

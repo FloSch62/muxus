@@ -136,6 +136,7 @@ From a source checkout:
 | `pnpm start` | Serve the built client from the server |
 | `pnpm electron` | Run the desktop shell in dev |
 | `pnpm test` | vitest unit tests |
+| `pnpm test:openssh` | The connection stack against an OpenSSH server in a container (needs Docker) |
 | `pnpm lint` | oxlint |
 | `pnpm typecheck` | Types across the workspace |
 | `make deb`, `make win`, `make dmg`, `make all` | Desktop installers via electron-builder |

@@ -14,5 +14,5 @@
     }
   },
   // Ambient typings for untyped client dependencies the tests reach.
-  "include": ["unit", "vitest.config.ts", "../client/src/remote-desktop/novnc.d.ts"]
+  "include": ["unit", "openssh", "vitest.config.ts", "vitest.openssh.config.ts", "../client/src/remote-desktop/novnc.d.ts"]
 }

@@ -1,7 +1,5 @@
-import net from 'node:net';
 import { nanoid } from 'nanoid';
 import type { FastifyBaseLogger } from 'fastify';
-import type { ClientChannel } from 'ssh2';
 import type { ForwardInfo, ForwardRequest, SshProfile, TunnelRecord } from '@muxus/shared';
 import { DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS } from '@muxus/shared/ws-protocol';
 import type {
@@ -10,6 +8,7 @@ import type {
   SshConnectionManager,
   ManagedConnection,
 } from '../ssh/connection-manager.js';
+import { isSshError } from '../ssh/engine.js';
 import { HttpProblem } from '../util/errors.js';
 
 /** Waits before each redial of a dropped tunnel; the last one repeats. */
@@ -48,7 +47,8 @@ export interface ForwardManagerOptions {
 /**
  * SSH port forwards over live connections: local (-L), remote (-R) and
  * dynamic (-D, a minimal no-auth SOCKS5 CONNECT server). All listeners bind
- * 127.0.0.1 only — Muxus is a local single-user tool.
+ * 127.0.0.1 only — Muxus is a local single-user tool. The SSH engine carries
+ * the bytes; this class decides which rules run on which connection.
  *
  * Saved tunnels can also be dialed without anyone at the keyboard: at
  * startup when they start with Muxus, and after a drop when they reconnect.
@@ -61,8 +61,6 @@ export class ForwardManager {
   private readonly forwards = new Map<string, ActiveForward>();
   /** Config forwards currently being created, keyed by connection and rule. */
   private readonly pendingConfigStarts = new Map<string, Promise<ForwardInfo>>();
-  /** Connections whose remote 'tcp connection' dispatcher is installed. */
-  private readonly remoteDispatch = new Map<string, Map<number, ForwardInfo>>();
   private readonly reconnectDelaysMs: readonly number[];
 
   constructor(
@@ -219,7 +217,6 @@ export class ForwardManager {
   stopAll(): void {
     for (const active of this.forwards.values()) discard(active);
     this.forwards.clear();
-    this.remoteDispatch.clear();
   }
 
   /** Bring the rule up on the lease's connection; the lease is released on failure. */
@@ -382,113 +379,61 @@ export class ForwardManager {
     }
   }
 
-  /** -L: listen locally, open a direct-tcpip channel per client. */
+  /** -L: listen locally; each client gets a direct-tcpip channel to the target. */
   private async startLocal(conn: ManagedConnection, info: ForwardInfo): Promise<() => void> {
-    const server = net.createServer((socket) => {
-      // The client can reset before its channel is open.
-      socket.on('error', () => socket.destroy());
-      openChannel(conn, socket.localAddress ?? '127.0.0.1', socket.localPort ?? 0, info.targetHost!, info.targetPort!).then(
-        (stream) => carry(socket, stream),
-        (err: unknown) => {
-          this.log.warn({ err, forward: info.id }, 'forwardOut failed');
-          socket.destroy();
-        },
-      );
+    const listener = await conn.transport
+      .forwardLocal(BIND_HOST, info.bindPort, info.targetHost!, info.targetPort!)
+      .catch((err: unknown) => {
+        throw listenProblem(info.bindPort, err);
+      });
+    info.bindPort = listener.port;
+    // A client whose channel the server refuses is dropped; say why.
+    const stopErrors = conn.transport.onForwardError((port, message) => {
+      if (port === listener.port) this.log.warn({ err: message, forward: info.id }, 'forwardOut failed');
     });
-    info.bindPort = await listen(server, info.bindPort);
-    return () => server.close();
+    return () => {
+      stopErrors();
+      listener.close();
+    };
   }
 
-  /** -R: ask the server to listen; route incoming channels to the local target. */
+  /** -R: ask the server to listen; its connections are carried to the local target. */
   private async startRemote(conn: ManagedConnection, info: ForwardInfo): Promise<() => void> {
-    let dispatch = this.remoteDispatch.get(conn.id);
-    if (!dispatch) {
-      dispatch = new Map();
-      this.remoteDispatch.set(conn.id, dispatch);
-      const routes = dispatch;
-      conn.client.on('tcp connection', (details, accept, reject) => {
-        const route = routes.get(details.destPort);
-        if (!route) {
-          reject();
-          return;
-        }
-        const stream = accept();
-        const socket = net.connect(route.targetPort!, route.targetHost!);
-        socket.on('connect', () => {
-          socket.pipe(stream).pipe(socket);
-        });
-        socket.on('error', () => stream.close());
-        stream.on('error', () => socket.destroy());
-        stream.on('close', () => socket.destroy());
+    const forward = await conn.transport
+      .forwardRemote(BIND_HOST, info.bindPort, info.targetHost!, info.targetPort!)
+      .catch((err: unknown) => {
+        throw new HttpProblem(400, `remote bind failed: ${errorMessage(err)}`);
       });
-    }
-    await new Promise<void>((resolve, reject) => {
-      conn.client.forwardIn('127.0.0.1', info.bindPort, (err) => (err ? reject(new HttpProblem(400, `remote bind failed: ${err.message}`)) : resolve()));
-    });
-    dispatch.set(info.bindPort, info);
+    info.bindPort = forward.port;
     return () => {
-      dispatch.delete(info.bindPort);
-      if (dispatch.size === 0) this.remoteDispatch.delete(conn.id);
-      try {
-        conn.client.unforwardIn('127.0.0.1', info.bindPort, () => {});
-      } catch {
-        // The connection is already gone, and the server's listener with it.
-      }
+      // The connection may already be gone, and the server's listener with it.
+      forward.close().catch(() => undefined);
     };
   }
 
   /** -D: minimal SOCKS5 (no auth, CONNECT only) tunneling through the connection. */
   private async startDynamic(conn: ManagedConnection, info: ForwardInfo): Promise<() => void> {
-    const server = net.createServer((socket) => {
-      socks5Connect(socket, (host, port, done) => {
-        openChannel(conn, socket.remoteAddress ?? '127.0.0.1', socket.remotePort ?? 0, host, port).then(
-          (stream) => {
-            done(true);
-            carry(socket, stream);
-          },
-          () => done(false),
-        );
-      });
-    });
     // Port 0 lets the system pick a free one (a web host's private proxy);
     // the forward then reports the port it got.
-    info.bindPort = await listen(server, info.bindPort);
-    return () => server.close();
+    const listener = await conn.transport.forwardDynamic(BIND_HOST, info.bindPort).catch((err: unknown) => {
+      throw listenProblem(info.bindPort, err);
+    });
+    info.bindPort = listener.port;
+    return () => listener.close();
   }
+}
+
+const BIND_HOST = '127.0.0.1';
+
+/** A listener that could not be bound is the request's fault; a lost connection is not. */
+function listenProblem(port: number, err: unknown): unknown {
+  if (isSshError(err, 'DISCONNECTED')) return err;
+  return new HttpProblem(400, `could not listen on ${BIND_HOST}:${port}: ${errorMessage(err)}`);
 }
 
 function discard(active: ActiveForward): void {
   active.cancelReconnect?.();
   active.unbind();
-}
-
-/**
- * A direct-tcpip channel for a local client. ssh2 throws from forwardOut once
- * its transport stops being writable, which can be well before the connection
- * reports its close, and a client accepted earlier can still ask after that.
- * These requests run in socket callbacks, where the throw would be uncaught.
- */
-function openChannel(
-  conn: ManagedConnection,
-  srcAddr: string,
-  srcPort: number,
-  host: string,
-  port: number,
-): Promise<ClientChannel> {
-  return new Promise((resolve, reject) => {
-    conn.client.forwardOut(srcAddr, srcPort, host, port, (err, stream) => (err ? reject(err) : resolve(stream)));
-  });
-}
-
-/** Join a local client to its channel, unless the client left while it opened. */
-function carry(socket: net.Socket, stream: ClientChannel): void {
-  if (socket.destroyed) {
-    stream.destroy();
-    return;
-  }
-  socket.pipe(stream).pipe(socket);
-  stream.on('error', () => socket.destroy());
-  socket.on('error', () => stream.destroy());
 }
 
 /** The dial a saved tunnel's start makes (see the client's dialConnection). */
@@ -515,90 +460,4 @@ function configForwardKey(
     forward.targetHost,
     forward.targetPort,
   ]);
-}
-
-/** Listen on 127.0.0.1 and resolve with the bound port (the picked one for port 0). */
-function listen(server: net.Server, port: number): Promise<number> {
-  return new Promise((resolve, reject) => {
-    server.once('error', (err) => reject(new HttpProblem(400, `could not listen on 127.0.0.1:${port}: ${err.message}`)));
-    server.listen(port, '127.0.0.1', () => {
-      const address = server.address();
-      resolve(typeof address === 'object' && address ? address.port : port);
-    });
-  });
-}
-
-/**
- * Speak just enough SOCKS5 (RFC 1928) to serve browsers and CLIs: no-auth
- * negotiation, then a CONNECT request with IPv4/domain/IPv6 target.
- */
-function socks5Connect(socket: net.Socket, open: (host: string, port: number, done: (ok: boolean) => void) => void): void {
-  let buffer = Buffer.alloc(0);
-  let stage: 'greeting' | 'request' = 'greeting';
-
-  const fail = (code: number) => {
-    // +----+-----+-------+------+----------+----------+ reply with the error
-    // |VER | REP |  RSV  | ATYP | BND.ADDR | BND.PORT | code, then hang up.
-    socket.end(Buffer.from([5, code, 0, 1, 0, 0, 0, 0, 0, 0]));
-  };
-
-  const onData = (chunk: Buffer) => {
-    buffer = Buffer.concat([buffer, chunk]);
-    if (stage === 'greeting') {
-      if (buffer.length < 2) return;
-      const nMethods = buffer[1]!;
-      if (buffer.length < 2 + nMethods) return;
-      if (buffer[0] !== 5) {
-        socket.destroy();
-        return;
-      }
-      socket.write(Buffer.from([5, 0])); // no authentication
-      buffer = buffer.subarray(2 + nMethods);
-      stage = 'request';
-    }
-    if (stage === 'request') {
-      if (buffer.length < 4) return;
-      if (buffer[0] !== 5 || buffer[1] !== 1) {
-        fail(7); // command not supported
-        return;
-      }
-      const atyp = buffer[3]!;
-      let host: string;
-      let consumed: number;
-      if (atyp === 1) {
-        if (buffer.length < 10) return;
-        host = [...buffer.subarray(4, 8)].join('.');
-        consumed = 10;
-      } else if (atyp === 3) {
-        if (buffer.length < 5) return;
-        const len = buffer[4]!;
-        if (buffer.length < 5 + len + 2) return;
-        host = buffer.subarray(5, 5 + len).toString('utf8');
-        consumed = 5 + len + 2;
-      } else if (atyp === 4) {
-        if (buffer.length < 22) return;
-        const parts: string[] = [];
-        for (let i = 4; i < 20; i += 2) parts.push(buffer.readUInt16BE(i).toString(16));
-        host = parts.join(':');
-        consumed = 22;
-      } else {
-        fail(8); // address type not supported
-        return;
-      }
-      const port = buffer.readUInt16BE(consumed - 2);
-      socket.removeListener('data', onData);
-      const leftover = buffer.subarray(consumed);
-      open(host, port, (ok) => {
-        if (!ok || socket.destroyed) {
-          fail(5); // connection refused
-          return;
-        }
-        socket.write(Buffer.from([5, 0, 0, 1, 0, 0, 0, 0, 0, 0]));
-        if (leftover.length) socket.unshift(leftover);
-      });
-    }
-  };
-
-  socket.on('data', onData);
-  socket.on('error', () => socket.destroy());
 }

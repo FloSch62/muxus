@@ -32,12 +32,13 @@ describe('what a system OpenSSH host cannot do', () => {
     expect(managedHostUsesSystemOpenSsh(saved({}))).toBe(false);
   });
 
-  it('cannot send BREAK, but can still type a text file', () => {
+  it('has no BREAK, like every SSH session, but can still type a text file', () => {
     const system = tab({ systemOpenSsh: true });
     expect(canSendBreak(system)).toBe(false);
     expect(sessionAttached(system)).toBe(true);
     expect(canSendTextFile(system)).toBe(true);
-    expect(canSendBreak(tab({}))).toBe(true);
+    expect(canSendBreak(tab({}))).toBe(false);
+    expect(canSendTextFile(tab({}))).toBe(true);
   });
 
   it('greys a tunnel only when it dials the host through its config', () => {

@@ -3,7 +3,12 @@ import type { SessionProfile } from '@muxus/shared';
 import { keyCommand } from '../../../client/src/keymap/commands.js';
 import { useMultiExecStore } from '../../../client/src/state/multi-exec.js';
 import { useTabsStore } from '../../../client/src/state/tabs.js';
-import { canSendBreak, supportsBreak } from '../../../client/src/terminal/send-break.js';
+import {
+  canSendBreak,
+  isLineSession,
+  sessionAttached,
+  supportsBreak,
+} from '../../../client/src/terminal/send-break.js';
 import {
   registerTerminal,
   type TerminalHandle,
@@ -43,13 +48,16 @@ function openTab(profile: SessionProfile, status: 'connected' | 'connecting' = '
 }
 
 describe('Send BREAK availability', () => {
-  it('belongs to serial, Telnet and SSH tabs only', () => {
-    for (const profile of [SSH, TELNET, SERIAL]) {
+  it('belongs to serial and Telnet tabs only', () => {
+    for (const profile of [TELNET, SERIAL]) {
       const { id, unregister } = openTab(profile);
       expect(supportsBreak(tab(id)), profile.kind).toBe(true);
+      expect(canSendBreak(tab(id)), profile.kind).toBe(true);
       unregister();
     }
     const others: SessionProfile[] = [
+      // An SSH session has no line to hold a break on.
+      SSH,
       { kind: 'local' },
       { kind: 'rdp', host: 'desktop', port: 3389 },
       { kind: 'vnc', host: 'desktop', port: 5900 },
@@ -63,13 +71,35 @@ describe('Send BREAK availability', () => {
     expect(supportsBreak(undefined)).toBe(false);
   });
 
-  it('waits for the session, but not for a silent SSH console to print', () => {
-    const { id, unregister } = openTab(SSH, 'connecting');
+  it('waits for the session to be attached', () => {
+    const { id, unregister } = openTab(TELNET, 'connecting');
     expect(canSendBreak(tab(id))).toBe(false);
     useTabsStore.getState().update(id, { connId: 'connection-1' });
     expect(canSendBreak(tab(id))).toBe(true);
     useTabsStore.getState().update(id, { status: 'closed' });
     expect(canSendBreak(tab(id))).toBe(false);
+    unregister();
+  });
+});
+
+describe('sessions a text file can be typed into', () => {
+  it('are serial, Telnet and SSH tabs, a silent SSH console included', () => {
+    for (const profile of [SSH, TELNET, SERIAL]) {
+      const { id, unregister } = openTab(profile);
+      expect(isLineSession(tab(id)), profile.kind).toBe(true);
+      expect(sessionAttached(tab(id)), profile.kind).toBe(true);
+      unregister();
+    }
+    const local = openTab({ kind: 'local' });
+    expect(isLineSession(tab(local.id))).toBe(false);
+    expect(sessionAttached(tab(local.id))).toBe(false);
+    local.unregister();
+
+    // Attached counts before the console has printed anything.
+    const { id, unregister } = openTab(SSH, 'connecting');
+    expect(sessionAttached(tab(id))).toBe(false);
+    useTabsStore.getState().update(id, { connId: 'connection-1' });
+    expect(sessionAttached(tab(id))).toBe(true);
     unregister();
   });
 });

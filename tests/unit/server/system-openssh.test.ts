@@ -283,9 +283,7 @@ describe.skipIf(!runsSsh)('a session through the real ssh program', () => {
     const lease = registry.acquire(session.id);
     expect(lease).toBeDefined();
     const sftp = await lease!.connection.sftp();
-    const home = await new Promise<string>((resolve, reject) =>
-      sftp.realpath('.', (err, resolved) => (err ? reject(err) : resolve(resolved))),
-    );
+    const home = await sftp.realpath('.');
     expect(home).toBe('/home/test/.');
     // One SFTP session serves every file request.
     expect(await lease!.connection.sftp()).toBe(sftp);
@@ -294,9 +292,7 @@ describe.skipIf(!runsSsh)('a session through the real ssh program', () => {
     // A running transfer outlives the tab, as it does on a built-in connection.
     session.close();
     await new Promise((resolve) => setTimeout(resolve, 300));
-    const stillThere = await new Promise<string>((resolve, reject) =>
-      sftp.realpath('after-tab', (err, resolved) => (err ? reject(err) : resolve(resolved))),
-    );
+    const stillThere = await sftp.realpath('after-tab');
     expect(stillThere).toBe('/home/test/after-tab');
 
     lease!.release();

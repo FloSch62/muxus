@@ -10,20 +10,6 @@ import { SshConnectionManager, type ConnectIo } from '../../../server/src/ssh/co
 import { KnownHostsStore } from '../../../server/src/ssh/known-hosts.js';
 import { loadConfigDocument } from '../../../server/src/ssh/ssh-config.js';
 
-// The desktop build runs on Electron, whose BoringSSL has no modp1/modp2 named
-// DH groups. Drop them before ssh2 captures the crypto functions so these
-// handshakes negotiate the way the shipped app does.
-await vi.hoisted(async () => {
-  const { default: crypto } = await import('node:crypto');
-  const createGroup = crypto.createDiffieHellmanGroup;
-  vi.spyOn(crypto, 'createDiffieHellmanGroup').mockImplementation((name) => {
-    if (name === 'modp1' || name === 'modp2') {
-      throw Object.assign(new Error('Unknown DH group'), { code: 'ERR_CRYPTO_UNKNOWN_DH_GROUP' });
-    }
-    return createGroup(name);
-  });
-});
-
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'muxus-algo-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 

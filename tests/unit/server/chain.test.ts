@@ -1,7 +1,6 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { PassThrough } from 'node:stream';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { savedHostHop, type SshProfile } from '@muxus/shared';
 import {
@@ -10,7 +9,6 @@ import {
   findMetadataAlias,
   listedMetadataAlias,
   muxKey,
-  observeSshTransportHealth,
   SshConnectionManager,
   sshKeepaliveOptions,
   terminalPtyOptions,
@@ -517,13 +515,13 @@ describe('terminalPtyOptions', () => {
       cols: 132,
       rows: 42,
       term: 'xterm-256color',
-      modes: { VERASE: 0x7f },
+      erase: 0x7f,
     });
-    expect(terminalPtyOptions(132, 42, 'xterm-256color', 'del').modes).toEqual({ VERASE: 0x7f });
+    expect(terminalPtyOptions(132, 42, 'xterm-256color', 'del').erase).toBe(0x7f);
   });
 
   it('negotiates ^H as the erase character for a host whose Backspace sends it', () => {
-    expect(terminalPtyOptions(80, 24, 'xterm-256color', 'ctrl-h').modes).toEqual({ VERASE: 0x08 });
+    expect(terminalPtyOptions(80, 24, 'xterm-256color', 'ctrl-h').erase).toBe(0x08);
   });
 });
 
@@ -544,35 +542,6 @@ describe('passive SSH transport health', () => {
     });
   });
 
-  it('turns suspect after two silent keepalive intervals and recovers on input', () => {
-    vi.useFakeTimers();
-    const transport = new PassThrough();
-    const states: string[] = [];
-    const stop = observeSshTransportHealth(transport, 15_000, (state) => states.push(state));
-
-    vi.advanceTimersByTime(29_999);
-    expect(states).toEqual([]);
-    vi.advanceTimersByTime(1);
-    expect(states).toEqual(['suspect']);
-
-    transport.write('keepalive reply');
-    expect(states).toEqual(['suspect', 'healthy']);
-
-    stop();
-    vi.advanceTimersByTime(30_000);
-    expect(states).toEqual(['suspect', 'healthy']);
-    transport.destroy();
-  });
-
-  it('does not monitor when SSH keepalives are disabled', () => {
-    vi.useFakeTimers();
-    const transport = new PassThrough();
-    const listener = vi.fn();
-    observeSshTransportHealth(transport, 0, listener);
-    vi.advanceTimersByTime(120_000);
-    expect(listener).not.toHaveBeenCalled();
-    transport.destroy();
-  });
 });
 
 describe('muxKey', () => {

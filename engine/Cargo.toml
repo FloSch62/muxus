@@ -1,0 +1,41 @@
+[package]
+name = "muxus-ssh-engine"
+description = "SSH engine for Muxus: transport, channels, SFTP and port forwards on russh, as a Node addon"
+# Not released on its own: it ships inside the app and carries no version to bump.
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/FloSch62/muxus"
+rust-version = "1.89"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# The ciphers of legacy PEM key files; the versions russh itself builds on.
+aes = "0.9"
+bytes = "1"
+cbc = "0.2"
+des = "0.9"
+md5 = "0.8"
+napi = { version = "3", default-features = false, features = ["napi9", "tokio_rt"] }
+napi-derive = "3"
+russh = { version = "0.65.2", features = ["dsa", "des"] }
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "sync", "time"] }
+
+[target.'cfg(windows)'.dependencies]
+pageant = "0.2"
+
+[dev-dependencies]
+# Unit tests run without a Node host, so the N-API symbols are stubbed out for them.
+napi = { version = "3", default-features = false, features = ["napi9", "tokio_rt", "noop"] }
+tokio = { version = "1", features = ["test-util"] }
+
+[build-dependencies]
+napi-build = "2"
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = "symbols"

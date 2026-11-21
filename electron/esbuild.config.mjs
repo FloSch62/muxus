@@ -1,4 +1,31 @@
+import { cpSync, readdirSync } from 'node:fs';
+import path from 'node:path';
 import { build } from 'esbuild';
+
+const ENGINE = path.resolve('../engine');
+
+/**
+ * The SSH engine is a native addon. Its loader names one binary per platform;
+ * each stays a `require` of a file beside main.js, and the binaries that were
+ * built are copied there. On macOS that is one per CPU, for the universal app.
+ */
+const sshEngine = {
+  name: 'ssh-engine',
+  setup(bundle) {
+    bundle.onResolve({ filter: /\.node$/ }, (args) =>
+      path.resolve(args.resolveDir) === ENGINE
+        ? { path: `./${path.basename(args.path)}`, external: true }
+        : undefined,
+    );
+    bundle.onEnd(() => {
+      const binaries = readdirSync(ENGINE).filter((name) => name.endsWith('.node'));
+      if (binaries.length === 0) {
+        throw new Error('The SSH engine has not been built: run "pnpm --filter @muxus/ssh-engine build".');
+      }
+      for (const name of binaries) cpSync(path.join(ENGINE, name), path.join('dist', name));
+    });
+  },
+};
 
 // Bundle the main process plus the whole server into one ESM file so the
 // packaged app needs no node_modules for JS deps (pnpm symlinks never reach
@@ -13,8 +40,8 @@ await build({
   format: 'esm',
   target: 'node22',
   sourcemap: true,
-  // bufferutil/utf-8-validate are optional ws natives we don't install;
-  // cpu-features/sshcrypto are ssh2's optional native accelerators.
+  plugins: [sshEngine],
+  // bufferutil/utf-8-validate are optional ws natives we don't install.
   external: [
     'electron',
     '@napi-rs/keyring',
@@ -22,13 +49,11 @@ await build({
     'serialport',
     'bufferutil',
     'utf-8-validate',
-    'cpu-features',
-    './crypto/build/Release/sshcrypto.node',
   ],
   define: { 'process.env.NODE_ENV': '"production"' },
   banner: {
     // CJS deps converted into the ESM bundle still call require() and read
-    // __dirname/__filename at runtime (ssh2 does both). Import bindings use
+    // __dirname/__filename at runtime. Import bindings use
     // names no bundled module can collide with — esbuild injects the banner
     // verbatim and cannot rename around it. Our own ESM modules must not
     // declare bare __dirname/__filename at top level for the same reason.

@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import net from 'node:net';
+import { connectLocalSocket, connectLocalTcp, type LocalStream } from '../ssh/engine.js';
 import { xauthTargetForPeer, type XauthTarget } from './xauthority.js';
 
 /** X display numbers map to TCP ports 6000 + n. */
@@ -68,43 +68,38 @@ export function parseDisplay(
 }
 
 /** Which Xauthority records apply to a connection to `endpoint`. */
-export function xauthTarget(endpoint: X11Endpoint, socket: net.Socket): XauthTarget {
-  return endpoint.kind === 'unix' ? { local: true } : xauthTargetForPeer(socket.remoteAddress);
+export function xauthTarget(endpoint: X11Endpoint, stream: Pick<LocalStream, 'peerAddress'>): XauthTarget {
+  return endpoint.kind === 'unix' ? { local: true } : xauthTargetForPeer(stream.peerAddress ?? undefined);
 }
 
-/** Open a stream to the X server; Unix sockets fall back to the abstract namespace. */
-export async function connectX11Endpoint(endpoint: X11Endpoint, timeoutMs = 5000): Promise<net.Socket> {
+/**
+ * Open a stream to the X server; Unix sockets fall back to the abstract
+ * namespace. The SSH engine holds the stream, so a forwarded connection is
+ * joined to it without its bytes passing through JavaScript.
+ */
+export async function connectX11Endpoint(endpoint: X11Endpoint, timeoutMs = 5000): Promise<LocalStream> {
   if (endpoint.kind === 'tcp') {
-    // X11 is small requests waiting on replies; Nagle plus delayed ACKs would
-    // stall them. Xlib and ssh(1) disable it on X connections too.
-    return connect({ host: endpoint.host, port: endpoint.port, noDelay: true }, timeoutMs);
+    // X11 is small requests waiting on replies; the engine turns Nagle off,
+    // as Xlib and ssh(1) do on X connections.
+    return connect(connectLocalTcp(endpoint.host, endpoint.port, timeoutMs));
   }
   if (!endpoint.abstract || fs.existsSync(endpoint.path)) {
     try {
-      return await connect({ path: endpoint.path }, timeoutMs);
+      return await connect(connectLocalSocket(endpoint.path, timeoutMs));
     } catch (err) {
       if (!endpoint.abstract) throw err;
     }
   }
-  return connect({ path: endpoint.abstract }, timeoutMs);
+  return connect(connectLocalSocket(endpoint.abstract, timeoutMs));
 }
 
-function connect(options: net.NetConnectOpts, timeoutMs: number): Promise<net.Socket> {
-  return new Promise((resolve, reject) => {
-    const socket = net.connect(options);
-    const timer = setTimeout(() => {
-      socket.destroy();
-      reject(new Error('timed out connecting to the local X server'));
-    }, timeoutMs);
-    socket.once('connect', () => {
-      clearTimeout(timer);
-      socket.off('error', onError);
-      resolve(socket);
-    });
-    const onError = (err: Error) => {
-      clearTimeout(timer);
-      reject(err);
-    };
-    socket.once('error', onError);
-  });
+async function connect(attempt: Promise<LocalStream>): Promise<LocalStream> {
+  try {
+    return await attempt;
+  } catch (err) {
+    if ((err as { code?: unknown } | undefined)?.code === 'ETIMEDOUT') {
+      throw new Error('timed out connecting to the local X server');
+    }
+    throw err;
+  }
 }

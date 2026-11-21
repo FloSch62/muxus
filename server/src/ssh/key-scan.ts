@@ -1,12 +1,9 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-// ssh2 is CommonJS; `utils`/`createAgent` are attached dynamically and escape
-// Node's named-export detection, so they must come off the default export.
-import ssh2, { type BaseAgent, type ParsedKey } from 'ssh2';
-
-const { createAgent, utils } = ssh2;
 import type { SshAgentKey, SshKeyInfo, SshKeysResponse } from '@muxus/shared';
+import { isEncryptedKeyError, parseSshKey } from './certificates.js';
+import type { SshAgent } from './identity.js';
 import { fingerprintSha256 } from './known-hosts.js';
 import { ResponsiveAgent } from './responsive-agent.js';
 import { isSecurityKeyType, readOpenSshKeyFile } from './security-keys.js';
@@ -63,44 +60,35 @@ export interface AgentKeyProbe {
 /** Ask an agent for its identities; `available` is false when it does not answer. */
 export async function probeAgentKeys(
   sock: string | undefined,
-  agent?: BaseAgent<ParsedKey>,
+  agent?: SshAgent,
 ): Promise<AgentKeyProbe> {
   if (!sock) return { available: false, keys: [] };
-  return new Promise((resolve) => {
-    try {
-      const client =
-        agent ??
-        new ResponsiveAgent(createAgent(sock) as BaseAgent<ParsedKey>, {
-          // Discovery only supplies editor badges; it must never hold the form
-          // open waiting for an approval that may not be visible.
-          operationTimeoutMs: 2_000,
-          waitStatusMs: -1,
-        });
-      client.getIdentities((err, keys) => {
-        if (err || !keys) {
-          resolve({ available: false, keys: [] });
-          return;
-        }
-        // Real agents hand back ParsedKey objects; skip anything else.
-        const parsed = keys.filter((k): k is ParsedKey => !!k && typeof k === 'object' && 'getPublicSSH' in k);
-        resolve({
-          available: true,
-          keys: parsed.map((k) => ({
-            type: k.type,
-            comment: k.comment || undefined,
-            fingerprint: fingerprintSha256(k.getPublicSSH()),
-          })),
-        });
-      });
-    } catch {
-      resolve({ available: false, keys: [] });
-    }
-  });
+  const client =
+    agent ??
+    new ResponsiveAgent(sock, {
+      // Discovery only supplies editor badges; it must never hold the form
+      // open waiting for an approval that may not be visible.
+      operationTimeoutMs: 2_000,
+      waitStatusMs: -1,
+    });
+  try {
+    const identities = await client.identities();
+    return {
+      available: true,
+      keys: identities.map((identity) => ({
+        type: identity.type,
+        comment: identity.comment || undefined,
+        fingerprint: fingerprintSha256(identity.blob),
+      })),
+    };
+  } catch {
+    return { available: false, keys: [] };
+  }
 }
 
 export async function listAgentKeys(
   sock = agentSocket(),
-  agent?: BaseAgent<ParsedKey>,
+  agent?: SshAgent,
 ): Promise<SshAgentKey[]> {
   return (await probeAgentKeys(sock, agent)).keys;
 }
@@ -144,15 +132,15 @@ export async function listSshKeys(
     // A security key file holds only a key handle; its header names the key.
     const header = readOpenSshKeyFile(content);
     const securityKey = header && isSecurityKeyType(header.type) ? header : undefined;
-    const probe = securityKey ? undefined : utils.parseKey(content);
+    const probe = securityKey ? undefined : parseSshKey(content);
     const encrypted = securityKey ? securityKey.encrypted : probe instanceof Error;
-    if (probe instanceof Error && !/passphrase|encrypted/i.test(probe.message)) continue; // not actually a usable key
+    if (probe instanceof Error && !isEncryptedKeyError(probe)) continue; // not actually a usable key
     const parsed = probe instanceof Error ? undefined : probe;
 
-    let type = (parsed?.type ?? securityKey?.type) as string | undefined;
+    let type = (parsed?.keyType ?? securityKey?.type) as string | undefined;
     let comment = parsed?.comment || undefined;
     let fingerprint = parsed
-      ? fingerprintSha256(parsed.getPublicSSH())
+      ? fingerprintSha256(parsed.publicBlob())
       : securityKey
         ? fingerprintSha256(securityKey.publicBlob)
         : undefined;
