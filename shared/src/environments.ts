@@ -212,6 +212,11 @@ export interface ContainerlabLabels {
   kind: string;
   topologyFile?: string;
   owner?: string;
+  /**
+   * One of containerlab's own helper containers, such as the one that holds a
+   * node's network namespace: part of the lab, not a node of its topology.
+   */
+  internal?: boolean;
 }
 
 export interface ContainerInfo {
@@ -253,6 +258,8 @@ export interface ContainerlabLab {
   topologyFile?: string;
   owner?: string;
   nodes: ContainerlabNode[];
+  /** How many helper containers of containerlab's own the lab has; they are not listed. */
+  helpers?: number;
 }
 
 export interface ContainerlabEnvironment {

@@ -97,7 +97,8 @@ highlighting.
 
 **Containerlab.** Nodes of a network operating system open with SSH to their management
 address as `admin`, through the lab host when it is remote; Linux nodes open with a
-shell in their container. The
+shell in their container. Containerlab's own helper containers, such as the ones that hold
+a node's network namespace, are not listed: the lab's tooltip says how many it has. The
 :material-hub-outline: button draws the lab's topology from its `.clab.yml` and saved
 annotations with the [containerlab topology viewer](https://github.com/srl-labs/containerlab-app/tree/main/packages/clab-viewer);
 selecting a node offers to open it.

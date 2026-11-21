@@ -252,7 +252,10 @@ export function isRunning(state: string): boolean {
   return normalized === 'running' || normalized === 'up' || normalized.startsWith('up ');
 }
 
-/** Containers of a runtime that are not a lab's nodes; those are listed under their lab. */
+/**
+ * Containers of a runtime that belong to no lab. A lab's nodes are listed
+ * under the lab, and containerlab's own helper containers are not listed.
+ */
 export function plainContainers(containers: readonly ContainerInfo[]): ContainerInfo[] {
   return containers.filter((container) => !container.containerlab);
 }

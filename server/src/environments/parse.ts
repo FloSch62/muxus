@@ -102,15 +102,37 @@ function clabLabels(fields: {
   owner?: string;
   internal?: string;
 }): ContainerlabLabels | undefined {
-  // Containerlab's own helpers (sshx, gotty …) are not nodes of the topology.
-  if (!fields.lab || !fields.node || fields.internal === 'true') return undefined;
+  if (!fields.lab) return undefined;
+  // Containerlab's own helpers (a node's namespace holder, sshx, gotty …)
+  // belong to the lab without being nodes of its topology.
+  const internal = fields.internal === 'true';
+  if (!fields.node && !internal) return undefined;
   return {
     lab: fields.lab,
-    node: fields.node,
+    node: fields.node ?? '',
     kind: fields.kind ?? '',
     ...(fields.topo ? { topologyFile: fields.topo } : {}),
     ...(fields.owner ? { owner: fields.owner } : {}),
+    ...(internal ? { internal } : {}),
   };
+}
+
+/**
+ * A lab's helper containers are hidden behind the lab they serve. One whose
+ * lab has no node here has nothing to hide behind, and stays an ordinary
+ * container so that it does not vanish from every list.
+ */
+function withoutStrayHelpers(containers: ContainerInfo[]): ContainerInfo[] {
+  const labs = new Set(
+    containers.flatMap((container) =>
+      container.containerlab && !container.containerlab.internal ? [container.containerlab.lab] : [],
+    ),
+  );
+  return containers.map((container) => {
+    if (!container.containerlab?.internal || labs.has(container.containerlab.lab)) return container;
+    const { containerlab: _helper, ...plain } = container;
+    return plain;
+  });
 }
 
 /** `docker ps -a --format` lines in the {@link DOCKER_PS_FORMAT} shape. */
@@ -141,7 +163,7 @@ export function parseDockerPs(output: string): ContainerInfo[] {
       ...(containerlab ? { containerlab } : {}),
     });
   }
-  return containers.sort((a, b) => a.name.localeCompare(b.name));
+  return withoutStrayHelpers(containers).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** `podman ps -a --format json`: one JSON array. */
@@ -192,7 +214,7 @@ export function parsePodmanPs(output: string): ContainerInfo[] {
       ...(containerlab ? { containerlab } : {}),
     });
   }
-  return containers.sort((a, b) => a.name.localeCompare(b.name));
+  return withoutStrayHelpers(containers).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** The `inspect --format` template whose lines {@link parseInspectAddresses} reads. */
@@ -224,9 +246,14 @@ export function containerlabLabs(
   addresses: ReadonlyMap<string, { ipv4?: string; ipv6?: string }> = new Map(),
 ): ContainerlabLab[] {
   const labs = new Map<string, ContainerlabLab>();
+  const helpers = new Map<string, number>();
   for (const container of containers) {
     const labels = container.containerlab;
     if (!labels) continue;
+    if (labels.internal) {
+      helpers.set(labels.lab, (helpers.get(labels.lab) ?? 0) + 1);
+      continue;
+    }
     let lab = labs.get(labels.lab);
     if (!lab) {
       lab = {
@@ -249,7 +276,11 @@ export function containerlabLabs(
       ...(address?.ipv6 ? { ipv6: address.ipv6 } : {}),
     });
   }
-  for (const lab of labs.values()) lab.nodes.sort((a, b) => a.name.localeCompare(b.name));
+  for (const lab of labs.values()) {
+    lab.nodes.sort((a, b) => a.name.localeCompare(b.name));
+    const count = helpers.get(lab.name);
+    if (count) lab.helpers = count;
+  }
   return [...labs.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 

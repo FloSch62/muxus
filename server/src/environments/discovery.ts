@@ -120,7 +120,8 @@ export async function discoverEnvironments(run: ProbeRunner): Promise<DiscoveryR
   } else add(problem('podman', results.get('podman-ps')));
 
   // Containerlab labels its nodes; their management addresses need one inspect.
-  const labRuntimes = runtimes.filter(({ containers }) => containers.some((c) => c.containerlab));
+  const isNode = (container: ContainerInfo) => !!container.containerlab && !container.containerlab.internal;
+  const labRuntimes = runtimes.filter(({ containers }) => containers.some(isNode));
   if (labRuntimes.length > 0) {
     const inspected = await run(
       labRuntimes.map(({ runtime, containers }) => ({
@@ -131,7 +132,7 @@ export async function discoverEnvironments(run: ProbeRunner): Promise<DiscoveryR
           '--format',
           INSPECT_NETWORKS_FORMAT,
           ...containers
-            .filter((c) => c.containerlab)
+            .filter(isNode)
             .slice(0, MAX_INSPECTED)
             .map((c) => c.name),
         ],

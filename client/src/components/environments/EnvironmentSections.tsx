@@ -440,6 +440,8 @@ function LabLines({
           ['Topology', lab.topologyFile],
           ['Owner', lab.owner],
           ['Nodes', `${running.length} of ${lab.nodes.length} running`],
+          // Containerlab's own containers, such as the ones holding a node's network namespace.
+          ['Helpers', lab.helpers ? `${lab.helpers} container${lab.helpers === 1 ? '' : 's'}, not listed` : undefined],
         ]}
         emphasis
         actions={
