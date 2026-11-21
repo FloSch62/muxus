@@ -1,6 +1,5 @@
 import type {
   FolderAuthSettings,
-  FolderSettingsRecord,
   FolderSettingsResponse,
   HostBlockOptions,
   HostUpsertRequest,
@@ -15,6 +14,9 @@ import type {
   SessionLogFileStatus,
   SessionLoggingPolicy,
   SessionLoggingPolicyInput,
+  SharedSessionSource,
+  SharedSessionSourceInput,
+  SharedSessionSourcesResponse,
   SshConfigResponse,
   SshHostEntry,
   TunnelRecord,
@@ -23,6 +25,7 @@ import type {
 import {
   MAX_PASTE_CHAR_DELAY_MS,
   MAX_PASTE_LINE_DELAY_MS,
+  MAX_SHARED_SESSIONS_REFRESH_MINUTES,
   TERMINAL_BACKSPACE_KEYS,
   TERMINAL_ENTER_KEYS,
   validPasteDelay,
@@ -30,6 +33,7 @@ import {
 import { MAX_JUMP_FALLBACKS, MAX_JUMP_HOPS } from '@muxus/shared/ws-protocol';
 import { apiFetch } from './api/http.js';
 import { fetchHostPreview } from './api/ssh-config.js';
+import { savedProfileFolderDefaults } from './folder-defaults.js';
 import { isAntiIdle } from './anti-idle.js';
 import {
   DEFAULT_COMMAND_GROUP,
@@ -177,6 +181,12 @@ export interface PortableFolderSettings {
   loginSequence?: LoginSequence;
 }
 
+/**
+ * A shared sessions link. Its hosts are in the backup like any other, and
+ * restoring the link with them lets it go on keeping those hosts up to date.
+ */
+export type PortableSharedSessionSource = Required<SharedSessionSourceInput>;
+
 export type PortableHistorySettings = Omit<
   SessionHistorySettings,
   'storageLocation'
@@ -194,6 +204,8 @@ export interface MuxusBackupData extends PortableConnections {
   logFileSettings?: PortableLogFileSettings;
   /** Absent in backups from before folder credentials existed. */
   folderSettings?: PortableFolderSettings[];
+  /** Absent in backups from before shared sessions existed. */
+  sharedSessionSources?: PortableSharedSessionSource[];
 }
 
 export interface MuxusBackupV1 {
@@ -265,7 +277,7 @@ export async function createBackupDocument(
     ...snapshot.sshConfig.hosts.map((host) => `ssh:${host.alias}`),
     ...snapshot.savedHosts.map((profile) => `profile:${profile.id}`),
   ];
-  const [policies, storage, logFiles, folderSettings] = await Promise.all([
+  const [policies, storage, logFiles, folderSettings, sharedSessions] = await Promise.all([
     Promise.all(
       profileKeys.map((profileKey) =>
         apiFetch<SessionLoggingPolicy>(
@@ -276,6 +288,7 @@ export async function createBackupDocument(
     apiFetch<SessionHistoryStorageStatus>('/api/session-history/storage'),
     apiFetch<SessionLogFileStatus>('/api/session-history/log-files'),
     apiFetch<FolderSettingsResponse>('/api/folders/settings'),
+    apiFetch<SharedSessionSourcesResponse>('/api/shared-sessions'),
   ]);
   const { storageLocation: _storageLocation, ...historySettings } =
     storage.settings;
@@ -304,6 +317,7 @@ export async function createBackupDocument(
           auth,
           ...(loginSequence ? { loginSequence } : {}),
         })),
+      sharedSessionSources: sharedSessions.sources.map(portableSharedSessionSource),
     },
   };
 }
@@ -401,37 +415,6 @@ function portableSavedSshOptions(
   };
 }
 
-/** Materialize the non-secret defaults the saved profile inherits in Muxus. */
-function savedProfileFolderDefaults(
-  group: string | undefined,
-  folders: readonly FolderSettingsRecord[],
-): { auth: FolderAuthSettings; hasPassword: boolean } {
-  const parts = (group ?? '')
-    .replace(/\\/g, '/')
-    .split('/')
-    .map((part) => part.trim())
-    .filter(Boolean);
-  if (parts.length === 0) return { auth: {}, hasPassword: false };
-
-  const byPath = new Map(
-    folders.map((folder) => [folder.path.toLocaleLowerCase(), folder]),
-  );
-  const auth: FolderAuthSettings = {};
-  let hasPassword = false;
-  for (let length = parts.length; length > 0; length--) {
-    const folder = byPath.get(parts.slice(0, length).join('/').toLocaleLowerCase());
-    if (!folder) continue;
-    hasPassword ||= folder.hasPassword;
-    if (auth.user === undefined) auth.user = folder.auth.user;
-    if (auth.port === undefined) auth.port = folder.auth.port;
-    if (auth.identityFiles === undefined) auth.identityFiles = folder.auth.identityFiles;
-    if (auth.identitiesOnly === undefined) auth.identitiesOnly = folder.auth.identitiesOnly;
-    if (auth.identityAgent === undefined) auth.identityAgent = folder.auth.identityAgent;
-    if (auth.forwardAgent === undefined) auth.forwardAgent = folder.auth.forwardAgent;
-  }
-  return { auth, hasPassword };
-}
-
 function openSshExportAlias(name: string, target: string): string {
   return (
     name
@@ -511,6 +494,7 @@ export async function restoreTransferDocument(
   if (selection.connections) {
     await restoreConnections(document.data, conflicts, result);
     await restoreFolderSettings(document.data.folderSettings ?? [], conflicts, result);
+    await restoreSharedSessionSources(document.data.sharedSessionSources ?? [], conflicts, result);
   }
 
   if (selection.tunnels) {
@@ -828,6 +812,48 @@ async function restoreFolderSettings(
         ...(isLoginSequence(entry.loginSequence) ? { loginSequence: entry.loginSequence } : {}),
       }),
     });
+    if (exists) result.updated++;
+    else result.added++;
+  }
+}
+
+function portableSharedSessionSource(source: PortableSharedSessionSource): PortableSharedSessionSource {
+  const { id, name, url, folder, refreshMinutes } = source;
+  return { id, name, url, folder, refreshMinutes };
+}
+
+/**
+ * Links come back under their own ID: the hosts restored next to them carry
+ * IDs derived from it, so the next check takes those hosts over instead of
+ * adding a second copy of each.
+ */
+async function restoreSharedSessionSources(
+  entries: readonly PortableSharedSessionSource[],
+  conflicts: TransferConflictStrategy,
+  result: RestoreResult,
+): Promise<void> {
+  if (entries.length === 0) return;
+  const current = await apiFetch<SharedSessionSourcesResponse>('/api/shared-sessions');
+  const existingIds = new Set(current.sources.map((source) => source.id));
+  for (const entry of entries) {
+    const exists = existingIds.has(entry.id);
+    if (exists && conflicts === 'keep') {
+      result.skipped++;
+      continue;
+    }
+    try {
+      await apiFetch<SharedSessionSource>('/api/shared-sessions', {
+        method: 'PUT',
+        headers: JSON_HEADERS,
+        body: JSON.stringify(portableSharedSessionSource(entry)),
+      });
+    } catch {
+      // A link this computer cannot use, such as a file path of another
+      // system, is left out rather than failing the restore. Its hosts are
+      // restored like any others.
+      result.skipped++;
+      continue;
+    }
     if (exists) result.updated++;
     else result.added++;
   }
@@ -1248,6 +1274,18 @@ function validateBackupData(data: Record<string, unknown>): void {
             nonEmptyString(entry.path) &&
             entry.path.length <= 300 &&
             isRecord(entry.auth),
+        ))) ||
+    (data.sharedSessionSources !== undefined &&
+      (!boundedArray(data.sharedSessionSources, 200) ||
+        !data.sharedSessionSources.every(
+          (entry) =>
+            isRecord(entry) &&
+            nonEmptyString(entry.id) &&
+            nonEmptyString(entry.name) &&
+            nonEmptyString(entry.url) &&
+            nonEmptyString(entry.folder) &&
+            Number.isInteger(entry.refreshMinutes) &&
+            finiteRange(entry.refreshMinutes, 0, MAX_SHARED_SESSIONS_REFRESH_MINUTES),
         )))
   ) {
     throw new Error('The backup data is incomplete or too large.');

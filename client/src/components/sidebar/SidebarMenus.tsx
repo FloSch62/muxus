@@ -1,4 +1,5 @@
 import type { ComponentProps } from 'react';
+import { AddMenu } from './AddMenu.js';
 import { FolderContextMenu } from './FolderContextMenu.js';
 import { HostContextMenu } from './HostContextMenu.js';
 import { HostSessionsMenu } from './HostSessionsMenu.js';
@@ -21,6 +22,7 @@ export function SidebarMenus({
   panel,
   shell,
   launch,
+  add,
 }: {
   host: ComponentProps<typeof HostContextMenu>;
   sessions: ComponentProps<typeof HostSessionsMenu>;
@@ -28,6 +30,7 @@ export function SidebarMenus({
   panel: ComponentProps<typeof PanelContextMenu>;
   shell: ComponentProps<typeof LocalShellContextMenu>;
   launch: ComponentProps<typeof LaunchGroupDialog>;
+  add: ComponentProps<typeof AddMenu>;
 }) {
   return (
     <>
@@ -37,6 +40,7 @@ export function SidebarMenus({
       <PanelContextMenu {...panel} />
       <LocalShellContextMenu {...shell} />
       <LaunchGroupDialog {...launch} />
+      <AddMenu {...add} />
     </>
   );
 }

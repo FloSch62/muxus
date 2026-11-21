@@ -993,6 +993,22 @@ ipcMain.handle('muxus:select-certificate-file', async (event, kind: unknown): Pr
   return result.canceled ? undefined : result.filePaths[0];
 });
 
+ipcMain.handle('muxus:select-shared-sessions-file', async (event): Promise<string | undefined> => {
+  const win = senderWindow(event);
+  if (!win) return undefined;
+  const result = await dialog.showOpenDialog(win, {
+    title: 'Choose session list',
+    defaultPath: app.getPath('home'),
+    buttonLabel: 'Use list',
+    properties: ['openFile', 'showHiddenFiles'],
+    filters: [
+      { name: 'Session lists', extensions: ['json', 'mxtsessions', 'muxus'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  });
+  return result.canceled ? undefined : result.filePaths[0];
+});
+
 ipcMain.handle(
   'muxus:select-log-file',
   async (event, defaultPath: unknown): Promise<string | undefined> => {

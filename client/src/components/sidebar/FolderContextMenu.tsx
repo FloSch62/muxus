@@ -8,11 +8,16 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import EditNoteOutlinedIcon from '@mui/icons-material/EditNoteOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import IosShareOutlinedIcon from '@mui/icons-material/IosShareOutlined';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import LinkOffOutlinedIcon from '@mui/icons-material/LinkOffOutlined';
+import LinkOutlinedIcon from '@mui/icons-material/LinkOutlined';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import SortByAlphaIcon from '@mui/icons-material/SortByAlpha';
 import UnfoldLessIcon from '@mui/icons-material/UnfoldLess';
+import type { SharedSessionSource } from '@muxus/shared';
 import type { FolderNode } from '../../host-tree.js';
 import {
   loadFolderDialog,
@@ -42,6 +47,12 @@ export function FolderContextMenu({
   canMoveUp,
   canMoveDown,
   canSortHosts,
+  link,
+  linkBusy,
+  onRefreshLink,
+  onEditLink,
+  onStopFollowing,
+  onShare,
 }: {
   menu: FolderMenuState | null;
   onClose: () => void;
@@ -60,9 +71,22 @@ export function FolderContextMenu({
   canMoveUp: boolean;
   canMoveDown: boolean;
   canSortHosts: boolean;
+  /** The shared sessions link this folder follows, when it follows one. */
+  link?: SharedSessionSource;
+  /** That link is being read right now. */
+  linkBusy: boolean;
+  onRefreshLink: (link: SharedSessionSource) => void;
+  onEditLink: (link: SharedSessionSource) => void;
+  onStopFollowing: (link: SharedSessionSource) => void;
+  /** Write the folder as a session list for others to follow. */
+  onShare: (node: FolderNode) => void;
 }) {
   const run = (action: (node: FolderNode) => void) => () => {
     if (menu) action(menu.node);
+    onClose();
+  };
+  const runLink = (action: (link: SharedSessionSource) => void) => () => {
+    if (link) action(link);
     onClose();
   };
   const count = menu?.node.descendantHostCount ?? 0;
@@ -99,6 +123,23 @@ export function FolderContextMenu({
         Run script on hosts in this folder…
       </MenuItem>
       <Divider />
+      {link
+        ? [
+            <MenuItem key="refresh-link" disabled={linkBusy} onClick={runLink(onRefreshLink)}>
+              <ListItemIcon>
+                <RefreshIcon fontSize="small" />
+              </ListItemIcon>
+              {linkBusy ? 'Reading shared sessions…' : 'Refresh shared sessions'}
+            </MenuItem>,
+            <MenuItem key="edit-link" onClick={runLink(onEditLink)}>
+              <ListItemIcon>
+                <LinkOutlinedIcon fontSize="small" />
+              </ListItemIcon>
+              Edit shared sessions link…
+            </MenuItem>,
+            <Divider key="link-divider" />,
+          ]
+        : null}
       <MenuItem disabled={!canMoveUp} onClick={run((node) => onMove(node, -1))}>
         <ListItemIcon>
           <KeyboardArrowUpIcon fontSize="small" />
@@ -154,13 +195,29 @@ export function FolderContextMenu({
         </ListItemIcon>
         Collapse all inside
       </MenuItem>
-      <Divider />
-      <MenuItem onClick={run(onDelete)} sx={{ color: 'error.main' }}>
-        <ListItemIcon sx={{ color: 'error.main' }}>
-          <DeleteOutlineIcon fontSize="small" />
+      <MenuItem disabled={count === 0} onClick={run(onShare)}>
+        <ListItemIcon>
+          <IosShareOutlinedIcon fontSize="small" />
         </ListItemIcon>
-        Delete folder
+        Share folder…
       </MenuItem>
+      <Divider />
+      {link ? (
+        // Deleting the folder would only last until the next check brings it back.
+        <MenuItem onClick={runLink(onStopFollowing)} sx={{ color: 'error.main' }}>
+          <ListItemIcon sx={{ color: 'error.main' }}>
+            <LinkOffOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          Stop following…
+        </MenuItem>
+      ) : (
+        <MenuItem onClick={run(onDelete)} sx={{ color: 'error.main' }}>
+          <ListItemIcon sx={{ color: 'error.main' }}>
+            <DeleteOutlineIcon fontSize="small" />
+          </ListItemIcon>
+          Delete folder
+        </MenuItem>
+      )}
     </Menu>
   );
 }

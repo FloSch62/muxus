@@ -1,6 +1,7 @@
 import type { SvgIconComponent } from '@mui/icons-material';
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
 import FolderOpenOutlinedIcon from '@mui/icons-material/FolderOpenOutlined';
+import FolderSharedOutlinedIcon from '@mui/icons-material/FolderSharedOutlined';
 import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import HubOutlinedIcon from '@mui/icons-material/HubOutlined';
@@ -36,8 +37,19 @@ export function isFolderIconId(id: string): boolean {
   return BY_ID.has(id);
 }
 
-/** The plain folder falls back to open/closed art; named icons do not. */
-export function folderIcon(id: string | undefined, expanded: boolean): SvgIconComponent {
-  if (!id || id === 'folder') return expanded ? FolderOpenOutlinedIcon : FolderOutlinedIcon;
+/**
+ * The plain folder falls back to open/closed art; named icons do not. A
+ * folder that follows a shared sessions link has its own art, unless the
+ * user picked an icon for it.
+ */
+export function folderIcon(
+  id: string | undefined,
+  expanded: boolean,
+  shared = false,
+): SvgIconComponent {
+  if (!id || id === 'folder') {
+    if (shared) return FolderSharedOutlinedIcon;
+    return expanded ? FolderOpenOutlinedIcon : FolderOutlinedIcon;
+  }
   return BY_ID.get(id) ?? FolderOutlinedIcon;
 }

@@ -25,6 +25,7 @@ import BoltIcon from '@mui/icons-material/Bolt';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import TerminalIcon from '@mui/icons-material/Terminal';
+import { useQueryClient } from '@tanstack/react-query';
 import type { SavedHostProfile, SshHostEntry } from '@muxus/shared';
 import {
   hasFolderSettingsUnder,
@@ -37,12 +38,22 @@ import { useApplyFolderMoves } from '../api/host-groups.js';
 import { useReorderManagedHosts } from '../api/host-order.js';
 import { useDeleteHostProfile } from '../api/profiles.js';
 import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
+import {
+  confirmRemoveSharedSessions,
+  refreshSharedSessionsNow,
+  sharedSessionsOrigin,
+  sharedSessionsState,
+  useDeleteSharedSessionSource,
+  useSharedSessionSources,
+  useSharedSessionsBeingRead,
+} from '../api/shared-sessions.js';
 import { useDeleteHost } from '../api/ssh-config.js';
 import { confirmDeleteHost, confirmDeleteHosts } from '../host-actions.js';
 import { tabHostKey } from '../host-sessions.js';
 import { hostOrderAfterDrop } from '../host-organization.js';
 import {
   buildHostTree,
+  folderKey,
   folderParentPath,
   folderSiblings,
   isSamePath,
@@ -121,6 +132,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
   const setHostEditor = useUiStore((s) => s.setHostEditor);
   const setHostBulkEditor = useUiStore((s) => s.setHostBulkEditor);
   const setFolderDialog = useUiStore((s) => s.setFolderDialog);
+  const setSharedSessionsDialog = useUiStore((s) => s.setSharedSessionsDialog);
   const sidebarPosition = usePrefsStore((state) => state.sidebarPosition);
   const openGesture = usePrefsStore((state) => state.sidebarOpenGesture);
   const localShellProfiles = usePrefsStore((state) => state.localShellProfiles);
@@ -134,6 +146,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
   const [sessionsMenu, setSessionsMenu] = useState<HostSessionsMenuState | null>(null);
   const [folderMenu, setFolderMenu] = useState<FolderMenuState | null>(null);
   const [panelMenu, setPanelMenu] = useState<{ top: number; left: number } | null>(null);
+  const [addMenu, setAddMenu] = useState<HTMLElement | null>(null);
   const [shellMenu, setShellMenu] = useState<LocalShellMenuState | null>(null);
   const [launchTarget, setLaunchTarget] = useState<LaunchTarget | null>(null);
   /** Folders collapsed during a search; discarded when the query changes. */
@@ -349,6 +362,32 @@ export const SessionSidebar = memo(function SessionSidebar() {
     onDropFolder: dropFolder,
     hostOrderAfterDrop,
   });
+
+  // Shared sessions links, by the folder each keeps its hosts in.
+  const queryClient = useQueryClient();
+  const { data: sharedSessions } = useSharedSessionSources();
+  const sharedSessionsBeingRead = useSharedSessionsBeingRead();
+  const stopFollowing = useDeleteSharedSessionSource();
+  const linkByFolderKey = useMemo(
+    () => new Map((sharedSessions?.sources ?? []).map((source) => [folderKey(source.folder), source])),
+    [sharedSessions],
+  );
+  const folderLink = useCallback(
+    (key: string) => {
+      const source = linkByFolderKey.get(key);
+      if (!source) return undefined;
+      const state = sharedSessionsState(source);
+      const failing = state.tone === 'error';
+      return {
+        tooltip: failing
+          ? `Shared sessions not updated: ${state.text}`
+          : `Shared sessions from ${sharedSessionsOrigin(source.url)} · ${state.text}`,
+        failing,
+      };
+    },
+    [linkByFolderKey],
+  );
+  const folderMenuLink = folderMenu ? linkByFolderKey.get(folderMenu.node.key) : undefined;
 
   const folderColor = useCallback(
     (key: string) => folders.folderStyle(key)?.color,
@@ -621,13 +660,15 @@ export const SessionSidebar = memo(function SessionSidebar() {
         {/* Adding a folder lives in the panel's right-click menu: one action in
             the header leaves the search box the width it needs to say that it
             also connects. */}
-        <Tooltip title="Add host">
+        <Tooltip title={addMenu ? '' : 'Add a host, folder or shared sessions link'}>
           <IconButton
             size="small"
-            aria-label="Add host"
+            aria-label="Add"
+            aria-haspopup="menu"
+            aria-expanded={addMenu ? true : undefined}
             onMouseEnter={() => void loadHostEditorDialog()}
             onFocus={() => void loadHostEditorDialog()}
-            onClick={() => setHostEditor({ mode: 'new' })}
+            onClick={(event) => setAddMenu(event.currentTarget)}
           >
             <AddIcon fontSize="small" />
           </IconButton>
@@ -751,6 +792,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
           setExpanded={setExpanded}
           folderColor={folderColor}
           folderIconId={folderIconId}
+          folderLink={folderLink}
           liveByKey={liveByKey}
           reorderEnabled={reorderEnabled}
           openGesture={openGesture}
@@ -819,7 +861,7 @@ export const SessionSidebar = memo(function SessionSidebar() {
         />
       ) : null}
 
-      {(menu || sessionsMenu || folderMenu || panelMenu || shellMenu || launchTarget) && (
+      {(menu || sessionsMenu || folderMenu || panelMenu || shellMenu || launchTarget || addMenu) && (
         <Suspense fallback={null}>
           <SidebarMenus
             host={{
@@ -876,12 +918,22 @@ export const SessionSidebar = memo(function SessionSidebar() {
                 folderMenuPosition.index >= 0 &&
                 folderMenuPosition.index < folderMenuPosition.total - 1,
               canSortHosts: reorderEnabled && folderMenuHostCount > 1,
+              link: folderMenuLink,
+              linkBusy: !!folderMenuLink && sharedSessionsBeingRead.has(folderMenuLink.id),
+              onRefreshLink: (link) => void refreshSharedSessionsNow(queryClient, link),
+              onEditLink: (link) => setSharedSessionsDialog({ mode: 'link', sourceId: link.id }),
+              onShare: (node) => setSharedSessionsDialog({ mode: 'share', path: node.path }),
+              onStopFollowing: (link) =>
+                void confirmRemoveSharedSessions(link).then((answer) => {
+                  if (answer) stopFollowing.mutate({ id: link.id, keepHosts: answer.keepHosts });
+                }),
             }}
             panel={{
               position: panelMenu,
               onClose: () => setPanelMenu(null),
               onNewHost: () => setHostEditor({ mode: 'new' }),
               onNewFolder: () => setFolderDialog({ mode: 'new' }),
+              onFollowLink: () => setSharedSessionsDialog({ mode: 'link' }),
               onSortHosts: () => alphabetizeHosts(allHosts),
               folderEditsEnabled,
               canSortHosts: reorderEnabled && allHosts.length > 1,
@@ -891,6 +943,14 @@ export const SessionSidebar = memo(function SessionSidebar() {
             }}
             shell={{ menu: shellMenu, onClose: () => setShellMenu(null) }}
             launch={{ target: launchTarget, onClose: () => setLaunchTarget(null) }}
+            add={{
+              anchor: addMenu,
+              onClose: () => setAddMenu(null),
+              onNewHost: () => setHostEditor({ mode: 'new' }),
+              onNewFolder: () => setFolderDialog({ mode: 'new' }),
+              onFollowLink: () => setSharedSessionsDialog({ mode: 'link' }),
+              folderEditsEnabled,
+            }}
           />
         </Suspense>
       )}

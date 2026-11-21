@@ -5,6 +5,7 @@ import ListItemButton from '@mui/material/ListItemButton';
 import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutlineOutlined';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import PlayArrowOutlinedIcon from '@mui/icons-material/PlayArrowOutlined';
 import type { VisibleNode } from '../../host-tree.js';
@@ -21,6 +22,10 @@ export interface FolderRowProps {
   count: number;
   color?: string;
   iconId?: string;
+  /** The folder follows a shared sessions link. */
+  shared?: boolean;
+  /** That link could not be read at its last check. */
+  sharedFailing?: boolean;
   focused: boolean;
   /** Highlight the whole row as the "drop inside this folder" target. */
   dropInto?: boolean;
@@ -58,6 +63,8 @@ export const FolderRow = memo(function FolderRow({
   count,
   color,
   iconId,
+  shared,
+  sharedFailing,
   focused,
   dropInto,
   dropEdge,
@@ -72,7 +79,7 @@ export const FolderRow = memo(function FolderRow({
   dragging,
 }: FolderRowProps) {
   const expanded = row.expanded ?? false;
-  const Icon = folderIcon(iconId, expanded);
+  const Icon = folderIcon(iconId, expanded, shared);
 
   /** Actions inside the row must not start a drag or toggle the folder. */
   const swallow = (event: MouseEvent) => event.stopPropagation();
@@ -154,6 +161,9 @@ export const FolderRow = memo(function FolderRow({
       >
         {label}
       </Box>
+      {sharedFailing ? (
+        <ErrorOutlineIcon aria-hidden sx={{ fontSize: 14, flexShrink: 0, color: 'error.main' }} />
+      ) : null}
       <Tooltip title={count > 0 ? `Launch all ${count} hosts…` : ''} disableInteractive>
         {/* Flex, not inline: an inline wrapper takes the body line height and
             makes folder rows taller than host rows. */}

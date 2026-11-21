@@ -654,6 +654,99 @@ export interface SavedHostProfilesResponse {
   profiles: SavedHostProfile[];
 }
 
+/** Largest shared session list Muxus reads from a link. */
+export const MAX_SHARED_SESSIONS_BYTES = 10 * 1024 * 1024;
+/** Most hosts one shared session list can keep in Muxus. */
+export const MAX_SHARED_SESSION_HOSTS = 10_000;
+/** Longest pause between two checks of a shared session list: a week. */
+export const MAX_SHARED_SESSIONS_REFRESH_MINUTES = 7 * 24 * 60;
+
+/**
+ * A session list published at a link (a MobaXterm shared sessions file or a
+ * Muxus backup) whose hosts Muxus keeps up to date inside one folder.
+ */
+export interface SharedSessionSource {
+  id: string;
+  name: string;
+  /**
+   * Where the list is read from: an http:// or https:// address, or the path
+   * of a file on this computer or a share. Often personal, so never logged.
+   */
+  url: string;
+  /** Sidebar folder its hosts live in; the list's own folders nest inside. */
+  folder: string;
+  /** Minutes between checks; 0 checks only when asked to. */
+  refreshMinutes: number;
+  /** Hosts currently kept from this list. */
+  hostCount: number;
+  /** Last time the link was read, successfully or not. */
+  lastCheckedAt?: string;
+  /** Last time the hosts matched the list. */
+  lastSyncedAt?: string;
+  /** Why the last check failed; absent after a successful one. */
+  lastError?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A link that failed is tried again this soon, whatever its interval. */
+const SHARED_SESSIONS_RETRY_MINUTES = 15;
+
+/** Whether a link is due for its next automatic check. */
+export function sharedSessionSourceDue(
+  source: Pick<SharedSessionSource, 'refreshMinutes' | 'lastCheckedAt' | 'lastError'>,
+  now: number,
+): boolean {
+  if (source.refreshMinutes <= 0) return false;
+  const last = source.lastCheckedAt ? Date.parse(source.lastCheckedAt) : Number.NaN;
+  if (Number.isNaN(last)) return true;
+  const minutes = source.lastError
+    ? Math.min(source.refreshMinutes, SHARED_SESSIONS_RETRY_MINUTES)
+    : source.refreshMinutes;
+  return now - last >= minutes * 60_000;
+}
+
+export interface SharedSessionSourceInput {
+  /** Omit to add a link; supply to change one (or to restore it from a backup). */
+  id?: string;
+  name: string;
+  url: string;
+  folder: string;
+  refreshMinutes: number;
+}
+
+export interface SharedSessionSourcesResponse {
+  sources: SharedSessionSource[];
+}
+
+/** What reading a link gave: its text, or nothing because it is not due yet. */
+export type SharedSessionFetchResponse =
+  | { status: 'fetched'; content: string }
+  | { status: 'not-due' };
+
+/** One host of a shared session list, ready to be stored. */
+export interface SharedSessionHost {
+  /** Stable for the same entry of the same link, so a host keeps its identity across checks. */
+  id: string;
+  name: string;
+  profile: SavedHostSessionProfile;
+  /** Full sidebar folder path. */
+  group?: string;
+  color?: string;
+  icon?: string;
+}
+
+/** The hosts a link lists now, or why its content could not be used. */
+export type SharedSessionApplyRequest = { hosts: SharedSessionHost[] } | { error: string };
+
+export interface SharedSessionApplyResult {
+  source: SharedSessionSource;
+  added: number;
+  updated: number;
+  removed: number;
+  unchanged: number;
+}
+
 /** One sidebar host, addressable across both host sources. */
 export type ManagedHostRef =
   | { kind: 'ssh'; alias: string }
@@ -978,6 +1071,8 @@ export interface OpenSshProfileMetadata {
   loginSequence?: LoginSequence;
   /** Password-manager entry this host logs in with; absent uses saved or folder passwords. */
   passwordRef?: ExternalPasswordRef;
+  /** Shared session list that keeps this host up to date; absent for hosts of your own. */
+  sharedSourceId?: string;
   /**
    * Jump routes tried in order when the ProxyJump in ssh_config fails, each a
    * whole chain. Kept by Muxus: ssh_config has no way to say it.

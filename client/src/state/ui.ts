@@ -40,6 +40,15 @@ export type FolderDialogState =
    */
   | { mode: 'move-hosts'; hostKeys: string[]; hostName?: string; currentPath: string };
 
+/**
+ * Shared sessions, asked for from the sidebar or the quick launcher: follow
+ * a link (or change the one with `sourceId`), or publish a folder as a list.
+ */
+export type SharedSessionsDialogState =
+  | false
+  | { mode: 'link'; sourceId?: string }
+  | { mode: 'share'; path: string };
+
 export const SETTINGS_SECTIONS = [
   'appearance',
   'terminal',
@@ -107,6 +116,8 @@ interface UiState {
   hostBulkEditor: string[] | false;
   /** Sidebar folder being created, renamed, styled, or picked as a target. */
   folderDialog: FolderDialogState;
+  /** Following a shared sessions link, or sharing a folder as one. */
+  sharedSessionsDialog: SharedSessionsDialogState;
   /** Global forwarding side panel (saved tunnels + live forwards). */
   forwardingOpen: boolean;
   /**
@@ -139,6 +150,7 @@ interface UiState {
   setHostOrganizer: (value: SshHostEntry | SavedHostProfile | false) => void;
   setHostBulkEditor: (hostKeys: string[] | false) => void;
   setFolderDialog: (value: FolderDialogState) => void;
+  setSharedSessionsDialog: (value: SharedSessionsDialogState) => void;
   setForwardingOpen: (open: boolean) => void;
   setEnvironmentsPanel: (value: { hostKey?: string } | false) => void;
   setSidebarView: (view: SidebarView) => void;
@@ -165,6 +177,7 @@ export const useUiStore = create<UiState>()((set) => ({
   hostOrganizer: false,
   hostBulkEditor: false,
   folderDialog: false,
+  sharedSessionsDialog: false,
   forwardingOpen: false,
   environmentsPanel: false,
   sidebarView: 'hosts',
@@ -203,6 +216,7 @@ export const useUiStore = create<UiState>()((set) => ({
   setHostOrganizer: (hostOrganizer) => set({ hostOrganizer }),
   setHostBulkEditor: (hostBulkEditor) => set({ hostBulkEditor }),
   setFolderDialog: (folderDialog) => set({ folderDialog }),
+  setSharedSessionsDialog: (sharedSessionsDialog) => set({ sharedSessionsDialog }),
   setForwardingOpen: (forwardingOpen) => set({ forwardingOpen }),
   setEnvironmentsPanel: (environmentsPanel) => set({ environmentsPanel }),
   setSidebarView: (sidebarView) => set({ sidebarView }),

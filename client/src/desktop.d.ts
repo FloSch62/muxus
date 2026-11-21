@@ -78,6 +78,8 @@ declare global {
       selectPasswordManagerFile?(target: 'database' | 'key-file' | 'store'): Promise<string | undefined>;
       /** Pick a PEM file for gNMI TLS: a CA bundle, a client certificate or its key. */
       selectCertificateFile?(kind: 'ca' | 'cert' | 'key'): Promise<string | undefined>;
+      /** Pick the file of a shared session list, such as one on a shared drive. */
+      selectSharedSessionsFile?(): Promise<string | undefined>;
       /** Choose where a session log file goes, starting from `defaultPath`. */
       selectLogFile(defaultPath: string): Promise<string | undefined>;
       /** Reveal a file in the operating system's file manager. */

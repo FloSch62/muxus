@@ -17,8 +17,8 @@ New hosts start in OpenSSH config. To start them in Muxus app data instead, chan
 Presentation attributes such as folder, colour, highlighting, logging policy and the
 [login sequence](#login-sequence) always live in the Muxus database.
 
-Open the editor with **+** at the top of the sidebar, from a host's **Edit host** menu
-entry, or by pressing ++enter++ on a search that matched nothing.
+Open the editor with **+** at the top of the sidebar → **New host…**, from a host's
+**Edit host** menu entry, or by pressing ++enter++ on a search that matched nothing.
 
 <figure markdown="span">
   ![The host editor, General section](../assets/screenshots/host-editor.png#only-light){ .shadow }

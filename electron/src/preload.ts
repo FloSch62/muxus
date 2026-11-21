@@ -211,6 +211,10 @@ contextBridge.exposeInMainWorld('muxusDesktop', {
   selectCertificateFile(kind: 'ca' | 'cert' | 'key'): Promise<string | undefined> {
     return ipcRenderer.invoke('muxus:select-certificate-file', kind);
   },
+  /** Pick the file of a shared session list, such as one on a shared drive. */
+  selectSharedSessionsFile(): Promise<string | undefined> {
+    return ipcRenderer.invoke('muxus:select-shared-sessions-file');
+  },
   /** Open a native save dialog for a session log file; resolves to the chosen path. */
   selectLogFile(defaultPath: string): Promise<string | undefined> {
     return ipcRenderer.invoke('muxus:select-log-file', defaultPath);

@@ -20,22 +20,25 @@ import type { AppContext } from '../app.js';
 import { sendError } from '../util/errors.js';
 import { metadataPatchSchema } from './metadata-schema.js';
 
+/** The connection settings of a Muxus-owned host, whatever stores it. */
+export const savedHostSessionProfileSchema = z.discriminatedUnion('kind', [
+  // The keepalive fallback is an application preference each connect sends
+  // for itself — never a stored connection field that could outvote it.
+  // A link's host key fingerprint belongs to that one connect as well.
+  sshProfileSchema.omit({ keepaliveIntervalSeconds: true, hostKeyFingerprint: true }),
+  telnetProfileSchema,
+  serialProfileSchema,
+  rdpProfileSchema,
+  vncProfileSchema,
+  gnmiProfileSchema,
+  netconfProfileSchema,
+  webProfileSchema,
+]);
+
 const savedProfileSchema = z.object({
   id: z.string().min(1).max(200).optional(),
   name: z.string().trim().min(1).max(200),
-  profile: z.discriminatedUnion('kind', [
-    // The keepalive fallback is an application preference each connect sends
-    // for itself — never a stored connection field that could outvote it.
-    // A link's host key fingerprint belongs to that one connect as well.
-    sshProfileSchema.omit({ keepaliveIntervalSeconds: true, hostKeyFingerprint: true }),
-    telnetProfileSchema,
-    serialProfileSchema,
-    rdpProfileSchema,
-    vncProfileSchema,
-    gnmiProfileSchema,
-    netconfProfileSchema,
-    webProfileSchema,
-  ]),
+  profile: savedHostSessionProfileSchema,
 });
 
 /** Muxus-owned SSH, Telnet, serial, RDP, VNC, gNMI, NETCONF and web hosts. */

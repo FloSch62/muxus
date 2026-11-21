@@ -83,6 +83,115 @@ files, scripts, terminal appearance and global SecureCRT settings are never impo
   <figcaption>Folders, colours, icons and live-session dots are stored by Muxus. SSH connection details can come from OpenSSH or a Muxus-only profile.</figcaption>
 </figure>
 
+## Shared sessions
+
+A team can keep one list of hosts that everyone follows. Each person gets the hosts of the
+list in a folder of their own, and as the list changes Muxus adds, changes and removes them.
+The list is a file at a web address or on a shared drive: one that a colleague
+[shared from Muxus](#share-a-folder), or a MobaXterm shared sessions file from a lab portal.
+
+### Follow a list
+
+Choose **+** at the top of the sidebar → **Shared sessions link…**, enter where the list is,
+and choose a name, the folder and how often Muxus checks: every 15 minutes, every hour,
+every day, or only when you refresh it. Muxus also checks when it starts. The same dialog
+opens from the [quick launcher](quick-launcher.md) as **Follow shared sessions**.
+
+The list can be at:
+
+- a **web address** starting with `https://` or `http://`, such as a self-service portal's
+  personal link or the raw file link of a Git repository, or
+- a **file** on this computer or a shared drive: a full path, `~/…`, a `\\server\share\…` path
+  or a `file://` address. The desktop app has a button to browse for it.
+
+The folder shows that it follows a list with its own icon, and its tooltip says where the
+list comes from and when it was last read. A red mark appears on it when the last check
+failed. Its right-click menu has **Refresh shared sessions**, **Edit shared sessions link…**
+and **Stop following…**, which deletes the hosts or keeps them as hosts of your own.
+**Settings → Backup & data → Shared sessions** lists every link with the same actions.
+
+The hosts are saved in Muxus app data, never in `ssh_config`, and you can edit them like
+any other. What you set on a host yourself stays: when its entry in the list changes, only
+the settings the list changed are brought over. Your own user name or key on a host survives
+the list changing its port, and is replaced only when the list changes the user name or key
+itself. The same goes for the host's name, folder, colour and icon. Passwords you save are
+kept by user, host and port, so they survive every update. A host that leaves the list is
+deleted, and one you delete yourself comes back at the next check. A check that fails, or a
+list that is empty or cannot be read, changes nothing.
+
+A user name or key that should apply to every host of a list is best set once, in the
+folder's [shared credentials](#shared-credentials).
+
+Renaming or moving the folder, or choosing another folder for the link, takes its hosts
+along. A host you move out of that folder stays where you put it unless the list moves it.
+Links are part of a [backup](settings.md#backup-data), so restoring one on another computer
+goes on following the same lists.
+
+!!! info "What a list cannot set"
+
+    A list changes without you looking at it again, so Muxus ignores the settings in it that
+    run something on your computer or weaken a check: `ProxyCommand`, agent forwarding,
+    remote port forwards and host key checking. Passwords are never part of a list; Muxus
+    asks when you connect. A web address with a user name or password in it is refused.
+
+### Share a folder
+
+Right-click a folder → **Share folder…** writes its hosts, subfolders included, as a session
+list. Then:
+
+1. Put the file where the others can read it: a web server, a Git repository, or a shared
+   drive.
+2. They follow its address or path as described above.
+3. To change the list later, share the folder again and replace the file. Everyone's hosts
+   follow at their next check.
+
+The list keeps each host's name, folder, colour, icon and connection settings. `ssh_config`
+hosts are written with the settings they resolve to, and what a host inherits from its
+folder's [shared credentials](#shared-credentials) is filled in. A host outside the folder
+that one of its hosts connects through comes along in a **Jump hosts** folder, so the list
+still connects. **Include user names** is on by default; turn it off when everyone logs in as
+themselves. **Include key file paths** is off by default, because keys rarely sit in the same
+place on every computer. Passwords and private keys are never written.
+
+### List formats
+
+Muxus reads three kinds of list:
+
+- **A Muxus session list**, as **Share folder…** writes it. A portal can generate one:
+
+    ```json
+    {
+      "format": "muxus-shared-sessions",
+      "version": 1,
+      "hosts": [
+        {
+          "id": "node0",
+          "name": "node0",
+          "folder": "clab",
+          "profile": { "kind": "ssh", "target": "node0.lab.example.net", "user": "alice" }
+        },
+        {
+          "name": "node0 console",
+          "folder": "clab/consoles",
+          "color": "#a855f7",
+          "profile": { "kind": "telnet", "host": "console.lab.example.net", "port": 2001 }
+        }
+      ]
+    }
+    ```
+
+    Every kind of host Muxus saves can be listed. `id` is optional; give one that stays the
+    same when a host's name may change, and to name the host as a jump host of another:
+    `"proxyJump": ["muxus-host:node0"]`.
+
+- **A MobaXterm session file** (`.mxtsessions`), as MobaXterm's own shared sessions use. A
+  personal link from a self-service portal works as it is, with your user name already in
+  every session. SSH, RDP and VNC sessions are read as in the
+  [MobaXterm import](#import-from-mobaxterm); SSH gateways become jump hosts in a
+  **Jump hosts** folder. A session is told apart by its folder and name, so one that is
+  renamed or moved in the file arrives as a new host.
+- **A Muxus backup**, as **Create backup** writes it. Only its hosts are used.
+
 ## Host rows
 
 A row shows the host name, a host-kind icon (SSH, Telnet, serial, RDP, VNC, gNMI, NETCONF), an optional colour flag,
@@ -140,7 +249,8 @@ saved, Muxus names it so you can set them by editing it. The same works in **Add
 Folders are stored in the local database next to the host colour, not in `ssh_config`.
 Hosts without a folder are grouped by the file they were defined in.
 
-- **Create** a folder by right-clicking empty space in the sidebar → **New folder**, or
+- **Create** a folder with **+** at the top of the sidebar → **New folder…**, by
+  right-clicking empty space in the sidebar → **New folder**, or
   nest one inside another from a folder's menu.
 - **Fill** it by dragging hosts in, or from a host's **Move to folder…**. Dragging one
   [selected](#editing-several-hosts-at-once) host brings every selected host along.

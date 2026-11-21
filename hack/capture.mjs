@@ -75,7 +75,7 @@ async function open(prefs = {}, seed) {
   const state = JSON.stringify({ state: { ...BASE_PREFS, ...prefs }, version: 9 });
   await page.addInitScript((value) => localStorage.setItem('muxus-prefs', value), state);
   await page.goto(`${env.url}/?token=${env.token}`, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('[aria-label="Add host"]');
+  await page.waitForSelector('[aria-label="Add"]');
   await wait(900);
   page.close_ = () => context.close();
   return page;
@@ -110,7 +110,7 @@ async function shot(page, name, { keepPointer = false, ...options } = {}) {
   // nothing succeeds just as quietly as a good one. Blank PNGs compress to a
   // few KiB, so retake once and fail loudly rather than ship an empty figure.
   if (await isBlank(path)) {
-    await page.waitForSelector('[aria-label="Add host"]', { state: 'attached' });
+    await page.waitForSelector('[aria-label="Add"]', { state: 'attached' });
     await wait(2000);
     await page.screenshot({ path, ...options });
     if (await isBlank(path)) throw new Error(`${name}: captured a blank window`);

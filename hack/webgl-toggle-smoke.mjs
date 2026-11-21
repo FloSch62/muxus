@@ -58,7 +58,7 @@ try {
     r.request().method() === 'GET' ? r.fulfill({ json: { workspace: null } }) : r.continue(),
   );
   await page.goto(`${env.url}/?token=${env.token}`, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('[aria-label="Add host"]');
+  await page.waitForSelector('[aria-label="Add"]');
 
   // Connect a demo host and wait for a live terminal.
   await page.locator('[role="treeitem"][aria-label="web-01"]').first().click();

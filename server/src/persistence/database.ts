@@ -31,6 +31,9 @@ import type {
   SessionLogFileSettings,
   SessionLoggingPolicy,
   SessionLoggingPolicyInput,
+  SharedSessionHost,
+  SharedSessionSource,
+  SharedSessionSourceInput,
   TerminalBackspaceKey,
   TerminalEnterKey,
   TunnelInput,
@@ -39,6 +42,7 @@ import type {
 } from '@muxus/shared';
 import {
   sessionLogFilePatternError,
+  sharedSessionSourceDue,
   TERMINAL_BACKSPACE_KEYS,
   TERMINAL_ENTER_KEYS,
 } from '@muxus/shared';
@@ -608,6 +612,35 @@ const MIGRATIONS = [
       ALTER TABLE connection_profiles
         ADD COLUMN password_ref_json TEXT
         CHECK(password_ref_json IS NULL OR json_valid(password_ref_json));
+    `,
+  },
+  {
+    version: 39,
+    name: 'shared-sessions',
+    // Session lists read from a link, and the saved hosts each one keeps up
+    // to date. No foreign key: a rebuild of connection_profiles would cascade
+    // into it. Removing a link deletes or releases its hosts explicitly.
+    sql: `
+      CREATE TABLE shared_session_sources (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 200),
+        url TEXT NOT NULL CHECK(length(url) BETWEEN 1 AND 4096),
+        folder TEXT NOT NULL CHECK(length(folder) BETWEEN 1 AND 300),
+        refresh_minutes INTEGER NOT NULL DEFAULT 60 CHECK(refresh_minutes >= 0),
+        last_checked_at TEXT,
+        last_synced_at TEXT,
+        last_error TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) STRICT;
+
+      ALTER TABLE connection_profiles ADD COLUMN shared_source_id TEXT;
+      -- What the list said about the host when it was last applied. A check
+      -- only touches a host whose entry changed, and then only the settings
+      -- that changed, so what the user set on the host stays.
+      ALTER TABLE connection_profiles
+        ADD COLUMN shared_entry_json TEXT
+        CHECK(shared_entry_json IS NULL OR json_valid(shared_entry_json));
     `,
   },
 ] as const;
@@ -2254,6 +2287,229 @@ export class MuxusDatabase {
     return pruned;
   }
 
+  listSharedSessionSources(): SharedSessionSource[] {
+    return this.db
+      .prepare(`${SHARED_SESSION_SOURCE_SELECT} ORDER BY sources.name COLLATE NOCASE, sources.created_at`)
+      .all()
+      .map(sharedSessionSourceFromRow);
+  }
+
+  sharedSessionSource(id: string): SharedSessionSource | undefined {
+    const row = this.db.prepare(`${SHARED_SESSION_SOURCE_SELECT} WHERE sources.id = ?`).get(id);
+    return row ? sharedSessionSourceFromRow(row) : undefined;
+  }
+
+  saveSharedSessionSource(input: SharedSessionSourceInput): SharedSessionSource {
+    requireNonEmpty(input.name, 'name');
+    requireNonEmpty(input.url, 'url');
+    requireNonEmpty(input.folder, 'folder');
+    const id = input.id ?? nanoid();
+    const previous = this.sharedSessionSource(id);
+    this.db
+      .prepare(`
+        INSERT INTO shared_session_sources(id, name, url, folder, refresh_minutes)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          name = excluded.name,
+          url = excluded.url,
+          folder = excluded.folder,
+          refresh_minutes = excluded.refresh_minutes,
+          updated_at = CURRENT_TIMESTAMP
+      `)
+      .run(id, input.name.trim(), input.url, input.folder, input.refreshMinutes);
+    // Whoever adds a link by hand reads it at once. Marking it checked keeps
+    // other windows from reading it a second time in the same moment. A link
+    // restored with its ID has no one reading it, so it stays due.
+    if (!previous && input.id === undefined) {
+      this.db
+        .prepare('UPDATE shared_session_sources SET last_checked_at = ? WHERE id = ?')
+        .run(new Date().toISOString(), id);
+    }
+    // Another link is read at the next opportunity, not an interval later.
+    if (previous && previous.url !== input.url) {
+      this.db
+        .prepare('UPDATE shared_session_sources SET last_checked_at = NULL, last_error = NULL WHERE id = ?')
+        .run(id);
+    }
+    // Another folder takes the hosts along. One the user moved out of it stays where it is.
+    if (previous && previous.folder !== input.folder) {
+      const hosts = this.db
+        .prepare(`
+          SELECT profiles.id, groups.name AS group_name
+          FROM connection_profiles AS profiles
+          LEFT JOIN connection_groups AS groups ON groups.id = profiles.group_id
+          WHERE profiles.shared_source_id = ?
+        `)
+        .all(id);
+      for (const host of hosts) {
+        const next = renameFolderPathUnder(String(host.group_name ?? ''), previous.folder, input.folder);
+        if (next === undefined) continue;
+        this.db
+          .prepare('UPDATE connection_profiles SET group_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+          .run(this.groupIdForName(next), String(host.id));
+      }
+    }
+    return this.sharedSessionSource(id)!;
+  }
+
+  /**
+   * A link's folder follows when it, or a folder around it, is renamed or
+   * moved in the sidebar. The hosts are moved by whoever renames the folder.
+   */
+  moveSharedSessionFolders(from: string, to: string): void {
+    for (const source of this.listSharedSessionSources()) {
+      const next = renameFolderPathUnder(source.folder, from, to);
+      if (next === undefined || next === source.folder) continue;
+      this.db
+        .prepare('UPDATE shared_session_sources SET folder = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(next, source.id);
+    }
+  }
+
+  /** Remove a link, and its hosts with it unless they are kept as hosts of the user's own. */
+  deleteSharedSessionSource(id: string, keepHosts = false): boolean {
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      if (keepHosts) {
+        this.db
+          .prepare(`
+            UPDATE connection_profiles
+            SET shared_source_id = NULL, shared_entry_json = NULL
+            WHERE shared_source_id = ?
+          `)
+          .run(id);
+      } else {
+        for (const hostId of this.sharedSessionEntries(id).keys()) this.deleteSavedHostProfile(hostId);
+      }
+      const deleted =
+        this.db.prepare('DELETE FROM shared_session_sources WHERE id = ?').run(id).changes > 0;
+      this.db.exec('COMMIT');
+      return deleted;
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  /**
+   * Claim one read of a link. Unless forced, a link another window read
+   * within its interval is left alone, so several windows do not each fetch it.
+   */
+  beginSharedSessionCheck(id: string, force: boolean, now = new Date()): SharedSessionSource | 'not-due' | undefined {
+    const source = this.sharedSessionSource(id);
+    if (!source) return undefined;
+    if (!force && !sharedSessionSourceDue(source, now.getTime())) return 'not-due';
+    this.db
+      .prepare('UPDATE shared_session_sources SET last_checked_at = ? WHERE id = ?')
+      .run(now.toISOString(), id);
+    return source;
+  }
+
+  /** A link that could not be read or understood keeps the hosts it had. */
+  failSharedSessionCheck(id: string, error: string): SharedSessionSource | undefined {
+    this.db
+      .prepare('UPDATE shared_session_sources SET last_error = ? WHERE id = ?')
+      .run(error.trim().slice(0, 1000) || 'The shared sessions could not be read.', id);
+    return this.sharedSessionSource(id);
+  }
+
+  /**
+   * Make a link's hosts follow its list. New entries are added and hosts the
+   * list no longer has are deleted. An entry that did not change is not
+   * touched. One that did change brings over only the settings the list
+   * changed, so a user name, key or anything else set on the host here stays
+   * unless the list changes that same setting.
+   */
+  applySharedSessions(
+    sourceId: string,
+    hosts: readonly SharedSessionHost[],
+    now = new Date(),
+  ): { added: number; updated: number; removed: number; unchanged: number } | undefined {
+    const source = this.sharedSessionSource(sourceId);
+    if (!source) return undefined;
+    const result = { added: 0, updated: 0, removed: 0, unchanged: 0 };
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const stale = this.sharedSessionEntries(sourceId);
+      const seen = new Set<string>();
+      for (const host of hosts) {
+        if (seen.has(host.id)) throw new Error(`The shared sessions list “${host.name}” twice.`);
+        seen.add(host.id);
+        const entry = sharedSessionEntry(host, source.folder);
+        const entryJson = canonicalJson(entry);
+        const owner = this.db
+          .prepare('SELECT shared_source_id FROM connection_profiles WHERE id = ?')
+          .get(host.id);
+        if (owner && owner.shared_source_id !== null && owner.shared_source_id !== sourceId) {
+          throw new Error(`“${host.name}” already belongs to another shared sessions link.`);
+        }
+        const previousJson = stale.get(host.id);
+        stale.delete(host.id);
+        if (previousJson === entryJson) {
+          result.unchanged++;
+          continue;
+        }
+        const current = previousJson === undefined ? undefined : this.savedHostProfile(host.id);
+        const previous = current ? parseSharedSessionEntry(previousJson) : undefined;
+        if (current && previous) {
+          this.saveSavedHostProfile({
+            id: host.id,
+            name: previous.name === entry.name ? current.name : entry.name,
+            profile: mergedSharedProfile(current.profile, previous.profile, entry.profile),
+          });
+          this.updateSavedHostMetadata(host.id, {
+            ...(previous.folder === entry.folder ? {} : { group: host.group ?? null }),
+            ...(previous.color === entry.color ? {} : { color: entry.color ?? null }),
+            ...(previous.icon === entry.icon ? {} : { icon: entry.icon ?? null }),
+          });
+        } else {
+          // New, or a host that was there without this link (restored from a
+          // backup): nothing says what the user changed on it, so the list decides.
+          this.saveSavedHostProfile({ id: host.id, name: host.name, profile: host.profile });
+          this.updateSavedHostMetadata(host.id, {
+            group: host.group ?? null,
+            ...(host.color === undefined ? {} : { color: host.color }),
+            ...(host.icon === undefined ? {} : { icon: host.icon }),
+          });
+        }
+        this.db
+          .prepare('UPDATE connection_profiles SET shared_source_id = ?, shared_entry_json = ? WHERE id = ?')
+          .run(sourceId, entryJson, host.id);
+        if (owner) result.updated++;
+        else result.added++;
+      }
+      for (const hostId of stale.keys()) {
+        this.deleteSavedHostProfile(hostId);
+        result.removed++;
+      }
+      this.db
+        .prepare(`
+          UPDATE shared_session_sources
+          SET last_synced_at = ?, last_checked_at = ?, last_error = NULL
+          WHERE id = ?
+        `)
+        .run(now.toISOString(), now.toISOString(), sourceId);
+      this.db.exec('COMMIT');
+      return result;
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  /** The hosts a link keeps, with what its list last said about each. */
+  private sharedSessionEntries(sourceId: string): Map<string, string> {
+    return new Map(
+      this.db
+        .prepare(`
+          SELECT id, shared_entry_json FROM connection_profiles
+          WHERE shared_source_id = ? AND kind IN ${SAVED_HOST_KINDS_SQL}
+        `)
+        .all(sourceId)
+        .map((row) => [String(row.id), String(row.shared_entry_json ?? '')]),
+    );
+  }
+
   listScripts(): SavedScript[] {
     return this.db
       .prepare('SELECT * FROM scripts ORDER BY name COLLATE NOCASE, created_at')
@@ -3037,12 +3293,112 @@ function savedHostFromRow(row: SqlRow): SavedHostProfile {
       ...discoverEnvironmentsFromRow(row),
       loginSequence: loginSequenceFromJson(row.login_sequence_json),
       passwordRef: passwordRefFromJson(row.password_ref_json),
+      sharedSourceId: optionalString(row.shared_source_id),
       lastConnectedAt: optionalString(row.last_connected_at),
       connectCount: Number(row.connect_count),
     },
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };
+}
+
+const SHARED_SESSION_SOURCE_SELECT = `
+  SELECT sources.*, (
+    SELECT COUNT(*) FROM connection_profiles WHERE shared_source_id = sources.id
+  ) AS host_count
+  FROM shared_session_sources AS sources
+`;
+
+function sharedSessionSourceFromRow(row: SqlRow): SharedSessionSource {
+  const lastCheckedAt = optionalString(row.last_checked_at);
+  const lastSyncedAt = optionalString(row.last_synced_at);
+  const lastError = optionalString(row.last_error);
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    url: String(row.url),
+    folder: String(row.folder),
+    refreshMinutes: Number(row.refresh_minutes),
+    hostCount: Number(row.host_count),
+    ...(lastCheckedAt ? { lastCheckedAt } : {}),
+    ...(lastSyncedAt ? { lastSyncedAt } : {}),
+    ...(lastError ? { lastError } : {}),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
+
+/** What a list says about one host, kept to tell what it changes next time. */
+interface SharedSessionEntry {
+  name: string;
+  profile: Record<string, unknown>;
+  /**
+   * Where the host sits inside the link's own folder. That folder is left
+   * out, so renaming or moving it does not make every entry look changed.
+   */
+  folder: string;
+  color?: string;
+  icon?: string;
+}
+
+function sharedSessionEntry(host: SharedSessionHost, linkFolder: string): SharedSessionEntry {
+  const group = host.group ?? '';
+  const inside =
+    folderPathKey(group) === folderPathKey(linkFolder)
+      ? ''
+      : isDescendantFolderPath(group, linkFolder)
+        ? folderPathSegments(group).slice(folderPathSegments(linkFolder).length).join('/')
+        : `/${group}`;
+  return {
+    name: host.name,
+    profile: { ...host.profile },
+    folder: inside,
+    ...(host.color === undefined ? {} : { color: host.color }),
+    ...(host.icon === undefined ? {} : { icon: host.icon }),
+  };
+}
+
+function parseSharedSessionEntry(json: string | undefined): SharedSessionEntry | undefined {
+  try {
+    const value = JSON.parse(json ?? '') as Partial<SharedSessionEntry> | null;
+    return value && typeof value.name === 'string' && value.profile && typeof value.folder === 'string'
+      ? (value as SharedSessionEntry)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A host's connection settings after its list entry changed: as they are
+ * here, with every setting the list changed taken from the list. A list that
+ * turns the host into another kind of connection replaces them all.
+ */
+function mergedSharedProfile(
+  current: SavedHostProfile['profile'],
+  previous: Record<string, unknown>,
+  next: Record<string, unknown>,
+): SavedHostProfile['profile'] {
+  if (previous.kind !== next.kind || current.kind !== next.kind) return next as SavedHostProfile['profile'];
+  const merged: Record<string, unknown> = { ...current };
+  for (const key of new Set([...Object.keys(previous), ...Object.keys(next)])) {
+    if (canonicalJson(previous[key]) === canonicalJson(next[key])) continue;
+    if (next[key] === undefined) delete merged[key];
+    else merged[key] = next[key];
+  }
+  return merged as SavedHostProfile['profile'];
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
 }
 
 /** NULL follows the global setting and is left out. */

@@ -6,6 +6,7 @@ import Typography from '@mui/material/Typography';
 import AltRouteIcon from '@mui/icons-material/AltRoute';
 import PublicOutlinedIcon from '@mui/icons-material/PublicOutlined';
 import { useDeleteHostProfile, useSaveHostProfile, useUpdateHostProfileMetadata } from '../api/profiles.js';
+import { useSharedHostCaption } from '../api/shared-sessions.js';
 import { confirmDeleteHost } from '../host-actions.js';
 import { connectSavedHost } from '../session-actions.js';
 import type { HostEditorState } from '../state/ui.js';
@@ -38,6 +39,7 @@ export function WebHostEditorContent({
   const setState = useUiStore((s) => s.setHostEditor);
   const existing =
     state.mode === 'edit-profile' || state.mode === 'duplicate-profile' ? state.entry : undefined;
+  const sharedCaption = useSharedHostCaption(state.mode === 'edit-profile' ? existing : undefined);
   const [section, setSection] = useState<Section>('general');
   const connectAfter = useRef(false);
   const close = () => setState(false);
@@ -76,7 +78,7 @@ export function WebHostEditorContent({
   return (
     <EditorShell
       title={title}
-      storage="Saved in Muxus app data"
+      storage={sharedCaption ?? 'Saved in Muxus app data'}
       typeKind={state.mode === 'new' ? 'web' : undefined}
       onTypeChange={state.mode === 'new' ? (next) => setState({ ...state, kind: next }) : undefined}
       sections={sections}

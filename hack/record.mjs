@@ -192,7 +192,7 @@ await page.addInitScript(
 await page.addInitScript(overlay);
 await purgeWorkspaces();
 await page.goto(`${env.url}/?token=${env.token}`, { waitUntil: 'domcontentloaded' });
-await page.waitForSelector('[aria-label="Add host"]');
+await page.waitForSelector('[aria-label="Add"]');
 await wait(1500);
 
 async function purgeWorkspaces() {

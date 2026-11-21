@@ -25,6 +25,7 @@ import {
   useSaveHostProfile,
   useUpdateHostProfileMetadata,
 } from '../api/profiles.js';
+import { useSharedHostCaption } from '../api/shared-sessions.js';
 import {
   createHosts,
   fetchHostPreview,
@@ -336,6 +337,7 @@ function SshHostEditorContent({
     state.entry.profile.kind === 'ssh'
       ? state.entry
       : undefined;
+  const sharedCaption = useSharedHostCaption(state.mode === 'edit-profile' ? editingProfile : undefined);
   const inheritedIdentityAgent =
     state.mode === 'edit' && state.entry.options.identityAgent === undefined
       ? state.entry.resolved.identityAgent
@@ -579,9 +581,10 @@ function SshHostEditorContent({
     <EditorShell
       title={title}
       storage={
-        draft.storage === 'muxus'
+        sharedCaption ??
+        (draft.storage === 'muxus'
           ? 'Saved in Muxus app data — ssh_config is unchanged'
-          : `Saved to ${shortenSshPath(draft.file || config?.path || '~/.ssh/config')}`
+          : `Saved to ${shortenSshPath(draft.file || config?.path || '~/.ssh/config')}`)
       }
       typeKind={state.mode === 'new' ? 'ssh' : undefined}
       onTypeChange={
