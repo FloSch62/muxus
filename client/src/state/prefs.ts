@@ -432,6 +432,10 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   // The file browser once had a place beside its terminal and a width for it.
   delete (state as { fileBrowserPosition?: unknown }).fileBrowserPosition;
   delete (state as { sftpPanelWidth?: unknown }).sftpPanelWidth;
+  // Hiding the sidebar used to hide the hosts and nothing else. It now holds
+  // settings, files, tunnels and the rest of what the top bar had, so a window
+  // that hid it before meets it shown once and can hide it again.
+  if (version < 18) delete state.sidebarCollapsed;
   if (!isSidebarOpenGesture(state.sidebarOpenGesture)) delete state.sidebarOpenGesture;
   if (typeof state.sidebarRailPinned !== 'boolean') delete state.sidebarRailPinned;
   if (!isSidebarHostView(state.sidebarHostView)) delete state.sidebarHostView;
@@ -750,7 +754,8 @@ export const usePrefsStore = create<PrefsState>()(
     }),
     {
       name: PREFS_STORAGE_NAME,
-      // 18: the file browser's dock beside the terminal and its width are gone.
+      // 18: the file browser's dock beside the terminal and its width are gone,
+      // and a sidebar hidden before it became the rail is shown again.
       version: 18,
       migrate: migratePrefsState,
       merge: mergePersistedPrefs,

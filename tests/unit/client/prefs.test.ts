@@ -186,6 +186,14 @@ describe('layout preferences', () => {
     ).toEqual({ sidebarPosition: 'right', commandBarPosition: 'bottom' });
   });
 
+  it('shows a sidebar that was hidden before it held the rail, once', () => {
+    expect(migratePrefsState({ sidebarCollapsed: true, monoFontSize: 16 }, 17)).toEqual({
+      monoFontSize: 16,
+    });
+    // Hidden again in the new layout, it stays hidden.
+    expect(migratePrefsState({ sidebarCollapsed: true }, 18)).toEqual({ sidebarCollapsed: true });
+  });
+
   it('forgets where the file browser used to dock and how wide it was there', () => {
     for (const fileBrowserPosition of ['pane', 'sidebar']) {
       expect(
