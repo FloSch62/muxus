@@ -74,6 +74,48 @@ describe('saved host profile routes', () => {
     ).toBe(false);
   });
 
+  it('stores the algorithm lists of a saved SSH host and refuses malformed ones', async () => {
+    const algorithms = {
+      kexAlgorithms: '+diffie-hellman-group14-sha1',
+      hostKeyAlgorithms: '+ssh-rsa',
+      ciphers: '^aes128-ctr',
+      macs: '-hmac-sha2-512',
+    };
+    const create = await app.inject({
+      method: 'PUT',
+      url: '/api/profiles',
+      headers: auth(),
+      payload: {
+        id: 'route-server',
+        name: 'Route server',
+        profile: { kind: 'ssh', target: 'route-server.example.test', useConfig: false, ...algorithms },
+      },
+    });
+    expect(create.statusCode).toBe(200);
+    const list = await app.inject({ method: 'GET', url: '/api/profiles', headers: auth() });
+    expect(list.json().profiles[0].profile).toMatchObject(algorithms);
+
+    const spaced = await app.inject({
+      method: 'PUT',
+      url: '/api/profiles',
+      headers: auth(),
+      payload: {
+        id: 'route-server',
+        name: 'Route server',
+        profile: {
+          kind: 'ssh',
+          target: 'route-server.example.test',
+          useConfig: false,
+          kexAlgorithms: '+diffie-hellman-group14-sha1, diffie-hellman-group1-sha1',
+        },
+      },
+    });
+    expect(spaced.statusCode).toBe(400);
+    expect(spaced.json().message).toBe('invalid algorithm list');
+    const kept = await app.inject({ method: 'GET', url: '/api/profiles', headers: auth() });
+    expect(kept.json().profiles[0].profile).toMatchObject(algorithms);
+  });
+
   it('never stores a link’s host key fingerprint with a saved host', async () => {
     const create = await app.inject({
       method: 'PUT',

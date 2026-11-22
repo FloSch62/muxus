@@ -318,6 +318,36 @@ describe('buildChain with saved Muxus jump hosts', () => {
     expect(chain[0]!.folderPasswords).toEqual([{ account: 'acct', label: 'Folder' }]);
   });
 
+  it('dials each saved host with its own algorithm lists', () => {
+    const chain = buildChain(
+      docOf(['Host configured-jump', '  KexAlgorithms +diffie-hellman-group1-sha1'].join('\n')),
+      {
+        profileId: 'app',
+        target: 'app.internal',
+        useConfig: false,
+        kexAlgorithms: '+diffie-hellman-group14-sha1',
+        ciphers: '+aes128-cbc',
+        proxyJump: [savedHostHop('edge')],
+      },
+      undefined,
+      undefined,
+      (id) => (id === 'edge' ? { ...savedHosts.edge!, hostKeyAlgorithms: '+ssh-dss' } : undefined),
+    );
+
+    expect(chain.map((hop) => [hop.spec.host, hop.savedHost])).toEqual([
+      ['configured-jump', undefined],
+      ['edge.example.com', true],
+      ['app.internal', true],
+    ]);
+    expect(chain[0]!.resolved.kexAlgorithms).toBe('+diffie-hellman-group1-sha1');
+    expect(chain[1]!.resolved).toMatchObject({ kexAlgorithms: undefined, hostKeyAlgorithms: '+ssh-dss' });
+    expect(chain[2]!.resolved).toMatchObject({
+      kexAlgorithms: '+diffie-hellman-group14-sha1',
+      hostKeyAlgorithms: undefined,
+      ciphers: '+aes128-cbc',
+    });
+  });
+
   it('names a missing saved jump host', () => {
     expect(() =>
       buildChain(

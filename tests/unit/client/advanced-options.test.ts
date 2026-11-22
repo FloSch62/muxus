@@ -4,7 +4,9 @@ import {
   applyLegacyPreset,
   LEGACY_ALGORITHM_PRESET,
   legacyPresetState,
+  optionValue,
   unsupportedEntries,
+  withOptionValue,
 } from '../../../client/src/components/host-editor/advanced-options.js';
 
 const TABLES = {
@@ -24,6 +26,31 @@ describe('unsupportedEntries', () => {
     expect(unsupportedEntries('Ciphers', '-*cbc', TABLES)).toEqual([]);
     expect(unsupportedEntries('Compression', 'yes', TABLES)).toEqual([]);
     expect(unsupportedEntries('Ciphers', 'serpent-cbc', undefined)).toEqual([]);
+  });
+});
+
+describe('one option as a field', () => {
+  const extras = [
+    { keyword: 'Compression', value: 'yes' },
+    { keyword: 'kexalgorithms', value: '+diffie-hellman-group14-sha1' },
+    { keyword: 'KexAlgorithms', value: '+diffie-hellman-group1-sha1' },
+  ];
+
+  it('reads the first row of a keyword, whatever its case, as ssh_config does', () => {
+    expect(optionValue(extras, 'KexAlgorithms')).toBe('+diffie-hellman-group14-sha1');
+    expect(optionValue(extras, 'Ciphers')).toBe('');
+  });
+
+  it('keeps one row per keyword where the first one was, and drops it when blank', () => {
+    expect(withOptionValue(extras, 'KexAlgorithms', '^ecdh-sha2-nistp256')).toEqual([
+      { keyword: 'Compression', value: 'yes' },
+      { keyword: 'KexAlgorithms', value: '^ecdh-sha2-nistp256' },
+    ]);
+    expect(withOptionValue(extras, 'Ciphers', '+aes128-cbc')).toEqual([
+      ...extras,
+      { keyword: 'Ciphers', value: '+aes128-cbc' },
+    ]);
+    expect(withOptionValue(extras, 'KexAlgorithms', ' ')).toEqual([{ keyword: 'Compression', value: 'yes' }]);
   });
 });
 

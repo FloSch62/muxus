@@ -69,7 +69,7 @@ function startLegacyServer(
 }
 
 let counter = 0;
-function makeManager(configFile: string): SshConnectionManager {
+function makeManager(configFile: string, saved?: SshProfile): SshConnectionManager {
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   return new SshConnectionManager(log as never, {
     knownHosts: new KnownHostsStore(
@@ -77,6 +77,7 @@ function makeManager(configFile: string): SshConnectionManager {
       path.join(tmp, 'no-global-known-hosts'),
     ),
     loadConfig: () => loadConfigDocument(configFile),
+    savedSshProfile: (id) => (id === saved?.profileId ? saved : undefined),
   });
 }
 
@@ -108,6 +109,28 @@ function writeConfig(port: number, algorithmLines: string[]): string {
 
 const profile: SshProfile = { kind: 'ssh', target: 'console' };
 
+/** A host saved in Muxus app data, as the database hands it to the dialer. */
+function savedConsole(port: number, algorithms: Partial<SshProfile> = {}): SshProfile {
+  return {
+    kind: 'ssh',
+    profileId: 'saved-console',
+    target: '127.0.0.1',
+    useConfig: false,
+    user: 'tester',
+    port,
+    passwordOnly: true,
+    ...algorithms,
+  };
+}
+
+/** What a tab sends for a saved host: its ID, and stale fields the server replaces. */
+const savedConsoleTab: SshProfile = {
+  kind: 'ssh',
+  profileId: 'saved-console',
+  target: 'stale.example.test',
+  useConfig: false,
+};
+
 describe('legacy algorithm negotiation', () => {
   let manager: SshConnectionManager | undefined;
   let server: Server | undefined;
@@ -127,8 +150,39 @@ describe('legacy algorithm negotiation', () => {
     manager = makeManager(writeConfig(started.port, []));
 
     await expect(manager.connect(profile, makeIo())).rejects.toThrow(
-      /no matching key exchange algorithm.*KexAlgorithms/s,
+      /no matching key exchange algorithm.*KexAlgorithms.*lines to this host's ssh config/s,
     );
+  }, 15_000);
+
+  it('points a saved host without the legacy algorithms to its own Advanced section', async () => {
+    const started = await startLegacyServer();
+    server = started.server;
+    manager = makeManager(writeConfig(started.port, []), savedConsole(started.port));
+
+    await expect(manager.connect(savedConsoleTab, makeIo())).rejects.toThrow(
+      /no matching key exchange algorithm — if 127\.0\.0\.1:\d+ only speaks legacy algorithms, set KexAlgorithms\/Ciphers\/HostKeyAlgorithms for this host \(Advanced → Algorithms in the host editor\)$/,
+    );
+  }, 15_000);
+
+  it('connects a saved host that lists the legacy algorithms', async () => {
+    const started = await startLegacyServer();
+    server = started.server;
+    manager = makeManager(
+      writeConfig(started.port, []),
+      savedConsole(started.port, {
+        kexAlgorithms: '+diffie-hellman-group14-sha1',
+        ciphers: '+aes128-cbc',
+      }),
+    );
+
+    const shell = await manager.connectShell(savedConsoleTab, makeIo(), 80, 24, 'xterm-256color');
+    const banner = await new Promise<string>((resolve) => {
+      shell.stream.once('data', (chunk: Buffer) => resolve(chunk.toString()));
+    });
+    expect(banner).toContain('console ready');
+    expect(shell.summary).toMatchObject({ kex: 'diffie-hellman-group14-sha1', cipher: 'aes128-cbc' });
+    shell.stream.close();
+    shell.lease.release();
   }, 15_000);
 
   it('connects once the config lists the legacy algorithms', async () => {

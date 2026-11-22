@@ -76,6 +76,23 @@ export function applyLegacyPreset(extras: readonly ExtraOption[]): ExtraOption[]
   return next;
 }
 
+/** The value ssh_config uses for `keyword`: its first row's, '' when there is none. */
+export function optionValue(extras: readonly ExtraOption[], keyword: string): string {
+  return extras.find((extra) => sameKeyword(extra, keyword))?.value ?? '';
+}
+
+/** One `keyword` row holding `value`, where its first row was; a blank value removes it. */
+export function withOptionValue(
+  extras: readonly ExtraOption[],
+  keyword: string,
+  value: string,
+): ExtraOption[] {
+  const at = extras.findIndex((extra) => sameKeyword(extra, keyword));
+  const rest = extras.filter((extra) => !sameKeyword(extra, keyword));
+  if (value.trim()) rest.splice(at < 0 ? rest.length : at, 0, { keyword, value });
+  return rest;
+}
+
 /**
  * Entries of an algorithm-list option the dialer would have to skip: not
  * `*`/`?` patterns, and absent from the SSH engine's supported table for the
@@ -96,6 +113,10 @@ export function unsupportedEntries(
     .map((entry) => entry.trim().toLowerCase())
     .filter(Boolean)
     .filter((entry) => !/[*?]/.test(entry) && !supported.includes(entry));
+}
+
+function sameKeyword(extra: ExtraOption, keyword: string): boolean {
+  return extra.keyword.trim().toLowerCase() === keyword.toLowerCase();
 }
 
 function algorithmNames(value: string): string[] {

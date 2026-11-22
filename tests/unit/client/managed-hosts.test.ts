@@ -262,6 +262,25 @@ describe('managed host identity and clipboard actions', () => {
     );
   });
 
+  it('passes a saved host\'s algorithm lists in the copied ssh command', () => {
+    const legacy = {
+      ...nativeSsh,
+      entry: {
+        ...nativeSsh.entry,
+        profile: {
+          ...nativeSsh.entry.profile,
+          kexAlgorithms: '+diffie-hellman-group14-sha1',
+          ciphers: '^aes128-cbc',
+        },
+      },
+    };
+
+    expect(managedHostCopyCommand(legacy).text).toBe(
+      "ssh -p 2222 -o KexAlgorithms=+diffie-hellman-group14-sha1 -o 'Ciphers=^aes128-cbc' " +
+        'admin@core.example.test',
+    );
+  });
+
   it('spells saved Muxus jump hosts out in the copied ssh command', () => {
     const bastion = nativeSshHost('bastion');
     const relay = nativeSshHost('relay');

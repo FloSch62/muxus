@@ -6,6 +6,7 @@ import { nanoid } from 'nanoid';
 import pty from 'node-pty';
 import {
   environmentCommandLine,
+  savedHostAlgorithmOptions,
   savedHostHopId,
   withoutAppImagePaths,
   type SshProfile,
@@ -140,6 +141,7 @@ export function savedHostOptions(profile: SshProfile): string[] {
   if (profile.keepaliveIntervalSeconds) {
     args.push(...option('ServerAliveInterval', profile.keepaliveIntervalSeconds));
   }
+  for (const { keyword, value } of savedHostAlgorithmOptions(profile)) args.push(...option(keyword, value));
   for (const forward of profile.forwards ?? []) {
     if (forward.type === 'dynamic') args.push('-D', String(forward.bindPort));
     else {

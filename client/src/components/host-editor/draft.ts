@@ -1,5 +1,8 @@
 import {
+  ALGORITHM_LIST_PATTERN,
   type ExternalPasswordRef,
+  SAVED_HOST_ALGORITHMS,
+  savedHostAlgorithmOptions,
   savedHostHopId,
   type ConfigForward,
   type HostKeywordHighlightConfig,
@@ -28,6 +31,7 @@ import {
   pastePromptWaitProblem,
   type PastePromptWaitDraft,
 } from '../../terminal/paste-prompt.js';
+import { optionValue } from './advanced-options.js';
 import { parseHostTarget } from './native-draft.js';
 
 export type IdentityAgentMode = 'default' | 'environment' | 'custom' | 'none';
@@ -298,7 +302,7 @@ export function draftFromSavedSshProfile(
     remoteCommand: remoteCommand.value,
     requestTty: profile.requestTty ?? 'inherit',
     strictHostKeyChecking: profile.strictHostKeyChecking ?? 'inherit',
-    extras: [],
+    extras: savedHostAlgorithmOptions(profile),
     keywordHighlights: saved.metadata.keywordHighlights ?? {
       inheritGlobal: true,
       rules: [],
@@ -320,14 +324,22 @@ export function draftAliases(draft: HostDraft): string[] {
 }
 
 const ALIAS_RE = /^[^\s#*?!]+$/;
+/** The only Advanced options a host in Muxus app data keeps, lowercased. */
+const SAVED_HOST_KEYWORDS = new Set(SAVED_HOST_ALGORITHMS.map(({ keyword }) => keyword.toLowerCase()));
 
 export function draftProblem(draft: HostDraft): string | null {
   if (draft.storage === 'muxus') {
     if (!draft.aliasText.trim()) return 'A name is required — it labels this host in Muxus.';
     if (draft.aliasText.trim().length > 200) return 'The host name must be 200 characters or fewer.';
     if (!draft.hostname.trim()) return 'Enter a hostname or IP address.';
-    if (draft.extras.length > 0) {
+    if (draft.extras.some((extra) => !SAVED_HOST_KEYWORDS.has(extra.keyword.trim().toLowerCase()))) {
       return 'Additional ssh_config options require OpenSSH config storage.';
+    }
+    for (const { keyword } of SAVED_HOST_ALGORITHMS) {
+      const value = optionValue(draft.extras, keyword).trim();
+      if (value && !ALGORITHM_LIST_PATTERN.test(value)) {
+        return `${keyword}: use comma-separated algorithm names, optionally starting with +, ^ or -, without spaces.`;
+      }
     }
   }
   const aliases = draftAliases(draft);
@@ -431,6 +443,10 @@ export function draftToSavedSshInput(
         draft.strictHostKeyChecking === 'inherit'
           ? undefined
           : draft.strictHostKeyChecking,
+      kexAlgorithms: text(optionValue(draft.extras, 'KexAlgorithms')),
+      hostKeyAlgorithms: text(optionValue(draft.extras, 'HostKeyAlgorithms')),
+      ciphers: text(optionValue(draft.extras, 'Ciphers')),
+      macs: text(optionValue(draft.extras, 'MACs')),
     },
   };
 }

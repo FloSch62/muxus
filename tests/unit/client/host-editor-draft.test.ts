@@ -102,6 +102,62 @@ describe('SSH host editor draft', () => {
     });
   });
 
+  it('loads and saves the algorithm lists of a self-contained Muxus host', () => {
+    const saved: SavedHostProfile = {
+      id: 'route-server',
+      kind: 'ssh',
+      name: 'Route server',
+      profile: {
+        kind: 'ssh',
+        profileId: 'route-server',
+        target: 'route-server.example.test',
+        useConfig: false,
+        kexAlgorithms: '+diffie-hellman-group14-sha1',
+        macs: 'hmac-sha1',
+      },
+      metadata: { profileId: 'route-server', connectCount: 0 },
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    };
+
+    const draft = draftFromSavedSshProfile(saved, false);
+    expect(draft.extras).toEqual([
+      { keyword: 'KexAlgorithms', value: '+diffie-hellman-group14-sha1' },
+      { keyword: 'MACs', value: 'hmac-sha1' },
+    ]);
+    expect(draftProblem(draft)).toBeNull();
+    const profile = draftToSavedSshInput(draft, saved.id).profile;
+    if (profile.kind !== 'ssh') throw new Error('Expected an SSH profile');
+    expect(profile).toMatchObject({ kexAlgorithms: '+diffie-hellman-group14-sha1', macs: 'hmac-sha1' });
+    expect(profile.hostKeyAlgorithms).toBeUndefined();
+    expect(profile.ciphers).toBeUndefined();
+
+    // Muxus app data has a place for the algorithm lists only.
+    expect(draftProblem({ ...draft, extras: [...draft.extras, { keyword: 'Compression', value: 'yes' }] })).toBe(
+      'Additional ssh_config options require OpenSSH config storage.',
+    );
+    for (const value of ['aes128-ctr, aes256-ctr', '+', 'aes128-ctr,,aes256-ctr', '!aes128-ctr', 'aes128-ctr;aes256-ctr']) {
+      expect(draftProblem({ ...draft, extras: [{ keyword: 'Ciphers', value }] })).toBe(
+        'Ciphers: use comma-separated algorithm names, optionally starting with +, ^ or -, without spaces.',
+      );
+    }
+  });
+
+  it('keeps the algorithm lines of a new host whichever storage it is saved in', () => {
+    const draft = {
+      ...blankDraft(),
+      aliasText: 'route-server',
+      hostname: 'route-server.example.test',
+      extras: [{ keyword: 'KexAlgorithms', value: '+diffie-hellman-group14-sha1' }],
+    };
+
+    expect(draftToRequest(draft).options.extras).toEqual(draft.extras);
+    expect(draftProblem({ ...draft, storage: 'muxus' })).toBeNull();
+    expect(draftToSavedSshInput({ ...draft, storage: 'muxus' }).profile).toMatchObject({
+      kexAlgorithms: '+diffie-hellman-group14-sha1',
+    });
+  });
+
   it('keeps saved Muxus jump hosts out of ssh_config storage', () => {
     const draft = {
       ...blankDraft(),

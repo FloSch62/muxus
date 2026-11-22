@@ -131,7 +131,8 @@ goes on following the same lists.
 
     A list changes without you looking at it again, so Muxus ignores the settings in it that
     run something on your computer or weaken a check: `ProxyCommand`, agent forwarding,
-    remote port forwards and host key checking. Passwords are never part of a list; Muxus
+    remote port forwards, host key checking and the algorithm lists (`KexAlgorithms`,
+    `HostKeyAlgorithms`, `Ciphers`, `MACs`). Passwords are never part of a list; Muxus
     asks when you connect. A web address with a user name or password in it is refused.
 
 ### Share a folder
