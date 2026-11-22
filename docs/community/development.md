@@ -190,8 +190,9 @@ KEEP=1 node hack/record.mjs        # leave the frames in /tmp to re-encode by ha
 ```
 
 `hack/record.mjs` walks one window through five beats: opening a saved host, splitting the
-pane, drawing a chart in the terminal, opening the quick launcher, and using the file
-browser and editor. It draws a pointer and caption over the page because a screen recording
+pane, previewing pictures with yazi in the new pane (or drawing a chart when yazi is
+missing, as for the screenshots), opening the quick launcher, and using the file browser
+and editor. The status bar shows the same invented readings as the screenshots. It draws a pointer and caption over the page because a screen recording
 captures neither the mouse nor the keys that drove it. Frames come off Chrome's screencast
 at device resolution and are stitched with `ffmpeg`, which has to be on `PATH`.
 

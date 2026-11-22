@@ -39,8 +39,13 @@ const VNC_PORT = Number(process.env.MUXUS_DEMO_VNC_PORT || 2290);
  * have it on PATH. Without it that shot falls back to the plot script.
  */
 const YAZI = await findYazi();
-/** The host whose ~/renders folder yazi browses. */
+/** The host whose ~/renders folder yazi browses in the screenshot. */
 export const GALLERY_HOST = 'build-01';
+/**
+ * The tour's copy, on the host it splits a pane of. Hidden, so the file
+ * browser screenshots of that host stay as they are.
+ */
+export const TOUR_GALLERY = { host: 'web-01', folder: '.demo/renders' };
 /** The invented desktop the VNC demo host shows (hack/demo-vnc.mjs). */
 const DEMO_DESKTOP_HOST = 'design-vm.lab.internal';
 
@@ -156,6 +161,9 @@ const HIDDEN_REMOTE_ENTRIES = new Set([
   '.sudo_as_admin_successful',
   '.demo',
   '.cache',
+  // yazi's config, and the state it keeps between runs.
+  '.config',
+  '.local',
 ]);
 
 const SHELL_RC = `
@@ -282,14 +290,22 @@ async function buildHome(hosts, keys) {
     if (!REMOTE_TREE[host.alias]) {
       await writeFile(path.join(remote, 'logs', 'access.log'), 'demo\n');
     }
-    if (YAZI && host.alias === GALLERY_HOST) await writeGallery(remote);
+    if (YAZI && host.alias === GALLERY_HOST) await writeGallery(remote, 'renders', [1, 3, 5]);
+    if (YAZI && host.alias === TOUR_GALLERY.host) {
+      // Half a window wide in the tour: the list and a large preview, no parent column.
+      await writeGallery(remote, TOUR_GALLERY.folder, [0, 2, 3]);
+    }
   }
 }
 
+let gallery;
+
 /** Pictures for yazi to preview, and yazi itself on the host's PATH. */
-async function writeGallery(remote) {
-  const renders = path.join(remote, 'renders');
-  for (const [name, png] of Object.entries(galleryPngs())) await writeFile(path.join(renders, name), png);
+async function writeGallery(remote, folder, ratio) {
+  const renders = path.join(remote, folder);
+  // Drawing them takes a while; every host that gets them shares one set.
+  gallery ??= galleryPngs();
+  for (const [name, png] of Object.entries(gallery)) await writeFile(path.join(renders, name), png);
   await writeFile(
     path.join(renders, 'render.sh'),
     '#!/usr/bin/env bash\n# Renders the wallpapers for the lab displays.\nset -euo pipefail\n',
@@ -298,7 +314,7 @@ async function writeGallery(remote) {
   await writeFile(path.join(renders, 'NOTES.md'), '# Renders\n\nWallpapers for the lab displays.\n');
   await writeFile(
     path.join(remote, '.config', 'yazi', 'yazi.toml'),
-    '[mgr]\nratio = [1, 3, 5]\nshow_hidden = false\n',
+    `[mgr]\nratio = [${ratio.join(', ')}]\nshow_hidden = false\n`,
   );
   await fs.rm(path.join(remote, 'bin', 'yazi'), { force: true });
   await fs.symlink(YAZI, path.join(remote, 'bin', 'yazi'));

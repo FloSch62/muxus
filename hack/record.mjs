@@ -15,7 +15,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
-import { startDemoEnv } from './demo-env.mjs';
+import { installCaptureFakes } from './capture-fakes.mjs';
+import { HAS_YAZI, TOUR_GALLERY, startDemoEnv } from './demo-env.mjs';
 
 const THEME = process.env.THEME === 'dark' ? 'dark' : 'light';
 const SUFFIX = THEME === 'dark' ? '-dark' : '';
@@ -179,6 +180,10 @@ const context = await browser.newContext({
   reducedMotion: 'no-preference',
 });
 const page = await context.newPage();
+// The status bar would otherwise show this computer's name, OS and memory.
+await installCaptureFakes(page, (route) =>
+  fetch(`${env.url}${route}`, { headers: { authorization: `Bearer ${env.token}` } }).then((res) => res.json()),
+);
 // Start from an empty window every time: a previous run flushes its layout on
 // the way out, and the restore would put its tabs back.
 await page.route('**/api/workspaces/latest', (route) => route.fulfill({ json: { workspace: null } }));
@@ -346,13 +351,27 @@ async function tour() {
   await wait(250);
 
   // --- 3. A terminal that draws ----------------------------------------------
-  await caption('kitty graphics — images render inline, over SSH');
-  await focusPane(1, { ms: 480 });
-  await type('plot', 2600);
-  await wait(750);
+  if (HAS_YAZI) {
+    await caption('kitty graphics — yazi previews images over SSH');
+    await focusPane(1, { ms: 480 });
+    await type(`yazi ~/${TOUR_GALLERY.folder}`, 2200);
+    // aurora, latency-p95, mandelbrot, NOTES.md, render.sh, synthwave
+    for (const [presses, hold] of [[1, 1300], [1, 1500], [3, 1900]]) {
+      for (let i = 0; i < presses; i++) {
+        await page.keyboard.press('j');
+        await wait(110);
+      }
+      await wait(hold);
+    }
+  } else {
+    await caption('kitty graphics — images render inline, over SSH');
+    await focusPane(1, { ms: 480 });
+    await type('plot', 2600);
+    await wait(750);
+  }
   await clearCaption();
   // Long enough for the caption to have finished fading: two live panes and a
-  // chart, nothing over them, is the frame worth stilling.
+  // picture, nothing over them, is the frame worth stilling.
   await wait(450);
   poster = frames.at(-1)?.file;
 
