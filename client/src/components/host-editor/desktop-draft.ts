@@ -24,6 +24,7 @@ export interface DesktopHostDraft {
   name: string;
   group: string;
   color?: string;
+  icon?: string;
   host: string;
   port: string;
   username: string;
@@ -45,6 +46,7 @@ export function blankDesktopDraft(prefillTarget = '', group = ''): DesktopHostDr
     name: '',
     group,
     color: undefined,
+    icon: undefined,
     host,
     port: port ?? '',
     username: user ?? '',
@@ -66,6 +68,7 @@ export function desktopDraftFromProfile(saved: SavedHostProfile, duplicate: bool
     name: duplicate ? `${saved.name} copy` : saved.name,
     group: saved.metadata.group ?? '',
     color: saved.metadata.color,
+    icon: saved.metadata.icon,
     host: profile.host,
     port: profile.port === DEFAULT_DESKTOP_PORTS[profile.kind] ? '' : String(profile.port),
     username: profile.username ?? '',
@@ -130,6 +133,7 @@ export function desktopDraftMetadataPatch(draft: DesktopHostDraft): OpenSshMetad
   return {
     group: draft.group.trim() || null,
     color: draft.color ?? null,
+    icon: draft.icon ?? null,
     passwordRef: draft.passwordRef ?? null,
   };
 }

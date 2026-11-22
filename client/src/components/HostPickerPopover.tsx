@@ -26,7 +26,7 @@ import {
 import { connectManagedHost } from '../session-actions.js';
 import { loadHostEditorDialog, loadTerminalViewImpl } from '../lazy-features.js';
 import { useUiStore } from '../state/ui.js';
-import { hostKindIcon } from './host-kind-icon.js';
+import { managedHostIcon } from './host-icon.js';
 import { TruncationTooltip } from './TruncationTooltip.js';
 
 export function HostPickerPopover({
@@ -206,7 +206,7 @@ function HostPickerRow({
   const title = managedHostDisplayName(host);
   const address = managedHostAddress(host);
   const metadata = host.entry.metadata;
-  const Icon = hostKindIcon(host.kind === 'ssh' ? 'ssh' : host.entry.kind);
+  const Icon = managedHostIcon(host);
 
   return (
     <ListItemButton

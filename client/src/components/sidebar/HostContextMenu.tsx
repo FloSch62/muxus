@@ -240,7 +240,7 @@ export function HostContextMenu({
         <ListItemIcon>
           <PaletteOutlinedIcon fontSize="small" />
         </ListItemIcon>
-        Organize &amp; color…
+        Organize, color &amp; icon…
       </MenuItem>
       <MenuItem
         onMouseEnter={() => void loadHostEditorDialog()}

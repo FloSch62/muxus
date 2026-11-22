@@ -78,6 +78,7 @@ import {
 } from '../keymap/commands.js';
 import { chordLabels } from '../keymap/hints.js';
 import { useWslShellProfiles } from '../local-shell-launchers.js';
+import { managedHostIcon } from './host-icon.js';
 import { LocalShellIcon } from './LocalShellIcon.js';
 import { HOTKEY_MOD_LABEL } from '../platform.js';
 import {
@@ -1287,9 +1288,11 @@ function ResultIcon({ result }: { result: LauncherResult }) {
     );
   }
   if (result.kind === 'editor') return <CodeOutlinedIcon {...props} color="primary" />;
-  if (result.kind === 'host' || result.kind === 'quick-connect') {
-    return <DnsOutlinedIcon {...props} color="primary" />;
+  if (result.kind === 'host') {
+    const HostIcon = managedHostIcon(result.host);
+    return <HostIcon {...props} color="primary" />;
   }
+  if (result.kind === 'quick-connect') return <DnsOutlinedIcon {...props} color="primary" />;
   if (result.kind === 'workspace') return <WorkspacesOutlinedIcon {...props} />;
   if (result.kind === 'command') {
     const color = result.command.color;

@@ -198,6 +198,7 @@ describe('nativeDraftMetadataPatch', () => {
     expect(nativeDraftMetadataPatch(blankNativeDraft())).toEqual({
       group: null,
       color: null,
+      icon: null,
       terminalScheme: null,
       terminalFontColor: null,
       terminalBackgroundColor: null,
@@ -217,6 +218,7 @@ describe('nativeDraftMetadataPatch', () => {
     expect(nativeDraftMetadataPatch(draft)).toEqual({
       group: 'Lab',
       color: null,
+      icon: null,
       terminalScheme: 'gruvbox-dark',
       terminalFontColor: '#ebdbb2',
       terminalBackgroundColor: '#282828',
@@ -331,9 +333,13 @@ describe('nativeDraftMetadataPatch', () => {
     ).toBe('Anti-idle interval: Between 10 and 3600 seconds.');
   });
 
-  it('carries the row color chosen in the editor', () => {
-    const draft = { ...blankNativeDraft(), color: '#4285f4' };
-    expect(nativeDraftMetadataPatch(draft)).toMatchObject({ color: '#4285f4' });
+  it('carries the row color and icon chosen in the editor', () => {
+    const draft = { ...blankNativeDraft(), color: '#4285f4', icon: 'switch' };
+    expect(nativeDraftMetadataPatch(draft)).toMatchObject({ color: '#4285f4', icon: 'switch' });
+    expect(nativeDraftFromProfile(
+      { ...serialHost, metadata: { ...serialHost.metadata, icon: 'cisco' } },
+      false,
+    ).icon).toBe('cisco');
     expect(nativeDraftFromProfile(
       { ...serialHost, metadata: { ...serialHost.metadata, color: '#ef5350' } },
       false,

@@ -91,7 +91,8 @@ import { useSavedHostProfiles, useSshConfig } from '../api/queries.js';
 import { editableManagedHostForProfile } from '../managed-hosts.js';
 import { useUiStore } from '../state/ui.js';
 import { loadHostEditorDialog } from '../lazy-features.js';
-import { environmentTabIcon, hostKindIcon } from './host-kind-icon.js';
+import { useSessionHostIcon } from './host-icon.js';
+import { environmentTabIcon } from './host-kind-icon.js';
 import { LocalShellIcon } from './LocalShellIcon.js';
 import { TabPasteProgress } from './PasteProgress.js';
 import { ProgramStatusBadge } from './ProgramStatusBadge.js';
@@ -181,6 +182,7 @@ export function TabStrip({
   zoomed: boolean;
 }) {
   const allTabs = useTabsStore((s) => s.tabs);
+  const sessionHostIcon = useSessionHostIcon();
   const unreadOutputIds = useTabsStore((s) => s.unreadOutputIds);
   const tabs = allTabs.filter((tab) => tab.paneId === paneId);
   const activeId = useTabsStore((s) => findPane(s.root, paneId)?.activeTabId ?? null);
@@ -542,7 +544,7 @@ export function TabStrip({
           tab.profile === null
             ? viewTabIcon(tab.view)
             : environmentTabIcon(tab.profile) ??
-              (tab.profile.kind === 'local' ? TerminalIcon : hostKindIcon(tab.profile.kind));
+              (tab.profile.kind === 'local' ? TerminalIcon : sessionHostIcon(tab.profile));
         return (
           <Stack
             key={tab.id}
@@ -1033,7 +1035,7 @@ export function TabStrip({
             tab.profile === null
               ? viewTabIcon(tab.view)
               : environmentTabIcon(tab.profile) ??
-                (tab.profile.kind === 'local' ? TerminalIcon : hostKindIcon(tab.profile.kind));
+                (tab.profile.kind === 'local' ? TerminalIcon : sessionHostIcon(tab.profile));
           return (
             <MenuItem
               key={tab.id}

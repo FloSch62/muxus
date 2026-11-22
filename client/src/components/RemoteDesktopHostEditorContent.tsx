@@ -19,6 +19,7 @@ import type { HostEditorState } from '../state/ui.js';
 import { useUiStore } from '../state/ui.js';
 import { FolderPathField } from './FolderPathField.js';
 import { HostColorPicker } from './HostColorPicker.js';
+import { HostIconPicker } from './HostIconPicker.js';
 import { EditorShell, type EditorSectionDef } from './host-editor/EditorShell.js';
 import { SshGatewayRouteField } from './host-editor/SshGatewayRouteField.js';
 import { PasswordEntryField } from './password-managers/PasswordEntryField.js';
@@ -176,6 +177,12 @@ function GeneralSection({ kind, draft, set }: SectionProps) {
         helperText="Optional — use / to nest, e.g. Lab/Windows."
       />
       <HostColorPicker value={draft.color} onChange={(color) => set({ color })} />
+      <HostIconPicker
+        value={draft.icon}
+        onChange={(icon) => set({ icon })}
+        kind={kind}
+        color={draft.color}
+      />
       {kind === 'vnc' && !draft.sshGateway && (
         <Alert severity="warning">
           Most VNC servers do not encrypt their traffic. Outside a trusted network, reach the host through an SSH

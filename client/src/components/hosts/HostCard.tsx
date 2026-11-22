@@ -6,9 +6,8 @@ import { alpha } from '@mui/material/styles';
 import CheckIcon from '@mui/icons-material/Check';
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import { managedHostAddress, managedHostDisplayName, type ManagedHost } from '../../managed-hosts.js';
-import { managedHostKind } from '../../hosts-table.js';
 import { EnvironmentBadges } from '../environments/EnvironmentBadges.js';
-import { hostKindIcon } from '../host-kind-icon.js';
+import { managedHostIcon } from '../host-icon.js';
 import type { HostActivation } from '../sidebar/row-clicks.js';
 import type { LiveCounts } from '../sidebar/useLiveHostCounts.js';
 
@@ -54,7 +53,7 @@ export const HostCard = memo(function HostCard({
   const title = managedHostDisplayName(host);
   const address = managedHostAddress(host);
   const color = host.entry.metadata?.color;
-  const Icon = hostKindIcon(managedHostKind(host));
+  const Icon = managedHostIcon(host);
   const connected = live?.connected ?? 0;
   const connecting = live?.connecting ?? 0;
 

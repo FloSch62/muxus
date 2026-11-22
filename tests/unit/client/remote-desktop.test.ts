@@ -36,7 +36,7 @@ const rdpHost: SavedHostProfile = {
     sshGateway: { target: 'bastion' },
     shareClipboard: false,
   },
-  metadata: { ...metadata, profileId: 'rdp-build', group: 'Windows', color: '#4488ff' },
+  metadata: { ...metadata, profileId: 'rdp-build', group: 'Windows', color: '#4488ff', icon: 'windows' },
   createdAt: '',
   updatedAt: '',
 };
@@ -88,6 +88,7 @@ describe('RDP/VNC host editor draft', () => {
     expect(desktopDraftMetadataPatch(draft)).toEqual({
       group: 'Windows',
       color: '#4488ff',
+      icon: 'windows',
       // No password-manager entry is linked.
       passwordRef: null,
     });

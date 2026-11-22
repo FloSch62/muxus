@@ -38,6 +38,7 @@ import { showToast } from '../../state/toast.js';
 import { useUiStore } from '../../state/ui.js';
 import { statusTextColor } from '../../theme.js';
 import { AuthPromptDialog, type AuthPromptRequest, type AuthPromptResult } from '../AuthPromptDialog.js';
+import { useSessionHostIcon } from '../host-icon.js';
 import { HostKeyDialog, type HostKeyRequest } from '../HostKeyDialog.js';
 import { ClabTopologyDialog } from './ClabTopologyDialog.js';
 import { ENVIRONMENT_KINDS } from './environment-icons.js';
@@ -337,7 +338,12 @@ function HostCard({
   const key = `host:${host.key}`;
   const open = scoped || expansion.isOpen(key, true);
   const local = host.key === LOCAL_ENVIRONMENT_KEY;
-  const HostIcon = local ? ComputerOutlinedIcon : DnsOutlinedIcon;
+  const sessionHostIcon = useSessionHostIcon();
+  const HostIcon = local
+    ? ComputerOutlinedIcon
+    : host.profile
+      ? sessionHostIcon(host.profile)
+      : DnsOutlinedIcon;
   const tools = host.environments
     .map((environment) =>
       environment.kind === 'containers'

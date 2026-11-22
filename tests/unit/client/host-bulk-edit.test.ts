@@ -208,6 +208,23 @@ describe('bulkEditPlan', () => {
     ]);
   });
 
+  it('gives every kind of host an icon, and takes it away again', () => {
+    const hosts = [openSsh('a', {}, { icon: 'ubuntu' }), telnet('t'), rdp('desk', { icon: 'windows' })];
+
+    expect(summarizeBulkValues(hosts, new Map()).icon).toEqual({ state: 'mixed', count: 3 });
+
+    const set = bulkEditPlan(hosts, { icon: 'ubuntu' });
+    // The host that already shows it is left alone.
+    expect(set.metadata.map(({ host, patch }) => [host.entry.metadata?.profileId, patch])).toEqual([
+      ['t', { icon: 'ubuntu' }],
+      ['desk', { icon: 'ubuntu' }],
+    ]);
+    expect(set.fieldCounts).toEqual({ icon: 2 });
+
+    const cleared = bulkEditPlan(hosts, { icon: undefined });
+    expect(cleared.metadata.map(({ patch }) => patch)).toEqual([{ icon: null }, { icon: null }]);
+  });
+
   it('only changes the highlighting profile and switch, keeping each host its own rules', () => {
     const rule = {
       id: 'r1',

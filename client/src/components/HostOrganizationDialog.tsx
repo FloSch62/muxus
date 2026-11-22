@@ -17,7 +17,8 @@ import { savedHostAddress, savedHostDisplayName } from '../saved-hosts.js';
 import { useUiStore } from '../state/ui.js';
 import { FolderPathField } from './FolderPathField.js';
 import { HostColorPicker } from './HostColorPicker.js';
-import { hostKindIcon } from './host-kind-icon.js';
+import { hostIcon } from './host-icon.js';
+import { HostIconPicker } from './HostIconPicker.js';
 
 /** Edit presentation metadata without changing a host's connection details. */
 export function HostOrganizationDialog() {
@@ -26,6 +27,7 @@ export function HostOrganizationDialog() {
   const [displayName, setDisplayName] = useState('');
   const [group, setGroup] = useState('');
   const [color, setColor] = useState<string | undefined>();
+  const [icon, setIcon] = useState<string | undefined>();
   const updateMetadata = useUpdateSshMetadata(() => setEntry(false));
   const updateProfileMetadata = useUpdateHostProfileMetadata(() => setEntry(false));
 
@@ -34,12 +36,14 @@ export function HostOrganizationDialog() {
     setDisplayName(entry.metadata?.displayName ?? '');
     setGroup(entry.metadata?.group ?? '');
     setColor(entry.metadata?.color);
+    setIcon(entry.metadata?.icon);
   }, [entry]);
 
   if (!entry) return null;
 
   const saved = isSavedHost(entry);
-  const PreviewIcon = hostKindIcon(saved ? entry.kind : 'ssh');
+  const kind = saved ? entry.kind : 'ssh';
+  const PreviewIcon = hostIcon(icon, kind);
   const fallbackName = saved ? entry.name : entry.alias;
   const name = displayName.trim() || fallbackName;
   const close = () => setEntry(false);
@@ -47,6 +51,7 @@ export function HostOrganizationDialog() {
     displayName: displayName.trim() || null,
     group: group.trim() || null,
     color: color ?? null,
+    icon: icon ?? null,
   };
   const save = () => {
     if (saved) {
@@ -68,7 +73,7 @@ export function HostOrganizationDialog() {
         <DialogTitle sx={{ pb: 0.75 }}>Organize {managedHostName(entry)}</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="textSecondary" sx={{ mb: 2.5 }}>
-            Display name, folder, and color are local to Muxus. Connection settings
+            Display name, folder, color and icon are local to Muxus. Connection settings
             stay unchanged.
           </Typography>
 
@@ -87,6 +92,7 @@ export function HostOrganizationDialog() {
               helperText="Choose a folder or type a new one — use / to nest."
             />
             <HostColorPicker value={color} onChange={setColor} />
+            <HostIconPicker value={icon} onChange={setIcon} kind={kind} color={color} />
 
             <Box
               sx={{

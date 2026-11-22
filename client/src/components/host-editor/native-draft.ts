@@ -45,6 +45,7 @@ export interface NativeHostDraft {
   group: string;
   /** Muxus row color, applied with the same metadata patch. */
   color?: string;
+  icon?: string;
   /** Empty follows the application theme's terminal scheme preference. */
   terminalScheme?: string;
   terminalFontColor?: string;
@@ -81,6 +82,7 @@ export function blankNativeDraft(prefillTarget = '', group = ''): NativeHostDraf
     name: '',
     group,
     color: undefined,
+    icon: undefined,
     terminalScheme: undefined,
     terminalFontColor: undefined,
     terminalBackgroundColor: undefined,
@@ -110,6 +112,7 @@ export function nativeDraftFromProfile(saved: SavedHostProfile, duplicate: boole
   draft.name = duplicate ? `${saved.name} copy` : saved.name;
   draft.group = saved.metadata.group ?? '';
   draft.color = saved.metadata.color;
+  draft.icon = saved.metadata.icon;
   draft.terminalScheme = saved.metadata.terminalScheme;
   draft.terminalFontColor = saved.metadata.terminalFontColor;
   draft.terminalBackgroundColor = saved.metadata.terminalBackgroundColor;
@@ -191,6 +194,7 @@ export function nativeDraftMetadataPatch(draft: NativeHostDraft): OpenSshMetadat
   return {
     group: draft.group.trim() || null,
     color: draft.color ?? null,
+    icon: draft.icon ?? null,
     terminalScheme: draft.terminalScheme ?? null,
     terminalFontColor: draft.terminalFontColor ?? null,
     terminalBackgroundColor: draft.terminalBackgroundColor ?? null,

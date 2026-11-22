@@ -17,7 +17,7 @@ import {
 import { connectManagedHost } from '../../session-actions.js';
 import { tabsInOrder, useTabsStore, type SessionTab } from '../../state/tabs.js';
 import { terminalHandle } from '../../terminal/terminal-registry.js';
-import { hostKindIcon } from '../host-kind-icon.js';
+import { useSessionHostIcon } from '../host-icon.js';
 
 export interface HostSessionsMenuState {
   anchor: HTMLElement;
@@ -74,6 +74,7 @@ export function HostSessionsMenu({
   onClose: () => void;
 }) {
   const tabs = useTabsStore((s) => s.tabs);
+  const sessionHostIcon = useSessionHostIcon();
   const root = useTabsStore((s) => s.root);
   const activeId = useTabsStore((s) => s.activeId);
   const hostKey = menu ? managedHostKey(menu.host) : undefined;
@@ -137,7 +138,7 @@ export function HostSessionsMenu({
       </ListSubheader>
       {sessions.map((tab) => {
         const Icon =
-          tab.profile.kind === 'local' ? TerminalIcon : hostKindIcon(tab.profile.kind);
+          tab.profile.kind === 'local' ? TerminalIcon : sessionHostIcon(tab.profile);
         const detail = statusDetail(tab);
         const preview = terminalHandle(tab.id)?.recentLines(PREVIEW_LINES) ?? [];
         const current = tab.id === activeId;
