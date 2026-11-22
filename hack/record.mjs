@@ -368,12 +368,12 @@ async function tour() {
   await wait(250);
 
   // --- 5. Files and an editor, in the session ---------------------------------
-  // Back to one pane first: the file browser takes half of the pane it opens in,
-  // and a terminal squeezed to twenty columns reflows into noise.
+  // Back to one pane first: beside the sidebar's file browser and an editor, two
+  // panes would be squeezed to twenty columns, and a terminal reflows into noise.
   await point(page.locator('[aria-label="Close pane"]').last(), { ms: 620 });
   await wait(700);
   await caption('SFTP and a remote editor on the same session');
-  await point(page.locator('[aria-label="Toggle file browser"]'), { ms: 620 });
+  await point(page.locator('nav[aria-label="Sidebar"] [aria-label$="ile browser"]'), { ms: 620 });
   await wait(1900);
   await point(page.getByText('docker-compose.yml').first(), { ms: 560, clicks: 2 });
   await wait(3000);

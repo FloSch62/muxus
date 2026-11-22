@@ -1,7 +1,11 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { DEFAULT_SIDEBAR_WIDTH } from '../sidebar-width.js';
-import { DEFAULT_SFTP_PANEL_WIDTH } from '../sftp-panel-width.js';
+import {
+  DEFAULT_HOSTS_TABLE_SORT,
+  isHostsTableSort,
+  type HostsTableSort,
+} from '../hosts-table-sort.js';
 import {
   DEFAULT_ENVIRONMENTS_PANEL_WIDTH,
   MIN_ENVIRONMENTS_PANEL_WIDTH,
@@ -61,10 +65,14 @@ export type TabNumberVisibility = 'shortcut' | 'always';
 export type SidebarPosition = 'left' | 'right';
 /** Where the saved-command bar sits relative to the pane canvas. */
 export type CommandBarPosition = 'top' | 'bottom';
-/** Beside each SSH terminal, or behind a tab in the window sidebar. */
-export type FileBrowserPosition = 'pane' | 'sidebar';
 /** Click that opens a sidebar entry; with double-click, a single click selects. */
 export type SidebarOpenGesture = 'click' | 'double-click';
+/** How the sidebar lays the hosts out: the folder tree, one flat list, or one folder at a time. */
+export type SidebarHostView = 'tree' | 'list' | 'scope';
+/** What the flat host list is grouped by. */
+export type SidebarHostGrouping = 'recent' | 'name' | 'kind';
+/** How the hosts tab shows the hosts. */
+export type HostsTabView = 'cards' | 'table';
 /** Where the host editor saves a new SSH host unless told otherwise. */
 export type NewSshHostStorage = 'openssh' | 'muxus';
 
@@ -296,10 +304,18 @@ export interface PrefsState {
   sidebarCollapsed: boolean;
   /** Which side of the window the hosts sidebar docks on. */
   sidebarPosition: SidebarPosition;
-  /** Where the remote file browser opens: beside its terminal, or in the sidebar. */
-  fileBrowserPosition: FileBrowserPosition;
   /** Whether a sidebar entry opens on a single click or on a double-click. */
   sidebarOpenGesture: SidebarOpenGesture;
+  /** Whether the sidebar rail shows its labels beside the icons. */
+  sidebarRailPinned: boolean;
+  /** How the sidebar lays the hosts out. */
+  sidebarHostView: SidebarHostView;
+  /** What the sidebar's flat host list is grouped by. */
+  sidebarHostGrouping: SidebarHostGrouping;
+  /** Cards or a table in the hosts tab. */
+  hostsTabView: HostsTabView;
+  /** Column the hosts tab's table is sorted by; arranged by folder until one is picked. */
+  hostsTabSort: HostsTableSort;
   /** Width of the sessions and hosts sidebar. */
   sidebarWidth: number;
   /** Folder keys the user collapsed. Absent means expanded, so a new folder
@@ -314,8 +330,6 @@ export interface PrefsState {
   /** Folders the user created that hold no host yet; canonical paths, since an
    *  empty folder has no host to carry its label. */
   sidebarEmptyFolders: string[];
-  /** Width of the per-session remote file browser. */
-  sftpPanelWidth: number;
   /** List names starting with a dot in every file browser. */
   showHiddenFiles: boolean;
   /** Width of the containers and VMs panel. */
@@ -341,12 +355,20 @@ export function isCommandBarPosition(value: unknown): value is CommandBarPositio
   return value === 'top' || value === 'bottom';
 }
 
-export function isFileBrowserPosition(value: unknown): value is FileBrowserPosition {
-  return value === 'pane' || value === 'sidebar';
-}
-
 export function isSidebarOpenGesture(value: unknown): value is SidebarOpenGesture {
   return value === 'click' || value === 'double-click';
+}
+
+export function isSidebarHostView(value: unknown): value is SidebarHostView {
+  return value === 'tree' || value === 'list' || value === 'scope';
+}
+
+export function isSidebarHostGrouping(value: unknown): value is SidebarHostGrouping {
+  return value === 'recent' || value === 'name' || value === 'kind';
+}
+
+export function isHostsTabView(value: unknown): value is HostsTabView {
+  return value === 'cards' || value === 'table';
 }
 
 export function isNewSshHostStorage(value: unknown): value is NewSshHostStorage {
@@ -407,8 +429,19 @@ export function migratePrefsState(persisted: unknown, version: number): unknown 
   if (!isTabNumberVisibility(state.tabNumberVisibility)) delete state.tabNumberVisibility;
   if (!isSidebarPosition(state.sidebarPosition)) delete state.sidebarPosition;
   if (!isCommandBarPosition(state.commandBarPosition)) delete state.commandBarPosition;
-  if (!isFileBrowserPosition(state.fileBrowserPosition)) delete state.fileBrowserPosition;
+  // The file browser once had a place beside its terminal and a width for it.
+  delete (state as { fileBrowserPosition?: unknown }).fileBrowserPosition;
+  delete (state as { sftpPanelWidth?: unknown }).sftpPanelWidth;
+  // Hiding the sidebar used to hide the hosts and nothing else. It now holds
+  // settings, files, tunnels and the rest of what the top bar had, so a window
+  // that hid it before meets it shown once and can hide it again.
+  if (version < 18) delete state.sidebarCollapsed;
   if (!isSidebarOpenGesture(state.sidebarOpenGesture)) delete state.sidebarOpenGesture;
+  if (typeof state.sidebarRailPinned !== 'boolean') delete state.sidebarRailPinned;
+  if (!isSidebarHostView(state.sidebarHostView)) delete state.sidebarHostView;
+  if (!isSidebarHostGrouping(state.sidebarHostGrouping)) delete state.sidebarHostGrouping;
+  if (!isHostsTabView(state.hostsTabView)) delete state.hostsTabView;
+  if (!isHostsTableSort(state.hostsTabSort)) delete state.hostsTabSort;
   if (!isTerminalFileLinkActivation(state.terminalFileLinkActivation)) {
     delete state.terminalFileLinkActivation;
   }
@@ -703,14 +736,17 @@ export const usePrefsStore = create<PrefsState>()(
       keywordHighlightProfiles: [...BUILTIN_HIGHLIGHT_PROFILES],
       sidebarCollapsed: false,
       sidebarPosition: 'left',
-      fileBrowserPosition: 'pane',
       sidebarOpenGesture: 'click',
+      sidebarRailPinned: false,
+      sidebarHostView: 'tree',
+      sidebarHostGrouping: 'recent',
+      hostsTabView: 'cards',
+      hostsTabSort: DEFAULT_HOSTS_TABLE_SORT,
       sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
       sidebarCollapsedFolders: [],
       sidebarFolderStyles: {},
       sidebarFolderOrder: {},
       sidebarEmptyFolders: [],
-      sftpPanelWidth: DEFAULT_SFTP_PANEL_WIDTH,
       showHiddenFiles: true,
       environmentsPanelWidth: DEFAULT_ENVIRONMENTS_PANEL_WIDTH,
       debugMode: false,
@@ -718,7 +754,9 @@ export const usePrefsStore = create<PrefsState>()(
     }),
     {
       name: PREFS_STORAGE_NAME,
-      version: 17,
+      // 18: the file browser's dock beside the terminal and its width are gone,
+      // and a sidebar hidden before it became the rail is shown again.
+      version: 18,
       migrate: migratePrefsState,
       merge: mergePersistedPrefs,
       storage: createJSONStorage(() => muxusStateStorage),

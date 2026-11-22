@@ -5,7 +5,7 @@ icon: lucide/arrow-left-right
 
 # Tunnels & port forwarding
 
-The forwarding panel is the :material-swap-horizontal: control in the top bar, badged with
+The forwarding panel is the :material-swap-horizontal: icon in the sidebar rail, badged with
 the number of active forwards. It has two sections: **persistent tunnels** that have been
 saved, and the forwards running on each **live connection**.
 

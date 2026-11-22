@@ -3,6 +3,7 @@ import type { SavedHostProfile, SshGateway, SshHostEntry } from '@muxus/shared';
 import type { CompareText } from '../compare-sources.js';
 import type { HostDraft } from '../components/host-editor/draft.js';
 import { openSettingsWindow } from '../window-management.js';
+import { usePrefsStore } from './prefs.js';
 
 /** Unified editor state for OpenSSH entries and Muxus-owned Telnet/serial/RDP/VNC hosts. */
 export type HostEditorState =
@@ -70,8 +71,10 @@ export function isSettingsSection(value: unknown): value is SettingsSection {
   return (SETTINGS_SECTIONS as readonly unknown[]).includes(value);
 }
 
-/** What the window sidebar shows while the file browser is docked in it. */
-export type SidebarView = 'hosts' | 'files';
+/** What the sidebar's panel shows. */
+export type SidebarView = 'hosts' | 'files' | 'environments' | 'forwarding';
+
+export const SIDEBAR_VIEWS: readonly SidebarView[] = ['hosts', 'files', 'environments', 'forwarding'];
 
 /** Where settings open, and the entry in that section to bring into view,
  * such as one local shell profile. */
@@ -118,18 +121,26 @@ interface UiState {
   folderDialog: FolderDialogState;
   /** Following a shared sessions link, or sharing a folder as one. */
   sharedSessionsDialog: SharedSessionsDialogState;
-  /** Global forwarding side panel (saved tunnels + live forwards). */
+  /**
+   * The forwarding view (saved tunnels + live forwards) is in front of the
+   * open sidebar panel. Follows `sidebarView`; set it through the actions.
+   */
   forwardingOpen: boolean;
   /**
-   * The containers, clusters and VMs panel: every host found so far, or one
-   * host (`hostKey`) opened from its sidebar badge or menu.
+   * The containers, clusters and VMs view while it is in front of the open
+   * sidebar panel: every host found so far, or one host (`hostKey`) opened
+   * from its sidebar badge or menu. Follows `sidebarView` like the above.
    */
   environmentsPanel: { hostKey?: string } | false;
   /**
-   * The sidebar tab in front. Kept per window and never persisted, like the
+   * The sidebar view in front. Kept per window and never persisted, like the
    * window's tabs, so each window browses its own sessions.
    */
   sidebarView: SidebarView;
+  /** Whether the panel is open beside the rail; closed, the rail stands alone. */
+  sidebarPanelOpen: boolean;
+  /** Folder the hosts are narrowed to in the folder scope view; '' is every host. */
+  sidebarScopePath: string;
   /** Diagnostic log viewer (settings → debug). */
   logViewerOpen: boolean;
   setFocusMode: (active: boolean) => void;
@@ -153,8 +164,49 @@ interface UiState {
   setSharedSessionsDialog: (value: SharedSessionsDialogState) => void;
   setForwardingOpen: (open: boolean) => void;
   setEnvironmentsPanel: (value: { hostKey?: string } | false) => void;
+  /** Bring a view to the front, opening the panel and a hidden sidebar for it. */
   setSidebarView: (view: SidebarView) => void;
+  /** The rail's click: open the view, or close the panel when it is already in front. */
+  toggleSidebarView: (view: SidebarView) => void;
+  setSidebarPanelOpen: (open: boolean) => void;
+  setSidebarScopePath: (path: string) => void;
   setLogViewerOpen: (open: boolean) => void;
+}
+
+type SidebarViewState = Pick<
+  UiState,
+  'sidebarView' | 'sidebarPanelOpen' | 'forwardingOpen' | 'environmentsPanel'
+>;
+
+/**
+ * The one place the panel's view changes. `forwardingOpen` and
+ * `environmentsPanel` are kept in step here, so everything that reads them
+ * still answers "is that view on screen" without knowing about the panel.
+ */
+function sidebarViewPatch(
+  state: SidebarViewState,
+  view: SidebarView,
+  open: boolean,
+  environments?: { hostKey?: string },
+): SidebarViewState {
+  return {
+    sidebarView: view,
+    sidebarPanelOpen: open,
+    forwardingOpen: open && view === 'forwarding',
+    environmentsPanel:
+      open && view === 'environments' ? (environments ?? (state.environmentsPanel || {})) : false,
+  };
+}
+
+/** Open the panel on a view. Asking for one also brings back a hidden sidebar. */
+function showSidebarView(
+  state: SidebarViewState,
+  view: SidebarView,
+  environments?: { hostKey?: string },
+): SidebarViewState {
+  const prefs = usePrefsStore.getState();
+  if (prefs.sidebarCollapsed) prefs.set({ sidebarCollapsed: false });
+  return sidebarViewPatch(state, view, true, environments);
 }
 
 export const useUiStore = create<UiState>()((set) => ({
@@ -181,6 +233,8 @@ export const useUiStore = create<UiState>()((set) => ({
   forwardingOpen: false,
   environmentsPanel: false,
   sidebarView: 'hosts',
+  sidebarPanelOpen: true,
+  sidebarScopePath: '',
   logViewerOpen: false,
   setFocusMode: (focusMode) => set({ focusMode }),
   // The desktop app opens (or raises) the settings window instead of the dialog.
@@ -217,8 +271,33 @@ export const useUiStore = create<UiState>()((set) => ({
   setHostBulkEditor: (hostBulkEditor) => set({ hostBulkEditor }),
   setFolderDialog: (folderDialog) => set({ folderDialog }),
   setSharedSessionsDialog: (sharedSessionsDialog) => set({ sharedSessionsDialog }),
-  setForwardingOpen: (forwardingOpen) => set({ forwardingOpen }),
-  setEnvironmentsPanel: (environmentsPanel) => set({ environmentsPanel }),
-  setSidebarView: (sidebarView) => set({ sidebarView }),
+  // Closing either view from its own control brings the hosts back rather
+  // than shutting the panel, the way putting the file browser away does.
+  setForwardingOpen: (open) =>
+    set((state) => {
+      if (open) return showSidebarView(state, 'forwarding');
+      return state.sidebarView === 'forwarding'
+        ? sidebarViewPatch(state, 'hosts', state.sidebarPanelOpen)
+        : state;
+    }),
+  setEnvironmentsPanel: (scope) =>
+    set((state) => {
+      if (scope) return showSidebarView(state, 'environments', scope);
+      return state.sidebarView === 'environments'
+        ? sidebarViewPatch(state, 'hosts', state.sidebarPanelOpen)
+        : state;
+    }),
+  setSidebarView: (view) => set((state) => showSidebarView(state, view)),
+  toggleSidebarView: (view) =>
+    set((state) =>
+      state.sidebarPanelOpen && state.sidebarView === view
+        ? sidebarViewPatch(state, view, false)
+        : showSidebarView(state, view),
+    ),
+  setSidebarPanelOpen: (open) =>
+    set((state) =>
+      open ? showSidebarView(state, state.sidebarView) : sidebarViewPatch(state, state.sidebarView, false),
+    ),
+  setSidebarScopePath: (sidebarScopePath) => set({ sidebarScopePath }),
   setLogViewerOpen: (logViewerOpen) => set({ logViewerOpen }),
 }));

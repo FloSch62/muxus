@@ -1,20 +1,26 @@
 import type { ElementType } from 'react';
 import { alpha, createTheme, type Theme } from '@mui/material/styles';
 import { DEFAULT_SIDEBAR_WIDTH } from './sidebar-width.js';
-import { DEFAULT_SFTP_PANEL_WIDTH } from './sftp-panel-width.js';
 
 declare module '@mui/material/styles' {
   /** Chrome surfaces (top bar, session sidebar, tab strip) share this background —
    *  exposed on the palette so no component re-hardcodes the hex. `sidebarInk`
    *  is the label color for sidebar rows: in light mode it sits below
-   *  text.primary because a panel of near-black rows reads as a slab of ink. */
+   *  text.primary because a panel of near-black rows reads as a slab of ink.
+   *  `sidebarSheet` is the card the sidebar's panel is drawn on, and
+   *  `sidebarEdge` the hairline around it and the rail: the divider as a solid
+   *  color, so outlines that meet or cross never double up. */
   interface Palette {
     sidebar: string;
     sidebarInk: string;
+    sidebarSheet: string;
+    sidebarEdge: string;
   }
   interface PaletteOptions {
     sidebar?: string;
     sidebarInk?: string;
+    sidebarSheet?: string;
+    sidebarEdge?: string;
   }
 }
 
@@ -32,8 +38,6 @@ export const layout = {
   sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   /** Tab strip height under the top bar. */
   tabStripHeight: 40,
-  /** Default SFTP panel width. */
-  sftpPanelWidth: DEFAULT_SFTP_PANEL_WIDTH,
   /** Forwarding side panel width. */
   forwardingPanelWidth: 380,
   /** Themed scrollbar thickness. */
@@ -57,6 +61,8 @@ const darkColors = {
   bgPaper: '#232328',
   sidebar: '#151518',
   sidebarInk: '#e6e6ea',
+  sidebarSheet: '#1d1d21',
+  sidebarEdge: '#28282b',
   divider: 'rgba(255, 255, 255, 0.08)',
   textPrimary: '#e6e6ea',
   textSecondary: '#9d9da7',
@@ -78,6 +84,8 @@ const lightColors = {
   bgPaper: '#ffffff',
   sidebar: '#f4f4f5',
   sidebarInk: '#3f3f49',
+  sidebarSheet: '#ffffff',
+  sidebarEdge: '#e0e0e1',
   divider: 'rgba(0, 0, 0, 0.08)',
   textPrimary: '#1c1c21',
   textSecondary: '#6e6e78',
@@ -132,6 +140,8 @@ export function buildTheme(mode: 'light' | 'dark', options: { modalBackdrop?: El
       divider: c.divider,
       sidebar: c.sidebar,
       sidebarInk: c.sidebarInk,
+      sidebarSheet: c.sidebarSheet,
+      sidebarEdge: c.sidebarEdge,
       background: { default: c.bgDefault, paper: c.bgPaper },
       // `disabled` is used as the dimmest text tier; keying it off the
       // secondary hue keeps the two muted greys in the same family instead

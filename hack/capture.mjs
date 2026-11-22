@@ -321,7 +321,7 @@ add('quick-launcher', async () => {
 add('sftp', async () => {
   const page = await open();
   await connect(page, 'web-01');
-  await page.locator('[aria-label="Toggle file browser"]').click();
+  await page.locator('nav[aria-label="Sidebar"] [aria-label$="ile browser"]').click();
   await wait(2000);
   await shot(page, 'sftp');
   await page.close_();
@@ -330,7 +330,7 @@ add('sftp', async () => {
 add('remote-editor', async () => {
   const page = await open();
   await connect(page, 'web-01');
-  await page.locator('[aria-label="Toggle file browser"]').click();
+  await page.locator('nav[aria-label="Sidebar"] [aria-label$="ile browser"]').click();
   await wait(2000);
   await page.getByText('docker-compose.yml').first().dblclick();
   await wait(3500);
@@ -341,7 +341,7 @@ add('remote-editor', async () => {
 add('tunnels', async () => {
   const page = await open();
   await connect(page, 'web-01');
-  await page.locator('[aria-label="Toggle forwarding panel"]').click();
+  await page.locator('nav[aria-label="Sidebar"] [aria-label^="Port forwarding"]').click();
   await wait(1500);
   await shot(page, 'tunnels');
   await page.close_();

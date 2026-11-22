@@ -682,7 +682,6 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         connId: undefined,
         sftpAvailable: undefined,
         systemOpenSsh: undefined,
-        sftpOpen: false,
         terminalCwd: undefined,
       });
     }
@@ -1408,7 +1407,6 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
               connId: tab.profile.kind === 'ssh' ? ctl.connId : undefined,
               sftpAvailable,
               systemOpenSsh: ctl.systemOpenSsh,
-              ...(sftpAvailable === false ? { sftpOpen: false } : {}),
               transferId: undefined,
               // The replacement connection is live; retries from here on may
               // multiplex normally again.

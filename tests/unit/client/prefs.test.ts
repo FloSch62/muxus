@@ -174,20 +174,32 @@ describe('appearance preference', () => {
 });
 
 describe('layout preferences', () => {
-  it('docks the sidebar on the left, the file browser beside the terminal and the command bar on top by default', () => {
+  it('docks the sidebar on the left and the command bar on top by default', () => {
     const initial = usePrefsStore.getInitialState();
     expect(initial.sidebarPosition).toBe('left');
-    expect(initial.fileBrowserPosition).toBe('pane');
     expect(initial.commandBarPosition).toBe('top');
   });
 
   it('keeps valid positions during migration', () => {
     expect(
-      migratePrefsState(
-        { sidebarPosition: 'right', fileBrowserPosition: 'sidebar', commandBarPosition: 'bottom' },
-        16,
-      ),
-    ).toEqual({ sidebarPosition: 'right', fileBrowserPosition: 'sidebar', commandBarPosition: 'bottom' });
+      migratePrefsState({ sidebarPosition: 'right', commandBarPosition: 'bottom' }, 16),
+    ).toEqual({ sidebarPosition: 'right', commandBarPosition: 'bottom' });
+  });
+
+  it('shows a sidebar that was hidden before it held the rail, once', () => {
+    expect(migratePrefsState({ sidebarCollapsed: true, monoFontSize: 16 }, 17)).toEqual({
+      monoFontSize: 16,
+    });
+    // Hidden again in the new layout, it stays hidden.
+    expect(migratePrefsState({ sidebarCollapsed: true }, 18)).toEqual({ sidebarCollapsed: true });
+  });
+
+  it('forgets where the file browser used to dock and how wide it was there', () => {
+    for (const fileBrowserPosition of ['pane', 'sidebar']) {
+      expect(
+        migratePrefsState({ fileBrowserPosition, sftpPanelWidth: 420, monoFontSize: 16 }, 17),
+      ).toEqual({ monoFontSize: 16 });
+    }
   });
 
   it('falls back to the defaults when a persisted position is invalid', () => {
@@ -195,11 +207,49 @@ describe('layout preferences', () => {
       migratePrefsState(
         {
           sidebarPosition: 'bottom',
-          fileBrowserPosition: 'left',
           commandBarPosition: 'left',
           monoFontSize: 16,
         },
         16,
+      ),
+    ).toEqual({ monoFontSize: 16 });
+  });
+});
+
+describe('sidebar layout preferences', () => {
+  it('starts with an unpinned rail, the folder tree and cards arranged by folder', () => {
+    expect(usePrefsStore.getInitialState()).toMatchObject({
+      sidebarRailPinned: false,
+      sidebarHostView: 'tree',
+      sidebarHostGrouping: 'recent',
+      hostsTabView: 'cards',
+      hostsTabSort: { descending: false },
+    });
+  });
+
+  it('keeps valid choices during migration', () => {
+    const saved = {
+      sidebarRailPinned: true,
+      sidebarHostView: 'scope',
+      sidebarHostGrouping: 'kind',
+      hostsTabView: 'table',
+      hostsTabSort: { column: 'lastUsed', descending: true },
+    };
+    expect(migratePrefsState(saved, 17)).toEqual(saved);
+  });
+
+  it('drops what it cannot read and falls back to the defaults', () => {
+    expect(
+      migratePrefsState(
+        {
+          sidebarRailPinned: 'yes',
+          sidebarHostView: 'grid',
+          sidebarHostGrouping: 'color',
+          hostsTabView: 'list',
+          hostsTabSort: { column: 'owner', descending: false },
+          monoFontSize: 16,
+        },
+        17,
       ),
     ).toEqual({ monoFontSize: 16 });
   });

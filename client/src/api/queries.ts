@@ -1,5 +1,11 @@
 import { useMemo } from 'react';
-import { useInfiniteQuery, useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query';
+import {
+  queryOptions,
+  useInfiniteQuery,
+  useQueries,
+  useQuery,
+  type UseQueryResult,
+} from '@tanstack/react-query';
 import type {
   AppInfo,
   ConnectionsResponse,
@@ -90,30 +96,64 @@ export function useSftpList(connId: string | undefined, path: string | undefined
   });
 }
 
+/**
+ * What the server holds right now, which it only tells when asked. A cached
+ * answer is never shown as it is: whatever shows this asks again the moment it
+ * appears and when the window comes back to the front. The poll only covers
+ * what changes in between, from outside this window.
+ */
+const LIVE_STATE = { staleTime: 0, refetchOnWindowFocus: true } as const;
+const LIVE_STATE_POLL_MS = 5_000;
+const FORWARDS_SETTLING_POLL_MS = 1_000;
+
+/**
+ * How soon to ask for the forwards again. One on its way up or back is about
+ * to change state, so it is followed closely until it has settled.
+ */
+export function forwardsPollInterval(
+  forwards: readonly Pick<ForwardInfo, 'status'>[] | undefined,
+): number {
+  const settling = forwards?.some(
+    (forward) => forward.status === 'starting' || forward.status === 'reconnecting',
+  );
+  return settling ? FORWARDS_SETTLING_POLL_MS : LIVE_STATE_POLL_MS;
+}
+
+export const forwardsQuery = queryOptions({
+  queryKey: ['forwards'],
+  queryFn: () => apiFetch<{ forwards: ForwardInfo[] }>('/api/forwards'),
+  ...LIVE_STATE,
+});
+
+export const connectionsQuery = queryOptions({
+  queryKey: ['connections'],
+  queryFn: () => apiFetch<ConnectionsResponse>('/api/connections'),
+  ...LIVE_STATE,
+});
+
+export const tunnelsQuery = queryOptions({
+  queryKey: ['tunnels'],
+  queryFn: () => apiFetch<TunnelsResponse>('/api/tunnels'),
+  // Another window may have saved or deleted one since this one last looked.
+  staleTime: 0,
+});
+
 /** Every active forward on every connection (forwarding panel + badge). */
 export function useForwards() {
   return useQuery({
-    queryKey: ['forwards'],
-    queryFn: () => apiFetch<{ forwards: ForwardInfo[] }>('/api/forwards'),
-    refetchInterval: 5_000,
+    ...forwardsQuery,
+    refetchInterval: (query) => forwardsPollInterval(query.state.data?.forwards),
   });
 }
 
 /** Live SSH transports (connection reuse for tunnels, grouping in the panel). */
 export function useConnections() {
-  return useQuery({
-    queryKey: ['connections'],
-    queryFn: () => apiFetch<ConnectionsResponse>('/api/connections'),
-    refetchInterval: 5_000,
-  });
+  return useQuery({ ...connectionsQuery, refetchInterval: LIVE_STATE_POLL_MS });
 }
 
 /** Saved tunnel definitions. */
 export function useTunnels() {
-  return useQuery({
-    queryKey: ['tunnels'],
-    queryFn: () => apiFetch<TunnelsResponse>('/api/tunnels'),
-  });
+  return useQuery(tunnelsQuery);
 }
 
 export interface SessionHistoryFilters {

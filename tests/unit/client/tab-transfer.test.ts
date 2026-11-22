@@ -71,7 +71,6 @@ describe('cross-window tab transfer', () => {
       terminalId: 'terminal-live',
       transferId: 'transfer-live',
       pinned: true,
-      sftpOpen: false,
       searchRequest: 0,
       editorPaths: [],
       loggingPaused: false,
@@ -107,7 +106,6 @@ describe('cross-window tab transfer', () => {
       status: 'idle' as const,
       connectOnMount: false as const,
       view: 'monitor' as const,
-      sftpOpen: false,
       searchRequest: 0,
       editorPaths: [],
       loggingPaused: false,
@@ -126,6 +124,14 @@ describe('cross-window tab transfer', () => {
     const state = useTabsStore.getState();
     expect(state.tabs.filter((tab) => tab.view === 'monitor')).toHaveLength(1);
     expect(state.activeId).toBe('monitor-from-window');
+
+    // Another view is no duplicate of the monitor: the hosts tab arrives beside it.
+    const hosts = { ...incoming, id: 'hosts-from-window', title: 'Hosts', view: 'hosts' as const };
+    expect(transfer.adoptTransferredTab(hosts, 'pane-test')).toBe(true);
+    expect(transfer.adoptTransferredTab({ ...hosts, id: 'second-hosts' }, 'pane-test')).toBe(true);
+    const views = useTabsStore.getState().tabs.flatMap((tab) => tab.view ?? []);
+    expect(views.toSorted()).toEqual(['hosts', 'monitor']);
+    expect(useTabsStore.getState().activeId).toBe('hosts-from-window');
   });
 
   it('transfers an interrupted live tab and removes the source only after completion', async () => {
@@ -151,7 +157,6 @@ describe('cross-window tab transfer', () => {
       status: 'interrupted' as const,
       connectOnMount: true as const,
       terminalId: 'terminal-live',
-      sftpOpen: false,
       searchRequest: 0,
       editorPaths: [],
       loggingPaused: false,

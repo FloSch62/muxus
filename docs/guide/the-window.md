@@ -10,55 +10,74 @@ the parts referenced elsewhere in the guide.
 <figure markdown="span">
   ![The Muxus window](../assets/screenshots/overview.png#only-light){ .shadow }
   ![The Muxus window](../assets/screenshots/overview-dark.png#only-dark){ .shadow }
-  <figcaption>Top bar, hosts sidebar, and a pane canvas with browser-style tab strips.</figcaption>
+  <figcaption>Top bar, sidebar, and a pane canvas with browser-style tab strips.</figcaption>
 </figure>
 
 ## Top bar
 
 In the desktop app the top bar serves as the titlebar. It is a drag region, and the native
-window controls sit inside it. From left to right:
+window controls sit inside it. It holds what belongs to the window and to the session in
+front; everything else lives in the [sidebar](#sidebar). From left to right:
 
 | Control | What it does |
 | --- | --- |
-| :material-menu: | Show/hide the hosts sidebar (++ctrl+b++) |
+| :material-menu: | Show/hide the sidebar, rail included (++ctrl+b++) |
 | **Workspace name** | Opens the [workspace dialog](workspaces.md): save, lock, open, rename, set a startup workspace |
 | :material-checkbox-multiple-marked-outline: **Multi-exec** | Type once into several sessions at once. See [multi-exec](commands.md#multi-execution) |
 | :material-flash: | [Saved command buttons](commands.md) |
-| :material-folder-outline: | The [file browser](files.md) for the active SSH tab, beside the terminal or in the sidebar |
-| :material-pulse: | The [host monitor](host-monitor.md): statistics of every connected host in one tab |
-| :material-cube-outline: | The [containers and VMs panel](environments.md), with each host's listening ports |
-| :material-swap-horizontal: | The [forwarding panel](tunnels.md); the badge counts forwards and turns amber while a tunnel [reconnects or could not start](tunnels.md#starting-with-muxus-and-reconnecting) |
 | :material-console: | Terminal actions: find, select all, copy all, export, logging, [Send BREAK](telnet-serial.md#send-break), [send text file](terminal.md#sending-a-text-file), clear, zoom |
-| :material-history: | [Session history](session-history.md) |
-| :material-weather-night: | Theme: light → dark → follow system |
-| :material-keyboard: | [Keyboard shortcuts](../reference/keyboard-shortcuts.md), searchable and rebindable |
-| :material-cog: | [Settings](settings.md) |
+| :material-image-filter-center-focus: | Focus mode: hide everything but the panes |
 
 Below it, an optional **action bar** appears once [command buttons](commands.md) have been
 saved and the bar is enabled. Each button sends its command to the focused terminal; with
 several command groups, a selector at its left end switches between them. The bar can also
 sit at the bottom of the window, below the panes.
 
-## Hosts sidebar
+## Sidebar
 
-The sidebar presents saved hosts as a tree: OpenSSH `Host` blocks grouped by the file they
-came from, plus user-defined folders, colours and icons. A green dot marks a host with a
-live session, and a hover card shows the address, jump chain, key and auto-started
+The sidebar is a **rail** of icons along the window edge and, beside it, one **panel** at a
+time. The panel is a card that grows out of the rail icon it belongs to. Click another
+icon to switch, and click the one in front again to close the panel and keep only the
+rail. ++ctrl+b++ and the menu button in the top bar hide the whole sidebar.
+
+| Rail | What it does |
+| --- | --- |
+| :material-server-outline: **Hosts** | The saved hosts, described below |
+| :material-folder-outline: **File browser** | The [file browser](files.md) of the active SSH session, which can also [fill the window](files.md#full-size) |
+| :material-cube-outline: **Containers & VMs** | The [containers and VMs](environments.md) of this computer and every connected host, with each host's listening ports |
+| :material-swap-horizontal: **Port forwarding** | Saved [tunnels](tunnels.md) and the forwards on live connections; the badge counts forwards and turns amber while a tunnel [reconnects or could not start](tunnels.md#starting-with-muxus-and-reconnecting) |
+| :material-pulse: **Host monitor** | The [host monitor](host-monitor.md): statistics of every connected host in one tab |
+| :material-history: **Session history** | [Session history](session-history.md) |
+| :material-weather-night: **Appearance** | Theme: light, dark, or follow the system |
+| :material-keyboard: **Keyboard shortcuts** | [Keyboard shortcuts](../reference/keyboard-shortcuts.md), searchable and rebindable |
+| :material-cog: **Settings** | [Settings](settings.md) |
+| :material-pin-outline: **Pin labels** | Widen the rail so every icon keeps its label beside it |
+
+While the rail is not pinned, pointing at an icon shows its label. The arrow keys move
+between the four panels once one of their icons has focus.
+
+The hosts panel presents saved hosts as a tree: OpenSSH `Host` blocks grouped by the file
+they came from, plus user-defined folders, colours and icons. A green dot marks a host with
+a live session, and a hover card shows the address, jump chain, key and auto-started
 forwards. Clicking a host that already has tabs open lists them so you can jump back to
 one or start another ([host rows](hosts.md#host-rows)). Hosts can also
 [open with a double-click](hosts.md#opening-with-a-double-click), leaving a single click to
-select them.
+select them. The strip under the search box switches the tree for a
+[flat list or one folder at a time](hosts.md#other-layouts), and opens the hosts as a
+[tab of their own](hosts.md#the-hosts-tab).
 
 The box at the top both filters and connects. Type an alias to filter, or `user@host:port`
 to dial a target that is not saved.
 
 The sidebar docks on the left by default. To dock it on the right, right-click empty space
-in the sidebar and choose **Move sidebar to the right**, or use **Settings → Appearance →
-Layout**. The width and collapsed state carry over, and ++ctrl+b++ toggles it on either side.
+in the hosts panel and choose **Move sidebar to the right**, or use **Settings → Appearance
+→ Layout**. The widths and the hidden state carry over, and ++ctrl+b++ toggles it on either
+side.
 
-With the [file browser docked in the sidebar](files.md#docking-it-in-the-sidebar), a column
-of vertical tabs runs along the window edge: **Hosts** and **File browser**. Both share the
-sidebar's width, and each keeps its place while the other is in front.
+The hosts and the [file browser](files.md#in-the-sidebar) share one
+width, so switching between them never resizes the terminals; drag the panel's edge to
+change it. Containers & VMs keeps a width of its own, and port forwarding is never narrower
+than its rules need. Each panel keeps its place while another is in front.
 
 [More on hosts :octicons-arrow-right-24:](hosts.md)
 
@@ -88,14 +107,9 @@ moving a tab toward a direction with no pane splits one off.
 
 ## Side panels
 
-- The **file browser** opens inside the active SSH tab, to the right of the terminal, and
-  can be popped out into its own window. It can also live in the sidebar, where it follows
-  the active session.
-- The **forwarding panel** docks on the right of the window and lists saved tunnels plus
-  the forwards running on each live connection. With the hosts sidebar on the right, the
-  panel opens between the panes and the sidebar.
-
-Both are loaded lazily. Their code is fetched the first time the button is used.
+The **file browser** is a panel of the sidebar that follows the active SSH session. It can
+spread over the panes to fill the window, or be popped out into its own window. Like the
+other sidebar panels it is loaded lazily: its code is fetched the first time it is opened.
 
 ## Status bar
 

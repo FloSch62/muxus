@@ -46,7 +46,6 @@ import {
 import { confirmAction } from '../state/dialogs.js';
 import { SYSTEM_OPENSSH_UNAVAILABLE, tunnelUsesSystemOpenSsh } from '../system-openssh.js';
 import { showErrorToast, showToast } from '../state/toast.js';
-import { useUiStore } from '../state/ui.js';
 import { layout, statusTextColor } from '../theme.js';
 import {
   AuthPromptDialog,
@@ -72,7 +71,6 @@ const TUNNEL_SWITCHES = [
  */
 export function ForwardingPanel() {
   const queryClient = useQueryClient();
-  const setForwardingOpen = useUiStore((s) => s.setForwardingOpen);
   const { data: forwardsData } = useForwards();
   const { data: connectionsData } = useConnections();
   const { data: tunnelsData } = useTunnels();
@@ -222,15 +220,15 @@ export function ForwardingPanel() {
 
   return (
     <Box
+      component="section"
+      aria-label="Port forwarding"
       sx={{
-        width: layout.forwardingPanelWidth,
-        flexShrink: 0,
-        height: '100%',
+        flex: 1,
+        minWidth: 0,
+        minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
         bgcolor: 'sidebar',
-        borderLeft: 1,
-        borderColor: 'divider',
       }}
     >
       {/* As tall as the tab strip beside it, so their bottom lines meet. */}
@@ -254,9 +252,6 @@ export function ForwardingPanel() {
         <Button size="small" variant="contained" startIcon={<AddIcon />} onClick={() => setEditor({})}>
           Tunnel
         </Button>
-        <IconButton size="small" aria-label="Close forwarding panel" onClick={() => setForwardingOpen(false)}>
-          <CloseIcon fontSize="small" />
-        </IconButton>
       </Stack>
 
       <Box sx={{ flex: 1, overflowY: 'auto', py: 1 }}>

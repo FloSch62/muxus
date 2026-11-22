@@ -222,10 +222,10 @@ export function adoptTransferredTab(
   edge: 'before' | 'after' = 'after',
 ): boolean {
   const state = useTabsStore.getState();
-  // A window shows one host monitor: one arriving from another window joins
-  // the one that is already here.
-  if (tab.view === 'monitor') {
-    const present = state.tabs.find((candidate) => candidate.view === 'monitor');
+  // A window shows each view of Muxus once: one arriving from another window
+  // joins the one that is already here.
+  if (tab.view) {
+    const present = state.tabs.find((candidate) => candidate.view === tab.view);
     if (present) {
       state.activate(present.id);
       return true;

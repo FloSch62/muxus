@@ -7,7 +7,14 @@ import Typography from '@mui/material/Typography';
 import type { AppWindowLaunch } from '@muxus/shared';
 import { wsProtocols, wsUrl } from '../api/http.js';
 import { requestCloseRemoteEditor } from '../editor/remote-editor-registry.js';
+import { PanelResizeHandle } from '../components/PanelResizeHandle.js';
 import { loadRemoteEditorWorkspace, loadSftpPanel } from '../lazy-features.js';
+import {
+  clampSftpPanelWidth,
+  DEFAULT_SFTP_PANEL_WIDTH,
+  maxSftpPanelWidth,
+  MIN_SFTP_PANEL_WIDTH,
+} from '../sftp-panel-width.js';
 import { layout } from '../theme.js';
 
 const SftpPanel = lazy(() =>
@@ -24,6 +31,8 @@ export function SftpWindow({ launch }: { launch: SftpLaunch }) {
   const editorId = useRef(`sftp-window-${launch.connId}`);
   const [editorPaths, setEditorPaths] = useState<string[]>([]);
   const [activePath, setActivePath] = useState<string>();
+  const [listWidth, setListWidth] = useState(DEFAULT_SFTP_PANEL_WIDTH);
+  const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     document.title = `${launch.title} — SFTP — Muxus`;
@@ -84,13 +93,38 @@ export function SftpWindow({ launch }: { launch: SftpLaunch }) {
       </AppBar>
       <Box sx={{ flex: 1, display: 'flex', minHeight: 0 }}>
         <Suspense fallback={null}>
-          <SftpPanel
-            connId={launch.connId}
-            hostLabel={launch.title}
-            initialPath={launch.path}
-            fill={editorPaths.length === 0}
-            onOpenFile={openFile}
-          />
+          {/* The files take the window until one is opened; then they keep a
+              column beside the editor, as wide as it was last dragged. */}
+          <Box
+            ref={listRef}
+            sx={{
+              position: 'relative',
+              flexShrink: 0,
+              width: editorPaths.length === 0 ? '100%' : listWidth,
+              maxWidth: editorPaths.length === 0 ? 'none' : '70%',
+              ...(editorPaths.length === 0 ? {} : { borderRight: 1, borderColor: 'divider' }),
+            }}
+          >
+            <SftpPanel
+              connId={launch.connId}
+              hostLabel={launch.title}
+              initialPath={launch.path}
+              onOpenFile={openFile}
+            />
+            {editorPaths.length > 0 ? (
+              <PanelResizeHandle
+                panelRef={listRef}
+                edge="right"
+                width={listWidth}
+                defaultWidth={DEFAULT_SFTP_PANEL_WIDTH}
+                minWidth={MIN_SFTP_PANEL_WIDTH}
+                maxWidth={maxSftpPanelWidth}
+                clampWidth={clampSftpPanelWidth}
+                onWidthChange={setListWidth}
+                label="Resize file browser"
+              />
+            ) : null}
+          </Box>
           {editorPaths.length > 0 && (
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <RemoteEditorWorkspace

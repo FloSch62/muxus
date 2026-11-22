@@ -348,4 +348,27 @@ describe('workspace serialization', () => {
       { id: 'ssh-tab', profile: { kind: 'ssh', target: 'router' }, connectOnMount: false },
     ]);
   });
+
+  it('saves the hosts tab and brings it back as the hosts tab', () => {
+    const layout = serializeWorkspace(
+      { id: 'pane', type: 'pane', activeTabId: 'ssh-tab' },
+      [
+        { id: 'hosts-tab', paneId: 'pane', title: 'Hosts', view: 'hosts', pinned: true },
+        { id: 'ssh-tab', paneId: 'pane', title: 'Router', profile: { kind: 'ssh', target: 'router' } },
+      ],
+      'pane',
+    );
+    expect(layout.root).toMatchObject({
+      type: 'pane',
+      tabs: [
+        { id: 'hosts-tab', kind: 'hosts', title: 'Hosts', pinned: true },
+        { id: 'ssh-tab', kind: 'terminal' },
+      ],
+    });
+
+    expect(restoreWorkspace(layout)!.tabs).toMatchObject([
+      { id: 'hosts-tab', paneId: 'pane', view: 'hosts', title: 'Hosts', pinned: true },
+      { id: 'ssh-tab', profile: { kind: 'ssh', target: 'router' } },
+    ]);
+  });
 });

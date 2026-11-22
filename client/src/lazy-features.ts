@@ -24,3 +24,4 @@ export const loadMonacoTextEditor = () => import('./components/MonacoTextEditor.
 export const loadRemoteDesktopViewImpl = () => import('./components/RemoteDesktopViewImpl.js');
 export const loadManagementViewImpl = () => import('./components/ManagementViewImpl.js');
 export const loadHostMonitorViewImpl = () => import('./components/HostMonitorViewImpl.js');
+export const loadHostsViewImpl = () => import('./components/hosts/HostsViewImpl.js');

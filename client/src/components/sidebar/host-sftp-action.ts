@@ -52,7 +52,7 @@ export function openManagedHostSftp(host: ManagedHost): string | undefined {
     matching.find((tab) => tab.id === state.activeId) ??
     matching[0];
   const id = reusable?.id ?? connectManagedHost(host);
-  showFileBrowser(id);
   useTabsStore.getState().activate(id);
+  showFileBrowser();
   return id;
 }
