@@ -3,6 +3,7 @@ import { apiFetch } from '../../../client/src/api/http.js';
 import { savedHostHop, type HostUpsertRequest, type SavedHostProfile } from '@muxus/shared';
 import {
   BACKUP_FORMAT,
+  PREFERENCE_KEYS,
   TRANSFER_VERSION,
   createBackupDocument,
   createOpenSshExport,
@@ -222,6 +223,12 @@ function mockBackupSnapshot(
   profiles: unknown[] = [],
   policies: unknown[] = [],
   sharedSessionSources: unknown[] = [],
+  library: {
+    passwordManagers?: unknown[];
+    workspaces?: { id: string }[];
+    scripts?: unknown[];
+    requests?: unknown[];
+  } = {},
 ): void {
   apiFetchMock
     .mockResolvedValueOnce({ hosts: [] })
@@ -248,7 +255,13 @@ function mockBackupSnapshot(
       activeDirectory: '/home/test/logs',
     })
     .mockResolvedValueOnce({ folders })
-    .mockResolvedValueOnce({ sources: sharedSessionSources });
+    .mockResolvedValueOnce({ sources: sharedSessionSources })
+    .mockResolvedValueOnce({ sources: library.passwordManagers ?? [], installed: [] })
+    .mockResolvedValueOnce({ workspaces: library.workspaces ?? [] })
+    .mockResolvedValueOnce({ scripts: library.scripts ?? [] })
+    .mockResolvedValueOnce({ requests: library.requests ?? [] });
+  // The list of workspaces has no layouts; each one is then read in full.
+  for (const workspace of library.workspaces ?? []) apiFetchMock.mockResolvedValueOnce(workspace);
 }
 
 describe('backing up session log files', () => {
@@ -355,7 +368,7 @@ describe('backing up session log files', () => {
           },
         }),
       ),
-      { preferences: false, connections: false, tunnels: false, logging: true },
+      { preferences: false, connections: false, tunnels: false, logging: true, workspaces: false, library: false },
       'replace',
     );
 
@@ -827,7 +840,7 @@ describe('backing up login sequences', () => {
 
     await restoreTransferDocument(
       parseTransferDocument(JSON.stringify(backup)),
-      { preferences: false, connections: true, tunnels: false, logging: false },
+      { preferences: false, connections: true, tunnels: false, logging: false, workspaces: false, library: false },
       'replace',
     );
 
@@ -883,6 +896,522 @@ describe('backing up host terminal schemes', () => {
       enterKey: 'crlf',
       localEcho: true,
     });
+  });
+});
+
+describe('backing up host icons', () => {
+  it('keeps a host icon in the backup file and gives it back on restore', async () => {
+    mockBackupSnapshot([], [
+      {
+        id: 'edge',
+        kind: 'telnet',
+        name: 'Edge',
+        profile: { kind: 'telnet', host: 'edge.example.test', port: 23 },
+        metadata: { profileId: 'edge', color: '#4285f4', icon: 'nokia', connectCount: 0 },
+        createdAt: '2026-11-22T00:00:00.000Z',
+        updatedAt: '2026-11-22T00:00:00.000Z',
+      },
+    ]);
+
+    const document = await createBackupDocument();
+    expect(document.data.savedHosts[0]?.metadata).toMatchObject({ color: '#4285f4', icon: 'nokia' });
+
+    // Through the file as it is written and read back.
+    const read = parseTransferDocument(JSON.stringify(document));
+    apiFetchMock.mockReset();
+    apiFetchMock
+      .mockResolvedValueOnce({ hosts: [] })
+      .mockResolvedValueOnce({ profiles: [] })
+      .mockResolvedValue({});
+
+    await expect(
+      restoreImportedConnections(
+        {
+          sshHosts: [
+            {
+              alias: 'web',
+              aliases: ['web'],
+              options: { hostname: 'web.example.test' },
+              metadata: { icon: 'ubuntu' },
+            },
+          ],
+          savedHosts: read.data.savedHosts,
+          hostOrder: [],
+        },
+        'replace',
+      ),
+    ).resolves.toEqual({ added: 2, updated: 0, skipped: 0 });
+
+    const icons = apiFetchMock.mock.calls
+      .filter(([route]) => route.endsWith('/metadata'))
+      .map(([route, init]) => [
+        route,
+        typeof init?.body === 'string' ? JSON.parse(init.body).icon : undefined,
+      ]);
+    expect(icons).toEqual([
+      ['/api/ssh/config/hosts/web/metadata', 'ubuntu'],
+      ['/api/profiles/edge/metadata', 'nokia'],
+    ]);
+  });
+});
+
+describe('which settings a backup carries', () => {
+  // The two that belong to one computer. A setting in neither list does not compile.
+  const LOCAL = ['interfaceZoom', 'debugMode'];
+  const prefs = (patch: Record<string, unknown>) => patch as unknown as BackupPreferences;
+
+  it('places every setting in a backup or names it as staying on this computer', () => {
+    const settings = Object.keys(usePrefsStore.getInitialState()).filter((key) => key !== 'set');
+    expect([...PREFERENCE_KEYS, ...LOCAL].sort()).toEqual(settings.sort());
+    expect(PREFERENCE_KEYS.filter((key) => LOCAL.includes(key))).toEqual([]);
+  });
+
+  it('brings back every setting it carries', async () => {
+    usePrefsStore.setState(usePrefsStore.getInitialState());
+    mockBackupSnapshot();
+
+    const document = await createBackupDocument();
+
+    expect(Object.keys(document.data.preferences)).toEqual([...PREFERENCE_KEYS]);
+    // A setting that is written but has no check on the way back would be lost here.
+    expect(Object.keys(sanitizePreferences(document.data.preferences)).sort()).toEqual(
+      [...PREFERENCE_KEYS].sort(),
+    );
+  });
+
+  it('keeps shortcuts, connection behavior, X11 and the host monitor', async () => {
+    const chosen = {
+      keybindings: { 'app.quick-launcher': ['Mod+J'], 'app.sidebar': [] },
+      discoverEnvironments: false,
+      environmentRefreshSeconds: 60,
+      autoReconnectRemote: false,
+      sshKeepaliveIntervalSeconds: 45,
+      restoreScrollback: false,
+      splitInheritsSession: false,
+      tabNumberVisibility: 'always' as const,
+      x11Enabled: true,
+      x11ForwardByDefault: null,
+      x11ClipboardSharing: true,
+      monitorIntervalMs: 10_000,
+      monitorKeptHosts: ['ssh:web-01', 'profile:edge'],
+      environmentsPanelWidth: 520,
+    };
+    usePrefsStore.setState(chosen);
+    mockBackupSnapshot();
+
+    const document = await createBackupDocument();
+
+    expect(document.data.preferences).toMatchObject(chosen);
+    expect(sanitizePreferences(document.data.preferences)).toMatchObject(chosen);
+  });
+
+  it('keeps what stays on this computer out of the file', async () => {
+    usePrefsStore.setState({ interfaceZoom: 1.25, debugMode: true });
+    mockBackupSnapshot();
+
+    const document = await createBackupDocument();
+
+    expect(document.data.preferences).not.toHaveProperty('interfaceZoom');
+    expect(document.data.preferences).not.toHaveProperty('debugMode');
+  });
+
+  it('drops a malformed value and keeps the rest', () => {
+    const restored = sanitizePreferences(
+      prefs({
+        keybindings: { 'app.sidebar': 'Mod+B' },
+        sshKeepaliveIntervalSeconds: -5,
+        environmentRefreshSeconds: 7,
+        tabNumberVisibility: 'sometimes',
+        x11Enabled: 'yes',
+        monitorIntervalMs: 1,
+        monitorKeptHosts: [42],
+        environmentsPanelWidth: 12,
+        restoreScrollback: false,
+      }),
+    );
+
+    expect(restored).toEqual({ restoreScrollback: false });
+  });
+});
+
+describe('backing up password managers and the links to their entries', () => {
+  const ref = { sourceId: 'kp', entryId: 'entry-1', title: 'Edge router', username: 'admin' };
+
+  it('writes where a manager is, under its own ID, and nothing about its state', async () => {
+    mockBackupSnapshot(
+      [],
+      [
+        {
+          id: 'edge',
+          kind: 'telnet',
+          name: 'Edge',
+          profile: { kind: 'telnet', host: 'edge.example.test', port: 23 },
+          metadata: { profileId: 'edge', passwordRef: ref, connectCount: 0 },
+          createdAt: '2026-11-22T00:00:00.000Z',
+          updatedAt: '2026-11-22T00:00:00.000Z',
+        },
+        {
+          id: 'plain',
+          kind: 'telnet',
+          name: 'Plain',
+          profile: { kind: 'telnet', host: 'plain.example.test', port: 23 },
+          metadata: { profileId: 'plain', connectCount: 0 },
+          createdAt: '2026-11-22T00:00:00.000Z',
+          updatedAt: '2026-11-22T00:00:00.000Z',
+        },
+      ],
+      [],
+      [],
+      {
+        passwordManagers: [
+          {
+            id: 'kp',
+            kind: 'keepass',
+            name: 'Work',
+            config: { path: '/home/test/work.kdbx' },
+            state: 'locked',
+            message: 'Locked.',
+            createdAt: '2026-11-22T00:00:00.000Z',
+            updatedAt: '2026-11-22T00:00:00.000Z',
+          },
+        ],
+      },
+    );
+
+    const document = await createBackupDocument();
+
+    expect(document.data.passwordManagers).toEqual([
+      { id: 'kp', kind: 'keepass', name: 'Work', config: { path: '/home/test/work.kdbx' } },
+    ]);
+    expect(document.data.savedHosts.map((host) => host.metadata.passwordRef)).toEqual([ref, null]);
+  });
+
+  const withManager = (metadata: Record<string, unknown>) => ({
+    format: BACKUP_FORMAT,
+    version: TRANSFER_VERSION,
+    createdAt: '2026-11-22T12:00:00.000Z',
+    data: {
+      sshHosts: [],
+      savedHosts: [
+        {
+          id: 'edge',
+          name: 'Edge',
+          profile: { kind: 'telnet', host: 'edge.example.test', port: 23 },
+          metadata,
+        },
+      ],
+      hostOrder: [],
+      preferences: {},
+      tunnels: [],
+      loggingPolicies: [],
+      historySettings: { maxTotalBytes: 1, minFreeBytes: 1, minFreePercent: 1 },
+      passwordManagers: [
+        { id: 'kp', kind: 'keepass', name: 'Work', config: { path: '/home/test/work.kdbx' } },
+        { id: 'next', kind: 'a-manager-of-a-later-release', name: 'Later', config: {} },
+      ],
+    },
+  });
+  const connectionsOnly = {
+    preferences: false,
+    connections: true,
+    tunnels: false,
+    logging: false,
+    workspaces: false,
+    library: false,
+  };
+  const body = (call: unknown[]): unknown => JSON.parse(String((call[1] as { body: string }).body));
+
+  it('connects a missing manager under its ID before the hosts that point at it', async () => {
+    apiFetchMock
+      .mockResolvedValueOnce({ sources: [], installed: [] })
+      .mockResolvedValue({ hosts: [], profiles: [], folders: [], sources: [] });
+
+    const result = await restoreTransferDocument(
+      parseTransferDocument(JSON.stringify(withManager({ passwordRef: ref }))),
+      connectionsOnly,
+      'keep',
+    );
+
+    // One manager and one host added; the manager this release does not know is left out.
+    expect(result).toEqual({ added: 2, updated: 0, skipped: 1 });
+    const calls = apiFetchMock.mock.calls;
+    expect(calls[1]?.[0]).toBe('/api/password-managers');
+    expect(calls[1]?.[1]).toMatchObject({ method: 'POST' });
+    expect(body(calls[1]!)).toEqual({
+      id: 'kp',
+      kind: 'keepass',
+      name: 'Work',
+      config: { path: '/home/test/work.kdbx' },
+    });
+    const patch = calls.find(([route]) => route === '/api/profiles/edge/metadata');
+    expect(body(patch!)).toMatchObject({ passwordRef: ref });
+  });
+
+  it('keeps a connected manager, or updates it when replacing', async () => {
+    const connected = { sources: [{ id: 'kp', kind: 'keepass', name: 'Mine', config: {} }], installed: [] };
+    apiFetchMock
+      .mockResolvedValueOnce(connected)
+      .mockResolvedValue({ hosts: [], profiles: [{ id: 'edge' }], folders: [], sources: [] });
+    const document = parseTransferDocument(JSON.stringify(withManager({})));
+
+    await expect(restoreTransferDocument(document, connectionsOnly, 'keep')).resolves.toEqual({
+      added: 0,
+      updated: 0,
+      skipped: 3,
+    });
+    expect(apiFetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false);
+
+    apiFetchMock.mockReset();
+    apiFetchMock
+      .mockResolvedValueOnce(connected)
+      .mockResolvedValue({ hosts: [], profiles: [{ id: 'edge' }], folders: [], sources: [] });
+    await restoreTransferDocument(document, connectionsOnly, 'replace');
+
+    const update = apiFetchMock.mock.calls.find(([route]) => route === '/api/password-managers/kp');
+    expect(update?.[1]).toMatchObject({ method: 'PUT' });
+    expect(body(update!)).toEqual({ kind: 'keepass', name: 'Work', config: { path: '/home/test/work.kdbx' } });
+  });
+
+  it('takes a link away only when the file says the host has none', async () => {
+    const patchFor = async (metadata: Record<string, unknown>) => {
+      apiFetchMock.mockReset();
+      apiFetchMock
+        .mockResolvedValueOnce({ sources: [], installed: [] })
+        .mockResolvedValue({ hosts: [], profiles: [], folders: [], sources: [] });
+      await restoreTransferDocument(
+        parseTransferDocument(JSON.stringify(withManager(metadata))),
+        connectionsOnly,
+        'replace',
+      );
+      return body(apiFetchMock.mock.calls.find(([route]) => route === '/api/profiles/edge/metadata')!);
+    };
+
+    expect(await patchFor({ passwordRef: null })).toMatchObject({ passwordRef: null });
+    // A backup from before the links were kept, and a malformed one, leave the host's link alone.
+    expect(await patchFor({})).not.toHaveProperty('passwordRef');
+    expect(await patchFor({ passwordRef: { sourceId: 'kp' } })).not.toHaveProperty('passwordRef');
+  });
+});
+
+describe('backing up workspaces, scripts and saved requests', () => {
+  const layout = {
+    version: 1 as const,
+    root: {
+      id: 'pane-1',
+      type: 'pane' as const,
+      activeTabId: 'tab-1',
+      tabs: [
+        {
+          id: 'tab-1',
+          kind: 'terminal' as const,
+          title: 'web-01',
+          profile: { kind: 'ssh' as const, target: 'web-01' },
+          offerReconnect: true,
+        },
+      ],
+    },
+  };
+  const workspace = (id: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    name: `Workspace ${id}`,
+    layout,
+    multiExecGroups: [],
+    isLocked: false,
+    isStartup: false,
+    createdAt: '2026-11-22T00:00:00.000Z',
+    updatedAt: '2026-11-22T00:00:00.000Z',
+    lastOpenedAt: '2026-11-22T10:00:00.000Z',
+    ...extra,
+  });
+  const script = { id: 's1', name: 'uptime', body: 'uptime\n' };
+  const request = { id: 'r1', protocol: 'gnmi', profileId: 'leaf', name: 'interfaces', request: { path: '/interfaces' } };
+  const stamps = { createdAt: '2026-11-22T00:00:00.000Z', updatedAt: '2026-11-22T00:00:00.000Z' };
+
+  const backup = (data: Record<string, unknown>) => ({
+    format: BACKUP_FORMAT,
+    version: TRANSFER_VERSION,
+    createdAt: '2026-11-22T12:00:00.000Z',
+    data: {
+      sshHosts: [],
+      savedHosts: [],
+      hostOrder: [],
+      preferences: {},
+      tunnels: [],
+      loggingPolicies: [],
+      historySettings: { maxTotalBytes: 1, minFreeBytes: 1, minFreePercent: 1 },
+      ...data,
+    },
+  });
+  const only = (selected: 'workspaces' | 'library') => ({
+    preferences: false,
+    connections: false,
+    tunnels: false,
+    logging: false,
+    workspaces: selected === 'workspaces',
+    library: selected === 'library',
+  });
+  const body = (call: unknown[]): Record<string, unknown> =>
+    JSON.parse(String((call[1] as { body: string }).body));
+
+  it('writes every workspace in full, every script and every saved request', async () => {
+    mockBackupSnapshot([], [], [], [], {
+      workspaces: [workspace('a', { isLocked: true, isStartup: true }), workspace('b')],
+      scripts: [{ ...script, ...stamps }],
+      requests: [{ ...request, ...stamps }, { id: 'r2', protocol: 'netconf', name: 'running', request: {}, ...stamps }],
+    });
+
+    const document = await createBackupDocument();
+
+    expect(document.data.workspaces).toEqual([
+      { id: 'a', name: 'Workspace a', layout, multiExecGroups: [], isLocked: true, isStartup: true },
+      { id: 'b', name: 'Workspace b', layout, multiExecGroups: [], isLocked: false, isStartup: false },
+    ]);
+    expect(document.data.scripts).toEqual([script]);
+    expect(document.data.managementRequests).toEqual([
+      request,
+      { id: 'r2', protocol: 'netconf', name: 'running', request: {} },
+    ]);
+    // The file reads back as it was written.
+    expect(parseTransferDocument(JSON.stringify(document)).data.workspaces).toHaveLength(2);
+  });
+
+  it('adds missing workspaces with their lock and the startup choice', async () => {
+    apiFetchMock
+      .mockResolvedValueOnce({ workspaces: [] })
+      .mockResolvedValueOnce(workspace('a'))
+      .mockResolvedValue({});
+    const document = parseTransferDocument(
+      JSON.stringify(backup({ workspaces: [{ ...workspace('a'), isLocked: true, isStartup: true }] })),
+    );
+
+    await expect(restoreTransferDocument(document, only('workspaces'), 'keep')).resolves.toEqual({
+      added: 1,
+      updated: 0,
+      skipped: 0,
+    });
+
+    const calls = apiFetchMock.mock.calls;
+    expect(calls[1]?.[0]).toBe('/api/workspaces');
+    expect(body(calls[1]!)).toEqual({
+      id: 'a',
+      name: 'Workspace a',
+      layout,
+      multiExecGroups: [],
+      createIfMissing: true,
+    });
+    expect([calls[2]?.[0], body(calls[2]!)]).toEqual(['/api/workspaces/a', { isLocked: true }]);
+    expect([calls[3]?.[0], body(calls[3]!)]).toEqual(['/api/workspaces/startup', { id: 'a' }]);
+  });
+
+  it('keeps an existing workspace, or writes over it and its name when replacing', async () => {
+    const existing = { workspaces: [workspace('a', { name: 'Mine', isLocked: true, isStartup: true }), workspace('z', { isStartup: false })] };
+    const document = parseTransferDocument(JSON.stringify(backup({ workspaces: [workspace('a')] })));
+
+    apiFetchMock.mockResolvedValueOnce(existing);
+    await expect(restoreTransferDocument(document, only('workspaces'), 'keep')).resolves.toEqual({
+      added: 0,
+      updated: 0,
+      skipped: 1,
+    });
+    expect(apiFetchMock).toHaveBeenCalledTimes(1);
+
+    apiFetchMock.mockReset();
+    apiFetchMock
+      .mockResolvedValueOnce(existing)
+      // The server keeps the name a workspace has when it is saved over.
+      .mockResolvedValueOnce(workspace('a', { name: 'Mine', isLocked: true }))
+      .mockResolvedValue({});
+    await expect(restoreTransferDocument(document, only('workspaces'), 'replace')).resolves.toEqual({
+      added: 0,
+      updated: 1,
+      skipped: 0,
+    });
+    const calls = apiFetchMock.mock.calls;
+    expect(body(calls[1]!)).toMatchObject({ id: 'a', overwriteLocked: true });
+    expect(body(calls[1]!)).not.toHaveProperty('createIfMissing');
+    expect(calls.slice(2).map((call) => [call[0], body(call)])).toEqual([
+      ['/api/workspaces/a', { name: 'Workspace a' }],
+      ['/api/workspaces/a', { isLocked: false }],
+    ]);
+  });
+
+  it('leaves out a workspace the server does not take and restores the others', async () => {
+    apiFetchMock
+      .mockResolvedValueOnce({ workspaces: [] })
+      .mockRejectedValueOnce(new Error('invalid workspace'))
+      .mockResolvedValueOnce(workspace('b'));
+    const document = parseTransferDocument(
+      JSON.stringify(backup({ workspaces: [workspace('a'), workspace('b')] })),
+    );
+
+    await expect(restoreTransferDocument(document, only('workspaces'), 'replace')).resolves.toEqual({
+      added: 1,
+      updated: 0,
+      skipped: 1,
+    });
+  });
+
+  it('adds missing scripts and requests and keeps or replaces the ones that exist', async () => {
+    const document = parseTransferDocument(
+      JSON.stringify(backup({ scripts: [script, { id: 's2', name: 'df', body: 'df -h' }], managementRequests: [request] })),
+    );
+
+    apiFetchMock
+      .mockResolvedValueOnce({ scripts: [{ id: 's1' }] })
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ requests: [{ id: 'r1' }] });
+    await expect(restoreTransferDocument(document, only('library'), 'keep')).resolves.toEqual({
+      added: 1,
+      updated: 0,
+      skipped: 2,
+    });
+    expect(body(apiFetchMock.mock.calls[1]!)).toEqual({ id: 's2', name: 'df', body: 'df -h' });
+
+    apiFetchMock.mockReset();
+    apiFetchMock
+      .mockResolvedValueOnce({ scripts: [{ id: 's1' }] })
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ requests: [{ id: 'r1' }] })
+      .mockResolvedValueOnce({});
+    await expect(restoreTransferDocument(document, only('library'), 'replace')).resolves.toEqual({
+      added: 1,
+      updated: 2,
+      skipped: 0,
+    });
+    expect(apiFetchMock.mock.calls[4]?.[0]).toBe('/api/management/requests');
+    expect(body(apiFetchMock.mock.calls[4]!)).toEqual(request);
+  });
+
+  it('restores nothing of a part that is not selected, and reads a backup without these parts', async () => {
+    const document = parseTransferDocument(
+      JSON.stringify(backup({ workspaces: [workspace('a')], scripts: [script], managementRequests: [request] })),
+    );
+    await restoreTransferDocument(
+      document,
+      { preferences: false, connections: false, tunnels: false, logging: false, workspaces: false, library: false },
+      'replace',
+    );
+    expect(apiFetchMock).not.toHaveBeenCalled();
+
+    const older = parseTransferDocument(JSON.stringify(backup({})));
+    await expect(restoreTransferDocument(older, only('workspaces'), 'replace')).resolves.toEqual({
+      added: 0,
+      updated: 0,
+      skipped: 0,
+    });
+    expect(apiFetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed or repeated entries before a restore can write', () => {
+    const parse = (data: Record<string, unknown>) => () => parseTransferDocument(JSON.stringify(backup(data)));
+
+    expect(parse({ workspaces: [{ id: 'a', name: 'A' }] })).toThrow('incomplete or too large');
+    expect(parse({ scripts: [{ id: 's1', name: 'x' }] })).toThrow('incomplete or too large');
+    expect(parse({ managementRequests: [{ ...request, protocol: 'snmp' }] })).toThrow('incomplete or too large');
+    expect(parse({ passwordManagers: [{ id: 'kp', kind: 'keepass', name: 'Work' }] })).toThrow('incomplete or too large');
+    expect(parse({ workspaces: [workspace('a'), workspace('a')] })).toThrow('duplicate saved items');
+    expect(parse({ scripts: [script, script] })).toThrow('duplicate saved items');
   });
 });
 
@@ -1660,7 +2189,7 @@ describe('backing up shared sessions links', () => {
       });
       const result = await restoreTransferDocument(
         backup([link, { ...link, id: 'new-link', name: 'New', hostCount: 3 }]),
-        { preferences: false, connections: true, tunnels: false, logging: false },
+        { preferences: false, connections: true, tunnels: false, logging: false, workspaces: false, library: false },
         strategy,
       );
       const puts = apiFetchMock.mock.calls

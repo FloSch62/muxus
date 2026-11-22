@@ -141,7 +141,8 @@ password as usual. An entry supplies the password only; the user name still come
 the host. Hosts set to connect with the
 [system OpenSSH program](adding-hosts.md) are not covered, because `ssh` asks for the
 password itself. KeePass databases that need a hardware key (YubiKey challenge-response)
-cannot be opened. See the
+cannot be opened. A [backup](settings.md#backup-data) keeps the connected managers and
+which entry each host and folder uses, never a password. See the
 [security model](../reference/security.md#external-password-managers).
 
 ## Security keys

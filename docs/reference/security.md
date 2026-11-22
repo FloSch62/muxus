@@ -134,7 +134,9 @@ other sessions.
 
 A host or folder linked to a [password-manager entry](../guide/connecting.md#passwords-from-a-password-manager)
 stores a reference: which connected manager, the entry's ID, and its title and user name
-for display. The password is never written to the database, the ssh config or a backup.
+for display. The password is never written to the database, the ssh config or a backup. A
+backup holds the reference and how the manager is reached, such as the path of a KeePass
+database, so the link works again after a restore.
 
 - The entry picker receives titles, user names, addresses and groups. No API route returns
   a password; the backend reads it at the moment a login asks and hands it to that login.

@@ -287,10 +287,22 @@ stored in the application-data directory.
 
 ## Backup & data
 
-**Create backup** writes the Muxus-side data to a file: folders, colours, saved
-Telnet/serial hosts, workspaces, tunnels, login sequences and preferences. **Restore a backup**
-merges a file back in; items absent from the file are not deleted. A login sequence's secret
-steps keep only which vault secret they type.
+**Create backup** writes the Muxus-side data to one file:
+
+- every host with its folder, colour, icon and other Muxus-only settings, the order of the
+  sidebar, and folder defaults,
+- workspaces, tunnels and login sequences,
+- saved scripts and saved NETCONF and gNMI requests,
+- connected password managers and which entry a host or folder logs in with,
+- shared session links and logging settings,
+- your settings, keyboard shortcuts and command buttons included.
+
+**Restore a backup** merges a file back in, all of it or only the parts you tick; items
+absent from the file are not deleted. For an item that already exists you choose whether
+it is kept or replaced with the file's version. A workspace that is open in a window is
+always left as it is, because that window keeps saving its own tabs and panes: switch the
+window to another workspace first to restore over it. A login sequence's secret steps keep
+only which vault secret they type.
 
 **Export OpenSSH** writes the SSH hosts out as a standard `ssh_config` for use with another
 client. Non-secret shared folder defaults are copied into each affected host block so the
@@ -307,7 +319,17 @@ sidebar. See [shared sessions](hosts.md#shared-sessions).
 !!! info "What a backup excludes"
 
     Private key files, passwords and recorded session history are never part of a backup.
-    The links of your shared sessions are, including a personal one.
+    The links of your shared sessions are, including a personal one. A connected password
+    manager is kept as the path of its database or program, without anything that unlocks
+    it.
+
+    What belongs to one computer stays there: the interface zoom, debug mode, the folders
+    that logs and history are written to, the remote desktop certificates you accepted,
+    and when each host was last used.
+
+    Saved scripts and command buttons are copied as you wrote them, so a password typed
+    into one ends up in the file. A command button can type a
+    [secret from the vault](#passwords) instead, which a backup names but never holds.
 
     A backup can contain a saved SSH `ProxyCommand`. Restoring it does not run the command,
     but opening that connection later does. Restore backups only from sources you trust.

@@ -7,7 +7,10 @@ import {
   type PasswordManagersResponse,
 } from '@muxus/shared';
 import type { AppContext } from '../app.js';
-import { PasswordManagerSourceMissingError } from '../password-managers/password-managers.js';
+import {
+  PasswordManagerSourceMissingError,
+  PasswordManagerSourceTakenError,
+} from '../password-managers/password-managers.js';
 import { PasswordManagerError, type PasswordManagerProblem } from '../password-managers/provider.js';
 import { HttpProblem, sendError } from '../util/errors.js';
 
@@ -23,6 +26,8 @@ const sourceSchema = z.object({
   name: z.string().max(200).optional(),
   config: configSchema,
 });
+/** A restore brings a manager back under the ID its hosts and folders refer to. */
+const createSchema = sourceSchema.extend({ id: z.string().min(1).max(200).optional() });
 
 const unlockSchema = z.object({ password: z.string().max(8192) });
 
@@ -46,7 +51,7 @@ export function registerPasswordManagerRoutes(app: FastifyInstance, ctx: AppCont
   app.get('/api/password-managers', (): Promise<PasswordManagersResponse> => ctx.passwordManagers.list());
 
   app.post('/api/password-managers', async (req, reply): Promise<PasswordManagerSource | void> => {
-    const parsed = sourceSchema.safeParse(req.body);
+    const parsed = createSchema.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ message: 'A valid password manager is required.' });
     if (parsed.data.kind === 'keepass' && !parsed.data.config.path?.trim()) {
       return reply.code(400).send({ message: 'Choose the KeePass database file.' });
@@ -117,6 +122,9 @@ function sendPasswordManagerError(reply: FastifyReply, err: unknown): Promise<vo
   }
   if (err instanceof PasswordManagerSourceMissingError) {
     return sendError(reply, new HttpProblem(404, err.message, 'password-manager-missing'));
+  }
+  if (err instanceof PasswordManagerSourceTakenError) {
+    return sendError(reply, new HttpProblem(409, err.message, 'password-manager-exists'));
   }
   return sendError(reply, err);
 }

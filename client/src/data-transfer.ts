@@ -1,4 +1,5 @@
 import type {
+  ExternalPasswordRef,
   FolderAuthSettings,
   FolderSettingsResponse,
   HostBlockOptions,
@@ -6,8 +7,13 @@ import type {
   LoginSequence,
   ManagedHostRef,
   OpenSshMetadataPatch,
+  PasswordManagerSource,
+  PasswordManagersResponse,
   SavedHostProfile,
   SavedHostProfilesResponse,
+  SavedManagementRequest,
+  SavedScript,
+  SavedScriptsResponse,
   SessionHistorySettings,
   SessionHistoryStorageStatus,
   SessionLogFileSettings,
@@ -21,16 +27,23 @@ import type {
   SshHostEntry,
   TunnelRecord,
   TunnelsResponse,
+  WorkspaceRecord,
+  WorkspaceSummary,
 } from '@muxus/shared';
 import {
   MAX_PASTE_CHAR_DELAY_MS,
   MAX_PASTE_LINE_DELAY_MS,
   MAX_SHARED_SESSIONS_REFRESH_MINUTES,
+  PASSWORD_MANAGER_KINDS,
   TERMINAL_BACKSPACE_KEYS,
   TERMINAL_ENTER_KEYS,
   validPasteDelay,
 } from '@muxus/shared';
-import { MAX_JUMP_FALLBACKS, MAX_JUMP_HOPS } from '@muxus/shared/ws-protocol';
+import {
+  MAX_JUMP_FALLBACKS,
+  MAX_JUMP_HOPS,
+  MAX_SSH_KEEPALIVE_INTERVAL_SECONDS,
+} from '@muxus/shared/ws-protocol';
 import { apiFetch } from './api/http.js';
 import { fetchHostPreview } from './api/ssh-config.js';
 import { savedProfileFolderDefaults } from './folder-defaults.js';
@@ -40,7 +53,9 @@ import {
   normalizeCommandButtonGroups,
   normalizeCommandButtons,
 } from './command-buttons.js';
+import { MIN_ENVIRONMENTS_PANEL_WIDTH } from './environments-panel-width.js';
 import { isKeywordHighlightProfileArray } from './highlight-profiles.js';
+import { isMonitorColumnList, isMonitorInterval, isMonitorSort } from './host-monitor.js';
 import { isStatusBarItemList } from './host-stats.js';
 import { isHostsTableSort } from './hosts-table-sort.js';
 import { isLoginSequence } from './login-sequence.js';
@@ -58,6 +73,7 @@ import {
   MIN_SIDEBAR_WIDTH,
 } from './sidebar-width.js';
 import {
+  ENVIRONMENT_REFRESH_SECONDS,
   MAX_INACTIVE_PANE_DIM_STRENGTH,
   MIN_INACTIVE_PANE_DIM_STRENGTH,
   isCommandBarPosition,
@@ -68,12 +84,14 @@ import {
   isSidebarHostView,
   isSidebarOpenGesture,
   isSidebarPosition,
+  isTabNumberVisibility,
   isTerminalFileLinkActivation,
   usePrefsStore,
   type FolderStyle,
   type PrefsState,
 } from './state/prefs.js';
 import { isFolderIconId } from './components/sidebar/folder-icons.js';
+import { announceWorkspaceCatalogChange, openWorkspaceIds } from './workspace-sync.js';
 
 export const BACKUP_FORMAT = 'muxus-backup';
 export const TRANSFER_VERSION = 2;
@@ -82,71 +100,105 @@ export const MAX_TRANSFER_FILE_BYTES = 20 * 1024 * 1024;
 
 const JSON_HEADERS = { 'content-type': 'application/json' };
 
-const PREFERENCE_KEYS = [
-  'themeMode',
-  'monoFontSize',
-  'fontFamily',
-  'lineHeight',
-  'lightTerminalScheme',
-  'darkTerminalScheme',
-  'customTerminalSchemes',
-  'fontColor',
-  'backgroundColor',
-  'activePaneBorder',
-  'dimInactivePanes',
-  'inactivePaneDimStrength',
-  'scrollback',
-  'cursorBlink',
-  'cursorStyle',
-  'webglRenderer',
-  'localShell',
-  'localShellProfiles',
-  'defaultLocalShellProfileId',
-  'showWslDistributions',
-  'copyOnSelect',
-  'allowOsc52ClipboardWrite',
-  'rightClickAction',
-  'terminalFileLinkActivation',
-  'pasteWarnMultiline',
-  'pasteWarnLookalikes',
-  'pasteLineDelayMs',
-  'pasteCharDelayMs',
-  'confirmCloseConnected',
-  'closeTabOnCleanExit',
-  'showProgramStatus',
-  'sshSessionSummary',
-  'rememberPasswordsByDefault',
-  'newSshHostStorage',
-  'notifyOnNewVersion',
-  'commandButtons',
-  'commandButtonGroups',
-  'selectedCommandButtonGroup',
-  'showCommandBar',
-  'commandBarPosition',
-  'showStatusBar',
-  'statusBarItems',
-  'keywordHighlights',
-  'keywordHighlightProfiles',
-  'sidebarCollapsed',
-  'sidebarPosition',
-  'sidebarOpenGesture',
-  'sidebarRailPinned',
-  'sidebarHostView',
-  'sidebarHostGrouping',
-  'hostsTabView',
-  'hostsTabSort',
-  'sidebarWidth',
-  'sidebarCollapsedFolders',
-  'sidebarFolderStyles',
-  'sidebarFolderOrder',
-  'sidebarEmptyFolders',
-  'showHiddenFiles',
-] as const satisfies readonly (keyof PrefsState)[];
+/**
+ * Where every setting belongs. `backup` puts it in a backup file, `local`
+ * keeps it on this computer. A setting that is missing here does not compile,
+ * so a new one cannot be left out of backups by forgetting it. A backed-up
+ * setting also needs its check in `sanitizePreferences` to come back on a
+ * restore, which a unit test holds this list against.
+ */
+const PREFERENCE_PLACEMENT = {
+  themeMode: 'backup',
+  monoFontSize: 'backup',
+  fontFamily: 'backup',
+  lineHeight: 'backup',
+  lightTerminalScheme: 'backup',
+  darkTerminalScheme: 'backup',
+  customTerminalSchemes: 'backup',
+  fontColor: 'backup',
+  backgroundColor: 'backup',
+  activePaneBorder: 'backup',
+  dimInactivePanes: 'backup',
+  inactivePaneDimStrength: 'backup',
+  scrollback: 'backup',
+  cursorBlink: 'backup',
+  cursorStyle: 'backup',
+  webglRenderer: 'backup',
+  localShell: 'backup',
+  localShellProfiles: 'backup',
+  defaultLocalShellProfileId: 'backup',
+  showWslDistributions: 'backup',
+  copyOnSelect: 'backup',
+  allowOsc52ClipboardWrite: 'backup',
+  rightClickAction: 'backup',
+  terminalFileLinkActivation: 'backup',
+  pasteWarnMultiline: 'backup',
+  pasteWarnLookalikes: 'backup',
+  pasteLineDelayMs: 'backup',
+  pasteCharDelayMs: 'backup',
+  confirmCloseConnected: 'backup',
+  closeTabOnCleanExit: 'backup',
+  showProgramStatus: 'backup',
+  discoverEnvironments: 'backup',
+  environmentRefreshSeconds: 'backup',
+  autoReconnectRemote: 'backup',
+  sshKeepaliveIntervalSeconds: 'backup',
+  sshSessionSummary: 'backup',
+  rememberPasswordsByDefault: 'backup',
+  newSshHostStorage: 'backup',
+  x11Enabled: 'backup',
+  x11ForwardByDefault: 'backup',
+  x11ClipboardSharing: 'backup',
+  notifyOnNewVersion: 'backup',
+  restoreScrollback: 'backup',
+  splitInheritsSession: 'backup',
+  tabNumberVisibility: 'backup',
+  keybindings: 'backup',
+  commandButtons: 'backup',
+  commandButtonGroups: 'backup',
+  selectedCommandButtonGroup: 'backup',
+  showCommandBar: 'backup',
+  commandBarPosition: 'backup',
+  showStatusBar: 'backup',
+  statusBarItems: 'backup',
+  monitorColumns: 'backup',
+  monitorSort: 'backup',
+  monitorIntervalMs: 'backup',
+  monitorKeptHosts: 'backup',
+  keywordHighlights: 'backup',
+  keywordHighlightProfiles: 'backup',
+  sidebarCollapsed: 'backup',
+  sidebarPosition: 'backup',
+  sidebarOpenGesture: 'backup',
+  sidebarRailPinned: 'backup',
+  sidebarHostView: 'backup',
+  sidebarHostGrouping: 'backup',
+  hostsTabView: 'backup',
+  hostsTabSort: 'backup',
+  sidebarWidth: 'backup',
+  sidebarCollapsedFolders: 'backup',
+  sidebarFolderStyles: 'backup',
+  sidebarFolderOrder: 'backup',
+  sidebarEmptyFolders: 'backup',
+  showHiddenFiles: 'backup',
+  environmentsPanelWidth: 'backup',
+  // Follows the screen in front of this computer.
+  interfaceZoom: 'local',
+  // A diagnostic switch for one computer, not a way of working.
+  debugMode: 'local',
+} as const satisfies Record<keyof Omit<PrefsState, 'set'>, 'backup' | 'local'>;
 
-export type BackupPreferences = Pick<
-  PrefsState,
-  (typeof PREFERENCE_KEYS)[number]
->;
+type PreferenceKey = keyof typeof PREFERENCE_PLACEMENT;
+type BackedUpPreferenceKey = {
+  [Key in PreferenceKey]: (typeof PREFERENCE_PLACEMENT)[Key] extends 'backup' ? Key : never;
+}[PreferenceKey];
+
+/** The settings a backup carries, in the order the file lists them. */
+export const PREFERENCE_KEYS = (Object.keys(PREFERENCE_PLACEMENT) as PreferenceKey[]).filter(
+  (key): key is BackedUpPreferenceKey => PREFERENCE_PLACEMENT[key] === 'backup',
+);
+
+export type BackupPreferences = Pick<PrefsState, BackedUpPreferenceKey>;
 
 export interface PortableHostMetadata extends OpenSshMetadataPatch {
   sortOrder?: number;
@@ -200,6 +252,28 @@ export type PortableHistorySettings = Omit<
 /** The log folder is a path on this machine, so like the history location it stays behind. */
 export type PortableLogFileSettings = Omit<SessionLogFileSettings, 'directory'>;
 
+/**
+ * A saved layout of tabs and panes. The scrollback of its terminals and when
+ * it was last opened stay behind.
+ */
+export type PortableWorkspace = Pick<
+  WorkspaceRecord,
+  'id' | 'name' | 'layout' | 'multiExecGroups' | 'isLocked' | 'isStartup'
+>;
+
+export type PortableScript = Pick<SavedScript, 'id' | 'name' | 'body'>;
+
+export type PortableManagementRequest = Pick<
+  SavedManagementRequest,
+  'id' | 'protocol' | 'profileId' | 'name' | 'request'
+>;
+
+/**
+ * A connected password manager: where its database or program is, never a
+ * password. Hosts and folders refer to it by its ID, so it keeps that ID.
+ */
+export type PortablePasswordManager = Pick<PasswordManagerSource, 'id' | 'kind' | 'name' | 'config'>;
+
 export interface MuxusBackupData extends PortableConnections {
   preferences: BackupPreferences;
   tunnels: TunnelRecord[];
@@ -211,6 +285,11 @@ export interface MuxusBackupData extends PortableConnections {
   folderSettings?: PortableFolderSettings[];
   /** Absent in backups from before shared sessions existed. */
   sharedSessionSources?: PortableSharedSessionSource[];
+  /** This and the three below are absent in backups from before they were kept. */
+  passwordManagers?: PortablePasswordManager[];
+  workspaces?: PortableWorkspace[];
+  scripts?: PortableScript[];
+  managementRequests?: PortableManagementRequest[];
 }
 
 export interface MuxusBackupV1 {
@@ -237,6 +316,9 @@ export interface RestoreSelection {
   connections: boolean;
   tunnels: boolean;
   logging: boolean;
+  workspaces: boolean;
+  /** Saved scripts and saved NETCONF and gNMI requests. */
+  library: boolean;
 }
 
 export interface RestoreResult {
@@ -282,7 +364,17 @@ export async function createBackupDocument(
     ...snapshot.sshConfig.hosts.map((host) => `ssh:${host.alias}`),
     ...snapshot.savedHosts.map((profile) => `profile:${profile.id}`),
   ];
-  const [policies, storage, logFiles, folderSettings, sharedSessions] = await Promise.all([
+  const [
+    policies,
+    storage,
+    logFiles,
+    folderSettings,
+    sharedSessions,
+    passwordManagers,
+    workspaces,
+    scripts,
+    managementRequests,
+  ] = await Promise.all([
     Promise.all(
       profileKeys.map((profileKey) =>
         apiFetch<SessionLoggingPolicy>(
@@ -294,6 +386,10 @@ export async function createBackupDocument(
     apiFetch<SessionLogFileStatus>('/api/session-history/log-files'),
     apiFetch<FolderSettingsResponse>('/api/folders/settings'),
     apiFetch<SharedSessionSourcesResponse>('/api/shared-sessions'),
+    apiFetch<PasswordManagersResponse>('/api/password-managers'),
+    fetchWorkspaces(),
+    apiFetch<SavedScriptsResponse>('/api/scripts'),
+    apiFetch<{ requests: SavedManagementRequest[] }>('/api/management/requests/all'),
   ]);
   const { storageLocation: _storageLocation, ...historySettings } =
     storage.settings;
@@ -323,8 +419,44 @@ export async function createBackupDocument(
           ...(loginSequence ? { loginSequence } : {}),
         })),
       sharedSessionSources: sharedSessions.sources.map(portableSharedSessionSource),
+      passwordManagers: passwordManagers.sources.map(({ id, kind, name, config }) => ({
+        id,
+        kind,
+        name,
+        config,
+      })),
+      workspaces: workspaces.map(
+        ({ id, name, layout, multiExecGroups, isLocked, isStartup }) => ({
+          id,
+          name,
+          layout,
+          multiExecGroups,
+          isLocked,
+          isStartup,
+        }),
+      ),
+      scripts: scripts.scripts.map(({ id, name, body }) => ({ id, name, body })),
+      managementRequests: managementRequests.requests.map(
+        ({ id, protocol, profileId, name, request }) => ({
+          id,
+          protocol,
+          ...(profileId ? { profileId } : {}),
+          name,
+          request,
+        }),
+      ),
     },
   };
+}
+
+/** The list has no layouts, so each workspace is read in full. */
+async function fetchWorkspaces(): Promise<WorkspaceRecord[]> {
+  const { workspaces } = await apiFetch<{ workspaces: WorkspaceSummary[] }>('/api/workspaces');
+  return Promise.all(
+    workspaces.map(({ id }) =>
+      apiFetch<WorkspaceRecord>(`/api/workspaces/${encodeURIComponent(id)}`),
+    ),
+  );
 }
 
 export async function createOpenSshExport(): Promise<string> {
@@ -497,6 +629,8 @@ export async function restoreTransferDocument(
 ): Promise<RestoreResult> {
   const result: RestoreResult = { added: 0, updated: 0, skipped: 0 };
   if (selection.connections) {
+    // First, so the hosts and folders restored after them find their manager.
+    await restorePasswordManagers(document.data.passwordManagers ?? [], conflicts, result);
     await restoreConnections(document.data, conflicts, result);
     await restoreFolderSettings(document.data.folderSettings ?? [], conflicts, result);
     await restoreSharedSessionSources(document.data.sharedSessionSources ?? [], conflicts, result);
@@ -563,6 +697,15 @@ export async function restoreTransferDocument(
         : []),
     ]);
     result.updated += document.data.loggingPolicies.length + (logFileSettings ? 2 : 1);
+  }
+
+  if (selection.library) {
+    await restoreScripts(document.data.scripts ?? [], conflicts, result);
+    await restoreManagementRequests(document.data.managementRequests ?? [], conflicts, result);
+  }
+
+  if (selection.workspaces) {
+    await restoreWorkspaces(document.data.workspaces ?? [], conflicts, result);
   }
 
   if (selection.preferences) {
@@ -672,6 +815,8 @@ function portableMetadata(
     systemOpenSsh: metadata.systemOpenSsh,
     discoverEnvironments: metadata.discoverEnvironments,
     loginSequence: metadata.loginSequence,
+    // Null says the host has no link, so a restore that replaces takes one away.
+    passwordRef: metadata.passwordRef ?? null,
     proxyJumpFallbacks: metadata.proxyJumpFallbacks,
     sortOrder: metadata.sortOrder,
   };
@@ -887,7 +1032,26 @@ function metadataPatch(metadata: PortableHostMetadata): OpenSshMetadataPatch {
     discoverEnvironments: typeof metadata.discoverEnvironments === 'boolean' ? metadata.discoverEnvironments : null,
     loginSequence: isLoginSequence(metadata.loginSequence) ? metadata.loginSequence : null,
     proxyJumpFallbacks: isJumpRoutes(metadata.proxyJumpFallbacks) ? metadata.proxyJumpFallbacks : null,
+    // A backup from before these links were kept, and a session imported from
+    // another client, say nothing about one: the host keeps the link it has.
+    ...(metadata.passwordRef === null || isPasswordRef(metadata.passwordRef)
+      ? { passwordRef: metadata.passwordRef }
+      : {}),
   };
+}
+
+function isPasswordRef(value: unknown): value is ExternalPasswordRef {
+  return (
+    isRecord(value) &&
+    nonEmptyString(value.sourceId) &&
+    value.sourceId.length <= 200 &&
+    nonEmptyString(value.entryId) &&
+    value.entryId.length <= 2_000 &&
+    typeof value.title === 'string' &&
+    value.title.length <= 500 &&
+    (value.username === undefined ||
+      (typeof value.username === 'string' && value.username.length <= 500))
+  );
 }
 
 /** Fallback jump routes from a backup: a list of non-empty lists of host names. */
@@ -913,6 +1077,172 @@ function restoredInputModes(metadata: PortableHostMetadata): TerminalInputModes 
     implicitCr: metadata.implicitCr === true,
     localEcho: metadata.localEcho === true,
   });
+}
+
+/**
+ * A connected password manager comes back under its own ID, which is what a
+ * host or folder linked to one of its entries refers to. One this build does
+ * not know, or cannot take, is left out rather than failing the restore.
+ */
+async function restorePasswordManagers(
+  entries: readonly PortablePasswordManager[],
+  conflicts: TransferConflictStrategy,
+  result: RestoreResult,
+): Promise<void> {
+  if (entries.length === 0) return;
+  const current = await apiFetch<PasswordManagersResponse>('/api/password-managers');
+  const existingIds = new Set(current.sources.map((source) => source.id));
+  for (const { id, kind, name, config } of entries) {
+    const exists = existingIds.has(id);
+    if (exists && conflicts === 'keep') {
+      result.skipped++;
+      continue;
+    }
+    if (!(PASSWORD_MANAGER_KINDS as readonly string[]).includes(kind)) {
+      result.skipped++;
+      continue;
+    }
+    try {
+      await apiFetch<PasswordManagerSource>(
+        exists ? `/api/password-managers/${encodeURIComponent(id)}` : '/api/password-managers',
+        {
+          method: exists ? 'PUT' : 'POST',
+          headers: JSON_HEADERS,
+          body: JSON.stringify(exists ? { kind, name, config } : { id, kind, name, config }),
+        },
+      );
+    } catch {
+      result.skipped++;
+      continue;
+    }
+    if (exists) result.updated++;
+    else result.added++;
+  }
+}
+
+async function restoreScripts(
+  entries: readonly PortableScript[],
+  conflicts: TransferConflictStrategy,
+  result: RestoreResult,
+): Promise<void> {
+  if (entries.length === 0) return;
+  const current = await apiFetch<SavedScriptsResponse>('/api/scripts');
+  const existingIds = new Set(current.scripts.map((script) => script.id));
+  for (const { id, name, body } of entries) {
+    const exists = existingIds.has(id);
+    if (exists && conflicts === 'keep') {
+      result.skipped++;
+      continue;
+    }
+    await apiFetch<SavedScript>('/api/scripts', {
+      method: 'PUT',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ id, name, body }),
+    });
+    if (exists) result.updated++;
+    else result.added++;
+  }
+}
+
+async function restoreManagementRequests(
+  entries: readonly PortableManagementRequest[],
+  conflicts: TransferConflictStrategy,
+  result: RestoreResult,
+): Promise<void> {
+  if (entries.length === 0) return;
+  const current = await apiFetch<{ requests: SavedManagementRequest[] }>(
+    '/api/management/requests/all',
+  );
+  const existingIds = new Set(current.requests.map((request) => request.id));
+  for (const { id, protocol, profileId, name, request } of entries) {
+    const exists = existingIds.has(id);
+    if (exists && conflicts === 'keep') {
+      result.skipped++;
+      continue;
+    }
+    await apiFetch<SavedManagementRequest>('/api/management/requests', {
+      method: 'PUT',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ id, protocol, ...(profileId ? { profileId } : {}), name, request }),
+    });
+    if (exists) result.updated++;
+    else result.added++;
+  }
+}
+
+/**
+ * A workspace that is open in a window is left as it is, whatever was chosen
+ * for conflicts: that window saves its own tabs and panes over the stored
+ * layout, and putting the restored layout into the window would close the
+ * sessions in it. One the server does not take, such as a layout from a
+ * release with other tab kinds, is left out rather than failing the restore.
+ */
+async function restoreWorkspaces(
+  entries: readonly PortableWorkspace[],
+  conflicts: TransferConflictStrategy,
+  result: RestoreResult,
+): Promise<void> {
+  if (entries.length === 0) return;
+  const [{ workspaces: current }, open] = await Promise.all([
+    apiFetch<{ workspaces: WorkspaceSummary[] }>('/api/workspaces'),
+    openWorkspaceIds(),
+  ]);
+  const existingIds = new Set(current.map((workspace) => workspace.id));
+  const present = new Set(existingIds);
+  let changed = false;
+  for (const { id, name, layout, multiExecGroups, isLocked } of entries) {
+    const exists = existingIds.has(id);
+    if (exists && (conflicts === 'keep' || open.has(id))) {
+      result.skipped++;
+      continue;
+    }
+    const route = `/api/workspaces/${encodeURIComponent(id)}`;
+    try {
+      const saved = await apiFetch<WorkspaceRecord>('/api/workspaces', {
+        method: 'PUT',
+        headers: JSON_HEADERS,
+        body: JSON.stringify({
+          id,
+          name,
+          layout,
+          multiExecGroups,
+          ...(exists ? { overwriteLocked: true } : { createIfMissing: true }),
+        }),
+      });
+      // Saving over a workspace keeps the name it has; a rename is its own request.
+      if (saved.name !== name) {
+        await apiFetch(route, { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify({ name }) });
+      }
+      if (saved.isLocked !== isLocked) {
+        await apiFetch(route, { method: 'PATCH', headers: JSON_HEADERS, body: JSON.stringify({ isLocked }) });
+      }
+    } catch {
+      result.skipped++;
+      continue;
+    }
+    present.add(id);
+    changed = true;
+    if (exists) result.updated++;
+    else result.added++;
+  }
+
+  // The workspace that opens at startup follows the file, unless this
+  // computer has its own choice and existing items are being kept.
+  const startup = entries.find((entry) => entry.isStartup && present.has(entry.id));
+  const currentStartup = current.find((workspace) => workspace.isStartup);
+  if (
+    startup &&
+    startup.id !== currentStartup?.id &&
+    (conflicts === 'replace' || !currentStartup)
+  ) {
+    await apiFetch('/api/workspaces/startup', {
+      method: 'PUT',
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ id: startup.id }),
+    });
+    changed = true;
+  }
+  if (changed) announceWorkspaceCatalogChange();
 }
 
 function portableTunnelInput(tunnel: TunnelRecord): Omit<TunnelRecord, 'createdAt' | 'updatedAt'> {
@@ -1037,6 +1367,21 @@ export function sanitizePreferences(
   if (typeof input.showProgramStatus === 'boolean') {
     output.showProgramStatus = input.showProgramStatus;
   }
+  if (typeof input.discoverEnvironments === 'boolean') {
+    output.discoverEnvironments = input.discoverEnvironments;
+  }
+  if ((ENVIRONMENT_REFRESH_SECONDS as readonly unknown[]).includes(input.environmentRefreshSeconds)) {
+    output.environmentRefreshSeconds = input.environmentRefreshSeconds;
+  }
+  if (typeof input.autoReconnectRemote === 'boolean') {
+    output.autoReconnectRemote = input.autoReconnectRemote;
+  }
+  if (
+    Number.isInteger(input.sshKeepaliveIntervalSeconds) &&
+    finiteRange(input.sshKeepaliveIntervalSeconds, 0, MAX_SSH_KEEPALIVE_INTERVAL_SECONDS)
+  ) {
+    output.sshKeepaliveIntervalSeconds = input.sshKeepaliveIntervalSeconds;
+  }
   if (typeof input.sshSessionSummary === 'boolean') {
     output.sshSessionSummary = input.sshSessionSummary;
   }
@@ -1046,9 +1391,29 @@ export function sanitizePreferences(
   if (isNewSshHostStorage(input.newSshHostStorage)) {
     output.newSshHostStorage = input.newSshHostStorage;
   }
+  // Null follows the platform, which is as much a choice as on or off.
+  if (input.x11Enabled === null || typeof input.x11Enabled === 'boolean') {
+    output.x11Enabled = input.x11Enabled;
+  }
+  if (input.x11ForwardByDefault === null || typeof input.x11ForwardByDefault === 'boolean') {
+    output.x11ForwardByDefault = input.x11ForwardByDefault;
+  }
+  if (typeof input.x11ClipboardSharing === 'boolean') {
+    output.x11ClipboardSharing = input.x11ClipboardSharing;
+  }
   if (typeof input.notifyOnNewVersion === 'boolean') {
     output.notifyOnNewVersion = input.notifyOnNewVersion;
   }
+  if (typeof input.restoreScrollback === 'boolean') {
+    output.restoreScrollback = input.restoreScrollback;
+  }
+  if (typeof input.splitInheritsSession === 'boolean') {
+    output.splitInheritsSession = input.splitInheritsSession;
+  }
+  if (isTabNumberVisibility(input.tabNumberVisibility)) {
+    output.tabNumberVisibility = input.tabNumberVisibility;
+  }
+  if (validKeybindings(input.keybindings)) output.keybindings = input.keybindings;
   // Buttons are checked against the groups in the same backup; one from an
   // older release has none, so its buttons all land in the default group.
   const commandButtonGroups = normalizeCommandButtonGroups(input.commandButtonGroups);
@@ -1075,6 +1440,17 @@ export function sanitizePreferences(
   }
   if (isStatusBarItemList(input.statusBarItems)) {
     output.statusBarItems = input.statusBarItems;
+  }
+  if (isMonitorColumnList(input.monitorColumns)) output.monitorColumns = input.monitorColumns;
+  if (isMonitorSort(input.monitorSort)) output.monitorSort = input.monitorSort;
+  if (isMonitorInterval(input.monitorIntervalMs)) {
+    output.monitorIntervalMs = input.monitorIntervalMs;
+  }
+  if (
+    boundedArray(input.monitorKeptHosts, 10_000) &&
+    input.monitorKeptHosts.every((key) => typeof key === 'string' && key.length <= 400)
+  ) {
+    output.monitorKeptHosts = input.monitorKeptHosts;
   }
   if (
     Array.isArray(input.keywordHighlights) &&
@@ -1121,6 +1497,10 @@ export function sanitizePreferences(
   if (typeof input.showHiddenFiles === 'boolean') {
     output.showHiddenFiles = input.showHiddenFiles;
   }
+  // The panel fits itself to the window it is shown in, so only nonsense is refused.
+  if (finiteRange(input.environmentsPanelWidth, MIN_ENVIRONMENTS_PANEL_WIDTH, 10_000)) {
+    output.environmentsPanelWidth = input.environmentsPanelWidth;
+  }
   if (boundedPathList(input.sidebarCollapsedFolders)) {
     output.sidebarCollapsedFolders = input.sidebarCollapsedFolders;
   }
@@ -1134,6 +1514,17 @@ export function sanitizePreferences(
     output.sidebarFolderOrder = input.sidebarFolderOrder;
   }
   return output;
+}
+
+/** Chords per command: bounded, and strings throughout. The keymap ignores what it cannot read. */
+function validKeybindings(value: unknown): value is Record<string, string[]> {
+  if (!isRecord(value) || Object.keys(value).length > 1_000) return false;
+  return Object.entries(value).every(
+    ([command, chords]) =>
+      command.length <= 200 &&
+      boundedArray(chords, 20) &&
+      chords.every((chord) => typeof chord === 'string' && chord.length <= 100),
+  );
 }
 
 function validTerminalSchemePreference(value: unknown): value is string {
@@ -1299,19 +1690,64 @@ function validateBackupData(data: Record<string, unknown>): void {
             nonEmptyString(entry.folder) &&
             Number.isInteger(entry.refreshMinutes) &&
             finiteRange(entry.refreshMinutes, 0, MAX_SHARED_SESSIONS_REFRESH_MINUTES),
+        ))) ||
+    (data.passwordManagers !== undefined &&
+      (!boundedArray(data.passwordManagers, 100) ||
+        !data.passwordManagers.every(
+          (entry) =>
+            isRecord(entry) &&
+            nonEmptyString(entry.id) &&
+            nonEmptyString(entry.kind) &&
+            typeof entry.name === 'string' &&
+            isRecord(entry.config),
+        ))) ||
+    (data.workspaces !== undefined &&
+      (!boundedArray(data.workspaces, 1_000) ||
+        !data.workspaces.every(
+          (entry) =>
+            isRecord(entry) &&
+            nonEmptyString(entry.id) &&
+            nonEmptyString(entry.name) &&
+            isRecord(entry.layout) &&
+            Array.isArray(entry.multiExecGroups) &&
+            typeof entry.isLocked === 'boolean' &&
+            typeof entry.isStartup === 'boolean',
+        ))) ||
+    (data.scripts !== undefined &&
+      (!boundedArray(data.scripts, 5_000) ||
+        !data.scripts.every(
+          (entry) =>
+            isRecord(entry) &&
+            nonEmptyString(entry.id) &&
+            nonEmptyString(entry.name) &&
+            typeof entry.body === 'string',
+        ))) ||
+    (data.managementRequests !== undefined &&
+      (!boundedArray(data.managementRequests, 20_000) ||
+        !data.managementRequests.every(
+          (entry) =>
+            isRecord(entry) &&
+            nonEmptyString(entry.id) &&
+            (entry.protocol === 'gnmi' || entry.protocol === 'netconf') &&
+            (entry.profileId === undefined || nonEmptyString(entry.profileId)) &&
+            nonEmptyString(entry.name) &&
+            isRecord(entry.request),
         )))
   ) {
     throw new Error('The backup data is incomplete or too large.');
   }
-  const tunnelIds = data.tunnels.map((tunnel) =>
-    String((tunnel as Record<string, unknown>).id),
-  );
-  const policyKeys = data.loggingPolicies.map((entry) =>
-    String((entry as Record<string, unknown>).profileKey),
-  );
+  const ids = (entries: unknown, key = 'id'): string[] =>
+    Array.isArray(entries)
+      ? entries.map((entry) => String((entry as Record<string, unknown>)[key]))
+      : [];
+  const repeats = (values: readonly string[]): boolean => new Set(values).size !== values.length;
   if (
-    new Set(tunnelIds).size !== tunnelIds.length ||
-    new Set(policyKeys).size !== policyKeys.length
+    repeats(ids(data.tunnels)) ||
+    repeats(ids(data.loggingPolicies, 'profileKey')) ||
+    repeats(ids(data.passwordManagers)) ||
+    repeats(ids(data.workspaces)) ||
+    repeats(ids(data.scripts)) ||
+    repeats(ids(data.managementRequests))
   ) {
     throw new Error('The backup contains duplicate saved items.');
   }

@@ -86,7 +86,9 @@ restores each group whose layout still contains at least two of its tabs.
 ## Storage
 
 Workspaces are stored in the local SQLite database, next to folders, colours and saved
-tunnels. They are not written to `ssh_config` and are not sent off the machine. Terminal
+tunnels. They are not written to `ssh_config` and are not sent off the machine. A
+[backup](settings.md#backup-data) holds their tabs and panes, without the terminal
+history. Terminal
 history snapshots live in the same local database and are dropped when their tab leaves
 every stored workspace; disable **Restore terminal history** to keep scrollback out of
 storage entirely.

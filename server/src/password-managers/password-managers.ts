@@ -67,6 +67,13 @@ export class PasswordManagerSourceMissingError extends Error {
   }
 }
 
+/** A restore asked for an ID that a connected password manager already has. */
+export class PasswordManagerSourceTakenError extends Error {
+  constructor() {
+    super('That password manager is already connected.');
+  }
+}
+
 /**
  * The password managers connected in Settings. Each gets one provider that
  * lives as long as its configuration, so an unlocked KeePass database or a
@@ -89,8 +96,12 @@ export class PasswordManagers {
   }
 
   async create(input: PasswordManagerInput): Promise<PasswordManagerSource> {
+    if (input.id && this.database.passwordManagerSource(input.id)) {
+      throw new PasswordManagerSourceTakenError();
+    }
     const config = cleanConfig(input.config);
     const row = this.database.createPasswordManagerSource({
+      ...(input.id ? { id: input.id } : {}),
       kind: input.kind,
       name: input.name?.trim() || this.defaultName(input.kind, config),
       config,

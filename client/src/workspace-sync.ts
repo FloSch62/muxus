@@ -257,3 +257,38 @@ export class WorkspaceWindowSync {
     }
   }
 }
+
+const NO_CALLBACKS: WorkspaceSyncCallbacks = {
+  onCatalogChanged: () => undefined,
+  onOpenWindowCountsChanged: () => undefined,
+  onWindowFocus: () => undefined,
+  onFocusRequested: () => undefined,
+};
+/** Every window answers a request for presence as it arrives; this allows for a busy one. */
+const PRESENCE_REPLY_MS = 300;
+
+/**
+ * The workspaces open in a window of this app right now, asked on the bus by
+ * code that has no workspace of its own, such as a restore started from the
+ * settings window. Empty where there is no bus to ask on.
+ */
+export async function openWorkspaceIds(): Promise<Set<string>> {
+  if (typeof window === 'undefined') return new Set();
+  const sync = new WorkspaceWindowSync();
+  sync.start(NO_CALLBACKS);
+  try {
+    await new Promise((resolve) => setTimeout(resolve, PRESENCE_REPLY_MS));
+    return new Set(Object.keys(sync.openWindowCounts()));
+  } finally {
+    sync.stop();
+  }
+}
+
+/** Have every window read the list of workspaces again, after a change made outside one. */
+export function announceWorkspaceCatalogChange(): void {
+  if (typeof window === 'undefined') return;
+  const sync = new WorkspaceWindowSync();
+  sync.start(NO_CALLBACKS);
+  sync.invalidateCatalog();
+  sync.stop();
+}
