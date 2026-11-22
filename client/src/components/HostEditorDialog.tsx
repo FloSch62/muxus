@@ -704,6 +704,7 @@ function metadataPatch(draft: HostDraft): OpenSshMetadataPatch {
     displayName: draft.displayName.trim() || null,
     group: draft.group.trim() || null,
     color: draft.color ?? null,
+    icon: draft.icon ?? null,
     terminalScheme: draft.terminalScheme ?? null,
     terminalFontColor: draft.terminalFontColor ?? null,
     terminalBackgroundColor: draft.terminalBackgroundColor ?? null,

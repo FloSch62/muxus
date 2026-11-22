@@ -48,6 +48,8 @@ export interface HostDraft {
   displayName: string;
   group: string;
   color?: string;
+  /** Icon shown instead of the connection kind's; an id of the host icon catalog. */
+  icon?: string;
   /** Empty follows the application theme's terminal scheme preference. */
   terminalScheme?: string;
   terminalFontColor?: string;
@@ -121,6 +123,7 @@ export function blankDraft(
     displayName: '',
     group,
     color: undefined,
+    icon: undefined,
     terminalScheme: undefined,
     terminalFontColor: undefined,
     terminalBackgroundColor: undefined,
@@ -177,6 +180,7 @@ export function draftFromEntry(entry: SshHostEntry, duplicate: boolean): HostDra
     displayName: duplicate ? '' : (entry.metadata?.displayName ?? ''),
     group: entry.metadata?.group ?? '',
     color: entry.metadata?.color,
+    icon: entry.metadata?.icon,
     terminalScheme: entry.metadata?.terminalScheme,
     terminalFontColor: entry.metadata?.terminalFontColor,
     terminalBackgroundColor: entry.metadata?.terminalBackgroundColor,
@@ -249,6 +253,7 @@ export function draftFromSavedSshProfile(
     displayName: duplicate ? '' : (saved.metadata.displayName ?? ''),
     group: saved.metadata.group ?? '',
     color: saved.metadata.color,
+    icon: saved.metadata.icon,
     terminalScheme: saved.metadata.terminalScheme,
     terminalFontColor: saved.metadata.terminalFontColor,
     terminalBackgroundColor: saved.metadata.terminalBackgroundColor,

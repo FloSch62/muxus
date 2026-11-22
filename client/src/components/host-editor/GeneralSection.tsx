@@ -8,6 +8,7 @@ import Typography from '@mui/material/Typography';
 import type { SshConfigResponse } from '@muxus/shared';
 import { FolderPathField } from '../FolderPathField.js';
 import { HostColorPicker } from '../HostColorPicker.js';
+import { HostIconPicker } from '../HostIconPicker.js';
 import type { HostDraft, RemoteCommandMode, RequestTtyMode } from './draft.js';
 import { draftAliases } from './draft.js';
 
@@ -216,8 +217,8 @@ export function GeneralSection({
       <Divider />
       <Typography variant="caption" color="textSecondary">
         {configBacked
-          ? 'Display name, group and color are local to Muxus — they never touch your ssh config.'
-          : 'Group and color are stored with this connection in Muxus app data.'}
+          ? 'Display name, group, color and icon are local to Muxus — they never touch your ssh config.'
+          : 'Group, color and icon are stored with this connection in Muxus app data.'}
       </Typography>
       {configBacked ? (
         <TextField
@@ -235,6 +236,12 @@ export function GeneralSection({
         helperText="Optional — use / to nest, e.g. Production/EU."
       />
       <HostColorPicker value={draft.color} onChange={(color) => set({ color })} />
+      <HostIconPicker
+        value={draft.icon}
+        onChange={(icon) => set({ icon })}
+        kind="ssh"
+        color={draft.color}
+      />
     </Stack>
   );
 }

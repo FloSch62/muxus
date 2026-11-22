@@ -90,7 +90,7 @@ remote editor.
 - Drag the gap between two panes, double-click it to even them out, or move it with the
   keyboard once it has focus. The gap shows a line while the pointer is on it.
 - Every tab shows a status dot (amber while connecting, green when connected, red when the
-  transport is gone), its host-kind icon, and any colour flag assigned to it.
+  transport is gone), its host's icon, and any colour flag assigned to it.
 - Double-click a tab to rename it. The right-click menu has close, duplicate, colour flags,
   open in a new window and reconnect.
 

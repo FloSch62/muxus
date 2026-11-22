@@ -182,7 +182,9 @@ Muxus reads three kinds of list:
 
     Every kind of host Muxus saves can be listed. `id` is optional; give one that stays the
     same when a host's name may change, and to name the host as a jump host of another:
-    `"proxyJump": ["muxus-host:node0"]`.
+    `"proxyJump": ["muxus-host:node0"]`. `color` and `icon` are optional too. `icon` is the
+    id of a [host icon](#host-icons), such as `ubuntu`, `windows`, `router` or `database`;
+    a list written by **Share folder…** shows the id of every icon you picked.
 
 - **A MobaXterm session file** (`.mxtsessions`), as MobaXterm's own shared sessions use. A
   personal link from a self-service portal works as it is, with your user name already in
@@ -194,9 +196,10 @@ Muxus reads three kinds of list:
 
 ## Host rows
 
-A row shows the host name, a host-kind icon (SSH, Telnet, serial, RDP, VNC, gNMI, NETCONF), an optional colour flag,
-and a green dot while a session to that host is live, with a count when there is more than
-one.
+A row shows the host name, an icon, an optional colour flag, and a green dot while a session
+to that host is live, with a count when there is more than one. The icon says how the host
+connects (SSH, Telnet, serial, RDP, VNC, gNMI, NETCONF, web) until you
+[give the host one of its own](#host-icons).
 
 The hover card carries the connection details:
 
@@ -214,6 +217,23 @@ reconnects in place), or choose **New session**. A middle-click skips the list a
 another session straight away. ++shift++ + click [selects](#editing-several-hosts-at-once)
 every host from the last one clicked to this one, without connecting.
 
+### Host icons
+
+A host can show an icon of your choosing instead of the one for its connection kind: pick
+it under **Icon** in the host editor's **General** section, or from a row's
+**Organize, color & icon…**. The picker lists general icons (server, database, router,
+switch, firewall, container and more) and the marks of what a host runs: operating systems
+such as Linux, Windows, macOS, Ubuntu, Debian, Arch and Fedora, platforms such as Docker,
+Kubernetes and Proxmox, network vendors and cloud providers. Type in its search box to
+narrow the list, and press ++enter++ to take the first match. **Default** goes back to the
+icon of the connection kind.
+
+The icon is drawn in the host's colour and follows the host everywhere: the sidebar, the
+hosts tab, the host's tabs and the quick launcher. Like the colour it is stored by Muxus,
+never in `ssh_config`, and it travels with [backups](settings.md#backup-data) and
+[shared session lists](#shared-sessions). To give several hosts the same icon, use the
+[bulk editor](#editing-several-hosts-at-once).
+
 ### Opening with a double-click
 
 To open hosts with a double-click instead, set **Open hosts with** to **Double-click** under
@@ -226,7 +246,7 @@ Folders keep opening and closing on a single click, so a double-click toggles th
 and the **Local terminal** rows wait for a double-click as well.
 
 The right-click menu has **Connect**, **Open in new window**,
-**Move up/down**, **Move to folder…**, **Organize & color…**, **Edit host**,
+**Move up/down**, **Move to folder…**, **Organize, color & icon…**, **Edit host**,
 **Duplicate**, **Copy `ssh …` command** and **Delete host**. **Connect** always opens a
 new session. On a host that is part of a selection, moving and deleting apply to the whole
 selection (**Move *n* selected hosts…**, **Delete *n* selected hosts**), and the menu also
@@ -388,7 +408,7 @@ hosts that already have every new value are skipped.
 
 | Section | Settings | Applies to |
 | --- | --- | --- |
-| Folder & color | Folder, colour | Every host |
+| Folder, color & icon | Folder, colour, icon | Every host |
 | SSH connection | User, port, host verification, agent forwarding, X11 forwarding, system OpenSSH, console compatibility, SFTP | SSH hosts |
 | Terminal appearance | Colour scheme, text and background colour, command button group, paste delays, waiting for the prompt, anti-idle, keys and echo | SSH, Telnet and serial hosts |
 | Highlighting | Highlighting profile, global rules | SSH, Telnet and serial hosts |

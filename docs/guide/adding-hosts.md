@@ -14,7 +14,7 @@ The SSH editor lets you choose where a new host lives:
 New hosts start in OpenSSH config. To start them in Muxus app data instead, change
 **Settings → Behavior → Save new SSH hosts in**.
 
-Presentation attributes such as folder, colour, highlighting, logging policy and the
+Presentation attributes such as folder, colour, icon, highlighting, logging policy and the
 [login sequence](#login-sequence) always live in the Muxus database.
 
 Open the editor with **+** at the top of the sidebar → **New host…**, from a host's
@@ -44,7 +44,7 @@ Open the editor with **+** at the top of the sidebar → **New host…**, from a
 | **User** | `User`, omitted to use the local username. |
 | **Description** | A `#` comment above the block, shown in the sidebar's hover card. |
 | **Config file** | Which file the block lands in: the main config, an existing `Include`d file, or a new group file that Muxus creates and includes. |
-| **Display name**, **folder**, **colour** | Muxus's own database, not the configuration file. |
+| **Display name**, **folder**, **colour**, **icon** | Muxus's own database, not the configuration file. The [icon](hosts.md#host-icons) replaces the one for the connection kind. |
 
 ## Authentication
 

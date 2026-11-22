@@ -57,6 +57,7 @@ export type BulkStrictHostKeyChecking = 'inherit' | 'yes' | 'no' | 'accept-new' 
 export interface BulkHostValues {
   group: string;
   color: string | undefined;
+  icon: string | undefined;
   user: string;
   port: string;
   strictHostKeyChecking: BulkStrictHostKeyChecking;
@@ -97,6 +98,7 @@ export type BulkAudience = 'all' | 'terminal' | 'ssh';
 export const BULK_FIELD_AUDIENCE: { readonly [F in BulkHostField]: BulkAudience } = {
   group: 'all',
   color: 'all',
+  icon: 'all',
   user: 'ssh',
   port: 'ssh',
   strictHostKeyChecking: 'ssh',
@@ -173,6 +175,7 @@ export function bulkValuesForHost(
   const values: Partial<BulkHostValues> = {
     group: normalizeGroupPath(metadata?.group),
     color: metadata?.color,
+    icon: metadata?.icon,
   };
   if (isTerminalHost(host)) {
     const highlights = metadata?.keywordHighlights;
@@ -425,6 +428,7 @@ function metadataPatch(
   const patch: OpenSshMetadataPatch = {};
   if (differs.has('group')) patch.group = changes.group || null;
   if (differs.has('color')) patch.color = changes.color ?? null;
+  if (differs.has('icon')) patch.icon = changes.icon ?? null;
   if (differs.has('terminalScheme')) patch.terminalScheme = changes.terminalScheme ?? null;
   if (differs.has('terminalFontColor')) patch.terminalFontColor = changes.terminalFontColor ?? null;
   if (differs.has('terminalBackgroundColor')) {

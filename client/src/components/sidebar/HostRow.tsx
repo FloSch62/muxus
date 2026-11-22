@@ -16,7 +16,7 @@ import {
 } from '../../managed-hosts.js';
 import { EnvironmentBadges } from '../environments/EnvironmentBadges.js';
 import { loadTerminalViewImpl } from '../../lazy-features.js';
-import { hostKindIcon } from '../host-kind-icon.js';
+import { managedHostIcon } from '../host-icon.js';
 import { hostDetailLines } from './host-details.js';
 import type { HostActivation } from './row-clicks.js';
 import {
@@ -93,7 +93,7 @@ export const HostRow = memo(function HostRow({
   const title = managedHostDisplayName(host);
   const address = managedHostAddress(host);
   const color = host.entry.metadata?.color;
-  const Icon = hostKindIcon(host.kind === 'ssh' ? 'ssh' : host.entry.kind);
+  const Icon = managedHostIcon(host);
   // Saved jump hosts read by name in the hover card.
   const { data: savedData } = useSavedHostProfiles();
   const details = hostDetailLines(host, savedData?.profiles);

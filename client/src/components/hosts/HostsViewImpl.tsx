@@ -58,7 +58,7 @@ import { usePrefsStore, type HostsTabView } from '../../state/prefs.js';
 import { useTabsStore } from '../../state/tabs.js';
 import { useUiStore } from '../../state/ui.js';
 import { EnvironmentBadges } from '../environments/EnvironmentBadges.js';
-import { hostKindIcon } from '../host-kind-icon.js';
+import { managedHostIcon } from '../host-icon.js';
 import { folderIcon } from '../sidebar/folder-icons.js';
 import { HostContextMenu, type HostMenuState } from '../sidebar/HostContextMenu.js';
 import { HostSessionsMenu, type HostSessionsMenuState } from '../sidebar/HostSessionsMenu.js';
@@ -1030,7 +1030,7 @@ const HostTableRow = memo(function HostTableRow({
   onDragEnd,
   registerRef,
 }: HostTableRowProps) {
-  const Icon = hostKindIcon(row.kind);
+  const Icon = managedHostIcon(host);
   const color = host.entry.metadata?.color;
   const connected = live?.connected ?? 0;
   const connecting = live?.connecting ?? 0;

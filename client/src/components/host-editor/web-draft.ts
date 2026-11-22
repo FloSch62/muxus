@@ -11,6 +11,7 @@ export interface WebHostDraft {
   url: string;
   group: string;
   color?: string;
+  icon?: string;
   /** SSH host whose SOCKS5 proxy carries the page; undefined connects directly. */
   sshGateway?: SshGateway;
 }
@@ -22,6 +23,7 @@ export function blankWebDraft(prefillTarget = '', group = '', sshGateway?: SshGa
     url: target ? normalizeWebUrl(target) : '',
     group,
     color: undefined,
+    icon: undefined,
     sshGateway,
   };
 }
@@ -34,6 +36,7 @@ export function webDraftFromProfile(saved: SavedHostProfile, duplicate: boolean)
     url: profile.url,
     group: saved.metadata.group ?? '',
     color: saved.metadata.color,
+    icon: saved.metadata.icon,
     sshGateway: profile.sshGateway,
   };
 }
@@ -78,5 +81,6 @@ export function webDraftMetadataPatch(draft: WebHostDraft): OpenSshMetadataPatch
   return {
     group: draft.group.trim() || null,
     color: draft.color ?? null,
+    icon: draft.icon ?? null,
   };
 }

@@ -44,6 +44,7 @@ import { isTerminalSchemeId } from '../terminal/palette.js';
 import { pastePromptWaitDraft } from '../terminal/paste-prompt.js';
 import { FolderPathField } from './FolderPathField.js';
 import { HostColorPicker } from './HostColorPicker.js';
+import { HostIconPicker } from './HostIconPicker.js';
 import { AntiIdleFields, AntiIdleIntro } from './host-editor/AntiIdleFields.js';
 import { EditorShell, type EditorSectionDef } from './host-editor/EditorShell.js';
 import { LoggingSection } from './host-editor/LoggingSection.js';
@@ -66,7 +67,7 @@ const SECTIONS: ReadonlyArray<{
   icon: ReactElement;
   fields: readonly BulkHostField[];
 }> = [
-  { value: 'organize', label: 'Folder & color', icon: <FolderOutlinedIcon fontSize="small" />, fields: ['group', 'color'] },
+  { value: 'organize', label: 'Folder, color & icon', icon: <FolderOutlinedIcon fontSize="small" />, fields: ['group', 'color', 'icon'] },
   {
     value: 'connection',
     label: 'SSH connection',
@@ -251,7 +252,7 @@ function BulkEditBody({ hostKeys, onClose }: { hostKeys: readonly string[]; onCl
       connectAction={false}
     >
       {section === 'organize' && (
-        <OrganizeSection group={field('group')} color={field('color')} />
+        <OrganizeSection group={field('group')} color={field('color')} icon={field('icon')} />
       )}
       {section === 'connection' && (
         <ConnectionSection
@@ -328,15 +329,17 @@ interface BulkFieldState<T> {
 function OrganizeSection({
   group,
   color,
+  icon,
 }: {
   group: BulkFieldState<string>;
   color: BulkFieldState<string | undefined>;
+  icon: BulkFieldState<string | undefined>;
 }) {
   return (
     <Stack spacing={2.5}>
       <SectionIntro
-        title="Folder & color"
-        description="Display name, folder and color are local to Muxus — they never touch your ssh config."
+        title="Folder, color & icon"
+        description="Folder, color and icon are local to Muxus — they never touch your ssh config."
       />
       <Box>
         <FolderPathField
@@ -350,6 +353,15 @@ function OrganizeSection({
       <Box>
         <HostColorPicker value={color.value} mixed={color.mixed} onChange={color.set} />
         <FieldStatus state={color} />
+      </Box>
+      <Box>
+        <HostIconPicker
+          value={icon.value}
+          mixed={icon.mixed}
+          onChange={icon.set}
+          color={color.mixed ? undefined : color.value}
+        />
+        <FieldStatus state={icon} />
       </Box>
     </Stack>
   );

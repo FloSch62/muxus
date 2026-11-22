@@ -31,6 +31,7 @@ export interface ManagementHostDraft {
   name: string;
   group: string;
   color?: string;
+  icon?: string;
   host: string;
   port: string;
   username: string;
@@ -56,6 +57,7 @@ export function blankManagementDraft(
     name: '',
     group,
     color: undefined,
+    icon: undefined,
     host,
     port: port ?? '',
     username: user ?? '',
@@ -80,6 +82,7 @@ export function managementDraftFromProfile(saved: SavedHostProfile, duplicate: b
     name: duplicate ? `${saved.name} copy` : saved.name,
     group: saved.metadata.group ?? '',
     color: saved.metadata.color,
+    icon: saved.metadata.icon,
     host: profile.host,
     port: profile.port === DEFAULT_MANAGEMENT_PORTS[profile.kind] ? '' : String(profile.port),
     username: profile.username ?? '',
@@ -148,6 +151,7 @@ export function managementDraftMetadataPatch(draft: ManagementHostDraft): OpenSs
   return {
     group: draft.group.trim() || null,
     color: draft.color ?? null,
+    icon: draft.icon ?? null,
   };
 }
 

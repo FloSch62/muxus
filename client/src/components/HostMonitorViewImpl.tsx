@@ -70,6 +70,7 @@ import { useTabsStore } from '../state/tabs.js';
 import { layout, statusTextColor } from '../theme.js';
 import { AuthPromptDialog, type AuthPromptRequest, type AuthPromptResult } from './AuthPromptDialog.js';
 import { LineAction, LineMenu, MONO, type MenuEntry } from './environments/EnvironmentTree.js';
+import { useSessionHostIcon } from './host-icon.js';
 import { HostKeyDialog, type HostKeyRequest } from './HostKeyDialog.js';
 
 const ROW_HEIGHT = 30;
@@ -684,6 +685,7 @@ function sameRow(before: HostRowProps, after: HostRowProps): boolean {
 const HostRow = memo(function HostRow({ row, columns, onReadAnyway, onKeep, onConnect }: HostRowProps) {
   const tabs = useTabsStore((state) => state.tabs);
   const activate = useTabsStore((state) => state.activate);
+  const sessionHostIcon = useSessionHostIcon();
   const connIds = row.host?.connIds ?? [];
   const tab = row.local
     ? tabs.find((candidate) => candidate.profile?.kind === 'local' && !candidate.profile.environment)
@@ -698,7 +700,11 @@ const HostRow = memo(function HostRow({ row, columns, onReadAnyway, onKeep, onCo
   const open = tab ? () => activate(tab.id) : openTerminal;
   const note = rowNote(row);
   const stale = row.reading.status !== 'ok' && !!row.reading.view;
-  const HostIcon = row.local ? ComputerOutlinedIcon : DnsOutlinedIcon;
+  const HostIcon = row.local
+    ? ComputerOutlinedIcon
+    : profile
+      ? sessionHostIcon(profile)
+      : DnsOutlinedIcon;
   const sourceKey = row.source?.key;
   const canKeep = !row.local && !!row.source?.profile && !row.source.systemOpenSsh;
   // LineAction applies it through sx, where a palette path resolves.

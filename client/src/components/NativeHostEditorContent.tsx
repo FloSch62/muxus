@@ -33,6 +33,7 @@ import type { HostEditorState } from '../state/ui.js';
 import { useUiStore } from '../state/ui.js';
 import { customTerminalInputModes } from '../terminal/input-modes.js';
 import { HostColorPicker } from './HostColorPicker.js';
+import { HostIconPicker } from './HostIconPicker.js';
 import { EditorShell, type EditorSectionDef } from './host-editor/EditorShell.js';
 import { HighlightingSection } from './host-editor/HighlightingSection.js';
 import { LoggingSection } from './host-editor/LoggingSection.js';
@@ -297,6 +298,12 @@ function GeneralSection({
         helperText="Optional — use / to nest, e.g. Lab/Bench 3."
       />
       <HostColorPicker value={draft.color} onChange={(color) => set({ color })} />
+      <HostIconPicker
+        value={draft.icon}
+        onChange={(icon) => set({ icon })}
+        kind={kind}
+        color={draft.color}
+      />
       {kind === 'telnet' && (
         <Alert severity="warning">
           Telnet is unencrypted. Credentials and terminal traffic are sent in plaintext.
