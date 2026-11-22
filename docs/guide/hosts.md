@@ -297,6 +297,12 @@ and search as in the sidebar.
   folder**) to go back to the folders in the sidebar's order.
 - The chips beside the search box narrow the list to one kind of host.
 
+<figure markdown="span">
+  ![The hosts tab showing every saved host as cards, one section per folder](../assets/screenshots/hosts-tab.png#only-light){ .shadow }
+  ![The hosts tab showing every saved host as cards, one section per folder](../assets/screenshots/hosts-tab-dark.png#only-dark){ .shadow }
+  <figcaption>The hosts tab as cards, filed under their folders, with filters by kind beside the search.</figcaption>
+</figure>
+
 Arranging hosts is what the tab is for:
 
 - Drag a card or a row to another spot in its folder to reorder it, or into another folder

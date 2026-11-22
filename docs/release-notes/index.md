@@ -5,8 +5,8 @@ hide:
   - toc
 ---
 
-<meta http-equiv="refresh" content="0; url=0.15/">
+<meta http-equiv="refresh" content="0; url=0.16/">
 
 # Latest release
 
-[Continue to release 0.15](0.15.md)
+[Continue to release 0.16](0.16.md)

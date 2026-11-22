@@ -114,15 +114,15 @@ function chunk(type, data) {
   return Buffer.concat([head, body, crc]);
 }
 
-function encodePng(rgba) {
-  const raw = Buffer.alloc((WIDTH * 4 + 1) * HEIGHT);
-  for (let y = 0; y < HEIGHT; y++) {
-    raw[y * (WIDTH * 4 + 1)] = 0; // filter: none
-    rgba.copy(raw, y * (WIDTH * 4 + 1) + 1, y * WIDTH * 4, (y + 1) * WIDTH * 4);
+export function encodePng(rgba, width = WIDTH, height = HEIGHT) {
+  const raw = Buffer.alloc((width * 4 + 1) * height);
+  for (let y = 0; y < height; y++) {
+    raw[y * (width * 4 + 1)] = 0; // filter: none
+    rgba.copy(raw, y * (width * 4 + 1) + 1, y * width * 4, (y + 1) * width * 4);
   }
   const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(WIDTH, 0);
-  ihdr.writeUInt32BE(HEIGHT, 4);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
   ihdr[8] = 8; // bit depth
   ihdr[9] = 6; // RGBA
   return Buffer.concat([

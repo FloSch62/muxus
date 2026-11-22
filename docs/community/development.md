@@ -167,6 +167,15 @@ node hack/capture.mjs sftp          # only shots whose name contains "sftp"
 - demo hostnames mapped onto loopback ports by a `--import` hook, so the screenshots show
   `web-01.prod.internal` while talking to `127.0.0.1`.
 
+The demo hosts run on your computer, so `hack/capture-fakes.mjs` answers the status bar,
+the host monitor, container discovery and listening ports with invented readings instead of
+your machine's own.
+
+The images-in-the-terminal shot browses a folder of generated pictures
+(`hack/demo-gallery.mjs`) with [yazi](https://yazi-rs.github.io). The sandbox does not
+install it: have `yazi` on `PATH` or point `MUXUS_DEMO_YAZI` at a release binary. Without
+it, that shot draws a chart with a shell script instead.
+
 Capture drives a real browser through `playwright-core`, a dev dependency, and expects
 Chrome at `/usr/bin/google-chrome`. Set `CHROME` to override the path.
 
@@ -181,8 +190,9 @@ KEEP=1 node hack/record.mjs        # leave the frames in /tmp to re-encode by ha
 ```
 
 `hack/record.mjs` walks one window through five beats: opening a saved host, splitting the
-pane, drawing a chart in the terminal, opening the quick launcher, and using the file
-browser and editor. It draws a pointer and caption over the page because a screen recording
+pane, previewing pictures with yazi in the new pane (or drawing a chart when yazi is
+missing, as for the screenshots), opening the quick launcher, and using the file browser
+and editor. The status bar shows the same invented readings as the screenshots. It draws a pointer and caption over the page because a screen recording
 captures neither the mouse nor the keys that drove it. Frames come off Chrome's screencast
 at device resolution and are stitched with `ffmpeg`, which has to be on `PATH`.
 

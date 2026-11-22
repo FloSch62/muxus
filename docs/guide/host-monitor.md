@@ -15,6 +15,12 @@ the [quick launcher](quick-launcher.md); the command can be
 it again goes to the one that is there. It is an ordinary tab otherwise. It can be pinned,
 moved to a split pane, and comes back with the [workspace](workspaces.md).
 
+<figure markdown="span">
+  ![The host monitor tab with this computer and four connected hosts](../assets/screenshots/host-monitor.png#only-light){ .shadow }
+  ![The host monitor tab with this computer and four connected hosts](../assets/screenshots/host-monitor-dark.png#only-dark){ .shadow }
+  <figcaption>One row per connected host, read over the connection that is already open.</figcaption>
+</figure>
+
 ## The table
 
 | Column | Shows |
