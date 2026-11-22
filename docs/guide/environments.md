@@ -10,6 +10,12 @@ lab node over SSH, a VM's serial console or VNC display. It asks the host's own 
 (`docker`, `podman`, `kubectl`, `pvesh`, `virsh`) over the SSH connection that is already
 open. Nothing is installed on the host and no port is exposed.
 
+<figure markdown="span">
+  ![The Containers & VMs panel with a Compose project and the listening ports of web-01](../assets/screenshots/environments.png#only-light){ .shadow }
+  ![The Containers & VMs panel with a Compose project and the listening ports of web-01](../assets/screenshots/environments-dark.png#only-dark){ .shadow }
+  <figcaption>A host's Compose project and its listening ports; port 8080 is forwarded to this computer.</figcaption>
+</figure>
+
 | Tool on the host | What Muxus shows | What opens |
 | --- | --- | --- |
 | Docker, Podman | Containers, grouped by Compose project, with their published ports | Shell (`exec -it`), logs, start, stop, restart, pause, remove |

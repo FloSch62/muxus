@@ -3,12 +3,14 @@
 //   node hack/capture.mjs               # light theme, every shot
 //   THEME=dark node hack/capture.mjs    # dark variants, written as <name>-dark.png
 //   node hack/capture.mjs sftp          # only shots whose name contains "sftp"
+//   node hack/capture.mjs 'tab|panes'   # a regular expression works too
 //
 // It boots the sandbox from hack/demo-env.mjs first, so every host, folder,
 // tunnel and file on screen is invented. Set CHROME to override the browser.
 import fs from 'node:fs/promises';
 import { chromium } from 'playwright-core';
-import { startDemoEnv } from './demo-env.mjs';
+import { fakeHostMonitor, installCaptureFakes } from './capture-fakes.mjs';
+import { GALLERY_HOST, HAS_YAZI, startDemoEnv } from './demo-env.mjs';
 
 const ONLY = process.argv[2];
 const THEME = process.env.THEME === 'dark' ? 'dark' : 'light';
@@ -46,6 +48,12 @@ const BASE_PREFS = {
   },
 };
 
+/**
+ * Windows still open. A shot that fails skips its close, and a window left
+ * open keeps saving its layout as a new "Workspace n" after every sweep.
+ */
+const openContexts = new Set();
+
 /** A fresh window. Workspaces are cleared first so tabs never leak between shots. */
 async function open(prefs = {}, seed) {
   // Twice: the window that just closed flushes its layout with a keepalive
@@ -63,6 +71,7 @@ async function open(prefs = {}, seed) {
     colorScheme: THEME,
   });
   const page = await context.newPage();
+  await installCaptureFakes(page, api);
   // Every window restores the last layout it saw, and a window that closes with
   // live tabs flushes one on its way out. Answer both restore lookups with
   // "nothing", so each shot starts from the same empty canvas.
@@ -77,7 +86,11 @@ async function open(prefs = {}, seed) {
   await page.goto(`${env.url}/?token=${env.token}`, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('[aria-label="Add"]');
   await wait(900);
-  page.close_ = () => context.close();
+  openContexts.add(context);
+  page.close_ = () => {
+    openContexts.delete(context);
+    return context.close();
+  };
   return page;
 }
 
@@ -89,7 +102,12 @@ async function purgeWorkspaces() {
 function api(route, method = 'GET', body) {
   return fetch(`${env.url}${route}`, {
     method,
-    headers: { authorization: `Bearer ${env.token}`, 'content-type': 'application/json' },
+    // No content-type without a body: Fastify refuses an empty JSON body, which
+    // made every DELETE of the workspace sweep fail.
+    headers: {
+      authorization: `Bearer ${env.token}`,
+      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+    },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   }).then((res) => (res.status === 204 ? null : res.json()));
 }
@@ -104,6 +122,10 @@ async function shot(page, name, { keepPointer = false, ...options } = {}) {
     await page.mouse.move(VIEW.width / 2, VIEW.height - 60);
     await wait(700);
   }
+  // The status bar's CPU share is a rate, so it needs a second reading.
+  await page
+    .waitForFunction(() => !/CPU\s*(…|\.\.\.)/.test(document.body.innerText), undefined, { timeout: 8000 })
+    .catch(() => undefined);
   const path = `${OUT}/${name}${SUFFIX}.png`;
   await page.screenshot({ path, ...options });
   // A window that is still painting yields a blank page, and a screenshot of
@@ -301,8 +323,22 @@ add('panes', async () => {
 
 add('kitty-graphics', async () => {
   const page = await open();
-  await connect(page, 'web-01');
-  await run(page, 'plot', 2500);
+  if (!HAS_YAZI) {
+    process.stdout.write('(no yazi: set MUXUS_DEMO_YAZI; drawing the plot instead) ');
+    await connect(page, 'web-01');
+    await run(page, 'plot', 2500);
+  } else {
+    // yazi asks the terminal what it can draw and previews the picture under
+    // the cursor with the kitty protocol.
+    await connect(page, GALLERY_HOST);
+    await run(page, 'cd renders && yazi', 3000);
+    // Sorted: aurora, latency-p95, mandelbrot, NOTES.md, render.sh, synthwave.
+    for (let i = 0; i < 5; i++) {
+      await page.keyboard.press('j');
+      await wait(250);
+    }
+    await wait(2500);
+  }
   await shot(page, 'kitty-graphics');
   await page.close_();
 });
@@ -344,6 +380,45 @@ add('tunnels', async () => {
   await page.locator('nav[aria-label="Sidebar"] [aria-label^="Port forwarding"]').click();
   await wait(1500);
   await shot(page, 'tunnels');
+  await page.close_();
+});
+
+add('hosts-tab', async () => {
+  const page = await open();
+  await page.locator('[aria-label="Open the hosts as a tab"]').click();
+  await wait(1500);
+  await shot(page, 'hosts-tab');
+  await page.close_();
+});
+
+add('host-monitor', async () => {
+  const page = await open();
+  await fakeHostMonitor(page);
+  await connect(page, 'web-01');
+  // connect() waits for a visible terminal, and the earlier tab's is hidden
+  // while the next one dials; a fixed pause is enough here.
+  for (const alias of ['web-02', 'cache-01', 'build-01']) {
+    await page.locator(`[role="treeitem"][aria-label="${alias}"]`).first().click();
+    await wait(3000);
+  }
+  await page.locator('nav[aria-label="Sidebar"] [aria-label="Host monitor"]').click();
+  // The table is wide; give it the window by folding the hosts panel away.
+  await page.locator('nav[aria-label="Sidebar"] [role="tab"][aria-label="Hosts"]').click();
+  // Rates need two readings, five seconds apart by default.
+  await wait(7000);
+  await shot(page, 'host-monitor');
+  await page.close_();
+});
+
+add('environments', async () => {
+  const page = await open({ environmentsPanelWidth: 560 });
+  await connect(page, 'web-01');
+  await run(page, 'status', 600);
+  await page.locator('nav[aria-label="Sidebar"] [aria-label="Containers & VMs"]').click();
+  await wait(2500);
+  await page.getByText('Listening ports', { exact: true }).last().click();
+  await wait(2000);
+  await shot(page, 'environments');
   await page.close_();
 });
 
@@ -512,13 +587,20 @@ add('terminal-search', async () => {
 });
 
 add('host-key', async () => {
-  // Forget the sandbox key so trust-on-first-use has something to ask about.
-  await fs.writeFile(`${env.home}/.ssh/known_hosts`, '');
-  const page = await open();
-  await page.locator('[role="treeitem"][aria-label="build-01"]').first().click();
-  await wait(2500);
-  await shot(page, 'host-key');
-  await page.close_();
+  // Forget the sandbox keys so trust-on-first-use has something to ask about,
+  // and bring them back after: later shots expect their hosts to be known.
+  const knownHosts = `${env.home}/.ssh/known_hosts`;
+  const known = await fs.readFile(knownHosts, 'utf8');
+  await fs.writeFile(knownHosts, '');
+  try {
+    const page = await open();
+    await page.locator('[role="treeitem"][aria-label="build-01"]').first().click();
+    await wait(2500);
+    await shot(page, 'host-key');
+    await page.close_();
+  } finally {
+    await fs.writeFile(knownHosts, known);
+  }
 });
 
 add('auth-prompt', async () => {
@@ -564,7 +646,7 @@ add('history', async () => {
 
 let failures = 0;
 for (const entry of shots) {
-  if (ONLY && !entry.name.includes(ONLY)) continue;
+  if (ONLY && !new RegExp(ONLY).test(entry.name)) continue;
   process.stdout.write(`${THEME}: ${entry.name} … `);
   try {
     await entry.fn();
@@ -572,6 +654,9 @@ for (const entry of shots) {
   } catch (err) {
     failures++;
     console.log(`FAILED — ${err.message.split('\n')[0]}`);
+  } finally {
+    for (const context of openContexts) await context.close().catch(() => undefined);
+    openContexts.clear();
   }
 }
 

@@ -15,6 +15,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 
+import { galleryPngs } from './demo-gallery.mjs';
 import { chartPng, kittySequence } from './demo-image.mjs';
 import { startDemoVnc } from './demo-vnc.mjs';
 
@@ -32,6 +33,14 @@ const REMOTES = path.join(DEMO_ROOT, 'remotes');
 const SSH_PORT_BASE = Number(process.env.MUXUS_DEMO_SSH_PORT || 2200);
 const APP_PORT = Number(process.env.MUXUS_DEMO_PORT || 3099);
 const VNC_PORT = Number(process.env.MUXUS_DEMO_VNC_PORT || 2290);
+/**
+ * yazi, the file manager the kitty-graphics screenshot previews pictures in.
+ * Not installed by the sandbox: point MUXUS_DEMO_YAZI at a release binary, or
+ * have it on PATH. Without it that shot falls back to the plot script.
+ */
+const YAZI = await findYazi();
+/** The host whose ~/renders folder yazi browses. */
+export const GALLERY_HOST = 'build-01';
 /** The invented desktop the VNC demo host shows (hack/demo-vnc.mjs). */
 const DEMO_DESKTOP_HOST = 'design-vm.lab.internal';
 
@@ -273,8 +282,44 @@ async function buildHome(hosts, keys) {
     if (!REMOTE_TREE[host.alias]) {
       await writeFile(path.join(remote, 'logs', 'access.log'), 'demo\n');
     }
+    if (YAZI && host.alias === GALLERY_HOST) await writeGallery(remote);
   }
 }
+
+/** Pictures for yazi to preview, and yazi itself on the host's PATH. */
+async function writeGallery(remote) {
+  const renders = path.join(remote, 'renders');
+  for (const [name, png] of Object.entries(galleryPngs())) await writeFile(path.join(renders, name), png);
+  await writeFile(
+    path.join(renders, 'render.sh'),
+    '#!/usr/bin/env bash\n# Renders the wallpapers for the lab displays.\nset -euo pipefail\n',
+    0o755,
+  );
+  await writeFile(path.join(renders, 'NOTES.md'), '# Renders\n\nWallpapers for the lab displays.\n');
+  await writeFile(
+    path.join(remote, '.config', 'yazi', 'yazi.toml'),
+    '[mgr]\nratio = [1, 3, 5]\nshow_hidden = false\n',
+  );
+  await fs.rm(path.join(remote, 'bin', 'yazi'), { force: true });
+  await fs.symlink(YAZI, path.join(remote, 'bin', 'yazi'));
+}
+
+async function findYazi() {
+  const candidates = process.env.MUXUS_DEMO_YAZI
+    ? [process.env.MUXUS_DEMO_YAZI]
+    : (process.env.PATH ?? '').split(path.delimiter).map((dir) => path.join(dir, 'yazi'));
+  for (const candidate of candidates) {
+    try {
+      await fs.access(candidate, fsConstants.X_OK);
+      return path.resolve(candidate);
+    } catch {
+      // not here
+    }
+  }
+  return undefined;
+}
+
+export const HAS_YAZI = Boolean(YAZI);
 
 function defaultRemoteTree(host) {
   return {
@@ -694,6 +739,19 @@ export async function startDemoEnv() {
   };
 }
 
+/** Host icons, so the sidebar shows a few besides the connection kind's own. */
+const DEMO_ICONS = {
+  'web-01': 'debian',
+  'web-02': 'debian',
+  'cache-01': 'ubuntu',
+  bastion: 'bastion',
+  'db-01': 'database',
+  'db-primary': 'database',
+  'build-01': 'ubuntu',
+  'core-switch (console)': 'switch',
+  'win-build': 'windows',
+};
+
 /** Folders, colours and a couple of saved tunnels — the state a real user has. */
 async function seed(url, hosts) {
   const api = (route, method, body) =>
@@ -710,12 +768,14 @@ async function seed(url, hosts) {
     await api(`/api/ssh/config/hosts/${host.alias}/metadata`, 'PATCH', {
       group: host.folder,
       color: host.color ?? null,
+      icon: DEMO_ICONS[host.alias] ?? null,
     });
   }
   for (const host of SHOWCASE_HOSTS) {
     await api(`/api/ssh/config/hosts/${host.alias}/metadata`, 'PATCH', {
       group: host.folder,
       displayName: host.displayName ?? null,
+      icon: DEMO_ICONS[host.alias] ?? null,
     });
   }
 
@@ -764,11 +824,16 @@ async function seed(url, hosts) {
 
   const profiles = await api('/api/profiles', 'GET');
   const byName = new Map(profiles.profiles.map((p) => [p.name, p.id]));
-  await api(`/api/profiles/${byName.get('win-build')}/metadata`, 'PATCH', { group: 'Lab', color: '#3b82f6' });
+  await api(`/api/profiles/${byName.get('win-build')}/metadata`, 'PATCH', {
+    group: 'Lab',
+    color: '#3b82f6',
+    icon: DEMO_ICONS['win-build'],
+  });
   await api(`/api/profiles/${byName.get('design-vm')}/metadata`, 'PATCH', { group: 'Lab' });
   await api(`/api/profiles/${byName.get('core-switch (console)')}/metadata`, 'PATCH', {
     group: 'Lab/Fabric',
     color: '#eab308',
+    icon: DEMO_ICONS['core-switch (console)'],
   });
   await api(`/api/profiles/${byName.get('lab-console')}/metadata`, 'PATCH', { group: 'Lab' });
 

@@ -9,9 +9,9 @@ and WezTerm. `kitten icat`, yazi and ranger previews, matplotlib's terminal back
 `timg` are all supported.
 
 <figure markdown="span">
-  ![A chart rendered inline in an SSH session](../assets/screenshots/kitty-graphics.png#only-light){ .shadow }
-  ![A chart rendered inline in an SSH session](../assets/screenshots/kitty-graphics-dark.png#only-dark){ .shadow }
-  <figcaption>A plot written to the terminal by a remote command, with no local file involved.</figcaption>
+  ![yazi previewing a picture in an SSH session](../assets/screenshots/kitty-graphics.png#only-light){ .shadow }
+  ![yazi previewing a picture in an SSH session](../assets/screenshots/kitty-graphics-dark.png#only-dark){ .shadow }
+  <figcaption>yazi on a remote host, previewing a picture through the kitty protocol, with no local file involved.</figcaption>
 </figure>
 
 ## Supported protocols
@@ -57,8 +57,8 @@ python -c "import matplotlib; matplotlib.use('module://matplotlib-backend-kitty'
 import matplotlib.pyplot as plt; plt.plot([1,4,9,16]); plt.show()"
 ```
 
-Any tool that emits a kitty escape sequence works without additional software. The
-screenshot above is produced by a shell script writing one to stdout.
+Any tool that emits a kitty escape sequence works without additional software, down to a
+shell script that writes one to stdout.
 
 !!! tip "File managers"
 
