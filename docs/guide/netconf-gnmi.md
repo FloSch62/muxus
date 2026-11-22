@@ -93,9 +93,9 @@ XPath, subtree filter, value or a `gnmic` command. Double-click a node to get it
 
 ### Saved and History
 
-**Saved** keeps requests for this host or for every host of the protocol. **History**
-keeps every request of the tab with its result: click to show the result again,
-double-click to run it again.
+**Saved** keeps requests for this host or for every host of the protocol, and they are
+part of a [backup](settings.md#backup-data). **History** keeps every request of the tab
+with its result: click to show the result again, double-click to run it again.
 
 ### Device
 

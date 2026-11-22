@@ -33,6 +33,7 @@ import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
 import TerminalOutlinedIcon from '@mui/icons-material/TerminalOutlined';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
+import WorkspacesOutlinedIcon from '@mui/icons-material/WorkspacesOutlined';
 import type { SvgIconComponent } from '@mui/icons-material';
 import { useAppInfo } from '../api/queries.js';
 import {
@@ -179,6 +180,9 @@ export function DataTransferSection({
       queryKey: ['session-history-storage'],
     });
     void queryClient.invalidateQueries({ queryKey: ['session-log-files'] });
+    void queryClient.invalidateQueries({ queryKey: ['password-managers'] });
+    void queryClient.invalidateQueries({ queryKey: ['scripts'] });
+    void queryClient.invalidateQueries({ queryKey: ['management-requests'] });
     void queryClient.invalidateQueries({
       queryKey: ['data-transfer-summary'],
     });
@@ -191,7 +195,7 @@ export function DataTransferSection({
           plural(summary.connections, 'connection'),
           plural(summary.tunnels, 'tunnel'),
         ].join('  ·  ')
-      : 'Settings, connections, tunnels and logging policies';
+      : 'Settings, connections, workspaces, tunnels and logging policies';
 
   return (
     <SettingsPage
@@ -361,6 +365,8 @@ function RestoreReviewDialog({
     connections: true,
     tunnels: true,
     logging: true,
+    workspaces: true,
+    library: true,
   });
   const [conflicts, setConflicts] =
     useState<TransferConflictStrategy>('keep');
@@ -384,14 +390,14 @@ function RestoreReviewDialog({
       key: 'preferences' as const,
       icon: SettingsOutlinedIcon,
       label: 'App settings',
-      detail: 'Appearance, terminal, behavior and global highlighting',
+      detail: 'Appearance, terminal, behavior, shortcuts and global highlighting',
       count: undefined,
     },
     {
       key: 'connections' as const,
       icon: DnsOutlinedIcon,
       label: 'Connections',
-      detail: 'SSH, Telnet, serial, RDP and VNC profiles',
+      detail: 'Hosts of every kind, folder defaults and password manager links',
       count: connectionCount,
     },
     {
@@ -407,6 +413,22 @@ function RestoreReviewDialog({
       label: 'Logging settings',
       detail: 'Policies and retention limits; no recordings',
       count: pending.document.data.loggingPolicies.length,
+    },
+    {
+      key: 'workspaces' as const,
+      icon: WorkspacesOutlinedIcon,
+      label: 'Workspaces',
+      detail: 'Saved layouts; one that is open in a window is left as it is',
+      count: pending.document.data.workspaces?.length ?? 0,
+    },
+    {
+      key: 'library' as const,
+      icon: TerminalOutlinedIcon,
+      label: 'Scripts and saved requests',
+      detail: 'Scripts for many hosts, saved NETCONF and gNMI requests',
+      count:
+        (pending.document.data.scripts?.length ?? 0) +
+        (pending.document.data.managementRequests?.length ?? 0),
     },
   ];
   const selectedCount = Object.values(selection).filter(Boolean).length;
@@ -560,7 +582,7 @@ function RestoreReviewDialog({
               sx={{ mt: 0.5 }}
             >
               App and logging settings are replaced when selected; the choice
-              above applies to saved connections and tunnels.
+              above applies to everything else.
             </Typography>
           ) : null}
         </FormControl>

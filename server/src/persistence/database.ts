@@ -1194,13 +1194,15 @@ export class MuxusDatabase {
   }
 
   createPasswordManagerSource(input: {
+    /** Given by a restore, so the hosts and folders that point at the manager still do. */
+    id?: string;
     kind: PasswordManagerKind;
     name: string;
     config: PasswordManagerConfig;
   }): PasswordManagerSourceRow {
     requireNonEmpty(input.name, 'name');
     assertSecretFree(input.config, 'passwordManager.config');
-    const id = nanoid();
+    const id = input.id ?? nanoid();
     this.db
       .prepare('INSERT INTO password_manager_sources(id, kind, name, config_json) VALUES (?, ?, ?, ?)')
       .run(id, input.kind, input.name.trim(), JSON.stringify(input.config));
@@ -1966,6 +1968,18 @@ export class MuxusDatabase {
         ORDER BY name COLLATE NOCASE, created_at
       `)
       .all(protocol, profileId ?? null);
+    return rows.map(managementRequestFromRow);
+  }
+
+  /** Every saved request of every host and protocol, as a backup needs them. */
+  listAllManagementRequests(): SavedManagementRequest[] {
+    const rows = this.db
+      .prepare(`
+        SELECT id, protocol, profile_id, name, request_json, created_at, updated_at
+        FROM management_requests
+        ORDER BY protocol, name COLLATE NOCASE, created_at
+      `)
+      .all();
     return rows.map(managementRequestFromRow);
   }
 

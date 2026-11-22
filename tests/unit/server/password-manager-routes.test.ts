@@ -69,6 +69,35 @@ describe('password manager routes', () => {
     expect((await request('GET', `/api/password-managers/${source.id}/entries`)).statusCode).toBe(404);
   });
 
+  it('brings a manager back under the ID a restore gives, and refuses one that is taken', async () => {
+    const restored = await request('POST', '/api/password-managers', {
+      id: 'from-a-backup',
+      kind: 'keepass',
+      name: 'Work',
+      config: { path: DATABASE },
+    });
+    expect(restored.json()).toMatchObject({ id: 'from-a-backup', name: 'Work', state: 'locked' });
+
+    const again = await request('POST', '/api/password-managers', {
+      id: 'from-a-backup',
+      kind: 'keepass',
+      config: { path: DATABASE },
+    });
+    expect(again.statusCode).toBe(409);
+    expect(again.json()).toMatchObject({ code: 'password-manager-exists' });
+
+    // An ID in the body of an update names nothing: the address does.
+    const updated = await request('PUT', '/api/password-managers/from-a-backup', {
+      id: 'another',
+      kind: 'keepass',
+      name: 'Renamed',
+      config: { path: DATABASE },
+    });
+    expect(updated.json()).toMatchObject({ id: 'from-a-backup', name: 'Renamed' });
+    const listed = (await request('GET', '/api/password-managers')).json() as PasswordManagersResponse;
+    expect(listed.sources.map((source) => source.id)).toEqual(['from-a-backup']);
+  });
+
   it('locks a source again when its settings change', async () => {
     const source = (
       await request('POST', '/api/password-managers', { kind: 'keepass', config: { path: DATABASE } })

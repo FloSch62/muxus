@@ -22,7 +22,8 @@ selection or folder are left out, and Muxus says how many. The [quick launcher](
 
 Scripts are kept in Muxus, listed on the left. **New** starts an empty one, and **From file…**
 loads a script file from this computer into the editor. **Save** keeps it for next time; a
-script can also be run without saving it.
+script can also be run without saving it. Saved scripts are part of a
+[backup](settings.md#backup-data).
 
 On each host the script is copied into a temporary file and run from there, then removed:
 

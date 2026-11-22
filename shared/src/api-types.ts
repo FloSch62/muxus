@@ -232,6 +232,11 @@ export interface PasswordManagersResponse {
 
 /** Body of POST /api/password-managers and PUT /api/password-managers/:id. */
 export interface PasswordManagerInput {
+  /**
+   * POST only, and only when restoring a backup: the ID the manager had, so
+   * the hosts and folders that point at it still do. Omit for a new one.
+   */
+  id?: string;
   kind: PasswordManagerKind;
   name?: string;
   config: PasswordManagerConfig;

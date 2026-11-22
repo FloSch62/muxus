@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   WorkspaceWindowSync,
+  announceWorkspaceCatalogChange,
+  openWorkspaceIds,
   type WorkspaceSyncCallbacks,
 } from '../../../client/src/workspace-sync.js';
 
@@ -45,6 +47,7 @@ function callbacks() {
 afterEach(() => {
   TestBroadcastChannel.instances.clear();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe('workspace window synchronization', () => {
@@ -99,5 +102,48 @@ describe('workspace window synchronization', () => {
     expect(firstCallbacks.onOpenWindowCountsChanged).toHaveBeenLastCalledWith({});
 
     first.stop();
+  });
+});
+
+describe('asking the windows from outside one', () => {
+  /** A renderer with a bus, as a settings window has, and one app window on it. */
+  function appWindow(workspaceId: string) {
+    vi.stubGlobal('window', { addEventListener: vi.fn(), removeEventListener: vi.fn() });
+    vi.stubGlobal('BroadcastChannel', TestBroadcastChannel);
+    const windowCallbacks = callbacks();
+    const sync = new WorkspaceWindowSync(
+      new TestBroadcastChannel('muxus-workspaces-v1') as unknown as BroadcastChannel,
+    );
+    sync.setActiveWorkspace(workspaceId);
+    sync.start(windowCallbacks);
+    return { sync, windowCallbacks };
+  }
+
+  it('learns which workspaces are open and leaves no window behind', async () => {
+    vi.useFakeTimers();
+    const { sync } = appWindow('operations');
+
+    const asked = openWorkspaceIds();
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect([...(await asked)]).toEqual(['operations']);
+    // Only the app window's own channel is left on the bus.
+    expect(TestBroadcastChannel.instances.size).toBe(1);
+    sync.stop();
+  });
+
+  it('has every window read the list of workspaces again', () => {
+    vi.useFakeTimers();
+    const { sync, windowCallbacks } = appWindow('operations');
+
+    announceWorkspaceCatalogChange();
+
+    expect(windowCallbacks.onCatalogChanged).toHaveBeenCalledOnce();
+    sync.stop();
+  });
+
+  it('finds nothing open where there is no window to ask from', async () => {
+    await expect(openWorkspaceIds()).resolves.toEqual(new Set());
+    expect(() => announceWorkspaceCatalogChange()).not.toThrow();
   });
 });

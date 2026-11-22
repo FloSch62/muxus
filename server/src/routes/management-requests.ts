@@ -26,6 +26,10 @@ export function registerManagementRequestRoutes(app: FastifyInstance, ctx: AppCo
     return { requests: ctx.database.listManagementRequests(protocol.data, query.profileId || undefined) };
   });
 
+  app.get('/api/management/requests/all', (): { requests: SavedManagementRequest[] } => ({
+    requests: ctx.database.listAllManagementRequests(),
+  }));
+
   app.put('/api/management/requests', async (req, reply): Promise<SavedManagementRequest | void> => {
     try {
       const parsed = savedRequestSchema.safeParse(req.body);

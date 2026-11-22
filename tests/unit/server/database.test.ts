@@ -335,6 +335,12 @@ describe('MuxusDatabase migrations', () => {
     database.saveManagementRequest({ protocol: 'netconf', name: 'Running', request: { operation: 'get-config' } });
     expect(database.listManagementRequests('gnmi', gnmi.id).map((request) => request.name)).toEqual(['Counters', 'System']);
     expect(database.listManagementRequests('gnmi').map((request) => request.name)).toEqual(['System']);
+    // A backup reads them all at once, whatever host or protocol they belong to.
+    expect(database.listAllManagementRequests().map((request) => request.name)).toEqual([
+      'Counters',
+      'System',
+      'Running',
+    ]);
     expect(database.saveManagementRequest({ ...own, name: 'Interface counters' }).name).toBe('Interface counters');
     expect(() =>
       database!.saveManagementRequest({ protocol: 'gnmi', name: 'Leaky', request: { password: 'secret' } }),

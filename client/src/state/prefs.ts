@@ -343,7 +343,7 @@ function isThemeMode(value: unknown): value is ThemeMode {
   return value === 'light' || value === 'os' || value === 'dark';
 }
 
-function isTabNumberVisibility(value: unknown): value is TabNumberVisibility {
+export function isTabNumberVisibility(value: unknown): value is TabNumberVisibility {
   return value === 'shortcut' || value === 'always';
 }
 
