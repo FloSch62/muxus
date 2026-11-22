@@ -6,6 +6,7 @@ import {
   equalizeSplits,
   findPane,
   firstPane,
+  flattenPaneLayout,
   neighborPaneId,
   panesInOrder,
   parentSplit,
@@ -15,6 +16,7 @@ import {
   splitAxis,
   updatePane,
   updateSplitRatio,
+  type LayoutRect,
   type PaneDirection,
   type PaneLeaf,
   type PaneNode,
@@ -169,6 +171,9 @@ export interface SessionSetEntry {
 
 export type SessionSetLayout = 'tabs' | 'columns' | 'rows' | 'grid';
 
+/** The open tabs all in one pane, or one pane each, stacked or side by side. */
+export type TabArrangement = Exclude<SessionSetLayout, 'grid'>;
+
 /** Keyboard resize step, as a fraction of the split's own extent. */
 export const PANE_RESIZE_STEP = 0.04;
 
@@ -181,6 +186,8 @@ interface TabsState {
   activeId: string | null;
   /** Pane temporarily filling the canvas; siblings stay mounted underneath. */
   zoomedPaneId: string | null;
+  /** Tabs kept tiled as they open and close; null while new tabs join the focused pane. */
+  tiling: Exclude<TabArrangement, 'tabs'> | null;
   open: (profile: SessionProfile, title: string) => string;
   openEmpty: () => string;
   /** Show the host monitor: the window's one monitor tab, opened if there is none. */
@@ -224,6 +231,10 @@ interface TabsState {
   resizeActivePane: (delta: number) => boolean;
   /** Give every pane an equal share of the canvas. */
   equalizePanes: () => boolean;
+  /** Tile the open tabs in tab order and keep them tiled, or gather them in one pane. */
+  arrangeTabs: (layout: TabArrangement) => boolean;
+  /** Keep the layout as it is: new tabs join the focused pane again. */
+  stopTiling: () => void;
   requestSearch: () => void;
   openEditor: (tabId: string, path: string) => void;
   activateEditor: (tabId: string, path: string) => void;
@@ -434,6 +445,16 @@ export function insertIntoPane(
 }
 
 export const useTabsStore = create<TabsState>()((set, get) => {
+  /** While the window tiles, lay its tabs out again once one opens or closes. */
+  const retile = () => {
+    const state = get();
+    if (!state.tiling) return;
+    // A zoom stays while the grid does, if it still shows the focused pane.
+    const zoomedPaneId = state.zoomedPaneId === state.activePaneId ? null : state.zoomedPaneId;
+    const arranged = arrangeCanvas({ ...state, zoomedPaneId }, state.tiling);
+    if (arranged) set(arranged);
+  };
+
   /**
    * Open a view of Muxus itself, or bring the one this window already has to
    * the front: a window shows each view once.
@@ -446,7 +467,7 @@ export const useTabsStore = create<TabsState>()((set, get) => {
     }
     const id = newId('tab');
     set((state) => {
-      const pane = findPane(state.root, state.activePaneId) ?? firstPane(state.root);
+      const pane = newTabPane(state);
       const viewTab: ViewTab = {
         id,
         paneId: pane.id,
@@ -474,6 +495,7 @@ export const useTabsStore = create<TabsState>()((set, get) => {
         activeId: id,
       };
     });
+    retile();
     return id;
   };
 
@@ -484,10 +506,11 @@ export const useTabsStore = create<TabsState>()((set, get) => {
   activePaneId: initial.id,
   activeId: null,
   zoomedPaneId: null,
+  tiling: null,
   open: (profile, title) => {
     const id = newId('tab');
     set((state) => {
-      const pane = findPane(state.root, state.activePaneId) ?? firstPane(state.root);
+      const pane = newTabPane(state);
       return {
         tabs: [
           ...state.tabs,
@@ -510,12 +533,13 @@ export const useTabsStore = create<TabsState>()((set, get) => {
         activeId: id,
       };
     });
+    retile();
     return id;
   },
   openEmpty: () => {
     const id = newId('tab');
     set((state) => {
-      const pane = findPane(state.root, state.activePaneId) ?? firstPane(state.root);
+      const pane = newTabPane(state);
       return {
         tabs: [
           ...state.tabs,
@@ -538,6 +562,7 @@ export const useTabsStore = create<TabsState>()((set, get) => {
         activeId: id,
       };
     });
+    retile();
     return id;
   },
   openMonitor: () => openViewTab('monitor'),
@@ -574,7 +599,7 @@ export const useTabsStore = create<TabsState>()((set, get) => {
     }));
     return replaced;
   },
-  close: (id) =>
+  close: (id) => {
     set((state) => {
       const closing = state.tabs.find((tab) => tab.id === id);
       if (!closing) return state;
@@ -616,7 +641,9 @@ export const useTabsStore = create<TabsState>()((set, get) => {
         ),
         activeId: state.activeId === id ? paneActiveId : state.activeId,
       };
-    }),
+    });
+    retile();
+  },
   activate: (id) =>
     set((state) => {
       const tab = state.tabs.find((candidate) => candidate.id === id);
@@ -740,6 +767,7 @@ export const useTabsStore = create<TabsState>()((set, get) => {
       activePaneId: paneId,
       activeId: id,
       zoomedPaneId: nextZoomedPaneId,
+      tiling: null,
     });
     return true;
   },
@@ -767,11 +795,12 @@ export const useTabsStore = create<TabsState>()((set, get) => {
         activePaneId: pane.id,
         activeId: null,
         zoomedPaneId: null,
+        tiling: null,
       };
     });
     return created;
   },
-  closePane: (paneId) =>
+  closePane: (paneId) => {
     set((state) => {
       const collapsed = collapsePane(state.root, paneId);
       if (!collapsed) return state;
@@ -792,7 +821,9 @@ export const useTabsStore = create<TabsState>()((set, get) => {
         activePaneId: focused ? collapsed.focus.id : state.activePaneId,
         activeId: focused ? collapsed.focus.activeTabId : state.activeId,
       };
-    }),
+    });
+    retile();
+  },
   focusPaneDirection: (direction) => {
     const state = get();
     const target = neighborPaneId(state.root, state.activePaneId, direction);
@@ -847,21 +878,35 @@ export const useTabsStore = create<TabsState>()((set, get) => {
     });
     return true;
   },
-  resizeSplit: (splitId, ratio) => set((state) => ({ root: updateSplitRatio(state.root, splitId, ratio) })),
+  resizeSplit: (splitId, ratio) =>
+    set((state) => {
+      const root = updateSplitRatio(state.root, splitId, ratio);
+      return root === state.root ? state : { root, tiling: null };
+    }),
   resizeActivePane: (delta) => {
     const state = get();
     const parent = parentSplit(state.root, state.activePaneId);
     if (!parent) return false;
     const ratio = parent.split.ratio + (parent.branch === 0 ? delta : -delta);
-    set({ root: updateSplitRatio(state.root, parent.split.id, ratio) });
+    const root = updateSplitRatio(state.root, parent.split.id, ratio);
+    if (root !== state.root) set({ root, tiling: null });
     return true;
   },
   equalizePanes: () => {
     const state = get();
     if (state.root.type === 'pane') return false;
-    set({ root: equalizeSplits(state.root) });
+    set({ root: equalizeSplits(state.root), tiling: null });
     return true;
   },
+  arrangeTabs: (layout) => {
+    const state = get();
+    const tiling = layout === 'tabs' ? null : layout;
+    const arranged = arrangeCanvas(state, layout);
+    if (!arranged && state.tiling === tiling) return false;
+    set({ ...arranged, tiling });
+    return true;
+  },
+  stopTiling: () => set({ tiling: null }),
   requestSearch: () =>
     set((state) => ({
       tabs: state.tabs.map((tab) =>
@@ -945,6 +990,7 @@ export const useTabsStore = create<TabsState>()((set, get) => {
           activePaneId: pane.id,
           activeId: null,
           zoomedPaneId: null,
+          tiling: null,
         };
       }
       const restored = restoreWorkspaceLayout(layout, options);
@@ -1033,6 +1079,7 @@ export const useTabsStore = create<TabsState>()((set, get) => {
       activePaneId: activePane.id,
       activeId: activePane.activeTabId,
       zoomedPaneId: null,
+      tiling: null,
     });
     return ids;
   },
@@ -1123,7 +1170,7 @@ export const useTabsStore = create<TabsState>()((set, get) => {
 });
 
 function buildSessionSetTree(
-  panes: readonly PaneLeaf[],
+  panes: readonly PaneNode[],
   direction: 'horizontal' | 'vertical',
   grid: boolean,
   depth = 0,
@@ -1148,6 +1195,87 @@ function buildSessionSetTree(
       buildSessionSetTree(second, direction, grid, depth + 1),
     ],
   };
+}
+
+/** A tab opened without a pane of its own joins the focused pane, or comes last while tiling. */
+function newTabPane(state: Pick<TabsState, 'root' | 'activePaneId' | 'tiling'>): PaneLeaf {
+  if (state.tiling) return panesInOrder(state.root).at(-1)!;
+  return findPane(state.root, state.activePaneId) ?? firstPane(state.root);
+}
+
+type Canvas = Pick<
+  TabsState,
+  'tabs' | 'root' | 'unreadOutputIds' | 'activePaneId' | 'activeId' | 'zoomedPaneId'
+>;
+
+/** The canvas with its tabs laid out again in tab order, or undefined when nothing changes. */
+function arrangeCanvas(state: Canvas, layout: TabArrangement): Canvas | undefined {
+  const ordered = tabsInOrder(state.root, state.tabs);
+  if (ordered.length < 2) return undefined;
+  let root: PaneNode;
+  let tabs: TerminalTab[];
+  if (layout === 'tabs') {
+    if (state.root.type === 'pane') return undefined;
+    const pane = findPane(state.root, state.activePaneId) ?? firstPane(state.root);
+    // Appended in tab order; pinned tabs still lead the strip.
+    tabs = ordered.reduce<TerminalTab[]>((strip, tab) => insertIntoPane(strip, tab, pane.id), []);
+    root = { ...pane, activeTabId: state.activeId ?? tabs[0]!.id };
+  } else {
+    // A pane keeps its first tab; every other tab gets a pane of its own.
+    const kept = new Set<string>();
+    const leaves = ordered.map((tab): PaneLeaf => {
+      const id = kept.has(tab.paneId) ? newId('pane') : tab.paneId;
+      kept.add(tab.paneId);
+      return { id, type: 'pane', activeTabId: tab.id };
+    });
+    // With r = floor(sqrt(n)), rows wrap into r columns and columns into floor(n / r).
+    const side = Math.floor(Math.sqrt(leaves.length));
+    root = buildTileTree(leaves, layout === 'rows' ? side : Math.floor(leaves.length / side));
+    const current = flattenPaneLayout(state.root).panes;
+    const target = flattenPaneLayout(root).panes;
+    // Already laid out this way: the same panes in the same places.
+    const unchanged =
+      !state.zoomedPaneId &&
+      current.length === target.length &&
+      current.every(
+        ({ pane, rect }, index) =>
+          pane.id === target[index]!.pane.id && sameRect(rect, target[index]!.rect),
+      );
+    if (unchanged) return undefined;
+    const paneIds = new Map(leaves.map((leaf) => [leaf.activeTabId, leaf.id]));
+    // Tabs keep their slots in the array, so no terminal moves within the page.
+    tabs = state.tabs.map((tab) => {
+      const paneId = paneIds.get(tab.id) ?? tab.paneId;
+      return paneId === tab.paneId ? tab : { ...tab, paneId };
+    });
+  }
+  const activePane =
+    panesInOrder(root).find((pane) => pane.activeTabId === state.activeId) ?? firstPane(root);
+  return {
+    tabs,
+    root,
+    unreadOutputIds: clearVisibleOutput(state.unreadOutputIds, tabs, root, null),
+    activePaneId: activePane.id,
+    activeId: activePane.activeTabId,
+    zoomedPaneId: null,
+  };
+}
+
+/** Equal columns of even stacks, filled column by column; the longer columns come last. */
+function buildTileTree(leaves: readonly PaneLeaf[], columnCount: number): PaneNode {
+  const shorter = Math.floor(leaves.length / columnCount);
+  const longer = leaves.length % columnCount;
+  const columns: PaneNode[] = [];
+  for (let column = 0, start = 0; column < columnCount; column++) {
+    const size = column < columnCount - longer ? shorter : shorter + 1;
+    columns.push(buildSessionSetTree(leaves.slice(start, start + size), 'vertical', false));
+    start += size;
+  }
+  return buildSessionSetTree(columns, 'horizontal', false);
+}
+
+function sameRect(a: LayoutRect, b: LayoutRect): boolean {
+  return (['x', 'y', 'width', 'height'] as const).every((key) => Math.abs(a[key] - b[key]) < 1e-6);
 }
 
 export type { PaneDirection, PaneLeaf, PaneNode };

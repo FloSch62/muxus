@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildBindingIndex,
   chordsAreDefault,
@@ -385,6 +385,79 @@ describe('pane focus keys', () => {
           .map((command) => command.id),
         platform,
       ).toEqual(['pane.focus.left']);
+    }
+  });
+});
+
+describe('tab arrangement', () => {
+  const arrangements = ['pane.tile.vertical', 'pane.tile.horizontal', 'pane.tabs'];
+
+  beforeEach(() => {
+    useTabsStore.setState({
+      tabs: [],
+      unreadOutputIds: new Set(),
+      root: { id: 'pane-keymap', type: 'pane', activeTabId: null },
+      activePaneId: 'pane-keymap',
+      activeId: null,
+      zoomedPaneId: null,
+      tiling: null,
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('is unbound, listed in the launcher, and leaves the key alone when nothing would change', () => {
+    vi.stubGlobal('requestAnimationFrame', () => 0);
+    useTabsStore.getState().open({ kind: 'local' }, 'Only');
+    for (const id of arrangements) {
+      const command = keyCommand(id)!;
+      expect(command, id).toMatchObject({ category: 'panes', defaultChords: [] });
+      expect(command.palette, id).not.toBe(false);
+    }
+    expect(keyCommand('pane.tabs')!.run()).toBe(false);
+    // With one tab, tiling only turns the mode on for the tabs to come.
+    expect(keyCommand('pane.tile.vertical')!.run()).toBe(true);
+    expect(keyCommand('pane.tile.vertical')!.run()).toBe(false);
+    expect(keyCommand('pane.tabs')!.run()).toBe(true);
+  });
+
+  it('tiles two tabs vertically side by side and horizontally one above the other', () => {
+    vi.stubGlobal('requestAnimationFrame', () => 0);
+    useTabsStore.getState().open({ kind: 'local' }, 'First');
+    useTabsStore.getState().open({ kind: 'local' }, 'Second');
+
+    expect(keyCommand('pane.tile.vertical')!.run()).toBe(true);
+    expect(useTabsStore.getState().root).toMatchObject({ type: 'split', direction: 'horizontal' });
+    expect(keyCommand('pane.tile.horizontal')!.run()).toBe(true);
+    expect(useTabsStore.getState().root).toMatchObject({ type: 'split', direction: 'vertical' });
+  });
+
+  it('hands the keyboard back to the focused terminal after arranging', () => {
+    const firstId = useTabsStore.getState().open({ kind: 'local' }, 'First');
+    const focusedId = useTabsStore.getState().open({ kind: 'local' }, 'Second');
+    const focus = vi.fn();
+    const unregister = registerTerminal(focusedId, { focus } as unknown as TerminalHandle);
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback));
+    const nextFrame = () => {
+      for (const callback of frames.splice(0)) callback(0);
+    };
+    try {
+      expect(keyCommand('pane.tile.vertical')!.run()).toBe(true);
+      expect(keyCommand('pane.tile.vertical')!.run()).toBe(false);
+      nextFrame();
+      expect(focus).toHaveBeenCalledTimes(1);
+      expect(useTabsStore.getState().activeId).toBe(focusedId);
+
+      // A tab chosen before the frame keeps the keyboard.
+      expect(keyCommand('pane.tabs')!.run()).toBe(true);
+      useTabsStore.getState().activate(firstId);
+      nextFrame();
+      expect(focus).toHaveBeenCalledTimes(1);
+    } finally {
+      unregister();
     }
   });
 });

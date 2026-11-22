@@ -240,7 +240,11 @@ export function adoptTransferredTab(
     return false;
   }
   const adopted = { ...tab, paneId } as TerminalTab;
-  useTabsStore.setState({ tabs: insertIntoPane(state.tabs, adopted, paneId, targetId, edge) });
+  // Dropped on a pane, the tab joins it: the layout is the user's from now on.
+  useTabsStore.setState({
+    tabs: insertIntoPane(state.tabs, adopted, paneId, targetId, edge),
+    tiling: null,
+  });
   useTabsStore.getState().activate(tab.id);
   return true;
 }

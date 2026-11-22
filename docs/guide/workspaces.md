@@ -5,7 +5,8 @@ icon: lucide/layout-dashboard
 # Workspaces
 
 A workspace stores a window's layout under a name: the pane tree, every tab in it, their
-titles and colour flags, and the multi-exec groups defined in it.
+titles and colour flags, whether the window [tiles its tabs](tabs-and-panes.md#moving-around),
+and the multi-exec groups defined in it.
 
 <figure markdown="span">
   ![The workspace dialog](../assets/screenshots/workspaces.png#only-light){ .shadow }

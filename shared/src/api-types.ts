@@ -1223,6 +1223,8 @@ export interface WorkspaceLayoutV1 {
   version: 1;
   root: WorkspaceNode | null;
   activePaneId?: string;
+  /** Tabs kept tiled as they open and close; absent while they join the focused pane. */
+  tiling?: 'columns' | 'rows';
 }
 
 /** A reusable mirrored-input target set owned by one workspace. */

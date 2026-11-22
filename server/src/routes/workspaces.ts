@@ -85,6 +85,7 @@ const workspaceLayoutSchema = z.object({
   version: z.literal(1),
   root: workspaceNodeSchema.nullable(),
   activePaneId: z.string().optional(),
+  tiling: z.enum(['columns', 'rows']).optional(),
 }).superRefine((layout, ctx) => {
   if (!layout.root) return;
   const nodeIds = new Set<string>();

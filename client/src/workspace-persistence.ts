@@ -35,7 +35,7 @@ export type WorkspaceInitialSelection =
   | { kind: 'open-name'; name: string };
 
 function currentSnapshot(): WorkspaceSnapshot {
-  const { root, tabs, activePaneId } = useTabsStore.getState();
+  const { root, tabs, activePaneId, tiling } = useTabsStore.getState();
   const sessionTabs = tabs.filter((tab): tab is SessionTab => tab.profile !== null);
   // The monitor is part of the layout too; a tab still choosing a session is not.
   const kept = tabs.flatMap((tab): PersistableTab[] =>
@@ -45,7 +45,7 @@ function currentSnapshot(): WorkspaceSnapshot {
         ? [{ id: tab.id, paneId: tab.paneId, title: tab.title, view: tab.view, color: tab.color, pinned: tab.pinned }]
         : [],
   );
-  const layout = serializeWorkspace(root, kept, activePaneId);
+  const layout = serializeWorkspace(root, kept, activePaneId, tiling);
   const tabIds = new Set(sessionTabs.map((tab) => tab.id));
   const multiExecGroups = useMultiExecStore.getState().groups.flatMap((group) => {
     const ids = [...new Set(group.tabIds)].filter((id) => tabIds.has(id));

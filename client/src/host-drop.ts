@@ -14,6 +14,7 @@ export function openDraggedHosts(paneId: string, hosts: readonly ManagedHost[]):
   if (source?.kind !== 'host') return;
   const byKey = new Map(hosts.map((host) => [managedHostKey(host), host]));
   useTabsStore.getState().focusPane(paneId);
+  useTabsStore.getState().stopTiling();
   for (const dragged of source.hosts) {
     const host = byKey.get(dragged.hostKey);
     if (host) connectManagedHost(host);

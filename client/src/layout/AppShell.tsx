@@ -669,7 +669,7 @@ function SplitDivider({
         };
         document.body.style.cursor = direction === 'horizontal' ? 'col-resize' : 'row-resize';
         document.body.style.userSelect = 'none';
-        update(event);
+        // Only moving resizes, so a plain click leaves the split, and tiling, as they are.
       }}
       onPointerMove={update}
       onPointerUp={(event) => finish(event, true)}

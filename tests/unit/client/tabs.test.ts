@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  openEmptyTab,
   openSessionProfile,
   requestForceReconnect,
   requestForceReconnectAll,
@@ -16,10 +17,19 @@ import {
   closableTabIdsToRight,
   isEmptyTab,
   tabLostConnection,
+  tabsInOrder,
   useTabsStore,
+  type SessionTab,
+  type TerminalTab,
 } from '../../../client/src/state/tabs.js';
 import { useUiStore } from '../../../client/src/state/ui.js';
-import { findPane } from '../../../client/src/state/workspace-layout.js';
+import {
+  findPane,
+  flattenPaneLayout,
+  panesInOrder,
+  serializeWorkspace,
+  type SplitNode,
+} from '../../../client/src/state/workspace-layout.js';
 
 /** Let the close flow run up to the point where it raises its dialog. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -38,6 +48,7 @@ beforeEach(() => {
     activePaneId: 'pane-test',
     activeId: null,
     zoomedPaneId: null,
+    tiling: null,
   });
   usePrefsStore.setState({
     confirmCloseConnected: true,
@@ -1274,6 +1285,442 @@ describe('pane and tab symbiosis', () => {
     useTabsStore.getState().resizeActivePane(0.2);
     expect(useTabsStore.getState().equalizePanes()).toBe(true);
     expect(useTabsStore.getState().root).toMatchObject({ ratio: 0.5 });
+  });
+});
+
+describe('arranging open tabs', () => {
+  /**
+   * Tabs 1 and 2 on the left, tab 3 on the right above an empty pane. They are
+   * opened in the order 1, 3, 2, and tab 2 has the focus.
+   */
+  const openSplitLayout = () => {
+    const store = useTabsStore.getState();
+    const first = store.open({ kind: 'local' }, 'First');
+    const rightPane = store.split('pane-test', 'right')!;
+    const third = useTabsStore.getState().open({ kind: 'ssh', target: 'router' }, 'Third');
+    useTabsStore.getState().split(rightPane, 'down');
+    useTabsStore.getState().focusPane('pane-test');
+    const second = useTabsStore.getState().open({ kind: 'local' }, 'Second');
+    return [first, second, third];
+  };
+  const withoutPane = (tabs: readonly TerminalTab[]) =>
+    tabs.map(({ paneId: _paneId, ...tab }) => tab);
+
+  it.each([
+    ['rows', 'vertical', 'height', 'width'],
+    ['columns', 'horizontal', 'width', 'height'],
+  ] as const)('tiles %s: an equal pane for each tab, in tab order', (layout, direction, shared, full) => {
+    const ids = openSplitLayout();
+
+    expect(useTabsStore.getState().arrangeTabs(layout)).toBe(true);
+
+    const state = useTabsStore.getState();
+    const { panes, dividers } = flattenPaneLayout(state.root);
+    expect(panes.map(({ pane }) => pane.activeTabId)).toEqual(ids);
+    for (const { pane, rect } of panes) {
+      expect(state.tabs.filter((tab) => tab.paneId === pane.id).map((tab) => tab.id)).toEqual([
+        pane.activeTabId,
+      ]);
+      expect(rect[shared]).toBeCloseTo(1 / 3);
+      expect(rect[full]).toBe(1);
+    }
+    expect(dividers.map((divider) => divider.direction)).toEqual([direction, direction]);
+    expect(state).toMatchObject({
+      activePaneId: panes[1]!.pane.id,
+      activeId: ids[1],
+      zoomedPaneId: null,
+    });
+  });
+
+  /** Tab count, then the column sizes tiled as columns (vertically) and as rows (horizontally). */
+  const grids: Array<[number, number[], number[]]> = [
+    [2, [1, 1], [2]],
+    [3, [1, 1, 1], [3]],
+    [4, [2, 2], [2, 2]],
+    [5, [2, 3], [2, 3]],
+    [6, [2, 2, 2], [3, 3]],
+    [7, [2, 2, 3], [3, 4]],
+    [8, [2, 2, 2, 2], [4, 4]],
+    [9, [3, 3, 3], [3, 3, 3]],
+    [10, [3, 3, 4], [3, 3, 4]],
+    [11, [3, 4, 4], [3, 4, 4]],
+    [12, [3, 3, 3, 3], [4, 4, 4]],
+  ];
+
+  it.each(
+    grids.flatMap(([count, columns, rows]) => [
+      ['columns', count, columns] as const,
+      ['rows', count, rows] as const,
+    ]),
+  )('tiles %s of %i tabs as columns of %j, column by column', (layout, count, sizes) => {
+    const ids = Array.from({ length: count }, (_, index) =>
+      useTabsStore.getState().open({ kind: 'local' }, `Tab ${index + 1}`),
+    );
+
+    expect(useTabsStore.getState().arrangeTabs(layout)).toBe(true);
+
+    const { root, tabs } = useTabsStore.getState();
+    const expected = sizes.flatMap((size, column) =>
+      Array.from({ length: size }, (_, row) => ({
+        x: column / sizes.length,
+        y: row / size,
+        width: 1 / sizes.length,
+        height: 1 / size,
+      })),
+    );
+    const { panes } = flattenPaneLayout(root);
+    expect(panes.map(({ pane }) => pane.activeTabId)).toEqual(ids);
+    panes.forEach(({ rect }, index) => {
+      for (const key of ['x', 'y', 'width', 'height'] as const) {
+        expect(rect[key], `tab ${index + 1} ${key}`).toBeCloseTo(expected[index]![key]);
+      }
+    });
+    expect(tabsInOrder(root, tabs).map((tab) => tab.id)).toEqual(ids);
+    expect(useTabsStore.getState().arrangeTabs(layout)).toBe(false);
+  });
+
+  /** Panes per column, left to right. */
+  const columnSizes = () => {
+    const sizes = new Map<number, number>();
+    for (const { rect } of flattenPaneLayout(useTabsStore.getState().root).panes) {
+      sizes.set(rect.x, (sizes.get(rect.x) ?? 0) + 1);
+    }
+    return [...sizes.values()];
+  };
+  const openTabs = (count: number) =>
+    Array.from({ length: count }, (_, index) =>
+      useTabsStore.getState().open({ kind: 'local' }, `Tab ${index + 1}`),
+    );
+
+  it.each(['columns', 'rows'] as const)(
+    'keeps tiling %s as sessions open, each one last and the grid laid out by the same rule',
+    (layout) => {
+      const ids = openTabs(1);
+      expect(useTabsStore.getState().arrangeTabs(layout)).toBe(true);
+      for (const [count, columns, rows] of grids) {
+        ids.push(useTabsStore.getState().open({ kind: 'local' }, `Tab ${count}`));
+        const state = useTabsStore.getState();
+        expect(columnSizes(), `${count} tabs`).toEqual(layout === 'columns' ? columns : rows);
+        expect(tabsInOrder(state.root, state.tabs).map((tab) => tab.id)).toEqual(ids);
+        expect(state.tabs.map((tab) => tab.id)).toEqual(ids);
+        expect(state).toMatchObject({ activeId: ids.at(-1), tiling: layout });
+      }
+    },
+  );
+
+  it('puts a new session last even while an earlier tile has the focus', () => {
+    const ids = openTabs(3);
+    useTabsStore.getState().arrangeTabs('rows');
+    useTabsStore.getState().activate(ids[0]!);
+
+    const laterId = useTabsStore.getState().open({ kind: 'local' }, 'Later');
+
+    const { root, tabs, activeId } = useTabsStore.getState();
+    expect(tabsInOrder(root, tabs).map((tab) => tab.id)).toEqual([...ids, laterId]);
+    expect(activeId).toBe(laterId);
+  });
+
+  it('closes the grid up by the same rule when a tab or its pane closes', () => {
+    const ids = openTabs(7);
+    useTabsStore.getState().arrangeTabs('columns');
+    expect(columnSizes()).toEqual([2, 2, 3]);
+
+    useTabsStore.getState().close(ids[2]!);
+    expect(columnSizes()).toEqual([2, 2, 2]);
+    useTabsStore.getState().closePane(useTabsStore.getState().tabs[0]!.paneId);
+    expect(columnSizes()).toEqual([2, 3]);
+
+    const { root, tabs, tiling } = useTabsStore.getState();
+    expect(tabsInOrder(root, tabs).map((tab) => tab.id)).toEqual([ids[1], ...ids.slice(3)]);
+    expect(tiling).toBe('columns');
+  });
+
+  it('gives the host monitor and a new tab a tile of their own while tiling', () => {
+    openTabs(1);
+    useTabsStore.getState().arrangeTabs('columns');
+    const monitorId = useTabsStore.getState().openMonitor();
+    const emptyId = useTabsStore.getState().openEmpty();
+
+    expect(columnSizes()).toEqual([1, 1, 1]);
+    const { root, tabs } = useTabsStore.getState();
+    expect(tabsInOrder(root, tabs).slice(1).map((tab) => tab.id)).toEqual([monitorId, emptyId]);
+  });
+
+  it("ends tiling when a pane's own + adds a tab there, which keeps the layout", () => {
+    const ids = openTabs(3);
+    useTabsStore.getState().arrangeTabs('columns');
+    const firstPaneId = useTabsStore.getState().tabs.find((tab) => tab.id === ids[0])!.paneId;
+
+    const addedId = openEmptyTab(firstPaneId);
+    useTabsStore.getState().open({ kind: 'local' }, 'Later');
+
+    const state = useTabsStore.getState();
+    expect(state.tiling).toBeNull();
+    expect(columnSizes()).toEqual([1, 1, 1]);
+    expect(state.tabs.filter((tab) => tab.paneId === firstPaneId).map((tab) => tab.id)).toEqual([
+      ids[0],
+      addedId,
+      state.activeId,
+    ]);
+  });
+
+  it('keeps tiling when a divider is let go where it was', () => {
+    openTabs(3);
+    useTabsStore.getState().arrangeTabs('columns');
+    const root = useTabsStore.getState().root as SplitNode;
+
+    useTabsStore.getState().resizeSplit(root.id, root.ratio);
+
+    expect(useTabsStore.getState()).toMatchObject({ root, tiling: 'columns' });
+  });
+
+  it('keeps tiling when growing a pane changes nothing, at its limit', () => {
+    openTabs(1);
+    useTabsStore.getState().split('pane-test', 'right');
+    useTabsStore.getState().focusPane('pane-test');
+    useTabsStore.getState().resizeActivePane(0.5);
+    useTabsStore.getState().arrangeTabs('rows');
+    const root = useTabsStore.getState().root;
+    expect(root).toMatchObject({ ratio: 0.9 });
+
+    expect(useTabsStore.getState().resizeActivePane(0.04)).toBe(true);
+
+    expect(useTabsStore.getState()).toMatchObject({ root, tiling: 'rows' });
+  });
+
+  it('drops a zoom on another tile when a view takes the focus in the last one', () => {
+    const [firstId] = openTabs(2);
+    useTabsStore.getState().arrangeTabs('columns');
+    useTabsStore.getState().openEmpty();
+    useTabsStore.getState().activate(firstId!);
+    expect(useTabsStore.getState().toggleZoom()).toBe(true);
+
+    const monitorId = useTabsStore.getState().openMonitor();
+
+    expect(useTabsStore.getState()).toMatchObject({
+      activeId: monitorId,
+      zoomedPaneId: null,
+      tiling: 'columns',
+    });
+    expect(columnSizes()).toEqual([1, 1, 1]);
+  });
+
+  it('keeps a zoom when a session opens or closes without changing the grid', () => {
+    openTabs(2);
+    useTabsStore.getState().openEmpty();
+    useTabsStore.getState().arrangeTabs('columns');
+    expect(useTabsStore.getState().toggleZoom()).toBe(true);
+    const zoomedPaneId = useTabsStore.getState().zoomedPaneId;
+
+    // The host monitor takes the untouched new tab's place.
+    useTabsStore.getState().openMonitor();
+    useTabsStore.getState().close('missing-tab');
+
+    expect(useTabsStore.getState()).toMatchObject({ zoomedPaneId, tiling: 'columns' });
+    expect(columnSizes()).toEqual([1, 1, 1]);
+  });
+
+  it.each<[string, () => unknown]>([
+    ['a split', () => useTabsStore.getState().split(useTabsStore.getState().activePaneId, 'down')],
+    [
+      'a tab moved to another pane',
+      () => {
+        const [first, second] = useTabsStore.getState().tabs;
+        useTabsStore.getState().moveTabToPane(first!.id, second!.paneId);
+      },
+    ],
+    ['a dragged divider', () => useTabsStore.getState().resizeSplit(useTabsStore.getState().root.id, 0.3)],
+    ['a grown pane', () => useTabsStore.getState().resizeActivePane(0.1)],
+    ['evened-out panes', () => useTabsStore.getState().equalizePanes()],
+    [
+      'a host group launch',
+      () => useTabsStore.getState().launchSet([{ profile: { kind: 'local' }, title: 'Set' }], 'tabs'),
+    ],
+  ])('ends tiling on %s', (_edit, edit) => {
+    openTabs(3);
+    useTabsStore.getState().arrangeTabs('columns');
+
+    edit();
+
+    expect(useTabsStore.getState().tiling).toBeNull();
+  });
+
+  it('keeps tiling through a zoom, which the next session drops', () => {
+    openTabs(3);
+    useTabsStore.getState().arrangeTabs('columns');
+    expect(useTabsStore.getState().toggleZoom()).toBe(true);
+    expect(useTabsStore.getState().tiling).toBe('columns');
+
+    useTabsStore.getState().open({ kind: 'local' }, 'Tab 4');
+
+    expect(useTabsStore.getState()).toMatchObject({ zoomedPaneId: null, tiling: 'columns' });
+    expect(columnSizes()).toEqual([2, 2]);
+  });
+
+  it('puts new sessions in the focused pane again after Tabs', () => {
+    openTabs(3);
+    useTabsStore.getState().arrangeTabs('rows');
+    useTabsStore.getState().arrangeTabs('tabs');
+    useTabsStore.getState().open({ kind: 'local' }, 'Tab 4');
+
+    const state = useTabsStore.getState();
+    expect(state.root.type).toBe('pane');
+    expect(state.tabs.every((tab) => tab.paneId === state.root.id)).toBe(true);
+    expect(state.tiling).toBeNull();
+  });
+
+  it('lays four tabs out as the same two-by-two grid either way, switching only the mode', () => {
+    for (let index = 0; index < 4; index++) {
+      useTabsStore.getState().open({ kind: 'local' }, `Tab ${index + 1}`);
+    }
+
+    expect(useTabsStore.getState().arrangeTabs('rows')).toBe(true);
+    const grid = useTabsStore.getState().root;
+    expect(useTabsStore.getState().arrangeTabs('columns')).toBe(true);
+    expect(useTabsStore.getState()).toMatchObject({ root: grid, tiling: 'columns' });
+    expect(useTabsStore.getState().arrangeTabs('columns')).toBe(false);
+  });
+
+  it('moves tabs between panes only: same tabs, sessions, numbers and array slots', () => {
+    const ids = openSplitLayout();
+    const before = useTabsStore.getState().tabs;
+
+    useTabsStore.getState().arrangeTabs('rows');
+
+    const { root, tabs } = useTabsStore.getState();
+    expect(withoutPane(tabs)).toEqual(withoutPane(before));
+    expect(tabsInOrder(root, tabs).map((tab) => tab.id)).toEqual(ids);
+    // The first tab of a pane stays where it was.
+    expect(tabs[0]).toBe(before[0]);
+  });
+
+  it('gathers every tab into the focused pane, in tab order', () => {
+    const ids = openSplitLayout();
+    useTabsStore.getState().arrangeTabs('columns');
+    const focusedPaneId = useTabsStore.getState().activePaneId;
+    const tiled = useTabsStore.getState().tabs;
+
+    expect(useTabsStore.getState().arrangeTabs('tabs')).toBe(true);
+
+    const state = useTabsStore.getState();
+    expect(state.root).toEqual({ id: focusedPaneId, type: 'pane', activeTabId: ids[1] });
+    expect(state.tabs.map((tab) => [tab.id, tab.paneId])).toEqual(
+      ids.map((id) => [id, focusedPaneId]),
+    );
+    expect(withoutPane(state.tabs)).toEqual(
+      withoutPane(ids.map((id) => tiled.find((tab) => tab.id === id)!)),
+    );
+    expect(state).toMatchObject({ activePaneId: focusedPaneId, activeId: ids[1] });
+  });
+
+  it('arranges the host monitor, the hosts tab and a new tab like any other tab', () => {
+    const sessionId = useTabsStore.getState().open({ kind: 'local' }, 'Local');
+    const monitorId = useTabsStore.getState().openMonitor();
+    const hostsId = useTabsStore.getState().openHosts();
+    const emptyId = useTabsStore.getState().openEmpty();
+    const ids = [sessionId, monitorId, hostsId, emptyId];
+    const before = useTabsStore.getState().tabs;
+
+    expect(useTabsStore.getState().arrangeTabs('columns')).toBe(true);
+    expect(panesInOrder(useTabsStore.getState().root).map((pane) => pane.activeTabId)).toEqual(ids);
+    expect(useTabsStore.getState().activeId).toBe(emptyId);
+
+    expect(useTabsStore.getState().arrangeTabs('tabs')).toBe(true);
+    expect(withoutPane(useTabsStore.getState().tabs)).toEqual(withoutPane(before));
+    expect(isEmptyTab(useTabsStore.getState().tabs[3]!)).toBe(true);
+  });
+
+  it('keeps pinned tabs at the head of the gathered strip', () => {
+    const store = useTabsStore.getState();
+    const firstId = store.open({ kind: 'local' }, 'First');
+    store.split('pane-test', 'right');
+    const pinnedId = useTabsStore.getState().open({ kind: 'local' }, 'Pinned');
+    useTabsStore.getState().setPinned(pinnedId, true);
+
+    expect(useTabsStore.getState().arrangeTabs('tabs')).toBe(true);
+    expect(useTabsStore.getState().tabs.map((tab) => [tab.id, !!tab.pinned])).toEqual([
+      [pinnedId, true],
+      [firstId, false],
+    ]);
+  });
+
+  it('with a single tab, only turns the mode on or off', () => {
+    useTabsStore.getState().open({ kind: 'local' }, 'Only');
+    useTabsStore.getState().split('pane-test', 'down');
+    const root = useTabsStore.getState().root;
+
+    expect(useTabsStore.getState().arrangeTabs('tabs')).toBe(false);
+    expect(useTabsStore.getState().arrangeTabs('rows')).toBe(true);
+    expect(useTabsStore.getState().arrangeTabs('rows')).toBe(false);
+    expect(useTabsStore.getState().arrangeTabs('tabs')).toBe(true);
+    expect(useTabsStore.getState()).toMatchObject({ root, tiling: null });
+  });
+
+  it('declines when the tabs are already laid out that way', () => {
+    useTabsStore.getState().open({ kind: 'local' }, 'First');
+    const secondId = useTabsStore.getState().open({ kind: 'local' }, 'Second');
+    expect(useTabsStore.getState().arrangeTabs('tabs')).toBe(false);
+
+    // Two tabs stacked by hand already have the layout: only the mode turns on.
+    expect(useTabsStore.getState().moveTabToNewPane(secondId, 'down')).toBe(true);
+    const stacked = useTabsStore.getState().root;
+    expect(useTabsStore.getState().arrangeTabs('rows')).toBe(true);
+    expect(useTabsStore.getState().root).toBe(stacked);
+    expect(useTabsStore.getState().arrangeTabs('rows')).toBe(false);
+
+    expect(useTabsStore.getState().arrangeTabs('columns')).toBe(true);
+    const tiled = useTabsStore.getState().root;
+    expect(useTabsStore.getState().arrangeTabs('columns')).toBe(false);
+    expect(useTabsStore.getState().root).toBe(tiled);
+
+    // A dragged divider ends tiling; tiling again evens the panes out.
+    useTabsStore.getState().resizeSplit(tiled.id, 0.3);
+    expect(useTabsStore.getState().tiling).toBeNull();
+    expect(useTabsStore.getState().arrangeTabs('columns')).toBe(true);
+    expect(useTabsStore.getState().root).toMatchObject({ direction: 'horizontal', ratio: 0.5 });
+    expect(useTabsStore.getState().activeId).toBe(secondId);
+  });
+
+  it('drops a zoom, even on tabs that are already tiled', () => {
+    openSplitLayout();
+    useTabsStore.getState().toggleZoom();
+
+    expect(useTabsStore.getState().arrangeTabs('rows')).toBe(true);
+    expect(useTabsStore.getState().zoomedPaneId).toBeNull();
+
+    useTabsStore.getState().toggleZoom();
+    expect(useTabsStore.getState().arrangeTabs('rows')).toBe(true);
+    expect(useTabsStore.getState().zoomedPaneId).toBeNull();
+  });
+
+  it('clears the unread mark of a tab it brings into view', () => {
+    const [firstId] = openSplitLayout();
+    useTabsStore.getState().notifyOutput(firstId!);
+    expect(useTabsStore.getState().unreadOutputIds).toEqual(new Set([firstId]));
+
+    useTabsStore.getState().arrangeTabs('columns');
+
+    expect(useTabsStore.getState().unreadOutputIds).toEqual(new Set());
+  });
+
+  it('saves a tiled layout and restores it as it was, still tiling', () => {
+    const ids = openSplitLayout();
+    useTabsStore.getState().arrangeTabs('rows');
+    const { root, tabs, activePaneId, tiling } = useTabsStore.getState();
+    const layout = serializeWorkspace(
+      root,
+      tabs.filter((tab): tab is SessionTab => tab.profile !== null),
+      activePaneId,
+      tiling,
+    );
+    useTabsStore.getState().stopTiling();
+
+    useTabsStore.getState().restore(layout);
+
+    const restored = useTabsStore.getState();
+    expect(restored.root).toEqual(root);
+    expect(tabsInOrder(restored.root, restored.tabs).map((tab) => tab.id)).toEqual(ids);
+    expect(restored).toMatchObject({ activePaneId, activeId: ids[1], tiling: 'rows' });
   });
 });
 
