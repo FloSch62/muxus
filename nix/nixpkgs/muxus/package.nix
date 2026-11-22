@@ -26,13 +26,13 @@ stdenv.mkDerivation (finalAttrs: let
   hasEngine = lib.versionAtLeast finalAttrs.version "0.16";
 in {
   pname = "muxus";
-  version = "0.15.1";
+  version = "0.16.0";
 
   src = fetchFromGitHub {
     owner = "FloSch62";
     repo = "muxus";
     tag = "v${finalAttrs.version}";
-    hash = "sha256-qBA8YMzG72yllSLNv1iErArYoBU3sMuP0yia/V/Od4Q=";
+    hash = "sha256-Pd+SovkjOyRxxmCLvL/dJvv6GD8K/KM1+C0ccIHsrj4=";
   };
 
   # Everything the desktop app needs; leaves out the test workspace.
@@ -70,7 +70,7 @@ in {
       ;
     inherit pnpm;
     fetcherVersion = 5;
-    hash = "sha256-OnxWRT3RvkjwukAOjYskB3+31zulSOcD9WJvPOYMQDQ=";
+    hash = "sha256-M9/k7QcfkHi1k6kos76Fd2oRXxsDB0IiO+Ih+qN/+DI=";
   };
 
   nativeBuildInputs = [
