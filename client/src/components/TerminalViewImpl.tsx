@@ -95,6 +95,7 @@ import {
 import { attachCommandTracker, attachCwdTracker } from '../terminal/shell-integration.js';
 import { attachProgramStatus } from '../terminal/program-status.js';
 import { useProgramStatusStore } from '../state/program-status.js';
+import { usePaneSurfaceStore } from '../state/pane-surface.js';
 import { attachOsc52Clipboard } from '../terminal/osc52-clipboard.js';
 import {
   attachKeywordHighlighter,
@@ -455,6 +456,14 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
     ),
     [scheme, effectiveFontColor, effectiveBackgroundColor],
   );
+  // The pane's sheet takes the terminal's background, so the screen runs to
+  // the sheet's own edge instead of sitting in it as a second frame.
+  const setPaneSurface = usePaneSurfaceStore((state) => state.set);
+  const surfaceColor = terminalTheme.background;
+  useEffect(() => {
+    setPaneSurface(tab.id, surfaceColor);
+    return () => setPaneSurface(tab.id, undefined);
+  }, [setPaneSurface, tab.id, surfaceColor]);
   const hostKeywordHighlights = hostMetadata?.keywordHighlights;
   const keywordHighlights = useMemo(
     () =>
@@ -2024,7 +2033,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
   return (
     <Box
       {...fileDrop.handlers}
-      sx={{ height: '100%', p: 1, pt: 0.75, minHeight: 0, position: 'relative' }}
+      sx={{ height: '100%', minHeight: 0, position: 'relative' }}
     >
       <Box
         ref={containerRef}
@@ -2037,11 +2046,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         sx={{
           height: '100%',
           bgcolor: terminalTheme.background,
-          border: 1,
-          borderColor: theme.palette.mode === 'dark' && !scheme.light ? 'transparent' : theme.palette.divider,
-          borderRadius: 1,
           overflow: 'hidden',
-          '& .xterm': { height: '100%', p: theme.spacing(0.5) },
+          // No frame of its own: the pane's sheet is the terminal's edge.
+          '& .xterm': { height: '100%', p: '8px 6px 6px 10px' },
           // xterm.css defaults the viewport to #000, which shows through the
           // .xterm padding as a black ring around the canvas.
           '& .xterm .xterm-viewport': { backgroundColor: 'transparent' },
@@ -2059,8 +2066,8 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           sx={{
             position: 'absolute',
             zIndex: 6,
-            top: 11,
-            right: 13,
+            top: 8,
+            right: 12,
             display: 'flex',
             alignItems: 'center',
             gap: 0.25,

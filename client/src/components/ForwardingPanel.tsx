@@ -46,7 +46,7 @@ import {
 import { confirmAction } from '../state/dialogs.js';
 import { SYSTEM_OPENSSH_UNAVAILABLE, tunnelUsesSystemOpenSsh } from '../system-openssh.js';
 import { showErrorToast, showToast } from '../state/toast.js';
-import { layout, statusTextColor } from '../theme.js';
+import { statusTextColor } from '../theme.js';
 import {
   AuthPromptDialog,
   type AuthPromptRequest,
@@ -55,6 +55,7 @@ import {
 import { HostKeyDialog, type HostKeyRequest } from './HostKeyDialog.js';
 import { FORWARD_FLAG, ForwardRuleForm, describeForward } from './ForwardRuleForm.js';
 import { TunnelEditorDialog, type TunnelEditorState } from './TunnelEditorDialog.js';
+import { PanelHeader } from './sidebar/PanelHeader.js';
 
 const MONO = { fontFamily: '"JetBrains Mono", monospace' } as const;
 const EMPTY_FORWARDS: ForwardInfo[] = [];
@@ -231,28 +232,17 @@ export function ForwardingPanel() {
         bgcolor: 'sidebar',
       }}
     >
-      {/* As tall as the tab strip beside it, so their bottom lines meet. */}
-      <Stack
-        direction="row"
-        spacing={1}
-        sx={{
-          height: layout.tabStripHeight,
-          flexShrink: 0,
-          boxSizing: 'border-box',
-          px: 1.5,
-          alignItems: 'center',
-          borderBottom: 1,
-          borderColor: 'divider',
-        }}
-      >
-        <SwapHorizOutlinedIcon fontSize="small" color="primary" />
-        <Typography variant="subtitle2" sx={{ fontWeight: 700, flex: 1 }}>
-          Port forwarding
-        </Typography>
-        <Button size="small" variant="contained" startIcon={<AddIcon />} onClick={() => setEditor({})}>
+      <PanelHeader icon={<SwapHorizOutlinedIcon />} title="Port forwarding">
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<AddIcon />}
+          onClick={() => setEditor({})}
+          sx={{ mr: 0.5, py: '2px' }}
+        >
           Tunnel
         </Button>
-      </Stack>
+      </PanelHeader>
 
       <Box sx={{ flex: 1, overflowY: 'auto', py: 1 }}>
         <SectionLabel>Persistent tunnels</SectionLabel>
@@ -554,10 +544,10 @@ function SectionLabel({ children }: { children: string }) {
       sx={{
         px: 1.5,
         pb: 0.5,
-        fontSize: 11,
-        fontWeight: 600,
-        textTransform: 'uppercase',
-        letterSpacing: 0.6,
+        // The sidebar's own label type, a size down: said, not shouted.
+        fontSize: 12,
+        fontWeight: 550,
+        letterSpacing: -0.1,
         color: 'text.secondary',
       }}
     >

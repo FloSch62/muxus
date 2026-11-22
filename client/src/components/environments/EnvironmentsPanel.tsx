@@ -36,7 +36,7 @@ import {
 } from '../../state/environments.js';
 import { showToast } from '../../state/toast.js';
 import { useUiStore } from '../../state/ui.js';
-import { layout, statusTextColor } from '../../theme.js';
+import { statusTextColor } from '../../theme.js';
 import { AuthPromptDialog, type AuthPromptRequest, type AuthPromptResult } from '../AuthPromptDialog.js';
 import { HostKeyDialog, type HostKeyRequest } from '../HostKeyDialog.js';
 import { ClabTopologyDialog } from './ClabTopologyDialog.js';
@@ -51,6 +51,7 @@ import {
 import { LineAction, LineMenu, NoteLine, TreeLine, useExpansion, type Expansion } from './EnvironmentTree.js';
 import { KubernetesSection } from './KubernetesSection.js';
 import { PortsSection } from './PortsSection.js';
+import { PanelHeader } from '../sidebar/PanelHeader.js';
 
 const PROVIDER_LABELS = {
   docker: 'Docker',
@@ -183,35 +184,27 @@ export function EnvironmentsPanel({
         bgcolor: 'sidebar',
       }}
     >
-      {/* As tall as the tab strip beside it, so their bottom lines meet. */}
-      <Stack
-        direction="row"
-        spacing={1}
-        sx={{
-          height: layout.tabStripHeight,
-          flexShrink: 0,
-          boxSizing: 'border-box',
-          px: 1.5,
-          alignItems: 'center',
-          borderBottom: 1,
-          borderColor: 'divider',
-        }}
+      <PanelHeader
+        icon={<ViewInArOutlinedIcon />}
+        title={
+          scoped ? (
+            <>
+              <Typography variant="subtitle2" noWrap sx={{ lineHeight: 1.25 }}>
+                {scoped.label}
+              </Typography>
+              <Button
+                size="small"
+                onClick={() => setPanel({})}
+                sx={{ p: 0, minWidth: 0, fontSize: 11, textTransform: 'none', lineHeight: 1.1, display: 'block' }}
+              >
+                All hosts
+              </Button>
+            </>
+          ) : (
+            'Containers & VMs'
+          )
+        }
       >
-        <ViewInArOutlinedIcon fontSize="small" color="primary" />
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography variant="subtitle2" noWrap sx={{ fontWeight: 700, lineHeight: scoped ? 1.25 : undefined }}>
-            {scoped ? scoped.label : 'Containers & VMs'}
-          </Typography>
-          {scoped ? (
-            <Button
-              size="small"
-              onClick={() => setPanel({})}
-              sx={{ p: 0, minWidth: 0, fontSize: 11, textTransform: 'none', lineHeight: 1.1, display: 'block' }}
-            >
-              All hosts
-            </Button>
-          ) : null}
-        </Box>
         <Tooltip title={scoped ? `Read ${scoped.label} again` : 'Read every host again'}>
           <IconButton
             size="small"
@@ -233,7 +226,7 @@ export function EnvironmentsPanel({
             {wide ? <CloseFullscreenIcon fontSize="small" /> : <OpenInFullIcon fontSize="small" />}
           </IconButton>
         </Tooltip>
-      </Stack>
+      </PanelHeader>
 
       <Stack direction="row" spacing={1} sx={{ px: 1.5, py: 1, alignItems: 'center' }}>
         <TextField

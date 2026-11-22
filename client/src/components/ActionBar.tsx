@@ -96,8 +96,6 @@ export const ActionBar = memo(function ActionBar({
         gap: 0.75,
         px: 1,
         bgcolor: 'sidebar',
-        [atBottom ? 'borderTop' : 'borderBottom']: 1,
-        borderColor: 'divider',
       }}
     >
       {grouped ? (

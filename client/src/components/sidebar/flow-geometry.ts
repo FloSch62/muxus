@@ -1,7 +1,10 @@
+import { sheet } from '../../theme.js';
+
 /**
  * Geometry of the sidebar rail and the card that grows out of it. The rail
  * item, the connector and the card each draw part of one outline, so the
- * numbers they share live here rather than in three files.
+ * numbers they share live here rather than in three files. The card is a
+ * sheet like every pane, so its own numbers are the theme's.
  */
 
 /** Rail width with icons only, and with its labels pinned open. */
@@ -10,17 +13,18 @@ export const RAIL_PINNED_WIDTH = 196;
 /** A rail item is a square of this size; its row is as tall. */
 export const RAIL_ITEM_SIZE = 36;
 export const RAIL_ITEM_GAP = 6;
-/**
- * Space above the first item. The card's rounded corner and the connector's
- * fillet above the first item each need their own radius of straight edge.
- */
-export const RAIL_PADDING_TOP = 26;
-export const RAIL_PADDING_BOTTOM = 8;
 /** Gap between the card and the window chrome around it. */
-export const CARD_INSET = 6;
-export const CARD_RADIUS = 10;
+export const CARD_INSET = sheet.gap;
+export const CARD_RADIUS = sheet.radius;
+/**
+ * Space above the first item and below the last: the card's own inset, so the
+ * rail's items start and end level with the card. Joined to the card, the
+ * first item's top edge is the card's, and the card gives up its corner there.
+ */
+export const RAIL_PADDING_TOP = CARD_INSET;
+export const RAIL_PADDING_BOTTOM = CARD_INSET;
 /** Radius of the concave corners where the connector meets the card. */
-export const CONNECTOR_FILLET = 10;
+export const CONNECTOR_FILLET = sheet.fillet;
 /** Distance from the window edge to an item, unpinned and pinned. */
 export const RAIL_ITEM_INSET = 7;
 export const RAIL_ITEM_INSET_PINNED = 6;

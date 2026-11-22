@@ -330,8 +330,8 @@ function overlayColors(): { color: string; symbolColor: string } {
   // compositor frame as the rest of the page — only the glyphs are native.
   const dark = nativeTheme.shouldUseDarkColors;
   return {
-    color: isLinux ? '#00000000' : dark ? '#151518' : '#f4f4f5',
-    symbolColor: dark ? '#e6e6ea' : '#1c1c21',
+    color: isLinux ? '#00000000' : dark ? '#1d1d22' : '#f1f1f3',
+    symbolColor: dark ? '#ececf0' : '#1c1c21',
   };
 }
 

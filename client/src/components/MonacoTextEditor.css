@@ -1,5 +1,5 @@
 .muxus-monaco {
-  --monaco-status-bg: #f4f4f5;
+  --monaco-status-bg: #f1f1f3;
   --monaco-status-border: rgba(0, 0, 0, 0.1);
   --monaco-status-fg: #5f5f68;
   --monaco-status-hover: rgba(0, 0, 0, 0.08);
@@ -10,7 +10,7 @@
 }
 
 .muxus-monaco[data-theme='dark'] {
-  --monaco-status-bg: #18181b;
+  --monaco-status-bg: #1d1d22;
   --monaco-status-border: rgba(255, 255, 255, 0.09);
   --monaco-status-fg: #b1b1ba;
   --monaco-status-hover: rgba(255, 255, 255, 0.1);

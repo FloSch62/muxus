@@ -64,7 +64,7 @@ export const HostViewBar = memo(function HostViewBar({
     <Stack
       direction="row"
       useFlexGap
-      sx={{ alignItems: 'center', gap: 0.5, minHeight: 24, px: 1.25, pb: 0.75 }}
+      sx={{ alignItems: 'center', gap: 0.5, minHeight: 24, px: 1.25, pt: 0.25, pb: 0.75 }}
     >
       {view === 'tree' ? (
         <Box
