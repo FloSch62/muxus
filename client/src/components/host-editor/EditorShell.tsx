@@ -101,6 +101,8 @@ export function EditorShell<S extends string>({
         )}
         <Stack
           direction="row"
+          // A flex gap, so the section's own margin below is not reset.
+          useFlexGap
           spacing={2.5}
           sx={{ flex: 1, minHeight: 0, pt: typeKind ? 1.5 : 0 }}
         >
@@ -136,6 +138,11 @@ export function EditorShell<S extends string>({
               pt: 1.5,
               pr: 0.5,
               pb: 1,
+              // A switch or checkbox hangs 11px out to the left of its label's
+              // row, so its mark lines up with the text around it. The scroll
+              // box clips there: reach that far out, and pad the reach back.
+              ml: -1.5,
+              pl: 1.5,
             }}
           >
             {children}

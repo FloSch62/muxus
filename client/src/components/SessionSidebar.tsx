@@ -106,6 +106,7 @@ import { useFolderPrefs } from './sidebar/useFolderPrefs.js';
 import { useLiveHostCounts } from './sidebar/useLiveHostCounts.js';
 import { useHostActions } from './sidebar/useHostActions.js';
 import { useTreeDnd, type FolderPlacement } from './sidebar/useTreeDnd.js';
+import { layout } from '../theme.js';
 
 const SidebarMenus = lazy(() =>
   loadSidebarMenus().then((module) => ({ default: module.SidebarMenus })),
@@ -608,7 +609,20 @@ export const SessionSidebar = memo(function SessionSidebar() {
         flexDirection: 'column',
       }}
     >
-      <Stack direction="row" spacing={1} sx={{ p: 1.25, pb: 0.75, alignItems: 'center' }}>
+      {/* As tall as the other panels' title rows and the tab strip beside
+          them, so search, titles and tabs share one line. */}
+      <Stack
+        direction="row"
+        spacing={0.75}
+        sx={{
+          height: layout.tabStripHeight,
+          flexShrink: 0,
+          boxSizing: 'border-box',
+          pl: 1.25,
+          pr: 0.75,
+          alignItems: 'center',
+        }}
+      >
         <TextField
           fullWidth
           inputRef={searchRef}
@@ -634,9 +648,10 @@ export const SessionSidebar = memo(function SessionSidebar() {
             input: {
               startAdornment: (
                 <InputAdornment position="start">
-                  <SearchIcon fontSize="small" />
+                  <SearchIcon sx={{ fontSize: 17 }} />
                 </InputAdornment>
               ),
+              sx: { fontSize: 13, pl: 1.25 },
             },
           }}
         />

@@ -38,7 +38,9 @@ export function AntiIdleFields({
 }) {
   const intervalProblem = value.enabled ? antiIdleIntervalProblem(value) : undefined;
   return (
-    <Stack spacing={1.5}>
+    // A flex gap: margins as spacing would reset the switch's own, and set it
+    // in from the other switches of the section.
+    <Stack spacing={1.5} useFlexGap>
       <FormControlLabel
         control={
           <Switch

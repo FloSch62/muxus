@@ -3,13 +3,16 @@ import { alpha, createTheme, type Theme } from '@mui/material/styles';
 import { DEFAULT_SIDEBAR_WIDTH } from './sidebar-width.js';
 
 declare module '@mui/material/styles' {
-  /** Chrome surfaces (top bar, session sidebar, tab strip) share this background —
-   *  exposed on the palette so no component re-hardcodes the hex. `sidebarInk`
-   *  is the label color for sidebar rows: in light mode it sits below
-   *  text.primary because a panel of near-black rows reads as a slab of ink.
-   *  `sidebarSheet` is the card the sidebar's panel is drawn on, and
-   *  `sidebarEdge` the hairline around it and the rail: the divider as a solid
-   *  color, so outlines that meet or cross never double up. */
+  /** The window is a canvas with sheets on it. `sidebar` is the canvas: the top
+   *  bar, the rail, the tab strips, the status bar and the gutters between the
+   *  sheets all share it, with no lines between them. `sidebarSheet` is what
+   *  sits on it — the sidebar's panel and every pane — and equals
+   *  background.default, so a view never has to know which of the two it is
+   *  drawn on. `sidebarEdge` is the hairline around a sheet and around what
+   *  grows out of one (a rail item, a tab): the divider as a solid color, so
+   *  outlines that meet or cross never double up. `sidebarInk` is the label
+   *  color for sidebar rows: in light mode it sits below text.primary because
+   *  a panel of near-black rows reads as a slab of ink. */
   interface Palette {
     sidebar: string;
     sidebarInk: string;
@@ -44,6 +47,27 @@ export const layout = {
   scrollbarSize: 10,
 } as const;
 
+/**
+ * A sheet's geometry, shared by the sidebar's panel and the panes: the gap
+ * between a sheet and whatever is beside it, its corner radius, and the radius
+ * of the concave corners where a rail item or a tab runs into its sheet.
+ */
+export const sheet = {
+  gap: 6,
+  radius: 10,
+  fillet: 10,
+} as const;
+
+/**
+ * In the sidebar's panel, "the canvas color" is the sheet's own: everything a
+ * view paints in it — a sticky header, the ring around a status dot — then
+ * matches the sheet it sits on. A pane keeps the canvas color for its strips:
+ * the tab strip, and the toolbars under it.
+ */
+export function sheetTheme(outer: Theme): Theme {
+  return { ...outer, palette: { ...outer.palette, sidebar: outer.palette.sidebarSheet } };
+}
+
 const modalBackdropAlpha = 0.5;
 
 /** Status hue for small colored text. The bright palette mains pass contrast
@@ -54,41 +78,47 @@ export const statusTextColor =
   (theme: Theme): string =>
     theme.palette.mode === 'dark' ? theme.palette[color].main : theme.palette[color].dark;
 
+// Dark surfaces step up from the canvas: canvas, sheet, paper. They sit well
+// above black on purpose — light text on a near-black ground glares, and
+// surfaces a shade apart cannot be told from each other.
 const darkColors = {
-  primary: '#6e8bfb',
+  primary: '#7b95fc',
   secondary: '#2dd4bf',
-  bgDefault: '#1b1b1f',
-  bgPaper: '#232328',
-  sidebar: '#151518',
-  sidebarInk: '#e6e6ea',
-  sidebarSheet: '#1d1d21',
-  sidebarEdge: '#28282b',
-  divider: 'rgba(255, 255, 255, 0.08)',
-  textPrimary: '#e6e6ea',
-  textSecondary: '#9d9da7',
+  bgDefault: '#26262c',
+  bgPaper: '#2e2e35',
+  sidebar: '#1d1d22',
+  sidebarInk: '#ececf0',
+  sidebarSheet: '#26262c',
+  sidebarEdge: '#393941',
+  divider: 'rgba(255, 255, 255, 0.1)',
+  textPrimary: '#ececf0',
+  textSecondary: '#b0b0bb',
+  disabledAlpha: 0.62,
   success: '#4ade80',
   warning: '#e7b341',
   error: '#f87171',
   info: '#60a5fa',
-  scrollThumb: 'rgba(255, 255, 255, 0.16)',
-  scrollThumbHover: 'rgba(255, 255, 255, 0.30)',
-  tooltipBg: '#2e2e34',
-  selectedPill: 'rgba(255, 255, 255, 0.09)',
-  selectedPillHover: 'rgba(255, 255, 255, 0.13)',
+  scrollThumb: 'rgba(255, 255, 255, 0.18)',
+  scrollThumbHover: 'rgba(255, 255, 255, 0.32)',
+  tooltipBg: '#3d3d46',
+  hover: 'rgba(255, 255, 255, 0.06)',
+  selectedPill: 'rgba(255, 255, 255, 0.1)',
+  selectedPillHover: 'rgba(255, 255, 255, 0.14)',
 };
 
 const lightColors = {
   primary: '#3b66f5',
   secondary: '#0d9488',
-  bgDefault: '#fafafa',
+  bgDefault: '#ffffff',
   bgPaper: '#ffffff',
-  sidebar: '#f4f4f5',
+  sidebar: '#f1f1f3',
   sidebarInk: '#3f3f49',
   sidebarSheet: '#ffffff',
-  sidebarEdge: '#e0e0e1',
-  divider: 'rgba(0, 0, 0, 0.08)',
+  sidebarEdge: '#dbdbe0',
+  divider: 'rgba(0, 0, 0, 0.09)',
   textPrimary: '#1c1c21',
-  textSecondary: '#6e6e78',
+  textSecondary: '#666670',
+  disabledAlpha: 0.68,
   success: '#16a34a',
   warning: '#b07a10',
   error: '#dc2626',
@@ -96,8 +126,9 @@ const lightColors = {
   scrollThumb: 'rgba(0, 0, 0, 0.18)',
   scrollThumbHover: 'rgba(0, 0, 0, 0.34)',
   tooltipBg: '#2e2e34',
+  hover: 'rgba(0, 0, 0, 0.045)',
   selectedPill: 'rgba(0, 0, 0, 0.07)',
-  selectedPillHover: 'rgba(0, 0, 0, 0.10)',
+  selectedPillHover: 'rgba(0, 0, 0, 0.1)',
 };
 
 /** Colors the desktop app paints the native window-controls overlay with —
@@ -146,7 +177,10 @@ export function buildTheme(mode: 'light' | 'dark', options: { modalBackdrop?: El
       // `disabled` is used as the dimmest text tier; keying it off the
       // secondary hue keeps the two muted greys in the same family instead
       // of MUI's unrelated default.
-      text: { primary: c.textPrimary, secondary: c.textSecondary, disabled: alpha(c.textSecondary, dark ? 0.55 : 0.6) },
+      text: { primary: c.textPrimary, secondary: c.textSecondary, disabled: alpha(c.textSecondary, c.disabledAlpha) },
+      // One hover and one selection tint for rows, rail items, tabs and
+      // segmented controls, whichever surface they sit on.
+      action: { hover: c.hover, selected: c.selectedPill },
     },
     shape: { borderRadius: 8 },
     typography: {
@@ -302,7 +336,7 @@ export function buildTheme(mode: 'light' | 'dark', options: { modalBackdrop?: El
           root: {
             borderRadius: 6,
             margin: '1px 6px',
-            '&:hover': { backgroundColor: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' },
+            '&:hover': { backgroundColor: c.hover },
             '&.Mui-selected': {
               backgroundColor: c.selectedPill,
               '&:hover': { backgroundColor: c.selectedPillHover },

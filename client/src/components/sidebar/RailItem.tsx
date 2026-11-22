@@ -13,6 +13,16 @@ const REVEALED = {
   zIndex: 2,
 } as const;
 
+/**
+ * How the carved label ends toward the item above or below it.
+ * - `shoulder`: the rail's edge runs on past the item, and bends out around the label.
+ * - `flat`: the item on that side is joined to the panel. Its edge is the
+ *   label's edge too: one line, and the join stays whole.
+ * - `open`: the item stands at the end of the sheet beside the rail. There is
+ *   no edge beyond it to bend, so the sheet's corner steps aside instead.
+ */
+export type RailCarveEnd = 'shoulder' | 'flat' | 'open';
+
 export interface RailItemProps {
   /** What the item is called, with anything worth adding, such as a count. */
   label: string;
@@ -28,6 +38,9 @@ export interface RailItemProps {
   /** Joined to the open panel by the connector, which then is its highlight. */
   connected?: boolean;
   disabled?: boolean;
+  /** How the carved label ends above and below the item; a shoulder unless said otherwise. */
+  above?: RailCarveEnd;
+  below?: RailCarveEnd;
   /** A switch that is on, said to assistive technology without lighting the item up. */
   pressed?: boolean;
   /** Drawn on the icon's corner, such as a count. */
@@ -54,7 +67,8 @@ export interface RailItemProps {
  *
  * The item joined to the open panel shows no carved label: the connector
  * already draws that outline there, and the two would cut into each other. It
- * falls back to an ordinary tooltip.
+ * falls back to an ordinary tooltip. Its neighbors carve theirs with a flat
+ * end toward it, for the same reason (see {@link RailCarveEnd}).
  */
 export const RailItem = memo(function RailItem({
   label,
@@ -64,6 +78,8 @@ export const RailItem = memo(function RailItem({
   side,
   active = false,
   connected = false,
+  above = 'shoulder',
+  below = 'shoulder',
   disabled = false,
   pressed,
   badge,
@@ -167,7 +183,7 @@ export const RailItem = memo(function RailItem({
           },
         }}
       >
-        {/* Fixed curved shoulders meet a flexible rounded end; nothing is stretched. */}
+        {/* Fixed curved pieces meet a flexible end; nothing is stretched. */}
         {carved ? (
           <Box
             aria-hidden
@@ -180,37 +196,12 @@ export const RailItem = memo(function RailItem({
               transition: `opacity ${RAIL_MOTION}`,
               color: 'sidebarEdge',
               transform: side === 'right' ? 'scaleX(-1)' : undefined,
+              '& svg': { position: 'absolute', display: 'block', overflow: 'visible' },
+              '& [data-fill]': { fill: (theme) => theme.palette.sidebar },
             }}
           >
-            <Box
-              sx={{
-                position: 'absolute',
-                left: RAIL_ITEM_SIZE,
-                top: -18,
-                width: 18,
-                height: 72,
-                '& svg': { display: 'block', overflow: 'visible' },
-                '& [data-fill]': { fill: (theme) => theme.palette.sidebar },
-              }}
-            >
-              <svg width="18" height="72" viewBox="0 0 18 72" fill="none">
-                <path data-fill d="M0 0H4.5Q4.5 12 18 12V60Q4.5 60 4.5 72H0Z" />
-                <path d="M4.5 0Q4.5 12 18 12H20M20 60H18Q4.5 60 4.5 72" stroke="currentColor" />
-              </svg>
-            </Box>
-            <Box
-              sx={{
-                position: 'absolute',
-                left: RAIL_ITEM_SIZE + 18,
-                right: -6,
-                top: '-6.5px',
-                bottom: '-6.5px',
-                bgcolor: 'sidebar',
-                border: '1px solid currentColor',
-                borderLeft: 0,
-                borderRadius: '0 12px 12px 0',
-              }}
-            />
+            <CarveHalf end={above} />
+            <CarveHalf end={below} lower />
           </Box>
         ) : null}
         <Box
@@ -285,3 +276,103 @@ export const RailItem = memo(function RailItem({
     item
   );
 });
+
+/** Where the label's surface starts: past the neck that bends it out of the rail. */
+const CARVE_NECK = 18;
+/** How far the label's surface stands out above and below the item's row. */
+const CARVE_OUTSET = 6.5;
+/** Corner radius of the label's far end. */
+const CARVE_RADIUS = 12;
+const HALF_ITEM = RAIL_ITEM_SIZE / 2;
+
+/**
+ * The upper half of the carved label's surface, down to the item's middle; the
+ * lower half is the same drawing turned over. Everything is laid out from the
+ * item's top edge, with the rail's edge 4.5px past the item.
+ */
+function CarveHalf({ end, lower = false }: { end: RailCarveEnd; lower?: boolean }) {
+  // The far end's box, from its top edge down to the item's middle.
+  const endTop = end === 'open' ? CARVE_RADIUS : end === 'flat' ? -CARVE_OUTSET - 0.5 : -CARVE_OUTSET;
+  return (
+    <Box
+      sx={{
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        top: lower ? HALF_ITEM : 0,
+        height: HALF_ITEM,
+        transform: lower ? 'scaleY(-1)' : undefined,
+      }}
+    >
+      {/* The neck. Its box starts 18px above the item, where a shoulder leaves the rail's edge. */}
+      <svg
+        width={CARVE_NECK}
+        height={CARVE_NECK + HALF_ITEM}
+        viewBox={`0 0 ${CARVE_NECK} ${CARVE_NECK + HALF_ITEM}`}
+        fill="none"
+        style={{ left: RAIL_ITEM_SIZE, top: -CARVE_NECK }}
+      >
+        {end === 'shoulder' ? (
+          <>
+            <path data-fill d="M0 0H4.5Q4.5 12 18 12V36H0Z" />
+            <path d="M4.5 0Q4.5 12 18 12H20" stroke="currentColor" />
+          </>
+        ) : end === 'flat' ? (
+          <>
+            {/* From the end of the joined item's own edge, straight on; over
+                the corner that item would otherwise turn into the panel with. */}
+            <path data-fill d="M-6 11.5H18V36H0V22.5H-6Z" />
+            <path d="M-5.5 11.5H20" stroke="currentColor" />
+          </>
+        ) : (
+          // Over the sheet's corner and the start of its top edge.
+          <path data-fill d="M0 18H18V36H0Z" />
+        )}
+      </svg>
+      <Box
+        sx={{
+          position: 'absolute',
+          left: RAIL_ITEM_SIZE + CARVE_NECK,
+          right: -6,
+          top: endTop,
+          bottom: 0,
+          boxSizing: 'border-box',
+          bgcolor: 'sidebar',
+          borderRight: '1px solid currentColor',
+          ...(end === 'open'
+            ? {}
+            : {
+                borderTop: '1px solid currentColor',
+                borderTopRightRadius: CARVE_RADIUS,
+              }),
+        }}
+      />
+      {end === 'open' ? (
+        <>
+          <Box
+            sx={{
+              position: 'absolute',
+              left: RAIL_ITEM_SIZE + CARVE_NECK,
+              right: -6,
+              top: 0,
+              height: CARVE_RADIUS,
+              bgcolor: 'sidebar',
+            }}
+          />
+          {/* The sheet's corner, moved to the far side of the label: its top
+              edge comes down into the label's far edge. */}
+          <svg
+            width={CARVE_RADIUS}
+            height={CARVE_RADIUS + 1}
+            viewBox={`0 0 ${CARVE_RADIUS} ${CARVE_RADIUS + 1}`}
+            fill="none"
+            style={{ left: 'calc(100% + 5.5px)', top: 0 }}
+          >
+            <path data-fill d="M0 12.5A12 12 0 0 1 12 .5V0H0Z" />
+            <path d="M0 12.5A12 12 0 0 1 12 .5" stroke="currentColor" />
+          </svg>
+        </>
+      ) : null}
+    </Box>
+  );
+}

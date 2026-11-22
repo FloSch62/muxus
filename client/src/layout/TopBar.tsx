@@ -90,7 +90,7 @@ export const TopBar = memo(function TopBar() {
   }, [focusMode]);
 
   return (
-    <AppBar position="static" color="transparent" sx={{ borderBottom: 1, borderColor: 'divider' }}>
+    <AppBar position="static" color="transparent">
       {/* In the desktop app the window is frameless and this toolbar doubles as
           the titlebar: it is a drag region, and the env(titlebar-area-*) vars
           reserve space for the native window controls (traffic lights on the

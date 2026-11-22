@@ -126,9 +126,8 @@ function StatusBarContent() {
         gap: 1,
         pl: 1.5,
         pr: 0.5,
+        // Part of the canvas, like the top bar: the sheets above end on their own edge.
         bgcolor: 'sidebar',
-        borderTop: 1,
-        borderColor: 'divider',
         fontSize: 12,
         fontWeight: 450,
         letterSpacing: -0.1,

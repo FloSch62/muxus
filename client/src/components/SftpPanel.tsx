@@ -107,6 +107,7 @@ import { FileTypeIcon } from './FileTypeIcon.js';
 import { OpenWithDialog } from './OpenWithDialog.js';
 import { formatSize, TransferProgress } from './TransferProgress.js';
 import { SYSTEM_OPENSSH_UNAVAILABLE } from '../system-openssh.js';
+import { PanelHeader } from './sidebar/PanelHeader.js';
 
 interface TransferState {
   id: number;
@@ -829,15 +830,12 @@ export function SftpPanel({
         void collectDrop(items).then(upload).catch(showErrorToast);
       }}
     >
-      <Stack direction="row" sx={{ px: 1.25, pt: 1, alignItems: 'center' }}>
-        <FolderOpenOutlinedIcon sx={{ mr: 0.75, fontSize: 18, color: 'primary.main' }} />
-        {/* Away from its terminal, the browser says whose files these are. */}
-        <Typography variant="subtitle2" noWrap sx={{ flex: 1, minWidth: 0 }}>
-          {inSidebar && hostLabel ? hostLabel : 'File browser'}
-        </Typography>
-        <Typography variant="caption" color="textSecondary" sx={{ ml: 0.75 }}>
-          SFTP
-        </Typography>
+      <PanelHeader
+        icon={<FolderOpenOutlinedIcon />}
+        // Away from its terminal, the browser says whose files these are.
+        title={inSidebar && hostLabel ? hostLabel : 'File browser'}
+        caption="SFTP"
+      >
         {onFullChange && (
           <Tooltip title={full ? 'Back to the sidebar (Esc)' : 'Fill the window'}>
             <IconButton
@@ -845,13 +843,8 @@ export function SftpPanel({
               aria-label={full ? 'Shrink file browser back to the sidebar' : 'Fill the window with the file browser'}
               aria-pressed={full}
               onClick={() => onFullChange(!full)}
-              sx={{ ml: 0.5 }}
             >
-              {full ? (
-                <CloseFullscreenIcon sx={{ fontSize: 17 }} />
-              ) : (
-                <OpenInFullIcon sx={{ fontSize: 17 }} />
-              )}
+              {full ? <CloseFullscreenIcon /> : <OpenInFullIcon />}
             </IconButton>
           </Tooltip>
         )}
@@ -861,13 +854,12 @@ export function SftpPanel({
               size="small"
               aria-label="Open file browser in new window"
               onClick={() => onOpenInNewWindow(currentPath)}
-              sx={{ ml: 0.5 }}
             >
-              <OpenInNewOutlinedIcon sx={{ fontSize: 17 }} />
+              <OpenInNewOutlinedIcon />
             </IconButton>
           </Tooltip>
         )}
-      </Stack>
+      </PanelHeader>
       <Stack direction="row" spacing={0.25} sx={{ p: 0.75, alignItems: 'center' }}>
         <Tooltip title="Parent directory">
           <span>

@@ -15,7 +15,7 @@ import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
-import { ThemeProvider, type Theme } from '@mui/material/styles';
+import { ThemeProvider } from '@mui/material/styles';
 import BrightnessAutoOutlinedIcon from '@mui/icons-material/BrightnessAutoOutlined';
 import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
 import DnsOutlinedIcon from '@mui/icons-material/DnsOutlined';
@@ -51,7 +51,8 @@ import {
   RAIL_WIDTH,
   railItemTop,
 } from '../components/sidebar/flow-geometry.js';
-import { RailItem } from '../components/sidebar/RailItem.js';
+import { PanelHeader } from '../components/sidebar/PanelHeader.js';
+import { RailItem, type RailCarveEnd } from '../components/sidebar/RailItem.js';
 import {
   clampEnvironmentsPanelWidth,
   DEFAULT_ENVIRONMENTS_PANEL_WIDTH,
@@ -77,7 +78,7 @@ import {
 import { usePrefsStore, type ThemeMode } from '../state/prefs.js';
 import { useTabsStore } from '../state/tabs.js';
 import { useUiStore, type SidebarView } from '../state/ui.js';
-import { layout } from '../theme.js';
+import { layout, sheetTheme } from '../theme.js';
 import { openAppWindow } from '../window-management.js';
 
 const SftpPanel = lazy(() =>
@@ -147,6 +148,9 @@ export const Sidebar = memo(function Sidebar() {
   const railWidth = pinned ? RAIL_PINNED_WIDTH : RAIL_WIDTH;
   const wide = view === 'environments' && environmentsWide;
   const full = panelOpen && view === 'files' && filesFull;
+  // The first rail item stands level with the card's top edge and runs
+  // straight into it, so the card has no corner to round there.
+  const joinedAtTop = panelOpen && VIEW_ORDER.indexOf(view) === 0;
   // Filling the window is a look at the files, not a state of the sidebar:
   // going anywhere else ends it.
   useEffect(() => {
@@ -183,8 +187,6 @@ export const Sidebar = memo(function Sidebar() {
         bgcolor: 'sidebar',
         // The card's edge takes the place of the rail's, a pixel into it.
         [onRight ? 'mr' : 'ml']: '-1px',
-        [onRight ? 'borderLeft' : 'borderRight']: 1,
-        borderColor: 'divider',
       }}
       onKeyDown={(event) => {
         if (!full || event.key !== 'Escape' || event.defaultPrevented) return;
@@ -237,7 +239,16 @@ export const Sidebar = memo(function Sidebar() {
               border: '1px solid',
               borderColor: 'sidebarEdge',
               borderRadius: `${CARD_RADIUS}px`,
+              ...(joinedAtTop
+                ? { [onRight ? 'borderTopRightRadius' : 'borderTopLeftRadius']: 0 }
+                : {}),
+              transition: 'border-radius 200ms cubic-bezier(0.4, 0, 0.2, 1)',
+              '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
               bgcolor: 'sidebar',
+              // Fields in a panel are as dense as the rows under them.
+              '& .MuiOutlinedInput-root.MuiInputBase-sizeSmall:not(.MuiInputBase-multiline)': {
+                height: 30,
+              },
             }}
           >
             <SidebarPanel view="hosts" shown={view === 'hosts'}>
@@ -317,15 +328,6 @@ export const Sidebar = memo(function Sidebar() {
   );
 });
 
-/**
- * Inside the card, "the sidebar's background" is the card's own: everything a
- * panel paints in that color — sticky headers, the ring around a status dot —
- * then matches the sheet it sits on without knowing it moved.
- */
-function sheetTheme(outer: Theme): Theme {
-  return { ...outer, palette: { ...outer.palette, sidebar: outer.palette.sidebarSheet } };
-}
-
 /** A view stays mounted behind the others, so it is as it was left. */
 function SidebarPanel({
   view,
@@ -395,6 +397,10 @@ function SidebarRail({
     void queryClient.prefetchQuery(tunnelsQuery);
   };
   const connectedView = panelOpen ? view : undefined;
+  const connectedIndex = connectedView ? VIEW_ORDER.indexOf(connectedView) : -1;
+  /** A label carved beside the joined item ends flat on its edge instead of cutting into it. */
+  const carveEnd = (neighbor: number): RailCarveEnd =>
+    neighbor >= 0 && neighbor === connectedIndex ? 'flat' : 'shoulder';
   const tabViews = VIEW_ORDER;
   const rovingView = connectedView ?? tabViews[0];
   const appearance =
@@ -432,8 +438,8 @@ function SidebarRail({
         height: '100%',
         boxSizing: 'border-box',
         position: 'relative',
-        // Above the panes and everything stacked in them, so a label carved
-        // out over a zoomed pane or a split divider is never cut off.
+        // Above the panes and everything stacked in them, so an item's label
+        // shown over a zoomed pane or a split is never cut off.
         zIndex: RAIL_Z_INDEX,
         display: 'flex',
         flexDirection: 'column',
@@ -441,10 +447,10 @@ function SidebarRail({
         pt: `${RAIL_PADDING_TOP}px`,
         pb: `${RAIL_PADDING_BOTTOM}px`,
         bgcolor: 'sidebar',
-        // While the panel is open its card draws this edge, a pixel into the rail.
+        // The pixel the open panel's card draws its edge in. The rail has no
+        // line of its own: it is part of the canvas the sheets sit on.
         backgroundClip: 'padding-box',
-        [side === 'left' ? 'borderRight' : 'borderLeft']: '1px solid',
-        borderColor: panelOpen ? 'transparent' : 'sidebarEdge',
+        [side === 'left' ? 'borderRight' : 'borderLeft']: '1px solid transparent',
       }}
     >
       <FlowConnector
@@ -454,7 +460,7 @@ function SidebarRail({
         visible={panelOpen}
       />
       <Box role="tablist" aria-label="Sidebar views" aria-orientation="vertical" sx={{ display: 'contents' }}>
-        {VIEW_ORDER.map((entry) => {
+        {VIEW_ORDER.map((entry, index) => {
           const meta = VIEW_META[entry];
           return (
             <RailItem
@@ -469,6 +475,9 @@ function SidebarRail({
               pinned={pinned}
               side={side}
               connected={connectedView === entry}
+              // The first item stands at the top of the sheet beside the rail.
+              above={index === 0 ? 'open' : carveEnd(index - 1)}
+              below={carveEnd(index + 1)}
               tabIndex={rovingView === entry ? 0 : -1}
               buttonRef={(element: HTMLButtonElement | null) => {
                 if (element) tabRefs.current.set(entry, element);
@@ -486,6 +495,7 @@ function SidebarRail({
         icon={<MonitorHeartOutlinedIcon />}
         pinned={pinned}
         side={side}
+        above={carveEnd(VIEW_ORDER.length - 1)}
         active={activeTab?.view === 'monitor'}
         onIntent={() => void loadHostMonitorViewImpl()}
         onClick={() => openMonitor()}
@@ -532,6 +542,8 @@ function SidebarRail({
         icon={pinned ? <PushPinIcon /> : <PushPinOutlinedIcon />}
         pinned={pinned}
         side={side}
+        // The last item stands at the bottom of the sheet beside the rail.
+        below="open"
         pressed={pinned}
         onClick={() => setPrefs({ sidebarRailPinned: !pinned })}
       />
@@ -564,8 +576,10 @@ function SidebarRail({
 
 /**
  * The tab the open panel grows out of: the active item's row in the card's
- * color, joined to the card by two concave corners. It moves by a transform,
- * so switching views slides it along the rail without laying anything out.
+ * color, joined to the card by two concave corners. The first item has only
+ * the lower one: it stands at the card's top edge, which is its own. It moves
+ * by a transform, so switching views slides it along the rail without laying
+ * anything out.
  */
 function FlowConnector({
   side,
@@ -579,52 +593,72 @@ function FlowConnector({
   visible: boolean;
 }) {
   const inset = pinned ? RAIL_ITEM_INSET_PINNED : RAIL_ITEM_INSET;
+  const first = index <= 0;
   const top = railItemTop(Math.max(index, 0)) - RAIL_PADDING_TOP - CONNECTOR_FILLET;
+  // Where the item's top edge goes from the rail to the card: straight on
+  // into the card's top edge, or up into its side by a concave corner.
+  const upper = first ? '' : 'A10 10 0 0 0 10 .5';
   return (
+    // Nothing of the connector shows above or below the card: sliding away
+    // from the top, its upper corner comes out from under the card's edge.
     <Box
       aria-hidden
-      data-sidebar-connector
       sx={{
         position: 'absolute',
-        top: RAIL_PADDING_TOP,
-        [side]: inset,
-        // Half a pixel past the rail's edge, where the card's hairline is centered.
-        width: (pinned ? RAIL_PINNED_WIDTH : RAIL_WIDTH) + 1.5 - inset,
-        height: RAIL_ITEM_SIZE + 2 * CONNECTOR_FILLET,
+        top: CARD_INSET,
+        bottom: CARD_INSET,
+        left: 0,
+        right: 0,
+        clipPath: 'inset(0 -2px)',
         pointerEvents: 'none',
         zIndex: 0,
-        color: 'sidebarEdge',
-        opacity: visible ? 1 : 0,
-        transform: `translateY(${top}px)${side === 'right' ? ' scaleX(-1)' : ''}`,
-        transition: 'transform 260ms cubic-bezier(0.4, 0, 0.2, 1), opacity 160ms ease',
-        '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
-        '& [data-fill]': { fill: (theme) => theme.palette.sidebarSheet },
       }}
     >
       <Box
+        data-sidebar-connector
         sx={{
           position: 'absolute',
-          left: 0,
-          right: 12,
-          top: CONNECTOR_FILLET,
-          height: RAIL_ITEM_SIZE,
-          boxSizing: 'border-box',
-          bgcolor: 'sidebarSheet',
-          border: '1px solid currentColor',
-          borderRight: 0,
-          borderRadius: '9px 0 0 9px',
+          top: RAIL_PADDING_TOP - CARD_INSET,
+          [side]: inset,
+          // Half a pixel past the rail's edge, where the card's hairline is centered.
+          width: (pinned ? RAIL_PINNED_WIDTH : RAIL_WIDTH) + 1.5 - inset,
+          height: RAIL_ITEM_SIZE + 2 * CONNECTOR_FILLET,
+          color: 'sidebarEdge',
+          opacity: visible ? 1 : 0,
+          transform: `translateY(${top}px)${side === 'right' ? ' scaleX(-1)' : ''}`,
+          transition: 'transform 260ms cubic-bezier(0.4, 0, 0.2, 1), opacity 160ms ease',
+          '@media (prefers-reduced-motion: reduce)': { transition: 'none' },
+          '& [data-fill]': { fill: (theme) => theme.palette.sidebarSheet },
         }}
-      />
-      <svg
-        width="12"
-        height="56"
-        viewBox="0 0 12 56"
-        fill="none"
-        style={{ position: 'absolute', right: 0, top: 0, display: 'block', overflow: 'visible' }}
       >
-        <path data-fill d="M0 10.5A10 10 0 0 0 10 .5H12V55.5H10A10 10 0 0 0 0 45.5Z" />
-        <path d="M0 10.5A10 10 0 0 0 10 .5M10 55.5A10 10 0 0 0 0 45.5" stroke="currentColor" />
-      </svg>
+        <Box
+          sx={{
+            position: 'absolute',
+            left: 0,
+            right: 12,
+            top: CONNECTOR_FILLET,
+            height: RAIL_ITEM_SIZE,
+            boxSizing: 'border-box',
+            bgcolor: 'sidebarSheet',
+            border: '1px solid currentColor',
+            borderRight: 0,
+            borderRadius: '9px 0 0 9px',
+          }}
+        />
+        <svg
+          width="12"
+          height="56"
+          viewBox="0 0 12 56"
+          fill="none"
+          style={{ position: 'absolute', right: 0, top: 0, display: 'block', overflow: 'visible' }}
+        >
+          <path data-fill d={`M0 10.5${upper}H12V55.5H10A10 10 0 0 0 0 45.5Z`} />
+          <path
+            d={`M0 10.5${first ? 'H12' : upper}M10 55.5A10 10 0 0 0 0 45.5`}
+            stroke="currentColor"
+          />
+        </svg>
+      </Box>
     </Box>
   );
 }
@@ -718,12 +752,7 @@ function SidebarFileBrowser({
   if (!tab?.connId || tab.sftpAvailable === false) {
     return (
       <Stack sx={{ flex: 1, minHeight: 0 }}>
-        <Stack direction="row" sx={{ px: 1.25, pt: 1, alignItems: 'center' }}>
-          <FolderOpenOutlinedIcon sx={{ mr: 0.75, fontSize: 18, color: 'primary.main' }} />
-          <Typography variant="subtitle2" sx={{ flex: 1 }}>
-            File browser
-          </Typography>
-        </Stack>
+        <PanelHeader icon={<FolderOpenOutlinedIcon />} title="File browser" />
         <Stack spacing={1.5} sx={{ alignItems: 'center', p: 3, pt: 5, textAlign: 'center' }}>
           <FolderOffOutlinedIcon sx={{ fontSize: 36, color: 'text.disabled' }} />
           <Typography variant="body2" color="textSecondary">
