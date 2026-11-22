@@ -32,11 +32,15 @@ jobs:
       - name: Bump and build
         env:
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          # From 1.17.0 on, nix-update copies the flake with `nix flake
+          # prefetch`. Older releases rely on `nix flake metadata`, which newer
+          # Nix no longer copies into the store, so evaluation fails.
+          NIX_UPDATE: github:Mic92/nix-update/v1.17.0
         run: |
-          nix run nixpkgs#nix-update -- --flake --version "${TAG#v}" muxus
+          nix run "$NIX_UPDATE" -- --flake --version "${TAG#v}" muxus
           # Once more at the new version: hashes of parts that only exist from
           # some release on are not seen while the old version is evaluated.
-          nix run nixpkgs#nix-update -- --flake --version skip muxus
+          nix run "$NIX_UPDATE" -- --flake --version skip muxus
           nix build .#muxus --no-link
 
       - name: Open a PR with the bump
