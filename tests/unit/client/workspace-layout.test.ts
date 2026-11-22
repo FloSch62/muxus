@@ -56,6 +56,7 @@ describe('pane tree operations', () => {
   });
 
   it('updates one leaf and clamps divider ratios', () => {
+    expect(updateSplitRatio(root, 'split-right', 0.5)).toBe(root);
     const activated = updatePane(root, 'pane-top', (pane) => ({ ...pane, activeTabId: 'tab-c' }));
     const resized = updateSplitRatio(activated, 'split-right', 0.99);
     expect(resized).toMatchObject({
@@ -370,5 +371,15 @@ describe('workspace serialization', () => {
       { id: 'hosts-tab', paneId: 'pane', view: 'hosts', title: 'Hosts', pinned: true },
       { id: 'ssh-tab', profile: { kind: 'ssh', target: 'router' } },
     ]);
+  });
+
+  it('keeps a window tiling, and writes nothing more for one that is not', () => {
+    const pane: PaneNode = { id: 'pane', type: 'pane', activeTabId: null };
+
+    expect(restoreWorkspace(serializeWorkspace(pane, [], 'pane', 'columns'))?.tiling).toBe('columns');
+    expect(JSON.stringify(serializeWorkspace(pane, [], 'pane'))).toBe(
+      '{"version":1,"root":{"id":"pane","type":"pane","tabs":[]},"activePaneId":"pane"}',
+    );
+    expect(restoreWorkspace(serializeWorkspace(pane, [], 'pane'))?.tiling).toBeNull();
   });
 });

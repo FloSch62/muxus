@@ -49,7 +49,7 @@ afterEach(() => {
 });
 
 describe('cross-window tab transfer', () => {
-  it('adopts a live tab and keeps pinned tabs first', async () => {
+  it('adopts a live tab where it is dropped, keeps pinned tabs first and ends tiling', async () => {
     vi.resetModules();
     const transfer = await import('../../../client/src/tab-transfer.js');
     const { useTabsStore } = await import('../../../client/src/state/tabs.js');
@@ -60,6 +60,7 @@ describe('cross-window tab transfer', () => {
       activePaneId: 'pane-test',
       activeId: null,
       zoomedPaneId: null,
+      tiling: 'columns',
     });
     const existingId = useTabsStore.getState().open({ kind: 'local' }, 'Existing');
     const incoming = {
@@ -83,7 +84,7 @@ describe('cross-window tab transfer', () => {
     const state = useTabsStore.getState();
     expect(state.tabs.map((tab) => tab.id)).toEqual(['tab-from-window', existingId]);
     expect(state.tabs[0]).toMatchObject({ paneId: 'pane-test', pinned: true });
-    expect(state.activeId).toBe('tab-from-window');
+    expect(state).toMatchObject({ activeId: 'tab-from-window', tiling: null });
     expect(transfer.adoptTransferredTab(incoming, 'pane-test')).toBe(false);
   });
 

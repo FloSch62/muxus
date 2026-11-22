@@ -243,7 +243,10 @@ export function updatePane(
 
 export function updateSplitRatio(root: PaneNode, splitId: string, ratio: number): PaneNode {
   if (root.type === 'pane') return root;
-  if (root.id === splitId) return { ...root, ratio: clampRatio(ratio) };
+  if (root.id === splitId) {
+    const clamped = clampRatio(ratio);
+    return clamped === root.ratio ? root : { ...root, ratio: clamped };
+  }
   const first = updateSplitRatio(root.children[0], splitId, ratio);
   const second = updateSplitRatio(root.children[1], splitId, ratio);
   return first === root.children[0] && second === root.children[1]
@@ -267,6 +270,7 @@ export function serializeWorkspace(
   root: PaneNode,
   tabs: readonly PersistableTab[],
   activePaneId: string,
+  tiling: WorkspaceLayoutV1['tiling'] | null = null,
 ): WorkspaceLayoutV1 {
   const byPane = new Map<string, PersistableTab[]>();
   for (const tab of tabs) {
@@ -305,7 +309,7 @@ export function serializeWorkspace(
       activeTabId,
     };
   };
-  return { version: 1, root: serializeNode(root), activePaneId };
+  return { version: 1, root: serializeNode(root), activePaneId, tiling: tiling ?? undefined };
 }
 
 export function restoreWorkspace(
@@ -316,6 +320,7 @@ export function restoreWorkspace(
   tabs: RestoredTab[];
   activePaneId: string;
   activeId: string | null;
+  tiling: NonNullable<WorkspaceLayoutV1['tiling']> | null;
 } | undefined {
   if (!layout.root) return undefined;
   const tabs: RestoredTab[] = [];
@@ -376,6 +381,7 @@ export function restoreWorkspace(
     tabs,
     activePaneId: activePane.id,
     activeId: activePane.activeTabId,
+    tiling: layout.tiling ?? null,
   };
 }
 

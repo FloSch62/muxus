@@ -1275,6 +1275,19 @@ describe('backing up workspaces, scripts and saved requests', () => {
     expect(parseTransferDocument(JSON.stringify(document)).data.workspaces).toHaveLength(2);
   });
 
+  it('keeps a tiled workspace tiling through a backup and back', async () => {
+    const tiled = workspace('a', { layout: { ...layout, tiling: 'rows' } });
+    mockBackupSnapshot([], [], [], [], { workspaces: [tiled] });
+    const document = parseTransferDocument(JSON.stringify(await createBackupDocument()));
+    expect(document.data.workspaces?.[0]?.layout).toMatchObject({ tiling: 'rows' });
+
+    apiFetchMock.mockReset();
+    apiFetchMock.mockResolvedValueOnce({ workspaces: [] }).mockResolvedValueOnce(tiled).mockResolvedValue({});
+    await restoreTransferDocument(document, only('workspaces'), 'keep');
+
+    expect(body(apiFetchMock.mock.calls[1]!)).toMatchObject({ layout: { tiling: 'rows' } });
+  });
+
   it('adds missing workspaces with their lock and the startup choice', async () => {
     apiFetchMock
       .mockResolvedValueOnce({ workspaces: [] })

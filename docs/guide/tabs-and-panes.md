@@ -45,6 +45,38 @@ splits, and the tab strip has split buttons for the mouse.
 Drag a divider to resize it, double-click it to even the split, or give it focus and use
 the arrows. **Even out panes** in the pane menu balances the whole layout.
 
+**Arrange tabs**, the button after the split buttons in each tab strip, lays out all the
+tabs of the window at once, and keeps them that way. The pane menu offers the same, also in
+a pane too narrow for the button. Tiling gives each tab a pane of its own; the panes fill a
+column from the top, then the next column, in the order of the tab numbers, so the numbers
+stay the same. **Tile tabs vertically** sets them side by side, **Tile tabs horizontally**
+stacks them, and both wrap into a grid as tabs are added:
+
+| Open tabs | Tile tabs vertically | Tile tabs horizontally |
+| --- | --- | --- |
+| 2 or 3 | Side by side | Stacked |
+| 4 | 2 columns of 2 | 2 columns of 2 |
+| 6 | 3 columns of 2 | 2 columns of 3 |
+| 8 | 4 columns of 2 | 2 columns of 4 |
+| 10 | 3 columns: 3, 3 and 4 | 3 columns: 3, 3 and 4 |
+| 12 | 4 columns of 3 | 3 columns of 4 |
+
+Columns share the width evenly and the panes of a column share its height; when the tabs do
+not divide evenly, the last columns take one more.
+
+Tiling stays on, checked in both menus. A session opened from the sidebar, the quick
+launcher or ++ctrl+shift+t++ gets a pane of its own at the end and the grid is laid out
+again, as it is when a tab or a pane closes; a zoomed pane then goes back into the grid.
+Zooming keeps tiling on. Adding a tab to a pane yourself, with the **+** of its strip or by
+dropping a host or a tab on it, ends tiling, and so do splitting, moving a tab, dragging a
+divider, growing or shrinking a pane, **Even out panes** and launching a host group: new
+sessions join the focused pane again. **Tabs** puts all the tabs back in one pane, pinned
+tabs first, and ends tiling too. A saved workspace keeps it.
+
+Sessions keep running through all of this, and the focused tab keeps the focus. The three
+commands are in the [quick launcher](quick-launcher.md) too; give them a chord in the
+keyboard sheet.
+
 ## Tabs
 
 Each pane has a browser-style tab strip. A tab is one session: local shell, SSH, Telnet,

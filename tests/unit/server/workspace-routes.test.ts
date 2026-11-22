@@ -434,6 +434,30 @@ describe('workspace routes', () => {
     expect(response.json()).toEqual({ workspace: null });
   });
 
+  it('keeps a tiled window tiling and rejects an unknown tiling', async () => {
+    const save = await app.inject({
+      method: 'PUT',
+      url: '/api/workspaces',
+      headers: auth(),
+      payload: { name: 'Tiled', layout: { ...layout, tiling: 'rows' } },
+    });
+    expect(save.statusCode).toBe(200);
+    const read = await app.inject({
+      method: 'GET',
+      url: `/api/workspaces/${save.json().id}`,
+      headers: auth(),
+    });
+    expect(read.json().layout).toMatchObject({ tiling: 'rows' });
+
+    const unknown = await app.inject({
+      method: 'PUT',
+      url: '/api/workspaces',
+      headers: auth(),
+      payload: { name: 'Odd', layout: { ...layout, tiling: 'grid' } },
+    });
+    expect(unknown.statusCode).toBe(400);
+  });
+
   it('rejects invalid split dimensions', async () => {
     const response = await app.inject({
       method: 'PUT',

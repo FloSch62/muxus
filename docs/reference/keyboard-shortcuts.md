@@ -34,6 +34,8 @@ resetting them.
 | Zoom pane / restore layout | ++ctrl+shift+z++ |
 | Grow / shrink pane | ++ctrl+shift+period++, ++ctrl+shift+comma++ |
 | Even out panes | *(unbound by default)* |
+| Tile tabs vertically / horizontally | *(unbound by default)* |
+| Tabs | *(unbound by default)* |
 | Close pane | ++ctrl+shift+x++ |
 
 ## Tabs
@@ -88,7 +90,7 @@ resetting them.
 | Zoom the terminal | ++ctrl++ + scroll wheel |
 | Open a terminal path in the editor | Hover for an underline, then left-click |
 | Resize a split, reset it to half | Drag the divider, double-click it |
-| Pane actions (split, zoom, close) | Right-click the tab strip |
+| Pane actions (split, zoom, tile, close) | Right-click the tab strip |
 | Rename a tab, close a tab | Double-click it, middle-click it |
 | New session to a host that already has one open | Middle-click it in the sidebar |
 | Select hosts in the sidebar to [edit, move or delete them together](../guide/hosts.md#editing-several-hosts-at-once) | ++ctrl++ + click (++cmd++ + click on macOS) for one, ++shift++ + click for a range from the last host clicked |

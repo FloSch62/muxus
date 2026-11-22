@@ -2,6 +2,7 @@ import { copyToClipboard } from '../clipboard.js';
 import { IS_MAC } from '../platform.js';
 import { requestCloseRemoteEditor } from '../editor/remote-editor-registry.js';
 import {
+  arrangeOpenTabs,
   duplicateTab,
   openEmptyTab,
   requestCloseActivePane,
@@ -188,6 +189,30 @@ export const KEY_COMMANDS: readonly KeyCommand[] = [
     defaultChords: [],
     keywords: ['balance', 'reset', 'equal', 'layout'],
     run: () => tabs().equalizePanes(),
+  },
+  {
+    id: 'pane.tile.vertical',
+    title: 'Tile tabs vertically',
+    category: 'panes',
+    defaultChords: [],
+    keywords: ['arrange', 'layout', 'side by side', 'columns', 'left to right', 'grid'],
+    run: () => arrangeOpenTabs('columns'),
+  },
+  {
+    id: 'pane.tile.horizontal',
+    title: 'Tile tabs horizontally',
+    category: 'panes',
+    defaultChords: [],
+    keywords: ['arrange', 'layout', 'stack', 'rows', 'top to bottom', 'grid'],
+    run: () => arrangeOpenTabs('rows'),
+  },
+  {
+    id: 'pane.tabs',
+    title: 'Tabs',
+    category: 'panes',
+    defaultChords: [],
+    keywords: ['arrange', 'layout', 'gather', 'merge', 'join', 'untile', 'single pane', 'one pane'],
+    run: () => arrangeOpenTabs('tabs'),
   },
   {
     id: 'pane.close',

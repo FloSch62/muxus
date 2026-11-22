@@ -49,9 +49,13 @@ import ReplayOutlinedIcon from '@mui/icons-material/ReplayOutlined';
 import RestartAltOutlinedIcon from '@mui/icons-material/RestartAltOutlined';
 import MonitorHeartOutlinedIcon from '@mui/icons-material/MonitorHeartOutlined';
 import StopCircleOutlinedIcon from '@mui/icons-material/StopCircleOutlined';
+import TabOutlinedIcon from '@mui/icons-material/TabOutlined';
+import TableRowsOutlinedIcon from '@mui/icons-material/TableRowsOutlined';
 import TerminalIcon from '@mui/icons-material/Terminal';
 import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import VerticalSplitOutlinedIcon from '@mui/icons-material/VerticalSplitOutlined';
+import ViewColumnOutlinedIcon from '@mui/icons-material/ViewColumnOutlined';
+import ViewQuiltOutlinedIcon from '@mui/icons-material/ViewQuiltOutlined';
 import PodcastsOutlinedIcon from '@mui/icons-material/PodcastsOutlined';
 import PowerInputOutlinedIcon from '@mui/icons-material/PowerInputOutlined';
 import { isTerminalProfile } from '@muxus/shared/ws-protocol';
@@ -59,6 +63,7 @@ import { showFileBrowser } from '../file-browser.js';
 import { useChordLabel } from '../keymap/hints.js';
 import { ChordHint, withChord } from './ChordHint.js';
 import {
+  arrangeOpenTabs,
   duplicateTab,
   detachTabToNewWindow,
   moveTabToNewWindow,
@@ -78,6 +83,7 @@ import {
   isRemoteSessionTab,
   useTabsStore,
   type PaneDirection,
+  type TabArrangement,
   type TabStatus,
   type TerminalTab,
 } from '../state/tabs.js';
@@ -113,6 +119,12 @@ const statusDot: Record<TabStatus, 'warning' | 'success' | 'error'> = {
   interrupted: 'warning',
   closed: 'error',
 };
+
+const LAYOUTS: Array<{ value: TabArrangement; label: string; Icon: typeof TabOutlinedIcon }> = [
+  { value: 'tabs', label: 'Tabs', Icon: TabOutlinedIcon },
+  { value: 'columns', label: 'Tile tabs vertically', Icon: ViewColumnOutlinedIcon },
+  { value: 'rows', label: 'Tile tabs horizontally', Icon: TableRowsOutlinedIcon },
+];
 
 /** Color flags a tab can be marked with (context menu). */
 const TAB_FLAG_COLORS = ['#ef5350', '#ffa726', '#ffee58', '#66bb6a', '#26c6da', '#42a5f5', '#ab47bc', '#ec407a'];
@@ -187,6 +199,7 @@ export function TabStrip({
   const tabs = allTabs.filter((tab) => tab.paneId === paneId);
   const activeId = useTabsStore((s) => findPane(s.root, paneId)?.activeTabId ?? null);
   const canClosePane = useTabsStore((s) => s.root.type === 'split');
+  const tiling = useTabsStore((s) => s.tiling);
   const activate = useTabsStore((s) => s.activate);
   const focusPane = useTabsStore((s) => s.focusPane);
   const toggleZoom = useTabsStore((s) => s.toggleZoom);
@@ -231,6 +244,7 @@ export function TabStrip({
   const [allTabsMenuAnchor, setAllTabsMenuAnchor] = useState<HTMLElement | null>(null);
   const [menu, setMenu] = useState<{ position: { top: number; left: number }; tab: TerminalTab } | null>(null);
   const [paneMenu, setPaneMenu] = useState<{ top: number; left: number } | null>(null);
+  const [layoutMenuAnchor, setLayoutMenuAnchor] = useState<HTMLElement | null>(null);
   const [renaming, setRenaming] = useState<TerminalTab | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
@@ -248,6 +262,27 @@ export function TabStrip({
     focusPane(paneId);
     splitActivePane(direction);
   };
+
+  /** The layouts of the window's tabs, the current one checked; for both menus that offer them. */
+  const layoutItems = (closeMenu: () => void) =>
+    LAYOUTS.map(({ value, label, Icon }) => (
+      <MenuItem
+        key={value}
+        disabled={value === 'tabs' && !tiling && (!canClosePane || allTabs.length < 2)}
+        onClick={() => {
+          closeMenu();
+          arrangeOpenTabs(value);
+        }}
+      >
+        <ListItemIcon>
+          <Icon fontSize="small" />
+        </ListItemIcon>
+        <ListItemText>{label}</ListItemText>
+        {(tiling ?? 'tabs') === value ? (
+          <CheckIcon aria-label="Current layout" sx={{ ml: 1, fontSize: 18 }} />
+        ) : null}
+      </MenuItem>
+    ));
 
   const updateScrollState = useCallback(() => {
     const viewport = tabViewportRef.current;
@@ -916,10 +951,7 @@ export function TabStrip({
           <IconButton
             size="small"
             aria-label="New tab"
-            onClick={() => {
-              focusPane(paneId);
-              openEmptyTab();
-            }}
+            onClick={() => openEmptyTab(paneId)}
             sx={{ alignSelf: 'center' }}
           >
             <AddIcon fontSize="small" />
@@ -964,6 +996,21 @@ export function TabStrip({
             sx={{ alignSelf: 'center' }}
           >
             <HorizontalSplitOutlinedIcon sx={{ fontSize: 17 }} />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Arrange tabs">
+          <IconButton
+            className="muxus-pane-action-full"
+            size="small"
+            aria-label="Arrange tabs"
+            aria-haspopup="menu"
+            aria-expanded={layoutMenuAnchor ? 'true' : undefined}
+            // Arranging is window-wide: this pane's terminal must not take the focus from the menu.
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => setLayoutMenuAnchor(event.currentTarget)}
+            sx={{ alignSelf: 'center' }}
+          >
+            <ViewQuiltOutlinedIcon sx={{ fontSize: 17 }} />
           </IconButton>
         </Tooltip>
         {canClosePane && (
@@ -1155,6 +1202,7 @@ export function TabStrip({
           </ListItemIcon>
           <ListItemText>Even out panes</ListItemText>
         </MenuItem>
+        {layoutItems(() => setPaneMenu(null))}
         <Divider />
         <MenuItem
           disabled={!canClosePane}
@@ -1169,6 +1217,14 @@ export function TabStrip({
           <ListItemText>Close pane</ListItemText>
           <ChordHint chord={closePaneChord} />
         </MenuItem>
+      </Menu>
+
+      <Menu
+        open={!!layoutMenuAnchor}
+        anchorEl={layoutMenuAnchor}
+        onClose={() => setLayoutMenuAnchor(null)}
+      >
+        {layoutItems(() => setLayoutMenuAnchor(null))}
       </Menu>
 
       <Menu

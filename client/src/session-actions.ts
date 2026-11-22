@@ -14,7 +14,12 @@ import {
 } from './state/prefs.js';
 import { useMultiExecStore } from './state/multi-exec.js';
 import { isEmptyTab, isMultiExecTarget, isRemoteSessionTab, useTabsStore } from './state/tabs.js';
-import type { PaneDirection, SessionSetEntry, SessionSetLayout } from './state/tabs.js';
+import type {
+  PaneDirection,
+  SessionSetEntry,
+  SessionSetLayout,
+  TabArrangement,
+} from './state/tabs.js';
 import { confirmAction, promptForText } from './state/dialogs.js';
 import { showErrorToast, showToast } from './state/toast.js';
 import { apiFetch } from './api/http.js';
@@ -116,9 +121,17 @@ export function openLocalTerminal(replaceTabId?: string): string {
   );
 }
 
-/** Open a blank tab that lets the user choose what kind of session to start. */
-export function openEmptyTab(): string {
-  return useTabsStore.getState().openEmpty();
+/**
+ * Open a blank tab that lets the user choose what kind of session to start.
+ * Given a pane, as its own + does, the tab goes there and tiling ends.
+ */
+export function openEmptyTab(paneId?: string): string {
+  const state = useTabsStore.getState();
+  if (paneId) {
+    state.focusPane(paneId);
+    state.stopTiling();
+  }
+  return state.openEmpty();
 }
 
 /**
@@ -355,6 +368,17 @@ export function splitActivePane(direction: PaneDirection): boolean {
     const id = useTabsStore.getState().open(source.profile, source.title);
     if (source.color) useTabsStore.getState().update(id, { color: source.color });
   }
+  return true;
+}
+
+/** Lay out the window's open tabs again, with the keyboard back in the focused terminal. */
+export function arrangeOpenTabs(layout: TabArrangement): boolean {
+  if (!useTabsStore.getState().arrangeTabs(layout)) return false;
+  const { activeId } = useTabsStore.getState();
+  // Gathering tabs can move the terminal within the page, which drops its focus.
+  requestAnimationFrame(() => {
+    if (useTabsStore.getState().activeId === activeId) terminalHandle(activeId)?.focus();
+  });
   return true;
 }
 
