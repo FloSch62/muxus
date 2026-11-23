@@ -340,6 +340,34 @@ export const DIAL_TIME_KEYWORDS: ReadonlySet<string> = new Set([
   'securitykeyprovider',
 ]);
 
+/**
+ * An algorithm list as ssh_config writes it: names or `*`/`?` patterns
+ * separated by commas, after an optional `+` (add to the defaults), `^` (put
+ * first) or `-` (remove from the defaults).
+ */
+export const ALGORITHM_LIST_PATTERN = /^[+^-]?[\w.@*?-]+(?:,[\w.@*?-]+)*$/;
+
+/**
+ * The algorithm lists a host saved in Muxus app data keeps in its profile, by
+ * ssh_config keyword, in the order the editor shows them.
+ */
+export const SAVED_HOST_ALGORITHMS = [
+  { keyword: 'KexAlgorithms', field: 'kexAlgorithms' },
+  { keyword: 'HostKeyAlgorithms', field: 'hostKeyAlgorithms' },
+  { keyword: 'Ciphers', field: 'ciphers' },
+  { keyword: 'MACs', field: 'macs' },
+] as const;
+
+/** The algorithm lists a saved host sets, as the ssh_config options they stand for. */
+export function savedHostAlgorithmOptions(
+  profile: Partial<Record<(typeof SAVED_HOST_ALGORITHMS)[number]['field'], string>>,
+): Array<{ keyword: string; value: string }> {
+  return SAVED_HOST_ALGORITHMS.flatMap(({ keyword, field }) => {
+    const value = profile[field];
+    return value ? [{ keyword, value }] : [];
+  });
+}
+
 export type UpdateCheckResult =
   | {
       available: true;

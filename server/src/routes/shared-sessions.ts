@@ -46,8 +46,8 @@ const applySchema = z.union([
 /**
  * A list read from a link changes without the user looking at it again, so
  * it does not get to set what runs on this computer or weakens a check:
- * ProxyCommand, agent forwarding, remote forwards and host key checking stay
- * the user's to set.
+ * ProxyCommand, agent forwarding, remote forwards, host key checking and the
+ * algorithm lists stay the user's to set.
  */
 function withoutLocalEffects(host: SharedSessionHost): SharedSessionHost {
   if (host.profile.kind !== 'ssh') return host;
@@ -55,6 +55,10 @@ function withoutLocalEffects(host: SharedSessionHost): SharedSessionHost {
     proxyCommand: _proxyCommand,
     forwardAgent: _forwardAgent,
     strictHostKeyChecking: _strictHostKeyChecking,
+    kexAlgorithms: _kexAlgorithms,
+    hostKeyAlgorithms: _hostKeyAlgorithms,
+    ciphers: _ciphers,
+    macs: _macs,
     forwards,
     ...profile
   } = host.profile;

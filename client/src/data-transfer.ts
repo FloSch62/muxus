@@ -35,6 +35,7 @@ import {
   MAX_PASTE_LINE_DELAY_MS,
   MAX_SHARED_SESSIONS_REFRESH_MINUTES,
   PASSWORD_MANAGER_KINDS,
+  savedHostAlgorithmOptions,
   TERMINAL_BACKSPACE_KEYS,
   TERMINAL_ENTER_KEYS,
   validPasteDelay,
@@ -532,6 +533,7 @@ function portableSavedSshOptions(
 ): HostBlockOptions {
   if (profile.profile.kind !== 'ssh') return {};
   const saved = profile.profile;
+  const algorithms = savedHostAlgorithmOptions(saved);
   return {
     hostname: saved.target,
     user: saved.user ?? inherited.user,
@@ -549,6 +551,7 @@ function portableSavedSshOptions(
     remoteCommand: saved.remoteCommand,
     requestTty: saved.requestTty,
     strictHostKeyChecking: saved.strictHostKeyChecking,
+    extras: algorithms.length ? algorithms : undefined,
   };
 }
 

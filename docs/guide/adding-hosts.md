@@ -203,6 +203,15 @@ panel shows the **exact block** that will be written.
   <figcaption>Free-form keywords, with a preview of the resulting block.</figcaption>
 </figure>
 
+A host saved in Muxus app data has no block. Under **Algorithms**, its Advanced section has one
+field each for `KexAlgorithms`, `HostKeyAlgorithms`, `Ciphers` and `MACs`, written as in
+`ssh_config`: a leading `+` adds names to the defaults, `^` puts them first, `-` removes them,
+and a list without one replaces the defaults. A device that fails with *no matching key
+exchange algorithm* and offers only `diffie-hellman-group14-sha1` connects once
+**KexAlgorithms** reads `+diffie-hellman-group14-sha1`. **Legacy device algorithms** fills in
+what old console servers and network gear usually need, for either kind of host. Names the
+built-in SSH client does not support are flagged as you type and skipped when connecting.
+
 ## Saving
 
 The footer offers **Save** and **Save & connect**. The second persists the selected storage

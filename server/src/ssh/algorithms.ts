@@ -99,7 +99,7 @@ function finalList(
   }
   if (mode === 'exact') {
     if (!names.length) {
-      throw new Error(`none of the ${keyword} in the ssh config ("${value}") are supported by the SSH engine`);
+      throw new Error(`none of the ${keyword} set for this host ("${value}") are supported by the SSH engine`);
     }
     return names;
   }
@@ -112,7 +112,7 @@ function finalList(
   const unchanged = result.length === defaults.length && result.every((name, i) => name === defaults[i]);
   if (unchanged) return undefined;
   if (!result.length) {
-    throw new Error(`the ${keyword} in the ssh config ("${value}") leave nothing the SSH engine could offer`);
+    throw new Error(`the ${keyword} set for this host ("${value}") leave nothing the SSH engine could offer`);
   }
   return result;
 }

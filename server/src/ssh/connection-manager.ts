@@ -326,6 +326,8 @@ export interface ChainHop {
   port: number;
   /** Display label for prompts when this is an intermediate hop. */
   hopLabel?: string;
+  /** A host saved in Muxus app data: its settings live in the host editor, not in ssh_config. */
+  savedHost?: boolean;
   /** The password-manager entry this host itself logs in with. */
   passwordRef?: ExternalPasswordRef;
   /** Folder passwords this hop may fall back to, nearest first. */
@@ -1725,6 +1727,7 @@ export function buildChain(
       user,
       port: owner?.port ?? spec.port ?? resolved.port,
       hopLabel: final ? undefined : spec.host,
+      ...(!fromConfig && owner?.profileId ? { savedHost: true } : {}),
       folderPasswords: folder?.passwords,
       ...(hostPasswordRef ? { passwordRef: hostPasswordRef } : {}),
       ...(final && profile.hostKeyFingerprint
@@ -1771,6 +1774,10 @@ function overlayProfile(
     requestTty: profile.requestTty ?? base.requestTty,
     strictHostKeyChecking:
       profile.strictHostKeyChecking ?? base.strictHostKeyChecking,
+    kexAlgorithms: profile.kexAlgorithms ?? base.kexAlgorithms,
+    hostKeyAlgorithms: profile.hostKeyAlgorithms ?? base.hostKeyAlgorithms,
+    ciphers: profile.ciphers ?? base.ciphers,
+    macs: profile.macs ?? base.macs,
   };
 }
 
@@ -2988,9 +2995,10 @@ function friendlyConnectError(err: Error, hop: ChainHop, securityKeyProblem?: st
     );
   }
   if (code === 'NO_MATCHING_ALGORITHM' || /Handshake failed: no matching/i.test(msg)) {
-    return new Error(
-      `${msg} — if ${where} only speaks legacy algorithms, add KexAlgorithms/Ciphers/HostKeyAlgorithms lines to this host's ssh config (Advanced options in the host editor)`,
-    );
+    const fix = hop.savedHost
+      ? 'set KexAlgorithms/Ciphers/HostKeyAlgorithms for this host (Advanced → Algorithms in the host editor)'
+      : "add KexAlgorithms/Ciphers/HostKeyAlgorithms lines to this host's ssh config (Advanced options in the host editor)";
+    return new Error(`${msg} — if ${where} only speaks legacy algorithms, ${fix}`);
   }
   // The engine's code names nothing the user needs; its message does.
   return err instanceof SshError ? new Error(msg) : err;

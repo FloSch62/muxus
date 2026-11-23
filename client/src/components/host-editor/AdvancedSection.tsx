@@ -12,13 +12,19 @@ import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import SettingsEthernetIcon from '@mui/icons-material/SettingsEthernet';
-import { DIAL_TIME_KEYWORDS } from '@muxus/shared';
+import { DIAL_TIME_KEYWORDS, SAVED_HOST_ALGORITHMS } from '@muxus/shared';
 import { useAppInfo } from '../../api/queries.js';
 import {
   SYSTEM_OPENSSH_UNAVAILABLE,
   SYSTEM_OPENSSH_WINDOWS_UNAVAILABLE,
 } from '../../system-openssh.js';
-import { applyLegacyPreset, legacyPresetState, unsupportedEntries } from './advanced-options.js';
+import {
+  applyLegacyPreset,
+  legacyPresetState,
+  optionValue,
+  unsupportedEntries,
+  withOptionValue,
+} from './advanced-options.js';
 import type { EnvironmentDiscoveryDraft, HostDraft } from './draft.js';
 import { usePrefsStore } from '../../state/prefs.js';
 
@@ -28,7 +34,8 @@ import { usePrefsStore } from '../../state/prefs.js';
  * exact block text a save writes — rendered by the server so it can't drift.
  * Rows are badged by whether the dialer applies the keyword or merely
  * preserves it for OpenSSH, and algorithm values the SSH engine can't offer
- * are flagged as they are typed instead of at connect time.
+ * are flagged as they are typed instead of at connect time. A host in Muxus
+ * app data has no block; it gets the algorithm lists as fields of their own.
  */
 export function AdvancedSection({
   draft,
@@ -51,6 +58,27 @@ export function AdvancedSection({
 
   const update = (i: number, patch: Partial<{ keyword: string; value: string }>) =>
     set({ extras: draft.extras.map((e, j) => (j === i ? { ...e, ...patch } : e)) });
+
+  const legacyPreset = (
+    <Tooltip
+      title={
+        legacyState === 'conflict'
+          ? 'An algorithm list uses a removal (-) policy the preset will not rewrite. Adjust the lists manually.'
+          : 'Adds the key exchange, host key and cipher options old console servers and network gear need. Merged into the modern defaults, so current hosts keep working.'
+      }
+    >
+      <span>
+        <Button
+          size="small"
+          startIcon={<SettingsEthernetIcon />}
+          disabled={legacyState === 'enabled' || legacyState === 'conflict'}
+          onClick={() => set({ extras: applyLegacyPreset(draft.extras) })}
+        >
+          Legacy device algorithms
+        </Button>
+      </span>
+    </Tooltip>
+  );
 
   return (
     <Stack spacing={2}>
@@ -152,11 +180,7 @@ export function AdvancedSection({
                   onChange={(ev) => update(i, { value: ev.target.value })}
                   fullWidth
                   error={unsupported.length > 0}
-                  helperText={
-                    unsupported.length
-                      ? `Skipped when connecting — not supported by the SSH engine: ${unsupported.join(', ')}`
-                      : undefined
-                  }
+                  helperText={skippedHelp(unsupported)}
                 />
                 <Box sx={{ width: 62, flexShrink: 0, display: 'flex', justifyContent: 'center', pt: 1.25 }}>
                   {keyword &&
@@ -180,27 +204,34 @@ export function AdvancedSection({
             <Button size="small" startIcon={<AddIcon />} onClick={() => set({ extras: [...draft.extras, { keyword: '', value: '' }] })}>
               Add option
             </Button>
-            <Tooltip
-              title={
-                legacyState === 'conflict'
-                  ? 'An algorithm list uses a removal (-) policy the preset will not rewrite. Adjust the lists manually.'
-                  : 'Adds the key exchange, host key and cipher options old console servers and network gear need. Merged into the modern defaults, so current hosts keep working.'
-              }
-            >
-              <span>
-                <Button
-                  size="small"
-                  startIcon={<SettingsEthernetIcon />}
-                  disabled={legacyState === 'enabled' || legacyState === 'conflict'}
-                  onClick={() => set({ extras: applyLegacyPreset(draft.extras) })}
-                >
-                  Legacy device algorithms
-                </Button>
-              </span>
-            </Tooltip>
+            {legacyPreset}
           </Stack>
         </Stack>
-      ) : null}
+      ) : (
+        <Stack spacing={1}>
+          <Typography variant="subtitle2">Algorithms</Typography>
+          <Typography variant="body2" color="textSecondary">
+            Comma-separated, as in ssh_config: a leading + adds the names to the defaults, ^ puts
+            them first, - removes them, and a list without one replaces the defaults.
+          </Typography>
+          {SAVED_HOST_ALGORITHMS.map(({ keyword }) => {
+            const value = optionValue(draft.extras, keyword);
+            const unsupported = unsupportedEntries(keyword, value, sshAlgorithms);
+            return (
+              <TextField
+                key={keyword}
+                label={keyword}
+                value={value}
+                onChange={(ev) => set({ extras: withOptionValue(draft.extras, keyword, ev.target.value) })}
+                fullWidth
+                error={unsupported.length > 0}
+                helperText={skippedHelp(unsupported)}
+              />
+            );
+          })}
+          <Box>{legacyPreset}</Box>
+        </Stack>
+      )}
 
       {configBacked ? (
         <Stack spacing={0.75}>
@@ -229,11 +260,17 @@ export function AdvancedSection({
         </Stack>
       ) : (
         <Typography variant="body2" color="textSecondary">
-          Raw ssh_config options are only available when a host is stored in OpenSSH
+          Other ssh_config options are only available when a host is stored in OpenSSH
           config. The connection settings in the other sections are stored directly by
           Muxus.
         </Typography>
       )}
     </Stack>
   );
+}
+
+function skippedHelp(unsupported: string[]): string | undefined {
+  return unsupported.length
+    ? `Skipped when connecting — not supported by the SSH engine: ${unsupported.join(', ')}`
+    : undefined;
 }

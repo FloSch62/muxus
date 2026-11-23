@@ -90,6 +90,16 @@ describe('ssh arguments', () => {
     ]);
   });
 
+  it('passes a saved host\'s algorithm lists as ssh writes them', () => {
+    expect(
+      savedHostOptions({ ...saved, kexAlgorithms: '+diffie-hellman-group14-sha1', macs: '^hmac-sha1' }),
+    ).toEqual([
+      '-o', 'KexAlgorithms=+diffie-hellman-group14-sha1',
+      '-o', 'MACs=^hmac-sha1',
+      '-o', 'GSSAPIAuthentication=yes',
+    ]);
+  });
+
   it('does not ask for GSSAPI on a password-only saved host', () => {
     expect(savedHostOptions({ ...saved, passwordOnly: true })).toEqual([
       '-o', 'PubkeyAuthentication=no',

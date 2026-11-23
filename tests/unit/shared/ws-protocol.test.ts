@@ -165,6 +165,33 @@ describe('sessionProfileSchema', () => {
     ).toBe(false);
   });
 
+  it('takes algorithm lists in ssh_config syntax and nothing else', () => {
+    for (const kexAlgorithms of [
+      '+diffie-hellman-group14-sha1',
+      '^ssh-rsa,rsa-sha2-256',
+      '-*cbc',
+      'aes128-gcm@openssh.com,aes256-ctr',
+    ]) {
+      expect(sessionProfileSchema.parse({ kind: 'ssh', target: 'x', kexAlgorithms })).toMatchObject({
+        kexAlgorithms,
+      });
+    }
+    for (const ciphers of [
+      '',
+      '+',
+      'aes128-ctr, aes256-ctr',
+      'aes128-ctr,,aes256-ctr',
+      '++aes128-ctr',
+      'aes128-ctr\nProxyCommand x',
+    ]) {
+      expect(sessionProfileSchema.safeParse({ kind: 'ssh', target: 'x', ciphers }).success).toBe(false);
+    }
+    expect(
+      sessionProfileSchema.safeParse({ kind: 'ssh', target: 'x', macs: `hmac-sha1${',hmac-sha1'.repeat(500)}` })
+        .success,
+    ).toBe(false);
+  });
+
   it('bounds tunnel-owned SSH configuration', () => {
     expect(
       sessionProfileSchema.safeParse({

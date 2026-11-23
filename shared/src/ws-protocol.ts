@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { TERMINAL_ENTER_KEYS, type ConfigForward } from './api-types.js';
+import { ALGORITHM_LIST_PATTERN, TERMINAL_ENTER_KEYS, type ConfigForward } from './api-types.js';
 import { normalizeHostKeyFingerprint } from './connection-links.js';
 import {
   CONTAINER_NAME_PATTERN,
@@ -125,6 +125,8 @@ export const localProfileSchema = z.object({
   environment: environmentTargetSchema.optional(),
 });
 
+const algorithmListSchema = z.string().max(4096).regex(ALGORITHM_LIST_PATTERN, 'invalid algorithm list');
+
 export const sshProfileSchema = z.object({
   kind: z.literal('ssh'),
   /** Stable Muxus database profile when this is a saved host. */
@@ -190,6 +192,11 @@ export const sshProfileSchema = z.object({
    */
   environment: environmentTargetSchema.optional(),
   strictHostKeyChecking: z.enum(['yes', 'no', 'accept-new', 'ask']).optional(),
+  /** KexAlgorithms, HostKeyAlgorithms, Ciphers and MACs, in ssh_config list syntax. */
+  kexAlgorithms: algorithmListSchema.optional(),
+  hostKeyAlgorithms: algorithmListSchema.optional(),
+  ciphers: algorithmListSchema.optional(),
+  macs: algorithmListSchema.optional(),
   /**
    * Host key the target must present, from an ssh:// link's fingerprint, in
    * canonical form. It only tightens verification and is never saved with a host.

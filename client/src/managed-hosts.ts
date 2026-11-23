@@ -5,6 +5,7 @@ import type {
   SshHostEntry,
   SshProfile,
 } from '@muxus/shared';
+import { savedHostAlgorithmOptions } from '@muxus/shared';
 import {
   groupHosts,
   hostAddress,
@@ -292,6 +293,9 @@ function savedSshCopyCommand(
       '-o',
       `StrictHostKeyChecking=${profile.strictHostKeyChecking}`,
     );
+  }
+  for (const { keyword, value } of savedHostAlgorithmOptions(profile)) {
+    args.push('-o', `${keyword}=${value}`);
   }
   args.push(profile.user ? `${profile.user}@${profile.target}` : profile.target);
   if (profile.remoteCommand) args.push(profile.remoteCommand);

@@ -955,6 +955,72 @@ describe('backing up host icons', () => {
   });
 });
 
+describe('backing up the algorithm lists of saved SSH hosts', () => {
+  const routeServer: SavedHostProfile = {
+    id: 'route-server',
+    kind: 'ssh',
+    name: 'Route server',
+    profile: {
+      kind: 'ssh',
+      profileId: 'route-server',
+      target: 'route-server.example.test',
+      useConfig: false,
+      kexAlgorithms: '+diffie-hellman-group14-sha1',
+      hostKeyAlgorithms: '+ssh-rsa',
+    },
+    metadata: { profileId: 'route-server', connectCount: 0 },
+    createdAt: '2026-11-22T00:00:00.000Z',
+    updatedAt: '2026-11-22T00:00:00.000Z',
+  };
+
+  it('keeps them in the backup file and gives them back on restore', async () => {
+    mockBackupSnapshot([], [routeServer]);
+    const document = await createBackupDocument();
+
+    const read = parseTransferDocument(JSON.stringify(document));
+    apiFetchMock.mockReset();
+    apiFetchMock
+      .mockResolvedValueOnce({ hosts: [] })
+      .mockResolvedValueOnce({ profiles: [] })
+      .mockResolvedValue({});
+    await restoreImportedConnections(
+      { sshHosts: [], savedHosts: read.data.savedHosts, hostOrder: [] },
+      'replace',
+    );
+
+    const body = apiFetchMock.mock.calls.find(
+      ([route, init]) => route === '/api/profiles' && init?.method === 'PUT',
+    )?.[1]?.body;
+    if (typeof body !== 'string') throw new Error('the host was not restored');
+    expect(JSON.parse(body).profile).toMatchObject({
+      kexAlgorithms: '+diffie-hellman-group14-sha1',
+      hostKeyAlgorithms: '+ssh-rsa',
+    });
+  });
+
+  it('writes them as option lines in an OpenSSH export', async () => {
+    const previews: HostUpsertRequest[] = [];
+    apiFetchMock.mockImplementation(async (url, options) => {
+      if (url === '/api/ssh/config') return { hosts: [] } as never;
+      if (url === '/api/profiles') return { profiles: [routeServer] } as never;
+      if (url === '/api/folders/settings') return { folders: [] } as never;
+      if (url === '/api/ssh/config/preview') {
+        if (typeof options?.body !== 'string') throw new Error('preview body was not JSON');
+        previews.push(JSON.parse(options.body) as HostUpsertRequest);
+        return { text: 'Host Route-server' } as never;
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+
+    await createOpenSshExport();
+
+    expect(previews[0]?.options.extras).toEqual([
+      { keyword: 'KexAlgorithms', value: '+diffie-hellman-group14-sha1' },
+      { keyword: 'HostKeyAlgorithms', value: '+ssh-rsa' },
+    ]);
+  });
+});
+
 describe('which settings a backup carries', () => {
   // The two that belong to one computer. A setting in neither list does not compile.
   const LOCAL = ['interfaceZoom', 'debugMode'];
