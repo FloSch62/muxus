@@ -75,6 +75,20 @@ export const NOKIA_SROS_HIGHLIGHT_PROFILE: KeywordHighlightProfile = {
       R`\b(?:Idle|Connect|OpenSent|OpenConfirm|IDLE|CONNECT|ACTIVE|OPENSENT|OPENCONFIRM)\b`,
       { foreground: AMBER, caseSensitive: true },
     ),
+    // "show router bgp summary" prints title-case states after the Up/Down timer
+    // ("0104d05h  Active"). Anchoring on the timer keeps "Active Routes" and other
+    // headers alone; Idle, Connect, OpenSent and OpenConfirm are covered above.
+    pattern('bgp-summary-active', 'BGP summary: Active session', R`(?<=\d[dhms]\s+)Active\b`, {
+      foreground: AMBER,
+      caseSensitive: true,
+    }),
+    // The same column shows Rcv/Act/Sent route counts once a session is established.
+    pattern(
+      'bgp-summary-established',
+      'BGP summary: established session counts',
+      R`(?<=\d[dhms]\s+)\d+/\d+/\d+\b`,
+      { foreground: GREEN },
+    ),
     pattern('severity-major', 'Critical and major alarms', R`\b(?:CRITICAL|MAJOR)\b`, {
       ...MAJOR_BADGE,
       caseSensitive: true,
@@ -93,6 +107,28 @@ export const NOKIA_SROS_HIGHLIGHT_PROFILE: KeywordHighlightProfile = {
       caseSensitive: true,
     }),
     pattern('cli-error', 'CLI errors', R`^Error:.*`, { foreground: RED, caseSensitive: true }),
+    // A real SR OS error line, e.g. "MINOR: CLI #2069: Invalid token". Only CLI
+    // messages: other classes ("BGP #2002") keep just their severity badge.
+    pattern(
+      'cli-error-line',
+      'CLI error and warning lines',
+      R`^(?:MINOR|MAJOR|CRITICAL|WARNING): CLI #\d+:.*`,
+      { foreground: RED, caseSensitive: true },
+    ),
+    pattern('cli-info-line', 'CLI info lines', R`^INFO: CLI #\d+:.*`, {
+      foreground: BLUE,
+      caseSensitive: true,
+    }),
+    // "A:admin@r1#" is the MD-CLI prompt. "*" (or "!") in front of the "(pr)[/]" context
+    // line above it marks uncommitted changes.
+    pattern('mdcli-prompt', 'MD-CLI user@node prompt', R`^[AB]:[\w.-]+@[\w.-]+[#>$]`, {
+      foreground: GREEN,
+      caseSensitive: true,
+    }),
+    pattern('mdcli-uncommitted', 'Uncommitted changes marker', R`^[!*]+(?=\()`, {
+      foreground: '#ffffff',
+      background: '#b45309',
+    }),
     // The MD-CLI context line: "*(ex)[/configure]" means uncommitted changes
     // in an exclusive, private, global or read-only configuration session.
     pattern(

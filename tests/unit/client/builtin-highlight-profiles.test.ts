@@ -94,9 +94,38 @@ describe('built-in highlighting profiles', () => {
     ]);
     expect(highlights(sros, 'Error: Bad command.')).toEqual([['cli-error', 'Error: Bad command.']]);
     expect(highlights(sros, '*(ex)[/configure router "Base" interface "to-pe2"]')).toEqual([
+      ['mdcli-uncommitted', '*'],
       ['mdcli-config-mode', '*(ex)'],
     ]);
+    expect(highlights(sros, '(ex)[/]')).toEqual([['mdcli-config-mode', '(ex)']]);
     expect(highlights(sros, '[/]')).toEqual([]);
+  });
+
+  it('highlight the BGP summary state column and the MD-CLI prompt', () => {
+    const sros = NOKIA_SROS_HIGHLIGHT_PROFILE;
+    expect(highlights(sros, 'Def. Inst       65001       0    0 0104d05h  Active')).toEqual([
+      ['bgp-summary-active', 'Active'],
+    ]);
+    expect(highlights(sros, 'Def. Inst       65001     120    0 00h12m30s 10/10/5')).toEqual([
+      ['port', '10/10/5'],
+      ['bgp-summary-established', '10/10/5'],
+    ]);
+    expect(highlights(sros, 'Active Routes: 12')).toEqual([]);
+    expect(highlights(sros, "MINOR: CLI #2069: Invalid token 'foo'")).toEqual([
+      ['severity-minor', 'MINOR'],
+      ['cli-error-line', "MINOR: CLI #2069: Invalid token 'foo'"],
+    ]);
+    expect(highlights(sros, 'A:admin@r135# show router bgp summary all')).toEqual([
+      ['mdcli-prompt', 'A:admin@r135#'],
+    ]);
+    expect(highlights(sros, '*(pr)[/]')).toEqual([
+      ['mdcli-uncommitted', '*'],
+      ['mdcli-config-mode', '*(pr)'],
+    ]);
+    expect(highlights(sros, 'INFO: CLI #2070: Entering private configuration mode')).toEqual([
+      ['severity-info', 'INFO'],
+      ['cli-info-line', 'INFO: CLI #2070: Entering private configuration mode'],
+    ]);
   });
 
   it('distinguish SR OS administrative shutdown from its negation', () => {
