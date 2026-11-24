@@ -65,6 +65,14 @@ try {
   const refused = await handshake(port, { name: auth.name, data: Buffer.alloc(auth.data.length, 0) });
   assert.equal(refused[0], 0, 'X server accepted a connection with the wrong cookie');
   console.log('X11 setup with a wrong cookie refused');
+
+  // Every client has left again. The server must stay up past the 5 seconds
+  // its window manager waits after a failed first connection: a server reset
+  // at this point made VcXsrv exit then, closing all forwarded windows.
+  await new Promise((resolve) => setTimeout(resolve, 8_000));
+  const later = await handshake(port, auth);
+  assert.equal(later[0], 1, 'the X server stopped accepting connections once its first clients had left');
+  console.log('X server still up after its clients left');
 } finally {
   x11.close();
 }

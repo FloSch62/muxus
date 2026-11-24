@@ -332,7 +332,7 @@ describe('BundledXServer', () => {
     expect(spawns[0]!.executable).toBe(path.join(directory, 'vcxsrv.exe'));
     const authFile = spawns[0]!.args[spawns[0]!.args.indexOf('-auth') + 1]!;
     expect(spawns[0]!.args).toEqual(
-      expect.arrayContaining([':12', '-multiwindow', '-noclipboard', '-silent-dup-error']),
+      expect.arrayContaining([':12', '-multiwindow', '-noclipboard', '-noreset', '-silent-dup-error']),
     );
     expect(first.clipboard).toBe(false);
     expect(parseXauthority(readFileSync(authFile))).toEqual([
