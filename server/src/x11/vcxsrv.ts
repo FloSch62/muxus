@@ -184,6 +184,12 @@ export class BundledXServer {
       '-wgl',
       '-auth',
       authFile,
+      // Without it the server resets once its last client leaves, and the
+      // first client is the readiness probe: it connects before the
+      // multiwindow window manager does (that one sleeps 5 s after a refused
+      // first try). The reset starts a second window manager, the first one
+      // wakes up to find it and VcXsrv exits, taking every window with it.
+      '-noreset',
       // A race for the display number must not pop up a modal error box.
       '-silent-dup-error',
       '-notrayicon',
