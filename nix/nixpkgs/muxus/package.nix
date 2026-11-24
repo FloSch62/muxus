@@ -26,13 +26,13 @@ stdenv.mkDerivation (finalAttrs: let
   hasEngine = lib.versionAtLeast finalAttrs.version "0.16";
 in {
   pname = "muxus";
-  version = "0.16.0";
+  version = "0.16.1";
 
   src = fetchFromGitHub {
     owner = "FloSch62";
     repo = "muxus";
     tag = "v${finalAttrs.version}";
-    hash = "sha256-Pd+SovkjOyRxxmCLvL/dJvv6GD8K/KM1+C0ccIHsrj4=";
+    hash = "sha256-D9mmFLWChknosURBfXDgQPDq/eIRm5wjXrXeCSH0n9g=";
   };
 
   # Everything the desktop app needs; leaves out the test workspace.
