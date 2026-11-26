@@ -1,6 +1,6 @@
 {
   "name": "@muxus/ssh-engine",
-  "version": "0.16.1",
+  "version": "0.16.2",
   "private": true,
   "description": "SSH engine for Muxus: transport, channels, SFTP and port forwards on russh, as a Node addon",
   "license": "MIT",

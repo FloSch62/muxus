@@ -46,7 +46,7 @@ describe('app routes', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       available: true,
-      currentVersion: '0.16.1',
+      currentVersion: '0.16.2',
       latestVersion: '0.17.0',
       releaseName: 'Muxus 0.17',
       releaseUrl: 'https://github.com/FloSch62/muxus/releases/tag/v0.17.0',
@@ -56,7 +56,7 @@ describe('app routes', () => {
       /^https:\/\/muxus\.app\/latest\.json\?t=\d+$/,
     );
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
-      headers: { Accept: 'application/json', 'User-Agent': 'Muxus/0.16.1' },
+      headers: { Accept: 'application/json', 'User-Agent': 'Muxus/0.16.2' },
     });
   });
 
@@ -83,7 +83,7 @@ describe('app routes', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       available: false,
-      currentVersion: '0.16.1',
+      currentVersion: '0.16.2',
       latestVersion: '0.17.0',
       reason: 'missing-release-url',
     });
