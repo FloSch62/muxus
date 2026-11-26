@@ -22,7 +22,10 @@ jobs:
       matrix:
         include:
           - name: Linux x64
-            os: ubuntu-latest
+            # Not ubuntu-latest: native modules are compiled here and then need
+            # this image's glibc or newer wherever Muxus runs.
+            # hack/verify-linux-glibc.mjs holds the matching floor.
+            os: ubuntu-24.04
             build_args: --linux deb --x64
             artifact_name: linux-deb-x64
             artifact_path: electron/release/*.deb
@@ -81,6 +84,12 @@ jobs:
           APPLE_ID: schwarz.flori.88@googlemail.com
           APPLE_TEAM_ID: DJY795VD98
           APPLE_APP_SPECIFIC_PASSWORD: ${{ inputs.sign_macos && runner.os == 'macOS' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+
+      # A binary built against a newer glibc than Muxus supports would keep the
+      # app from starting on older distributions.
+      - name: Verify Linux glibc baseline
+        if: runner.os == 'Linux'
+        run: node hack/verify-linux-glibc.mjs
 
       - name: Verify macOS signatures and notarization
         if: runner.os == 'macOS' && inputs.sign_macos
