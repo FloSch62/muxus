@@ -71,6 +71,7 @@ export class SessionRecorder {
   private sequence = 0;
   private terminalEnded = false;
   private pending: PendingEvent[] = [];
+  private pendingBytes = 0;
   private flushTimer: NodeJS.Timeout | undefined;
   private stateListener: ((state: SessionLoggingState) => void) | undefined;
   private unsubscribeFailure: (() => void) | undefined;
@@ -130,6 +131,7 @@ export class SessionRecorder {
     this.outputNormalizer = new TerminalTextNormalizer();
     this.sequence = 0;
     this.pending = [];
+    this.pendingBytes = 0;
     this.state.enabled = true;
     this.state.sessionId = this.history.beginSession(
       {
@@ -199,6 +201,20 @@ export class SessionRecorder {
     if (this.state.captureInput) this.flushInputNormalizerSnapshot();
     const text = this.outputNormalizer.write(raw);
     this.append('output', raw, text, this.outputNormalizer.takeLineTimestamps());
+  }
+
+  /**
+   * Whether the terminal should stop reading until history has written what it
+   * was given, so a flood is recorded rather than suspended. When the writer has
+   * stopped finishing writes, history is suspended instead and the terminal goes on.
+   */
+  historyBehind(): boolean {
+    if (!this.state.enabled || this.state.paused || !this.history.behind) return false;
+    if (this.history.stalledFor(HISTORY_STALL_MS)) {
+      this.suspend('Session logging suspended: the history writer stopped responding.');
+      return false;
+    }
+    return true;
   }
 
   /** A status line for every active log. */
@@ -371,7 +387,9 @@ export class SessionRecorder {
         rawBytes: raw.byteLength,
       });
     }
-    if (raw.byteLength >= MAX_BUFFERED_EVENT_BYTES) {
+    this.pendingBytes += raw.byteLength;
+    // Bounded batches: the terminal waits on the writer's queue, which must see a flood as it comes.
+    if (this.pendingBytes >= MAX_BUFFERED_EVENT_BYTES) {
       this.flush();
       return;
     }
@@ -412,6 +430,7 @@ export class SessionRecorder {
     }
     const pending = this.pending;
     this.pending = [];
+    this.pendingBytes = 0;
     const events = pending.map((event): HistoryEvent => ({
         sequence: event.sequence,
         recordedAt: event.recordedAt,
@@ -460,6 +479,7 @@ export class SessionRecorder {
     if (!this.file) this.state.paused = false;
     this.state.warning = message;
     this.pending = [];
+    this.pendingBytes = 0;
     if (this.flushTimer) clearTimeout(this.flushTimer);
     this.flushTimer = undefined;
     this.history.finishSession(
@@ -479,6 +499,8 @@ export class SessionRecorder {
 
 const FLUSH_INTERVAL_MS = 250;
 const MAX_BUFFERED_EVENT_BYTES = 256 * 1024;
+/** Far beyond a busy worker's longest write; a terminal held this long is given back. */
+const HISTORY_STALL_MS = 5_000;
 
 interface PendingEvent {
   sequence: number;
