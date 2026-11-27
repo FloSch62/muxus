@@ -1029,6 +1029,7 @@ export function assertSecretFree(value: unknown, location = 'config'): void {
 export class MuxusDatabase {
   private readonly db: DatabaseSync;
   private readonly metadataByAlias: StatementSync;
+  private readonly allOpenSshMetadata: StatementSync;
   private readonly folderSettingsByKey: StatementSync;
 
   constructor(readonly filename: string) {
@@ -1048,7 +1049,7 @@ export class MuxusDatabase {
     );
     if (filename !== ':memory:') this.db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;');
     this.migrate();
-    this.metadataByAlias = this.db.prepare(`
+    const openSshMetadataQuery = `
       SELECT
         profiles.id,
         profiles.name,
@@ -1082,8 +1083,10 @@ export class MuxusDatabase {
         groups.name AS group_name
       FROM connection_profiles AS profiles
       LEFT JOIN connection_groups AS groups ON groups.id = profiles.group_id
-      WHERE profiles.kind = 'openssh' AND profiles.ssh_alias = ?
-    `);
+      WHERE profiles.kind = 'openssh'`;
+    this.metadataByAlias = this.db.prepare(`${openSshMetadataQuery} AND profiles.ssh_alias = ?`);
+    // The host list wants every alias: one pass beats a lookup per host.
+    this.allOpenSshMetadata = this.db.prepare(openSshMetadataQuery);
     // Prepared once: the host list looks up every folder of every host.
     this.folderSettingsByKey = this.db.prepare('SELECT * FROM folder_settings WHERE path_key = ?');
   }
@@ -1099,12 +1102,14 @@ export class MuxusDatabase {
       .map((row) => ({ version: Number(row.version), name: String(row.name) }));
   }
 
-  openSshMetadata(aliases: readonly string[]): Map<string, OpenSshMetadata> {
+  /** Metadata of the given aliases, or of every OpenSSH host when none are given. */
+  openSshMetadata(aliases?: readonly string[]): Map<string, OpenSshMetadata> {
+    const rows = new Map<string, SqlRow>();
+    for (const row of this.allOpenSshMetadata.all()) rows.set(String(row.ssh_alias), row);
     const result = new Map<string, OpenSshMetadata>();
-    for (const alias of aliases) {
-      const row = this.metadataByAlias.get(alias);
-      if (!row) continue;
-      result.set(alias, metadataFromRow(row));
+    for (const alias of aliases ?? rows.keys()) {
+      const row = rows.get(alias);
+      if (row) result.set(alias, metadataFromRow(row));
     }
     return result;
   }

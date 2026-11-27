@@ -85,11 +85,14 @@ const bulkDeleteSchema = z.object({
 export function registerSshRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get('/api/ssh/config', (): SshConfigResponse => {
     const doc = loadConfigDocument();
+    const metadata = ctx.database.openSshMetadata();
     // Resolved values include folder defaults, so the list and the editor show
     // exactly what connect will use.
-    const folderAuth = batchFolderAuthResolver(ctx.database);
+    const folderAuth = batchFolderAuthResolver({
+      groupForAlias: (alias) => metadata.get(alias)?.group,
+      folderSettingsForPath: (path) => ctx.database.folderSettingsForPath(path),
+    });
     const hosts = sortHostList(listHosts(doc, (alias) => folderAuth(alias)?.optionLines));
-    const metadata = ctx.database.openSshMetadata(hosts.map((host) => host.alias));
     return {
       path: defaultSshConfigPath(),
       files: doc.fileOrder,

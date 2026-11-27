@@ -238,6 +238,35 @@ describe('OpenSSH host list order', () => {
   });
 });
 
+describe('OpenSSH host list metadata', () => {
+  it('reads the metadata of all hosts at once, not once or twice per host', async () => {
+    mkdirSync(path.join(home, '.ssh'), { recursive: true });
+    writeFileSync(
+      path.join(home, '.ssh', 'config'),
+      ['Host web-1', '  HostName 203.0.113.11', 'Host web-2', '  HostName 203.0.113.12', 'Host db', '  HostName 203.0.113.20', ''].join('\n'),
+    );
+    ctx.database.updateOpenSshMetadata('web-1', { group: 'Prod', color: '#d32f2f' });
+    ctx.database.updateOpenSshMetadata('web-2', { group: 'Prod' });
+    ctx.database.upsertFolderSettings('Prod', { user: 'deploy', port: 2222 });
+    const perHost = vi.spyOn(ctx.database, 'groupForAlias');
+    const reads = vi.spyOn(ctx.database, 'openSshMetadata');
+
+    const response = await app.inject({ method: 'GET', url: '/api/ssh/config', headers: auth() });
+    const { hosts } = response.json() as SshConfigResponse;
+
+    expect(hosts.map((host) => host.alias)).toEqual(['db', 'web-1', 'web-2']);
+    expect(hosts[0]).toMatchObject({ resolved: { port: 22 } });
+    expect(hosts[0]?.metadata).toBeUndefined();
+    expect(hosts[1]).toMatchObject({
+      resolved: { user: 'deploy', port: 2222 },
+      metadata: { group: 'Prod', color: '#d32f2f' },
+    });
+    expect(hosts[2]).toMatchObject({ resolved: { user: 'deploy', port: 2222 }, metadata: { group: 'Prod' } });
+    expect(reads).toHaveBeenCalledTimes(1);
+    expect(perHost).not.toHaveBeenCalled();
+  });
+});
+
 describe('OpenSSH bulk host updates', () => {
   const seedConfig = (lines: string[]) => {
     mkdirSync(path.join(home, '.ssh'), { recursive: true });
