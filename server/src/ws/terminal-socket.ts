@@ -896,13 +896,15 @@ async function handleSession(
   const sshLoginSequence = profile.environment ? undefined : prepareLoginSequence(sshHost);
 
   // Flow control: a runaway `cat hugefile` must not balloon the ws buffer.
+  // The drain poll only runs while paused, so an idle session sets no timer.
   let paused = false;
-  const resumeTimer = setInterval(() => {
-    if (paused && socket.bufferedAmount < BACKPRESSURE_HIGH / 2) {
-      paused = false;
-      stream.resume();
-    }
-  }, BACKPRESSURE_POLL_MS);
+  let resumeTimer: NodeJS.Timeout | undefined;
+  const resumeWhenDrained = () => {
+    if (socket.bufferedAmount >= BACKPRESSURE_HIGH / 2) return;
+    clearInterval(resumeTimer);
+    paused = false;
+    stream.resume();
+  };
 
   stream.on('data', (chunk: Buffer) => {
     recorder?.output(chunk);
@@ -913,6 +915,7 @@ async function handleSession(
     if (!paused && socket.bufferedAmount > BACKPRESSURE_HIGH) {
       paused = true;
       stream.pause();
+      resumeTimer = setInterval(resumeWhenDrained, BACKPRESSURE_POLL_MS);
     }
   });
   let exitCode: number | undefined;
@@ -1004,12 +1007,13 @@ function attachTerminalTransport(
 
   let paused = false;
   let closed = false;
-  const resumeTimer = setInterval(() => {
-    if (paused && socket.bufferedAmount < BACKPRESSURE_HIGH / 2) {
-      paused = false;
-      transport.resume();
-    }
-  }, BACKPRESSURE_POLL_MS);
+  let resumeTimer: NodeJS.Timeout | undefined;
+  const resumeWhenDrained = () => {
+    if (socket.bufferedAmount >= BACKPRESSURE_HIGH / 2) return;
+    clearInterval(resumeTimer);
+    paused = false;
+    transport.resume();
+  };
 
   const unsubscribeData = transport.onData((data) => {
     recorder.output(data);
@@ -1019,6 +1023,7 @@ function attachTerminalTransport(
     if (!paused && socket.bufferedAmount > BACKPRESSURE_HIGH) {
       paused = true;
       transport.pause();
+      resumeTimer = setInterval(resumeWhenDrained, BACKPRESSURE_POLL_MS);
     }
   });
   let finished = false;
