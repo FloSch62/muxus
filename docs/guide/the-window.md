@@ -151,7 +151,9 @@ command.
 nor network traffic.
 
 Only the tab in front is read, and nothing is read while the window is minimised or the bar
-is hidden. Telnet, serial and remote desktop tabs show no statistics.
+is hidden. While the window isn't focused, for example with another application or the
+Settings window in front, the bar refreshes every 15 seconds. Telnet, serial and remote
+desktop tabs show no statistics.
 
 ## Empty panes
 

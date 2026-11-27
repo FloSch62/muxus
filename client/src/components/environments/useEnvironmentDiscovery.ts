@@ -69,10 +69,7 @@ export function useEnvironmentDiscovery(): void {
 
   useEffect(() => {
     if (refreshSeconds <= 0) return;
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === 'hidden') return;
-      refreshConnectedHosts();
-    }, refreshSeconds * 1000);
+    const timer = window.setInterval(refreshConnectedHosts, refreshSeconds * 1000);
     return () => window.clearInterval(timer);
   }, [refreshSeconds]);
 }

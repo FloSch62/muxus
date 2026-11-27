@@ -223,9 +223,11 @@ export function discoveryEnabledFor(host: EnvironmentHost): boolean {
 /**
  * Read every host that can be read without connecting again, quietly. Hosts
  * that run no commands, and hosts found automatically whose discovery is now
- * off, are left alone.
+ * off, are left alone. Nothing is read while the window is hidden or not
+ * focused, when nobody watches the badges.
  */
 export function refreshConnectedHosts(): void {
+  if (document.visibilityState === 'hidden' || !document.hasFocus()) return;
   const { entries, order } = useEnvironmentsStore.getState();
   for (const key of order) {
     const entry = entries[key];
