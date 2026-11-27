@@ -2,7 +2,7 @@ import type { ApiErrorBody } from '@muxus/shared';
 import {
   TERMINAL_SESSION_CLOSE_REASON,
   terminalWebSocketProtocols,
-} from '@muxus/shared/ws-protocol';
+} from '@muxus/shared';
 import { reportAuthInvalid, reportBackendDown, reportBackendUp } from '../state/backend.js';
 
 let token = '';

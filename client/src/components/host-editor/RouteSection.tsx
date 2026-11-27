@@ -27,7 +27,7 @@ import {
 } from '@muxus/shared';
 import { jumpHopLabel, savedHostDisplayName } from '../../saved-hosts.js';
 import type { HostDraft } from './draft.js';
-import { MAX_JUMP_FALLBACKS } from '@muxus/shared/ws-protocol';
+import { MAX_JUMP_FALLBACKS } from '@muxus/shared';
 import { draftAliases } from './draft.js';
 
 /**

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { SessionProfile, WorkspaceLayoutV1 } from '@muxus/shared';
-import { isTerminalProfile } from '@muxus/shared/ws-protocol';
+import { isTerminalProfile } from '@muxus/shared';
 import type { ReattachMode } from '../connection-recovery.js';
 import {
   equalizeSplits,

@@ -44,7 +44,7 @@ import {
   MAX_JUMP_FALLBACKS,
   MAX_JUMP_HOPS,
   MAX_SSH_KEEPALIVE_INTERVAL_SECONDS,
-} from '@muxus/shared/ws-protocol';
+} from '@muxus/shared';
 import { apiFetch } from './api/http.js';
 import { fetchHostPreview } from './api/ssh-config.js';
 import { savedProfileFolderDefaults } from './folder-defaults.js';

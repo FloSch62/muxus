@@ -1,5 +1,5 @@
 import type { AppWindowLaunch } from '@muxus/shared';
-import { MAX_BREAK_DURATION_MS } from '@muxus/shared/ws-protocol';
+import { MAX_BREAK_DURATION_MS } from '@muxus/shared';
 import { authToken } from './api/http.js';
 
 const LAUNCH_FRAGMENT_KEY = 'launch';

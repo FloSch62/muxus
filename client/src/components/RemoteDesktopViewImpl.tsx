@@ -24,7 +24,7 @@ import {
   DESKTOP_RDP_WS_PATH,
   DESKTOP_TICKET_PROTOCOL_PREFIX,
   DESKTOP_VNC_WS_PATH,
-} from '@muxus/shared/ws-protocol';
+} from '@muxus/shared';
 import { wsProtocols, wsUrl } from '../api/http.js';
 import { copyToClipboard, readFromClipboard } from '../clipboard.js';
 import {

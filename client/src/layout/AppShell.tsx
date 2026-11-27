@@ -15,7 +15,7 @@ import {
   isDesktopProfile,
   isManagementProfile,
   isTerminalProfile,
-} from '@muxus/shared/ws-protocol';
+} from '@muxus/shared';
 import { paneFocusOpacity, usePrefsStore } from '../state/prefs.js';
 import { multiExecPaneIds, useMultiExecStore } from '../state/multi-exec.js';
 import {

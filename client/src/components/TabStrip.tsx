@@ -58,7 +58,7 @@ import ViewColumnOutlinedIcon from '@mui/icons-material/ViewColumnOutlined';
 import ViewQuiltOutlinedIcon from '@mui/icons-material/ViewQuiltOutlined';
 import PodcastsOutlinedIcon from '@mui/icons-material/PodcastsOutlined';
 import PowerInputOutlinedIcon from '@mui/icons-material/PowerInputOutlined';
-import { isTerminalProfile } from '@muxus/shared/ws-protocol';
+import { isTerminalProfile } from '@muxus/shared';
 import { showFileBrowser } from '../file-browser.js';
 import { useChordLabel } from '../keymap/hints.js';
 import { ChordHint, withChord } from './ChordHint.js';

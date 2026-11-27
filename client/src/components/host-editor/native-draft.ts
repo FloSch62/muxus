@@ -5,7 +5,7 @@ import type {
   SavedHostProfileInput,
   SerialProfile,
 } from '@muxus/shared';
-import { DEFAULT_BREAK_DURATION_MS, MAX_BREAK_DURATION_MS } from '@muxus/shared/ws-protocol';
+import { DEFAULT_BREAK_DURATION_MS, MAX_BREAK_DURATION_MS } from '@muxus/shared';
 import {
   blankHostSessionLoggingDraft,
   type HostSessionLoggingDraft,

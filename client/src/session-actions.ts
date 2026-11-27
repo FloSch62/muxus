@@ -4,7 +4,7 @@ import type {
   SessionProfile,
   SshHostEntry,
 } from '@muxus/shared';
-import { isTerminalProfile } from '@muxus/shared/ws-protocol';
+import { isTerminalProfile } from '@muxus/shared';
 import type { ManagedHost } from './managed-hosts.js';
 import { localShellLaunchArguments } from './local-shell-profile.js';
 import { savedHostDisplayName } from './saved-hosts.js';
