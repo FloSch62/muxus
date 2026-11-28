@@ -17,7 +17,7 @@ import TuneOutlinedIcon from '@mui/icons-material/TuneOutlined';
 import UsbOutlinedIcon from '@mui/icons-material/UsbOutlined';
 import PaletteOutlinedIcon from '@mui/icons-material/PaletteOutlined';
 import type { SavedHostProfile, SerialPortInfo, SerialProfile } from '@muxus/shared';
-import { MAX_BREAK_DURATION_MS } from '@muxus/shared/ws-protocol';
+import { MAX_BREAK_DURATION_MS } from '@muxus/shared';
 import { useDeleteHostProfile, useSaveHostProfile, useUpdateHostProfileMetadata } from '../api/profiles.js';
 import { useSharedHostCaption } from '../api/shared-sessions.js';
 import { useSaveSessionLoggingPolicy } from '../api/session-history.js';

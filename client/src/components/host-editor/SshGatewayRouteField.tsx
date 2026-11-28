@@ -5,7 +5,7 @@ import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import type { SshGateway } from '@muxus/shared';
-import { MAX_JUMP_FALLBACKS } from '@muxus/shared/ws-protocol';
+import { MAX_JUMP_FALLBACKS } from '@muxus/shared';
 import { SshGatewayField } from './SshGatewayField.js';
 
 

@@ -51,7 +51,7 @@ import {
 import {
   DEFAULT_SSH_KEEPALIVE_INTERVAL_SECONDS,
   MAX_SSH_KEEPALIVE_INTERVAL_SECONDS,
-} from '@muxus/shared/ws-protocol';
+} from '@muxus/shared';
 
 /** How often connected hosts are read again; 0 reads them only when they connect. */
 export const ENVIRONMENT_REFRESH_SECONDS = [0, 15, 30, 60, 120, 300] as const;

@@ -1,4 +1,4 @@
-import { isTerminalProfile } from '@muxus/shared/ws-protocol';
+import { isTerminalProfile } from '@muxus/shared';
 import { confirmDiscardRemoteEditors } from './editor/remote-editor-registry.js';
 import {
   insertIntoPane,
