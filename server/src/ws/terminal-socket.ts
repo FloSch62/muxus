@@ -677,9 +677,44 @@ async function handleSession(
       if (handleLoggingControl(msg)) return;
       if (msg.op === 'resize') pty.resize(msg.cols, msg.rows);
     };
+    // The PTY hands over about half a kilobyte at a time: output read within a
+    // millisecond goes out as one frame, and a window or a session history that
+    // falls behind pauses the shell, as it pauses every other transport.
+    let pending: Buffer[] = [];
+    let pendingBytes = 0;
+    let paused = false;
+    let shellExited = false;
+    let resumeTimer: NodeJS.Timeout | undefined;
+    const resumeWhenDrained = () => {
+      if (socket.bufferedAmount >= BACKPRESSURE_HIGH / 2 || recorder?.historyBehind()) {
+        // node-pty discards what a paused PTY still holds 200 ms after the shell
+        // exits, so a shell that has exited is read to the end, backlog or not.
+        if (processExists(pty.pid)) return;
+        shellExited = true;
+      }
+      clearInterval(resumeTimer);
+      paused = false;
+      pty.resume();
+    };
+    const flushOutput = () => {
+      if (pendingBytes === 0) return;
+      const chunk = pending.length === 1 ? pending[0]! : Buffer.concat(pending, pendingBytes);
+      pending = [];
+      pendingBytes = 0;
+      if (socket.readyState !== socket.OPEN) return;
+      socket.send(chunk, { binary: true });
+      if (!paused && !shellExited && (socket.bufferedAmount > BACKPRESSURE_HIGH || recorder?.historyBehind())) {
+        paused = true;
+        pty.pause();
+        resumeTimer = setInterval(resumeWhenDrained, BACKPRESSURE_POLL_MS);
+      }
+    };
     pty.onData((data) => {
       recorder?.output(data);
-      if (socket.readyState === socket.OPEN) socket.send(Buffer.from(data, 'utf8'), { binary: true });
+      const chunk = Buffer.from(data, 'utf8');
+      if (pendingBytes === 0) setTimeout(flushOutput, 1);
+      pending.push(chunk);
+      pendingBytes += chunk.length;
       if (startupInput) {
         startupOutput = `${startupOutput}${data}`.slice(-8192);
         if (localShellPromptReady(startupOutput)) {
@@ -691,11 +726,17 @@ async function handleSession(
       }
     });
     pty.onExit(({ exitCode }) => {
+      flushOutput();
       recorder?.end('completed');
       sendControl(socket, { op: 'exit', code: exitCode, reason: 'completed' });
       socket.close();
     });
-    socket.on('close', () => pty.kill());
+    socket.on('close', () => {
+      clearInterval(resumeTimer);
+      // ConPTY waits for its output to drain when it is closed.
+      if (paused) pty.resume();
+      pty.kill();
+    });
     sendControl(socket, { op: 'ready', connId: `local-${process.pid}` });
     return;
   }
@@ -895,10 +936,11 @@ async function handleSession(
   // console session never shows them.
   const sshLoginSequence = profile.environment ? undefined : prepareLoginSequence(sshHost);
 
-  // Flow control: a runaway `cat hugefile` must not balloon the ws buffer.
+  // Flow control: a runaway `cat hugefile` must neither balloon the ws buffer
+  // nor outrun session history.
   let paused = false;
   const resumeTimer = setInterval(() => {
-    if (paused && socket.bufferedAmount < BACKPRESSURE_HIGH / 2) {
+    if (paused && socket.bufferedAmount < BACKPRESSURE_HIGH / 2 && !recorder?.historyBehind()) {
       paused = false;
       stream.resume();
     }
@@ -910,7 +952,7 @@ async function handleSession(
     pastePacer.output(chunk);
     if (socket.readyState !== socket.OPEN) return;
     socket.send(chunk, { binary: true });
-    if (!paused && socket.bufferedAmount > BACKPRESSURE_HIGH) {
+    if (!paused && (socket.bufferedAmount > BACKPRESSURE_HIGH || recorder?.historyBehind())) {
       paused = true;
       stream.pause();
     }
@@ -1005,7 +1047,7 @@ function attachTerminalTransport(
   let paused = false;
   let closed = false;
   const resumeTimer = setInterval(() => {
-    if (paused && socket.bufferedAmount < BACKPRESSURE_HIGH / 2) {
+    if (paused && socket.bufferedAmount < BACKPRESSURE_HIGH / 2 && !recorder.historyBehind()) {
       paused = false;
       transport.resume();
     }
@@ -1016,7 +1058,7 @@ function attachTerminalTransport(
     loginSequence?.output(data);
     if (socket.readyState !== socket.OPEN) return;
     socket.send(data, { binary: true });
-    if (!paused && socket.bufferedAmount > BACKPRESSURE_HIGH) {
+    if (!paused && (socket.bufferedAmount > BACKPRESSURE_HIGH || recorder.historyBehind())) {
       paused = true;
       transport.pause();
     }
@@ -1075,4 +1117,15 @@ function answerBreak(socket: WebSocket, send: () => Promise<string | undefined>)
 
 function sendControl(socket: WebSocket, msg: TerminalServerMessage): void {
   if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(msg));
+}
+
+/** Signal 0 only asks whether the process is still there. */
+function processExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM: the shell became another user (su -), but it is still running.
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
 }

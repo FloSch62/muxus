@@ -62,6 +62,8 @@ export class SessionHistoryStore {
   private readonly failureListeners = new Map<string, Set<(message: string) => void>>();
   private nextRequestId = 1;
   private pendingWriteBytes = 0;
+  /** When a queued write last finished, or the queue last started to fill. */
+  private writeProgressAt = 0;
   private closed = false;
 
   private constructor(
@@ -141,13 +143,29 @@ export class SessionHistoryStore {
     ) {
       return false;
     }
+    if (this.pendingWriteBytes === 0) this.writeProgressAt = Date.now();
     this.pendingWriteBytes += bytes;
     void this.request('append', { sessionId, events, policy })
       .catch((error) => this.notifyFailure(sessionId, error.message))
       .finally(() => {
         this.pendingWriteBytes = Math.max(0, this.pendingWriteBytes - bytes);
+        this.writeProgressAt = Date.now();
       });
     return true;
+  }
+
+  /**
+   * More than half the write queue, which every session shares, is taken. A
+   * terminal that records here then waits before reading on, as it waits for a
+   * full socket, so the queue does not overflow and suspend its logging.
+   */
+  get behind(): boolean {
+    return this.pendingWriteBytes > MAX_PENDING_WRITE_BYTES / 2;
+  }
+
+  /** Whether writes are queued and none has finished for `ms`: the worker or its disk is stuck. */
+  stalledFor(ms: number): boolean {
+    return this.pendingWriteBytes > 0 && Date.now() - this.writeProgressAt > ms;
   }
 
   setSessionState(

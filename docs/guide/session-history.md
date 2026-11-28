@@ -162,7 +162,11 @@ into a separate FTS5 database.
 | Age retention | Off (configurable) |
 
 When the quota is reached, the oldest unpinned completed sessions are evicted down to an
-85% low-water mark. Active sessions are never evicted. If storage is exhausted, logging
-suspends itself and the terminal continues to operate. Usage, quota, retention and the
-storage location are shown and adjustable in
+85% low-water mark. Active sessions are never evicted. Output that arrives faster than the
+worker writes it, such as a long `cat`, holds back the terminals being recorded until the
+worker catches up, as a slow window does, so it is recorded completely. All tabs share the
+worker, so while one of them floods it, other recorded tabs can pause briefly when they
+print. If the worker writes nothing for five seconds while a terminal waits, or storage is
+exhausted, logging suspends itself and the terminal continues to operate. Usage, quota,
+retention and the storage location are shown and adjustable in
 [Settings → Session logging](settings.md#session-logging).

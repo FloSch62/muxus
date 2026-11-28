@@ -9,7 +9,7 @@ import { randomBytes } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SessionHistorySettings } from '@muxus/shared';
 import { SessionHistoryStore } from '../../../server/src/session-logging/history-store.js';
 
@@ -102,6 +102,30 @@ describe('hybrid session history store', () => {
     const segmentFiles = readdirSync(path.join(root, 'sessions', id));
     expect(segmentFiles).toHaveLength(2);
     expect(segmentFiles.every((file) => file.endsWith('.muxlog.zst'))).toBe(true);
+  });
+
+  it('tells writers when its queue is half full, and when queued writes stopped finishing', async () => {
+    root = mkdtempSync(path.join(os.tmpdir(), 'muxus-history-test-'));
+    store = await SessionHistoryStore.open({ root, settings });
+    const policy = { maxPartBytes: 64 * 1024 * 1024, maxParts: 2 };
+    const time = '2026-09-24T10:00:00.000Z';
+    const id = store.beginSession({ profileKey: 'local', title: 'Local', kind: 'local', host: 'local', startedAt: time, captureInput: false }, policy);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      expect(store.behind).toBe(false);
+      store.append(id, [{ sequence: 1, recordedAt: time, elapsedMs: 0, direction: 'output', raw: Buffer.alloc(5 * 1024 * 1024, 120), text: '' }], policy);
+      expect(store.behind).toBe(true);
+      expect(store.stalledFor(5_000)).toBe(false);
+      vi.setSystemTime(Date.now() + 6_000);
+      expect(store.stalledFor(5_000)).toBe(true);
+
+      // The worker answers in order: by the next answer the write has finished.
+      await store.sessionLog(id);
+      expect(store.behind).toBe(false);
+      expect(store.stalledFor(5_000)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('centers snippets on the match, counts matches, and anchors previews', async () => {
