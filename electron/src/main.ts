@@ -80,6 +80,7 @@ import {
   type LocalCopy,
 } from './local-open.js';
 import { allowRestrictedFolders } from './file-system-access.js';
+import { ignoreClosedConsole } from './console-output.js';
 import { LinuxLinkHandlers, SystemLinkHandlers, withoutAppImagePaths } from './link-handlers.js';
 import { importLoginShellEnvironment } from './login-shell-environment.js';
 import { initMainLog, installCrashCapture, mainLog, mainLogPath } from './main-log.js';
@@ -110,6 +111,7 @@ if (isDevelopment) {
 }
 initMainLog(app.getPath('userData'));
 installCrashCapture();
+ignoreClosedConsole();
 mainLog(
   'info',
   `Muxus ${app.getVersion()} starting on ${process.platform}/${process.arch} (Electron ${process.versions.electron})`,
