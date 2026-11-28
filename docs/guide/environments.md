@@ -53,7 +53,8 @@ With **Settings → Behavior → Find containers, clusters and VMs** on (the def
 looks at this computer when the window opens, and at an SSH host when a session to it
 connects. While the session stays connected it looks again every 30 seconds, or as often
 as **Refresh containers, clusters and VMs** says, so a lab you destroy in a terminal
-disappears on its own. When the last session to a host closes, its containers and VMs
+disappears on its own. It skips these looks while the window is minimised or isn't
+focused. When the last session to a host closes, its containers and VMs
 are no longer shown. Hosts whose server never runs a command, such as routers and
 console servers, are never asked: some of them drop the whole connection when a second
 channel asks to run one. The :material-refresh: button reads a host again at any time.

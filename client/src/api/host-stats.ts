@@ -13,8 +13,10 @@ export type HostStatsState =
   | { status: 'unsupported' }
   | { status: 'error'; message: string };
 
-/** How often the bar refreshes while the window is visible. */
+/** How often the bar refreshes while the window has focus. */
 const POLL_MS = 3_000;
+/** Without focus the bar stays visible but is rarely read. */
+const UNFOCUSED_POLL_MS = 15_000;
 /** The second reading comes sooner, so CPU and traffic appear right away. */
 const FIRST_RATE_MS = 1_000;
 const RETRY_MS = 15_000;
@@ -92,7 +94,7 @@ export function useHostStats(source: HostStatsSource | undefined): HostStatsStat
           state: { status: 'ok', view: hostStatsView(current, previous), stale: false },
           latest: current,
         });
-        schedule(previous ? POLL_MS : FIRST_RATE_MS);
+        schedule(!previous ? FIRST_RATE_MS : document.hasFocus() ? POLL_MS : UNFOCUSED_POLL_MS);
       } catch (error) {
         if (cancelled) return;
         const message = error instanceof Error ? error.message : String(error);
