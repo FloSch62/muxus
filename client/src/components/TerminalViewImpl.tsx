@@ -2058,6 +2058,9 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           // clip, │ ┃ ╎ reach into the rows above and below: an indent guide
           // sticks out past its block.
           '& .xterm .xterm-rows > div': { overflowY: 'clip !important' },
+          // xterm's input textarea is invisible, yet Chromium blinks its caret:
+          // every blink wakes the compositor and the GPU process while focused.
+          '& .xterm .xterm-helper-textarea': { caretAnimation: 'manual' },
         }}
       />
       {searchOpen && (
