@@ -1,4 +1,5 @@
 import type { SerializeAddon } from '@xterm/addon-serialize';
+import type { IDisposable, Terminal } from '@xterm/xterm';
 import {
   TERMINAL_SNAPSHOT_FORMAT_VERSION,
   TERMINAL_SNAPSHOT_MAX_CHARS,
@@ -130,6 +131,24 @@ export function serializeScrollback(
     /* a terminal mid-teardown cannot be serialized */
   }
   return undefined;
+}
+
+/**
+ * Calls `changed` when output may alter the next snapshot. Snapshots leave out
+ * the alt buffer, so what a full-screen program such as top or tmux redraws
+ * there changes nothing until it switches back to the normal buffer.
+ */
+export function watchSnapshotChanges(
+  terminal: Pick<Terminal, 'buffer'>,
+  changed: () => void,
+): IDisposable & { output(): void } {
+  const bufferChange = terminal.buffer.onBufferChange(changed);
+  return {
+    output: () => {
+      if (terminal.buffer.active.type === 'normal') changed();
+    },
+    dispose: () => bufferChange.dispose(),
+  };
 }
 
 export async function fetchTerminalSnapshot(tabId: string): Promise<string | null> {

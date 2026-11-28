@@ -177,6 +177,7 @@ import {
   TERMINAL_HISTORY_DIVIDER,
   TERMINAL_SNAPSHOT_INTERVAL_MS,
   TERMINAL_SNAPSHOT_QUIET_MS,
+  watchSnapshotChanges,
 } from '../terminal/scrollback-snapshots.js';
 import { registerUnloadKeepalive } from '../unload-keepalive.js';
 import { completeTabTransfer } from '../tab-transfer.js';
@@ -1171,6 +1172,11 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
         persistSnapshot();
       }, TERMINAL_SNAPSHOT_QUIET_MS);
     };
+    const snapshotChanges = watchSnapshotChanges(term, () => {
+      snapshotDirty = true;
+      snapshotRevision += 1;
+      scheduleQuietSnapshot();
+    });
     const unregisterUnloadFlush = registerUnloadKeepalive(
       (maxBodyBytes) => {
         if (!snapshotDirty || !usePrefsStore.getState().restoreScrollback) return 0;
@@ -1272,9 +1278,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
           clearTransientStatus();
           notifyOutput(tab.id);
           receivedTerminalOutput = true;
-          snapshotDirty = true;
-          snapshotRevision += 1;
-          scheduleQuietSnapshot();
+          snapshotChanges.output();
           if (waitingForTerminalOutput) {
             waitingForTerminalOutput = false;
             if (!transportSuspect) {
@@ -1797,6 +1801,7 @@ export default function TerminalViewImpl({ tab, active }: { tab: SessionTab; act
       settleTransferPreparation(false);
       clearInterval(snapshotTimer);
       if (quietSnapshotTimer !== undefined) clearTimeout(quietSnapshotTimer);
+      snapshotChanges.dispose();
       unregisterUnloadFlush();
       unsubscribePreferences();
       // The buffer outlives this socket generation: a reconnect replays it in
