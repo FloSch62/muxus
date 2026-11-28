@@ -1155,6 +1155,21 @@ describe('hybrid OpenSSH metadata', () => {
     expect(metadata.get('two')).toMatchObject({ group: 'Prod' });
   });
 
+  it('reads the metadata of every OpenSSH host when no aliases are given', () => {
+    database = new MuxusDatabase(':memory:');
+    database.updateOpenSshMetadata('web', { group: 'Prod', color: '#d32f2f' });
+    database.updateOpenSshMetadata('db', { group: 'Prod/EU' });
+    database.saveSavedHostProfile({
+      name: 'Core router',
+      profile: { kind: 'telnet', host: 'router.example.test', port: 23 },
+    });
+
+    const metadata = database.openSshMetadata();
+    expect([...metadata.keys()].sort()).toEqual(['db', 'web']);
+    expect(metadata.get('web')).toMatchObject({ group: 'Prod', color: '#d32f2f' });
+    expect(metadata.get('db')).toMatchObject({ group: 'Prod/EU' });
+  });
+
   it('preserves the stable profile ID when an OpenSSH alias is renamed', () => {
     database = new MuxusDatabase(':memory:');
     const before = database.updateOpenSshMetadata('old-alias', { group: 'Work' });
