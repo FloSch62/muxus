@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   serializeScrollback,
   snapshotBodyBytes,
@@ -6,6 +6,7 @@ import {
   stripTerminalHistoryDividers,
   TERMINAL_HISTORY_DIVIDER,
   trimReplayTail,
+  watchSnapshotChanges,
 } from '../../../client/src/terminal/scrollback-snapshots.js';
 import { PAGE_KEEPALIVE_BODY_LIMIT_BYTES } from '../../../client/src/unload-keepalive.js';
 
@@ -156,5 +157,57 @@ describe('snapshot size budgeting', () => {
 
   it('reports nothing for an empty buffer', () => {
     expect(serializeScrollback(fakeAddon(0))).toBeUndefined();
+  });
+});
+
+describe('snapshot changes', () => {
+  /** Stand-in terminal whose active buffer switches as an escape sequence would. */
+  function fakeTerminal() {
+    const listeners = new Set<() => void>();
+    const active = { type: 'normal' as 'normal' | 'alternate' };
+    const terminal = {
+      buffer: {
+        active,
+        onBufferChange: (listener: () => void) => {
+          listeners.add(listener);
+          return { dispose: () => listeners.delete(listener) };
+        },
+      },
+    } as unknown as Parameters<typeof watchSnapshotChanges>[0];
+    const switchTo = (type: 'normal' | 'alternate') => {
+      active.type = type;
+      for (const listener of listeners) listener();
+    };
+    return { terminal, switchTo };
+  }
+
+  it('counts output on the normal buffer', () => {
+    const { terminal } = fakeTerminal();
+    const changed = vi.fn();
+    watchSnapshotChanges(terminal, changed).output();
+    expect(changed).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips what a full-screen program redraws until it switches back', () => {
+    const { terminal, switchTo } = fakeTerminal();
+    const changed = vi.fn();
+    const changes = watchSnapshotChanges(terminal, changed);
+
+    switchTo('alternate');
+    expect(changed).toHaveBeenCalledTimes(1);
+    changes.output();
+    changes.output();
+    expect(changed).toHaveBeenCalledTimes(1);
+
+    switchTo('normal');
+    expect(changed).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops watching once disposed', () => {
+    const { terminal, switchTo } = fakeTerminal();
+    const changed = vi.fn();
+    watchSnapshotChanges(terminal, changed).dispose();
+    switchTo('alternate');
+    expect(changed).not.toHaveBeenCalled();
   });
 });
